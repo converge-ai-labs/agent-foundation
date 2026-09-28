@@ -33,16 +33,14 @@ export function RunEnvironmentMounts({ run }: { run: Schema["RunView"] }) {
       "environments",
     ],
     queryFn: ({ signal }) =>
-      client.http
-        .GET(
-          "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/environments",
-          {
-            params: {
-              path: { workspace_id: workspace.id, thread_id: run.thread_id },
-            },
-            signal,
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/threads/{thread_id}/environments", {
+          params: {
+            path: { thread_id: run.thread_id },
           },
-        )
+          signal,
+        })
         .then(data)
         .then((page) => page.items),
   });
@@ -119,10 +117,10 @@ function AddMountForm({
     queryKey: ["mount-environment-options", workspace.id],
     queryFn: ({ signal }) =>
       allPages((cursor) =>
-        client.http
-          .GET("/api/v1/workspaces/{workspace_id}/environments", {
+        client
+          .workspace(workspace.id)
+          .GET("/api/v1/environments", {
             params: {
-              path: { workspace_id: workspace.id },
               query: { cursor },
             },
             signal,
@@ -133,22 +131,20 @@ function AddMountForm({
   const selected = environments.data?.find((item) => item.id === environmentId);
   const save = useMutation({
     mutationFn: () =>
-      client.http
-        .POST(
-          "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/environments",
-          {
-            params: {
-              path: { workspace_id: workspace.id, thread_id: thread.id },
-            },
-            // The mount changes the Thread the reader saw.
-            headers: ifMatch(rowTag(thread)),
-            body: {
-              name,
-              environment_id: environmentId,
-              ...(directory ? { working_directory: directory } : {}),
-            },
+      client
+        .workspace(workspace.id)
+        .POST("/api/v1/threads/{thread_id}/environments", {
+          params: {
+            path: { thread_id: thread.id },
           },
-        )
+          // The mount changes the Thread the reader saw.
+          headers: ifMatch(rowTag(thread)),
+          body: {
+            name,
+            environment_id: environmentId,
+            ...(directory ? { working_directory: directory } : {}),
+          },
+        })
         .then(data),
     onSuccess: () => {
       void invalidateConversation(cache, workspace.id, {

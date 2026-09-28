@@ -10,11 +10,11 @@ pytestmark = pytest.mark.anyio
 
 async def test_an_async_child_reports_its_result_to_the_parent_thread(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    model_id = await api.create_model(model.base_url)
-    helper = await api.create_agent("worker", model_id, instructions="Role: worker")
+    model_key = await api.create_model(model.base_url)
+    helper = await api.create_agent("Worker", model_key, instructions="Role: worker")
     coordinator = await api.create_agent(
-        "coordinator",
-        model_id,
+        "Coordinator",
+        model_key,
         instructions="Role: coordinator",
         subagent_mode="async",
         subagents={"helper": {"agent_id": helper["id"], "description": "Computes answers"}},
@@ -33,7 +33,7 @@ async def test_an_async_child_reports_its_result_to_the_parent_thread(stack) -> 
     assert (parent["status"], parent["output"]) == ("completed", "Delegated to the helper.")
 
     async def child_thread() -> dict | None:
-        listing = await api.client.get(f"{api.path}/threads", params={"session_id": parent_thread["session_id"]})
+        listing = await api.client.get("/api/v1/threads", params={"session_id": parent_thread["session_id"]})
         children = [thread for thread in expect(listing, 200)["items"] if thread["origin"] == "child"]
         return children[0] if children and children[0]["last_run_id"] else None
 

@@ -9,7 +9,6 @@ from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.resources.uploads.schemas import Digest, UploadId
 
-SkillKey = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")]
 SkillName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
 Description = Annotated[str, StringConstraints(max_length=16384)]
 Repository = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$")]
@@ -74,7 +73,7 @@ class SkillManifest(BaseModel):
 
 
 class SkillPin(BaseModel):
-    """An agent revision's edge to one exact skill revision."""
+    """An agent revision's edge to one exact revision of a skill."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
     skill_id: ObjectId
@@ -82,10 +81,9 @@ class SkillPin(BaseModel):
 
 
 class SkillCreate(BaseModel):
-    """`key`, `name` and `description` default to what the package's SKILL.md declares."""
+    """`name` and `description` default to what the package's SKILL.md declares."""
 
     model_config = ConfigDict(extra="forbid")
-    key: SkillKey | None = None
     name: SkillName | None = None
     description: Description | None = None
     labels: Labels = Field(default_factory=dict)
@@ -125,7 +123,6 @@ class Skill(BaseModel):
     id: str
     organization_id: str
     workspace_id: str
-    key: str
     name: str
     description: str
     labels: dict[str, str]
@@ -140,7 +137,6 @@ class Skill(BaseModel):
 
 
 class SkillRevision(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
     id: str
     skill_id: str
     workspace_id: str

@@ -30,7 +30,7 @@ from a13n_service.resources.memories.service import resolve_memory
 from a13n_service.resources.models.service import model_settings, resolve_media_model, resolve_model
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import WebProviderRow
-from a13n_service.resources.skills.pins import require_pins
+from a13n_service.resources.skills.pins import require_distinct_names, require_pins
 from a13n_service.resources.skills.schemas import SkillPin
 from a13n_service.resources.skills.tables import SkillRow
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope
@@ -72,9 +72,9 @@ async def validate_config(
             ),
         }
     )
-    with at_field("model.model_id"):
-        model = await resolve_model(session, actor, scope, config.model.model_id, verb=verb, authority=authority)
-    model_settings(model.config, model.provider, config.model.settings, registry=registry, field="model.settings")
+    with at_field("model"):
+        model = await resolve_model(session, actor, scope, config.model, verb=verb, authority=authority)
+    model_settings(model.config, model.provider, config.model_settings, registry=registry, field="model_settings")
     if config.reviewer is not None:
         with at_field("reviewer.model"):
             reviewer = await resolve_model(session, actor, scope, config.reviewer.model, verb=verb, authority=authority)
@@ -205,6 +205,9 @@ async def _pin_skills(
             checked[f"skills.{index}"] = SkillPin(skill_id=skill.skill_id, revision_id=revision_id)
         pinned.append(selection)
     await require_pins(session, workspace_id, checked)
+    await require_distinct_names(
+        session, workspace_id, {f"skills.{index}": skill.revision_id or "" for index, skill in enumerate(pinned)}
+    )
     return tuple(pinned)
 
 

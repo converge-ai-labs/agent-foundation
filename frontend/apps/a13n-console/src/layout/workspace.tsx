@@ -20,7 +20,7 @@ interface WorkspaceContextValue {
   workspaces: Schema["Workspace"][];
   /** The caller's verb in the current workspace. */
   can: (verb: Verb) => boolean;
-  /** The caller's verb at organization scope: shared resources and administration. */
+  /** The caller's verb at organization scope for administration. */
   organizationCan: (verb: Verb) => boolean;
 }
 const Context = createContext<WorkspaceContextValue | null>(null);
@@ -35,7 +35,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     { t } = useTranslation();
   const route = useParams();
   const location = useLocation();
-  const workspaceKey = route.workspaceKey;
+  const workspaceId = route.workspaceId;
   const organization = auth.data?.organizations[0];
   const userId = auth.data?.user.value.id;
   const workspaces = useQuery({
@@ -57,8 +57,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   });
   const items = workspaces.data?.items ?? [];
   const remembered = userId ? lastWorkspaceByUser.get(userId) : undefined;
-  const workspace = workspaceKey
-    ? items.find((item) => item.key === workspaceKey)
+  const workspace = workspaceId
+    ? items.find((item) => item.id === workspaceId)
     : // An archived workspace runs nothing, so it is the landing page only when no other exists.
       (items.find((item) => item.id === remembered) ??
       items.find((item) => !item.archived_at) ??
@@ -69,7 +69,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [userId, selected]);
   if (!auth.isPending && !organization) return <NoOrganization />;
   if (auth.isPending || workspaces.isPending) return <Loading page />;
-  if (workspaceKey && workspaces.isSuccess && !selected)
+  if (workspaceId && workspaces.isSuccess && !selected)
     return (
       <ErrorPage
         title={t("Not found")}
@@ -103,7 +103,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         actions={<WorkspaceRecoveryActions workspaces={items} />}
       />
     );
-  if (!workspaceKey && location.pathname === "/")
+  if (!workspaceId && location.pathname === "/")
     return <Navigate to={`${workspacePath(workspace)}/agents`} replace />;
   return (
     <Context.Provider
@@ -191,14 +191,9 @@ function NoWorkspace({
             <>
               <Link to="/settings/profile">{t("Personal settings")}</Link>
               {admin && (
-                <>
-                  <Link to="/organization/settings">
-                    {t("Organization settings")}
-                  </Link>
-                  <Link to="/organization/settings/providers">
-                    {t("Providers")}
-                  </Link>
-                </>
+                <Link to="/organization/settings">
+                  {t("Organization settings")}
+                </Link>
               )}
               <Button
                 variant="outline"

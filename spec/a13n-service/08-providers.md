@@ -97,7 +97,7 @@ A connection becomes one Harness capability per selected connection of a run. To
 - **OAuth** (`oauth.py`). The OAuth 2.1 client of Remote MCP servers follows the MCP SDK's discovery rules: protected-resource and authorization-server metadata, dynamic client registration when no client is configured, PKCE S256, issuer checks, the authorization-code, refresh and client-credentials grants, and token revocation. Persisting flows, fencing concurrent use and deciding what an uncertain outcome means belong to the connection service ([04](04-resources.md#connections)).
 - **Connectors** (`connectors.py`). The Harness connector definition supplies the provider runtime over the host transport; the Service adapts its catalogue and account operations to tools. A connector action executes at the catalogue version it was listed with, and a call's request ID is derived from the connection, run and tool call, so a resent request can be deduplicated by the provider. An action whose outcome is unknown reaches the model as a failure telling it to check the external state before calling again. A catalogue beyond the Harness discovery bounds fails instead of being truncated.
 
-**Composio.** Composio is a connector provider: an organization or workspace configures it once as a connector provider resource, with the platform's API key as its credential. Each connector connection names one app and its actions and binds one external account through Composio's hosted setup; the connection's credential is the account reference, and Composio keeps and refreshes the app's own tokens ([04](04-resources.md#connections)).
+**Composio.** Composio is a connector provider: a workspace configures it once as a connector provider resource, with the platform's API key as its credential. Each connector connection names one app and its actions and binds one external account through Composio's hosted setup; the connection's credential is the account reference, and Composio keeps and refreshes the app's own tokens ([04](04-resources.md#connections)).
 
 ## Model catalog
 
@@ -150,7 +150,7 @@ class TraceProvider(Protocol):
 
 ## Installed Harness plugins
 
-`plugins.keys` installs Harness plugin factories by entry-point key; nothing else is imported, and a key without an installed factory fails startup. Agents select instances of installed plugins by `plugin_key` with their own configuration, and revision validation asks the factory to accept that configuration ([04](04-resources.md#validation)). There is no route listing installed plugins. A plugin that needs a secret receives it only through the secrets invocation policy ([04](04-resources.md#secrets)).
+`plugins.keys` installs Harness plugin factories by entry-point key; nothing else is imported, and a key without an installed factory fails startup. Agents select instances of installed plugins by `plugin_key` with their own configuration, and revision validation asks the factory to accept that configuration ([04](04-resources.md#validation)). There is no route listing installed plugins.
 
 ## What a provider may and may not do
 

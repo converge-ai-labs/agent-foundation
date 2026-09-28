@@ -125,7 +125,7 @@ async def test_a_registered_target_serves_runs_and_keeps_its_token_sealed(  # ty
         "ready",
         service.tenant.principal_id,
     ]
-    listed = await service.client.get(f"{service.workspace}/environments")
+    listed = await service.client.get(f"{service.api}/environments")
     assert "token" not in view and TOKEN not in registered.text + listed.text
     row = await stored(service, view["id"])
     assert row.token is not None and TOKEN not in json.dumps(row.token) and revealed(service, row) == TOKEN.encode()

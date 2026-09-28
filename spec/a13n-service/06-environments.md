@@ -46,7 +46,7 @@ thread_environments
   UNIQUE (thread_id, environment_id)
 ```
 
-A **managed** instance has a template and its provider; an **external target** has neither, nor a handle or provider identity, and holds only the `device_id`, `endpoint` and `token` of the envd daemon it reaches ([external targets](#external-targets)). A target belongs to the principal that registered it (`owner_principal_id`); managed instances have no owner. The constraint trigger `environments_provider_id_in_scope` refuses a provider outside the instance's scope ([04](04-resources.md#provider-resources)), and identity columns never change.
+A **managed** instance has a template and its provider; an **external target** has neither, nor a handle or provider identity, and holds only the `device_id`, `endpoint` and `token` of the envd daemon it reaches ([external targets](#external-targets)). A target belongs to the principal that registered it (`owner_principal_id`); managed instances have no owner. The instance references its provider by `(workspace_id, provider_id)`, so the database refuses a provider of another workspace ([04](04-resources.md#provider-resources)), and identity columns never change.
 
 - `handle` is `{recipe, state, credential_version}`: the recipe a managed instance was built from, the provider's portable state for reaching it, and the version of the provider credential that last reached it, which is its encryption envelope's nonce and changes whenever the credential is written.
 - `provider_identity` is `{type, backend}`, the provider type and non-secret backend locator the handle is meaningful in. It is frozen when a managed instance's create operation is first claimed; NULL means the create was never claimed.

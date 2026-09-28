@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { expect, it, vi } from "vitest";
@@ -7,7 +13,9 @@ import { RunOptions } from "./option-chips";
 import { useRunOptions } from "./options-dialog";
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
-vi.mock("../../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
     organization: { id: "org_test" },
@@ -26,8 +34,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 const vision = {
-  id: "mdl_0123456789abcdef0123",
-  key: "vision",
+  key: "model-0123456789abcdef0123",
   name: "Vision",
   enabled: true,
   provider_id: "provider",
@@ -178,7 +185,7 @@ it("overrides media understanding per kind and names the choice on its chip", as
       ? {
           id: "ws_test",
           version: 0,
-          image: "mdl_0123456789abcdef0123",
+          image: "model-0123456789abcdef0123",
           video: null,
           audio: null,
         }
@@ -214,7 +221,7 @@ it("overrides media understanding per kind and names the choice on its chip", as
   expect(submit.mock.lastCall?.[0].options).toEqual({
     overrides: {
       media_understanding: {
-        image: "mdl_0123456789abcdef0123",
+        image: "model-0123456789abcdef0123",
         video: null,
         audio: null,
       },
@@ -271,11 +278,30 @@ it("sends the chosen model and instructions as the run's overrides", async () =>
   expect(submit.mock.lastCall?.[0]).toEqual({
     options: {
       overrides: {
-        model: { model_id: "mdl_0123456789abcdef0123" },
+        model: "model-0123456789abcdef0123",
         instructions: "Answer briefly.",
       },
     },
   });
+});
+
+it("takes model settings from their own field and rejects them in advanced JSON", () => {
+  const { result } = renderHook(() => useRunOptions());
+  act(() => {
+    result.current.setSettings('{"temperature": 0.2}');
+    result.current.setAdvanced('{"skills": []}');
+  });
+  expect(result.current.build()).toEqual({
+    options: {
+      overrides: { skills: [], model_settings: { temperature: 0.2 } },
+    },
+  });
+  act(() =>
+    result.current.setAdvanced('{"model_settings": {"temperature": 1}}'),
+  );
+  expect(() => result.current.build()).toThrow(
+    "The model_settings field cannot be edited in advanced run configuration.",
+  );
 });
 
 it("mounts initial memories on the new thread and changes their access before sending", async () => {
@@ -284,8 +310,8 @@ it("mounts initial memories on the new thread and changes their access before se
     data: {
       items: path.endsWith("/memories")
         ? [
-            { id: "mem_prefs", key: "user-prefs", name: "Preferences" },
-            { id: "mem_book", key: "handbook", name: "Handbook" },
+            { id: "mem_prefs", name: "Preferences" },
+            { id: "mem_book", name: "Handbook" },
           ]
         : [],
       next_cursor: null,
@@ -298,34 +324,34 @@ it("mounts initial memories on the new thread and changes their access before se
   await user.click(await screen.findByRole("button", { name: /Memories/ }));
   await user.click(screen.getByRole("combobox", { name: "Memory" }));
   await user.click(
-    await screen.findByRole("option", { name: "Preferences (user-prefs)" }),
+    await screen.findByRole("option", { name: "Preferences (mem_prefs)" }),
   );
   // The mount name follows the memory's key until it is edited.
   expect(
     (screen.getByRole("textbox", { name: "Mount name" }) as HTMLInputElement)
       .value,
-  ).toBe("user-prefs");
+  ).toBe("preferences");
   await user.click(screen.getByRole("button", { name: "Add memory" }));
   await user.click(
-    await screen.findByRole("combobox", { name: "Access for user-prefs" }),
+    await screen.findByRole("combobox", { name: "Access for preferences" }),
   );
   await user.click(await screen.findByRole("option", { name: "Read" }));
   // A memory already mounted is not offered again.
   await user.click(screen.getByRole("combobox", { name: "Memory" }));
-  await screen.findByRole("option", { name: "Handbook (handbook)" });
+  await screen.findByRole("option", { name: "Handbook (mem_book)" });
   expect(
-    screen.queryByRole("option", { name: "Preferences (user-prefs)" }),
+    screen.queryByRole("option", { name: "Preferences (mem_prefs)" }),
   ).toBeNull();
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: "Apply" }));
   expect(
-    screen.getByRole("button", { name: "Memories: user-prefs" }),
+    screen.getByRole("button", { name: "Memories: preferences" }),
   ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Submit" }));
   expect(submit).toHaveBeenLastCalledWith(
     expect.objectContaining({
       memories: [
-        { name: "user-prefs", memory_id: "mem_prefs", access: "read" },
+        { name: "preferences", memory_id: "mem_prefs", access: "read" },
       ],
     }),
   );

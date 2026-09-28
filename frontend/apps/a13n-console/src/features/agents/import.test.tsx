@@ -8,7 +8,9 @@ import { initialConfig } from "./configuration";
 import { agentFile, serializeAgentFile } from "./transfer";
 
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_target" },
@@ -29,12 +31,9 @@ afterEach(() => {
 });
 const config = {
   ...initialConfig(),
-  model: {
-    model_id: "mdl_0123456789abcdef0123",
-    settings: { temperature: 0.4 },
-  },
+  model: "model-0123456789abcdef0123",
+  model_settings: { temperature: 0.4 },
   plugins: [{ instance_name: "memory", plugin_key: "memory", config: {} }],
-  secret_requirements: [{ key: "token", scope: "workspace" as const }],
 };
 const source = serializeAgentFile(
   agentFile({ name: "Research", description: "Keep me" }, config),
@@ -45,8 +44,7 @@ function setup() {
     data: {
       items: [
         {
-          id: "mdl_0123456789abcdef0123",
-          key: "research",
+          key: "model-0123456789abcdef0123",
           name: "Research model",
           enabled: true,
         },
@@ -74,7 +72,7 @@ it("previews before creation and retries the same request without losing advance
   const { user, onSuccess } = setup();
   http.POST.mockRejectedValueOnce(
     new Error("Network interrupted"),
-  ).mockResolvedValueOnce({ data: { key: "research" } });
+  ).mockResolvedValueOnce({ data: { id: "ap_research" } });
   await user.click(screen.getByLabelText("Agent YAML"));
   await user.paste(source);
   await user.click(screen.getByRole("button", { name: "Review" }));
@@ -91,7 +89,6 @@ it("previews before creation and retries the same request without losing advance
   await user.click(screen.getByRole("button", { name: "Create agent" }));
   await screen.findByText("Network interrupted");
   expect(http.POST.mock.calls[0]?.[1].body).toEqual({
-    key: "research",
     name: "Research",
     description: "Keep me",
     config,
@@ -108,8 +105,8 @@ it("blocks missing dependencies and requires an explicit replacement", async () 
   await user.click(screen.getByLabelText("Agent YAML"));
   await user.paste(
     source.replace(
-      "model_id: mdl_0123456789abcdef0123",
-      "model_id: mdl_fedcba9876543210fedc",
+      "model: model-0123456789abcdef0123",
+      "model: model-fedcba9876543210fedc",
     ),
   );
   await user.click(screen.getByRole("button", { name: "Review" }));
@@ -120,10 +117,12 @@ it("blocks missing dependencies and requires an explicit replacement", async () 
     (screen.getByRole("button", { name: "Create agent" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-  await user.click(screen.getByRole("combobox", { name: "model.model_id" }));
+  await user.click(screen.getByRole("combobox", { name: "model" }));
   await user.keyboard("{ArrowDown}");
   await user.click(
-    await screen.findByRole("option", { name: "Research model · research" }),
+    await screen.findByRole("option", {
+      name: "Research model · model-0123456789abcdef0123",
+    }),
   );
   await waitFor(() =>
     expect(
@@ -137,7 +136,7 @@ it("blocks missing dependencies and requires an explicit replacement", async () 
   await user.click(screen.getByRole("button", { name: "Back" }));
   expect(
     (screen.getByLabelText("Agent YAML") as HTMLTextAreaElement).value,
-  ).toContain("model_id: mdl_0123456789abcdef0123");
+  ).toContain("model: model-0123456789abcdef0123");
   expect(http.POST).not.toHaveBeenCalled();
 });
 
@@ -157,8 +156,7 @@ it("blocks an unavailable root Environment template until mapped in the destinat
       : {
           items: [
             {
-              id: "mdl_0123456789abcdef0123",
-              key: "research",
+              key: "model-0123456789abcdef0123",
               name: "Research model",
               enabled: true,
             },
@@ -226,7 +224,7 @@ it("uploads a file, validates its contents, and rejects unsupported versions wit
   );
   await user.click(screen.getByRole("button", { name: "Review" }));
   await screen.findByText(
-    "Unsupported Agent file version. Expected schema_version: 2.",
+    "Unsupported Agent file version. Expected schema_version: 1.",
   );
   expect(http.GET).not.toHaveBeenCalled();
   expect(http.POST).not.toHaveBeenCalled();

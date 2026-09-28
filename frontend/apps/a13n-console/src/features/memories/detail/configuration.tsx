@@ -59,10 +59,11 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
   }
   const save = useMutation({
     mutationFn: () =>
-      client.http
-        .PATCH("/api/v1/workspaces/{workspace_id}/memories/{memory_id}", {
+      client
+        .workspace(workspace.id)
+        .PATCH("/api/v1/memories/{memory_id}", {
           params: {
-            path: { workspace_id: workspace.id, memory_id: memory.id },
+            path: { memory_id: memory.id },
           },
           headers: ifMatch(base.etag),
           body: memoryUpdate(memory, draft),
@@ -198,18 +199,16 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
                     )
               }
               action={() =>
-                client.http.DELETE(
-                  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}",
-                  {
+                client
+                  .workspace(workspace.id)
+                  .DELETE("/api/v1/memories/{memory_id}", {
                     params: {
                       path: {
-                        workspace_id: workspace.id,
                         memory_id: memory.id,
                       },
                     },
                     headers: ifMatch(base.etag),
-                  },
-                )
+                  })
               }
               onSuccess={() => {
                 navigate(`${basePath}/memories`);
@@ -244,11 +243,11 @@ export function MemoryConfiguration({ resource }: { resource: Resource }) {
 /** What keeps the memory's content: its kind and type, and a record memory's provider and namespace. */
 function MemoryStorage({ memory }: { memory: Schema["Memory"] }) {
   const client = useClient(),
-    { workspace, organization } = useWorkspace(),
+    { workspace } = useWorkspace(),
     { t } = useTranslation();
   const typeName = useMemoryTypeName();
   const providers = useQuery({
-    ...memoryProviders(client, organization.id, workspace.id),
+    ...memoryProviders(client, workspace.id),
     enabled: memory.kind === "record",
   });
   const provider = providers.data?.find(

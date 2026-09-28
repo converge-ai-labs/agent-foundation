@@ -3,7 +3,7 @@ import { DisclosureSection } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
+import { useWorkspace } from "../../layout/workspace";
 import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import { useCursor } from "../../shared/collection";
 import {
@@ -19,7 +19,6 @@ import {
   ProviderKeyLink,
   SchemaFields,
   jsonObject,
-  stringValues,
   validateSettings,
   withSchemaValues,
 } from "../../shared/forms";
@@ -45,7 +44,7 @@ import {
   providerStyles,
   providerTestResult,
 } from "../providers";
-import { connectorApi, type ConnectorScope } from "./api";
+import { connectorApi } from "./api";
 
 type Definition = Schema["ProviderType"];
 
@@ -64,41 +63,24 @@ function useConnectorDefinitions(enabled = true) {
   });
 }
 
-export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
+export function ConnectorProviders() {
   const client = useClient(),
-    { can, organizationCan, organization } = useAccess(),
+    { can, workspace } = useWorkspace(),
     page = useCursor();
   const rows = useResourceRows<Schema["Provider"]>();
   const query = useQuery({
-    queryKey: [
-      "connector-providers",
-      scope.kind,
-      scope.id,
-      "list",
-      page.cursor,
-    ],
+    queryKey: ["connector-providers", workspace.id, "list", page.cursor],
     queryFn: ({ signal }) =>
-      connectorApi(client, organization.id, scope).providers(
-        signal,
-        page.cursor,
-      ),
+      connectorApi(client, workspace.id).providers(signal, page.cursor),
   });
-  const manage =
-    scope.kind === "organization" ? organizationCan("write") : can("write");
+  const manage = can("write");
   return (
     <>
       {rows.selected && (
         <EditConnectorProvider
           key={rows.selected.id}
-          scope={
-            rows.selected.workspace_id
-              ? { kind: "workspace", id: rows.selected.workspace_id }
-              : { kind: "organization", id: rows.selected.organization_id }
-          }
           providerId={rows.selected.id}
-          readOnly={
-            !(rows.selected.workspace_id ? manage : organizationCan("write"))
-          }
+          readOnly={!manage}
           {...rows.control}
         />
       )}
@@ -109,18 +91,14 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
         error={query.error}
         page={page}
         nextCursor={query.data?.next_cursor}
-        action={manage ? <AddConnectorProvider scope={scope} /> : undefined}
-        canActivateRow={(item) =>
-          (item.workspace_id ? manage : organizationCan("write")) ||
-          (scope.kind === "workspace" && item.enabled)
-        }
+        action={manage ? <AddConnectorProvider /> : undefined}
+        canActivateRow={(item) => manage || item.enabled}
         onRowActivate={rows.activate}
         row={(item) => ({
           id: item.id,
           name: item.name,
           definition: item.type,
           type: item.type,
-          workspaceId: item.workspace_id,
           credentials: item.credential_configured
             ? "configured"
             : "not_configured",
@@ -132,7 +110,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
 }
 
 /** Catalog-first creation: choose the broker, then connect it. */
-function AddConnectorProvider({ scope }: { scope: ConnectorScope }) {
+function AddConnectorProvider() {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [generation, setGeneration] = useState(0);
@@ -160,7 +138,6 @@ function AddConnectorProvider({ scope }: { scope: ConnectorScope }) {
       {(definition, back) => (
         <CatalogStep backLabel={t("All providers")} onBack={back}>
           <ProviderForm
-            scope={scope}
             definition={definition}
             close={() => change(false)}
             reload={async () => {}}
@@ -172,45 +149,30 @@ function AddConnectorProvider({ scope }: { scope: ConnectorScope }) {
 }
 
 function EditConnectorProvider({
-  scope,
   providerId,
   controlledOpen,
   onClose,
   finalFocus,
   readOnly = false,
 }: ResourceEditorControl & {
-  scope: ConnectorScope;
   providerId: string;
   readOnly?: boolean;
 }) {
   const client = useClient(),
-    { organization } = useAccess(),
+    { workspace } = useWorkspace(),
     [generation, setGeneration] = useState(0);
   const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
   const definitions = useConnectorDefinitions(state.open);
   const resource = useQuery({
-    queryKey: [
-      "connector-providers",
-      scope.kind,
-      scope.id,
-      "detail",
-      providerId,
-    ],
+    queryKey: ["connector-providers", workspace.id, "detail", providerId],
     enabled: state.open,
     queryFn: ({ signal }) =>
-      client.http
-        .GET(
-          "/api/v1/organizations/{organization_id}/connector-providers/{provider_id}",
-          {
-            params: {
-              path: {
-                organization_id: organization.id,
-                provider_id: providerId,
-              },
-            },
-            signal,
-          },
-        )
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/connector-providers/{provider_id}", {
+          params: { path: { provider_id: providerId } },
+          signal,
+        })
         .then(data),
   });
   const definition = definitions.data?.items.find(
@@ -224,7 +186,6 @@ function EditConnectorProvider({
       id={providerId}
       type={resource.data?.type}
       definition={definition?.display_name}
-      scope={resource.data?.workspace_id ? "workspace" : "organization"}
       readOnly={readOnly}
       loading={definitions.isPending || resource.isPending}
       error={definitions.error ?? resource.error}
@@ -246,7 +207,6 @@ function EditConnectorProvider({
         ) : (
           <ProviderForm
             key={generation}
-            scope={scope}
             initial={resource.data}
             definition={definition}
             close={() => state.setOpen(false)}
@@ -284,13 +244,11 @@ function OAuthCallbackSetup() {
 }
 
 function ProviderForm({
-  scope,
   initial,
   definition,
   close,
   reload,
 }: {
-  scope: ConnectorScope;
   initial?: Schema["Provider"];
   definition?: Definition;
   close: () => void;
@@ -299,7 +257,7 @@ function ProviderForm({
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation(),
-    { organization } = useAccess(),
+    { workspace } = useWorkspace(),
     [basis] = useState(initial),
     [name, setName] = useState(initial?.name ?? definition?.display_name ?? ""),
     [enabled, setEnabled] = useState(initial?.enabled ?? false),
@@ -321,31 +279,24 @@ function ProviderForm({
           if (!definition) throw new Error(t("Provider unavailable."));
           validateSettings(section.schema, secret);
         }
-        return client.http
-          .PATCH(
-            "/api/v1/organizations/{organization_id}/connector-providers/{provider_id}",
-            {
-              params: {
-                path: {
-                  organization_id: basis.organization_id,
-                  provider_id: basis.id,
-                },
-              },
-              headers: ifMatch(rowTag(basis)),
-              body: {
-                name,
-                enabled,
-                ...(secret === undefined
-                  ? {}
-                  : {
-                      credential:
-                        secret === null
-                          ? null
-                          : jsonObject(JSON.stringify(secret)),
-                    }),
-              },
+        return client
+          .workspace(workspace.id)
+          .PATCH("/api/v1/connector-providers/{provider_id}", {
+            params: { path: { provider_id: basis.id } },
+            headers: ifMatch(rowTag(basis)),
+            body: {
+              name,
+              enabled,
+              ...(secret === undefined
+                ? {}
+                : {
+                    credential:
+                      secret === null
+                        ? null
+                        : jsonObject(JSON.stringify(secret)),
+                  }),
             },
-          )
+          })
           .then(data);
       }
       if (!definition) throw new Error(t("Select a provider type."));
@@ -355,7 +306,7 @@ function ProviderForm({
       );
       validateSettings(definition.configuration_schema, config);
       if (secret) validateSettings(section.schema, secret);
-      return connectorApi(client, organization.id, scope).create({
+      return connectorApi(client, workspace.id).create({
         name,
         type,
         config: jsonObject(JSON.stringify(config)),
@@ -367,18 +318,11 @@ function ProviderForm({
   const test = useMutation({
     mutationFn: () => {
       if (!basis) throw new Error(t("Save the provider first."));
-      return client.http
-        .POST(
-          "/api/v1/organizations/{organization_id}/connector-providers/{provider_id}/test",
-          {
-            params: {
-              path: {
-                organization_id: basis.organization_id,
-                provider_id: basis.id,
-              },
-            },
-          },
-        )
+      return client
+        .workspace(workspace.id)
+        .POST("/api/v1/connector-providers/{provider_id}/test", {
+          params: { path: { provider_id: basis.id } },
+        })
         .then(data);
     },
   });

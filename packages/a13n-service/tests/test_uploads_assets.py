@@ -20,7 +20,7 @@ def etag(resource: dict) -> str:
 
 async def upload(service, content: bytes, key: str, filename: str = "notes.txt") -> dict:  # type: ignore[no-untyped-def]
     response = await service.client.post(
-        f"{service.workspace}/uploads",
+        f"{service.api}/uploads",
         files={"file": (filename, content, "text/plain")},
         headers={"idempotency-key": key},
     )
@@ -34,13 +34,13 @@ async def test_asset_lifecycle_from_upload_to_retirement(service) -> None:  # ty
     # The same request key and bytes name the same upload; different bytes under that key are refused.
     assert (await upload(service, b"hello", "upload-1"))["upload_id"] == staged["upload_id"]
     reused = await service.client.post(
-        f"{service.workspace}/uploads",
+        f"{service.api}/uploads",
         files={"file": ("notes.txt", b"other", "text/plain")},
         headers={"idempotency-key": "upload-1"},
     )
     assert reused.status_code == 409 and reused.json()["error"]["details"]["reason"] == "idempotency_key_reused"
 
-    assets = f"{service.workspace}/assets"
+    assets = f"{service.api}/assets"
     created = await service.client.post(assets, json={"upload_id": staged["upload_id"], "name": "notes.txt"})
     assert created.status_code == 201, created.text
     asset = created.json()
@@ -81,12 +81,12 @@ async def test_asset_lifecycle_from_upload_to_retirement(service) -> None:  # ty
 
 async def test_upload_bounds_and_workspace_binding(service) -> None:  # type: ignore[no-untyped-def]
     too_large = await service.client.post(
-        f"{service.workspace}/uploads",
+        f"{service.api}/uploads",
         files={"file": ("big.bin", b"x" * (service.runtime.settings.objects.upload_bytes + 1), "text/plain")},
         headers={"idempotency-key": "big"},
     )
     assert too_large.status_code == 413
-    unkeyed = await service.client.post(f"{service.workspace}/uploads", files={"file": ("a.txt", b"a", "text/plain")})
+    unkeyed = await service.client.post(f"{service.api}/uploads", files={"file": ("a.txt", b"a", "text/plain")})
     assert unkeyed.status_code == 400
 
     storage, objects = service.runtime.storage, service.runtime.objects
@@ -112,14 +112,14 @@ async def test_upload_bounds_and_workspace_binding(service) -> None:  # type: ig
     # An upload staged in another workspace cannot become an asset here.
     other = new_object_id("ws")
     async with transaction(storage) as session:
-        session.add(WorkspaceRow(id=other, organization_id=organization_id, key="other", name="Other"))
+        session.add(WorkspaceRow(id=other, organization_id=organization_id, name="Other"))
     elsewhere = await service.client.post(
-        f"/api/v1/workspaces/{other}/uploads",
+        f"{service.api}/uploads",
         files={"file": ("a.txt", b"a", "text/plain")},
-        headers={"idempotency-key": "elsewhere"},
+        headers={"idempotency-key": "elsewhere", "x-workspace-id": other},
     )
     assert elsewhere.status_code == 200, elsewhere.text
     borrowed = await service.client.post(
-        f"{service.workspace}/assets", json={"upload_id": elsewhere.json()["upload_id"], "name": "a.txt"}
+        f"{service.api}/assets", json={"upload_id": elsewhere.json()["upload_id"], "name": "a.txt"}
     )
     assert borrowed.status_code == 404

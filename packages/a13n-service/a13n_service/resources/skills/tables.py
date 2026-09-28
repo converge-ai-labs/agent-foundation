@@ -15,7 +15,6 @@ class SkillRow(Stamped, Base):
     __tablename__ = "skills"
     KIND: ClassVar[str] = "skill"
     __table_args__ = (
-        UniqueConstraint("workspace_id", "key"),
         UniqueConstraint("workspace_id", "id"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(
@@ -31,7 +30,6 @@ class SkillRow(Stamped, Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
-    key: Mapped[str]
     name: Mapped[str]
     description: Mapped[str]
     default_revision_id: Mapped[str | None] = mapped_column(String(72))

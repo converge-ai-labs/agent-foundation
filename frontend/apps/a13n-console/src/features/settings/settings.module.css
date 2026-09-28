@@ -164,9 +164,6 @@
   width: 260px;
   max-width: 100%;
 }
-.profileKey {
-  padding: 16px 0;
-}
 
 /* Detail pane inside a settings section (a service account and its keys). */
 .detailHeader {

@@ -166,25 +166,20 @@ async def started_attempt(service: SimpleNamespace) -> tuple[str, str]:
     """A run taken through submission, claim and start, the path the worker takes."""
     provider = await post(
         service,
-        f"{service.organization}/model-providers",
-        {"workspace_id": None, "type": "openai", "name": "OpenAI", "credential": {"api_key": "sk-model"}},
+        f"{service.api}/model-providers",
+        {"type": "openai", "name": "OpenAI", "credential": {"api_key": "sk-model"}},
     )
     model = await post(
         service,
-        f"{service.organization}/models",
+        f"{service.api}/models",
         {
-            "workspace_id": None,
             "provider_id": provider["id"],
             "key": "gpt",
             "name": "GPT",
             "config": {"model_name": "gpt-5.5", "model_api": "openai.responses"},
         },
     )
-    agent = await post(
-        service,
-        f"{service.workspace}/agents",
-        {"key": "traced", "name": "Traced", "config": {"model": {"model_id": model["id"]}}},
-    )
+    agent = await post(service, f"{service.api}/agents", {"name": "Traced", "config": {"model": model["key"]}})
     message = NewThread.model_validate(
         {"payload": {"content": [{"type": "text", "text": "hi"}]}, "agent_id": agent["id"]}
     )
@@ -197,9 +192,7 @@ async def started_attempt(service: SimpleNamespace) -> tuple[str, str]:
 async def add_workspace(service: SimpleNamespace) -> str:
     workspace_id = new_object_id("ws")
     async with transaction(service.runtime.storage) as session:
-        session.add(
-            WorkspaceRow(id=workspace_id, organization_id=service.tenant.organization_id, key="other", name="Other")
-        )
+        session.add(WorkspaceRow(id=workspace_id, organization_id=service.tenant.organization_id, name="Other"))
     return workspace_id
 
 
@@ -224,7 +217,7 @@ async def test_every_span_an_attempt_exports_carries_its_correlation(service, sc
     run_id = (await runs_kit.start_thread(service, agent, "hello"))["run"]["id"]
     await (await runs_kit.attempt(service, runtime=traced))
     run = await runs_kit.sealed(service, run_id)
-    [attempt] = (await service.client.get(f"{service.workspace}/runs/{run_id}/attempts")).json()["items"]
+    [attempt] = (await service.client.get(f"{service.api}/runs/{run_id}/attempts")).json()["items"]
 
     expected = scope(
         service,
@@ -305,7 +298,7 @@ async def test_attempt_trace_returns_only_the_attempts_spans_redacted(api: Simpl
     ]
     query_through(api, backend.answer(httpx2.Response(200, json={"data": rows})).logfire())
 
-    response = await api.client.get(f"{api.workspace}/runs/{run_id}/attempts/{attempt_id}/trace")
+    response = await api.client.get(f"{api.api}/runs/{run_id}/attempts/{attempt_id}/trace")
     assert response.status_code == 200, response.text
     body = response.json()
     assert [item["id"] for item in body["items"]] == ["a" * 16, "b" * 16]
@@ -383,7 +376,7 @@ async def test_workspace_traces_page_through_langfuse_within_scope(api: SimpleNa
         httpx2.Response(200, json={"data": [root, child, langfuse_row("obs-y", {"attributes": foreign})], "meta": {}}),
     )
     query_through(api, backend.langfuse())
-    listing = f"{api.workspace}/traces"
+    listing = f"{api.api}/traces"
 
     first = (await api.client.get(listing, params={"thread_id": THREAD})).json()
     assert [item["id"] for item in first["items"]] == ["obs-root"]
@@ -409,15 +402,15 @@ async def test_workspace_traces_page_through_langfuse_within_scope(api: SimpleNa
     assert window.status_code == 400
     assert len(backend.requests) == 2
 
-    trace = await api.client.get(f"{api.workspace}/traces/{TRACE}")
+    trace = await api.client.get(f"{api.api}/traces/{TRACE}")
     assert (trace.status_code, trace.json()["id"]) == (200, "obs-root")
     assert backend.requests[2].url.params["traceId"] == TRACE
-    missing = await api.client.get(f"{api.workspace}/traces/{'f' * 32}")
+    missing = await api.client.get(f"{api.api}/traces/{'f' * 32}")
     assert (missing.status_code, missing.json()["error"]["details"]["kind"]) == (404, "trace")
-    spans = (await api.client.get(f"{api.workspace}/traces/{TRACE}/spans")).json()
+    spans = (await api.client.get(f"{api.api}/traces/{TRACE}/spans")).json()
     assert [item["id"] for item in spans["items"]] == ["obs-root", "obs-child"]
     assert (spans["items"][1]["status"], spans["items"][1]["model"]) == ("error", "gpt-5.5")
-    assert (await api.client.get(f"{api.workspace}/traces/not-a-trace")).status_code == 400
+    assert (await api.client.get(f"{api.api}/traces/not-a-trace")).status_code == 400
 
 
 async def test_workspace_traces_select_a_session_and_root_attributes(api: SimpleNamespace, backend: Backend) -> None:
@@ -430,7 +423,7 @@ async def test_workspace_traces_select_a_session_and_root_attributes(api: Simple
     ]
     backend.answer(httpx2.Response(200, json={"data": rows, "meta": {"cursor": "p2"}}))
     query_through(api, backend.langfuse())
-    listing = f"{api.workspace}/traces"
+    listing = f"{api.api}/traces"
     params = {"session_id": SESSION, "attribute": ["gen_ai.agent.name:support", "deployment:blue:green"]}
 
     response = await api.client.get(listing, params=params)
@@ -465,7 +458,7 @@ async def test_numeric_and_boolean_attributes_match_as_the_backend_selected_them
     query_through(api, backend.answer(httpx2.Response(200, json={"data": rows})).logfire())
 
     response = await api.client.get(
-        f"{api.workspace}/traces", params={"attribute": ["http.status_code:200", "retry.enabled:true"]}
+        f"{api.api}/traces", params={"attribute": ["http.status_code:200", "retry.enabled:true"]}
     )
     assert response.status_code == 200, response.text
     assert [item["id"] for item in response.json()["items"]] == ["a" * 16, "b" * 16]
@@ -490,7 +483,7 @@ async def test_attribute_selectors_never_name_correlation_or_credentials(
     }
     query_through(api, backend.logfire())
     for case, selectors in refused.items():
-        response = await api.client.get(f"{api.workspace}/traces", params={"attribute": selectors})
+        response = await api.client.get(f"{api.api}/traces", params={"attribute": selectors})
         assert (response.status_code, response.json()["error"]["details"]["field"]) == (400, "attribute"), case
     assert backend.requests == []
 
@@ -517,7 +510,7 @@ async def test_logfire_spans_carry_level_scope_resource_events_and_links_redacte
     backend.answer(httpx2.Response(200, json={"data": [row]}))
     query_through(api, backend.logfire())
 
-    response = await api.client.get(f"{api.workspace}/traces/{TRACE}")
+    response = await api.client.get(f"{api.api}/traces/{TRACE}")
     assert response.status_code == 200, response.text
     span = response.json()
     assert (span["level"], span["source_url"]) == ("warn", None)
@@ -548,7 +541,7 @@ async def test_langfuse_spans_carry_level_resource_scope_and_a_source_url(
     backend.answer(httpx2.Response(200, json={"data": [row], "meta": {}}))
     query_through(api, backend.langfuse())
 
-    response = await api.client.get(f"{api.workspace}/traces/{TRACE}")
+    response = await api.client.get(f"{api.api}/traces/{TRACE}")
     assert response.status_code == 200, response.text
     span = response.json()
     assert (span["level"], span["status"]) == ("warning", "ok")
@@ -561,11 +554,11 @@ async def test_langfuse_spans_carry_level_resource_scope_and_a_source_url(
 
 
 async def test_trace_backend_names_the_configured_backend(api: SimpleNamespace, backend: Backend) -> None:
-    unconfigured = await api.client.get(f"{api.workspace}/trace-backend")
+    unconfigured = await api.client.get(f"{api.api}/trace-backend")
     assert (unconfigured.status_code, unconfigured.json()) == (200, {"type": None, "queryable_since": None})
 
     query_through(api, backend.langfuse())
-    response = await api.client.get(f"{api.workspace}/trace-backend")
+    response = await api.client.get(f"{api.api}/trace-backend")
     assert response.status_code == 200, response.text
     described = response.json()
     assert described["type"] == "langfuse"
@@ -632,5 +625,5 @@ async def test_slow_or_unconfigured_backends_are_unavailable(api: SimpleNamespac
             await traces.get_trace(api.runtime.storage, provider, admin(api), api.tenant.workspace_id, TRACE)
         assert (error.value.code, error.value.details["dependency"]) == ("unavailable", dependency)
 
-    response = await api.client.get(f"{api.workspace}/traces")
+    response = await api.client.get(f"{api.api}/traces")
     assert (response.status_code, response.json()["error"]["details"]) == (503, {"dependency": "trace"})

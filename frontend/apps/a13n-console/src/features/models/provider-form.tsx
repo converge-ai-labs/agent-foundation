@@ -17,7 +17,6 @@ import {
   providerKeyLink,
   providerTestResult,
 } from "../providers";
-import { type ModelScope } from "./api";
 import {
   ProviderConnection,
   ordinaryConfigurationSchema,
@@ -26,20 +25,18 @@ import { useProviderDraft } from "./provider-draft";
 
 /** The name, one settings group, then the advanced disclosure. */
 export function ProviderForm({
-  scope,
   resource,
   definitions,
   close,
   reload,
 }: {
   reload: () => Promise<void>;
-  scope: ModelScope;
   resource: { value: Schema["Provider"]; etag?: string };
   definitions: Schema["ProviderType"][];
   close: () => void;
 }) {
   const { t } = useTranslation();
-  const draft = useProviderDraft({ scope, resource, definitions, close });
+  const draft = useProviderDraft({ resource, definitions, close });
   const { original, type, definition, save } = draft;
   const credentialLabel = t(draft.credentialField.label);
   const keyLink = providerKeyLink(definition);

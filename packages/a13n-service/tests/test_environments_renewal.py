@@ -38,13 +38,13 @@ async def env(service) -> SimpleNamespace:  # type: ignore[no-untyped-def]
 async def expiring_template(env: SimpleNamespace, **provider: object) -> str:
     """A template of the expiring type, on its own provider."""
     created = await env.client.post(
-        f"{env.organization}/environment-providers",
-        json={"workspace_id": None, "type": "expiring", "name": "Expiring", **provider},
+        f"{env.api}/environment-providers",
+        json={"type": "expiring", "name": "Expiring", **provider},
     )
     assert created.status_code == 201, created.text
     template = await env.client.post(
-        f"{env.workspace}/environment-templates",
-        json={"key": "expiring", "name": "Expiring", "provider_id": created.json()["id"]},
+        f"{env.api}/environment-templates",
+        json={"name": "Expiring", "provider_id": created.json()["id"]},
     )
     assert template.status_code == 201, template.text
     return template.json()["id"]
@@ -117,7 +117,7 @@ async def test_renewals_have_their_own_sweep_and_fall_due_halfway_to_the_expiry(
     assert await due_in(env, expiring) <= timedelta() and (await schedule(env, expiring))[1] is None
     await maintain_environments(env.runtime, owner="sweep")
     assert BACKEND.renewals == [], "maintenance never renews"
-    path = f"{env.workspace}/environments/{expiring}"
+    path = f"{env.api}/environments/{expiring}"
     etag = (await env.client.get(path)).headers["etag"]
 
     await renew_environments(env.runtime)
@@ -166,7 +166,7 @@ async def test_an_unclassified_renewal_error_is_locatable_without_leaking_its_pa
 
 async def test_a_failed_renewal_backs_off_and_one_the_provider_cannot_grant_waits_for_the_expiry(env) -> None:  # type: ignore[no-untyped-def]
     sandbox = await ready_sandbox(env)
-    path = f"{env.workspace}/environments/{sandbox}"
+    path = f"{env.api}/environments/{sandbox}"
 
     # A transient failure is recorded without refusing use, and retried halfway to the expiry still known.
     BACKEND.renewal_error = provider_error("fake", "provider_unavailable", EnvironmentProviderErrorCategory.UNAVAILABLE)
@@ -259,7 +259,7 @@ async def test_a_sandbox_a_new_credential_cannot_see_is_not_lost(env) -> None:  
     first = (await handle(env, sandbox))["credential_version"]
     assert first is not None
     provider_id = (await environment(env, sandbox))["provider_id"]
-    item = f"{env.organization}/environment-providers/{provider_id}"
+    item = f"{env.api}/environment-providers/{provider_id}"
 
     async def replace_credential(api_key: str) -> None:
         etag = (await env.client.get(item)).headers["etag"]

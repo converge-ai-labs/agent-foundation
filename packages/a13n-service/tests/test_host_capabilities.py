@@ -1,4 +1,4 @@
-"""Host capabilities a run's Harness opens: web providers and transport, skills, secrets and asset publication.
+"""Host capabilities a run's Harness opens: web providers and transport, skills and asset publication.
 
 Each capability runs through the real Harness over a development `local` environment, with a function model
 scripting the tool calls a run's model would make.
@@ -10,7 +10,6 @@ import zipfile
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -33,8 +32,6 @@ from a13n_harness.providers.environment.direct_local.configuration import (
 from a13n_harness.providers.web.definition import WebProviderDefinition
 from a13n_harness.providers.web.options import SearchOptions
 from a13n_harness.providers.web.transport import WebProviderTransport
-from a13n_harness.tools import current_invocation_scope
-from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_service.distribution import OSS
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError
@@ -46,8 +43,6 @@ from a13n_service.resources.assets.service import get_asset, read_asset_content
 from a13n_service.resources.providers.schemas import ProviderCreate
 from a13n_service.resources.providers.service import create_provider
 from a13n_service.resources.providers.tables import WebProviderRow
-from a13n_service.resources.secrets.schemas import SecretCreate, SecretRequirement
-from a13n_service.resources.secrets.service import create_secret
 from a13n_service.resources.skills.github import GitHub
 from a13n_service.resources.skills.schemas import SkillCreate, UploadSource
 from a13n_service.resources.skills.service import create_skill
@@ -56,7 +51,6 @@ from a13n_service.runs.admission import CallContext
 from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import AttemptControl, Lease
 from a13n_service.runs.calls import CallCheck
-from a13n_service.runs.secrets import require_secrets, secrets_policy
 from a13n_service.runs.skills import resolve_skills
 from a13n_service.runs.skills import skills_capability as build_skills
 from a13n_service.runs.tables import RunRow
@@ -65,10 +59,9 @@ from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal, Wor
 from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse, RedirectResponse
 from pydantic import BaseModel, ConfigDict
-from pydantic_ai.capabilities import AbstractCapability, Toolset
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage, ModelRequest, RetryPromptPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
-from pydantic_ai.toolsets import FunctionToolset
 
 pytestmark = pytest.mark.anyio
 
@@ -216,8 +209,8 @@ async def test_a_refused_web_search_never_reaches_its_provider(runtime, tenant) 
         runtime.storage,
         actor,
         WebProviderRow,
-        tenant.organization_id,
-        ProviderCreate(workspace_id=None, type="fake_search", name="Search", config={}),
+        tenant.workspace_id,
+        ProviderCreate(type="fake_search", name="Search", config={}),
         registry=runtime.registry,
         keys=runtime.keys,
     )
@@ -364,66 +357,6 @@ async def test_skills_materialize_once_and_later_attempts_reuse_them(runtime, te
     cause = failed.value.__cause__
     assert isinstance(cause, ServiceError) and (cause.code, cause.details) == ("unavailable", {"dependency": "objects"})
     assert not (root / f"{pinned.digest}.complete").exists()
-
-
-# Secrets.
-
-VALUE = "s3cr3t-value-for-tests"
-CHILD = "apr_111111111111111111111111"
-
-
-def secret_tool(name: str, audience: str) -> HarnessTool:
-    async def use() -> dict[str, Any]:
-        return {"ok": True, "length": len(str(current_invocation_scope().credentials[audience]))}
-
-    return HarnessTool(
-        use,
-        name=name,
-        harness_metadata=HarnessToolMetadata(
-            tool_id=f"test.{name}",
-            effects=frozenset({"read"}),
-            credential_audiences=(audience,),
-            idempotency="none",
-            output_policy=ToolOutputPolicy(max_inline_bytes=4096, max_output_bytes=4096),
-        ),
-    )
-
-
-async def test_a_tool_gets_only_the_secrets_its_node_declares(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
-    body = SecretCreate.model_validate({"key": "API_KEY", "value": VALUE})
-    await create_secret(runtime.storage, runtime.keys, admin(tenant), tenant.workspace_id, body)
-    row = run_row(tenant)
-    requirements = {REVISION: [SecretRequirement(key="API_KEY")], CHILD: [SecretRequirement(key="OTHER")]}
-    with pytest.raises(ServiceError) as missing:
-        await require_secrets(runtime, row.workspace_id, row.principal_id, requirements)
-    assert missing.value.details == {"kind": "secret", "id": "OTHER"}
-    await require_secrets(runtime, row.workspace_id, row.principal_id, {REVISION: requirements[REVISION]})
-
-    policy = secrets_policy(runtime, row.workspace_id, row.principal_id, row.agent_revision_id, requirements)
-    tools = Toolset(FunctionToolset([secret_tool("use_key", "API_KEY"), secret_tool("use_other", "OTHER")]))
-    script = Script([("use_other", {}, "call_other"), ("use_key", {}, "call_key"), "done"])
-    result = await run(script, [tools], capabilities=(policy,))
-    assert result.output == "done" and result.state is not None
-    denied, used = script.results
-    assert "denied" in str(denied) and used == {"ok": True, "length": len(VALUE)}
-    assert VALUE not in result.state.model_dump_json()
-
-    # An inline child runs under its own definition ID and may use only what that revision declares.
-    def node(parent: str | None, definition_id: str | None) -> Any:
-        claims = {} if definition_id is None else {"agent_id": definition_id}
-        identity = AgentIdentityRef(issuer="a13n-service", subject="usr_x", **claims)
-        return SimpleNamespace(instance=SimpleNamespace(parent_agent_instance_id=parent), identity=identity)
-
-    def needing(audience: str) -> HarnessToolMetadata:
-        return secret_tool("probe", audience).metadata["a13n.harness.tool"]  # type: ignore[index]
-
-    async def decision(context: Any, audience: str) -> str:
-        return (await policy.evaluator(None, needing(audience), context=context)).decision  # type: ignore[arg-type]
-
-    assert await decision(node("agent-parent", CHILD), "OTHER") == "allow"
-    assert await decision(node("agent-parent", CHILD), "API_KEY") == "deny"
-    assert await decision(node("agent-parent", None), "OTHER") == "deny"
-    assert await decision(node(None, None), "API_KEY") == "allow"
 
 
 # Assets.

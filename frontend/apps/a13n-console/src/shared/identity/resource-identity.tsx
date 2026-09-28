@@ -41,7 +41,7 @@ export function ResourceIdentity({
       ) : (
         <div className={styles.resourceIdentityLink}>{content}</div>
       )}
-      {resourceId && (
+      {(resourceId || resourceKey) && (
         <ResourceReference id={resourceId} resourceKey={resourceKey} />
       )}
     </div>

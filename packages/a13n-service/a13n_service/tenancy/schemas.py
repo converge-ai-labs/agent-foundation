@@ -24,7 +24,6 @@ Password = Annotated[SecretStr, Field(min_length=1, max_length=1024)]
 NewPassword = Annotated[SecretStr, Field(min_length=12, max_length=1024)]
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 Description = Annotated[str, StringConstraints(max_length=2048)]
-Key = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")]
 RoleName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,31}$")]
 LinkToken = Annotated[str, StringConstraints(min_length=16, max_length=512)]
 
@@ -49,19 +48,17 @@ class PrincipalSummary(_View):
 
 class Organization(_View):
     id: str
-    key: str
     name: str
     image_url: str | None
     version: int
     created_at: datetime
     updated_at: datetime
-    # The caller's verbs at organization scope: `admin` administers it, `write` edits shared resources.
+    # The caller's verbs at organization scope; `admin` administers it.
     permissions: list[Verb]
 
 
 class OrganizationUpdate(_Input):
     name: Name | None = None
-    key: Key | None = None
 
 
 class OrganizationPage(BaseModel):
@@ -72,7 +69,6 @@ class OrganizationPage(BaseModel):
 class Workspace(_View):
     id: str
     organization_id: str
-    key: str
     name: str
     settings: dict[str, JsonValue]
     image_url: str | None
@@ -85,14 +81,11 @@ class Workspace(_View):
 
 
 class WorkspaceCreate(_Input):
-    key: Key
     name: Name
 
 
 class WorkspaceUpdate(_Input):
     name: Name | None = None
-    # Links naming the old key stop resolving; everything else refers to the workspace by ID.
-    key: Key | None = None
 
 
 class WorkspacePage(BaseModel):

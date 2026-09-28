@@ -45,9 +45,9 @@ async def replace_media_defaults(
         row = await lock(session, WorkspaceRow, scope.workspace_id)
         assert row is not None
         require_match(if_match, row.id, row.version)
-        for kind, model_id in body.selections().items():
+        for kind, key in body.selections().items():
             with at_field(kind):
-                await resolve_media_model(session, actor, scope, kind, model_id, verb="read")
+                await resolve_media_model(session, actor, scope, kind, key, verb="read")
         media = body.model_dump(mode="json", exclude_none=True)
         if media != row.settings.get("media", {}):
             row.settings = {**row.settings, "media": media}

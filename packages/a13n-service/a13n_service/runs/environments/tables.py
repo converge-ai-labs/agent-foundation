@@ -24,7 +24,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
-from a13n_service.resources.providers.tables import provider_in_scope
 
 STATUSES = ("creating", "starting", "ready", "stopping", "stopped", "deleting", "deleted")
 OPERATIONS = "('creating', 'starting', 'stopping', 'deleting')"
@@ -36,7 +35,7 @@ class EnvironmentRow(Stamped, Base):
         UniqueConstraint("workspace_id", "id"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(
-            ["organization_id", "provider_id"], ["environment_providers.organization_id", "environment_providers.id"]
+            ["workspace_id", "provider_id"], ["environment_providers.workspace_id", "environment_providers.id"]
         ),
         ForeignKeyConstraint(
             ["workspace_id", "template_id"], ["environment_templates.workspace_id", "environment_templates.id"]
@@ -83,7 +82,6 @@ class EnvironmentRow(Stamped, Base):
         Index("ix_environments_renewals", "renew_at", postgresql_where=text("renew_at IS NOT NULL")),
         rules(
             identity_guarded("environments"),
-            *provider_in_scope("environments", "provider_id", "environment_providers"),
             # Renewals reschedule themselves every few minutes without changing what a client sees.
             unversioned=("renew_at", "expires_at"),
         ),

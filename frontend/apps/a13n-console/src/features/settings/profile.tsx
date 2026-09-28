@@ -4,9 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
-import { useLocation, useNavigate } from "react-router";
 import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/forms";
-import { ResourceKeyField } from "../../shared/identity";
 import { useClient, type IdentityData } from "../../auth/context";
 import { UserAvatar } from "../../layout/avatar";
 import { representation, type Schema } from "../../shared/api";
@@ -94,13 +92,8 @@ function ProfileForm({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    cache = useQueryClient(),
-    navigate = useNavigate(),
-    location = useLocation();
+    cache = useQueryClient();
   const [name, setName] = useState(resource.value.name);
-  const [key, setKey] = useState(
-    "key" in resource.value ? resource.value.key : "",
-  );
   const [current, setCurrent] = useState(resource);
   const save = useMutation({
     mutationFn: async (): Promise<ProfileRepresentation> => {
@@ -122,21 +115,22 @@ function ProfileForm({
           .PATCH("/api/v1/workspaces/{workspace_id}", {
             params: { header: headers, path: { workspace_id: target.id } },
             headers,
-            body: { name, key },
+            body: { name },
           })
           .then(representation);
       return client.http
         .PATCH("/api/v1/organizations/{organization_id}", {
           params: { header: headers, path: { organization_id: target.id } },
           headers,
-          body: { name, key },
+          body: { name },
         })
         .then(representation);
     },
     onSuccess: (result) => {
       setCurrent(result);
-      const value = result.value;
-      if ("organization_id" in value) {
+      // The target chose the endpoint, so it also names the returned resource.
+      if (target.kind === "workspace") {
+        const value = result.value as Schema["Workspace"];
         cache.setQueryData<{ items: Schema["Workspace"][] }>(
           ["workspaces", value.organization_id],
           (previous) =>
@@ -147,7 +141,8 @@ function ProfileForm({
               ),
             },
         );
-      } else if ("key" in value) {
+      } else if (target.kind === "organization") {
+        const value = result.value as Schema["Organization"];
         cache.setQueryData<IdentityData>(
           ["identity"],
           (previous) =>
@@ -158,16 +153,6 @@ function ProfileForm({
               ),
             },
         );
-      }
-      const oldKey = "key" in current.value ? current.value.key : undefined;
-      if (
-        target.kind === "workspace" &&
-        "key" in result.value &&
-        oldKey !== result.value.key
-      ) {
-        const parts = location.pathname.split("/");
-        parts[2] = result.value.key;
-        navigate(parts.join("/") + location.search, { replace: true });
       }
       void cache.invalidateQueries();
     },
@@ -238,8 +223,7 @@ function ProfileForm({
   });
   const nameId = useId();
   const pending = save.isPending || image.isPending;
-  const keyChanged = "key" in current.value && key !== current.value.key;
-  const dirty = name !== current.value.name || keyChanged;
+  const dirty = name !== current.value.name;
   const nameLabel = t(
     target.kind === "personal"
       ? "Display name"
@@ -298,16 +282,6 @@ function ProfileForm({
             )}
           </div>
         </SettingsRow>
-        {"key" in current.value && (
-          <div className={styles.profileKey}>
-            <ResourceKeyField
-              value={key}
-              onChange={setKey}
-              disabled={pending}
-              readOnly={!editable}
-            />
-          </div>
-        )}
         <SettingsRow label={t("ID")}>
           <CopyableId value={current.value.id} />
         </SettingsRow>
@@ -334,15 +308,8 @@ function ProfileForm({
       {editable && dirty && (
         <SaveBar
           title={t("Unsaved changes")}
-          consequence={
-            keyChanged
-              ? t("Saving changes this page's address.")
-              : t("Saving updates the name everyone sees.")
-          }
-          onDiscard={() => {
-            setName(current.value.name);
-            if ("key" in current.value) setKey(current.value.key);
-          }}
+          consequence={t("Saving updates the name everyone sees.")}
+          onDiscard={() => setName(current.value.name)}
           saveLabel={t("Save changes")}
           pending={save.isPending}
           disabled={pending || !name.trim()}

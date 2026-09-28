@@ -24,13 +24,15 @@ ATTACHMENT = re.compile(r'Attachment "(.+?)" \(')
 
 
 def verify(api: Api, seeded: Seeded) -> list[Check]:
-    org, ws, index = seeded.organization, seeded.workspace, seeded.index
+    api.workspace_id = seeded.workspace
+    org, ws = f"/api/v1/organizations/{seeded.organization}", f"/api/v1/workspaces/{seeded.workspace}"
+    index = seeded.index
     return [
         *_identity(api, org, ws, index),
-        *_providers(api, org, ws),
-        *_resources(api, org, ws, index),
-        *_execution(api, ws, index),
-        *_memories(api, ws, index),
+        *_providers(api),
+        *_resources(api, index),
+        *_execution(api, index),
+        *_memories(api, index),
     ]
 
 
@@ -61,7 +63,7 @@ def _identity(api: Api, org: str, ws: str, index: dict[str, str]) -> Iterator[Ch
         "Workspaces: this one, an empty one and an archived one",
         len(workspaces) == 3
         and workspaces[index["archived_workspace"]]["archived_at"] is not None
-        and not api.items(f"/api/v1/workspaces/{index['empty_workspace']}/agents"),
+        and not _agents_in(api, index["empty_workspace"]),
     )
     yield (
         "The organization, workspace and administrator have images",
@@ -69,12 +71,21 @@ def _identity(api: Api, org: str, ws: str, index: dict[str, str]) -> Iterator[Ch
     )
 
 
-def _providers(api: Api, org: str, ws: str) -> Iterator[Check]:
+def _agents_in(api: Api, workspace_id: str) -> list[Json]:
+    """The agents of another workspace the session can read."""
+    current, api.workspace_id = api.workspace_id, workspace_id
+    try:
+        return api.items("/api/v1/agents")
+    finally:
+        api.workspace_id = current
+
+
+def _providers(api: Api) -> Iterator[Check]:
     for kind in KINDS:
         offered = {item["type"] for item in api.items(f"/api/v1/provider-types/{kind}")}
-        accounts = {item["type"] for item in api.items(f"{org}/{kind}-providers")}
+        accounts = {item["type"] for item in api.items(f"/api/v1/{kind}-providers")}
         yield f"Every {kind} provider type has an account", offered <= accounts
-    models = {model["key"]: model for model in api.items(f"{org}/models")}
+    models = {model["key"]: model for model in api.items("/api/v1/models")}
     fictional = [model for key, model in models.items() if key.startswith("fictional-")]
     offered_models = len(api.items("/api/v1/provider-types/model"))
     yield (
@@ -83,70 +94,67 @@ def _providers(api: Api, org: str, ws: str) -> Iterator[Check]:
         and not any(model["enabled"] for model in fictional)
         and sum(model["catalog_ref"] is not None for model in fictional) > offered_models // 2,
     )
-    media = api.get(f"{ws}/media-understanding-defaults")
+    media = api.get("/api/v1/media-understanding-defaults")
     yield (
         "The scripted models are enabled, and the media model is every media default",
         models["local-scripted"]["enabled"]
         and models["local-scripted-media"]["enabled"]
-        and {media["image"], media["audio"], media["video"]} == {models["local-scripted-media"]["id"]},
+        and {media["image"], media["audio"], media["video"]} == {"local-scripted-media"},
     )
 
 
-def _resources(api: Api, org: str, ws: str, index: dict[str, str]) -> Iterator[Check]:
-    skills = {skill["key"]: skill for skill in api.items(f"{ws}/skills")}
+def _resources(api: Api, index: dict[str, str]) -> Iterator[Check]:
+    skills = {skill["name"]: skill for skill in api.items("/api/v1/skills")}
     draft = skills["accessibility-review"]
     yield (
         "Skills: every example, one archived, one whose newest revision is not the default",
-        {skill.key for skill in SKILLS} <= skills.keys()
+        {skill.name for skill in SKILLS} <= skills.keys()
         and skills["legacy-style-guide"]["archived_at"] is not None
-        and api.items(f"{ws}/skills/{draft['id']}/revisions")[0]["id"] != draft["default_revision_id"],
+        and api.items(f"/api/v1/skills/{draft['id']}/revisions")[0]["id"] != draft["default_revision_id"],
     )
-    agents = {agent["key"]: agent for agent in api.items(f"{ws}/agents")}
+    agents = {agent["id"]: agent for agent in api.items("/api/v1/agents")}
     yield (
         "Agents: more than a Console page, an archived one, a duplicate and Agent Composer",
         len(agents) > AGENT_PAGE
-        and agents["legacy-triage"]["archived_at"] is not None
-        and {"release-writer-copy", "agent-composer"} <= agents.keys(),
+        and any(agent["archived_at"] is not None for agent in agents.values())
+        and index["writer_duplicate"] in agents
+        and any(agent["source"] == "builtin" for agent in agents.values()),
     )
-    writer = agents["release-writer"]
-    revisions = api.items(f"{ws}/agents/{writer['id']}/revisions")
+    writer = agents[index["writer"]]
+    revisions = api.items(f"/api/v1/agents/{writer['id']}/revisions")
     yield (
         "The writer has three revisions, and the newest is not the default",
         len(revisions) == 3 and revisions[0]["id"] != writer["default_revision_id"] == index["writer_default_revision"],
     )
-    yield (
-        "Secrets of workspace and personal scope",
-        {secret["scope"] for secret in api.items(f"{ws}/secrets")} == {"workspace", "user"},
-    )
-    templates = api.items(f"{ws}/environment-templates")
+    templates = api.items("/api/v1/environment-templates")
     yield (
         "A template per environment account, and a disabled one",
-        len(templates) == len(api.items(f"{org}/environment-providers")) + 1
+        len(templates) == len(api.items("/api/v1/environment-providers")) + 1
         and [template["enabled"] for template in templates].count(False) == 1,
     )
-    statuses = {environment["name"]: environment["status"] for environment in api.items(f"{ws}/environments")}
+    statuses = {environment["name"]: environment["status"] for environment in api.items("/api/v1/environments")}
     yield (
         "Environments: the shared review workspace is ready, and one is stopped",
         (statuses.get("Release review workspace"), statuses.get("Sprint archive")) == ("ready", "stopped"),
     )
-    connections = {(item["type"], item["status"], item["enabled"]) for item in api.items(f"{ws}/connections")}
+    connections = {(item["type"], item["status"], item["enabled"]) for item in api.items("/api/v1/connections")}
     yield (
         "Connections: ready, pending and disabled MCP servers, and a pending connector account",
         {("mcp", "ready", True), ("mcp", "pending", True), ("mcp", "ready", False), ("composio", "pending", True)}
         <= connections,
     )
-    subscription = api.items(f"{ws}/subscriptions")[0]
-    deliveries = api.items(f"{ws}/subscriptions/{subscription['id']}/deliveries")
+    subscription = api.items("/api/v1/subscriptions")[0]
+    deliveries = api.items(f"/api/v1/subscriptions/{subscription['id']}/deliveries")
     yield (
         "The webhook subscription delivered lifecycle events",
         any(item["status"] == "delivered" for item in deliveries),
     )
-    stored = {asset["name"]: asset for asset in api.items(f"{ws}/assets")}
+    stored = {asset["name"]: asset for asset in api.items("/api/v1/assets")}
     yield (
         "Every example file is stored with its bytes",
         all(
             stored[example.name]["digest"] == hashlib.sha256(example.data).hexdigest()
-            and api.content(f"{ws}/assets/{stored[example.name]['id']}/content") == example.data
+            and api.content(f"/api/v1/assets/{stored[example.name]['id']}/content") == example.data
             for example in examples()
         ),
     )
@@ -156,9 +164,9 @@ def _resources(api: Api, org: str, ws: str, index: dict[str, str]) -> Iterator[C
     )
 
 
-def _execution(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
-    threads = {thread["id"]: thread for thread in api.items(f"{ws}/threads")}
-    runs = {run["id"]: run for thread in threads for run in api.items(f"{ws}/threads/{thread}/runs")}
+def _execution(api: Api, index: dict[str, str]) -> Iterator[Check]:
+    threads = {thread["id"]: thread for thread in api.items("/api/v1/threads")}
+    runs = {run["id"]: run for thread in threads for run in api.items(f"/api/v1/threads/{thread}/runs")}
 
     def run(name: str) -> Json:
         return runs[index[name]]
@@ -180,12 +188,12 @@ def _execution(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
         [run(name)["trigger"] for name in ("approval_approved", "client_tool_completed")] == ["resume", "resume"],
     )
     steered = run("steered")
-    entries = api.items(f"{ws}/threads/{steered['thread_id']}/inbox")
+    entries = api.items(f"/api/v1/threads/{steered['thread_id']}/inbox")
     yield (
         "A running run incorporated a steering message",
         [entry["assigned_run_id"] for entry in entries] == [steered["id"], steered["id"]],
     )
-    queued = api.items(f"{ws}/threads/{run('interrupted')['thread_id']}/inbox", status="pending")
+    queued = api.items(f"/api/v1/threads/{run('interrupted')['thread_id']}/inbox", status="pending")
     yield (
         "An interrupted run keeps its thread's queued message",
         run("interrupted")["status"] == "cancelled" and len(queued) == 1,
@@ -197,7 +205,7 @@ def _execution(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
     yield "Structured output is recorded", isinstance(run("structured_output")["output"], dict)
     delegated = run("delegated")
     # The result steers the parent's run while it waits, or starts a successor run once it has ended.
-    results = api.items(f"{ws}/threads/{delegated['thread_id']}/inbox")
+    results = api.items(f"/api/v1/threads/{delegated['thread_id']}/inbox")
     yield (
         "A sub-agent ran in a child thread, and its result reached the parent",
         any(thread["origin_run_id"] == delegated["id"] for thread in threads.values())
@@ -210,14 +218,14 @@ def _execution(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
     )
     calls = [
         (item["content"]["toolCallName"], item["content"]["arguments"])
-        for item in api.get(f"{ws}/runs/{index['skill_and_files']}/items")["items"]
+        for item in api.get(f"/api/v1/runs/{index['skill_and_files']}/items")["items"]
         if item["kind"] == "tool_call"
     ]
     yield (
         "The shared workspace shows a skill read, a file write and a command",
         [name for name, _ in calls] == ["view", "write", "shell_exec"] and "/.a13n/skills/" in calls[0][1],
     )
-    native, inline, placed = (api.get(f"{ws}/runs/{index[name]}/items")["items"] for name in DELIVERIES)
+    native, inline, placed = (api.get(f"/api/v1/runs/{index[name]}/items")["items"] for name in DELIVERIES)
     media_types = {
         item["content"]["value"]["event"]["content"]["media_type"]
         for item in native
@@ -240,19 +248,19 @@ def _execution(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
         "Another member started a conversation",
         run("member_conversation")["principal_id"] == index["member_runner"],
     )
-    yield "Usage is recorded and priced per model", any(model["cost"] for model in api.get(f"{ws}/usage")["models"])
+    yield "Usage is recorded and priced per model", any(model["cost"] for model in api.get("/api/v1/usage")["models"])
 
 
-def _memories(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
-    handbook = api.get(f"{ws}/memories/{index['memory_handbook']}")
-    preferences = f"{ws}/memories/{index['memory_preferences']}"
+def _memories(api: Api, index: dict[str, str]) -> Iterator[Check]:
+    handbook = api.get(f"/api/v1/memories/{index['memory_handbook']}")
+    preferences = f"/api/v1/memories/{index['memory_preferences']}"
     yield (
         "Memories: a handbook with an always-loaded README, and preferences",
         (handbook["always_load"], handbook["file_count"]) == (["README.md"], len(HANDBOOK))
         and api.get(preferences)["file_count"] > 0,
     )
-    edited = api.get(f"{ws}/runs/{index['memory_edit']}")
-    mounts = api.items(f"{ws}/threads/{edited['thread_id']}/memories")
+    edited = api.get(f"/api/v1/runs/{index['memory_edit']}")
+    mounts = api.items(f"/api/v1/threads/{edited['thread_id']}/memories")
     yield (
         "The agent's default memory mounts joined its conversation",
         [(mount["name"], mount["access"]) for mount in mounts]
@@ -268,10 +276,10 @@ def _memories(api: Api, ws: str, index: dict[str, str]) -> Iterator[Check]:
         and "Reply in Chinese." in api.get(f"{preferences}/files/language.md")["content"]
         and any("+- Reply in Chinese." in hunk for hunk in detail["hunks"]),
     )
-    revisions = api.items(f"{ws}/memories/{index['memory_handbook']}/revisions")
+    revisions = api.items(f"/api/v1/memories/{index['memory_handbook']}/revisions")
     releases = [(item["op"], item["run_id"]) for item in revisions if item["path"] == "process/releases.md"]
     yield "A person's edit shows in the handbook's history", releases == [("update", None), ("create", None)]
-    facts = f"{ws}/memories/{index['memory_facts']}"
+    facts = f"/api/v1/memories/{index['memory_facts']}"
     texts = {record["text"] for record in api.items(f"{facts}/records")}
     yield (
         "A record memory in the fake mem0 holds its records and the one a run recorded",

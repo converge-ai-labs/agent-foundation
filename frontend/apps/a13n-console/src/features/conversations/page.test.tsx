@@ -19,7 +19,7 @@ let allowed: string[] = [];
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/workspace/design",
+    basePath: "/workspace/ws_design",
     organization: { id: "organization" },
     workspace: { id: "workspace" },
     can: (action: string) => allowed.includes(action),
@@ -79,10 +79,10 @@ it("renders a full Session page from collection previews without per-row Thread 
   });
   render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={["/workspace/design/sessions"]}>
+      <MemoryRouter initialEntries={["/workspace/ws_design/sessions"]}>
         <Routes>
           <Route
-            path="/workspace/:workspaceKey/sessions"
+            path="/workspace/:workspaceId/sessions"
             element={<ConversationsPage />}
           >
             <Route path=":sessionId/*" element={<SelectedDetail />} />
@@ -100,7 +100,7 @@ it("renders a full Session page from collection previews without per-row Thread 
   expect(screen.getAllByText("—")).toHaveLength(2);
   expect(screen.getByRole("searchbox")).toBeTruthy();
   expect(screen.queryByText("Session detail")).toBeNull();
-  expect(requests).toEqual(["/api/v1/workspaces/workspace/sessions"]);
+  expect(requests).toEqual(["/api/v1/sessions"]);
   const row = screen.getByText("Question 0").closest("tr")!;
   await user.click(
     within(row).getByRole("button", { name: "Show resource reference" }),
@@ -112,7 +112,9 @@ it("renders a full Session page from collection previews without per-row Thread 
   expect(screen.queryByText("Session detail")).toBeNull();
   await user.click(within(row).getByText("Question 0"));
   expect(
-    await screen.findByText("/workspace/design/sessions/session_0?view=debug"),
+    await screen.findByText(
+      "/workspace/ws_design/sessions/session_0?view=debug",
+    ),
   ).toBeTruthy();
   cleanup();
   cache.clear();
@@ -153,11 +155,11 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter
-        initialEntries={["/workspace/design/sessions?agent_id=agt_one"]}
+        initialEntries={["/workspace/ws_design/sessions?agent_id=agt_one"]}
       >
         <Routes>
           <Route
-            path="/workspace/:workspaceKey/sessions"
+            path="/workspace/:workspaceId/sessions"
             element={<ConversationsPage />}
           >
             <Route path=":sessionId/*" element={<SelectedDetail />} />
@@ -214,7 +216,7 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
   await user.click(screen.getByText("No request text").closest("tr")!);
   expect(
     await screen.findByText(
-      "/workspace/design/sessions/sess_one/threads/thread_one?view=debug",
+      "/workspace/ws_design/sessions/sess_one/threads/thread_one?view=debug",
     ),
   ).toBeTruthy();
   cleanup();
@@ -316,14 +318,14 @@ it("starts a Console session that mounts the chosen template, reusing both on a 
   await user.click(screen.getByRole("button", { name: "Send" }));
   expect(
     await screen.findByText(
-      "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_1",
+      "/workspace/ws_design/sessions/ses_1/threads/thr_1/runs/run_1",
     ),
   ).toBeTruthy();
   expect(posts.map(({ path }) => path)).toEqual([
-    "/api/v1/workspaces/workspace/sessions",
-    "/api/v1/workspaces/workspace/environments",
-    "/api/v1/workspaces/workspace/threads",
-    "/api/v1/workspaces/workspace/threads",
+    "/api/v1/sessions",
+    "/api/v1/environments",
+    "/api/v1/threads",
+    "/api/v1/threads",
   ]);
   expect(posts[0]?.body).toEqual({ labels: { "a13n.console": "debug" } });
   expect(posts[1]?.body).toEqual({ template_id: "envt_research" });

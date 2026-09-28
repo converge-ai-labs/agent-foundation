@@ -67,7 +67,7 @@ def rate_limited(
 def at_field(path: str) -> Iterator[None]:
     """A referenced resource that is missing, disabled or unusable makes the field at `path` invalid.
 
-    The details keep the resource's kind and ID; a refused permission stays `forbidden`.
+    The details keep the resource's kind and ID, or a model's key; a refused permission stays `forbidden`.
     """
     try:
         yield

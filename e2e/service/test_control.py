@@ -12,7 +12,7 @@ CONFIGURATION = {"toolsets": {"configuration": {"enabled": True}}}
 
 async def test_interrupt_cancels_a_running_run_once(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     await model.say("Never shown.", to="[poem]", hold="never")
     receipt = await api.start(agent, "[poem] Write a long poem")
     thread_id, run_id = receipt["thread"]["id"], receipt["run"]["id"]
@@ -43,13 +43,14 @@ async def test_interrupt_cancels_a_running_run_once(stack) -> None:  # type: ign
 
 async def test_revoking_the_grant_stops_the_run(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     account = expect(await api.client.post(f"{api.path}/service-accounts", json={"name": "Runner"}), 201)
     issued = await api.client.post(f"{api.path}/service-accounts/{account['id']}/keys", json={"name": "journey"})
     await model.say("Never shown.", to="[revoke]", hold="never")
+    # An API key acts in its own workspace, so its client names none.
     async with stack.client(authorization=f"Bearer {expect(issued, 201)['secret']}") as runner:
         started = await runner.post(
-            f"{api.path}/threads",
+            "/api/v1/threads",
             json={"agent_id": agent["id"], "payload": {"content": [{"type": "text", "text": "[revoke] Keep going"}]}},
             headers={"idempotency-key": "revoke-1"},
         )
@@ -61,25 +62,27 @@ async def test_revoking_the_grant_stops_the_run(stack) -> None:  # type: ignore[
         expect(await api.client.delete(f"{api.path}/grants/{grant['id']}"), 204)
         run = await api.sealed(run_id)
         assert (run["status"], run["failure"]["code"]) == ("failed", "authority_revoked")
-        assert (await runner.get(f"{api.path}/runs/{run_id}")).status_code in {401, 403}
+        assert (await runner.get(f"/api/v1/runs/{run_id}")).status_code in {401, 403}
     await model.arrived("[revoke]", status="abandoned")
 
 
 async def test_an_approval_waits_and_resumes_once(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    model_id = await api.create_model(model.base_url)
-    agent = await api.create_agent("builder", model_id, **CONFIGURATION)
-    config = {"model": {"model_id": model_id}, "instructions": "Greet people."}
-    await model.call(
-        "create_agent", {"key": "greeter", "name": "Greeter", "config": config}, call_id="call_create", to="[build]"
-    )
+    model_key = await api.create_model(model.base_url)
+    agent = await api.create_agent("Builder", model_key, **CONFIGURATION)
+    config = {"model": model_key, "instructions": "Greet people."}
+    await model.call("create_agent", {"name": "Greeter", "config": config}, call_id="call_create", to="[build]")
+
+    async def greeters() -> list[dict]:
+        return expect(await api.client.get("/api/v1/agents", params={"q": "Greeter"}), 200)["items"]
+
     receipt = await api.start(agent, "[build] Make a greeter")
     waiting = await api.sealed(receipt["run"]["id"])
     assert (waiting["status"], waiting["wait_reason"]) == ("waiting", "approval")
     assert [(item["tool_call_id"], item["kind"]) for item in waiting["pending"]["items"]] == [
         ("call_create", "approval")
     ]
-    assert (await api.client.get(f"{api.path}/agents/greeter")).status_code == 404
+    assert await greeters() == []
 
     await model.say("Created the greeter.", to="[build]")
     approve = [{"tool_call_id": "call_create", "action": "approve"}]
@@ -92,17 +95,19 @@ async def test_an_approval_waits_and_resumes_once(stack) -> None:  # type: ignor
     done = await api.sealed(successor["id"])
     assert (done["status"], done["output"], done["trigger"]) == ("completed", "Created the greeter.", "resume")
     assert done["parent_run_id"] == waiting["id"]
-    assert expect(await api.client.get(f"{api.path}/agents/greeter"), 200)["name"] == "Greeter"
+    [greeter] = await greeters()
+    assert greeter["name"] == "Greeter"
     # The wait is answered: it is no longer the thread's head, so another resume conflicts even with a new key.
     stale = await api.resume(waiting["id"], approve, key="approve-2")
     assert expect(stale, 409)["error"]["code"] == "conflict"
     requests = await model.requests("[build]")
     assert len(requests) == 2 and len(tool_results(requests[1])) == 1
+    assert greeter["id"] in tool_results(requests[1])[0]
 
 
 async def test_a_steer_joins_the_running_run(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("helper", await api.create_model(model.base_url), **CONFIGURATION)
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url), **CONFIGURATION)
     # The steer arrives while the first request is outstanding and joins at the tool boundary that follows it.
     await model.call("find_resources", {"kind": "model"}, call_id="call_find", to="[steer]", hold="steer")
     await model.say("Answered both.", to="[steer]")
@@ -126,7 +131,7 @@ async def test_a_steer_joins_the_running_run(stack) -> None:  # type: ignore[no-
 async def test_messages_queue_behind_a_client_tool_wait(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
     lookup = {"name": "lookup", "description": "Look a value up", "parameters_json_schema": {"type": "object"}}
-    agent = await api.create_agent("helper", await api.create_model(model.base_url), client_tools=[lookup])
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url), client_tools=[lookup])
     await model.call("lookup", {}, call_id="call_lookup", to="[wait]")
     receipt = await api.start(agent, "[wait] Look it up")
     thread_id = receipt["thread"]["id"]

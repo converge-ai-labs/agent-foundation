@@ -11,7 +11,9 @@ const http = vi.hoisted(() => ({
   DELETE: vi.fn(),
   PATCH: vi.fn(),
 }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
@@ -29,7 +31,6 @@ afterEach(() => {
 
 const agent = {
   id: "ap_test",
-  key: "research",
   name: "Research",
   description: "Finds sources",
   image_url: null,
@@ -50,7 +51,7 @@ function renderDetails(close = vi.fn(), reload = vi.fn()) {
   });
   const { container } = render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={["/workspace/test/agents/research"]}>
+      <MemoryRouter initialEntries={["/workspace/test/agents/ap_test"]}>
         <AgentDetails
           close={close}
           resource={{ value: agent, etag: '"initial"' }}
@@ -82,57 +83,47 @@ it("preserves metadata drafts across avatar uploads and uses each returned ETag"
   expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
     "Draft name",
   );
-  expect(http.PUT).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/avatar",
-    {
-      params: { path: { workspace_id: "ws_test", agent_id: "ap_test" } },
-      headers: { "If-Match": '"initial"', "Content-Type": "image/png" },
-      body: file,
-    },
-  );
+  expect(http.PUT).toHaveBeenCalledWith("/api/v1/agents/{agent_id}/avatar", {
+    params: { path: { agent_id: "ap_test" } },
+    headers: { "If-Match": '"initial"', "Content-Type": "image/png" },
+    body: file,
+  });
   await user.click(screen.getByRole("button", { name: "Remove image" }));
   await waitFor(() => expect(onImageSaved).toHaveBeenCalledTimes(2));
-  expect(http.DELETE).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/avatar",
-    {
-      params: { path: { workspace_id: "ws_test", agent_id: "ap_test" } },
-      headers: { "If-Match": '"uploaded"' },
-    },
-  );
+  expect(http.DELETE).toHaveBeenCalledWith("/api/v1/agents/{agent_id}/avatar", {
+    params: { path: { agent_id: "ap_test" } },
+    headers: { "If-Match": '"uploaded"' },
+  });
   // An empty description clears it: the Service reads null as "unchanged".
   await user.clear(screen.getByLabelText("Description"));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() =>
-    expect(http.PATCH).toHaveBeenCalledWith(
-      "/api/v1/workspaces/{workspace_id}/agents/{agent_id}",
-      {
-        params: { path: { workspace_id: "ws_test", agent_id: "ap_test" } },
-        headers: { "If-Match": '"removed"' },
-        body: { name: "Draft name", key: "research", description: "" },
-      },
-    ),
+    expect(http.PATCH).toHaveBeenCalledWith("/api/v1/agents/{agent_id}", {
+      params: { path: { agent_id: "ap_test" } },
+      headers: { "If-Match": '"removed"' },
+      body: { name: "Draft name", description: "" },
+    }),
   );
 });
 
-it("follows a changed key to the agent's new address", async () => {
+it("renames an agent while keeping its ID address", async () => {
   http.PATCH.mockResolvedValue(
-    response({ ...agent, key: "deep-research" }, '"saved"'),
+    response({ ...agent, name: "Deep research" }, '"saved"'),
   );
   const close = vi.fn(),
     reload = vi.fn();
   const { user } = renderDetails(close, reload);
-  const key = screen.getByLabelText("URL key");
-  await user.clear(key);
-  await user.type(key, "deep-research");
+  const name = screen.getByLabelText("Name");
+  await user.clear(name);
+  await user.type(name, "Deep research");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(close).toHaveBeenCalledOnce());
   expect(http.PATCH.mock.calls[0]?.[1].body).toEqual({
-    name: "Research",
-    key: "deep-research",
+    name: "Deep research",
     description: "Finds sources",
   });
   expect(screen.getByLabelText("Current path").textContent).toBe(
-    "/workspace/test/agents/deep-research",
+    "/workspace/test/agents/ap_test",
   );
-  expect(reload).not.toHaveBeenCalled();
+  expect(reload).toHaveBeenCalledOnce();
 });

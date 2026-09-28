@@ -73,7 +73,7 @@ export function AgentEditor({
   const choices = useAgentChoices();
   const definitions = useModelProviderDefinitions();
   const selectedModel = choices.data?.models.find(
-    (item) => item.id === draft.model,
+    (item) => item.key === draft.model,
   );
   const modelApi = selectedModel?.config.model_api;
   const settingsSchema = modelApi

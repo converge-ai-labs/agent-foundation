@@ -18,9 +18,10 @@ export function readDisplay(
   runId: string,
   signal: AbortSignal,
 ) {
-  return client.http
-    .GET("/api/v1/workspaces/{workspace_id}/runs/{run_id}/items", {
-      params: { path: { workspace_id: workspaceId, run_id: runId } },
+  return client
+    .workspace(workspaceId)
+    .GET("/api/v1/runs/{run_id}/items", {
+      params: { path: { run_id: runId } },
       signal,
     })
     .then(data);

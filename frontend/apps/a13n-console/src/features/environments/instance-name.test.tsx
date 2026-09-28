@@ -6,7 +6,9 @@ import { expect, it, vi } from "vitest";
 import { EnvironmentNameEditor } from "./instance-name";
 
 const http = vi.hoisted(() => ({ PATCH: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -56,7 +58,7 @@ it("retains the draft and original precondition until an explicit conflict reloa
   await user.click(screen.getByRole("button", { name: "Save name" }));
   await waitFor(() => expect(reload).toHaveBeenCalledTimes(2));
   expect(http.PATCH.mock.calls[1][1]).toEqual({
-    params: { path: { workspace_id: "ws_test", environment_id: "env_test" } },
+    params: { path: { environment_id: "env_test" } },
     headers: { "If-Match": '"fresh"' },
     body: { name: "My draft" },
   });

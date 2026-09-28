@@ -16,8 +16,8 @@ pytestmark = pytest.mark.anyio
 DELEGATE = {"subagent_name": "helper", "prompt": "compute"}
 
 
-async def create_memory(service: SimpleNamespace, key: str) -> dict[str, Any]:
-    created = await service.client.post(f"{service.workspace}/memories", json={"key": key, "name": key})
+async def create_memory(service: SimpleNamespace, name: str) -> dict[str, Any]:
+    created = await service.client.post(f"{service.api}/memories", json={"name": name})
     assert created.status_code == 201, created.text
     return created.json()
 
@@ -46,7 +46,7 @@ async def test_thread_mounts_are_edited_under_the_thread_version(service, script
     started = await runs_kit.start_thread(service, agent, "hi", memories=[mount("team", team)])
     run = started["run"]
     assert mounted(run) == [("team", team["id"], "write")]
-    mounts = f"{service.workspace}/threads/{started['thread']['id']}/memories"
+    mounts = f"{service.api}/threads/{started['thread']['id']}/memories"
     listing = await client.get(mounts)
     assert listing.json()["items"] == run["memory_mounts"]
     version = listing.headers["etag"]
@@ -88,47 +88,47 @@ async def test_thread_mounts_are_edited_under_the_thread_version(service, script
 async def test_a_thread_mounts_a_bounded_number_of_memories(serve, settings, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     limited = settings.model_copy(update={"memory": settings.memory.model_copy(update={"mounts_per_thread": 2})})
     async with serve(settings=limited) as service:
-        agent = await runs_kit.create_agent(service, scripted_model)
-        first, second, third = [await create_memory(service, key) for key in ("one", "two", "three")]
+        model = await runs_kit.create_model(service, scripted_model)
+        agent = await runs_kit.add_agent(service, "helper", model)
+        first, second, third = [await create_memory(service, name) for name in ("one", "two", "three")]
         initial = [mount("one", first), mount("two", second)]
         refused = await service.client.post(
-            f"{service.workspace}/threads",
+            f"{service.api}/threads",
             json=runs_kit.message(agent, "hi", memories=[*initial, mount("three", third)]),
             headers=runs_kit.fresh_key(),
         )
         assert refused.status_code == 409 and reason(refused) == "memory_mount_limit", refused.text
         duplicates = await service.client.post(
-            f"{service.workspace}/threads",
+            f"{service.api}/threads",
             json=runs_kit.message(agent, "hi", memories=[mount("one", first), mount("one", second)]),
             headers=runs_kit.fresh_key(),
         )
         assert duplicates.status_code == 400, duplicates.text
 
         started = await runs_kit.start_thread(service, agent, "hi", memories=initial)
-        mounts = f"{service.workspace}/threads/{started['thread']['id']}/memories"
+        mounts = f"{service.api}/threads/{started['thread']['id']}/memories"
         version = (await service.client.get(mounts)).headers["etag"]
         extra = await service.client.post(mounts, json=mount("three", third), headers={"if-match": version})
         assert extra.status_code == 409 and reason(extra) == "memory_mount_limit", extra.text
 
         # Agent defaults that would take a thread over the limit at its first acceptance fail the entry.
-        model_id = await runs_kit.create_model(service, scripted_model)
-        crowded = await runs_kit.add_agent(service, "crowded", model_id, memory_mounts=[mount("three", third)])
+        crowded = await runs_kit.add_agent(service, "crowded", model, memory_mounts=[mount("three", third)])
         refused = await runs_kit.start_thread(service, crowded, "hi", memories=initial)
         assert refused["run"] is None and refused["entry"]["failure"]["code"] == "memory_mount_limit", refused
 
 
 async def test_agent_defaults_join_at_a_threads_first_acceptance_only(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    team, notes, own = [await create_memory(service, key) for key in ("team", "notes", "own")]
-    model_id = await runs_kit.create_model(service, scripted_model)
+    team, notes, own = [await create_memory(service, name) for name in ("team", "notes", "own")]
+    model = await runs_kit.create_model(service, scripted_model)
     defaults = [mount("team", team), mount("notes", notes, "read")]
-    agent = await runs_kit.add_agent(service, "helper", model_id, memory_mounts=defaults)
+    agent = await runs_kit.add_agent(service, "helper", model, memory_mounts=defaults)
     # The thread's own mount keeps its name: the default of that name does not join.
     started = await runs_kit.start_thread(service, agent, "hi", memories=[mount("team", own)])
     assert mounted(started["run"]) == [("notes", notes["id"], "read"), ("team", own["id"], "write")]
     await finish(service, scripted_model, runs_kit)
 
     thread = await runs_kit.get_thread(service, started["thread"]["id"])
-    mounts = f"{service.workspace}/threads/{thread['id']}/memories"
+    mounts = f"{service.api}/threads/{thread['id']}/memories"
     removed = await service.client.delete(f"{mounts}/notes", headers=runs_kit.if_match(thread))
     assert removed.status_code == 204, removed.text
     later = await runs_kit.submit(service, thread["id"], runs_kit.message(agent, "again"))
@@ -138,9 +138,9 @@ async def test_agent_defaults_join_at_a_threads_first_acceptance_only(service, s
 
 async def test_a_deleted_default_memory_fails_the_entry(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     team = await create_memory(service, "team")
-    model_id = await runs_kit.create_model(service, scripted_model)
-    agent = await runs_kit.add_agent(service, "helper", model_id, memory_mounts=[mount("team", team)])
-    deleted = await service.client.delete(f"{service.workspace}/memories/{team['id']}", headers=runs_kit.if_match(team))
+    model = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(service, "helper", model, memory_mounts=[mount("team", team)])
+    deleted = await service.client.delete(f"{service.api}/memories/{team['id']}", headers=runs_kit.if_match(team))
     assert deleted.status_code == 204, deleted.text
     refused = await runs_kit.start_thread(service, agent, "hi")
     assert refused["run"] is None and refused["entry"]["failure"]["code"] == "invalid_argument", refused
@@ -148,7 +148,7 @@ async def test_a_deleted_default_memory_fails_the_entry(service, scripted_model,
 
 
 async def test_agent_default_mounts_are_validated_when_authored(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    model_id = await runs_kit.create_model(service, scripted_model)
+    model = await runs_kit.create_model(service, scripted_model)
     team = await create_memory(service, "team")
     cases = [
         ([mount("team", {"id": "mem_" + "0" * 20})], "memory_mounts.0.memory_id"),
@@ -157,12 +157,8 @@ async def test_agent_default_mounts_are_validated_when_authored(service, scripte
     ]
     for memory_mounts, field in cases:
         response = await service.client.post(
-            f"{service.workspace}/agents",
-            json={
-                "key": "invalid",
-                "name": "Invalid",
-                "config": {"model": {"model_id": model_id}, "memory_mounts": memory_mounts},
-            },
+            f"{service.api}/agents",
+            json={"name": "Invalid", "config": {"model": model, "memory_mounts": memory_mounts}},
         )
         assert response.status_code == 400, (memory_mounts, response.text)
         if field is not None:
@@ -177,7 +173,7 @@ async def test_a_fork_copies_its_origins_mounts_and_adds_its_own(service, script
 
     async def fork(**fields: Any) -> Any:
         return await service.client.post(
-            f"{service.workspace}/runs/{origin['run']['id']}/fork",
+            f"{service.api}/runs/{origin['run']['id']}/fork",
             json=runs_kit.message(agent, "fork", **fields),
             headers=runs_kit.fresh_key(),
         )
@@ -191,7 +187,7 @@ async def test_a_fork_copies_its_origins_mounts_and_adds_its_own(service, script
 
 async def test_a_child_thread_adopts_its_parents_mounts_and_its_own_defaults(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    team, notes, other, gone = [await create_memory(service, key) for key in ("team", "notes", "other", "gone")]
+    team, notes, other, gone = [await create_memory(service, name) for name in ("team", "notes", "other", "gone")]
     worker = {"memory_mounts": [mount("team", other), mount("notes", notes, "read")]}
     coordinator = await runs_kit.delegating(service, scripted_model, "async", worker=worker)
     scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
@@ -199,7 +195,7 @@ async def test_a_child_thread_adopts_its_parents_mounts_and_its_own_defaults(ser
     memories = [mount("team", team), mount("gone", gone)]
     submitted = await runs_kit.start_thread(service, coordinator, "delegate", memories=memories)
     # Deleted after the parent froze it: the child does not adopt it.
-    deleted = await service.client.delete(f"{service.workspace}/memories/{gone['id']}", headers=runs_kit.if_match(gone))
+    deleted = await service.client.delete(f"{service.api}/memories/{gone['id']}", headers=runs_kit.if_match(gone))
     assert deleted.status_code == 204, deleted.text
     await (await runs_kit.attempt(service))
 
@@ -219,9 +215,9 @@ async def test_deleting_a_memory_unmounts_it_and_moves_the_thread_version(servic
     agent = await runs_kit.create_agent(service, scripted_model)
     team = await create_memory(service, "team")
     started = await runs_kit.start_thread(service, agent, "hi", memories=[mount("team", team)])
-    mounts = f"{service.workspace}/threads/{started['thread']['id']}/memories"
+    mounts = f"{service.api}/threads/{started['thread']['id']}/memories"
     before = (await service.client.get(mounts)).headers["etag"]
-    deleted = await service.client.delete(f"{service.workspace}/memories/{team['id']}", headers=runs_kit.if_match(team))
+    deleted = await service.client.delete(f"{service.api}/memories/{team['id']}", headers=runs_kit.if_match(team))
     assert deleted.status_code == 204, deleted.text
     after = await service.client.get(mounts)
     assert after.json()["items"] == [] and after.headers["etag"] != before
@@ -253,10 +249,10 @@ async def test_archiving_a_thread_removes_its_memory_mounts(service, scripted_mo
     started = await runs_kit.start_thread(service, agent, "hi", memories=[mount("team", team)])
     thread = await runs_kit.get_thread(service, started["thread"]["id"])
     archived = await service.client.post(
-        f"{service.workspace}/threads/{thread['id']}/archive", headers=runs_kit.if_match(thread)
+        f"{service.api}/threads/{thread['id']}/archive", headers=runs_kit.if_match(thread)
     )
     assert archived.status_code == 200, archived.text
-    mounts = f"{service.workspace}/threads/{thread['id']}/memories"
+    mounts = f"{service.api}/threads/{thread['id']}/memories"
     listing = await service.client.get(mounts)
     assert listing.json()["items"] == []
     refused = await service.client.post(

@@ -26,10 +26,13 @@ class Browser:
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url
         self.csrf = ""
+        self.workspace = ""
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
     def request(self, method: str, path: str, body: dict | None = None) -> tuple[int, str, dict]:
         headers = {"Origin": self.base_url, "X-CSRF-Token": self.csrf}
+        if self.workspace:
+            headers["X-Workspace-ID"] = self.workspace
         data = None
         if body is not None:
             data, headers["Content-Type"] = json.dumps(body).encode(), "application/json"
@@ -72,9 +75,10 @@ def check(base_url: str, email: str, password: str, *, first_run: bool) -> None:
     )
     browser.csrf = signed_in["csrf_token"]
     browser.expect(200, "GET", "/api/v1/auth/session")
-    workspace = browser.expect(200, "GET", "/api/v1/workspaces")["items"][0]["id"]
-    key = f"SMOKE_{secrets.token_hex(4).upper()}"
-    browser.expect(201, "POST", f"/api/v1/workspaces/{workspace}/secrets", {"key": key, "value": "smoke"})
+    browser.workspace = browser.expect(200, "GET", "/api/v1/workspaces")["items"][0]["id"]
+    provider = {"type": "openai", "name": f"Smoke {secrets.token_hex(4)}", "credential": {"api_key": "sk-smoke"}}
+    if not browser.expect(201, "POST", "/api/v1/model-providers", provider)["credential_configured"]:
+        raise RuntimeError("The model provider did not keep its credential")
     if first_run:
         browser.expect(409, "POST", "/api/v1/auth/bootstrap", credentials)
     print(f"{base_url}: Console, {'bootstrap' if first_run else 'sign-in'} and credential storage work", flush=True)

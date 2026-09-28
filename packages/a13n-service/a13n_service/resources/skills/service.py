@@ -1,17 +1,18 @@
-"""Skill heads and immutable revisions; packages are read and staged before each transaction opens."""
+"""Skill heads and immutable revisions; packages are read and staged before each transaction opens.
+
+The model sees each skill by the name its SKILL.md declares, which agent validation keeps distinct within an agent.
+"""
 
 import hashlib
 import json
 from collections.abc import Sequence
 
 from anyio import to_thread
-from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
-from a13n_service.infra.errors import invalid
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.infra.objects.interface import ObjectStore
@@ -24,7 +25,6 @@ from a13n_service.resources.skills.schemas import (
     Skill,
     SkillCreate,
     SkillFile,
-    SkillKey,
     SkillManifest,
     SkillPage,
     SkillRevision,
@@ -40,11 +40,9 @@ from a13n_service.resources.uploads import service as uploads
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 
-_KEY = TypeAdapter(SkillKey)
 
-
-async def resolve_skill(session: AsyncSession, workspace_id: str, reference: str, *, lock: bool = False) -> SkillRow:
-    return await revisions.resolve_head(session, SkillRow, workspace_id, reference, lock=lock)
+async def resolve_skill(session: AsyncSession, workspace_id: str, skill_id: str, *, lock: bool = False) -> SkillRow:
+    return await revisions.resolve_head(session, SkillRow, workspace_id, skill_id, lock=lock)
 
 
 async def resolve_revision(session: AsyncSession, head: SkillRow, revision_id: str) -> SkillRevisionRow:
@@ -111,7 +109,6 @@ async def _views(session: AsyncSession, heads: Sequence[SkillRow]) -> list[Skill
             id=head.id,
             organization_id=head.organization_id,
             workspace_id=head.workspace_id,
-            key=head.key,
             name=head.name,
             description=head.description,
             labels=head.labels,
@@ -139,17 +136,12 @@ async def create_skill(
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
     manifest, package_ref = await _prepare(objects, github, scope, actor, body.source)
-    try:
-        key = _KEY.validate_python(body.key or manifest.name)
-    except ValidationError:
-        raise invalid("key", "required when the SKILL.md name is not a valid key") from None
     async with transaction(storage) as session:
         await workspace_scope(session, actor, scope.workspace_id, "write")
         head = SkillRow(
             id=new_object_id("sk"),
             organization_id=scope.organization_id,
             workspace_id=scope.workspace_id,
-            key=key,
             name=body.name or manifest.name,
             description=manifest.description if body.description is None else body.description,
             labels=body.labels,
@@ -157,7 +149,7 @@ async def create_skill(
             updated_by_id=actor.id,
         )
         session.add(head)
-        await revisions.flush_head(session, head)
+        await session.flush()
         await revisions.publish(
             session, head, SkillRevisionRow, manifest, actor=actor, note=None, package_ref=package_ref
         )
@@ -180,7 +172,7 @@ async def validate_package(
     workspace_id: str,
     source: UploadSource | GitHubSource,
 ) -> SkillManifest:
-    """The manifest a revision read from `source` would freeze, checked as creating one checks it; storing nothing."""
+    """The manifest a skill read from `source` would freeze, checked as creating one checks it; storing nothing."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
     manifest, _ = await _read(objects, github, scope, source)
@@ -278,14 +270,28 @@ async def create_revision(
         if created:
             audit_row(session, actor, head, "revision.create", {"revision_id": revision.id})
             await session.flush()
-        return SkillRevision.model_validate(revision)
+        return revision_view(head, revision)
+
+
+def revision_view(head: SkillRow, revision: SkillRevisionRow) -> SkillRevision:
+    return SkillRevision(
+        id=revision.id,
+        skill_id=head.id,
+        workspace_id=revision.workspace_id,
+        number=revision.number,
+        config=SkillManifest.model_validate(revision.config),
+        digest=revision.digest,
+        note=revision.note,
+        created_by_id=revision.created_by_id,
+        created_at=revision.created_at,
+    )
 
 
 async def get_revision(
     storage: Storage, actor: Principal, workspace_id: str, skill_id: str, revision_id: str
 ) -> SkillRevision:
     return await revisions.get_revision(
-        storage, actor, SkillRow, SkillRevisionRow, SkillRevision, workspace_id, skill_id, revision_id
+        storage, actor, SkillRow, SkillRevisionRow, revision_view, workspace_id, skill_id, revision_id
     )
 
 
@@ -294,7 +300,7 @@ async def list_revisions(
 ) -> SkillRevisionPage:
     """Newest first."""
     items, next_cursor = await revisions.list_revisions(
-        storage, actor, SkillRow, SkillRevisionRow, SkillRevision, workspace_id, skill_id, limit=limit, cursor=cursor
+        storage, actor, SkillRow, SkillRevisionRow, revision_view, workspace_id, skill_id, limit=limit, cursor=cursor
     )
     return SkillRevisionPage(items=items, next_cursor=next_cursor)
 

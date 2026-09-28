@@ -63,7 +63,7 @@ Redis only accelerates the Service: it keeps rate-limit counters, wakes idle wor
 
 ### Encryption keys
 
-Provider and connection credentials, secret values, OAuth tokens and queued mail links are encrypted with AES-GCM under the active key of the key ring. Each key is 32 random bytes, base64-encoded, under an ID you choose:
+Provider and connection credentials, OAuth tokens and queued mail links are encrypted with AES-GCM under the active key of the key ring. Each key is 32 random bytes, base64-encoded, under an ID you choose:
 
 ```sh
 export A13N_ENCRYPTION__ACTIVE_KEY_ID=primary

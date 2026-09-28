@@ -13,17 +13,17 @@ LOOKUP_TOOL = "lookup_local_review"
 FAILING_TOOL = "fail_local_review"
 
 
-def seed_connections(api: Api, ws: str, model_url: str, composio: Json) -> dict[str, Json]:
+def seed_connections(api: Api, model_url: str, composio: Json) -> dict[str, Json]:
     """Every connection by state: `ready` is tested, so its tools are listed."""
     server = model_url.removesuffix("/v1") + "/mcp"
     ready = api.post(
-        f"{ws}/connections", {"type": "mcp", "name": "Release review (local MCP)", "config": {"url": server}}
+        "/api/v1/connections", {"type": "mcp", "name": "Release review (local MCP)", "config": {"url": server}}
     )
-    api.post(f"{ws}/connections/{ready['id']}/test")
+    api.post(f"/api/v1/connections/{ready['id']}/test")
     connections = {
         "ready": ready,
         "headers": api.post(
-            f"{ws}/connections",
+            "/api/v1/connections",
             {
                 "type": "mcp",
                 "name": "Release review (API key header)",
@@ -33,14 +33,16 @@ def seed_connections(api: Api, ws: str, model_url: str, composio: Json) -> dict[
             },
         ),
         "pending": api.post(
-            f"{ws}/connections",
+            "/api/v1/connections",
             {"type": "mcp", "name": "Release review (token required)", "auth": "bearer", "config": {"url": server}},
         ),
     }
-    retired = api.post(f"{ws}/connections", {"type": "mcp", "name": "Retired review server", "config": {"url": server}})
-    connections["disabled"] = api.patch(f"{ws}/connections/{retired['id']}", retired, {"enabled": False})
+    retired = api.post(
+        "/api/v1/connections", {"type": "mcp", "name": "Retired review server", "config": {"url": server}}
+    )
+    connections["disabled"] = api.patch(f"/api/v1/connections/{retired['id']}", retired, {"enabled": False})
     connections["connector"] = api.post(
-        f"{ws}/connections",
+        "/api/v1/connections",
         {
             "type": "composio",
             "name": "GitHub (fictional account)",

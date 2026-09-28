@@ -7,10 +7,17 @@ import { ProviderForm } from "./provider-form";
 
 const state = vi.hoisted(() => ({ PATCH: vi.fn(), close: vi.fn() }));
 vi.mock("../../auth/context", () => ({
-  useClient: () => ({ http: { PATCH: state.PATCH } }),
+  useClient: () => ({
+    http: { PATCH: state.PATCH },
+    workspace: () => ({ PATCH: state.PATCH }),
+  }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useAccess: () => ({ organization: { id: "org_test" } }),
+  useWorkspace: () => ({
+    organization: { id: "org_test" },
+    workspace: { id: "ws_test" },
+    can: () => true,
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -42,7 +49,6 @@ function mount() {
       }
     >
       <ProviderForm
-        scope={{ kind: "workspace", id: "ws_test" }}
         resource={{ value: provider, etag: '"test"' }}
         definitions={[
           {
@@ -110,11 +116,8 @@ it("starts collapsed and saves header rotation without resubmitting the primary 
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(state.close).toHaveBeenCalled());
   const [path, request] = state.PATCH.mock.calls[0];
-  expect(path).toBe(
-    "/api/v1/organizations/{organization_id}/model-providers/{provider_id}",
-  );
+  expect(path).toBe("/api/v1/model-providers/{provider_id}");
   expect(request.params.path).toEqual({
-    organization_id: "org_test",
     provider_id: provider.id,
   });
   expect(request.headers).toEqual({ "If-Match": '"test"' });
@@ -254,7 +257,6 @@ function mountCustom(configuration = {}, definition = customDefinition) {
       }
     >
       <ProviderForm
-        scope={{ kind: "workspace", id: "ws_test" }}
         resource={{
           value: {
             ...provider,

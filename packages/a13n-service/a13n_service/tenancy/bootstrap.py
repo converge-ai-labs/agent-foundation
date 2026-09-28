@@ -42,12 +42,10 @@ async def bootstrap(storage: Storage, request: BootstrapInput) -> Bootstrapped:
         await advisory_lock(session, "bootstrap")
         if await session.scalar(select(OrganizationRow.id).limit(1)):
             raise AlreadyBootstrapped()
-        session.add(OrganizationRow(id=result.organization_id, key="default", name="Default organization"))
+        session.add(OrganizationRow(id=result.organization_id, name="Default organization"))
         await session.flush()
         session.add(
-            WorkspaceRow(
-                id=result.workspace_id, organization_id=result.organization_id, key="default", name="Default workspace"
-            )
+            WorkspaceRow(id=result.workspace_id, organization_id=result.organization_id, name="Default workspace")
         )
         session.add(PrincipalRow(id=result.principal_id, kind="user", name=request.email, email=request.email))
         await session.flush()

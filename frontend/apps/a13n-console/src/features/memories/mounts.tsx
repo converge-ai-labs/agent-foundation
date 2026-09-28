@@ -22,10 +22,10 @@ type Access = Schema["MemoryAccess"];
 /** The model addresses a mounted memory by this name. */
 export const MOUNT_NAME_PATTERN = "[a-z][a-z0-9-]{0,62}";
 
-/** A mount name suggested from a memory key, such as `team-handbook`. */
-export function mountName(key: string): string {
+/** A mount name suggested from a memory name, such as `team-handbook`. */
+export function mountName(name: string): string {
   return (
-    key
+    name
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, "-")
       .replace(/^[^a-z]+/, "")
@@ -107,11 +107,11 @@ export function MountForm({
         onValueChange={(value) => {
           setMemoryId(value);
           const memory = available.find((item) => item.id === value);
-          if (memory) suggestName(mountName(memory.key));
+          if (memory) suggestName(mountName(memory.name));
         }}
         options={available.map((memory) => ({
           value: memory.id,
-          label: `${memory.name} (${memory.key})`,
+          label: `${memory.name} (${memory.id})`,
         }))}
       />
       <FormField

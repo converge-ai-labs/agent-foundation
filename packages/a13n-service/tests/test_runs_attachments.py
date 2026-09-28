@@ -25,9 +25,8 @@ BLOCKED = b"PK\x03\x04 a fictional archive the environment refuses"
 
 async def _model(service, scripted_model, *capabilities: str) -> str:  # type: ignore[no-untyped-def]
     provider = await service.client.post(
-        f"{service.organization}/model-providers",
+        f"{service.api}/model-providers",
         json={
-            "workspace_id": None,
             "type": "openai",
             "name": "Scripted",
             "config": {"base_url": scripted_model.url},
@@ -41,26 +40,20 @@ async def _model(service, scripted_model, *capabilities: str) -> str:  # type: i
         "characteristics": {"capabilities": list(capabilities)},
     }
     model = await service.client.post(
-        f"{service.organization}/models",
-        json={
-            "workspace_id": None,
-            "provider_id": provider.json()["id"],
-            "key": "scripted",
-            "name": "S",
-            "config": config,
-        },
+        f"{service.api}/models",
+        json={"provider_id": provider.json()["id"], "key": "scripted", "name": "S", "config": config},
     )
     assert model.status_code == 201, model.text
-    return model.json()["id"]
+    return model.json()["key"]
 
 
 async def _asset(service, runs_kit, name: str, content_type: str, data: bytes) -> dict[str, Any]:  # type: ignore[no-untyped-def]
     upload = await service.client.post(
-        f"{service.workspace}/uploads", files={"file": (name, data, content_type)}, headers=runs_kit.fresh_key()
+        f"{service.api}/uploads", files={"file": (name, data, content_type)}, headers=runs_kit.fresh_key()
     )
     assert upload.status_code == 200, upload.text
     asset = await service.client.post(
-        f"{service.workspace}/assets", json={"upload_id": upload.json()["upload_id"], "name": name}
+        f"{service.api}/assets", json={"upload_id": upload.json()["upload_id"], "name": name}
     )
     assert asset.status_code == 201, asset.text
     return asset.json()
@@ -94,13 +87,12 @@ def _user_texts(request: dict[str, Any]) -> list[str]:
 
 async def _local_template(service, root: Path) -> str:  # type: ignore[no-untyped-def]
     provider = await service.client.post(
-        f"{service.organization}/environment-providers", json={"workspace_id": None, "type": "local", "name": "Local"}
+        f"{service.api}/environment-providers", json={"type": "local", "name": "Local"}
     )
     assert provider.status_code == 201, provider.text
     template = await service.client.post(
-        f"{service.workspace}/environment-templates",
+        f"{service.api}/environment-templates",
         json={
-            "key": "local",
             "name": "Local",
             "provider_id": provider.json()["id"],
             "config": {"recipe": {"root": {"path": str(root)}}},
@@ -118,12 +110,12 @@ async def test_the_model_reads_what_it_understands_natively_and_text_inline(
     service, scripted_model, runs_kit, listen
 ) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    model_id = await _model(service, scripted_model, "image_understanding", "document_understanding")
-    agent = await runs_kit.add_agent(service, "viewer", model_id)
+    model = await _model(service, scripted_model, "image_understanding", "document_understanding")
+    agent = await runs_kit.add_agent(service, "viewer", model)
     # Only the image types every provider maps are native: a TIFF is neither native nor text.
     tiff = await _asset(service, runs_kit, "scan.tiff", "image/tiff", b"II*\x00")
     refused = await service.client.post(
-        f"{service.workspace}/threads", json=_message(agent, _attached(tiff)), headers=runs_kit.fresh_key()
+        f"{service.api}/threads", json=_message(agent, _attached(tiff)), headers=runs_kit.fresh_key()
     )
     assert refused.status_code == 400 and refused.json()["error"]["details"]["media_type"] == "image/tiff"
 
@@ -137,7 +129,7 @@ async def test_the_model_reads_what_it_understands_natively_and_text_inline(
     app.get("/notes.txt")(lambda: Response(long, media_type="text/plain; charset=iso-8859-1"))
     async with listen(app) as origin:
         started = await service.client.post(
-            f"{service.workspace}/threads",
+            f"{service.api}/threads",
             json=_message(
                 agent,
                 _attached(image),
@@ -183,7 +175,7 @@ async def test_a_file_the_run_cannot_read_is_refused_when_submitted_or_edited(
     }
     for media_type, asset in unreadable.items():
         refused = await service.client.post(
-            f"{service.workspace}/threads", json=_message(agent, _attached(asset)), headers=runs_kit.fresh_key()
+            f"{service.api}/threads", json=_message(agent, _attached(asset)), headers=runs_kit.fresh_key()
         )
         assert refused.status_code == 400, refused.text
         assert refused.json()["error"]["details"] == {
@@ -191,14 +183,14 @@ async def test_a_file_the_run_cannot_read_is_refused_when_submitted_or_edited(
             "reason": "environment_required",
             "media_type": media_type,
         }
-    assert (await service.client.get(f"{service.workspace}/threads")).json()["items"] == []
+    assert (await service.client.get(f"{service.api}/threads")).json()["items"] == []
 
     # A text file within a text part's size is read inline, whatever the run mounts.
     short = await _asset(service, runs_kit, "short.txt", "text/plain", b"x" * INLINE_TEXT_BYTES)
     thread_id = (await runs_kit.start_thread(service, agent, "first"))["thread"]["id"]
     queued = await runs_kit.submit(service, thread_id, _message(agent, _attached(short), delivery="next_run"))
     assert queued.status_code == 201, queued.text
-    entry = f"{service.workspace}/threads/{thread_id}/inbox/{queued.json()['entry']['id']}"
+    entry = f"{service.api}/threads/{thread_id}/inbox/{queued.json()['entry']['id']}"
     edit = {"payload": {"content": [_attached(unreadable["application/zip"])]}}
     thread = runs_kit.if_match(await runs_kit.get_thread(service, thread_id))
     edited = await service.client.patch(entry, json=edit, headers=thread)
@@ -234,7 +226,7 @@ async def test_other_files_are_placed_in_the_primary_environment(
         # Control characters in a URL's last segment are left out of the name.
         url = {"type": "url", "url": f"{origin}/files/data%0A%00.bin"}
         started = await service.client.post(
-            f"{service.workspace}/threads",
+            f"{service.api}/threads",
             json=_message(agent, _attached(archive), _attached(report), url),
             headers=runs_kit.fresh_key(),
         )
@@ -291,7 +283,7 @@ async def test_acceptance_refuses_a_queued_file_its_run_could_not_read(
         await runs_kit.pause_sweeps(service)
         agent = await runs_kit.add_agent(service, "reader", await _model(service, scripted_model))
         template_id = await _local_template(service, tmp_path)
-        reserved = await service.client.post(f"{service.workspace}/environments", json={"template_id": template_id})
+        reserved = await service.client.post(f"{service.api}/environments", json={"template_id": template_id})
         assert reserved.status_code == 201, reserved.text
         mounts = [{"name": "workspace", "environment_id": reserved.json()["id"]}]
         started = await runs_kit.start_thread(service, agent, "first", environments=mounts)
@@ -302,7 +294,7 @@ async def test_acceptance_refuses_a_queued_file_its_run_could_not_read(
 
         thread = runs_kit.if_match(await runs_kit.get_thread(service, thread_id))
         removed = await service.client.delete(
-            f"{service.workspace}/threads/{thread_id}/environments/workspace", headers=thread
+            f"{service.api}/threads/{thread_id}/environments/workspace", headers=thread
         )
         assert removed.status_code == 204, removed.text
         scripted_model.say("Done")

@@ -186,11 +186,14 @@ async def _serve(
             response = await client.post("/api/v1/auth/login", json={"email": EMAIL, "password": PASSWORD})
             assert response.status_code == 200, response.text
             client.headers["x-csrf-token"] = response.json()["csrf_token"]
+            # A login session names the workspace of each business request.
+            client.headers["x-workspace-id"] = tenant.workspace_id
             yield SimpleNamespace(
                 app=app,
                 runtime=runtime,
                 client=client,
                 tenant=tenant,
+                api="/api/v1",
                 workspace=f"/api/v1/workspaces/{tenant.workspace_id}",
                 organization=f"/api/v1/organizations/{tenant.organization_id}",
             )
@@ -340,10 +343,10 @@ QUESTION = {
 
 
 async def create_model(service: SimpleNamespace, model: ScriptedModel) -> str:
+    """The scripted model's key."""
     provider = await service.client.post(
-        f"{service.organization}/model-providers",
+        f"{service.api}/model-providers",
         json={
-            "workspace_id": None,
             "type": "openai",
             "name": "Scripted",
             "config": {"base_url": model.url},
@@ -352,9 +355,8 @@ async def create_model(service: SimpleNamespace, model: ScriptedModel) -> str:
     )
     assert provider.status_code == 201, provider.text
     created = await service.client.post(
-        f"{service.organization}/models",
+        f"{service.api}/models",
         json={
-            "workspace_id": None,
             "provider_id": provider.json()["id"],
             "key": "scripted",
             "name": "Scripted",
@@ -362,13 +364,12 @@ async def create_model(service: SimpleNamespace, model: ScriptedModel) -> str:
         },
     )
     assert created.status_code == 201, created.text
-    return created.json()["id"]
+    return created.json()["key"]
 
 
-async def add_agent(service: SimpleNamespace, key: str, model_id: str, **config: Any) -> dict[str, Any]:
+async def add_agent(service: SimpleNamespace, name: str, model: str, **config: Any) -> dict[str, Any]:
     agent = await service.client.post(
-        f"{service.workspace}/agents",
-        json={"key": key, "name": key.title(), "config": {"model": {"model_id": model_id}, **config}},
+        f"{service.api}/agents", json={"name": name.title(), "config": {"model": model, **config}}
     )
     assert agent.status_code == 201, agent.text
     return agent.json()
@@ -383,14 +384,14 @@ async def delegating(service: SimpleNamespace, model: ScriptedModel, mode: str, 
 
     `config` extends the coordinator's; `worker` and `edge` in it configure the worker agent and its edge.
     """
-    model_id = await create_model(service, model)
+    key = await create_model(service, model)
     worker_config = config.pop("worker", {})
     edge = config.pop("edge", {})
-    worker = await add_agent(service, "worker", model_id, instructions="Role: worker", **worker_config)
+    worker = await add_agent(service, "worker", key, instructions="Role: worker", **worker_config)
     return await add_agent(
         service,
         "coordinator",
-        model_id,
+        key,
         instructions="Role: coordinator",
         subagent_mode=mode,
         subagents={"helper": {"agent_id": worker["id"], "description": "Computes answers", **edge}},
@@ -407,36 +408,38 @@ def fresh_key() -> dict[str, str]:
 
 
 def if_match(resource: dict[str, Any]) -> dict[str, str]:
-    return {"if-match": f'"{resource["id"]}:{resource["version"]}"'}
+    """The ETag of a view: its ID and version, or its key and version for a model."""
+    identifier = resource["id"] if "id" in resource else resource["key"]
+    return {"if-match": f'"{identifier}:{resource["version"]}"'}
 
 
 async def start_thread(service: SimpleNamespace, agent: dict[str, Any], text: str, **fields: Any) -> dict[str, Any]:
     response = await service.client.post(
-        f"{service.workspace}/threads", json=message(agent, text, **fields), headers=fresh_key()
+        f"{service.api}/threads", json=message(agent, text, **fields), headers=fresh_key()
     )
     assert response.status_code == 201, response.text
     return response.json()
 
 
 async def submit(service: SimpleNamespace, thread_id: str, body: dict[str, Any]) -> httpx2.Response:
-    return await service.client.post(f"{service.workspace}/threads/{thread_id}/inbox", json=body, headers=fresh_key())
+    return await service.client.post(f"{service.api}/threads/{thread_id}/inbox", json=body, headers=fresh_key())
 
 
 async def get_thread(service: SimpleNamespace, thread_id: str) -> dict[str, Any]:
-    response = await service.client.get(f"{service.workspace}/threads/{thread_id}")
+    response = await service.client.get(f"{service.api}/threads/{thread_id}")
     assert response.status_code == 200, response.text
     return response.json()
 
 
 async def inbox(service: SimpleNamespace, thread_id: str) -> list[dict[str, Any]]:
     """The thread's entries in inbox order."""
-    response = await service.client.get(f"{service.workspace}/threads/{thread_id}/inbox")
+    response = await service.client.get(f"{service.api}/threads/{thread_id}/inbox")
     assert response.status_code == 200, response.text
     return response.json()["items"]
 
 
 async def get_run(service: SimpleNamespace, run_id: str) -> dict[str, Any]:
-    response = await service.client.get(f"{service.workspace}/runs/{run_id}")
+    response = await service.client.get(f"{service.api}/runs/{run_id}")
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -460,7 +463,7 @@ async def checkpointed(service: SimpleNamespace, run_id: str) -> None:
 
 
 async def items(service: SimpleNamespace, run_id: str) -> dict[str, Any]:
-    response = await service.client.get(f"{service.workspace}/runs/{run_id}/items")
+    response = await service.client.get(f"{service.api}/runs/{run_id}/items")
     assert response.status_code == 200, response.text
     return response.json()
 

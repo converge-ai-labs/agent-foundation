@@ -75,8 +75,8 @@ def test_override_schema_is_api_qualified(api: str) -> None:
 )
 def test_raw_body_cannot_replace_host_owned_fields(api: str, key: str) -> None:
     with pytest.raises(ServiceError) as refused:
-        check_settings(settings_schema(api), {"extra_body": {key: None}}, field="model.settings")
-    assert refused.value.details["field"] == "model.settings.extra_body"
+        check_settings(settings_schema(api), {"extra_body": {key: None}}, field="model_settings")
+    assert refused.value.details["field"] == "model_settings.extra_body"
 
 
 @pytest.mark.parametrize(
@@ -100,6 +100,7 @@ def test_invalid_headers_are_rejected_without_echoing_values(value: Any) -> None
 def selected(config: ModelConfig | None = None, **provider: Any) -> ResolvedModel:
     return ResolvedModel(
         id=new_object_id("mdl"),
+        key=new_object_id("mdl").replace("_", "-"),
         version=1,
         config=config or ModelConfig(model_name="future-model", model_api="openai.responses"),
         pricing=None,
@@ -148,22 +149,20 @@ def test_run_settings_still_replace_agent_settings_before_model_defaults() -> No
     )
     config = AgentConfig.model_validate(
         {
-            "model": {
-                "model_id": model.id,
-                "settings": {"temperature": 0.2, "extra_body": {"reasoning": {"effort": "agent"}}},
-            }
+            "model": model.key,
+            "model_settings": {"temperature": 0.2, "extra_body": {"reasoning": {"effort": "agent"}}},
         }
     )
     for override, expected in [
         ({}, "agent"),
-        ({"settings": None}, "agent"),
-        ({"settings": {}}, "future"),
-        ({"settings": {"extra_body": {}}}, None),
+        ({"model_settings": None}, "agent"),
+        ({"model_settings": {}}, "future"),
+        ({"model_settings": {"extra_body": {}}}, None),
     ]:
-        changed = apply_override(config, AgentOverride.model_validate({"model": override}))
-        effective = _settings(model, changed.model.settings)
+        changed = apply_override(config, AgentOverride.model_validate(override))
+        effective = _settings(model, changed.model_settings)
         assert effective.get("extra_body", {}).get("reasoning", {}).get("effort") == expected
-        if override.get("settings") is not None:
+        if override.get("model_settings") is not None:
             assert "temperature" not in effective
 
 
@@ -261,7 +260,7 @@ async def test_service_composition_binds_affinity_per_thread_without_mutating_cl
     root = ResolvedAgent(
         new_object_id("ap"),
         new_object_id("apr"),
-        AgentConfig.model_validate({"model": {"model_id": model.id}, "toolsets": {}}),
+        AgentConfig.model_validate({"model": model.key, "toolsets": {}}),
         model,
         None,
         {},
@@ -280,7 +279,7 @@ async def test_service_composition_binds_affinity_per_thread_without_mutating_cl
             executable = build(
                 root, capabilities=lambda _: [], plugins=HarnessPluginFactoryCatalog([]), instrumentation=None
             )
-            bindings = RunBindings.embedded(model_resolver=model_resolver(root, {model.id: native}))
+            bindings = RunBindings.embedded(model_resolver=model_resolver(root, {model.key: native}))
 
             async def run(thread: str) -> None:
                 result = await executable.run(
@@ -337,7 +336,7 @@ async def test_media_affinity_uses_calling_thread_and_its_own_model_defaults() -
     root = ResolvedAgent(
         new_object_id("ap"),
         new_object_id("apr"),
-        AgentConfig.model_validate({"model": {"model_id": primary.id}, "toolsets": {}}),
+        AgentConfig.model_validate({"model": primary.key, "toolsets": {}}),
         primary,
         None,
         {"image": media},
@@ -360,7 +359,7 @@ async def test_media_affinity_uses_calling_thread_and_its_own_model_defaults() -
             endpoint_policy=SimpleNamespace(validate=no_endpoint_check),
         )
         async with native:
-            provider = media_understanding(root, {media.id: native})
+            provider = media_understanding(root, {media.key: native})
 
             async def inspect_media(ctx: RunContext[AgentContext]) -> str:
                 result = await provider.understand(
@@ -384,7 +383,7 @@ async def test_media_affinity_uses_calling_thread_and_its_own_model_defaults() -
             )
             bindings = RunBindings.embedded(
                 model_resolver=model_resolver(
-                    root, {primary.id: FunctionModel(stream_function=primary_stream), media.id: native}
+                    root, {primary.key: FunctionModel(stream_function=primary_stream), media.key: native}
                 )
             )
 
@@ -410,9 +409,8 @@ async def test_media_affinity_uses_calling_thread_and_its_own_model_defaults() -
 
 async def resources(service: Any, scripted: Any, kit: Any, *, settings: dict | None = None) -> tuple[dict, dict, dict]:
     provider = await service.client.post(
-        f"{service.organization}/model-providers",
+        f"{service.api}/model-providers",
         json={
-            "workspace_id": None,
             "type": "openai",
             "name": "Gateway",
             "config": {"base_url": scripted.url, "session_affinity_header": "x-thread"},
@@ -422,9 +420,8 @@ async def resources(service: Any, scripted: Any, kit: Any, *, settings: dict | N
     )
     assert provider.status_code == 201, provider.text
     model = await service.client.post(
-        f"{service.organization}/models",
+        f"{service.api}/models",
         json={
-            "workspace_id": None,
             "provider_id": provider.json()["id"],
             "key": "raw",
             "name": "Raw",
@@ -437,9 +434,7 @@ async def resources(service: Any, scripted: Any, kit: Any, *, settings: dict | N
         },
     )
     assert model.status_code == 201, model.text
-    agent = await kit.add_agent(
-        service, "raw-agent", model.json()["id"], model={"model_id": model.json()["id"], "settings": settings or {}}
-    )
+    agent = await kit.add_agent(service, "raw-agent", model.json()["key"], model_settings=settings or {})
     return provider.json(), model.json(), agent
 
 
@@ -465,7 +460,7 @@ async def test_persisted_overrides_reach_wire_and_clear_defaults(
         ({"extra_body": {}, "extra_headers": {}}, None, {}),
         ({"extra_body": {"reasoning_effort": "future"}, "extra_headers": {"X-Run": "yes"}}, "future", {"x-run": "yes"}),
     ]:
-        options = {} if settings is None else {"options": {"overrides": {"model": {"settings": settings}}}}
+        options = {} if settings is None else {"options": {"overrides": {"model_settings": settings}}}
         scripted_model.say("Done")
         started = await runs_kit.start_thread(executing, agent, "hi", **options)
         run = await runs_kit.sealed(executing, started["run"]["id"])
@@ -477,7 +472,7 @@ async def test_persisted_overrides_reach_wire_and_clear_defaults(
         assert wire["x-gateway-key"] == "private"
         assert {key: wire[key] for key in ("x-model", "x-agent", "x-run") if key in wire} == expected_headers
         if settings is not None:
-            assert run["options"]["overrides"]["model"]["settings"] == settings
+            assert run["options"]["overrides"]["model_settings"] == settings
     assert len({entry["x-thread"] for entry in headers}) == 4
 
 
@@ -488,7 +483,7 @@ async def test_live_provider_change_rechecks_old_agent_before_request(
         executing, scripted_model, runs_kit, settings={"extra_headers": {"X-New-Secret": "was-public"}}
     )
     updated = await executing.client.patch(
-        f"{executing.organization}/model-providers/{provider['id']}",
+        f"{executing.api}/model-providers/{provider['id']}",
         json={"extra_headers": {"x-new-secret": "now-private"}},
         headers=runs_kit.if_match(provider),
     )
@@ -506,15 +501,15 @@ async def test_authoring_and_run_override_reject_provider_header_collisions(
     for name in ("Authorization", "X-Gateway-Key", "X-Thread"):
         settings = {"extra_headers": {name: "do-not-echo"}}
         response = await service.client.post(
-            f"{service.workspace}/agents/validate",
-            json={"config": {"model": {"model_id": model["id"], "settings": settings}}},
+            f"{service.api}/agents/validate",
+            json={"config": {"model": model["key"], "model_settings": settings}},
         )
         assert response.status_code == 400, response.text
-        assert response.json()["error"]["details"]["field"] == "model.settings.extra_headers"
+        assert response.json()["error"]["details"]["field"] == "model_settings.extra_headers"
         assert "do-not-echo" not in response.text
         response = await service.client.post(
-            f"{service.workspace}/threads",
-            json=runs_kit.message(agent, "hi", options={"overrides": {"model": {"settings": settings}}}),
+            f"{service.api}/threads",
+            json=runs_kit.message(agent, "hi", options={"overrides": {"model_settings": settings}}),
             headers=runs_kit.fresh_key(),
         )
         assert response.status_code == 400, response.text
@@ -534,11 +529,11 @@ async def test_child_and_continuation_requests_keep_thread_affinity(
         return await call_next(request)
 
     _, model, _ = await resources(service, scripted_model, runs_kit)
-    worker = await runs_kit.add_agent(service, "worker", model["id"], instructions="Role: worker")
+    worker = await runs_kit.add_agent(service, "worker", model["key"], instructions="Role: worker")
     coordinator = await runs_kit.add_agent(
         service,
         "coordinator",
-        model["id"],
+        model["key"],
         instructions="Role: coordinator",
         subagent_mode=mode,
         subagents={"helper": {"agent_id": worker["id"], "description": "Computes answers"}},

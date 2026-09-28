@@ -12,7 +12,6 @@ import {
   credentialHint,
   providerKeyLink,
 } from "../providers";
-import { type ModelScope } from "./api";
 import {
   ProviderConnection,
   ordinaryConfigurationSchema,
@@ -93,15 +92,14 @@ export function ModelProviderCatalog({
   );
 }
 
-/** Catalog-first provider creation, used for both workspace and organization. */
-export function AddProvider({ scope }: { scope: ModelScope }) {
+/** Catalog-first provider creation. */
+export function AddProvider() {
   const [open, setOpen] = useState(false),
     [generation, setGeneration] = useState(0);
   const definitions = useModelProviderDefinitions();
   return (
     <AddProviderCatalogDialog
       key={generation}
-      scope={scope}
       definitions={definitions.data?.items}
       error={definitions.error}
       open={open}
@@ -114,13 +112,11 @@ export function AddProvider({ scope }: { scope: ModelScope }) {
 }
 
 function AddProviderCatalogDialog({
-  scope,
   definitions,
   error,
   open,
   onOpenChange,
 }: {
-  scope: ModelScope;
   definitions?: Definition[];
   error: unknown;
   open: boolean;
@@ -128,7 +124,6 @@ function AddProviderCatalogDialog({
 }) {
   const { t } = useTranslation();
   const draft = useProviderDraft({
-    scope,
     definitions: definitions ?? [],
     initialType: "",
     close: () => onOpenChange(false),

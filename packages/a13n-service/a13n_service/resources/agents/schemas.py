@@ -1,7 +1,8 @@
 """Agent configuration as a revision freezes it, per-run overrides of it, and the agent API values.
 
 Skill and subagent edges may omit `revision_id` on input; revision creation and override validation pin it
-to the head's default revision, so a stored configuration always names exact revisions.
+to the head's default revision, so a stored configuration always names exact revisions. Models are named by
+key, every other resource by ID.
 """
 
 from datetime import datetime
@@ -12,20 +13,19 @@ from a13n_harness.tools.client import ClientToolDefinition
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 from pydantic_ai.usage import UsageLimits
 
-from a13n_service.infra.ids import ObjectId
+from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.providers.model_settings import JsonSettings
+from a13n_service.resources.agents.tables import AgentSource
 from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.resources.memories.schemas import MemoryMounts
 from a13n_service.resources.models.schemas import MediaUnderstandingSelection
-from a13n_service.resources.secrets.schemas import SecretRequirement
 
 BoundedKey = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$")]
 PluginKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_.-]{1,127}$")]
 Description = Annotated[str, StringConstraints(max_length=4096)]
 Instructions = Annotated[str, StringConstraints(max_length=256 * 1024)]
-AgentKey = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")]
 AgentName = Annotated[str, StringConstraints(min_length=1, max_length=128)]
 AgentDescription = Annotated[str, StringConstraints(max_length=8192)]
 JsonObject = dict[str, JsonValue]
@@ -51,13 +51,6 @@ class AgentModelCharacteristics(_Frozen):
     context_window_tokens: int | None = Field(default=None, gt=0)
     proactive_context_management_threshold: float | None = Field(default=0.65, ge=0.0, le=1.0)
     compact_threshold: float = Field(default=0.90, gt=0.0, le=1.0)
-
-
-class AgentModel(_Frozen):
-    model_id: ObjectId
-    # Native settings layered over the model's own defaults.
-    settings: ModelSettings = Field(default_factory=dict)
-    characteristics: AgentModelCharacteristics = Field(default_factory=AgentModelCharacteristics)
 
 
 class SkillSelection(_Frozen):
@@ -131,9 +124,9 @@ class RetryConfig(_Frozen):
 
 
 class AgentReviewer(ToolReviewConfig):
-    """The model reviewing calls whose permission is `review`, selected by model ID."""
+    """The model reviewing calls whose permission is `review`, selected by model key."""
 
-    model: ObjectId
+    model: Key
     model_settings: ModelSettings | None = None
 
 
@@ -146,7 +139,10 @@ class PluginSelection(_Frozen):
 
 
 class AgentConfig(_Frozen):
-    model: AgentModel
+    model: Key
+    # Native settings layered over the model's own defaults.
+    model_settings: ModelSettings = Field(default_factory=dict)
+    model_characteristics: AgentModelCharacteristics = Field(default_factory=AgentModelCharacteristics)
     instructions: Instructions = ""
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
@@ -162,7 +158,6 @@ class AgentConfig(_Frozen):
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     output_spec: OutputSpec | None = None
     retries: RetryConfig | None = None
-    secret_requirements: tuple[SecretRequirement, ...] = Field(default=(), max_length=128)
     # Referenced, not pinned: read when an environment is created from it, never during execution.
     default_environment_template_id: ObjectId | None = None
     # Added to a thread's memory mounts at its first acceptance, for names and memories it does not use yet.
@@ -175,17 +170,10 @@ class AgentConfig(_Frozen):
             ("Connections", [item.connection_id for item in self.connection_tools]),
             ("Client tool names", [item.name for item in self.client_tools]),
             ("Plugin instance names", [item.instance_name for item in self.plugins]),
-            ("Secret requirement keys", [item.key for item in self.secret_requirements]),
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")
         return self
-
-
-class ModelOverride(_Frozen):
-    model_id: ObjectId | None = None
-    settings: ModelSettings | None = None
-    characteristics: AgentModelCharacteristics | None = None
 
 
 class SubagentOverride(_Frozen):
@@ -207,14 +195,16 @@ class RetryOverride(_Frozen):
 class AgentOverride(_Frozen):
     """What one run changes of its revision's configuration; an omitted or null field keeps the revision's.
 
-    `toolsets` replaces whole toolsets; `model`, `retries` and each subagent edge replace the fields they set,
-    and a null edge removes it; every other field replaces the revision's value.
+    `toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null
+    edge removes it; every other field replaces the revision's value.
     """
 
     toolsets: ToolsetOverrides | None = None
     reviewer: AgentReviewer | None = None
     media_understanding: MediaUnderstandingSelection | None = None
-    model: ModelOverride | None = None
+    model: Key | None = None
+    model_settings: ModelSettings | None = None
+    model_characteristics: AgentModelCharacteristics | None = None
     instructions: Instructions | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
@@ -226,6 +216,9 @@ class AgentOverride(_Frozen):
 
 
 _REPLACED = (
+    "model",
+    "model_settings",
+    "model_characteristics",
     "reviewer",
     "media_understanding",
     "instructions",
@@ -243,8 +236,6 @@ def apply_override(config: AgentConfig, override: AgentOverride) -> AgentConfig:
     fields.update((name, value) for name in _REPLACED if (value := getattr(override, name)) is not None)
     if override.toolsets is not None:
         fields["toolsets"] = {**config.toolsets, **override.toolsets}
-    if override.model is not None:
-        fields["model"] = {**dict(config.model), **_set(override.model)}
     if override.retries is not None:
         fields["retries"] = {**dict(config.retries or RetryConfig()), **_set(override.retries)}
     if override.subagents is not None:
@@ -287,7 +278,6 @@ def _set(value: BaseModel) -> dict[str, object]:
 
 class AgentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    key: AgentKey
     name: AgentName
     description: AgentDescription = ""
     labels: Labels = Field(default_factory=dict)
@@ -297,8 +287,6 @@ class AgentCreate(BaseModel):
 class AgentUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: AgentName | None = None
-    # Links naming the old key stop resolving; everything else refers to the agent by ID.
-    key: AgentKey | None = None
     description: AgentDescription | None = None
     labels: Labels | None = None
 
@@ -307,7 +295,6 @@ class AgentDuplicate(BaseModel):
     """A new head whose first revision copies `revision_id`, by default the source's default revision."""
 
     model_config = ConfigDict(extra="forbid")
-    key: AgentKey
     name: AgentName
     description: AgentDescription = ""
     labels: Labels = Field(default_factory=dict)
@@ -337,12 +324,11 @@ class Agent(BaseModel):
     id: str
     organization_id: str
     workspace_id: str
-    key: str
     name: str
     description: str
     labels: dict[str, str]
     default_revision_id: str | None
-    source: str
+    source: AgentSource
     image_url: str | None
     archived_at: datetime | None
     version: int

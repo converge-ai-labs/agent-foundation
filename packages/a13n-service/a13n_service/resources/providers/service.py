@@ -18,8 +18,10 @@ from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.web.definition import WebProviderDefinition
 from pydantic import JsonValue, ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.infra import cursors
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation
 from a13n_service.infra.db import Storage, assign, short_session, transaction
 from a13n_service.infra.errors import invalid, not_found
@@ -37,11 +39,11 @@ from a13n_service.resources.providers.schemas import (
     ProviderTypePage,
     ProviderUpdate,
 )
-from a13n_service.resources.providers.scope import list_rows, usable_row, writable_scope
 from a13n_service.resources.providers.tables import ProviderRow
-from a13n_service.resources.rows import audit_row, find_row, given, record_update
+from a13n_service.resources.rows import audit_row, find_row, given, record_update, usable_row
 from a13n_service.settings import Providers
-from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Scope, Verb, WorkspaceScope
+from a13n_service.tenancy.access import workspace_scope
+from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,14 +92,14 @@ async def create_provider[R: ProviderRow](
     storage: Storage,
     actor: Principal,
     row_type: type[R],
-    organization_id: str,
+    workspace_id: str,
     body: ProviderCreate,
     *,
     registry: Registry,
     keys: KeyRing,
 ) -> Provider:
     async with transaction(storage) as session:
-        scope = await writable_scope(session, actor, organization_id, body.workspace_id)
+        scope = await workspace_scope(session, actor, workspace_id, "write")
         definition = registry.get(row_type.PROVIDER_KIND, body.type)
         config = _validated_config(
             definition, body.config, body.credential, stored_credential=False, header_names=body.extra_headers.keys()
@@ -123,25 +125,26 @@ async def create_provider[R: ProviderRow](
 
 
 async def get_provider[R: ProviderRow](
-    storage: Storage, actor: Principal, row_type: type[R], organization_id: str, provider_id: str
+    storage: Storage, actor: Principal, row_type: type[R], workspace_id: str, provider_id: str
 ) -> Provider:
     async with short_session(storage) as session:
-        return provider_view(await find_row(session, actor, row_type, Scope(organization_id), provider_id, "read"))
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        return provider_view(await find_row(session, actor, row_type, scope, provider_id, "read"))
 
 
 async def list_providers[R: ProviderRow](
-    storage: Storage,
-    actor: Principal,
-    row_type: type[R],
-    organization_id: str,
-    *,
-    workspace_id: str | None,
-    limit: int,
-    cursor: str | None,
+    storage: Storage, actor: Principal, row_type: type[R], workspace_id: str, *, limit: int, cursor: str | None
 ) -> ProviderPage:
     async with short_session(storage) as session:
-        rows, next_cursor = await list_rows(
-            session, actor, row_type, organization_id, workspace_id, limit=limit, cursor=cursor
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        rows, next_cursor = await cursors.id_page(
+            session,
+            select(row_type).where(row_type.workspace_id == scope.workspace_id),
+            row_type.id,
+            kind=row_type.KIND,
+            owner=scope.workspace_id,
+            cursor=cursor,
+            limit=limit,
         )
     return ProviderPage(items=[provider_view(row) for row in rows], next_cursor=next_cursor)
 
@@ -150,7 +153,7 @@ async def update_provider[R: ProviderRow](
     storage: Storage,
     actor: Principal,
     row_type: type[R],
-    organization_id: str,
+    workspace_id: str,
     provider_id: str,
     body: ProviderUpdate,
     *,
@@ -160,7 +163,8 @@ async def update_provider[R: ProviderRow](
 ) -> Provider:
     replaces_credential = "credential" in body.model_fields_set
     async with transaction(storage) as session:
-        row = await find_row(session, actor, row_type, Scope(organization_id), provider_id, "write", lock=True)
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        row = await find_row(session, actor, row_type, scope, provider_id, "write", lock=True)
         require_match(if_match, row.id, row.version)
         headers = _updated_headers(keys, row, body.extra_headers)
         config = row.config if body.config is None else body.config
@@ -192,7 +196,7 @@ async def test_provider[R: ProviderRow](
     storage: Storage,
     actor: Principal,
     row_type: type[R],
-    organization_id: str,
+    workspace_id: str,
     provider_id: str,
     *,
     registry: Registry,
@@ -202,7 +206,8 @@ async def test_provider[R: ProviderRow](
 ) -> ProviderTest:
     """One non-billable probe of the current configuration, outside any transaction; changes nothing."""
     async with short_session(storage) as session:
-        provider = _resolved(await find_row(session, actor, row_type, Scope(organization_id), provider_id, "run"))
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        provider = _resolved(await find_row(session, actor, row_type, scope, provider_id, "run"))
     result = await probe(
         registry,
         row_type.PROVIDER_KIND,
@@ -229,7 +234,7 @@ async def resolve_provider[R: ProviderRow](
     verb: Verb = "run",
     authority: ExecutionAuthority | None = None,
 ) -> ResolvedProvider:
-    """An enabled provider usable in the workspace (its own or shared), read in the caller's short session."""
+    """An enabled provider of the workspace, read in the caller's short session."""
     return _resolved(await usable_row(session, actor, row_type, scope, provider_id, verb=verb, authority=authority))
 
 

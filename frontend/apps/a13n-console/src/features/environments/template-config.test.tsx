@@ -14,10 +14,15 @@ const state = vi.hoisted(() => ({
 vi.mock("../../auth/context", () => ({
   useClient: () => ({
     http: { GET: state.GET, POST: state.POST, PATCH: state.PATCH },
+    workspace: () => ({ GET: state.GET, POST: state.POST, PATCH: state.PATCH }),
   }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useAccess: () => ({ organization: { id: "org_test" } }),
+  useWorkspace: () => ({
+    organization: { id: "org_test" },
+    workspace: { id: "ws_test" },
+    can: () => true,
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -149,10 +154,7 @@ beforeEach(() => {
         })
       }
     >
-      <TemplateConfig
-        scope={{ kind: "workspace", id: "ws_test" }}
-        close={state.close}
-      />
+      <TemplateConfig close={state.close} />
     </QueryClientProvider>,
   ).unmount;
 });
@@ -184,7 +186,6 @@ it("creates an E2B template configuration from ordinary fields without a schema-
     screen.getByRole("textbox", { name: "Name" }),
     "Project template",
   );
-  await user.type(screen.getByRole("textbox", { name: "Key" }), "project");
   expect(
     screen.queryByRole("textbox", { name: "Template configuration (JSON)" }),
   ).toBeNull();
@@ -193,23 +194,18 @@ it("creates an E2B template configuration from ordinary fields without a schema-
   ).toBeNull();
   await user.click(screen.getByRole("button", { name: "Create template" }));
   await waitFor(() =>
-    expect(state.POST).toHaveBeenCalledWith(
-      "/api/v1/workspaces/{workspace_id}/environment-templates",
-      {
-        params: { path: { workspace_id: "ws_test" } },
-        body: {
-          key: "project",
-          name: "Project template",
-          description: null,
-          provider_id: "eprov_e2b",
-          config: {
-            recipe: { template: "my-template" },
-            stop_after_seconds: null,
-            delete_after_seconds: null,
-          },
+    expect(state.POST).toHaveBeenCalledWith("/api/v1/environment-templates", {
+      body: {
+        name: "Project template",
+        description: null,
+        provider_id: "eprov_e2b",
+        config: {
+          recipe: { template: "my-template" },
+          stop_after_seconds: null,
+          delete_after_seconds: null,
         },
       },
-    ),
+    }),
   );
 });
 
@@ -280,7 +276,6 @@ it("rejects invalid advanced configuration without sending a request", async () 
   const user = userEvent.setup();
   await selectProvider(user, "E2B");
   await user.type(screen.getByRole("textbox", { name: "Name" }), "Invalid");
-  await user.type(screen.getByRole("textbox", { name: "Key" }), "invalid");
   await user.click(screen.getByRole("button", { name: "JSON" }));
   await user.clear(
     screen.getByRole("textbox", { name: "Template configuration (JSON)" }),
@@ -308,7 +303,6 @@ it("shows the Service's refusal of a recipe beside the recipe", async () => {
   const user = userEvent.setup();
   await selectProvider(user, "Docker");
   await user.type(screen.getByRole("textbox", { name: "Name" }), "Docker");
-  await user.type(screen.getByRole("textbox", { name: "Key" }), "docker");
   await user.click(screen.getByRole("button", { name: "JSON" }));
   await user.clear(
     screen.getByRole("textbox", { name: "Template configuration (JSON)" }),
@@ -386,7 +380,6 @@ it("saves an existing template's recipe and idle policy against its ETag", async
       }
     >
       <TemplateConfig
-        scope={{ kind: "workspace", id: "ws_test" }}
         template={{ value: template, etag: '"envtpl_test:4"' }}
         close={state.close}
       />
@@ -397,10 +390,10 @@ it("saves an existing template's recipe and idle policy against its ETag", async
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() =>
     expect(state.PATCH).toHaveBeenCalledWith(
-      "/api/v1/workspaces/{workspace_id}/environment-templates/{template_id}",
+      "/api/v1/environment-templates/{template_id}",
       {
         params: {
-          path: { workspace_id: "ws_test", template_id: "envtpl_test" },
+          path: { template_id: "envtpl_test" },
         },
         headers: { "If-Match": '"envtpl_test:4"' },
         body: {

@@ -30,7 +30,6 @@ import shared from "../../shared/shared.module.css";
 import styles from "./agents.module.css";
 import { useAgentComposer } from "./composer";
 import { AgentFilePreview } from "./export";
-import { createWithKey } from "../../shared/keys";
 import {
   agentDependencies,
   inspectAgentDependencies,
@@ -132,7 +131,7 @@ export function ImportAgentForm({
 }) {
   const { t } = useTranslation();
   const client = useClient(),
-    { workspace, organization, basePath } = useWorkspace();
+    { workspace, basePath } = useWorkspace();
   const cache = useQueryClient(),
     navigate = useNavigate();
   const [source, setSource] = useState("");
@@ -157,33 +156,24 @@ export function ImportAgentForm({
     gcTime: 0,
     retry: false,
     queryFn: ({ signal }) =>
-      inspectAgentDependencies(
-        client,
-        organization.id,
-        workspace.id,
-        draft!.config,
-        signal,
-      ),
+      inspectAgentDependencies(client, workspace.id, draft!.config, signal),
   });
   const create = useMutation({
     mutationFn: (file: AgentFile) =>
-      createWithKey(file.name, "agent", (key) =>
-        client.http
-          .POST("/api/v1/workspaces/{workspace_id}/agents", {
-            params: { path: { workspace_id: workspace.id } },
-            body: {
-              key,
-              name: file.name,
-              description: file.description ?? "",
-              config: file.config,
-            },
-          })
-          .then(data),
-      ),
+      client
+        .workspace(workspace.id)
+        .POST("/api/v1/agents", {
+          body: {
+            name: file.name,
+            description: file.description ?? "",
+            config: file.config,
+          },
+        })
+        .then(data),
     onSuccess: (result) => {
       void cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
       onSuccess();
-      navigate(`${basePath}/agents/${result.key}`);
+      navigate(`${basePath}/agents/${result.id}`);
     },
     onSettled: () => onBusyChange?.(false),
   });
@@ -399,7 +389,7 @@ export function ImportAgentForm({
             </DisclosureSection>
             <p className={styles.importNote}>
               {t(
-                "Creates a new agent. Service validates the configuration on creation; plugin availability and secret access also depend on the execution environment.",
+                "Creates a new agent. Service validates the configuration on creation; plugin availability also depends on the execution environment.",
               )}
             </p>
           </fieldset>

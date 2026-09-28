@@ -16,10 +16,13 @@ import type { AgentConfig } from "./configuration";
 import { AgentToolsets } from "./toolsets";
 
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    workspace: { id: "ws_test", key: "default" },
+    workspace: { id: "ws_test" },
+    basePath: "/workspace/ws_test",
     organization: { id: "org_test" },
     can: () => true,
   }),
@@ -67,7 +70,7 @@ function renderDraft(starting: NonNullable<AgentConfig["toolsets"]>) {
         <AgentToolsets
           value={value}
           onChange={setValue}
-          config={{ model: { model_id: "mdl_test" }, toolsets: value }}
+          config={{ model: "model-test", toolsets: value }}
           agentId="ap_test"
         />
         <output data-testid="draft">{JSON.stringify(value)}</output>
@@ -196,11 +199,10 @@ it("keeps disabled child settings, edits permissions, and validates the candidat
   expect(draft().web.tools.search.config.max_results).toBe(7);
   await waitFor(() =>
     expect(http.POST).toHaveBeenCalledWith(
-      "/api/v1/workspaces/{workspace_id}/agents/validate",
+      "/api/v1/agents/validate",
       expect.objectContaining({
-        params: { path: { workspace_id: "ws_test" } },
         body: {
-          config: { model: { model_id: "mdl_test" }, toolsets: draft() },
+          config: { model: "model-test", toolsets: draft() },
           agent_id: "ap_test",
         },
       }),
@@ -234,7 +236,7 @@ it("shows why the Service would refuse the configuration, with its setup link", 
     within(alert)
       .getByRole("link", { name: "Manage Web Providers" })
       .getAttribute("href"),
-  ).toBe("/workspace/default/settings/providers?category=web");
+  ).toBe("/workspace/ws_test/settings/providers?category=web");
   expect(http.POST).toHaveBeenCalledOnce();
 });
 

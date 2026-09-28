@@ -32,7 +32,7 @@ def test_a_key_file_is_generated_once_then_read(tmp_path: Path) -> None:
     key = file_key(path)
     assert len(base64.b64decode(key.get_secret_value(), validate=True)) == 32
     assert path.stat().st_mode & 0o777 == 0o600 and [entry.name for entry in tmp_path.iterdir()] == [path.name]
-    location = SecretLocation("org_one", "secrets", "value", "sec_one")
+    location = SecretLocation("org_one", "model_providers", "credential", "mprov_one")
     envelope = KeyRing(active_key_id=FILE_KEY_ID, keys={FILE_KEY_ID: key}).protect(b"private", location)
     again = KeyRing(active_key_id=FILE_KEY_ID, keys={FILE_KEY_ID: file_key(path)})
     assert again.reveal(envelope, location) == b"private"

@@ -12,6 +12,11 @@ export interface ClientOptions {
   maxReadRetries?: number;
 }
 
+/** A login session names the workspace of each business request; management routes take none. */
+export function workspaceHeaders(workspaceId: string) {
+  return { "X-Workspace-ID": workspaceId };
+}
+
 const publicMutations = new Set([
   "/api/v1/auth/login",
   "/api/v1/auth/password-reset",

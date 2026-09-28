@@ -1,12 +1,13 @@
-"""The assembled runtime, who is calling, and the images they send, as FastAPI dependencies; they return values
-and never yield SQL sessions."""
+"""The assembled runtime, who is calling, the workspace they act in, and the images they send, as FastAPI
+dependencies; they return values and never yield SQL sessions."""
 
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Header, Request
 
-from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.http import answer_headers
+from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.redis import rate_limit
 from a13n_service.tenancy.access import Authenticated, unauthenticated
 from a13n_service.tenancy.authorize import Principal
@@ -38,6 +39,31 @@ async def current_principal(credential: Annotated[Authenticated, Depends(current
 
 Credential = Annotated[Authenticated, Depends(current_credential)]
 Actor = Annotated[Principal, Depends(current_principal)]
+
+
+async def current_workspace(
+    actor: Actor,
+    selected: Annotated[
+        ObjectId | None,
+        Header(
+            alias="X-Workspace-ID",
+            description="The workspace ID a login session acts in; required with a login session. An API key acts "
+            "in its own workspace and needs none; naming another is forbidden.",
+        ),
+    ] = None,
+) -> str:
+    """The workspace a business request acts in: an API key's own, or the one a login session names in
+    `X-Workspace-ID`. Authorization still checks the caller's grants there."""
+    if actor.confinement is None:
+        if selected is None:
+            raise invalid("X-Workspace-ID", "a login session names the workspace it acts in")
+        return selected
+    if selected not in {None, actor.confinement.workspace_id}:
+        raise ServiceError("forbidden", "X-Workspace-ID names a workspace other than the API key's")
+    return actor.confinement.workspace_id
+
+
+WorkspaceId = Annotated[str, Depends(current_workspace)]
 
 
 async def limit_guessing(request: Request, flow: str, *identities: str) -> None:

@@ -9,7 +9,7 @@ from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from a13n_service.infra.ids import ObjectId
+from a13n_service.infra.ids import Key, ObjectId
 from a13n_service.providers.model_settings import JsonSettings
 
 
@@ -55,10 +55,9 @@ class CatalogRef(BaseModel):
 
 class ModelCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # Required: a workspace ID, or explicit null to share the model with every workspace the provider serves.
-    workspace_id: ObjectId | None
     provider_id: ObjectId
-    key: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")
+    # What agents select the model by; `{provider type}-{upstream name}` with other characters as `-` when omitted.
+    key: Key | None = None
     name: str = Field(min_length=1, max_length=128)
     description: str = Field(default="", max_length=2048)
     config: ModelConfig
@@ -82,9 +81,8 @@ class ModelUpdate(BaseModel):
 
 class Model(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id: str
     organization_id: str
-    workspace_id: str | None
+    workspace_id: str
     provider_id: str
     key: str
     name: str
@@ -131,15 +129,15 @@ MEDIA_KINDS: tuple[NativeInputMediaKind, ...] = ("image", "video", "audio")
 
 
 class MediaUnderstandingSelection(BaseModel):
-    """The model describing each media kind a model cannot read; a kind without one is unavailable."""
+    """The model, by key, describing each media kind a model cannot read; a kind without one is unavailable."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    image: ObjectId | None = None
-    video: ObjectId | None = None
-    audio: ObjectId | None = None
+    image: Key | None = None
+    video: Key | None = None
+    audio: Key | None = None
 
     def selections(self) -> dict[NativeInputMediaKind, str]:
-        return {kind: model_id for kind in MEDIA_KINDS if (model_id := getattr(self, kind)) is not None}
+        return {kind: key for kind in MEDIA_KINDS if (key := getattr(self, kind)) is not None}
 
 
 class MediaDefaults(MediaUnderstandingSelection):

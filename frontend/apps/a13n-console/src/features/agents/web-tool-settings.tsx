@@ -80,7 +80,7 @@ export function WebToolSettings({
         />
         {can("write") && (
           <a
-            href={providersPath("web", "workspace", workspace.key)}
+            href={providersPath("web", workspace)}
             className={styles.webProviderLink}
           >
             {t("Manage")}

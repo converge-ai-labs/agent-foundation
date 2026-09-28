@@ -8,7 +8,6 @@ import { useWorkspace } from "../../layout/workspace";
 import { representation, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/forms";
-import { createWithKey } from "../../shared/keys";
 import { DetailHeader, DetailPage, Section } from "../../shared/page";
 import { AgentAvatar } from "./avatar";
 import { initialConfig, type AgentConfig } from "./configuration";
@@ -43,7 +42,7 @@ export function CreateAgent() {
   }, [file]);
   const finish = (agent: Schema["Agent"]) => {
     void cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
-    navigate(`${basePath}/agents/${agent.key}`, { replace: true });
+    navigate(`${basePath}/agents/${agent.id}`, { replace: true });
   };
   const upload = useMutation({
     mutationFn: async (resource: { value: Schema["Agent"]; etag?: string }) => {
@@ -64,14 +63,12 @@ export function CreateAgent() {
   });
   const create = useMutation({
     mutationFn: (config: AgentConfig) =>
-      createWithKey(name, "agent", (key) =>
-        client.http
-          .POST("/api/v1/workspaces/{workspace_id}/agents", {
-            params: { path: { workspace_id: workspace.id } },
-            body: { key, name, description, config },
-          })
-          .then(representation),
-      ),
+      client
+        .workspace(workspace.id)
+        .POST("/api/v1/agents", {
+          body: { name, description, config },
+        })
+        .then(representation),
     onSuccess: (resource) => {
       setCreated(resource);
       if (file) upload.mutate(resource);

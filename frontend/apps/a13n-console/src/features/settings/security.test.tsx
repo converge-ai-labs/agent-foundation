@@ -19,7 +19,7 @@ vi.mock("../../auth/context", () => ({
   useAuth: () => ({
     data: { user: { value: { email: "alex@example.com" }, etag: '"v1"' } },
   }),
-  useClient: () => ({ http: client }),
+  useClient: () => ({ http: client, workspace: () => client }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),

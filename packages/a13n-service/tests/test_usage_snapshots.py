@@ -189,7 +189,7 @@ async def test_request_budget_counts_inline_calls_without_counting_snapshot_deli
     scripted_model.say("42", to="worker")
     scripted_model.say("The helper said 42", to="coordinator")
     response = await executing.client.post(
-        f"{executing.workspace}/threads",
+        f"{executing.api}/threads",
         json=runs_kit.message(agent, "compute", options={"max_usage": {"requests": limit}}),
         headers=runs_kit.fresh_key(),
     )

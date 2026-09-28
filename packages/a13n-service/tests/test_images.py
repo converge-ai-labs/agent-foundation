@@ -71,7 +71,7 @@ async def test_profile_images(service, settings: Settings) -> None:  # type: ign
     async with AsyncExitStack() as stack:
         member = await join(service, stack, "member@example.com", "viewer")
         me = (await member.get("/api/v1/users/me")).json()
-        # Anyone sharing an organization with the user sees the image; a workspace key cannot change it.
+        # Anyone sharing an organization with the user sees the image; an API key cannot change it.
         assert (await member.get(stored.json()["image_url"])).content == PNG
         key = await member.post(
             "/api/v1/users/me/keys", json={"workspace_id": service.tenant.workspace_id, "name": "k"}
@@ -153,7 +153,7 @@ async def test_images_are_bounded_like_uploads(serve, settings: Settings) -> Non
         assert (await client.put(AVATAR, content=PNG, headers=changing(profile))).status_code == 200
         # Images and workspace uploads share one per-principal budget.
         upload = await client.post(
-            f"{service.workspace}/uploads",
+            f"{service.api}/uploads",
             files={"file": ("a.txt", b"a", "text/plain")},
             headers={"idempotency-key": "one"},
         )

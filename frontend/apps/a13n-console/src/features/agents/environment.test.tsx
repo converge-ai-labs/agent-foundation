@@ -7,7 +7,9 @@ import { initialConfig } from "./configuration";
 import { AgentEditor } from "./editor";
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test", settings: {} },
@@ -62,7 +64,7 @@ it("saves the environment choice together with other configuration edits", async
         <AgentEditor
           initial={{
             ...initialConfig(),
-            model: { model_id: "mdl_0123456789abcdef0123" },
+            model: "model-0123456789abcdef0123",
             instructions: "Check the evidence.",
           }}
           version={7}

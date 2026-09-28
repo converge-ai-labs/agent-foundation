@@ -12,9 +12,9 @@ export function useTraceBackend() {
   return useQuery({
     queryKey: ["trace-backend", workspace.id],
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/trace-backend", {
-          params: { path: { workspace_id: workspace.id } },
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/trace-backend", {
           signal,
         })
         .then(data),

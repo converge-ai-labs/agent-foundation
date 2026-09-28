@@ -15,7 +15,7 @@ from sqlalchemy import ColumnElement, Integer, SQLColumnExpression, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
-from a13n_service.infra.db import Storage, assign, short_session, transaction, unique_key
+from a13n_service.infra.db import Storage, assign, short_session, transaction
 from a13n_service.infra.errors import disabled, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
@@ -67,30 +67,26 @@ async def _validated_config(
 async def create_template(
     storage: Storage, actor: Principal, workspace_id: str, body: TemplateCreate, *, registry: Registry
 ) -> Template:
-    with unique_key(EnvironmentTemplateRow.KIND, "uq_environment_templates_workspace_id_key", body.key):
-        async with transaction(storage) as session:
-            scope = await workspace_scope(session, actor, workspace_id, "write")
-            config = await _validated_config(
-                session, actor, scope, body.provider_id, body.config, registry, current=None
-            )
-            row = EnvironmentTemplateRow(
-                id=new_object_id("envtpl"),
-                organization_id=scope.organization_id,
-                workspace_id=scope.workspace_id,
-                key=body.key,
-                name=body.name,
-                description=body.description,
-                provider_id=body.provider_id,
-                config=config,
-                enabled=True,
-                labels=body.labels,
-                created_by_id=actor.id,
-                updated_by_id=actor.id,
-            )
-            session.add(row)
-            await session.flush()
-            audit_row(session, actor, row, "create")
-            return Template.model_validate(row)
+    async with transaction(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "write")
+        config = await _validated_config(session, actor, scope, body.provider_id, body.config, registry, current=None)
+        row = EnvironmentTemplateRow(
+            id=new_object_id("envtpl"),
+            organization_id=scope.organization_id,
+            workspace_id=scope.workspace_id,
+            name=body.name,
+            description=body.description,
+            provider_id=body.provider_id,
+            config=config,
+            enabled=True,
+            labels=body.labels,
+            created_by_id=actor.id,
+            updated_by_id=actor.id,
+        )
+        session.add(row)
+        await session.flush()
+        audit_row(session, actor, row, "create")
+        return Template.model_validate(row)
 
 
 async def list_templates(

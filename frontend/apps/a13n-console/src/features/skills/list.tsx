@@ -51,10 +51,10 @@ export function SkillsPage() {
       page.cursor,
     ],
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/skills", {
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/skills", {
           params: {
-            path: { workspace_id: workspace.id },
             query: {
               cursor: page.cursor,
               // The chip adds archived items; omitting the filter lists both.
@@ -68,9 +68,7 @@ export function SkillsPage() {
         .then(data),
   });
   const importSkill = can("write") ? (
-    <ImportSkill
-      onSuccess={(skill) => navigate(encodeURIComponent(skill.key))}
-    />
+    <ImportSkill onSuccess={(skill) => navigate(skill.id)} />
   ) : undefined;
   const filtered = !!term || source !== "all" || archived;
   return (
@@ -115,18 +113,17 @@ export function SkillsPage() {
             className={styles.listTable}
             caption={t("Skills")}
             items={query.data.items}
-            onRowActivate={(skill) => navigate(encodeURIComponent(skill.key))}
+            onRowActivate={(skill) => navigate(skill.id)}
             columns={[
               {
                 label: t("Skill"),
                 tone: "primary",
                 render: (skill) => (
                   <ResourceIdentity
-                    to={encodeURIComponent(skill.key)}
+                    to={skill.id}
                     name={skill.name}
-                    description={skill.key}
+                    description={skill.description || skill.id}
                     resourceId={skill.id}
-                    resourceKey={skill.key}
                     icon={<SkillIcon />}
                   />
                 ),

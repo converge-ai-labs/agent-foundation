@@ -11,7 +11,10 @@ const { post, accepted } = vi.hoisted(() => ({
   accepted: vi.fn(),
 }));
 vi.mock("../../../auth/context", () => ({
-  useClient: () => ({ http: { POST: post } }),
+  useClient: () => ({
+    http: { POST: post },
+    workspace: () => ({ POST: post }),
+  }),
 }));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -73,9 +76,7 @@ it("requires an explicit decision for every approval before sending the complete
   await user.click(submit);
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(accepted).toHaveBeenCalledWith(successor));
-  expect(post.mock.calls[0]![0]).toBe(
-    "/api/v1/workspaces/{workspace_id}/runs/{run_id}/resume",
-  );
+  expect(post.mock.calls[0]![0]).toBe("/api/v1/runs/{run_id}/resume");
   expect(post.mock.calls[0]![1].body).toEqual({
     answers: [
       { action: "approve", tool_call_id: "first" },
@@ -170,9 +171,7 @@ function renderQuestions(questions = questionPresentation) {
   return userEvent.setup();
 }
 function answered() {
-  expect(post.mock.calls[0]![0]).toBe(
-    "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/inbox",
-  );
+  expect(post.mock.calls[0]![0]).toBe("/api/v1/threads/{thread_id}/inbox");
   const body = post.mock.calls[0]![1].body;
   expect(body).toMatchObject({
     kind: "message",

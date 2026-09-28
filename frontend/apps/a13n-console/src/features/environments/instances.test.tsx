@@ -6,7 +6,9 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { EnvironmentInstances } from "./instances";
 
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
@@ -22,10 +24,10 @@ vi.mock("../../shared/page", () => ({
 }));
 
 const collections: Record<string, unknown[]> = {
-  "/api/v1/organizations/{organization_id}/environment-providers": [
+  "/api/v1/environment-providers": [
     { id: "eprov_docker", name: "Docker host", type: "docker", enabled: true },
   ],
-  "/api/v1/workspaces/{workspace_id}/environment-templates": [
+  "/api/v1/environment-templates": [
     {
       id: "envtpl_python",
       name: "Python",
@@ -76,9 +78,8 @@ it("allocates a managed environment from an enabled template", async () => {
   await user.click(screen.getByRole("button", { name: "Create environment" }));
   await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
   expect(http.POST.mock.calls[0]).toEqual([
-    "/api/v1/workspaces/{workspace_id}/environments",
+    "/api/v1/environments",
     {
-      params: { path: { workspace_id: "ws_test" } },
       body: { template_id: "envtpl_python", name: "Scratch" },
     },
   ]);
@@ -103,9 +104,8 @@ it("registers an external target by its endpoint and token, with no provider to 
   await user.click(screen.getByRole("button", { name: "Create environment" }));
   await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
   expect(http.POST.mock.calls[0]).toEqual([
-    "/api/v1/workspaces/{workspace_id}/environments",
+    "/api/v1/environments",
     expect.objectContaining({
-      params: { path: { workspace_id: "ws_test" } },
       body: {
         endpoint: "https://laptop.example.com:8443",
         token: "daemon-token",

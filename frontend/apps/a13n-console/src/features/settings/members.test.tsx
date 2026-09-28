@@ -12,7 +12,9 @@ const http = vi.hoisted(() => ({
   PATCH: vi.fn(),
   DELETE: vi.fn(),
 }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useAccess: () => ({
     organization: { id: "org_acme" },

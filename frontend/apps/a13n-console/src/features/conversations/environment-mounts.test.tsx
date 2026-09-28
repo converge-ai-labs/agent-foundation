@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
   thread: {} as Schema["ThreadView"],
   mounts: [] as Schema["MountView"][],
 }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http: mocks }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http: mocks, workspace: () => mocks }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
@@ -86,9 +88,9 @@ it("mounts an external target's working directory on the Thread it was read with
   await waitFor(() => expect(mocks.POST).toHaveBeenCalledTimes(2));
   const request = mocks.POST.mock.calls[0];
   expect(request).toEqual([
-    "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/environments",
+    "/api/v1/threads/{thread_id}/environments",
     expect.objectContaining({
-      params: { path: { workspace_id: "ws_test", thread_id: "thr_1" } },
+      params: { path: { thread_id: "thr_1" } },
       headers: { "If-Match": '"thr_1:4"' },
       body: {
         name: "reference",

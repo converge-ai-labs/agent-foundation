@@ -517,8 +517,8 @@ class UsageFilter(_Frozen):
 
 
 class ModelUsage(BaseModel):
-    # None for records of a model since deleted.
-    model_id: str | None
+    # The model's key; None for records no model priced.
+    model: str | None
     requests: int
     input_tokens: int
     output_tokens: int

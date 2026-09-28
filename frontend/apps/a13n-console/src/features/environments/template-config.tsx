@@ -3,7 +3,7 @@ import { Button, DisclosureSection, FormField, Input } from "a13n-ui";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
+import { useWorkspace } from "../../layout/workspace";
 import { ApiError } from "../../service-client";
 import {
   allPages,
@@ -22,7 +22,7 @@ import {
 } from "../../shared/forms";
 import { IconTile, ProviderIcon } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
-import { environmentApi, type WorkspaceScope } from "./api";
+import { environmentApi } from "./api";
 import editorStyles from "./environments.module.css";
 import { ProviderConfiguration } from "./provider-configuration";
 import { useEnvironmentTypes } from "./providers";
@@ -38,7 +38,6 @@ export interface ChosenProvider {
  * opens on the current configuration with a way back to the catalog.
  */
 export function TemplateConfig({
-  scope,
   template,
   close,
   reload,
@@ -46,7 +45,6 @@ export function TemplateConfig({
   onProviderChange,
 }: {
   readOnly?: boolean;
-  scope: WorkspaceScope;
   template?: ReturnType<typeof representation<Schema["Template"]>>;
   close: () => void;
   reload?: () => Promise<void>;
@@ -56,22 +54,18 @@ export function TemplateConfig({
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation(),
-    { organization } = useAccess(),
+    { workspace } = useWorkspace(),
     [basis] = useState(template),
     types = useEnvironmentTypes();
   const providers = useQuery({
-    queryKey: ["environment-provider-options", scope.kind, scope.id],
+    queryKey: ["environment-provider-options", workspace.id],
     queryFn: ({ signal }) =>
       allPages((cursor) =>
-        environmentApi(client, organization.id, scope).providers(
-          signal,
-          cursor,
-        ),
+        environmentApi(client, workspace.id).providers(signal, cursor),
       ),
   });
   const saved = template?.value;
-  const [key, setKey] = useState(""),
-    [name, setName] = useState(""),
+  const [name, setName] = useState(""),
     [description, setDescription] = useState(""),
     [providerId, setProviderId] = useState(saved?.provider_id ?? ""),
     [choosing, setChoosing] = useState(!saved?.provider_id);
@@ -134,27 +128,23 @@ export function TemplateConfig({
         },
       };
       if (basis)
-        return client.http
-          .PATCH(
-            "/api/v1/workspaces/{workspace_id}/environment-templates/{template_id}",
-            {
-              params: {
-                path: {
-                  workspace_id: basis.value.workspace_id,
-                  template_id: basis.value.id,
-                },
+        return client
+          .workspace(basis.value.workspace_id)
+          .PATCH("/api/v1/environment-templates/{template_id}", {
+            params: {
+              path: {
+                template_id: basis.value.id,
               },
-              headers: ifMatch(basis.etag),
-              body: templateConfig,
             },
-          )
+            headers: ifMatch(basis.etag),
+            body: templateConfig,
+          })
           .then(data);
-      return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/environment-templates", {
-          params: { path: { workspace_id: scope.id } },
+      return client
+        .workspace(workspace.id)
+        .POST("/api/v1/environment-templates", {
           body: {
             ...templateConfig,
-            key,
             name,
             description: description || null,
           },
@@ -216,16 +206,6 @@ export function TemplateConfig({
                 required={true}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                maxLength={128}
-              />
-            </FormField>
-            <FormField className="min-w-0 w-full" label={t("Key")}>
-              <Input
-                readOnly={readOnly}
-                required={true}
-                value={key}
-                onChange={(event) => setKey(event.target.value)}
-                pattern="[a-z0-9][a-z0-9_\-]{0,127}"
                 maxLength={128}
               />
             </FormField>

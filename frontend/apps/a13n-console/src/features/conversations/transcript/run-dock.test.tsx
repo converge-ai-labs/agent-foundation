@@ -206,9 +206,7 @@ it("continues the completed head with a next-run message and navigates to its Ru
     expect(screen.getByTestId("location").textContent).toContain("/runs/next"),
   );
   expect(posts).toHaveLength(1);
-  expect(posts[0]?.path).toBe(
-    "/api/v1/workspaces/workspace/threads/thread/inbox",
-  );
+  expect(posts[0]?.path).toBe("/api/v1/threads/thread/inbox");
   expect(posts[0]?.body).toEqual({
     kind: "message",
     delivery: "next_run",
@@ -223,13 +221,9 @@ it("steers the active Run and reports when it applied the guidance", async () =>
   });
   fireEvent.click(screen.getByRole("button", { name: "Send guidance" }));
   await screen.findByText("Guidance applied to the run.");
-  expect(posts.map((p) => p.path)).toEqual([
-    "/api/v1/workspaces/workspace/threads/thread/inbox",
-  ]);
+  expect(posts.map((p) => p.path)).toEqual(["/api/v1/threads/thread/inbox"]);
   // The dock reads its own entry, never the whole inbox history.
-  expect(posts.reads).toContain(
-    "/api/v1/workspaces/workspace/threads/thread/inbox/inb_new",
-  );
+  expect(posts.reads).toContain("/api/v1/threads/thread/inbox/inb_new");
   expect(posts[0]?.body).toMatchObject({
     delivery: "steer",
     agent_id: "agent",
@@ -311,7 +305,7 @@ it("offers Stop in place of Send while a run is active and the draft is empty", 
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await waitFor(() => expect(posts).toHaveLength(1));
   expect(posts[0]).toMatchObject({
-    path: "/api/v1/workspaces/workspace/runs/run/interrupt",
+    path: "/api/v1/runs/run/interrupt",
     body: null,
   });
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
@@ -384,9 +378,9 @@ it("resumes a waiting Run with default answers before sending the new message", 
     ),
   );
   expect(posts.map(({ path, body }) => [path, body])).toEqual([
-    ["/api/v1/workspaces/workspace/runs/run/resume", { answers: [] }],
+    ["/api/v1/runs/run/resume", { answers: [] }],
     [
-      "/api/v1/workspaces/workspace/threads/thread/inbox",
+      "/api/v1/threads/thread/inbox",
       {
         kind: "message",
         delivery: "steer",

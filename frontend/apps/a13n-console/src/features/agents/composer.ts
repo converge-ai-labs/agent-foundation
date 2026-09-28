@@ -8,9 +8,6 @@ import { ApiError } from "../../service-client";
 import { data, type Schema } from "../../shared/api";
 import { modelApi } from "../models/api";
 import { providersPath } from "../providers/navigation";
-import { agentQuery } from "./queries";
-
-const COMPOSER_KEY = "agent-composer";
 
 function modelRequired(error: unknown) {
   return (
@@ -22,7 +19,7 @@ function modelRequired(error: unknown) {
 
 /** The agent version a conversation with the composer starts from. */
 export interface ComposerTarget {
-  agent: Pick<Schema["Agent"], "id" | "key" | "name">;
+  agent: Pick<Schema["Agent"], "id" | "name">;
   revision: Pick<Schema["AgentRevision"], "id" | "number">;
 }
 
@@ -38,10 +35,19 @@ export function useAgentComposer() {
     cache = useQueryClient(),
     navigate = useNavigate(),
     toast = useToast(),
-    { workspace, organization, basePath, can } = useWorkspace();
+    { workspace, basePath, can } = useWorkspace();
   const write = can("write");
   const existing = useQuery({
-    ...agentQuery(client, workspace.id, COMPOSER_KEY),
+    queryKey: ["agents", workspace.id, "builtin"],
+    queryFn: ({ signal }) =>
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/agents", {
+          params: { query: { source: "builtin" } },
+          signal,
+        })
+        .then(data)
+        .then((page) => page.items[0] ?? null),
     enabled: !write && can("run"),
   });
   const converse = (agentId: string, target?: ComposerTarget) => {
@@ -50,10 +56,9 @@ export function useAgentComposer() {
       search.set(
         "message",
         t(
-          "Help me change the agent {{name}} (key {{key}}, ID {{id}}), starting from its version {{version}} (revision ID {{revision}}).",
+          "Help me change the agent {{name}} (ID {{id}}), starting from its version {{version}} (revision ID {{revision}}).",
           {
             name: target.agent.name,
-            key: target.agent.key,
             id: target.agent.id,
             version: target.revision.number,
             revision: target.revision.id,
@@ -64,10 +69,9 @@ export function useAgentComposer() {
   };
   const prepare = useMutation({
     mutationFn: (_target?: ComposerTarget) =>
-      client.http
-        .POST("/api/v1/workspaces/{workspace_id}/agent-composer", {
-          params: { path: { workspace_id: workspace.id } },
-        })
+      client
+        .workspace(workspace.id)
+        .POST("/api/v1/agent-composer", {})
         .then(data),
     onSuccess: (agent, target) => {
       void cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
@@ -75,10 +79,7 @@ export function useAgentComposer() {
     },
     onError: async (error) => {
       if (!modelRequired(error)) return;
-      const configured = await modelApi(client, organization.id, {
-        kind: "workspace",
-        id: workspace.id,
-      })
+      const configured = await modelApi(client, workspace.id)
         .providers(new AbortController().signal)
         .then(
           (page) => page.items.some((provider) => provider.enabled),
@@ -97,7 +98,7 @@ export function useAgentComposer() {
             navigate(
               configured
                 ? `${basePath}/models`
-                : providersPath("models", "workspace", workspace.key),
+                : providersPath("models", workspace),
             ),
         },
       });

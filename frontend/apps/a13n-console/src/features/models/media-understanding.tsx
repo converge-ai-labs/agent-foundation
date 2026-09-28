@@ -33,9 +33,9 @@ export function MediaUnderstandingDefaults() {
       etag: string;
       selection: MediaSelection;
     }) =>
-      client.http
-        .PUT("/api/v1/workspaces/{workspace_id}/media-understanding-defaults", {
-          params: { path: { workspace_id: workspace.id } },
+      client
+        .workspace(workspace.id)
+        .PUT("/api/v1/media-understanding-defaults", {
           headers: ifMatch(change.etag),
           body: change.selection,
         })

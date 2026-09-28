@@ -25,7 +25,7 @@ async def _waiting(service, scripted_model, runs_kit, **config) -> dict:  # type
 async def test_a_resume_replays_its_key_and_answers_a_wait_once(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     scripted_model.call("lookup", {}, call_id="call_lookup")
     waiting = await _waiting(service, scripted_model, runs_kit, client_tools=[LOOKUP])
-    resume = f"{service.workspace}/runs/{waiting['id']}/resume"
+    resume = f"{service.api}/runs/{waiting['id']}/resume"
     stray = {"answers": [{"tool_call_id": "call_other", "action": "complete", "result": {"value": 1}}]}
     refused = await service.client.post(resume, json=stray, headers={"idempotency-key": "resume-0"})
     assert refused.status_code == 400 and refused.json()["error"]["details"] == {
@@ -52,7 +52,7 @@ async def test_a_resume_closes_a_question_only_wait_without_answers(service, scr
 
     # Declining every question is an explicit decision: the successor continues with no response to them.
     resumed = await service.client.post(
-        f"{service.workspace}/runs/{waiting['id']}/resume", json={"answers": []}, headers=runs_kit.fresh_key()
+        f"{service.api}/runs/{waiting['id']}/resume", json={"answers": []}, headers=runs_kit.fresh_key()
     )
     assert resumed.status_code == 201 and resumed.json()["resume"]["answers"][0]["action"] == "no_response"
     scripted_model.say("Moving on")
@@ -71,7 +71,7 @@ async def test_a_fork_continues_a_runs_history_in_a_new_thread(service, scripted
     await (await runs_kit.attempt(service))
 
     forked = await service.client.post(
-        f"{service.workspace}/runs/{origin['run']['id']}/fork",
+        f"{service.api}/runs/{origin['run']['id']}/fork",
         json=runs_kit.message(agent, "what was it?"),
         headers=runs_kit.fresh_key(),
     )
@@ -130,7 +130,7 @@ async def test_run_items_follow_a_replaced_display(service, scripted_model, runs
 async def test_a_new_run_keeps_the_session_etag(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
     submitted = await runs_kit.start_thread(service, agent, "first")
-    session = f"{service.workspace}/sessions/{submitted['thread']['session_id']}"
+    session = f"{service.api}/sessions/{submitted['thread']['session_id']}"
     before = await service.client.get(session)
     scripted_model.say("Done")
     await (await runs_kit.attempt(service))
@@ -150,7 +150,7 @@ async def test_sessions_list_most_recently_updated_first_and_refuse_malformed_fi
 ) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
     first, second = [await runs_kit.start_thread(service, agent, text) for text in ("first", "second")]
-    sessions = f"{service.workspace}/sessions"
+    sessions = f"{service.api}/sessions"
     page = (await service.client.get(sessions, params={"status": ["accepted"], "limit": 1})).json()
     assert [item["id"] for item in page["items"]] == [second["thread"]["session_id"]]
     rest = await service.client.get(

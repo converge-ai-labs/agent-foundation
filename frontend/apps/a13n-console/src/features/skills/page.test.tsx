@@ -19,7 +19,7 @@ vi.mock("../../shared/download", () => ({ downloadBlob: download }));
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/workspace/design",
+    basePath: "/workspace/ws_design",
     workspace: { id: workspaceId },
     can: () => true,
   }),
@@ -47,7 +47,6 @@ function setup(workspace: string, search = "") {
   const skill = {
     id: "sk_example",
     workspace_id: workspace,
-    key: "example",
     name: "Example skill",
     version: 4,
     default_revision_id: "skr_example",
@@ -90,13 +89,12 @@ function setup(workspace: string, search = "") {
   const older = makeRevision("skr_older", 1, "example/", olderFiles);
   const zip = zipSync(currentFiles);
   const requests: Request[] = [];
-  const skills = `/api/v1/workspaces/${workspace}/skills`;
+  const skills = `/api/v1/skills`;
   const fetcher: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
     requests.push(request);
     const route = `${request.method} ${new URL(request.url).pathname}`;
     switch (route) {
-      case `GET ${skills}/example`:
       case `GET ${skills}/sk_example`:
         return Response.json(skill, { headers: { ETag: '"skill-v1"' } });
       case `GET ${skills}/sk_example/revisions`:
@@ -126,12 +124,11 @@ function setup(workspace: string, search = "") {
       case `POST ${skills}/sk_example/revisions/skr_older/set-default`:
         skill.default_revision_id = "skr_older";
         return Response.json(skill, { headers: { ETag: '"skill-v2"' } });
-      case `GET /api/v1/workspaces/${workspace}/agents`:
+      case `GET /api/v1/agents`:
         return Response.json({
           items: [
             {
               id: "ap_example",
-              key: "example-agent",
               name: "Example agent",
               image_url: null,
             },
@@ -163,15 +160,15 @@ function setup(workspace: string, search = "") {
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter
-        initialEntries={[`/workspace/design/skills/example${search}`]}
+        initialEntries={[`/workspace/ws_design/skills/sk_example${search}`]}
       >
         <Routes>
           <Route
-            path="/workspace/:workspaceKey/skills/:skillKey"
+            path="/workspace/:workspaceId/skills/:skillId"
             element={<SkillDetail />}
           />
           <Route
-            path="/workspace/:workspaceKey/skills"
+            path="/workspace/:workspaceId/skills"
             element={<p>Skill collection</p>}
           />
         </Routes>
@@ -205,15 +202,20 @@ it.each(["ws_first", "ws_second"])(
       (await screen.findByRole("link", { name: "Example agent" })).getAttribute(
         "href",
       ),
-    ).toBe("/workspace/design/agents/example-agent");
-    const skills = `/api/v1/workspaces/${workspace}/skills`;
+    ).toBe("/workspace/ws_design/agents/ap_example");
+    const skills = `/api/v1/skills`;
     expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
-      `${skills}/example`,
+      `${skills}/sk_example`,
       `${skills}/sk_example/revisions/skr_example`,
       `${skills}/sk_example/revisions`,
       `${skills}/sk_example/revisions/skr_example/content`,
-      `/api/v1/workspaces/${workspace}/agents`,
+      `/api/v1/agents`,
     ]);
+    expect(
+      requests.every(
+        (request) => request.headers.get("X-Workspace-ID") === workspace,
+      ),
+    ).toBe(true);
     // Only unarchived agents with a revision pinning the skill are listed.
     expect(
       Object.fromEntries(new URL(requests.at(-1)!.url).searchParams),
@@ -254,8 +256,8 @@ it("renames and archives a skill with its CSRF proof and existing ETag", async (
       (request) => `${request.method} ${new URL(request.url).pathname}`,
     ),
   ).toEqual([
-    "PATCH /api/v1/workspaces/ws_settings/skills/sk_example",
-    "POST /api/v1/workspaces/ws_settings/skills/sk_example/archive",
+    "PATCH /api/v1/skills/sk_example",
+    "POST /api/v1/skills/sk_example/archive",
   ]);
   for (const request of mutations) {
     expect(request.headers.get("If-Match")).toBe('"skill-v1"');
@@ -319,7 +321,7 @@ it("sets an older version as the default with the workspace and existing ETag", 
   ).toBeTruthy();
   const request = requests.find((request) => request.method === "POST")!;
   expect(new URL(request.url).pathname).toBe(
-    "/api/v1/workspaces/ws_default/skills/sk_example/revisions/skr_older/set-default",
+    "/api/v1/skills/sk_example/revisions/skr_older/set-default",
   );
   expect(request.headers.get("If-Match")).toBe('"skill-v1"');
   expect(request.headers.get("X-CSRF-Token")).toBe("test-csrf");

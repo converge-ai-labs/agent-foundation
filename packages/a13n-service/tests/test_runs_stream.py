@@ -341,7 +341,7 @@ async def test_readers_after_a_trim_receive_the_tail_and_gaps(service, scripted_
     boundary_id = (await _entries(service.runtime.redis, run["thread_id"]))[0][0]
     headers = await runs_kit.bearer(service)
     async with listen(service.app) as base:
-        url = f"{base}{service.workspace}/threads/{run['thread_id']}/stream"
+        url = f"{base}{service.api}/threads/{run['thread_id']}/stream"
         # A new reader receives only the tail; the boundary past what it received tells it to re-read the display.
         async with runs_kit.frames(url, headers) as stream:
             assert await _frames(stream, 3) == [("gap", None), ("boundary", 2), ("delta", 3)]
@@ -364,7 +364,7 @@ async def test_a_live_reader_skipped_past_removed_entries_gets_a_gap(service, sc
     first = await redis.xadd(key, delta(1))
     headers = await runs_kit.bearer(service)
     async with listen(service.app) as base:
-        url = f"{base}{service.workspace}/threads/{run['thread_id']}/stream"
+        url = f"{base}{service.api}/threads/{run['thread_id']}/stream"
         async with runs_kit.frames(url, headers) as stream:
             assert await _frames(stream, 1) == [("delta", 1)]
             # Trimmed before the shared read reached them, as a lagging reader experiences it.

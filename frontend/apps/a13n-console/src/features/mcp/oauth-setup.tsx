@@ -9,7 +9,7 @@ import { data, type Schema } from "../../shared/api";
 import { AuthorizationLink } from "../../shared/authorization-link";
 import { ErrorNotice, StatePill } from "../../shared/feedback";
 import styles from "./mcp.module.css";
-import { connectionPath, connectionState } from "../connections/api";
+import { connectionState } from "../connections/api";
 import {
   authorizeConnection,
   startBrowserAuthorization,
@@ -46,10 +46,11 @@ export function MCPOAuthSetup({
     mutationFn: async (basis: Schema["Connection"]) => {
       await authorizeConnection(client, basis);
       return data(
-        await client.http.GET(
-          "/api/v1/workspaces/{workspace_id}/connections/{connection_id}",
-          { params: { path: connectionPath(basis) } },
-        ),
+        await client
+          .workspace(basis.workspace_id)
+          .GET("/api/v1/connections/{connection_id}", {
+            params: { path: { connection_id: basis.id } },
+          }),
       );
     },
     onSuccess: (updated) => {

@@ -30,7 +30,7 @@ it("resubmits a stopped Run's message with its options and only a chosen pin", (
 it("sends a pending message again with the options it was accepted with", () => {
   const options = {
     labels: { purpose: "check" },
-    overrides: { model: { settings: { max_tokens: 512 } } },
+    overrides: { model_settings: { max_tokens: 512 } },
   };
   expect(
     entryResubmission({

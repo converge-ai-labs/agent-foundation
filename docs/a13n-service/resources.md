@@ -1,41 +1,34 @@
 # Resource basics
 
-Resources are what a tenant configures for its agents: providers and models, agents and skills, connections, secrets, environment templates, subscriptions and assets. This page covers what they have in common. The following pages cover each kind: [Models](models.md), [Tools and connections](tools.md), [Skills and secrets](skills.md), [Environments](environments.md) and [Files and webhooks](files-and-webhooks.md).
+Resources are what a tenant configures for its agents: providers and models, agents and skills, connections, environment templates, memories, subscriptions and assets. This page covers what they have in common. The following pages cover each kind: [Models](models.md), [Tools and connections](tools.md), [Skills](skills.md), [Environments](environments.md), [Memory](memory.md) and [Files and webhooks](files-and-webhooks.md).
 
-## Scopes
+## Workspaces
 
-Most resources belong to one workspace and live under `/api/v1/workspaces/{workspace_id}/...`.
-
-Providers and models live in organization collections, `/api/v1/organizations/{organization_id}/{kind}-providers` and `/api/v1/organizations/{organization_id}/models`, and each row has a `workspace_id`:
-
-- `workspace_id: null` shares the row with every workspace of the organization. Creating or changing it needs `write` at organization scope; workspace members can read and use it. In Console, manage shared rows under **Organization settings → Providers** and **Models**.
-- A workspace ID confines the row to that workspace. Creating or changing it needs `write` in the workspace. In Console, use **Workspace settings → Providers** and the workspace **Models** page.
-
-The scope of a row never changes. A workspace resource may use its own workspace's providers and models or the organization's shared ones, never another workspace's. Listing with `?workspace_id=...` returns the shared rows plus that workspace's; without the filter you get the shared rows plus those of every workspace you can read. A row you cannot read answers `404`, as if it did not exist.
+Every resource belongs to exactly one workspace and never moves. Its collection lives under `/api/v1`, such as `/api/v1/model-providers` or `/api/v1/agents`, in the workspace the request's credential selects (see [HTTP conventions](http.md#workspace)). A resource refers only to resources of its own workspace, such as a model to one of its workspace's providers; anything outside the workspace answers `404`, as if it did not exist. Creating and changing providers and models needs `write` in the workspace. In Console, providers are under **Workspace settings → Providers**.
 
 ## Lifecycles
 
 Resources follow one of two lifecycles.
 
-**Live** resources (providers, models, connections, environment templates, secrets, subscriptions) change in place. Each change increments the row's `version`, and runs use the current state when they need the resource: a disabled provider or connection stops new use at once.
+**Live** resources (providers, models, connections, environment templates, subscriptions) change in place. Each change increments the row's `version`, and runs use the current state when they need the resource: a disabled provider or connection stops new use at once.
 
 **Revisioned** resources (agents and skills) have a head and immutable, numbered revisions. Each change adds a revision; the head's `default_revision_id` selects the one new work uses, and runs pin the exact revision they started with. Heads are archived rather than deleted. Publishing content identical to the head's current default revision creates nothing: the request returns that revision again with `201`, and the head's version, ETag and audit trail are unchanged, whether or not the request set `make_default: false`.
 
 Nothing a run depends on is hard-deleted underneath it:
 
-| Kind                                 | Stop using it                                                                          |
-| ------------------------------------ | -------------------------------------------------------------------------------------- |
-| Providers, models                    | `PATCH` with `{"enabled": false}`.                                                     |
-| Connections, environment templates   | `PATCH {"enabled": false}`. A connection's credential is removed with `POST …/revoke`. |
-| Agents, skills                       | `POST …/archive`; `POST …/unarchive` reverses it.                                      |
-| Assets                               | `DELETE` retires the asset; its content stays readable for history.                    |
-| Secrets, subscriptions, environments | `DELETE`.                                                                              |
+| Kind                               | Stop using it                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| Providers, models                  | `PATCH` with `{"enabled": false}`.                                                     |
+| Connections, environment templates | `PATCH {"enabled": false}`. A connection's credential is removed with `POST …/revoke`. |
+| Agents, skills                     | `POST …/archive`; `POST …/unarchive` reverses it.                                      |
+| Assets                             | `DELETE` retires the asset; its content stays readable for history.                    |
+| Subscriptions, environments        | `DELETE`.                                                                              |
 
 ## Common conventions
 
-- **IDs and keys.** Every resource has a kind-prefixed ID, such as `ap_…` for agents. Agents, skills and models also have a `key` (`^[a-z0-9][a-z0-9_-]{0,127}$`) unique in their collection; agent and skill paths accept the ID or the key. Changing an agent's or skill's key breaks links that used the old key, while runs and revisions refer to IDs.
+- **Keys and IDs.** Only models are identified by a `key`: 1–128 lowercase letters, digits, `-` and `.`, starting with a letter or digit (`^[a-z0-9][a-z0-9.-]{0,127}$`). A key is unique in its workspace and never changes; paths, agent configurations and ETags (`"{key}:{version}"`) name a model by it, and its view has no `id`. Every other resource, including agents, skills, memories, environment templates and revisions, is identified by a kind-prefixed ID, such as `ap_…` for agents and `sk_…` for skills.
 - **Versions.** Reads return an `ETag`; changes require it in `If-Match`. See [HTTP conventions](http.md#concurrency-control).
-- **Labels.** Agents and skills carry up to 32 `labels`. List them with `?label=key:value` (repeatable, all must match), `q` (case-insensitive substring of key, name or description) and `archived=true|false`.
+- **Labels.** Agents and skills carry up to 32 `labels`. List them with `?label=key:value` (repeatable, all must match), `q` (case-insensitive substring of the name or description) and `archived=true|false`.
 - **Authors.** Views carry `created_by_id`, `updated_by_id`, `created_at` and `updated_at`.
 - **Audit.** Changes to resources are recorded in the [audit trail](identity.md#audit). An update that changes nothing keeps the version and records nothing.
 
@@ -53,12 +46,12 @@ A provider is one configured account of an external service. There are five kind
 
 `GET /api/v1/provider-types/{kind}` describes each installed type: its `configuration_schema` and `credential_schema` (JSON Schema), when a credential is required, and a `setup_url` for obtaining one. Model types add their model APIs and per-API settings schemas; web types list the operations they serve; environment types describe their environment schema and whether they support managed instances, stop and destroy. Console builds its provider forms from this endpoint.
 
-Create a provider with its scope, type, name, configuration and credential:
+Create a provider in its kind's collection, such as `/api/v1/model-providers`, with its type, name, configuration and credential:
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/organizations/$ORG/model-providers" \
+curl -X POST "$A13N_URL/api/v1/model-providers" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"workspace_id": "'"$WORKSPACE"'", "type": "openai", "name": "OpenAI", "config": {}, "credential": {"api_key": "sk-..."}}'
+  -d '{"type": "openai", "name": "OpenAI", "config": {}, "credential": {"api_key": "sk-..."}}'
 ```
 
 - **Credentials are write-only.** They are encrypted with the deployment's key ring and never returned; views show only `credential_configured`. In a `PATCH`, a `credential` value replaces it, `null` removes it, and leaving it out keeps it.

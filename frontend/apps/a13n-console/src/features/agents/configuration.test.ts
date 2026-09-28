@@ -1,20 +1,20 @@
 import { expect, test } from "vitest";
 import { advancedConfig, buildConfig, initialConfig } from "./configuration";
 
-const model = { model_id: "mdl_0123456789abcdef0123" };
+const model = "model-0123456789abcdef0123";
 
 test("ordinary editing preserves hidden configuration and leaves omission distinct from null", () => {
   const original = {
     ...initialConfig(),
     model,
-    secret_requirements: [{ key: "support_token", scope: "user" as const }],
+    plugins: [{ plugin_key: "example", instance_name: "example", config: {} }],
   };
   const config = buildConfig(
     original,
     { model: original.model, instructions: "Updated instructions" },
     advancedConfig(original),
   );
-  expect(config.secret_requirements).toEqual(original.secret_requirements);
+  expect(config.plugins).toEqual(original.plugins);
   expect(config.instructions).toBe("Updated instructions");
   expect(config.output_spec).toBeUndefined();
   const advanced = JSON.parse(advancedConfig(original));
@@ -47,7 +47,7 @@ test("keeps reviewer and disabled tool configuration through dedicated fields", 
     ...initialConfig(),
     model,
     reviewer: {
-      model: "mdl_0123456789abcdef0123",
+      model: "model-0123456789abcdef0123",
       risk_threshold: "high" as const,
     },
     toolsets: {
@@ -93,7 +93,7 @@ test("media understanding is a dedicated field kept out of advanced configuratio
     ...initialConfig(),
     model,
     media_understanding: {
-      image: "mdl_fedcba9876543210fedc",
+      image: "model-fedcba9876543210fedc",
       video: null,
       audio: null,
     },
@@ -119,7 +119,7 @@ test("media understanding is a dedicated field kept out of advanced configuratio
     buildConfig(
       original,
       { model: original.model },
-      '{"media_understanding": {"image": "mdl_fedcba9876543210fedc"}}',
+      '{"media_understanding": {"image": "model-fedcba9876543210fedc"}}',
     ),
   ).toThrow(/dedicated field/);
 });

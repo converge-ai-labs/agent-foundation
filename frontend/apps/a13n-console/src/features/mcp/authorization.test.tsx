@@ -14,7 +14,9 @@ const http = vi.hoisted(() => ({
 vi.mock("../connections/authorization-context", () => ({
   startBrowserAuthorization: http.start,
 }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
@@ -105,9 +107,9 @@ it("uses the saved app and refreshed version for reconnect after authorization f
   );
   await user.click(screen.getByRole("button", { name: "Save and authorize" }));
   expect(http.PATCH).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace_id}/connections/{connection_id}",
+    "/api/v1/connections/{connection_id}",
     {
-      params: { path: { workspace_id: "ws_test", connection_id: "conn_test" } },
+      params: { path: { connection_id: "conn_test" } },
       headers: { "If-Match": '"conn_test:1"' },
       body: { config: saved.config },
     },

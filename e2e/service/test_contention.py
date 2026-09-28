@@ -29,7 +29,7 @@ async def settled(api, thread_id: str) -> list[dict]:  # type: ignore[no-untyped
 
 async def test_concurrent_input_is_consumed_once_in_order(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     await model.say("Noted.", repeat=True)
 
     busy = (await api.start(agent, "[busy] 0"))["thread"]["id"]

@@ -84,7 +84,7 @@ export function useLineageThreads(runId: string, threadId: string) {
     .filter((id, index, all) => id !== threadId && all.indexOf(id) === index);
   const threads = useQueries({ queries: ids.map((id) => queries.thread(id)) });
   const runs = useQueries({ queries: ids.map((id) => queries.runs(id)) });
-  return ids.flatMap((id, index): ThreadRuns[] => {
+  return ids.flatMap((_, index): ThreadRuns[] => {
     const thread = threads[index]?.data;
     return thread
       ? [{ thread, runs: chronological<Run>(runs[index]?.data ?? []) }]

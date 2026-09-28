@@ -120,7 +120,7 @@ it("withdraws a pending message against the Thread it was read with", async () =
   ).toBeTruthy();
   const removal = requests.find((request) => request.method === "DELETE")!;
   expect(new URL(removal.url).pathname).toBe(
-    "/api/v1/workspaces/workspace/threads/thr_1/inbox/inb_1",
+    "/api/v1/threads/thr_1/inbox/inb_1",
   );
   expect(removal.headers.get("If-Match")).toBe('"thr_1:4"');
 });
@@ -145,9 +145,7 @@ it("reorders pending messages as one order against the Thread", async () => {
     expect(requests.some((request) => request.method === "PUT")).toBe(true),
   );
   const order = requests.find((request) => request.method === "PUT")!;
-  expect(new URL(order.url).pathname).toBe(
-    "/api/v1/workspaces/workspace/threads/thr_1/inbox/order",
-  );
+  expect(new URL(order.url).pathname).toBe("/api/v1/threads/thr_1/inbox/order");
   expect(order.headers.get("If-Match")).toBe('"thr_1:4"');
   expect(await order.json()).toEqual({ entry_ids: ["inb_2", "inb_1"] });
 });
@@ -208,12 +206,10 @@ it("runs the next message of a paused Thread by withdrawing and resubmitting it"
   // A child result is never resubmitted: the first message is.
   expect(withdrawal?.method).toBe("DELETE");
   expect(new URL(withdrawal!.url).pathname).toBe(
-    "/api/v1/workspaces/workspace/threads/thr_1/inbox/inb_1",
+    "/api/v1/threads/thr_1/inbox/inb_1",
   );
   expect(withdrawal?.headers.get("If-Match")).toBe('"thr_1:4"');
-  expect(new URL(submission!.url).pathname).toBe(
-    "/api/v1/workspaces/workspace/threads/thr_1/inbox",
-  );
+  expect(new URL(submission!.url).pathname).toBe("/api/v1/threads/thr_1/inbox");
   expect(submission?.headers.get("Idempotency-Key")).toBe("resubmit:inb_1");
   expect(await submission!.json()).toEqual({
     kind: "message",

@@ -21,7 +21,7 @@ These conventions do not replace an upstream or project-owned protocol. The Harn
 
 Foundation-owned product HTTP APIs use the `/api` namespace. The current public compatibility line places its versioned resource routes below `/api/v1`. Operational endpoints such as liveness and readiness are outside `/api` and are not public resource APIs.
 
-Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/workspaces/{workspace_id}/runs/{run_id}/interrupt`; arbitrary verb-shaped RPC endpoints are not used when a resource or command expresses the operation directly.
+Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/runs/{run_id}/interrupt`; arbitrary verb-shaped RPC endpoints are not used when a resource or command expresses the operation directly.
 
 A successful single-resource, mutation, or command response returns that resource or receipt directly. There is no universal `data` envelope. Ordinary status meanings are:
 
@@ -55,7 +55,7 @@ Every request and response is bounded. The owning API defines tighter limits for
 Ordinary resource collections use one cursor-based shape:
 
 ```http
-GET /api/v1/workspaces/ws_123/agents?limit=50&cursor=opaque-value
+GET /api/v1/agents?limit=50&cursor=opaque-value
 ```
 
 ```json
@@ -142,4 +142,4 @@ Cursor encoding, storage layout, framework models, and SDK transport machinery a
 
 ## Resource References
 
-The owning API defines which path segments accept a readable key beside the immutable ID and how they resolve; for the Service, [paths and scope](a13n-service/10-api.md#paths-and-scope) and [authorization](a13n-service/03-tenancy.md#authorization) own that contract. Resolution never widens a credential's boundary, and an out-of-scope reference returns a concealed not-found result. A key change updates the canonical address immediately without retaining old routes or aliases.
+The owning API defines which path segments take a readable key and how they resolve; for the Service, [paths and scope](a13n-service/10-api.md#paths-and-scope) and [authorization](a13n-service/03-tenancy.md#authorization) own that contract. Resolution never widens a credential's boundary, and an out-of-scope reference returns a concealed not-found result. A key change updates the canonical address immediately without retaining old routes or aliases.

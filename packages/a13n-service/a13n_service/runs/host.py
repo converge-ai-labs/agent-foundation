@@ -39,7 +39,6 @@ from a13n_service.runs.memories.execution import (
     resolve_memories,
 )
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.secrets import Requirements, secrets_policy
 from a13n_service.runs.skills import PinnedSkill, resolve_skills, skills_capability
 from a13n_service.runs.tables import RunRow
 from a13n_service.runs.web import ResolvedWeb, open_web, resolve_web
@@ -56,7 +55,6 @@ class _Parts:
 @dataclass(frozen=True, slots=True)
 class HostPlan:
     parts: Mapping[str, _Parts]
-    secrets: Requirements
     memories: tuple[PlannedMemory, ...]
     # The root agent's enabled memory tools of each kind.
     file_tools: frozenset[FileToolKey]
@@ -91,7 +89,6 @@ async def resolve_host(
         )
     return HostPlan(
         parts,
-        {node.revision_id: node.config.secret_requirements for node in agent.agents()},
         memories=await resolve_memories(session, run),
         file_tools=memory_file_tools(agent.config.toolsets),
         record_tools=memory_record_tools(agent.config.toolsets),
@@ -102,7 +99,6 @@ async def resolve_host(
 class Host:
     runtime: Runtime
     lease: Lease
-    root_revision_id: str
     principal: Principal
     authority: ExecutionAuthority
     plan: HostPlan
@@ -140,14 +136,6 @@ class Host:
             file_media_understanding=media_understanding(agent, self.models) if agent.media else None,
         )
 
-    def policies(self) -> tuple[AbstractCapability[AgentContext], ...]:
-        """Run-wide policies; inline agents inherit them with their bindings."""
-        return (
-            secrets_policy(
-                self.runtime, self.lease.workspace_id, self.principal.id, self.root_revision_id, self.plan.secrets
-            ),
-        )
-
 
 @asynccontextmanager
 async def open_host(
@@ -157,7 +145,6 @@ async def open_host(
     plan: HostPlan,
     models: Mapping[str, Model],
     *,
-    root_revision_id: str,
     principal: Principal,
     authority: ExecutionAuthority,
     cursors: MemoryCursors,
@@ -198,4 +185,4 @@ async def open_host(
             )
         )
         memory = tuple(capability for capability in (files, records) if capability is not None)
-        yield Host(runtime, lease, root_revision_id, principal, authority, plan, models, tools, webs, memory)
+        yield Host(runtime, lease, principal, authority, plan, models, tools, webs, memory)

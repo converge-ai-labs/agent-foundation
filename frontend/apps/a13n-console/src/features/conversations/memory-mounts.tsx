@@ -29,7 +29,7 @@ export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
   const thread = useQuery(
     conversationQueries(client, workspace.id).thread(run.thread_id),
   );
-  const path = { workspace_id: workspace.id, thread_id: run.thread_id };
+  const path = { thread_id: run.thread_id };
   const mounts = useQuery({
     // Mount edits change the Thread, so they refresh with it.
     queryKey: [
@@ -37,8 +37,9 @@ export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
       "memories",
     ],
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories", {
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/threads/{thread_id}/memories", {
           params: { path },
           signal,
         })
@@ -53,15 +54,13 @@ export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
   // Every change names the Thread the reader saw.
   const add = useMutation({
     mutationFn: (mount: Schema["MemoryMount"]) =>
-      client.http
-        .POST(
-          "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories",
-          {
-            params: { path },
-            headers: ifMatch(thread.data && rowTag(thread.data)),
-            body: mount,
-          },
-        )
+      client
+        .workspace(workspace.id)
+        .POST("/api/v1/threads/{thread_id}/memories", {
+          params: { path },
+          headers: ifMatch(thread.data && rowTag(thread.data)),
+          body: mount,
+        })
         .then(data),
     onSuccess: () => {
       void changed();
@@ -76,27 +75,24 @@ export function ThreadMemoryMounts({ run }: { run: Schema["RunView"] }) {
       name: string;
       body: Schema["MemoryMountUpdate"];
     }) =>
-      client.http
-        .PATCH(
-          "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories/{name}",
-          {
-            params: { path: { ...path, name } },
-            headers: ifMatch(thread.data && rowTag(thread.data)),
-            body,
-          },
-        )
+      client
+        .workspace(workspace.id)
+        .PATCH("/api/v1/threads/{thread_id}/memories/{name}", {
+          params: { path: { ...path, name } },
+          headers: ifMatch(thread.data && rowTag(thread.data)),
+          body,
+        })
         .then(data),
     onSuccess: () => void changed(),
   });
   const remove = useMutation({
     mutationFn: (name: string) =>
-      client.http.DELETE(
-        "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories/{name}",
-        {
+      client
+        .workspace(workspace.id)
+        .DELETE("/api/v1/threads/{thread_id}/memories/{name}", {
           params: { path: { ...path, name } },
           headers: ifMatch(thread.data && rowTag(thread.data)),
-        },
-      ),
+        }),
     onSuccess: () => void changed(),
   });
   const editable = can("run") && !!thread.data && isInteractive(thread.data);

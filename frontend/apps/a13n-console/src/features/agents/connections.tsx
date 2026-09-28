@@ -16,7 +16,7 @@ import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import type { AgentConfig } from "./configuration";
-import { connectionPath, connectionState } from "../connections/api";
+import { connectionState } from "../connections/api";
 import { MCPConnectionIcon } from "../connections/mcp-icon";
 import { ToolPermissions, type PermissionChoice } from "./tool-permissions";
 import styles from "./agents.module.css";
@@ -73,11 +73,12 @@ export function ConnectionGroup({
     refetchOnWindowFocus: false,
     queryFn: async ({ signal }): Promise<CatalogTool[]> => {
       if (!connection) return [];
-      const result = await client.http
-        .GET(
-          "/api/v1/workspaces/{workspace_id}/connections/{connection_id}/tools",
-          { params: { path: connectionPath(connection) }, signal },
-        )
+      const result = await client
+        .workspace(connection.workspace_id)
+        .GET("/api/v1/connections/{connection_id}/tools", {
+          params: { path: { connection_id: connection.id } },
+          signal,
+        })
         .then(data);
       return result.items.map((tool) => ({
         name: tool.name,

@@ -143,19 +143,16 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
                 "Every retained change of this path is deleted, and the file itself stays. Content that runs already read stays in their conversation histories and traces.",
               )}
               action={() =>
-                client.http
-                  .DELETE(
-                    "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions",
-                    {
-                      params: {
-                        path: {
-                          workspace_id: workspace.id,
-                          memory_id: memory.id,
-                        },
-                        query: { path },
+                client
+                  .workspace(workspace.id)
+                  .DELETE("/api/v1/memories/{memory_id}/revisions", {
+                    params: {
+                      path: {
+                        memory_id: memory.id,
                       },
+                      query: { path },
                     },
-                  )
+                  })
                   .then(data)
               }
               onSuccess={() => void invalidateMemories(cache, workspace.id)}
@@ -242,13 +239,13 @@ export function MemoryHistory({ memory }: { memory: Memory }) {
                                   )
                             }
                             action={() =>
-                              client.http
+                              client
+                                .workspace(workspace.id)
                                 .POST(
-                                  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions/{seq}/restore",
+                                  "/api/v1/memories/{memory_id}/revisions/{seq}/restore",
                                   {
                                     params: {
                                       path: {
-                                        workspace_id: workspace.id,
                                         memory_id: memory.id,
                                         seq: revision.seq,
                                       },

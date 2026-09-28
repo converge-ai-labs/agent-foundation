@@ -18,15 +18,15 @@ from a13n_service.runs.environments.schemas import (
 )
 from a13n_service.runs.environments.tables import STATUSES
 from a13n_service.runs.requests import CurrentRuntime
-from a13n_service.tenancy.requests import Actor
+from a13n_service.tenancy.requests import Actor, WorkspaceId
 
-router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}", tags=["environments"])
+router = APIRouter(prefix="/api/v1", tags=["environments"])
 
 
 @router.get("/environments", response_model=EnvironmentPage)
 async def list_environments(
     runtime: CurrentRuntime,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     actor: Actor,
     status: Annotated[str | None, Query(pattern=f"^({'|'.join(STATUSES)})$")] = None,
     limit: PageLimit = 50,
@@ -41,7 +41,7 @@ async def list_environments(
 async def create_environment(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: ManagedEnvironmentCreate | ExternalTargetCreate,
     actor: Actor,
 ) -> EnvironmentView:
@@ -56,7 +56,7 @@ async def create_environment(
 
 @router.get("/environments/{environment_id}", response_model=EnvironmentView)
 async def get_environment(
-    runtime: CurrentRuntime, response: Response, workspace_id: str, environment_id: str, actor: Actor
+    runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, environment_id: str, actor: Actor
 ) -> EnvironmentView:
     result = await service.get_environment(runtime.storage, actor, workspace_id, environment_id)
     return tagged(response, result)
@@ -66,7 +66,7 @@ async def get_environment(
 async def update_environment(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     environment_id: str,
     body: EnvironmentUpdate,
     actor: Actor,
@@ -80,7 +80,7 @@ async def update_environment(
 async def stop_environment(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     environment_id: str,
     actor: Actor,
     if_match: IfMatch = None,
@@ -93,7 +93,7 @@ async def stop_environment(
 async def delete_environment(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     environment_id: str,
     actor: Actor,
     if_match: IfMatch = None,
@@ -104,7 +104,7 @@ async def delete_environment(
 
 @router.get("/threads/{thread_id}/environments", response_model=MountPage)
 async def list_mounts(
-    runtime: CurrentRuntime, response: Response, workspace_id: str, thread_id: str, actor: Actor
+    runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, thread_id: str, actor: Actor
 ) -> MountPage:
     page, version = await mounts.list_mounts(runtime.storage, actor, workspace_id, thread_id)
     response.headers["ETag"] = etag(thread_id, version)
@@ -115,7 +115,7 @@ async def list_mounts(
 async def add_mount(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     thread_id: str,
     body: MountCreate,
     actor: Actor,
@@ -128,7 +128,12 @@ async def add_mount(
 
 @router.delete("/threads/{thread_id}/environments/{name}", status_code=204)
 async def remove_mount(
-    runtime: CurrentRuntime, workspace_id: str, thread_id: str, name: str, actor: Actor, if_match: IfMatch = None
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    thread_id: str,
+    name: str,
+    actor: Actor,
+    if_match: IfMatch = None,
 ) -> Response:
     version = await mounts.remove_mount(runtime.storage, actor, workspace_id, thread_id, name, if_match=if_match)
     return Response(status_code=204, headers={"ETag": etag(thread_id, version)})

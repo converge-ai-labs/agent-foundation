@@ -24,9 +24,9 @@ from a13n_service.resources.skills.schemas import (
     SourceKind,
     UploadSource,
 )
-from a13n_service.tenancy.requests import Actor, limit_uploads
+from a13n_service.tenancy.requests import Actor, WorkspaceId, limit_uploads
 
-router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}/skills", tags=["skills"])
+router = APIRouter(prefix="/api/v1/skills", tags=["skills"])
 
 
 async def _github(request: Request, actor: Actor, runtime: Runtime, source: UploadSource | GitHubSource) -> GitHub:
@@ -43,7 +43,12 @@ async def _github(request: Request, actor: Actor, runtime: Runtime, source: Uplo
 
 @router.post("", response_model=Skill, status_code=201)
 async def create_skill(
-    request: Request, response: Response, workspace_id: str, body: SkillCreate, actor: Actor, runtime: CurrentRuntime
+    request: Request,
+    response: Response,
+    workspace_id: WorkspaceId,
+    body: SkillCreate,
+    actor: Actor,
+    runtime: CurrentRuntime,
 ) -> Skill:
     github = await _github(request, actor, runtime, body.source)
     result = await service.create_skill(runtime.storage, runtime.objects, github, actor, workspace_id, body)
@@ -52,7 +57,7 @@ async def create_skill(
 
 @router.post("/validate", response_model=SkillManifest)
 async def validate_package(
-    request: Request, workspace_id: str, body: SkillValidate, actor: Actor, runtime: CurrentRuntime
+    request: Request, workspace_id: WorkspaceId, body: SkillValidate, actor: Actor, runtime: CurrentRuntime
 ) -> SkillManifest:
     """The manifest the package would give a new skill or revision, checked as creation checks it; nothing is
     stored."""
@@ -62,7 +67,7 @@ async def validate_package(
 
 @router.get("", response_model=SkillPage)
 async def list_skills(
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     actor: Actor,
     runtime: CurrentRuntime,
     label: Annotated[list[str] | None, Query()] = None,
@@ -72,7 +77,7 @@ async def list_skills(
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> SkillPage:
-    """Skills of the workspace. `q` matches the key, name or description, ignoring case; `source` the kind of
+    """Skills of the workspace. `q` matches the name or description, ignoring case; `source` the kind of
     source the default revision was read from; `archived` keeps only archived skills, or only open ones."""
     return await service.list_skills(
         runtime.storage,
@@ -89,7 +94,7 @@ async def list_skills(
 
 @router.get("/{skill_id}", response_model=Skill)
 async def get_skill(
-    response: Response, workspace_id: str, skill_id: str, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, skill_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Skill:
     return tagged(response, await service.get_skill(runtime.storage, actor, workspace_id, skill_id))
 
@@ -97,7 +102,7 @@ async def get_skill(
 @router.patch("/{skill_id}", response_model=Skill)
 async def update_skill(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     skill_id: str,
     body: SkillUpdate,
     actor: Actor,
@@ -112,7 +117,7 @@ async def update_skill(
 @router.post("/{skill_id}/archive", response_model=Skill)
 async def archive_skill(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     skill_id: str,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -128,7 +133,7 @@ async def archive_skill(
 @router.post("/{skill_id}/unarchive", response_model=Skill)
 async def unarchive_skill(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     skill_id: str,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -143,7 +148,7 @@ async def unarchive_skill(
 @router.post("/{skill_id}/revisions", response_model=SkillRevision, status_code=201)
 async def create_revision(
     request: Request,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     skill_id: str,
     body: SkillRevisionCreate,
     actor: Actor,
@@ -159,7 +164,7 @@ async def create_revision(
 
 @router.get("/{skill_id}/revisions", response_model=SkillRevisionPage)
 async def list_revisions(
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     skill_id: str,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -171,7 +176,7 @@ async def list_revisions(
 
 @router.get("/{skill_id}/revisions/{revision_id}", response_model=SkillRevision)
 async def get_revision(
-    workspace_id: str, skill_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
+    workspace_id: WorkspaceId, skill_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> SkillRevision:
     return await service.get_revision(runtime.storage, actor, workspace_id, skill_id, revision_id)
 
@@ -179,7 +184,7 @@ async def get_revision(
 @router.post("/{skill_id}/revisions/{revision_id}/set-default", response_model=Skill)
 async def set_default_revision(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     skill_id: str,
     revision_id: str,
     actor: Actor,
@@ -203,7 +208,7 @@ async def set_default_revision(
     },
 )
 async def read_archive(
-    workspace_id: str, skill_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
+    workspace_id: WorkspaceId, skill_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Response:
     """The revision's package as a zip archive."""
     filename, data = await content.read_archive(
@@ -227,7 +232,7 @@ async def read_archive(
     },
 )
 async def read_file(
-    workspace_id: str, skill_id: str, revision_id: str, path: str, actor: Actor, runtime: CurrentRuntime
+    workspace_id: WorkspaceId, skill_id: str, revision_id: str, path: str, actor: Actor, runtime: CurrentRuntime
 ) -> Response:
     """One package file, by the path the revision's manifest lists."""
     data = await content.read_file(runtime.storage, runtime.objects, actor, workspace_id, skill_id, revision_id, path)

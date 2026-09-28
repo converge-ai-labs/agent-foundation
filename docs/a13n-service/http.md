@@ -9,7 +9,7 @@ Request bodies are strict: unknown fields are refused. For language integrations
 Applications authenticate with an [API key](identity.md#api-keys) as a bearer token:
 
 ```sh
-curl "$A13N_URL/api/v1/workspaces/$WORKSPACE/agents" -H "Authorization: Bearer $A13N_API_KEY"
+curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
 When an `Authorization` header is present, cookies are ignored. An API key acts only in its own workspace, and never changes the account of the person who created it.
@@ -22,6 +22,15 @@ Browsers use the login session cookie set by `POST /api/v1/auth/login`. For cook
 Account operations (changing your profile, password or email, disabling your account, listing login sessions and your own audit trail), `GET /api/v1/auth/session` and `POST /api/v1/auth/logout` require a login session, as do creating an API key, sending or resending an invitation, and starting a browser authorization (an OAuth authorization code or a connector account setup). An API key gets `403 forbidden` from all of them, one status everywhere: it never mints something that can outlive it, and never hands a third party a link to complete on your behalf. A request without valid credentials receives `401 unauthenticated`; a disabled principal's credentials are treated as invalid.
 
 Every authenticated response, including the route's own answer and any error after authentication, carries `Cache-Control: no-store` and, when the session was renewed, its refreshed cookie.
+
+### Workspace
+
+Everything a workspace holds, such as agents, threads, runs, providers, models, skills and memories, is addressed without the workspace in the path, as in `/api/v1/agents`. Each such request acts in one workspace, which the credential selects:
+
+- An API key acts in its own workspace and needs no header. An `X-Workspace-ID` naming another workspace is refused with `403 forbidden`.
+- A login session names the workspace by ID in `X-Workspace-ID: ws_…`. Without the header the request fails with `400 invalid_argument` and `details.field` `X-Workspace-ID`.
+
+Administration and deployment-wide reads take no header. Administration names its scope in the path: `/api/v1/auth/…`, `/api/v1/users/…`, `/api/v1/organizations/…`, `/api/v1/workspaces`, and `/api/v1/workspaces/{workspace_id}` with its `icon`, `archive`, `audit-events`, `grants`, `invitations`, `service-accounts` and `keys`. The deployment-wide reads are `/api/v1/model-catalog`, `/api/v1/provider-types/{kind}`, `/api/v1/mcp-servers` and `/api/v1/connections/redirect-uri`.
 
 ## Errors
 
@@ -62,10 +71,10 @@ Messages are for people; branch on `code` and `details.reason`. Error details ne
 
 ## Concurrency control
 
-Single-resource responses carry a strong `ETag`, such as `"ap_…:4"`, and views carry the same `version`. Operations that change an existing resource require the ETag you last read in `If-Match`:
+Single-resource responses carry a strong `ETag`, such as `"ap_…:4"` (`"{key}:{version}"` for models), and views carry the same `version`. Operations that change an existing resource require the ETag you last read in `If-Match`:
 
 ```sh
-curl -X PATCH "$A13N_URL/api/v1/workspaces/$WORKSPACE/agents/$AGENT" \
+curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -H 'If-Match: "ap_...:4"' -d '{"description": "Answers billing questions"}'
 ```
@@ -95,7 +104,7 @@ Collections return `{"items": [...], "next_cursor": "..."}`. Pass `limit` (1–1
 
 ## Identifiers and time
 
-IDs are opaque strings with a kind prefix, such as `ws_`, `ap_` (agent), `sess_`, `thread_`, `run_`. Paths accept workspace, agent and skill keys in place of IDs. Timestamps are RFC 3339 with an offset.
+IDs are opaque strings with a kind prefix, such as `ws_`, `ap_` (agent), `sk_` (skill), `sess_`, `thread_`, `run_`. Models have no exposed ID: paths and references name them by their [key](resources.md#common-conventions). Timestamps are RFC 3339 with an offset.
 
 ## Streams
 

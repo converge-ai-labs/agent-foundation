@@ -26,8 +26,6 @@ CONFIG: dict[str, Json] = {
     "sprites": {"organization": "northstar-fictional"},
     "vercel": {"team_id": "team_fictional", "project_id": "prj_fictional"},
 }
-# One model and one web account are confined to the workspace, so lists show both scopes.
-WORKSPACE_SCOPED = {"deepseek", "exa"}
 DISABLED = "minimax"
 EXTRA_HEADERS = {"openrouter": {"x-title": "Northstar Studio"}}
 # A cataloged model each type serves; the Service records a catalog reference as given, never resolving it.
@@ -48,27 +46,27 @@ MODELS = {
 }
 
 
-def seed_providers(api: Api, org: str, workspace_id: str) -> dict[str, dict[str, Json]]:
+def seed_providers(api: Api) -> dict[str, dict[str, Json]]:
     """The fictional accounts by kind and type; `local` environments are seeded for real (seed_local.py)."""
     accounts: dict[str, dict[str, Json]] = {kind: {} for kind in KINDS}
     for kind in KINDS:
         for described in api.items(f"/api/v1/provider-types/{kind}"):
             if (kind, described["type"]) == ("environment", "local"):
                 continue
-            provider = _account(api, org, workspace_id, kind, described)
+            provider = _account(api, kind, described)
             if kind == "model":
-                _model(api, org, provider, described)
+                _model(api, provider, described)
             accounts[kind][described["type"]] = provider
     if disabled := accounts["model"].get(DISABLED):
-        accounts["model"][DISABLED] = api.patch(f"{org}/model-providers/{disabled['id']}", disabled, {"enabled": False})
+        path = f"/api/v1/model-providers/{disabled['id']}"
+        accounts["model"][DISABLED] = api.patch(path, disabled, {"enabled": False})
     return accounts
 
 
-def _account(api: Api, org: str, workspace_id: str, kind: str, described: Json) -> Json:
+def _account(api: Api, kind: str, described: Json) -> Json:
     provider_type = described["type"]
     credential = _credential(described)
     body = {
-        "workspace_id": workspace_id if provider_type in WORKSPACE_SCOPED else None,
         "type": provider_type,
         # A type without a credential, such as `docker`, is a real account of this machine.
         "name": described["display_name"] if credential is None else f"{described['display_name']} (fictional)",
@@ -76,7 +74,7 @@ def _account(api: Api, org: str, workspace_id: str, kind: str, described: Json) 
         "credential": credential,
         "extra_headers": EXTRA_HEADERS.get(provider_type, {}),
     }
-    return api.post(f"{org}/{kind}-providers", body)
+    return api.post(f"/api/v1/{kind}-providers", body)
 
 
 def _credential(described: Json) -> Json | None:
@@ -105,12 +103,12 @@ def _unregistered_key() -> str:
     return pem.decode()
 
 
-def _model(api: Api, org: str, provider: Json, described: Json) -> Json:
-    """One disabled model, referring to its catalog entry where the type's models are cataloged."""
+def _model(api: Api, provider: Json, described: Json) -> Json:
+    """One disabled model, referring to its catalog entry where the type's models are cataloged. Types share
+    upstream names, so the key names the type rather than defaulting to the upstream name."""
     name, upstream = MODELS.get(provider["type"], ("Fictional model", "fictional-model"))
     channels = described.get("catalog_providers") or []
     body = {
-        "workspace_id": provider["workspace_id"],
         "provider_id": provider["id"],
         "key": f"fictional-{provider['type'].replace('_', '-')}",
         "name": name,
@@ -118,4 +116,4 @@ def _model(api: Api, org: str, provider: Json, described: Json) -> Json:
         "catalog_ref": {"provider": channels[0], "model": upstream} if channels else None,
         "enabled": False,
     }
-    return api.post(f"{org}/models", body)
+    return api.post("/api/v1/models", body)

@@ -4,13 +4,13 @@ import { initialConfig } from "../configuration";
 import { buildDraftConfig, thinkingEfforts, useAgentDraft } from "./draft";
 
 const asIs = (value: string) => value;
-const vision = "mdl_00000000000000000001",
-  motion = "mdl_00000000000000000002";
+const vision = "model-00000000000000000001",
+  motion = "model-00000000000000000002";
 
 function draftFor(config: Partial<ReturnType<typeof initialConfig>> = {}) {
   const initial = {
     ...initialConfig(),
-    model: { model_id: "mdl_0123456789abcdef0123" },
+    model: "model-0123456789abcdef0123",
     ...config,
   };
   return renderHook(() => useAgentDraft(initial)).result;
@@ -99,7 +99,7 @@ it("checks model settings against the calling API's schema before publishing", (
     draft.current.setSettings('{"temperature": 0.2}');
   });
   const built = buildDraftConfig(draft.current, settingsSchema, asIs);
-  expect(built.ok && built.config.model.settings).toEqual({
+  expect(built.ok && built.config.model_settings).toEqual({
     temperature: 0.2,
     thinking: "high",
   });
@@ -110,6 +110,31 @@ it("checks model settings against the calling API's schema before publishing", (
   expect(!refused.ok && refused.error.message).toMatch(
     /must NOT have additional properties/,
   );
+});
+
+it("carries model characteristics through advanced JSON", () => {
+  const characteristics = {
+    context_window_tokens: 200_000,
+    compact_threshold: 0.8,
+  };
+  const draft = draftFor({ model_characteristics: characteristics });
+  expect(JSON.parse(draft.current.advanced).model_characteristics).toEqual(
+    characteristics,
+  );
+  const built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.model_characteristics).toEqual(
+    characteristics,
+  );
+  act(() =>
+    draft.current.setAdvanced(
+      '{"model_characteristics": {"context_window_tokens": 100000}}',
+    ),
+  );
+  expect(draft.current.dirty).toBe(true);
+  const edited = buildDraftConfig(draft.current, undefined, asIs);
+  expect(edited.ok && edited.config.model_characteristics).toEqual({
+    context_window_tokens: 100_000,
+  });
 });
 
 it("publishes default memory mounts and keeps them out of advanced JSON", () => {
@@ -144,22 +169,22 @@ it("preserves raw settings and distinguishes inheritance from explicit clearing"
     extra_body: { reasoning: { effort: "future" } },
     extra_headers: { "x-experiment": "on" },
   };
-  const draft = draftFor({ model: { model_id: vision, settings } });
+  const draft = draftFor({ model: vision, model_settings: settings });
   expect(draft.current.thinking).toBe("default");
   let built = buildDraftConfig(draft.current, undefined, asIs);
-  expect(built.ok && built.config.model.settings).toEqual(settings);
+  expect(built.ok && built.config.model_settings).toEqual(settings);
   act(() =>
     draft.current.setSettings('{"extra_body": {}, "extra_headers": {}}'),
   );
   built = buildDraftConfig(draft.current, undefined, asIs);
-  expect(built.ok && built.config.model.settings).toEqual({
+  expect(built.ok && built.config.model_settings).toEqual({
     extra_body: {},
     extra_headers: {},
   });
   act(() => draft.current.setSettings("{}"));
   built = buildDraftConfig(draft.current, undefined, asIs);
-  expect(built.ok && built.config.model.settings).toEqual({});
+  expect(built.ok && built.config.model_settings).toEqual({});
   act(() => draft.current.setThinking("false"));
   built = buildDraftConfig(draft.current, undefined, asIs);
-  expect(built.ok && built.config.model.settings).toEqual({ thinking: false });
+  expect(built.ok && built.config.model_settings).toEqual({ thinking: false });
 });

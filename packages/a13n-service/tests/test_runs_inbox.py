@@ -63,9 +63,9 @@ def _dispositions(entries: list[dict]) -> list[tuple[str, str | None]]:
 
 async def test_a_refused_entry_fails_alone_and_the_next_one_starts(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    model_id = await runs_kit.create_model(service, scripted_model)
-    admitted = await runs_kit.add_agent(service, "admitted", model_id)
-    refused = await runs_kit.add_agent(service, "refused", model_id)
+    model = await runs_kit.create_model(service, scripted_model)
+    admitted = await runs_kit.add_agent(service, "admitted", model)
+    refused = await runs_kit.add_agent(service, "refused", model)
     thread_id = (await runs_kit.start_thread(service, admitted, "first"))["thread"]["id"]
     await _queue(service, runs_kit, thread_id, refused, "refused")
     await _queue(service, runs_kit, thread_id, admitted, "second")
@@ -82,12 +82,12 @@ async def test_an_unavailable_admission_stores_nothing(service, scripted_model, 
     agent = await runs_kit.create_agent(service, scripted_model)
     body, key = runs_kit.message(agent, "hi"), runs_kit.fresh_key()
     monkeypatch.setattr(service.app.state, "runtime", replace(service.runtime, admission=_Unavailable()))
-    refused = await service.client.post(f"{service.workspace}/threads", json=body, headers=key)
+    refused = await service.client.post(f"{service.api}/threads", json=body, headers=key)
     assert refused.status_code == 503, refused.text
-    assert (await service.client.get(f"{service.workspace}/threads")).json()["items"] == []
+    assert (await service.client.get(f"{service.api}/threads")).json()["items"] == []
 
     monkeypatch.undo()
-    retried = await service.client.post(f"{service.workspace}/threads", json=body, headers=key)
+    retried = await service.client.post(f"{service.api}/threads", json=body, headers=key)
     assert retried.status_code == 201 and retried.json()["run"]["status"] == "accepted", retried.text
 
 
@@ -120,7 +120,7 @@ async def test_only_the_submitter_edits_a_pending_entry(service, scripted_model,
     account = (await service.client.post(accounts, json={"name": "runner", "role": "runner"})).json()
     key = await service.client.post(f"{accounts}/{account['id']}/keys", json={"name": "runner"})
     runner = {"authorization": "Bearer " + key.json()["secret"]}
-    entry = f"{service.workspace}/threads/{thread_id}/inbox/{queued['id']}"
+    entry = f"{service.api}/threads/{thread_id}/inbox/{queued['id']}"
     edit = {"payload": {"content": [{"type": "text", "text": "rewritten"}]}}
 
     thread = runs_kit.if_match(await runs_kit.get_thread(service, thread_id))
@@ -137,7 +137,7 @@ async def test_only_the_submitter_edits_a_pending_entry(service, scripted_model,
 async def test_malformed_overrides_fail_before_anything_is_stored(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
     thread_id = (await runs_kit.start_thread(service, agent, "first"))["thread"]["id"]
-    missing = {"overrides": {"model": {"model_id": new_object_id("mdl")}}}
+    missing = {"overrides": {"model": "missing"}}
 
     appended = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "queued", options=missing))
     assert appended.status_code == 400, appended.text
@@ -146,7 +146,7 @@ async def test_malformed_overrides_fail_before_anything_is_stored(service, scrip
     queued = await _queue(service, runs_kit, thread_id, agent, "queued")
     thread = runs_kit.if_match(await runs_kit.get_thread(service, thread_id))
     edited = await service.client.patch(
-        f"{service.workspace}/threads/{thread_id}/inbox/{queued['id']}", json={"options": missing}, headers=thread
+        f"{service.api}/threads/{thread_id}/inbox/{queued['id']}", json={"options": missing}, headers=thread
     )
     assert edited.status_code == 400, edited.text
     assert (await runs_kit.inbox(service, thread_id))[1]["options"] == queued["options"]
@@ -166,7 +166,7 @@ async def test_the_inbox_holds_a_bounded_count_of_outstanding_input(serve, setti
         assert (details["count"], details["limit_count"]) == (2, 2)
         thread = runs_kit.if_match(await runs_kit.get_thread(service, thread_id))
         withdrawn = await service.client.delete(
-            f"{service.workspace}/threads/{thread_id}/inbox/{queued['id']}", headers=thread
+            f"{service.api}/threads/{thread_id}/inbox/{queued['id']}", headers=thread
         )
         assert withdrawn.status_code == 200, withdrawn.text
         assert (await runs_kit.submit(service, thread_id, runs_kit.message(agent, "fits again"))).status_code == 201
@@ -176,7 +176,7 @@ async def test_pending_entries_are_edited_reordered_and_withdrawn(service, scrip
     agent = await runs_kit.create_agent(service, scripted_model)
     thread_id = (await runs_kit.start_thread(service, agent, "first"))["thread"]["id"]
     a, b, c = [(await _queue(service, runs_kit, thread_id, agent, text))["id"] for text in "abc"]
-    inbox = f"{service.workspace}/threads/{thread_id}/inbox"
+    inbox = f"{service.api}/threads/{thread_id}/inbox"
     thread = await runs_kit.get_thread(service, thread_id)
 
     edit = {"payload": {"content": [{"type": "text", "text": "a, edited"}]}, "delivery": "steer"}
@@ -210,7 +210,7 @@ async def test_archive_withdraws_input_and_cancels_the_accepted_run(service, scr
     submitted = await runs_kit.start_thread(service, agent, "first")
     thread_id, run_id = submitted["thread"]["id"], submitted["run"]["id"]
     await _queue(service, runs_kit, thread_id, agent, "queued")
-    archive = f"{service.workspace}/threads/{thread_id}/archive"
+    archive = f"{service.api}/threads/{thread_id}/archive"
     thread = await runs_kit.get_thread(service, thread_id)
 
     archived = await service.client.post(archive, headers=runs_kit.if_match(thread))
@@ -255,7 +255,7 @@ async def test_archive_withdraws_the_steers_a_completing_run_left_unused(service
     assert [entry.id for entry in assigned] == [steer["id"]]
     thread = await runs_kit.get_thread(service, thread_id)
     archived = await service.client.post(
-        f"{service.workspace}/threads/{thread_id}/archive", headers=runs_kit.if_match(thread)
+        f"{service.api}/threads/{thread_id}/archive", headers=runs_kit.if_match(thread)
     )
     assert archived.status_code == 200, archived.text
 
@@ -264,16 +264,3 @@ async def test_archive_withdraws_the_steers_a_completing_run_left_unused(service
     assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
     entries = {entry["id"]: entry for entry in await runs_kit.inbox(service, thread_id)}
     assert entries[steer["id"]]["status"] == "withdrawn", entries[steer["id"]]
-
-
-async def test_a_new_thread_replays_its_key_however_the_path_names_the_workspace(
-    service, scripted_model, runs_kit
-) -> None:  # type: ignore[no-untyped-def]
-    agent = await runs_kit.create_agent(service, scripted_model)
-    key = (await service.client.get(service.workspace)).json()["key"]
-    body, headers = runs_kit.message(agent, "hello"), runs_kit.fresh_key()
-    created = await service.client.post(f"{service.workspace}/threads", json=body, headers=headers)
-    assert created.status_code == 201, created.text
-    replayed = await service.client.post(f"/api/v1/workspaces/{key}/threads", json=body, headers=headers)
-    assert replayed.status_code == 200, replayed.text
-    assert replayed.json()["thread"]["id"] == created.json()["thread"]["id"]

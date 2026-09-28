@@ -3,7 +3,6 @@ import {
   IdentificationBadgeIcon,
   RobotIcon,
   ClipboardTextIcon,
-  CubeIcon,
   KeyIcon,
   StackIcon,
   EnvelopeIcon,
@@ -82,7 +81,7 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       value: "general",
       layout: "form",
       label: "General",
-      description: "Name this workspace and control its address.",
+      description: "Manage this workspace's name and icon.",
       icon: GearSixIcon,
     },
     {
@@ -147,7 +146,7 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       value: "general",
       layout: "form",
       label: "General",
-      description: "Name this organization and control its address.",
+      description: "Manage this organization's name and icon.",
       icon: GearSixIcon,
     },
     {
@@ -161,17 +160,6 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       label: "Invitations",
       description: "Invite people and manage pending invitations.",
       icon: EnvelopeIcon,
-    },
-    {
-      value: "models",
-      label: "Models",
-      description: "Models available across your organization.",
-      icon: CubeIcon,
-    },
-    {
-      value: "providers",
-      label: "Providers",
-      icon: SlidersIcon,
     },
     {
       value: "workspaces",

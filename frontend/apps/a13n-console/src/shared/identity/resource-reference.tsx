@@ -11,7 +11,7 @@ export function ResourceReference({
   resourceKey,
   references,
 }: {
-  id: string;
+  id?: string;
   idLabel?: string;
   idCopyLabel?: string;
   resourceKey?: string;
@@ -36,11 +36,13 @@ export function ResourceReference({
         sideOffset={5}
         tooltipStyle
       >
-        <ReferenceRow
-          label={idLabel ?? t("ID")}
-          value={id}
-          copyLabel={idCopyLabel ?? t("Copy resource ID")}
-        />
+        {id && (
+          <ReferenceRow
+            label={idLabel ?? t("ID")}
+            value={id}
+            copyLabel={idCopyLabel ?? t("Copy resource ID")}
+          />
+        )}
         {resourceKey && (
           <ReferenceRow
             label={t("Key")}

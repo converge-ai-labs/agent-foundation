@@ -30,6 +30,7 @@ from a13n_service.resources.agents.schemas import (
     AgentRevision,
     AgentRevisionCreate,
     AgentRevisionPage,
+    AgentSource,
     AgentUpdate,
     AgentValidate,
     apply_override,
@@ -51,13 +52,12 @@ def agent_view(head: AgentRow) -> Agent:
         id=head.id,
         organization_id=head.organization_id,
         workspace_id=head.workspace_id,
-        key=head.key,
         name=head.name,
         description=head.description,
         labels=head.labels,
         default_revision_id=head.default_revision_id,
         source=head.source,
-        image_url=images.url(f"/api/v1/workspaces/{head.workspace_id}/agents/{head.id}/avatar", head.image),
+        image_url=images.url(f"/api/v1/agents/{head.id}/avatar", head.image),
         archived_at=head.archived_at,
         version=head.version,
         created_by_id=head.created_by_id,
@@ -125,7 +125,6 @@ async def insert_head(
         id=new_object_id("ap"),
         organization_id=scope.organization_id,
         workspace_id=scope.workspace_id,
-        key=body.key,
         name=body.name,
         description=body.description,
         labels=body.labels,
@@ -135,7 +134,7 @@ async def insert_head(
     )
     config = await validate_config(session, actor, scope, head.id, body.config, registry=registry, plugins=plugins)
     session.add(head)
-    await revisions.flush_head(session, head)
+    await session.flush()
     await revisions.publish(session, head, AgentRevisionRow, config, actor=actor, note=None)
     await session.flush()
     await session.refresh(head)
@@ -148,7 +147,7 @@ async def update_agent(
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         head = await revisions.open_head(session, AgentRow, scope.workspace_id, agent_id, if_match)
-        await revisions.update_head(session, actor, head, given(body, "name", "key", "description", "labels"))
+        await revisions.update_head(session, actor, head, given(body, "name", "description", "labels"))
         return agent_view(head)
 
 
@@ -259,7 +258,7 @@ async def get_revision(
     storage: Storage, actor: Principal, workspace_id: str, agent_id: str, revision_id: str
 ) -> AgentRevision:
     return await revisions.get_revision(
-        storage, actor, AgentRow, AgentRevisionRow, AgentRevision, workspace_id, agent_id, revision_id
+        storage, actor, AgentRow, AgentRevisionRow, _revision_view, workspace_id, agent_id, revision_id
     )
 
 
@@ -271,6 +270,7 @@ async def list_agents(
     labels: list[str],
     q: str | None = None,
     archived: bool | None = None,
+    source: AgentSource | None = None,
     skill_id: str | None = None,
     skill_revision_id: str | None = None,
     limit: int,
@@ -284,6 +284,8 @@ async def list_agents(
             label_filter(AgentRow.labels, labels),
             revisions.head_filter(AgentRow, q=q, archived=archived),
         )
+        if source is not None:
+            query = query.where(AgentRow.source == source)
         # Agent revisions store their pins as `config.skills: [{skill_id, revision_id}]`.
         pin = {name: value for name, value in (("skill_id", skill_id), ("revision_id", skill_revision_id)) if value}
         if pin:
@@ -297,7 +299,7 @@ async def list_agents(
             query,
             AgentRow.id,
             kind="agents",
-            owner=cursors.query_owner(scope.workspace_id, labels, q, archived, skill_id, skill_revision_id),
+            owner=cursors.query_owner(scope.workspace_id, labels, q, archived, source, skill_id, skill_revision_id),
             cursor=cursor,
             limit=limit,
         )
@@ -309,9 +311,13 @@ async def list_revisions(
 ) -> AgentRevisionPage:
     """Newest first."""
     items, next_cursor = await revisions.list_revisions(
-        storage, actor, AgentRow, AgentRevisionRow, AgentRevision, workspace_id, agent_id, limit=limit, cursor=cursor
+        storage, actor, AgentRow, AgentRevisionRow, _revision_view, workspace_id, agent_id, limit=limit, cursor=cursor
     )
     return AgentRevisionPage(items=items, next_cursor=next_cursor)
+
+
+def _revision_view(head: AgentRow, revision: AgentRevisionRow) -> AgentRevision:
+    return AgentRevision.model_validate(revision)
 
 
 async def set_default(

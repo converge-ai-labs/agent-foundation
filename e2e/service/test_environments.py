@@ -191,23 +191,13 @@ async def test_a_run_uses_its_environment_across_its_lifecycle(stack, provider, 
 
 async def create_template(api, account: Backend) -> str:  # type: ignore[no-untyped-def]
     """A provider resource for the account and a template of its recipe."""
-    body = {
-        "workspace_id": api.tenant["workspace_id"],
-        "type": account.type,
-        "name": account.type.title(),
-        "config": account.config,
-    }
+    body = {"type": account.type, "name": account.type.title(), "config": account.config}
     if account.credential is not None:
         body["credential"] = account.credential
-    provider_row = await api.client.post(f"{api.organization}/environment-providers", json=body)
+    provider_row = await api.client.post("/api/v1/environment-providers", json=body)
     template = await api.client.post(
-        f"{api.path}/environment-templates",
-        json={
-            "key": "box",
-            "name": "Box",
-            "provider_id": expect(provider_row, 201)["id"],
-            "config": {"recipe": account.recipe},
-        },
+        "/api/v1/environment-templates",
+        json={"name": "Box", "provider_id": expect(provider_row, 201)["id"], "config": {"recipe": account.recipe}},
     )
     return expect(template, 201)["id"]
 
@@ -231,7 +221,7 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
     types = expect(await api.client.get("/api/v1/provider-types/environment"), 200)["items"]
     [described] = [item for item in types if item["type"] == account.type]
     agent = await api.create_agent(
-        "builder", await api.create_model(model.base_url), default_environment_template_id=template_id
+        "Builder", await api.create_model(model.base_url), default_environment_template_id=template_id
     )
 
     command = "echo live-$((6 * 7)) > proof.txt && cat proof.txt"
@@ -240,7 +230,7 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
     receipt = await api.start(agent, "[write] Write the proof")
     thread_id = receipt["thread"]["id"]
     [mount] = receipt["run"]["environment_mounts"]
-    environment_id, path = mount["environment_id"], f"{api.path}/environments/{mount['environment_id']}"
+    environment_id, path = mount["environment_id"], f"/api/v1/environments/{mount['environment_id']}"
     cleanup.append(environment_id)
     run = await api.sealed(receipt["run"]["id"], timeout=timeout)
     assert (run["status"], run["output"]) == ("completed", "Written."), run["failure"]
@@ -269,9 +259,9 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
     assert expect(await api.client.get(path), 200)["status"] == "ready"
 
     # Deletion requires the thread to stop mounting it first, then removes the instance.
-    thread = await api.client.get(f"{api.path}/threads/{thread_id}")
+    thread = await api.client.get(f"/api/v1/threads/{thread_id}")
     unmounted = await api.client.delete(
-        f"{api.path}/threads/{thread_id}/environments/workspace", headers={"if-match": thread.headers["etag"]}
+        f"/api/v1/threads/{thread_id}/environments/workspace", headers={"if-match": thread.headers["etag"]}
     )
     expect(unmounted, 204)
     await delete(api, path, timeout)
@@ -298,12 +288,10 @@ async def test_a_ready_e2b_sandbox_is_renewed_past_its_timeout(stack, request) -
 
 
 async def outlive_timeout(api, account: Backend, cleanup: list[str]) -> None:  # type: ignore[no-untyped-def]
-    reserved = await api.client.post(
-        f"{api.path}/environments", json={"template_id": await create_template(api, account)}
-    )
+    reserved = await api.client.post("/api/v1/environments", json={"template_id": await create_template(api, account)})
     environment_id = expect(reserved, 201)["id"]
     cleanup.append(environment_id)
-    path = f"{api.path}/environments/{environment_id}"
+    path = f"/api/v1/environments/{environment_id}"
 
     async def ready() -> bool:
         return expect(await api.client.get(path), 200)["status"] == "ready"

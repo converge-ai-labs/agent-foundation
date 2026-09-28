@@ -8,7 +8,6 @@ import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { SchemaFields, withSchemaValues } from "../../shared/forms";
-import { connectionPath } from "../connections/api";
 import { startBrowserAuthorization } from "../connections/authorization-context";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/forms";
@@ -39,25 +38,27 @@ export function ConnectionSetup({
     [picked, setPicked] = useState(saved?.actions);
   const providerId = connection?.connector_provider_id ?? provider!.id;
   const app = saved?.app ?? connector!.key;
-  const appPath = { workspace_id: workspace.id, provider_id: providerId, app };
+  const appPath = { provider_id: providerId, app };
   const definition = useQuery({
     queryKey: ["connector-setup-catalog", workspace.id, providerId, app],
     queryFn: ({ signal }) =>
-      client.http
-        .GET(
-          "/api/v1/workspaces/{workspace_id}/connector-providers/{provider_id}/apps/{app}",
-          { params: { path: appPath }, signal },
-        )
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/connector-providers/{provider_id}/apps/{app}", {
+          params: { path: appPath },
+          signal,
+        })
         .then(data),
   });
   const catalog = useQuery({
     queryKey: ["connector-actions", workspace.id, providerId, app],
     queryFn: ({ signal }) =>
-      client.http
-        .GET(
-          "/api/v1/workspaces/{workspace_id}/connector-providers/{provider_id}/apps/{app}/actions",
-          { params: { path: appPath }, signal },
-        )
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/connector-providers/{provider_id}/apps/{app}/actions", {
+          params: { path: appPath },
+          signal,
+        })
         .then(data),
   });
   // A new connection offers every tool while they fit; a larger app needs a choice.
@@ -91,38 +92,34 @@ export function ConnectionSetup({
       let target = created.current;
       if (!target) {
         target = data(
-          await client.http.POST(
-            "/api/v1/workspaces/{workspace_id}/connections",
-            {
-              params: { path: { workspace_id: workspace.id } },
-              body: {
-                type: provider!.type,
-                name,
-                config,
-                auth: "account",
-                connector_provider_id: providerId,
-              },
+          await client.workspace(workspace.id).POST("/api/v1/connections", {
+            body: {
+              type: provider!.type,
+              name,
+              config,
+              auth: "account",
+              connector_provider_id: providerId,
             },
-          ),
+          }),
         );
         created.current = target;
       } else {
         const current = data(
-          await client.http.GET(
-            "/api/v1/workspaces/{workspace_id}/connections/{connection_id}",
-            { params: { path: connectionPath(target) } },
-          ),
+          await client
+            .workspace(target.workspace_id)
+            .GET("/api/v1/connections/{connection_id}", {
+              params: { path: { connection_id: target.id } },
+            }),
         );
         // Setup belongs to the configuration; an unchanged setup keeps the current account.
         target = data(
-          await client.http.PATCH(
-            "/api/v1/workspaces/{workspace_id}/connections/{connection_id}",
-            {
-              params: { path: connectionPath(current) },
+          await client
+            .workspace(current.workspace_id)
+            .PATCH("/api/v1/connections/{connection_id}", {
+              params: { path: { connection_id: current.id } },
               headers: ifMatch(rowTag(current)),
               body: { config },
-            },
-          ),
+            }),
         );
         created.current = target;
       }

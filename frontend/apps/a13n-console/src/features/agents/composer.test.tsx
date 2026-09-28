@@ -9,12 +9,14 @@ import { useAgentComposer } from "./composer";
 
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
 const access = vi.hoisted(() => ({ verbs: ["read", "run", "write"] }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    workspace: { id: "ws_test", key: "test" },
+    workspace: { id: "ws_test" },
     organization: { id: "org_test" },
-    basePath: "/workspace/test",
+    basePath: "/workspace/ws_test",
     can: (verb: string) => access.verbs.includes(verb),
   }),
 }));
@@ -42,7 +44,7 @@ function Launcher() {
             type="button"
             onClick={() =>
               composer.start({
-                agent: { id: "ap_research", key: "research", name: "Research" },
+                agent: { id: "ap_research", name: "Research" },
                 revision: { id: "apr_three", number: 3 },
               })
             }
@@ -88,10 +90,7 @@ it("prepares the composer for writers and opens a conversation with it", async (
       "?agent=ap_composer",
     ),
   );
-  expect(http.POST).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace_id}/agent-composer",
-    { params: { path: { workspace_id: "ws_test" } } },
-  );
+  expect(http.POST).toHaveBeenCalledWith("/api/v1/agent-composer", {});
   expect(http.GET).not.toHaveBeenCalled();
 });
 
@@ -123,7 +122,10 @@ it("explains the missing model instead of opening a conversation", async () => {
 it("lets runners converse with an existing composer without preparing it", async () => {
   access.verbs = ["read", "run"];
   http.GET.mockResolvedValue({
-    data: { id: "ap_composer", source: "builtin" },
+    data: {
+      items: [{ id: "ap_composer", source: "builtin" }],
+      next_cursor: null,
+    },
   });
   const user = renderLauncher();
   await user.click(
@@ -132,9 +134,7 @@ it("lets runners converse with an existing composer without preparing it", async
   expect(screen.getByLabelText("Current path").textContent).toBe(
     "?agent=ap_composer",
   );
-  expect(http.GET.mock.calls[0]?.[1].params.path.agent_id).toBe(
-    "agent-composer",
-  );
+  expect(http.GET.mock.calls[0]?.[1].params.query.source).toBe("builtin");
   expect(http.POST).not.toHaveBeenCalled();
 });
 
@@ -163,6 +163,6 @@ it("opens the conversation with a first message naming the agent version to star
   );
   expect(search.get("agent")).toBe("ap_composer");
   expect(search.get("message")).toBe(
-    "Help me change the agent Research (key research, ID ap_research), starting from its version 3 (revision ID apr_three).",
+    "Help me change the agent Research (ID ap_research), starting from its version 3 (revision ID apr_three).",
   );
 });

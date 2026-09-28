@@ -2,11 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import {
-  QueryClient,
-  QueryClientProvider,
-  focusManager,
-} from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "../../service-client";
 import { AddWebProvider, WebProviderEditor } from "./editor";
 
@@ -15,18 +11,19 @@ const http = vi.hoisted(() => ({
   POST: vi.fn(),
   PATCH: vi.fn(),
 }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
-  useAccess: () => ({
+  useWorkspace: () => ({
     organization: { id: "org_test" },
-    workspace: { id: "ws_test", key: "research" },
+    workspace: { id: "ws_test" },
     can: () => true,
   }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-const scope = { kind: "workspace", id: "ws_test" } as const;
 const provider = {
   id: "sp_test",
   name: "Research",
@@ -98,7 +95,7 @@ afterEach(() => {
 it("creates a saved provider independently and clears its credential on close without caching mutation input", async () => {
   const user = userEvent.setup(),
     saved = vi.fn(),
-    cache = setup(<AddWebProvider scope={scope} onSaved={saved} />);
+    cache = setup(<AddWebProvider onSaved={saved} />);
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await user.click(await screen.findByRole("button", { name: /Brave Search/ }));
   const name = await screen.findByRole("textbox", { name: "Name" });
@@ -142,15 +139,14 @@ it("creates a credential-free DuckDuckGo provider without an API key", async () 
     ),
   );
   const user = userEvent.setup();
-  setup(<AddWebProvider scope={scope} />);
+  setup(<AddWebProvider />);
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await user.click(await screen.findByRole("button", { name: /DuckDuckGo/ }));
   expect(screen.queryByLabelText("API key")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
   expect(http.POST.mock.calls[0][1]).toMatchObject({
-    params: { path: { organization_id: "org_test" } },
-    body: { workspace_id: "ws_test", type: "duckduckgo", name: "DuckDuckGo" },
+    body: { type: "duckduckgo", name: "DuckDuckGo" },
   });
   expect(http.POST.mock.calls[0][1].body).not.toHaveProperty("credential");
 });
@@ -159,7 +155,6 @@ it("keeps the existing credential write-only and sends If-Match for edits", asyn
   const user = userEvent.setup();
   setup(
     <WebProviderEditor
-      scope={scope}
       providerId={provider.id}
       controlledOpen
       onClose={() => {}}
@@ -183,7 +178,7 @@ it("keeps the existing credential write-only and sends If-Match for edits", asyn
 
 it("reconciles an uncertain create before allowing another attempt", async () => {
   const user = userEvent.setup();
-  setup(<AddWebProvider scope={scope} />);
+  setup(<AddWebProvider />);
   http.POST.mockRejectedValue(new TypeError("Network unavailable"));
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await user.click(await screen.findByRole("button", { name: /Brave Search/ }));
@@ -203,7 +198,6 @@ it("retains the provider draft across a stale ETag and requires loading the curr
   const user = userEvent.setup();
   setup(
     <WebProviderEditor
-      scope={scope}
       providerId={provider.id}
       controlledOpen
       onClose={() => {}}
@@ -296,7 +290,7 @@ it("submits an external provider's declared configuration and token", async () =
     }),
   );
   const user = userEvent.setup();
-  setup(<AddWebProvider scope={scope} />);
+  setup(<AddWebProvider />);
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await user.click(await screen.findByRole("button", { name: /Acme Web/ }));
   const acmeName = await screen.findByRole("textbox", { name: "Name" });
@@ -350,7 +344,6 @@ it("retains a saved nested credential when only ordinary fields change", async (
   const user = userEvent.setup();
   setup(
     <WebProviderEditor
-      scope={scope}
       providerId={provider.id}
       controlledOpen
       onClose={() => {}}

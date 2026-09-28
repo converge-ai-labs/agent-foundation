@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
 
-TemplateKey = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")]
 TemplateName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 Description = Annotated[str, StringConstraints(max_length=2048)]
 
@@ -26,7 +25,6 @@ class TemplateConfig(BaseModel):
 
 class TemplateCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    key: TemplateKey
     name: TemplateName
     description: Description | None = None
     provider_id: ObjectId
@@ -56,7 +54,6 @@ class Template(BaseModel):
     id: str
     organization_id: str
     workspace_id: str
-    key: str
     name: str
     description: str | None
     provider_id: str

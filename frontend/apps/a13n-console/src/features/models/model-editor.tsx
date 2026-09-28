@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
+import { useWorkspace } from "../../layout/workspace";
 import { type Schema } from "../../shared/api";
 import {
   ResourceModalTitle,
@@ -12,60 +12,51 @@ import {
 } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { AddModel } from "./add-model";
-import { modelApi, type ModelScope } from "./api";
+import { modelApi } from "./api";
 import { EditModelForm } from "./model-form";
 
 /** Adding a model walks through steps; editing one shows every section at once. */
 export function ModelEditor({
-  scope,
-  modelId,
+  modelKey,
   providerId,
   onSaved,
   ...control
 }: {
-  scope: ModelScope;
-  modelId?: string;
+  modelKey?: string;
   providerId?: string;
   onSaved?: (model: Schema["Model"]) => void;
 } & ResourceEditorControl) {
-  return modelId ? (
-    <EditModel scope={scope} modelId={modelId} onSaved={onSaved} {...control} />
+  return modelKey ? (
+    <EditModel modelKey={modelKey} onSaved={onSaved} {...control} />
   ) : (
-    <AddModel
-      scope={scope}
-      providerId={providerId}
-      onSaved={onSaved}
-      {...control}
-    />
+    <AddModel providerId={providerId} onSaved={onSaved} {...control} />
   );
 }
 
 function EditModel({
-  scope,
-  modelId,
+  modelKey,
   onSaved,
   controlledOpen,
   onClose,
   finalFocus,
 }: {
-  scope: ModelScope;
-  modelId: string;
+  modelKey: string;
   onSaved?: (model: Schema["Model"]) => void;
 } & ResourceEditorControl) {
   const client = useClient(),
     { t } = useTranslation(),
-    { organization } = useAccess(),
+    { workspace } = useWorkspace(),
     [generation, setGeneration] = useState(0),
-    api = modelApi(client, organization.id, scope);
+    api = modelApi(client, workspace.id);
   const { open, setOpen, modalProps } = useResourceEditorState({
     controlledOpen,
     onClose,
     finalFocus,
   });
   const model = useQuery({
-    queryKey: ["model", scope.kind, scope.id, modelId],
+    queryKey: ["model", workspace.id, modelKey],
     enabled: open,
-    queryFn: ({ signal }) => api.model(modelId, signal),
+    queryFn: ({ signal }) => api.model(modelKey, signal),
   });
   return (
     <ModalFrame
@@ -76,7 +67,6 @@ function EditModel({
         model.data ? (
           <ResourceModalTitle
             name={model.data.value.name}
-            id={model.data.value.id}
             resourceKey={model.data.value.key}
           />
         ) : (
@@ -93,7 +83,6 @@ function EditModel({
         ) : (
           <EditModelForm
             key={generation}
-            scope={scope}
             resource={model.data}
             onSaved={onSaved}
             reload={async () => {

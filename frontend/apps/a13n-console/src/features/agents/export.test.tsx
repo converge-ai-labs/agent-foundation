@@ -21,11 +21,11 @@ it("copies and downloads the same complete saved configuration shown in raw prev
   const agent = {
     name: "Research",
     description: "Saved description",
-    key: "research",
+    id: "ap_research",
   } as Schema["Agent"];
   const config = {
     ...initialConfig(),
-    model: { model_id: "mdl_0123456789abcdef0123" },
+    model: "model-0123456789abcdef0123",
     instructions: "Preserve\nall instructions.",
   };
   render(<ExportAgent agent={agent} config={config} version={3} />);
@@ -33,7 +33,7 @@ it("copies and downloads the same complete saved configuration shown in raw prev
   await user.click(screen.getByRole("button", { name: "Raw" }));
   const yaml = screen.getByLabelText("Agent YAML").textContent!;
   expect(parseAgentFile(yaml)).toEqual({
-    schema_version: 2,
+    schema_version: 1,
     name: agent.name,
     description: agent.description,
     config,
@@ -41,7 +41,10 @@ it("copies and downloads the same complete saved configuration shown in raw prev
   await user.click(screen.getByRole("button", { name: "Copy YAML" }));
   await waitFor(() => expect(copy).toHaveBeenCalledWith(yaml));
   await user.click(screen.getByRole("button", { name: "Download YAML" }));
-  expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), "research.yaml");
+  expect(downloadBlob).toHaveBeenCalledWith(
+    expect.any(Blob),
+    "ap_research.yaml",
+  );
   const blob = vi.mocked(downloadBlob).mock.calls[0]![0];
   const text = await new Promise<string>((resolve) => {
     const reader = new FileReader();

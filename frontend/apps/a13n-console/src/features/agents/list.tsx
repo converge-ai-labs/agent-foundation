@@ -35,7 +35,7 @@ import { ModelIcon } from "../models/model-icon";
 import { AgentAvatar } from "./avatar";
 import { ExportAgent } from "./export";
 import { AgentCreationMenu } from "./import";
-import { useModelsById } from "./queries";
+import { useModelsByKey } from "./queries";
 import styles from "./agents.module.css";
 
 const PAGE_SIZE = 30;
@@ -55,10 +55,10 @@ export function Agents() {
   const list = useQuery({
     queryKey: ["agents", workspace.id, query, archived, page.cursor],
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/agents", {
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/agents", {
           params: {
-            path: { workspace_id: workspace.id },
             query: {
               limit: PAGE_SIZE,
               cursor: page.cursor,
@@ -116,7 +116,7 @@ export function Agents() {
           description={
             searching
               ? t(
-                  "No agent in this workspace matches that name, key, or description.",
+                  "No agent in this workspace matches that name or description.",
                 )
               : archived
                 ? t("Change or clear the search and filters.")
@@ -152,20 +152,17 @@ function useRevisions(items: readonly Agent[]) {
       enabled: !!agent.default_revision_id,
       staleTime: Infinity,
       queryFn: ({ signal }: { signal: AbortSignal }) =>
-        client.http
-          .GET(
-            "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/revisions/{revision_id}",
-            {
-              params: {
-                path: {
-                  workspace_id: workspace.id,
-                  agent_id: agent.id,
-                  revision_id: agent.default_revision_id!,
-                },
+        client
+          .workspace(workspace.id)
+          .GET("/api/v1/agents/{agent_id}/revisions/{revision_id}", {
+            params: {
+              path: {
+                agent_id: agent.id,
+                revision_id: agent.default_revision_id!,
               },
-              signal,
             },
-          )
+            signal,
+          })
           .then(data),
     })),
   });
@@ -176,14 +173,14 @@ function AgentRows({ items }: { items: readonly Agent[] }) {
     { can, basePath } = useWorkspace(),
     navigate = useNavigate();
   const revisions = useRevisions(items);
-  const modelsById = useModelsById();
+  const modelsById = useModelsByKey();
   const state = (agent: Agent) => (agent.archived_at ? "archived" : "enabled");
   return (
     <div className={styles.listTable}>
       <ResourceTable
         items={items}
         caption={t("Agents")}
-        onRowActivate={(agent) => navigate(agent.key)}
+        onRowActivate={(agent) => navigate(agent.id)}
         rowMenuLabel={t("Agent actions")}
         rowMenu={(agent) => {
           const revision = revisions[items.indexOf(agent)]?.data;
@@ -228,11 +225,10 @@ function AgentRows({ items }: { items: readonly Agent[] }) {
             tone: "primary",
             render: (agent) => (
               <ResourceIdentity
-                to={agent.key}
+                to={agent.id}
                 name={agent.name}
-                description={agent.description || agent.key}
+                description={agent.description || agent.id}
                 resourceId={agent.id}
-                resourceKey={agent.key}
                 icon={
                   <AgentAvatar
                     name={agent.name}
@@ -251,7 +247,7 @@ function AgentRows({ items }: { items: readonly Agent[] }) {
               if (!agent.default_revision_id)
                 return <span className={styles.modelName}>—</span>;
               if (revision?.isPending) return <InlineLoading width="6rem" />;
-              const id = revision?.data?.config.model.model_id;
+              const id = revision?.data?.config.model;
               const model = id ? modelsById.get(id) : undefined;
               return (
                 <span className={styles.modelName} title={id ?? undefined}>
@@ -304,14 +300,15 @@ function ArchiveAgent({ agent }: { agent: Agent }) {
         </MenuItem>
       }
       action={() =>
-        client.http
+        client
+          .workspace(workspace.id)
           .POST(
             archived
-              ? "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/unarchive"
-              : "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/archive",
+              ? "/api/v1/agents/{agent_id}/unarchive"
+              : "/api/v1/agents/{agent_id}/archive",
             {
               params: {
-                path: { workspace_id: workspace.id, agent_id: agent.id },
+                path: { agent_id: agent.id },
               },
               headers: ifMatch(rowTag(agent)),
             },

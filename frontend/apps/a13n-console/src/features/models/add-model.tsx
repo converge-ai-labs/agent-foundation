@@ -12,7 +12,6 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { ProviderIcon, ResourceEditorButton } from "../../shared/identity";
 import { connectStepDescription, connectStepTitle } from "./add-provider";
-import { type ModelScope } from "./api";
 import { CatalogPicker } from "./catalog-picker";
 import {
   CatalogNotice,
@@ -33,14 +32,12 @@ type Step = "provider" | "connect" | "model" | "details";
  * how it should behave — with connecting a new provider folded into the first.
  */
 export function AddModel({
-  scope,
   providerId,
   onSaved,
   controlledOpen,
   onClose,
   finalFocus,
 }: {
-  scope: ModelScope;
   providerId?: string;
   onSaved?: (model: Schema["Model"]) => void;
 } & ResourceEditorControl) {
@@ -52,19 +49,14 @@ export function AddModel({
   });
   const [step, setStep] = useState<Step>(providerId ? "model" : "provider");
   const model = useModelDraft({
-    scope,
     providerId,
     active: open,
     close: () => setOpen(false),
     onSaved,
   });
   const definitions = model.definitions.data?.items ?? [];
-  // A shared model can only use a shared provider.
-  const providers = (model.providers.data ?? []).filter(
-    (item) => scope.kind === "workspace" || !item.workspace_id,
-  );
+  const providers = model.providers.data ?? [];
   const providerDraft = useProviderDraft({
-    scope,
     definitions,
     initialType: "",
     close: () => (providers.length ? setStep("provider") : setOpen(false)),

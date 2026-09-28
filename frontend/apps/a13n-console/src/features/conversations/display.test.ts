@@ -13,7 +13,7 @@ import {
 it("reads the committed display of one Run", async () => {
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
     expect(new URL((input as Request).url).pathname).toBe(
-      "/api/v1/workspaces/ws_1/runs/run_2/items",
+      "/api/v1/runs/run_2/items",
     );
     return Response.json({
       run: fixtureRun(),

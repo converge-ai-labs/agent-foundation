@@ -44,7 +44,7 @@ def etag(resource: dict) -> str:
 
 
 async def test_subscription_configuration_is_admin_only(service) -> None:  # type: ignore[no-untyped-def]
-    base = f"{service.workspace}/subscriptions"
+    base = f"{service.api}/subscriptions"
     body = {"name": "Runs", "url": "http://127.0.0.1:9/hook", "kinds": ["run.completed", "run.completed"]}
     created = await service.client.post(base, json=body)
     assert created.status_code == 201, created.text
@@ -261,7 +261,7 @@ async def test_webhooks_are_signed_retried_and_redelivered(runtime, tenant) -> N
 
 async def subscribe(service: SimpleNamespace, url: str, kinds: list[str], **fields: object) -> dict:
     body = {"name": "Runs", "url": url, "kinds": kinds, "signing_secret": SECRET, **fields}
-    response = await service.client.post(f"{service.workspace}/subscriptions", json=body)
+    response = await service.client.post(f"{service.api}/subscriptions", json=body)
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -333,7 +333,7 @@ async def test_an_undecryptable_signing_secret_never_blocks_a_run(service: Simpl
     dead, pending = rows[broken["id"]], rows[healthy["id"]]
     assert (dead.status, dead.last_error, dead.target) == ("dead", SECRET_UNAVAILABLE, {"url": broken["url"]})
     assert (pending.status, dead.payload["type"], dead.payload["run"]["id"]) == ("pending", "run.accepted", run.id)
-    redeliver = f"{service.workspace}/subscriptions/{broken['id']}/deliveries/{dead.id}/redeliver"
+    redeliver = f"{service.api}/subscriptions/{broken['id']}/deliveries/{dead.id}/redeliver"
     refused = await service.client.post(redeliver)
     assert refused.status_code == 409 and refused.json()["error"]["details"]["reason"] == SECRET_UNAVAILABLE
 

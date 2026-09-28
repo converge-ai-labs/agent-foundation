@@ -8,7 +8,9 @@ import { useAgentDraft, type AgentDraft } from "./draft";
 import { MemorySection } from "./memory";
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
-vi.mock("../../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
@@ -29,14 +31,14 @@ function show(readOnly = false) {
   http.GET.mockResolvedValue({
     data: {
       items: [
-        { id: "mem_book", key: "handbook", name: "Handbook", kind: "file" },
+        { id: "mem_book", name: "Handbook", kind: "file" },
         {
           id: "mem_prefs",
-          key: "user-prefs",
+
           name: "Preferences",
           kind: "file",
         },
-        { id: "mem_facts", key: "facts", name: "Facts", kind: "record" },
+        { id: "mem_facts", name: "Facts", kind: "record" },
       ],
       next_cursor: null,
     },
@@ -76,7 +78,7 @@ it("adds, changes and removes the agent's default memories", async () => {
   const dialog = await screen.findByRole("dialog");
   await user.click(within(dialog).getByRole("combobox", { name: "Memory" }));
   await user.click(
-    await screen.findByRole("option", { name: "Preferences (user-prefs)" }),
+    await screen.findByRole("option", { name: "Preferences (mem_prefs)" }),
   );
   await user.click(within(dialog).getByRole("button", { name: "Add memory" }));
   expect(await screen.findByRole("link", { name: "Preferences" })).toBeTruthy();
@@ -84,7 +86,7 @@ it("adds, changes and removes the agent's default memories", async () => {
     screen.getByRole("combobox", { name: "Access for handbook" }),
   );
   await user.click(await screen.findByRole("option", { name: "Write" }));
-  await user.click(screen.getByRole("button", { name: "Remove user-prefs" }));
+  await user.click(screen.getByRole("button", { name: "Remove preferences" }));
   // A record memory recalls unless the agent turns it off.
   await user.click(screen.getByRole("switch", { name: "Recall for facts" }));
   expect(draft().memoryMounts).toEqual([

@@ -35,7 +35,7 @@ async def thread_stream(
 ) -> AsyncIterator[AsyncIterator[Frame]]:
     """The thread's SSE stream from `last_event_id`, as a client that reconnects would open it."""
     headers = {"last-event-id": last_event_id} if last_event_id is not None else {}
-    path = f"{api.path}/threads/{thread_id}/stream"
+    path = f"/api/v1/threads/{thread_id}/stream"
     async with api.client.stream("GET", path, headers=headers, timeout=TIMEOUT) as response:
         assert response.status_code == 200, await response.aread()
         yield _parse(response)

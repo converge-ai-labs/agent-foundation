@@ -1,4 +1,266 @@
 export interface paths {
+  "/api/v1/agent-composer": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Prepare Composer
+     * @description The workspace's Agent Composer, created or brought up to date with the deployment's definition.
+     *
+     *     Refused with `model_required` while the workspace has no model the caller can use.
+     */
+    post: operations["prepare_composer_api_v1_agent_composer_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Agents
+     * @description Agents of the workspace. `q` matches the name or description, ignoring case; `archived` keeps only
+     *     archived agents, or only open ones; `source=builtin` finds the Agent Composer; the skill filters keep those
+     *     with a revision pinning that skill or that skill revision.
+     */
+    get: operations["list_agents_api_v1_agents_get"];
+    put?: never;
+    /** Create Agent */
+    post: operations["create_agent_api_v1_agents_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/validate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Validate Revision
+     * @description No content when creating a revision of the configuration would accept it, else the same `invalid_argument`
+     *     error with the field's path relative to `config`; nothing is stored.
+     */
+    post: operations["validate_revision_api_v1_agents_validate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{agent_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Agent */
+    get: operations["get_agent_api_v1_agents__agent_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Agent */
+    patch: operations["update_agent_api_v1_agents__agent_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/agents/{agent_id}/archive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Archive Agent */
+    post: operations["archive_agent_api_v1_agents__agent_id__archive_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{agent_id}/avatar": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Avatar */
+    get: operations["get_avatar_api_v1_agents__agent_id__avatar_get"];
+    /** Put Avatar */
+    put: operations["put_avatar_api_v1_agents__agent_id__avatar_put"];
+    post?: never;
+    /** Delete Avatar */
+    delete: operations["delete_avatar_api_v1_agents__agent_id__avatar_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{agent_id}/duplicate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Duplicate Agent */
+    post: operations["duplicate_agent_api_v1_agents__agent_id__duplicate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{agent_id}/revisions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Revisions */
+    get: operations["list_revisions_api_v1_agents__agent_id__revisions_get"];
+    put?: never;
+    /**
+     * Create Revision
+     * @description A configuration that validates to the default revision's creates nothing and returns that revision.
+     */
+    post: operations["create_revision_api_v1_agents__agent_id__revisions_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{agent_id}/revisions/{revision_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Revision */
+    get: operations["get_revision_api_v1_agents__agent_id__revisions__revision_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{agent_id}/revisions/{revision_id}/set-default": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Set Default */
+    post: operations["set_default_api_v1_agents__agent_id__revisions__revision_id__set_default_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/agents/{agent_id}/unarchive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Unarchive Agent */
+    post: operations["unarchive_agent_api_v1_agents__agent_id__unarchive_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/assets": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Assets */
+    get: operations["list_assets_api_v1_assets_get"];
+    put?: never;
+    /** Create Asset */
+    post: operations["create_asset_api_v1_assets_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/assets/{asset_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Asset */
+    get: operations["get_asset_api_v1_assets__asset_id__get"];
+    put?: never;
+    post?: never;
+    /** Retire Asset */
+    delete: operations["retire_asset_api_v1_assets__asset_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/assets/{asset_id}/content": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read Asset Content */
+    get: operations["read_asset_content_api_v1_assets__asset_id__content_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/auth/bootstrap": {
     parameters: {
       query?: never;
@@ -141,6 +403,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/connections": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Connections */
+    get: operations["list_connections_api_v1_connections_get"];
+    put?: never;
+    /** Create Connection */
+    post: operations["create_connection_api_v1_connections_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connections/callback": {
     parameters: {
       query?: never;
@@ -178,6 +458,352 @@ export interface paths {
     get: operations["get_redirect_uri_api_v1_connections_redirect_uri_get"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Connection */
+    get: operations["get_connection_api_v1_connections__connection_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Connection */
+    patch: operations["update_connection_api_v1_connections__connection_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/authorize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Authorize Connection
+     * @description A browser flow needs a login session and is bound to this browser by a cookie the callback checks; an API
+     *     key authorizes only a client-credentials client, without a browser.
+     */
+    post: operations["authorize_connection_api_v1_connections__connection_id__authorize_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/revoke": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke Connection */
+    post: operations["revoke_connection_api_v1_connections__connection_id__revoke_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Connection */
+    post: operations["test_connection_api_v1_connections__connection_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connections/{connection_id}/tools": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Tools */
+    get: operations["list_tools_api_v1_connections__connection_id__tools_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connector-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Providers */
+    get: operations["list_providers_api_v1_connector_providers_get"];
+    put?: never;
+    /** Create Provider */
+    post: operations["create_provider_api_v1_connector_providers_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connector-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Provider */
+    get: operations["get_provider_api_v1_connector_providers__provider_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Provider
+     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     */
+    patch: operations["update_provider_api_v1_connector_providers__provider_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/connector-providers/{provider_id}/apps": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Apps */
+    get: operations["list_apps_api_v1_connector_providers__provider_id__apps_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connector-providers/{provider_id}/apps/{app}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get App */
+    get: operations["get_app_api_v1_connector_providers__provider_id__apps__app__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connector-providers/{provider_id}/apps/{app}/actions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Actions */
+    get: operations["list_actions_api_v1_connector_providers__provider_id__apps__app__actions_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/connector-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Provider */
+    post: operations["test_provider_api_v1_connector_providers__provider_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environment-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Providers */
+    get: operations["list_providers_api_v1_environment_providers_get"];
+    put?: never;
+    /** Create Provider */
+    post: operations["create_provider_api_v1_environment_providers_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environment-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Provider */
+    get: operations["get_provider_api_v1_environment_providers__provider_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Provider
+     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     */
+    patch: operations["update_provider_api_v1_environment_providers__provider_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/environment-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Provider */
+    post: operations["test_provider_api_v1_environment_providers__provider_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environment-templates": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Templates */
+    get: operations["list_templates_api_v1_environment_templates_get"];
+    put?: never;
+    /** Create Template */
+    post: operations["create_template_api_v1_environment_templates_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environment-templates/{template_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Template */
+    get: operations["get_template_api_v1_environment_templates__template_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Template */
+    patch: operations["update_template_api_v1_environment_templates__template_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/environments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Environments */
+    get: operations["list_environments_api_v1_environments_get"];
+    put?: never;
+    /**
+     * Create Environment
+     * @description Reserve a managed sandbox from a template (`creating`), or register an external envd target (`ready`).
+     */
+    post: operations["create_environment_api_v1_environments_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Environment */
+    get: operations["get_environment_api_v1_environments__environment_id__get"];
+    put?: never;
+    post?: never;
+    /** Delete Environment */
+    delete: operations["delete_environment_api_v1_environments__environment_id__delete"];
+    options?: never;
+    head?: never;
+    /** Update Environment */
+    patch: operations["update_environment_api_v1_environments__environment_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/stop": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Stop Environment */
+    post: operations["stop_environment_api_v1_environments__environment_id__stop_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -224,6 +850,294 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/media-understanding-defaults": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Media Defaults */
+    get: operations["get_media_defaults_api_v1_media_understanding_defaults_get"];
+    /**
+     * Replace Media Defaults
+     * @description Replaces all three kinds; each model must declare it understands its kind. Requires workspace admin.
+     */
+    put: operations["replace_media_defaults_api_v1_media_understanding_defaults_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Memories */
+    get: operations["list_memories_api_v1_memories_get"];
+    put?: never;
+    /** Create Memory */
+    post: operations["create_memory_api_v1_memories_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories/{memory_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Memory */
+    get: operations["get_memory_api_v1_memories__memory_id__get"];
+    put?: never;
+    post?: never;
+    /** Delete Memory */
+    delete: operations["delete_memory_api_v1_memories__memory_id__delete"];
+    options?: never;
+    head?: never;
+    /** Update Memory */
+    patch: operations["update_memory_api_v1_memories__memory_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/memories/{memory_id}/files": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Files */
+    get: operations["list_files_api_v1_memories__memory_id__files_get"];
+    put?: never;
+    /** Create File */
+    post: operations["create_file_api_v1_memories__memory_id__files_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories/{memory_id}/files/move": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Move File
+     * @description Move the source file `If-Match` names; the destination must be free.
+     */
+    post: operations["move_file_api_v1_memories__memory_id__files_move_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories/{memory_id}/files/{path}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read File */
+    get: operations["read_file_api_v1_memories__memory_id__files__path__get"];
+    /** Replace File */
+    put: operations["replace_file_api_v1_memories__memory_id__files__path__put"];
+    post?: never;
+    /** Delete File */
+    delete: operations["delete_file_api_v1_memories__memory_id__files__path__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories/{memory_id}/records": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Records */
+    get: operations["list_records_api_v1_memories__memory_id__records_get"];
+    put?: never;
+    /** Add Record */
+    post: operations["add_record_api_v1_memories__memory_id__records_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories/{memory_id}/records/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Search Records
+     * @description The records most similar to the query; the query travels in the body, never the URL.
+     */
+    post: operations["search_records_api_v1_memories__memory_id__records_search_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories/{memory_id}/records/{record_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Update Record
+     * @description Replace the record's text; records carry no version, so the last writer wins.
+     */
+    put: operations["update_record_api_v1_memories__memory_id__records__record_id__put"];
+    post?: never;
+    /** Delete Record */
+    delete: operations["delete_record_api_v1_memories__memory_id__records__record_id__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories/{memory_id}/revisions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Revisions */
+    get: operations["list_revisions_api_v1_memories__memory_id__revisions_get"];
+    put?: never;
+    post?: never;
+    /**
+     * Purge History
+     * @description Delete every retained revision of one file path.
+     */
+    delete: operations["purge_history_api_v1_memories__memory_id__revisions_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories/{memory_id}/revisions/{seq}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Revision */
+    get: operations["get_revision_api_v1_memories__memory_id__revisions__seq__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memories/{memory_id}/revisions/{seq}/restore": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Restore Revision
+     * @description Set the path back to the content the change replaced; `If-Match` names the file there, if any.
+     */
+    post: operations["restore_revision_api_v1_memories__memory_id__revisions__seq__restore_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Providers */
+    get: operations["list_providers_api_v1_memory_providers_get"];
+    put?: never;
+    /** Create Provider */
+    post: operations["create_provider_api_v1_memory_providers_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Provider */
+    get: operations["get_provider_api_v1_memory_providers__provider_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Provider
+     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     */
+    patch: operations["update_provider_api_v1_memory_providers__provider_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/memory-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Provider */
+    post: operations["test_provider_api_v1_memory_providers__provider_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/model-catalog": {
     parameters: {
       query?: never;
@@ -242,6 +1156,104 @@ export interface paths {
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Providers */
+    get: operations["list_providers_api_v1_model_providers_get"];
+    put?: never;
+    /** Create Provider */
+    post: operations["create_provider_api_v1_model_providers_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Provider */
+    get: operations["get_provider_api_v1_model_providers__provider_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Provider
+     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     */
+    patch: operations["update_provider_api_v1_model_providers__provider_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/model-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Provider */
+    post: operations["test_provider_api_v1_model_providers__provider_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/models": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Models */
+    get: operations["list_models_api_v1_models_get"];
+    put?: never;
+    /**
+     * Create Model
+     * @description Needs `write` on the workspace and on the model's provider, whose credential the model spends.
+     */
+    post: operations["create_model_api_v1_models_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/models/{key}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Model */
+    get: operations["get_model_api_v1_models__key__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Model
+     * @description A configuration change also needs `write` on the model's provider.
+     */
+    patch: operations["update_model_api_v1_models__key__patch"];
     trace?: never;
   };
   "/api/v1/organizations": {
@@ -290,118 +1302,6 @@ export interface paths {
     get: operations["list_organization_audit_events_api_v1_organizations__organization_id__audit_events_get"];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/connector-providers": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Providers */
-    get: operations["list_providers_api_v1_organizations__organization_id__connector_providers_get"];
-    put?: never;
-    /** Create Provider */
-    post: operations["create_provider_api_v1_organizations__organization_id__connector_providers_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/connector-providers/{provider_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Provider */
-    get: operations["get_provider_api_v1_organizations__organization_id__connector_providers__provider_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /**
-     * Update Provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
-     */
-    patch: operations["update_provider_api_v1_organizations__organization_id__connector_providers__provider_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/connector-providers/{provider_id}/test": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Test Provider */
-    post: operations["test_provider_api_v1_organizations__organization_id__connector_providers__provider_id__test_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/environment-providers": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Providers */
-    get: operations["list_providers_api_v1_organizations__organization_id__environment_providers_get"];
-    put?: never;
-    /** Create Provider */
-    post: operations["create_provider_api_v1_organizations__organization_id__environment_providers_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/environment-providers/{provider_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Provider */
-    get: operations["get_provider_api_v1_organizations__organization_id__environment_providers__provider_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /**
-     * Update Provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
-     */
-    patch: operations["update_provider_api_v1_organizations__organization_id__environment_providers__provider_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/environment-providers/{provider_id}/test": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Test Provider */
-    post: operations["test_provider_api_v1_organizations__organization_id__environment_providers__provider_id__test_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -535,216 +1435,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization_id}/memory-providers": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Providers */
-    get: operations["list_providers_api_v1_organizations__organization_id__memory_providers_get"];
-    put?: never;
-    /** Create Provider */
-    post: operations["create_provider_api_v1_organizations__organization_id__memory_providers_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/memory-providers/{provider_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Provider */
-    get: operations["get_provider_api_v1_organizations__organization_id__memory_providers__provider_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /**
-     * Update Provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
-     */
-    patch: operations["update_provider_api_v1_organizations__organization_id__memory_providers__provider_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/memory-providers/{provider_id}/test": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Test Provider */
-    post: operations["test_provider_api_v1_organizations__organization_id__memory_providers__provider_id__test_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/model-providers": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Providers */
-    get: operations["list_providers_api_v1_organizations__organization_id__model_providers_get"];
-    put?: never;
-    /** Create Provider */
-    post: operations["create_provider_api_v1_organizations__organization_id__model_providers_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/model-providers/{provider_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Provider */
-    get: operations["get_provider_api_v1_organizations__organization_id__model_providers__provider_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /**
-     * Update Provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
-     */
-    patch: operations["update_provider_api_v1_organizations__organization_id__model_providers__provider_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/model-providers/{provider_id}/test": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Test Provider */
-    post: operations["test_provider_api_v1_organizations__organization_id__model_providers__provider_id__test_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/models": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Models */
-    get: operations["list_models_api_v1_organizations__organization_id__models_get"];
-    put?: never;
-    /**
-     * Create Model
-     * @description Needs `write` on the model's scope and on its provider, whose credential the model spends.
-     */
-    post: operations["create_model_api_v1_organizations__organization_id__models_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/models/{model_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Model */
-    get: operations["get_model_api_v1_organizations__organization_id__models__model_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /**
-     * Update Model
-     * @description A configuration change also needs `write` on the model's provider.
-     */
-    patch: operations["update_model_api_v1_organizations__organization_id__models__model_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/web-providers": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Providers */
-    get: operations["list_providers_api_v1_organizations__organization_id__web_providers_get"];
-    put?: never;
-    /** Create Provider */
-    post: operations["create_provider_api_v1_organizations__organization_id__web_providers_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/web-providers/{provider_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Provider */
-    get: operations["get_provider_api_v1_organizations__organization_id__web_providers__provider_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /**
-     * Update Provider
-     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
-     */
-    patch: operations["update_provider_api_v1_organizations__organization_id__web_providers__provider_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization_id}/web-providers/{provider_id}/test": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Test Provider */
-    post: operations["test_provider_api_v1_organizations__organization_id__web_providers__provider_id__test_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/organizations/{organization_id}/workspaces": {
     parameters: {
       query?: never;
@@ -772,6 +1462,831 @@ export interface paths {
     };
     /** List Provider Types */
     get: operations["list_provider_types_api_v1_provider_types__kind__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Run */
+    get: operations["get_run_api_v1_runs__run_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Run
+     * @description Labels only.
+     */
+    patch: operations["update_run_api_v1_runs__run_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/attempts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Run Attempts */
+    get: operations["run_attempts_api_v1_runs__run_id__attempts_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/attempts/{attempt_id}/trace": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Attempt Spans
+     * @description The attempt's spans, including its inline child runs.
+     */
+    get: operations["list_attempt_spans_api_v1_runs__run_id__attempts__attempt_id__trace_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/fork": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Fork Run
+     * @description A new thread in the run's session that continues from this run's committed history.
+     */
+    post: operations["fork_run_api_v1_runs__run_id__fork_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/interrupt": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Interrupt Run */
+    post: operations["interrupt_run_api_v1_runs__run_id__interrupt_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/items": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Run Items */
+    get: operations["run_items_api_v1_runs__run_id__items_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/lineage": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Run Lineage
+     * @description The run and its ancestors, nearest first, across fork origins.
+     */
+    get: operations["run_lineage_api_v1_runs__run_id__lineage_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/resume": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Resume Run
+     * @description Answer the waiting run's approvals and client tools; the successor run continues from them.
+     */
+    post: operations["resume_run_api_v1_runs__run_id__resume_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Sessions */
+    get: operations["list_sessions_api_v1_sessions_get"];
+    put?: never;
+    /** Create Session */
+    post: operations["create_session_api_v1_sessions_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/sessions/{session_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Session */
+    get: operations["get_session_api_v1_sessions__session_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Session */
+    patch: operations["update_session_api_v1_sessions__session_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/skills": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Skills
+     * @description Skills of the workspace. `q` matches the name or description, ignoring case; `source` the kind of
+     *     source the default revision was read from; `archived` keeps only archived skills, or only open ones.
+     */
+    get: operations["list_skills_api_v1_skills_get"];
+    put?: never;
+    /** Create Skill */
+    post: operations["create_skill_api_v1_skills_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skills/validate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Validate Package
+     * @description The manifest the package would give a new skill or revision, checked as creation checks it; nothing is
+     *     stored.
+     */
+    post: operations["validate_package_api_v1_skills_validate_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skills/{skill_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Skill */
+    get: operations["get_skill_api_v1_skills__skill_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Skill
+     * @description Name, description and labels; an archived skill changes only by unarchiving.
+     */
+    patch: operations["update_skill_api_v1_skills__skill_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/skills/{skill_id}/archive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Archive Skill
+     * @description Archived skills keep their revisions readable and pinned; they refuse new revisions and new pins.
+     */
+    post: operations["archive_skill_api_v1_skills__skill_id__archive_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skills/{skill_id}/revisions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Revisions */
+    get: operations["list_revisions_api_v1_skills__skill_id__revisions_get"];
+    put?: never;
+    /**
+     * Create Revision
+     * @description A package whose manifest equals the default revision's creates nothing and returns that revision.
+     */
+    post: operations["create_revision_api_v1_skills__skill_id__revisions_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skills/{skill_id}/revisions/{revision_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Revision */
+    get: operations["get_revision_api_v1_skills__skill_id__revisions__revision_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skills/{skill_id}/revisions/{revision_id}/content": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read Archive
+     * @description The revision's package as a zip archive.
+     */
+    get: operations["read_archive_api_v1_skills__skill_id__revisions__revision_id__content_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skills/{skill_id}/revisions/{revision_id}/files/{path}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read File
+     * @description One package file, by the path the revision's manifest lists.
+     */
+    get: operations["read_file_api_v1_skills__skill_id__revisions__revision_id__files__path__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skills/{skill_id}/revisions/{revision_id}/set-default": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Set Default Revision */
+    post: operations["set_default_revision_api_v1_skills__skill_id__revisions__revision_id__set_default_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skills/{skill_id}/unarchive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Unarchive Skill */
+    post: operations["unarchive_skill_api_v1_skills__skill_id__unarchive_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/subscriptions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Subscriptions */
+    get: operations["list_subscriptions_api_v1_subscriptions_get"];
+    put?: never;
+    /**
+     * Create Subscription
+     * @description The response is the only time the signing secret is returned.
+     */
+    post: operations["create_subscription_api_v1_subscriptions_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/subscriptions/{subscription_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Subscription */
+    get: operations["get_subscription_api_v1_subscriptions__subscription_id__get"];
+    put?: never;
+    post?: never;
+    /** Delete Subscription */
+    delete: operations["delete_subscription_api_v1_subscriptions__subscription_id__delete"];
+    options?: never;
+    head?: never;
+    /** Update Subscription */
+    patch: operations["update_subscription_api_v1_subscriptions__subscription_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/subscriptions/{subscription_id}/deliveries": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Deliveries */
+    get: operations["list_deliveries_api_v1_subscriptions__subscription_id__deliveries_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/subscriptions/{subscription_id}/deliveries/{delivery_id}/redeliver": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Redeliver */
+    post: operations["redeliver_api_v1_subscriptions__subscription_id__deliveries__delivery_id__redeliver_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Threads */
+    get: operations["list_threads_api_v1_threads_get"];
+    put?: never;
+    /**
+     * Create Thread
+     * @description Create a thread (and its session unless one is named) with its first message.
+     */
+    post: operations["create_thread_api_v1_threads_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Thread */
+    get: operations["get_thread_api_v1_threads__thread_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Thread */
+    patch: operations["update_thread_api_v1_threads__thread_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/archive": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Archive Thread */
+    post: operations["archive_thread_api_v1_threads__thread_id__archive_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/environments": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Mounts */
+    get: operations["list_mounts_api_v1_threads__thread_id__environments_get"];
+    put?: never;
+    /** Add Mount */
+    post: operations["add_mount_api_v1_threads__thread_id__environments_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/environments/{name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove Mount */
+    delete: operations["remove_mount_api_v1_threads__thread_id__environments__name__delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/inbox": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Inbox
+     * @description In inbox order.
+     */
+    get: operations["list_inbox_api_v1_threads__thread_id__inbox_get"];
+    put?: never;
+    /**
+     * Submit Message
+     * @description Append a message; it starts a run at once when the thread can accept it, or steers the active run.
+     */
+    post: operations["submit_message_api_v1_threads__thread_id__inbox_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/inbox/order": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Reorder Inbox */
+    put: operations["reorder_inbox_api_v1_threads__thread_id__inbox_order_put"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/inbox/{entry_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Entry
+     * @description One entry and its disposition; edits name the thread's ETag.
+     */
+    get: operations["get_entry_api_v1_threads__thread_id__inbox__entry_id__get"];
+    put?: never;
+    post?: never;
+    /**
+     * Withdraw Entry
+     * @description Withdraw a pending entry; its tombstone keeps the request key.
+     */
+    delete: operations["withdraw_entry_api_v1_threads__thread_id__inbox__entry_id__delete"];
+    options?: never;
+    head?: never;
+    /** Edit Entry */
+    patch: operations["edit_entry_api_v1_threads__thread_id__inbox__entry_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/memories": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Mounts */
+    get: operations["list_mounts_api_v1_threads__thread_id__memories_get"];
+    put?: never;
+    /** Add Mount */
+    post: operations["add_mount_api_v1_threads__thread_id__memories_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/memories/{name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Remove Mount */
+    delete: operations["remove_mount_api_v1_threads__thread_id__memories__name__delete"];
+    options?: never;
+    head?: never;
+    /** Update Mount */
+    patch: operations["update_mount_api_v1_threads__thread_id__memories__name__patch"];
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Thread Runs
+     * @description Newest first.
+     */
+    get: operations["list_thread_runs_api_v1_threads__thread_id__runs_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/threads/{thread_id}/stream": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Thread Stream
+     * @description Live output of the thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.
+     */
+    get: operations["thread_stream_api_v1_threads__thread_id__stream_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/toolsets": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Toolsets */
+    get: operations["list_toolsets_api_v1_toolsets_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/trace-backend": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Trace Backend
+     * @description The backend trace queries read, and how far back they find a trace.
+     */
+    get: operations["get_trace_backend_api_v1_trace_backend_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/traces": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Traces
+     * @description Trace root spans, one per attempt. A cursor keeps the window of the first page.
+     */
+    get: operations["list_traces_api_v1_traces_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/traces/{trace_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Trace
+     * @description The trace's root span.
+     */
+    get: operations["get_trace_api_v1_traces__trace_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/traces/{trace_id}/spans": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Trace Spans
+     * @description The trace's spans.
+     */
+    get: operations["list_trace_spans_api_v1_traces__trace_id__spans_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/uploads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create Upload
+     * @description Repeating a request with the same `Idempotency-Key` and bytes returns the same upload.
+     */
+    post: operations["create_upload_api_v1_uploads_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/usage": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Summarize Usage */
+    get: operations["summarize_usage_api_v1_usage_get"];
     put?: never;
     post?: never;
     delete?: never;
@@ -962,6 +2477,62 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/web-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Providers */
+    get: operations["list_providers_api_v1_web_providers_get"];
+    put?: never;
+    /** Create Provider */
+    post: operations["create_provider_api_v1_web_providers_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/web-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Provider */
+    get: operations["get_provider_api_v1_web_providers__provider_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Update Provider
+     * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
+     */
+    patch: operations["update_provider_api_v1_web_providers__provider_id__patch"];
+    trace?: never;
+  };
+  "/api/v1/web-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Provider */
+    post: operations["test_provider_api_v1_web_providers__provider_id__test_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces": {
     parameters: {
       query?: never;
@@ -997,215 +2568,6 @@ export interface paths {
     patch: operations["update_workspace_api_v1_workspaces__workspace_id__patch"];
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/agent-composer": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Prepare Composer
-     * @description The workspace's Agent Composer, created or brought up to date with the deployment's definition.
-     *
-     *     Refused with `model_required` while the workspace has no model the caller can use.
-     */
-    post: operations["prepare_composer_api_v1_workspaces__workspace_id__agent_composer_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/agents": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Agents
-     * @description Agents of the workspace. `q` matches the key, name or description, ignoring case; `archived` keeps only
-     *     archived agents, or only open ones; the skill filters keep those with a revision pinning that skill or
-     *     revision.
-     */
-    get: operations["list_agents_api_v1_workspaces__workspace_id__agents_get"];
-    put?: never;
-    /** Create Agent */
-    post: operations["create_agent_api_v1_workspaces__workspace_id__agents_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/agents/validate": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Validate Revision
-     * @description No content when creating a revision of the configuration would accept it, else the same `invalid_argument`
-     *     error with the field's path relative to `config`; nothing is stored.
-     */
-    post: operations["validate_revision_api_v1_workspaces__workspace_id__agents_validate_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/agents/{agent_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Agent */
-    get: operations["get_agent_api_v1_workspaces__workspace_id__agents__agent_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Update Agent */
-    patch: operations["update_agent_api_v1_workspaces__workspace_id__agents__agent_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/archive": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Archive Agent */
-    post: operations["archive_agent_api_v1_workspaces__workspace_id__agents__agent_id__archive_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/avatar": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Avatar */
-    get: operations["get_avatar_api_v1_workspaces__workspace_id__agents__agent_id__avatar_get"];
-    /** Put Avatar */
-    put: operations["put_avatar_api_v1_workspaces__workspace_id__agents__agent_id__avatar_put"];
-    post?: never;
-    /** Delete Avatar */
-    delete: operations["delete_avatar_api_v1_workspaces__workspace_id__agents__agent_id__avatar_delete"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/duplicate": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Duplicate Agent */
-    post: operations["duplicate_agent_api_v1_workspaces__workspace_id__agents__agent_id__duplicate_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/revisions": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Revisions */
-    get: operations["list_revisions_api_v1_workspaces__workspace_id__agents__agent_id__revisions_get"];
-    put?: never;
-    /**
-     * Create Revision
-     * @description A configuration that validates to the default revision's creates nothing and returns that revision.
-     */
-    post: operations["create_revision_api_v1_workspaces__workspace_id__agents__agent_id__revisions_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/revisions/{revision_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Revision */
-    get: operations["get_revision_api_v1_workspaces__workspace_id__agents__agent_id__revisions__revision_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/revisions/{revision_id}/set-default": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Set Default */
-    post: operations["set_default_api_v1_workspaces__workspace_id__agents__agent_id__revisions__revision_id__set_default_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/unarchive": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Unarchive Agent */
-    post: operations["unarchive_agent_api_v1_workspaces__workspace_id__agents__agent_id__unarchive_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/workspaces/{workspace_id}/archive": {
     parameters: {
       query?: never;
@@ -1223,59 +2585,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/assets": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Assets */
-    get: operations["list_assets_api_v1_workspaces__workspace_id__assets_get"];
-    put?: never;
-    /** Create Asset */
-    post: operations["create_asset_api_v1_workspaces__workspace_id__assets_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/assets/{asset_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Asset */
-    get: operations["get_asset_api_v1_workspaces__workspace_id__assets__asset_id__get"];
-    put?: never;
-    post?: never;
-    /** Retire Asset */
-    delete: operations["retire_asset_api_v1_workspaces__workspace_id__assets__asset_id__delete"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/assets/{asset_id}/content": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Read Asset Content */
-    get: operations["read_asset_content_api_v1_workspaces__workspace_id__assets__asset_id__content_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/workspaces/{workspace_id}/audit-events": {
     parameters: {
       query?: never;
@@ -1287,258 +2596,6 @@ export interface paths {
     get: operations["list_workspace_audit_events_api_v1_workspaces__workspace_id__audit_events_get"];
     put?: never;
     post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/connections": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Connections */
-    get: operations["list_connections_api_v1_workspaces__workspace_id__connections_get"];
-    put?: never;
-    /** Create Connection */
-    post: operations["create_connection_api_v1_workspaces__workspace_id__connections_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/connections/{connection_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Connection */
-    get: operations["get_connection_api_v1_workspaces__workspace_id__connections__connection_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Update Connection */
-    patch: operations["update_connection_api_v1_workspaces__workspace_id__connections__connection_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/connections/{connection_id}/authorize": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Authorize Connection
-     * @description A browser flow needs a login session and is bound to this browser by a cookie the callback checks; an API
-     *     key authorizes only a client-credentials client, without a browser.
-     */
-    post: operations["authorize_connection_api_v1_workspaces__workspace_id__connections__connection_id__authorize_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/connections/{connection_id}/revoke": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Revoke Connection */
-    post: operations["revoke_connection_api_v1_workspaces__workspace_id__connections__connection_id__revoke_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/connections/{connection_id}/test": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Test Connection */
-    post: operations["test_connection_api_v1_workspaces__workspace_id__connections__connection_id__test_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/connections/{connection_id}/tools": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Tools */
-    get: operations["list_tools_api_v1_workspaces__workspace_id__connections__connection_id__tools_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/connector-providers/{provider_id}/apps": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Apps */
-    get: operations["list_apps_api_v1_workspaces__workspace_id__connector_providers__provider_id__apps_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/connector-providers/{provider_id}/apps/{app}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get App */
-    get: operations["get_app_api_v1_workspaces__workspace_id__connector_providers__provider_id__apps__app__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/connector-providers/{provider_id}/apps/{app}/actions": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Actions */
-    get: operations["list_actions_api_v1_workspaces__workspace_id__connector_providers__provider_id__apps__app__actions_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/environment-templates": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Templates */
-    get: operations["list_templates_api_v1_workspaces__workspace_id__environment_templates_get"];
-    put?: never;
-    /** Create Template */
-    post: operations["create_template_api_v1_workspaces__workspace_id__environment_templates_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/environment-templates/{template_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Template */
-    get: operations["get_template_api_v1_workspaces__workspace_id__environment_templates__template_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Update Template */
-    patch: operations["update_template_api_v1_workspaces__workspace_id__environment_templates__template_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/environments": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Environments */
-    get: operations["list_environments_api_v1_workspaces__workspace_id__environments_get"];
-    put?: never;
-    /**
-     * Create Environment
-     * @description Reserve a managed sandbox from a template (`creating`), or register an external envd target (`ready`).
-     */
-    post: operations["create_environment_api_v1_workspaces__workspace_id__environments_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/environments/{environment_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Environment */
-    get: operations["get_environment_api_v1_workspaces__workspace_id__environments__environment_id__get"];
-    put?: never;
-    post?: never;
-    /** Delete Environment */
-    delete: operations["delete_environment_api_v1_workspaces__workspace_id__environments__environment_id__delete"];
-    options?: never;
-    head?: never;
-    /** Update Environment */
-    patch: operations["update_environment_api_v1_workspaces__workspace_id__environments__environment_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/environments/{environment_id}/stop": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Stop Environment */
-    post: operations["stop_environment_api_v1_workspaces__workspace_id__environments__environment_id__stop_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1689,427 +2746,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace_id}/media-understanding-defaults": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Media Defaults */
-    get: operations["get_media_defaults_api_v1_workspaces__workspace_id__media_understanding_defaults_get"];
-    /**
-     * Replace Media Defaults
-     * @description Replaces all three kinds; each model must declare it understands its kind. Requires workspace admin.
-     */
-    put: operations["replace_media_defaults_api_v1_workspaces__workspace_id__media_understanding_defaults_put"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Memories */
-    get: operations["list_memories_api_v1_workspaces__workspace_id__memories_get"];
-    put?: never;
-    /** Create Memory */
-    post: operations["create_memory_api_v1_workspaces__workspace_id__memories_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Memory */
-    get: operations["get_memory_api_v1_workspaces__workspace_id__memories__memory_id__get"];
-    put?: never;
-    post?: never;
-    /** Delete Memory */
-    delete: operations["delete_memory_api_v1_workspaces__workspace_id__memories__memory_id__delete"];
-    options?: never;
-    head?: never;
-    /** Update Memory */
-    patch: operations["update_memory_api_v1_workspaces__workspace_id__memories__memory_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/files": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Files */
-    get: operations["list_files_api_v1_workspaces__workspace_id__memories__memory_id__files_get"];
-    put?: never;
-    /** Create File */
-    post: operations["create_file_api_v1_workspaces__workspace_id__memories__memory_id__files_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/move": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Move File
-     * @description Move the source file `If-Match` names; the destination must be free.
-     */
-    post: operations["move_file_api_v1_workspaces__workspace_id__memories__memory_id__files_move_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/{path}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Read File */
-    get: operations["read_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__get"];
-    /** Replace File */
-    put: operations["replace_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__put"];
-    post?: never;
-    /** Delete File */
-    delete: operations["delete_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__delete"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Records */
-    get: operations["list_records_api_v1_workspaces__workspace_id__memories__memory_id__records_get"];
-    put?: never;
-    /** Add Record */
-    post: operations["add_record_api_v1_workspaces__workspace_id__memories__memory_id__records_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records/search": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Search Records
-     * @description The records most similar to the query; the query travels in the body, never the URL.
-     */
-    post: operations["search_records_api_v1_workspaces__workspace_id__memories__memory_id__records_search_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records/{record_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /**
-     * Update Record
-     * @description Replace the record's text; records carry no version, so the last writer wins.
-     */
-    put: operations["update_record_api_v1_workspaces__workspace_id__memories__memory_id__records__record_id__put"];
-    post?: never;
-    /** Delete Record */
-    delete: operations["delete_record_api_v1_workspaces__workspace_id__memories__memory_id__records__record_id__delete"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Revisions */
-    get: operations["list_revisions_api_v1_workspaces__workspace_id__memories__memory_id__revisions_get"];
-    put?: never;
-    post?: never;
-    /**
-     * Purge History
-     * @description Delete every retained revision of one file path.
-     */
-    delete: operations["purge_history_api_v1_workspaces__workspace_id__memories__memory_id__revisions_delete"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions/{seq}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Revision */
-    get: operations["get_revision_api_v1_workspaces__workspace_id__memories__memory_id__revisions__seq__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/revisions/{seq}/restore": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Restore Revision
-     * @description Set the path back to the content the change replaced; `If-Match` names the file there, if any.
-     */
-    post: operations["restore_revision_api_v1_workspaces__workspace_id__memories__memory_id__revisions__seq__restore_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/runs/{run_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Run */
-    get: operations["get_run_api_v1_workspaces__workspace_id__runs__run_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /**
-     * Update Run
-     * @description Labels only.
-     */
-    patch: operations["update_run_api_v1_workspaces__workspace_id__runs__run_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/runs/{run_id}/attempts": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Run Attempts */
-    get: operations["run_attempts_api_v1_workspaces__workspace_id__runs__run_id__attempts_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/runs/{run_id}/attempts/{attempt_id}/trace": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Attempt Spans
-     * @description The attempt's spans, including its inline child runs.
-     */
-    get: operations["list_attempt_spans_api_v1_workspaces__workspace_id__runs__run_id__attempts__attempt_id__trace_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/runs/{run_id}/fork": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Fork Run
-     * @description A new thread in the run's session that continues from this run's committed history.
-     */
-    post: operations["fork_run_api_v1_workspaces__workspace_id__runs__run_id__fork_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/runs/{run_id}/interrupt": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Interrupt Run */
-    post: operations["interrupt_run_api_v1_workspaces__workspace_id__runs__run_id__interrupt_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/runs/{run_id}/items": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Run Items */
-    get: operations["run_items_api_v1_workspaces__workspace_id__runs__run_id__items_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/runs/{run_id}/lineage": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Run Lineage
-     * @description The run and its ancestors, nearest first, across fork origins.
-     */
-    get: operations["run_lineage_api_v1_workspaces__workspace_id__runs__run_id__lineage_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/runs/{run_id}/resume": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Resume Run
-     * @description Answer the waiting run's approvals and client tools; the successor run continues from them.
-     */
-    post: operations["resume_run_api_v1_workspaces__workspace_id__runs__run_id__resume_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/secrets": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Secrets */
-    get: operations["list_secrets_api_v1_workspaces__workspace_id__secrets_get"];
-    put?: never;
-    /** Create Secret */
-    post: operations["create_secret_api_v1_workspaces__workspace_id__secrets_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/secrets/{secret_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Secret */
-    get: operations["get_secret_api_v1_workspaces__workspace_id__secrets__secret_id__get"];
-    /** Replace Secret */
-    put: operations["replace_secret_api_v1_workspaces__workspace_id__secrets__secret_id__put"];
-    post?: never;
-    /** Delete Secret */
-    delete: operations["delete_secret_api_v1_workspaces__workspace_id__secrets__secret_id__delete"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/workspaces/{workspace_id}/service-accounts": {
     parameters: {
       query?: never;
@@ -2162,679 +2798,6 @@ export interface paths {
      * @description Needs a login session: an API key never issues keys, so a leaked key cannot outlive its revocation.
      */
     post: operations["create_service_account_key_api_v1_workspaces__workspace_id__service_accounts__account_id__keys_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/sessions": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Sessions */
-    get: operations["list_sessions_api_v1_workspaces__workspace_id__sessions_get"];
-    put?: never;
-    /** Create Session */
-    post: operations["create_session_api_v1_workspaces__workspace_id__sessions_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/sessions/{session_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Session */
-    get: operations["get_session_api_v1_workspaces__workspace_id__sessions__session_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Update Session */
-    patch: operations["update_session_api_v1_workspaces__workspace_id__sessions__session_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/skills": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Skills
-     * @description Skills of the workspace. `q` matches the key, name or description, ignoring case; `source` the kind of
-     *     source the default revision was read from; `archived` keeps only archived skills, or only open ones.
-     */
-    get: operations["list_skills_api_v1_workspaces__workspace_id__skills_get"];
-    put?: never;
-    /** Create Skill */
-    post: operations["create_skill_api_v1_workspaces__workspace_id__skills_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/skills/validate": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Validate Package
-     * @description The manifest the package would give a new skill or revision, checked as creation checks it; nothing is
-     *     stored.
-     */
-    post: operations["validate_package_api_v1_workspaces__workspace_id__skills_validate_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/skills/{skill_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Skill */
-    get: operations["get_skill_api_v1_workspaces__workspace_id__skills__skill_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /**
-     * Update Skill
-     * @description Name, description and labels; an archived skill changes only by unarchiving.
-     */
-    patch: operations["update_skill_api_v1_workspaces__workspace_id__skills__skill_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/archive": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Archive Skill
-     * @description Archived skills keep their revisions readable and pinned; they refuse new revisions and new pins.
-     */
-    post: operations["archive_skill_api_v1_workspaces__workspace_id__skills__skill_id__archive_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/revisions": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Revisions */
-    get: operations["list_revisions_api_v1_workspaces__workspace_id__skills__skill_id__revisions_get"];
-    put?: never;
-    /**
-     * Create Revision
-     * @description A package whose manifest equals the default revision's creates nothing and returns that revision.
-     */
-    post: operations["create_revision_api_v1_workspaces__workspace_id__skills__skill_id__revisions_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/revisions/{revision_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Revision */
-    get: operations["get_revision_api_v1_workspaces__workspace_id__skills__skill_id__revisions__revision_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/revisions/{revision_id}/content": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Read Archive
-     * @description The revision's package as a zip archive.
-     */
-    get: operations["read_archive_api_v1_workspaces__workspace_id__skills__skill_id__revisions__revision_id__content_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/revisions/{revision_id}/files/{path}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Read File
-     * @description One package file, by the path the revision's manifest lists.
-     */
-    get: operations["read_file_api_v1_workspaces__workspace_id__skills__skill_id__revisions__revision_id__files__path__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/revisions/{revision_id}/set-default": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Set Default Revision */
-    post: operations["set_default_revision_api_v1_workspaces__workspace_id__skills__skill_id__revisions__revision_id__set_default_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/unarchive": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Unarchive Skill */
-    post: operations["unarchive_skill_api_v1_workspaces__workspace_id__skills__skill_id__unarchive_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/subscriptions": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Subscriptions */
-    get: operations["list_subscriptions_api_v1_workspaces__workspace_id__subscriptions_get"];
-    put?: never;
-    /**
-     * Create Subscription
-     * @description The response is the only time the signing secret is returned.
-     */
-    post: operations["create_subscription_api_v1_workspaces__workspace_id__subscriptions_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/subscriptions/{subscription_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Subscription */
-    get: operations["get_subscription_api_v1_workspaces__workspace_id__subscriptions__subscription_id__get"];
-    put?: never;
-    post?: never;
-    /** Delete Subscription */
-    delete: operations["delete_subscription_api_v1_workspaces__workspace_id__subscriptions__subscription_id__delete"];
-    options?: never;
-    head?: never;
-    /** Update Subscription */
-    patch: operations["update_subscription_api_v1_workspaces__workspace_id__subscriptions__subscription_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/subscriptions/{subscription_id}/deliveries": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Deliveries */
-    get: operations["list_deliveries_api_v1_workspaces__workspace_id__subscriptions__subscription_id__deliveries_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/subscriptions/{subscription_id}/deliveries/{delivery_id}/redeliver": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Redeliver */
-    post: operations["redeliver_api_v1_workspaces__workspace_id__subscriptions__subscription_id__deliveries__delivery_id__redeliver_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Threads */
-    get: operations["list_threads_api_v1_workspaces__workspace_id__threads_get"];
-    put?: never;
-    /**
-     * Create Thread
-     * @description Create a thread (and its session unless one is named) with its first message.
-     */
-    post: operations["create_thread_api_v1_workspaces__workspace_id__threads_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Thread */
-    get: operations["get_thread_api_v1_workspaces__workspace_id__threads__thread_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Update Thread */
-    patch: operations["update_thread_api_v1_workspaces__workspace_id__threads__thread_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/archive": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Archive Thread */
-    post: operations["archive_thread_api_v1_workspaces__workspace_id__threads__thread_id__archive_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/environments": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Mounts */
-    get: operations["list_mounts_api_v1_workspaces__workspace_id__threads__thread_id__environments_get"];
-    put?: never;
-    /** Add Mount */
-    post: operations["add_mount_api_v1_workspaces__workspace_id__threads__thread_id__environments_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/environments/{name}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Remove Mount */
-    delete: operations["remove_mount_api_v1_workspaces__workspace_id__threads__thread_id__environments__name__delete"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/inbox": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Inbox
-     * @description In inbox order.
-     */
-    get: operations["list_inbox_api_v1_workspaces__workspace_id__threads__thread_id__inbox_get"];
-    put?: never;
-    /**
-     * Submit Message
-     * @description Append a message; it starts a run at once when the thread can accept it, or steers the active run.
-     */
-    post: operations["submit_message_api_v1_workspaces__workspace_id__threads__thread_id__inbox_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/inbox/order": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /** Reorder Inbox */
-    put: operations["reorder_inbox_api_v1_workspaces__workspace_id__threads__thread_id__inbox_order_put"];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/inbox/{entry_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Entry
-     * @description One entry and its disposition; edits name the thread's ETag.
-     */
-    get: operations["get_entry_api_v1_workspaces__workspace_id__threads__thread_id__inbox__entry_id__get"];
-    put?: never;
-    post?: never;
-    /**
-     * Withdraw Entry
-     * @description Withdraw a pending entry; its tombstone keeps the request key.
-     */
-    delete: operations["withdraw_entry_api_v1_workspaces__workspace_id__threads__thread_id__inbox__entry_id__delete"];
-    options?: never;
-    head?: never;
-    /** Edit Entry */
-    patch: operations["edit_entry_api_v1_workspaces__workspace_id__threads__thread_id__inbox__entry_id__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Mounts */
-    get: operations["list_mounts_api_v1_workspaces__workspace_id__threads__thread_id__memories_get"];
-    put?: never;
-    /** Add Mount */
-    post: operations["add_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories/{name}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Remove Mount */
-    delete: operations["remove_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories__name__delete"];
-    options?: never;
-    head?: never;
-    /** Update Mount */
-    patch: operations["update_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories__name__patch"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/runs": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Thread Runs
-     * @description Newest first.
-     */
-    get: operations["list_thread_runs_api_v1_workspaces__workspace_id__threads__thread_id__runs_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/stream": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Thread Stream
-     * @description Live output of the thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`.
-     */
-    get: operations["thread_stream_api_v1_workspaces__workspace_id__threads__thread_id__stream_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/toolsets": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Toolsets */
-    get: operations["list_toolsets_api_v1_workspaces__workspace_id__toolsets_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/trace-backend": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Trace Backend
-     * @description The backend trace queries read, and how far back they find a trace.
-     */
-    get: operations["get_trace_backend_api_v1_workspaces__workspace_id__trace_backend_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/traces": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Traces
-     * @description Trace root spans, one per attempt. A cursor keeps the window of the first page.
-     */
-    get: operations["list_traces_api_v1_workspaces__workspace_id__traces_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/traces/{trace_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Get Trace
-     * @description The trace's root span.
-     */
-    get: operations["get_trace_api_v1_workspaces__workspace_id__traces__trace_id__get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/traces/{trace_id}/spans": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List Trace Spans
-     * @description The trace's spans.
-     */
-    get: operations["list_trace_spans_api_v1_workspaces__workspace_id__traces__trace_id__spans_get"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/uploads": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Create Upload
-     * @description Repeating a request with the same `Idempotency-Key` and bytes returns the same upload.
-     */
-    post: operations["create_upload_api_v1_workspaces__workspace_id__uploads_post"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace_id}/usage": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Summarize Usage */
-    get: operations["summarize_usage_api_v1_workspaces__workspace_id__usage_get"];
-    put?: never;
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -2910,8 +2873,6 @@ export interface components {
       id: string;
       /** Image Url */
       image_url: string | null;
-      /** Key */
-      key: string;
       /** Labels */
       labels: {
         [key: string]: string;
@@ -2920,8 +2881,7 @@ export interface components {
       name: string;
       /** Organization Id */
       organization_id: string;
-      /** Source */
-      source: string;
+      source: components["schemas"]["AgentSource"];
       /**
        * Updated At
        * Format: date-time
@@ -2959,7 +2919,13 @@ export interface components {
        * @default []
        */
       memory_mounts?: components["schemas"]["MemoryMount"][];
-      model: components["schemas"]["AgentModel"];
+      /** Model */
+      model: string;
+      model_characteristics?: components["schemas"]["AgentModelCharacteristics"];
+      /** Model Settings */
+      model_settings?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /**
        * Plugins
@@ -2968,11 +2934,6 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
-      /**
-       * Secret Requirements
-       * @default []
-       */
-      secret_requirements?: components["schemas"]["SecretRequirement"][];
       /**
        * Skills
        * @default []
@@ -3023,7 +2984,13 @@ export interface components {
        * @default []
        */
       memory_mounts?: components["schemas"]["MemoryMount"][];
-      model: components["schemas"]["AgentModel"];
+      /** Model */
+      model: string;
+      model_characteristics?: components["schemas"]["AgentModelCharacteristics"];
+      /** Model Settings */
+      model_settings?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /**
        * Plugins
@@ -3032,11 +2999,6 @@ export interface components {
       plugins?: components["schemas"]["PluginSelection"][];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
-      /**
-       * Secret Requirements
-       * @default []
-       */
-      secret_requirements?: components["schemas"]["SecretRequirement"][];
       /**
        * Skills
        * @default []
@@ -3070,8 +3032,6 @@ export interface components {
        * @default
        */
       description?: string;
-      /** Key */
-      key: string;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -3089,8 +3049,6 @@ export interface components {
        * @default
        */
       description?: string;
-      /** Key */
-      key: string;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -3099,16 +3057,6 @@ export interface components {
       name: string;
       /** Revision Id */
       revision_id?: string | null;
-    };
-    /** AgentModel */
-    AgentModel: {
-      characteristics?: components["schemas"]["AgentModelCharacteristics"];
-      /** Model Id */
-      model_id: string;
-      /** Settings */
-      settings?: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
     };
     /**
      * AgentModelCharacteristics
@@ -3132,8 +3080,8 @@ export interface components {
      * AgentOverride
      * @description What one run changes of its revision's configuration; an omitted or null field keeps the revision's.
      *
-     *     `toolsets` replaces whole toolsets; `model`, `retries` and each subagent edge replace the fields they set,
-     *     and a null edge removes it; every other field replaces the revision's value.
+     *     `toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null
+     *     edge removes it; every other field replaces the revision's value.
      */
     "AgentOverride-Input": {
       /** Client Tools */
@@ -3144,7 +3092,14 @@ export interface components {
       instructions?: string | null;
       media_understanding?:
         components["schemas"]["MediaUnderstandingSelection"] | null;
-      model?: components["schemas"]["ModelOverride"] | null;
+      /** Model */
+      model?: string | null;
+      model_characteristics?:
+        components["schemas"]["AgentModelCharacteristics"] | null;
+      /** Model Settings */
+      model_settings?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
@@ -3165,8 +3120,8 @@ export interface components {
      * AgentOverride
      * @description What one run changes of its revision's configuration; an omitted or null field keeps the revision's.
      *
-     *     `toolsets` replaces whole toolsets; `model`, `retries` and each subagent edge replace the fields they set,
-     *     and a null edge removes it; every other field replaces the revision's value.
+     *     `toolsets` replaces whole toolsets; `retries` and each subagent edge replace the fields they set, and a null
+     *     edge removes it; every other field replaces the revision's value.
      */
     "AgentOverride-Output": {
       /** Client Tools */
@@ -3177,7 +3132,14 @@ export interface components {
       instructions?: string | null;
       media_understanding?:
         components["schemas"]["MediaUnderstandingSelection"] | null;
-      model?: components["schemas"]["ModelOverride"] | null;
+      /** Model */
+      model?: string | null;
+      model_characteristics?:
+        components["schemas"]["AgentModelCharacteristics"] | null;
+      /** Model Settings */
+      model_settings?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
@@ -3203,7 +3165,7 @@ export interface components {
     };
     /**
      * AgentReviewer
-     * @description The model reviewing calls whose permission is `review`, selected by model ID.
+     * @description The model reviewing calls whose permission is `review`, selected by model key.
      */
     AgentReviewer: {
       /** Instruction */
@@ -3279,12 +3241,12 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** @enum {string} */
+    AgentSource: "custom" | "builtin";
     /** AgentUpdate */
     AgentUpdate: {
       /** Description */
       description?: string | null;
-      /** Key */
-      key?: string | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -4582,7 +4544,7 @@ export interface components {
     };
     /**
      * MediaUnderstandingSelection
-     * @description The model describing each media kind a model cannot read; a kind without one is unavailable.
+     * @description The model, by key, describing each media kind a model cannot read; a kind without one is unavailable.
      */
     MediaUnderstandingSelection: {
       /** Audio */
@@ -4624,8 +4586,6 @@ export interface components {
       id: string;
       /** Inherited Guide */
       inherited_guide: string;
-      /** Key */
-      key: string;
       kind: components["schemas"]["MemoryKind"];
       /** Labels */
       labels: {
@@ -4670,8 +4630,6 @@ export interface components {
       description?: string | null;
       /** Guide */
       guide?: string | null;
-      /** Key */
-      key: string;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -4981,8 +4939,6 @@ export interface components {
       description: string;
       /** Enabled */
       enabled: boolean;
-      /** Id */
-      id: string;
       /** Key */
       key: string;
       /** Name */
@@ -5002,7 +4958,7 @@ export interface components {
       /** Version */
       version: number;
       /** Workspace Id */
-      workspace_id: string | null;
+      workspace_id: string;
     };
     /**
      * ModelCapability
@@ -5086,25 +5042,12 @@ export interface components {
        */
       enabled?: boolean;
       /** Key */
-      key: string;
+      key?: string | null;
       /** Name */
       name: string;
       pricing?: components["schemas"]["ModelPricingEntry-Input"] | null;
       /** Provider Id */
       provider_id: string;
-      /** Workspace Id */
-      workspace_id: string | null;
-    };
-    /** ModelOverride */
-    ModelOverride: {
-      characteristics?:
-        components["schemas"]["AgentModelCharacteristics"] | null;
-      /** Model Id */
-      model_id?: string | null;
-      /** Settings */
-      settings?: {
-        [key: string]: components["schemas"]["JsonValue"];
-      } | null;
     };
     /** ModelPage */
     ModelPage: {
@@ -5205,8 +5148,8 @@ export interface components {
       cost: string | null;
       /** Input Tokens */
       input_tokens: number;
-      /** Model Id */
-      model_id: string | null;
+      /** Model */
+      model: string | null;
       /** Output Tokens */
       output_tokens: number;
       /** Requests */
@@ -5313,8 +5256,6 @@ export interface components {
       id: string;
       /** Image Url */
       image_url: string | null;
-      /** Key */
-      key: string;
       /** Name */
       name: string;
       /** Permissions */
@@ -5336,8 +5277,6 @@ export interface components {
     };
     /** OrganizationUpdate */
     OrganizationUpdate: {
-      /** Key */
-      key?: string | null;
       /** Name */
       name?: string | null;
     };
@@ -5617,7 +5556,7 @@ export interface components {
       /** Version */
       version: number;
       /** Workspace Id */
-      workspace_id: string | null;
+      workspace_id: string;
     };
     /** ProviderCreate */
     ProviderCreate: {
@@ -5642,8 +5581,6 @@ export interface components {
       name: string;
       /** Type */
       type: string;
-      /** Workspace Id */
-      workspace_id: string | null;
     };
     /** ProviderPage */
     ProviderPage: {
@@ -5970,76 +5907,6 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
-    /** Secret */
-    Secret: {
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /** Created By Id */
-      created_by_id: string;
-      /** Id */
-      id: string;
-      /** Key */
-      key: string;
-      /** Principal Id */
-      principal_id: string | null;
-      scope: components["schemas"]["SecretScope"];
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-      /** Updated By Id */
-      updated_by_id: string;
-      /** Version */
-      version: number;
-      /** Workspace Id */
-      workspace_id: string;
-    };
-    /**
-     * SecretCreate
-     * @description `user` creates a secret private to the caller.
-     */
-    SecretCreate: {
-      /** Key */
-      key: string;
-      /** @default workspace */
-      scope?: components["schemas"]["SecretScope"];
-      /**
-       * Value
-       * Format: password
-       */
-      value: string;
-    };
-    /** SecretPage */
-    SecretPage: {
-      /** Items */
-      items: components["schemas"]["Secret"][];
-      /** Next Cursor */
-      next_cursor: string | null;
-    };
-    /**
-     * SecretRequirement
-     * @description A secret an agent revision needs at execution; `user` resolves to the run principal's own secret.
-     */
-    SecretRequirement: {
-      /** Key */
-      key: string;
-      /** @default workspace */
-      scope?: components["schemas"]["SecretScope"];
-    };
-    /** @enum {string} */
-    SecretScope: "workspace" | "user";
-    /** SecretUpdate */
-    SecretUpdate: {
-      /**
-       * Value
-       * Format: password
-       */
-      value: string;
-    };
     /** ServiceAccount */
     ServiceAccount: {
       /**
@@ -6206,8 +6073,6 @@ export interface components {
       description: string;
       /** Id */
       id: string;
-      /** Key */
-      key: string;
       /** Labels */
       labels: {
         [key: string]: string;
@@ -6230,13 +6095,11 @@ export interface components {
     };
     /**
      * SkillCreate
-     * @description `key`, `name` and `description` default to what the package's SKILL.md declares.
+     * @description `name` and `description` default to what the package's SKILL.md declares.
      */
     SkillCreate: {
       /** Description */
       description?: string | null;
-      /** Key */
-      key?: string | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -6642,8 +6505,6 @@ export interface components {
       enabled: boolean;
       /** Id */
       id: string;
-      /** Key */
-      key: string;
       /** Labels */
       labels: {
         [key: string]: string;
@@ -6685,8 +6546,6 @@ export interface components {
       config?: components["schemas"]["TemplateConfig"];
       /** Description */
       description?: string | null;
-      /** Key */
-      key: string;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -7135,8 +6994,6 @@ export interface components {
       id: string;
       /** Image Url */
       image_url: string | null;
-      /** Key */
-      key: string;
       /** Name */
       name: string;
       /** Organization Id */
@@ -7157,8 +7014,6 @@ export interface components {
     };
     /** WorkspaceCreate */
     WorkspaceCreate: {
-      /** Key */
-      key: string;
       /** Name */
       name: string;
     };
@@ -7171,8 +7026,6 @@ export interface components {
     };
     /** WorkspaceUpdate */
     WorkspaceUpdate: {
-      /** Key */
-      key?: string | null;
       /** Name */
       name?: string | null;
     };
@@ -7196,6 +7049,633 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  prepare_composer_api_v1_agent_composer_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_agents_api_v1_agents_get: {
+    parameters: {
+      query?: {
+        label?: string[] | null;
+        q?: string | null;
+        archived?: boolean | null;
+        source?: components["schemas"]["AgentSource"] | null;
+        skill_id?: string | null;
+        skill_revision_id?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_agent_api_v1_agents_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AgentCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  validate_revision_api_v1_agents_validate_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AgentValidate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_agent_api_v1_agents__agent_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_agent_api_v1_agents__agent_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AgentUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  archive_agent_api_v1_agents__agent_id__archive_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_avatar_api_v1_agents__agent_id__avatar_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The image */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "image/jpeg": Binary;
+          "image/png": Binary;
+          "image/webp": Binary;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  put_avatar_api_v1_agents__agent_id__avatar_put: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "image/jpeg": Binary;
+        "image/png": Binary;
+        "image/webp": Binary;
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_avatar_api_v1_agents__agent_id__avatar_delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  duplicate_agent_api_v1_agents__agent_id__duplicate_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AgentDuplicate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_revisions_api_v1_agents__agent_id__revisions_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRevisionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_revision_api_v1_agents__agent_id__revisions_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AgentRevisionCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRevision"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_revision_api_v1_agents__agent_id__revisions__revision_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+        revision_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentRevision"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  set_default_api_v1_agents__agent_id__revisions__revision_id__set_default_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+        revision_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  unarchive_agent_api_v1_agents__agent_id__unarchive_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        agent_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_assets_api_v1_assets_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AssetPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_asset_api_v1_assets_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AssetCreate"];
+      };
+    };
+    responses: {
+      /** @description The asset already created from this upload */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Asset"];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Asset"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_asset_api_v1_assets__asset_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        asset_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Asset"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  retire_asset_api_v1_assets__asset_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        asset_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Asset"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  read_asset_content_api_v1_assets__asset_id__content_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        asset_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The asset bytes, with their stored content type */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "*/*": Binary;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   bootstrap_administrator_api_v1_auth_bootstrap_post: {
     parameters: {
       query?: never;
@@ -7381,6 +7861,63 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  list_connections_api_v1_connections_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_connection_api_v1_connections_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConnectionCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Connection"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   complete_authorization_api_v1_connections_callback_get: {
     parameters: {
       query: {
@@ -7434,6 +7971,854 @@ export interface operations {
           "application/json": components["schemas"]["OAuthRedirect"];
         };
       };
+      default: components["responses"]["Error"];
+    };
+  };
+  get_connection_api_v1_connections__connection_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Connection"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_connection_api_v1_connections__connection_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConnectionUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Connection"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  authorize_connection_api_v1_connections__connection_id__authorize_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AuthorizationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationResult"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  revoke_connection_api_v1_connections__connection_id__revoke_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RevokedConnection"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  test_connection_api_v1_connections__connection_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectionTest"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_tools_api_v1_connections__connection_id__tools_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        connection_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ToolPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_providers_api_v1_connector_providers_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_provider_api_v1_connector_providers_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_provider_api_v1_connector_providers__provider_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_provider_api_v1_connector_providers__provider_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_apps_api_v1_connector_providers__provider_id__apps_get: {
+    parameters: {
+      query?: {
+        query?: string | null;
+        limit?: number;
+        cursor?: string | null;
+        refresh?: boolean;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorAppPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_app_api_v1_connector_providers__provider_id__apps__app__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+        app: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorApp"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_actions_api_v1_connector_providers__provider_id__apps__app__actions_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+        app: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorActionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  test_provider_api_v1_connector_providers__provider_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderTest"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_providers_api_v1_environment_providers_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_provider_api_v1_environment_providers_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_provider_api_v1_environment_providers__provider_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_provider_api_v1_environment_providers__provider_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  test_provider_api_v1_environment_providers__provider_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderTest"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_templates_api_v1_environment_templates_get: {
+    parameters: {
+      query?: {
+        label?: string[] | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TemplatePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_template_api_v1_environment_templates_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TemplateCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Template"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_template_api_v1_environment_templates__template_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        template_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Template"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_template_api_v1_environment_templates__template_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        template_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TemplateUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Template"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_environments_api_v1_environments_get: {
+    parameters: {
+      query?: {
+        status?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_environment_api_v1_environments_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json":
+          | components["schemas"]["ManagedEnvironmentCreate"]
+          | components["schemas"]["ExternalTargetCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_environment_api_v1_environments__environment_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_environment_api_v1_environments__environment_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_environment_api_v1_environments__environment_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EnvironmentUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  stop_environment_api_v1_environments__environment_id__stop_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EnvironmentView"];
+        };
+      };
+      400: components["responses"]["Error"];
       default: components["responses"]["Error"];
     };
   };
@@ -7491,6 +8876,809 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  get_media_defaults_api_v1_media_understanding_defaults_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MediaDefaults"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  replace_media_defaults_api_v1_media_understanding_defaults_put: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MediaUnderstandingSelection"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MediaDefaults"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_memories_api_v1_memories_get: {
+    parameters: {
+      query?: {
+        label?: string[] | null;
+        kind?: components["schemas"]["MemoryKind"] | null;
+        type?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_memory_api_v1_memories_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_memory_api_v1_memories__memory_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_memory_api_v1_memories__memory_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_memory_api_v1_memories__memory_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_files_api_v1_memories__memory_id__files_get: {
+    parameters: {
+      query?: {
+        /** @description A directory ending in "/"; "" lists every file */
+        prefix?: string;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFilePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_file_api_v1_memories__memory_id__files_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryFileCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFile"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  move_file_api_v1_memories__memory_id__files_move_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryFileMove"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFile"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  read_file_api_v1_memories__memory_id__files__path__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+        path: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFile"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  replace_file_api_v1_memories__memory_id__files__path__put: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+        path: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryFileReplace"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFile"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_file_api_v1_memories__memory_id__files__path__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+        path: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_records_api_v1_memories__memory_id__records_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        /** @description The provider's own cursor */
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRecordPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  add_record_api_v1_memories__memory_id__records_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryRecordText"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRecordView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  search_records_api_v1_memories__memory_id__records_search_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryRecordSearch"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRecordPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_record_api_v1_memories__memory_id__records__record_id__put: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+        record_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryRecordText"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRecordView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_record_api_v1_memories__memory_id__records__record_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+        record_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_revisions_api_v1_memories__memory_id__revisions_get: {
+    parameters: {
+      query?: {
+        path?: string | null;
+        run_id?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRevisionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  purge_history_api_v1_memories__memory_id__revisions_delete: {
+    parameters: {
+      query: {
+        path: string;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["HistoryPurge"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_revision_api_v1_memories__memory_id__revisions__seq__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+        seq: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryRevisionDetail"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  restore_revision_api_v1_memories__memory_id__revisions__seq__restore_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        memory_id: string;
+        seq: number;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryFileState"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_providers_api_v1_memory_providers_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_provider_api_v1_memory_providers_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_provider_api_v1_memory_providers__provider_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_provider_api_v1_memory_providers__provider_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  test_provider_api_v1_memory_providers__provider_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderTest"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   get_model_catalog_api_v1_model_catalog_get: {
     parameters: {
       query?: never;
@@ -7509,6 +9697,267 @@ export interface operations {
           "application/json": components["schemas"]["ModelCatalog"];
         };
       };
+      default: components["responses"]["Error"];
+    };
+  };
+  list_providers_api_v1_model_providers_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_provider_api_v1_model_providers_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_provider_api_v1_model_providers__provider_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_provider_api_v1_model_providers__provider_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  test_provider_api_v1_model_providers__provider_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderTest"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_models_api_v1_models_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_model_api_v1_models_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModelCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Model"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_model_api_v1_models__key__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Model"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_model_api_v1_models__key__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModelUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Model"];
+        };
+      };
+      400: components["responses"]["Error"];
       default: components["responses"]["Error"];
     };
   };
@@ -7565,7 +10014,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -7613,282 +10062,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AuditPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_providers_api_v1_organizations__organization_id__connector_providers_get: {
-    parameters: {
-      query?: {
-        workspace_id?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_provider_api_v1_organizations__organization_id__connector_providers_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ProviderCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_provider_api_v1_organizations__organization_id__connector_providers__provider_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_provider_api_v1_organizations__organization_id__connector_providers__provider_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ProviderUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  test_provider_api_v1_organizations__organization_id__connector_providers__provider_id__test_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderTest"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_providers_api_v1_organizations__organization_id__environment_providers_get: {
-    parameters: {
-      query?: {
-        workspace_id?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_provider_api_v1_organizations__organization_id__environment_providers_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ProviderCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_provider_api_v1_organizations__organization_id__environment_providers__provider_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_provider_api_v1_organizations__organization_id__environment_providers__provider_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ProviderUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  test_provider_api_v1_organizations__organization_id__environment_providers__provider_id__test_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderTest"];
         };
       };
       400: components["responses"]["Error"];
@@ -8032,7 +10205,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -8065,7 +10238,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -8147,7 +10320,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -8175,7 +10348,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -8221,533 +10394,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["MemberPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_providers_api_v1_organizations__organization_id__memory_providers_get: {
-    parameters: {
-      query?: {
-        workspace_id?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_provider_api_v1_organizations__organization_id__memory_providers_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ProviderCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_provider_api_v1_organizations__organization_id__memory_providers__provider_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_provider_api_v1_organizations__organization_id__memory_providers__provider_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ProviderUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  test_provider_api_v1_organizations__organization_id__memory_providers__provider_id__test_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderTest"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_providers_api_v1_organizations__organization_id__model_providers_get: {
-    parameters: {
-      query?: {
-        workspace_id?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_provider_api_v1_organizations__organization_id__model_providers_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ProviderCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_provider_api_v1_organizations__organization_id__model_providers__provider_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_provider_api_v1_organizations__organization_id__model_providers__provider_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ProviderUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  test_provider_api_v1_organizations__organization_id__model_providers__provider_id__test_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderTest"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_models_api_v1_organizations__organization_id__models_get: {
-    parameters: {
-      query?: {
-        workspace_id?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ModelPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_model_api_v1_organizations__organization_id__models_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ModelCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Model"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_model_api_v1_organizations__organization_id__models__model_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        model_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Model"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_model_api_v1_organizations__organization_id__models__model_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        organization_id: string;
-        model_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ModelUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Model"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_providers_api_v1_organizations__organization_id__web_providers_get: {
-    parameters: {
-      query?: {
-        workspace_id?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_provider_api_v1_organizations__organization_id__web_providers_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ProviderCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_provider_api_v1_organizations__organization_id__web_providers__provider_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_provider_api_v1_organizations__organization_id__web_providers__provider_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ProviderUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Provider"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  test_provider_api_v1_organizations__organization_id__web_providers__provider_id__test_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ProviderTest"];
         };
       };
       400: components["responses"]["Error"];
@@ -8833,6 +10479,1828 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  get_run_api_v1_runs__run_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_run_api_v1_runs__run_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RunLabels"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  run_attempts_api_v1_runs__run_id__attempts_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Attempts"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_attempt_spans_api_v1_runs__run_id__attempts__attempt_id__trace_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        attempt_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SpanPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  fork_run_api_v1_runs__run_id__fork_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Fork"];
+      };
+    };
+    responses: {
+      /** @description The replayed submission in its current state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  interrupt_run_api_v1_runs__run_id__interrupt_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  run_items_api_v1_runs__run_id__items_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunItems"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  run_lineage_api_v1_runs__run_id__lineage_get: {
+    parameters: {
+      query?: {
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  resume_run_api_v1_runs__run_id__resume_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ResumeRequest"];
+      };
+    };
+    responses: {
+      /** @description The existing successor run in its current state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunView"];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_sessions_api_v1_sessions_get: {
+    parameters: {
+      query?: {
+        /** @description A session or thread ID */
+        q?: string | null;
+        agent_id?: string | null;
+        status?: components["schemas"]["RunStatus"][];
+        trigger?: components["schemas"]["Trigger"][];
+        updated_after?: string | null;
+        updated_before?: string | null;
+        label?: string[];
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_session_api_v1_sessions_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SessionCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_session_api_v1_sessions__session_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_session_api_v1_sessions__session_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SessionUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SessionView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_skills_api_v1_skills_get: {
+    parameters: {
+      query?: {
+        label?: string[] | null;
+        q?: string | null;
+        source?: ("upload" | "github") | null;
+        archived?: boolean | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_skill_api_v1_skills_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SkillCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Skill"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  validate_package_api_v1_skills_validate_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SkillValidate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillManifest"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_skill_api_v1_skills__skill_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Skill"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_skill_api_v1_skills__skill_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SkillUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Skill"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  archive_skill_api_v1_skills__skill_id__archive_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Skill"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_revisions_api_v1_skills__skill_id__revisions_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillRevisionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_revision_api_v1_skills__skill_id__revisions_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SkillRevisionCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillRevision"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_revision_api_v1_skills__skill_id__revisions__revision_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+        revision_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SkillRevision"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  read_archive_api_v1_skills__skill_id__revisions__revision_id__content_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+        revision_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The revision's package as a zip archive */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/zip": Binary;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  read_file_api_v1_skills__skill_id__revisions__revision_id__files__path__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+        revision_id: string;
+        path: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description One file of the revision's package */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/octet-stream": Binary;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  set_default_revision_api_v1_skills__skill_id__revisions__revision_id__set_default_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+        revision_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Skill"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  unarchive_skill_api_v1_skills__skill_id__unarchive_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Skill"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_subscriptions_api_v1_subscriptions_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SubscriptionPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_subscription_api_v1_subscriptions_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SubscriptionCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CreatedSubscription"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_subscription_api_v1_subscriptions__subscription_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        subscription_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Subscription"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  delete_subscription_api_v1_subscriptions__subscription_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        subscription_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_subscription_api_v1_subscriptions__subscription_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        subscription_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SubscriptionUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Subscription"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_deliveries_api_v1_subscriptions__subscription_id__deliveries_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        subscription_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeliveryPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  redeliver_api_v1_subscriptions__subscription_id__deliveries__delivery_id__redeliver_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        subscription_id: string;
+        delivery_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebhookDelivery"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_threads_api_v1_threads_get: {
+    parameters: {
+      query?: {
+        session_id?: string | null;
+        label?: string[] | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_thread_api_v1_threads_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["NewThread"];
+      };
+    };
+    responses: {
+      /** @description The replayed submission in its current state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_thread_api_v1_threads__thread_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_thread_api_v1_threads__thread_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ThreadUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  archive_thread_api_v1_threads__thread_id__archive_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_mounts_api_v1_threads__thread_id__environments_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MountPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  add_mount_api_v1_threads__thread_id__environments_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MountCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MountView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  remove_mount_api_v1_threads__thread_id__environments__name__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_inbox_api_v1_threads__thread_id__inbox_get: {
+    parameters: {
+      query?: {
+        status?: components["schemas"]["EntryStatus"][] | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EntryPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  submit_message_api_v1_threads__thread_id__inbox_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Message"];
+      };
+    };
+    responses: {
+      /** @description The replayed submission in its current state */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  reorder_inbox_api_v1_threads__thread_id__inbox_order_put: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["InboxOrder"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ThreadView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_entry_api_v1_threads__thread_id__inbox__entry_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        entry_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EntryView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  withdraw_entry_api_v1_threads__thread_id__inbox__entry_id__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        entry_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  edit_entry_api_v1_threads__thread_id__inbox__entry_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        entry_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["EntryUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Submitted"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_mounts_api_v1_threads__thread_id__memories_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryMountPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  add_mount_api_v1_threads__thread_id__memories_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryMount"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryMount"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  remove_mount_api_v1_threads__thread_id__memories__name__delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_mount_api_v1_threads__thread_id__memories__name__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryMountUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryMount"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_thread_runs_api_v1_threads__thread_id__runs_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  thread_stream_api_v1_threads__thread_id__stream_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        "Last-Event-ID"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/event-stream": unknown;
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_toolsets_api_v1_toolsets_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ToolsetCatalog"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_trace_backend_api_v1_trace_backend_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TraceBackend"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_traces_api_v1_traces_get: {
+    parameters: {
+      query?: {
+        session_id?: string | null;
+        thread_id?: string | null;
+        run_id?: string | null;
+        /** @description key:value, an exact root span attribute */
+        attribute?: string[] | null;
+        started_after?: string | null;
+        started_before?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SpanPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_trace_api_v1_traces__trace_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        trace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Span"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_trace_spans_api_v1_traces__trace_id__spans_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        trace_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SpanPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_upload_api_v1_uploads_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "multipart/form-data": components["schemas"]["UploadCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Upload"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  summarize_usage_api_v1_usage_get: {
+    parameters: {
+      query?: {
+        run_id?: string | null;
+        thread_id?: string | null;
+        session_id?: string | null;
+        ingested_after?: string | null;
+        ingested_before?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UsageSummary"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   get_profile_api_v1_users_me_get: {
     parameters: {
       query?: never;
@@ -8858,7 +12326,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path?: never;
@@ -8912,7 +12380,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path?: never;
@@ -8943,7 +12411,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path?: never;
@@ -9044,7 +12512,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -9164,6 +12632,150 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  list_providers_api_v1_web_providers_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_provider_api_v1_web_providers_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_provider_api_v1_web_providers__provider_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_provider_api_v1_web_providers__provider_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  test_provider_api_v1_web_providers__provider_id__test_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderTest"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_workspaces_api_v1_workspaces_get: {
     parameters: {
       query?: {
@@ -9217,7 +12829,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -9244,467 +12856,11 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
-  prepare_composer_api_v1_workspaces__workspace_id__agent_composer_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_agents_api_v1_workspaces__workspace_id__agents_get: {
-    parameters: {
-      query?: {
-        label?: string[] | null;
-        q?: string | null;
-        archived?: boolean | null;
-        skill_id?: string | null;
-        skill_revision_id?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_agent_api_v1_workspaces__workspace_id__agents_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AgentCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  validate_revision_api_v1_workspaces__workspace_id__agents_validate_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AgentValidate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_agent_api_v1_workspaces__workspace_id__agents__agent_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_agent_api_v1_workspaces__workspace_id__agents__agent_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AgentUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  archive_agent_api_v1_workspaces__workspace_id__agents__agent_id__archive_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_avatar_api_v1_workspaces__workspace_id__agents__agent_id__avatar_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The image */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "image/jpeg": Binary;
-          "image/png": Binary;
-          "image/webp": Binary;
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  put_avatar_api_v1_workspaces__workspace_id__agents__agent_id__avatar_put: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "image/jpeg": Binary;
-        "image/png": Binary;
-        "image/webp": Binary;
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  delete_avatar_api_v1_workspaces__workspace_id__agents__agent_id__avatar_delete: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  duplicate_agent_api_v1_workspaces__workspace_id__agents__agent_id__duplicate_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AgentDuplicate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_revisions_api_v1_workspaces__workspace_id__agents__agent_id__revisions_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentRevisionPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_revision_api_v1_workspaces__workspace_id__agents__agent_id__revisions_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AgentRevisionCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentRevision"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_revision_api_v1_workspaces__workspace_id__agents__agent_id__revisions__revision_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        agent_id: string;
-        revision_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AgentRevision"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  set_default_api_v1_workspaces__workspace_id__agents__agent_id__revisions__revision_id__set_default_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        agent_id: string;
-        revision_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  unarchive_agent_api_v1_workspaces__workspace_id__agents__agent_id__unarchive_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        agent_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Agent"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
   archive_workspace_api_v1_workspaces__workspace_id__archive_post: {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -9721,148 +12877,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Workspace"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_assets_api_v1_workspaces__workspace_id__assets_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AssetPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_asset_api_v1_workspaces__workspace_id__assets_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AssetCreate"];
-      };
-    };
-    responses: {
-      /** @description The asset already created from this upload */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Asset"];
-        };
-      };
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Asset"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_asset_api_v1_workspaces__workspace_id__assets__asset_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        asset_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Asset"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  retire_asset_api_v1_workspaces__workspace_id__assets__asset_id__delete: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        asset_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Asset"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  read_asset_content_api_v1_workspaces__workspace_id__assets__asset_id__content_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        asset_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The asset bytes, with their stored content type */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "*/*": Binary;
         };
       };
       400: components["responses"]["Error"];
@@ -9890,594 +12904,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["AuditPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_connections_api_v1_workspaces__workspace_id__connections_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ConnectionPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_connection_api_v1_workspaces__workspace_id__connections_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ConnectionCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Connection"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_connection_api_v1_workspaces__workspace_id__connections__connection_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Connection"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_connection_api_v1_workspaces__workspace_id__connections__connection_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ConnectionUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Connection"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  authorize_connection_api_v1_workspaces__workspace_id__connections__connection_id__authorize_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["AuthorizationRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["AuthorizationResult"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  revoke_connection_api_v1_workspaces__workspace_id__connections__connection_id__revoke_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RevokedConnection"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  test_connection_api_v1_workspaces__workspace_id__connections__connection_id__test_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ConnectionTest"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_tools_api_v1_workspaces__workspace_id__connections__connection_id__tools_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        connection_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ToolPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_apps_api_v1_workspaces__workspace_id__connector_providers__provider_id__apps_get: {
-    parameters: {
-      query?: {
-        query?: string | null;
-        limit?: number;
-        cursor?: string | null;
-        refresh?: boolean;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        provider_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ConnectorAppPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_app_api_v1_workspaces__workspace_id__connector_providers__provider_id__apps__app__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        provider_id: string;
-        app: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ConnectorApp"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_actions_api_v1_workspaces__workspace_id__connector_providers__provider_id__apps__app__actions_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        provider_id: string;
-        app: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ConnectorActionPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_templates_api_v1_workspaces__workspace_id__environment_templates_get: {
-    parameters: {
-      query?: {
-        label?: string[] | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TemplatePage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_template_api_v1_workspaces__workspace_id__environment_templates_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["TemplateCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Template"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_template_api_v1_workspaces__workspace_id__environment_templates__template_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        template_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Template"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_template_api_v1_workspaces__workspace_id__environment_templates__template_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        template_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["TemplateUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Template"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_environments_api_v1_workspaces__workspace_id__environments_get: {
-    parameters: {
-      query?: {
-        status?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EnvironmentPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_environment_api_v1_workspaces__workspace_id__environments_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json":
-          | components["schemas"]["ManagedEnvironmentCreate"]
-          | components["schemas"]["ExternalTargetCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EnvironmentView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_environment_api_v1_workspaces__workspace_id__environments__environment_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        environment_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EnvironmentView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  delete_environment_api_v1_workspaces__workspace_id__environments__environment_id__delete: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        environment_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EnvironmentView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_environment_api_v1_workspaces__workspace_id__environments__environment_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        environment_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EnvironmentUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EnvironmentView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  stop_environment_api_v1_workspaces__workspace_id__environments__environment_id__stop_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        environment_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      202: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EnvironmentView"];
         };
       };
       400: components["responses"]["Error"];
@@ -10621,7 +13047,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -10654,7 +13080,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -10736,7 +13162,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -10764,7 +13190,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -10820,7 +13246,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -10839,1038 +13265,6 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["ApiKey"];
         };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_media_defaults_api_v1_workspaces__workspace_id__media_understanding_defaults_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MediaDefaults"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  replace_media_defaults_api_v1_workspaces__workspace_id__media_understanding_defaults_put: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MediaUnderstandingSelection"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MediaDefaults"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_memories_api_v1_workspaces__workspace_id__memories_get: {
-    parameters: {
-      query?: {
-        label?: string[] | null;
-        kind?: components["schemas"]["MemoryKind"] | null;
-        type?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_memory_api_v1_workspaces__workspace_id__memories_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemoryCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Memory"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_memory_api_v1_workspaces__workspace_id__memories__memory_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Memory"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  delete_memory_api_v1_workspaces__workspace_id__memories__memory_id__delete: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_memory_api_v1_workspaces__workspace_id__memories__memory_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemoryUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Memory"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_files_api_v1_workspaces__workspace_id__memories__memory_id__files_get: {
-    parameters: {
-      query?: {
-        /** @description A directory ending in "/"; "" lists every file */
-        prefix?: string;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryFilePage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_file_api_v1_workspaces__workspace_id__memories__memory_id__files_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemoryFileCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryFile"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  move_file_api_v1_workspaces__workspace_id__memories__memory_id__files_move_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemoryFileMove"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryFile"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  read_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-        path: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryFile"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  replace_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__put: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        memory_id: string;
-        path: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemoryFileReplace"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryFile"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  delete_file_api_v1_workspaces__workspace_id__memories__memory_id__files__path__delete: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        memory_id: string;
-        path: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_records_api_v1_workspaces__workspace_id__memories__memory_id__records_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        /** @description The provider's own cursor */
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryRecordPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  add_record_api_v1_workspaces__workspace_id__memories__memory_id__records_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemoryRecordText"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryRecordView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  search_records_api_v1_workspaces__workspace_id__memories__memory_id__records_search_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemoryRecordSearch"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryRecordPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_record_api_v1_workspaces__workspace_id__memories__memory_id__records__record_id__put: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-        record_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemoryRecordText"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryRecordView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  delete_record_api_v1_workspaces__workspace_id__memories__memory_id__records__record_id__delete: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-        record_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_revisions_api_v1_workspaces__workspace_id__memories__memory_id__revisions_get: {
-    parameters: {
-      query?: {
-        path?: string | null;
-        run_id?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryRevisionPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  purge_history_api_v1_workspaces__workspace_id__memories__memory_id__revisions_delete: {
-    parameters: {
-      query: {
-        path: string;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["HistoryPurge"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_revision_api_v1_workspaces__workspace_id__memories__memory_id__revisions__seq__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        memory_id: string;
-        seq: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryRevisionDetail"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  restore_revision_api_v1_workspaces__workspace_id__memories__memory_id__revisions__seq__restore_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        memory_id: string;
-        seq: number;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryFileState"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_run_api_v1_workspaces__workspace_id__runs__run_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RunView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_run_api_v1_workspaces__workspace_id__runs__run_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["RunLabels"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RunView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  run_attempts_api_v1_workspaces__workspace_id__runs__run_id__attempts_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Attempts"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_attempt_spans_api_v1_workspaces__workspace_id__runs__run_id__attempts__attempt_id__trace_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        run_id: string;
-        attempt_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SpanPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  fork_run_api_v1_workspaces__workspace_id__runs__run_id__fork_post: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        workspace_id: string;
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["Fork"];
-      };
-    };
-    responses: {
-      /** @description The replayed submission in its current state */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Submitted"];
-        };
-      };
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Submitted"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  interrupt_run_api_v1_workspaces__workspace_id__runs__run_id__interrupt_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RunView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  run_items_api_v1_workspaces__workspace_id__runs__run_id__items_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RunItems"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  run_lineage_api_v1_workspaces__workspace_id__runs__run_id__lineage_get: {
-    parameters: {
-      query?: {
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RunPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  resume_run_api_v1_workspaces__workspace_id__runs__run_id__resume_post: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        workspace_id: string;
-        run_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ResumeRequest"];
-      };
-    };
-    responses: {
-      /** @description The existing successor run in its current state */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RunView"];
-        };
-      };
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RunView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_secrets_api_v1_workspaces__workspace_id__secrets_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SecretPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_secret_api_v1_workspaces__workspace_id__secrets_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SecretCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Secret"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_secret_api_v1_workspaces__workspace_id__secrets__secret_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        secret_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Secret"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  replace_secret_api_v1_workspaces__workspace_id__secrets__secret_id__put: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        secret_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SecretUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Secret"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  delete_secret_api_v1_workspaces__workspace_id__secrets__secret_id__delete: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        secret_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];
@@ -11960,7 +13354,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -11988,7 +13382,7 @@ export interface operations {
     parameters: {
       query?: never;
       header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
         "If-Match"?: string | null;
       };
       path: {
@@ -12067,1479 +13461,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["IssuedKey"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_sessions_api_v1_workspaces__workspace_id__sessions_get: {
-    parameters: {
-      query?: {
-        /** @description A session or thread ID */
-        q?: string | null;
-        agent_id?: string | null;
-        status?: components["schemas"]["RunStatus"][];
-        trigger?: components["schemas"]["Trigger"][];
-        updated_after?: string | null;
-        updated_before?: string | null;
-        label?: string[];
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SessionPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_session_api_v1_workspaces__workspace_id__sessions_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SessionCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SessionView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_session_api_v1_workspaces__workspace_id__sessions__session_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        session_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SessionView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_session_api_v1_workspaces__workspace_id__sessions__session_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        session_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SessionUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SessionView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_skills_api_v1_workspaces__workspace_id__skills_get: {
-    parameters: {
-      query?: {
-        label?: string[] | null;
-        q?: string | null;
-        source?: ("upload" | "github") | null;
-        archived?: boolean | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SkillPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_skill_api_v1_workspaces__workspace_id__skills_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SkillCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Skill"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  validate_package_api_v1_workspaces__workspace_id__skills_validate_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SkillValidate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SkillManifest"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_skill_api_v1_workspaces__workspace_id__skills__skill_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        skill_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Skill"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_skill_api_v1_workspaces__workspace_id__skills__skill_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        skill_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SkillUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Skill"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  archive_skill_api_v1_workspaces__workspace_id__skills__skill_id__archive_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        skill_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Skill"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_revisions_api_v1_workspaces__workspace_id__skills__skill_id__revisions_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        skill_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SkillRevisionPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_revision_api_v1_workspaces__workspace_id__skills__skill_id__revisions_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        skill_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SkillRevisionCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SkillRevision"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_revision_api_v1_workspaces__workspace_id__skills__skill_id__revisions__revision_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        skill_id: string;
-        revision_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SkillRevision"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  read_archive_api_v1_workspaces__workspace_id__skills__skill_id__revisions__revision_id__content_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        skill_id: string;
-        revision_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description The revision's package as a zip archive */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/zip": Binary;
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  read_file_api_v1_workspaces__workspace_id__skills__skill_id__revisions__revision_id__files__path__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        skill_id: string;
-        revision_id: string;
-        path: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description One file of the revision's package */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/octet-stream": Binary;
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  set_default_revision_api_v1_workspaces__workspace_id__skills__skill_id__revisions__revision_id__set_default_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        skill_id: string;
-        revision_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Skill"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  unarchive_skill_api_v1_workspaces__workspace_id__skills__skill_id__unarchive_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        skill_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Skill"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_subscriptions_api_v1_workspaces__workspace_id__subscriptions_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SubscriptionPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_subscription_api_v1_workspaces__workspace_id__subscriptions_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SubscriptionCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["CreatedSubscription"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_subscription_api_v1_workspaces__workspace_id__subscriptions__subscription_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        subscription_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Subscription"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  delete_subscription_api_v1_workspaces__workspace_id__subscriptions__subscription_id__delete: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        subscription_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_subscription_api_v1_workspaces__workspace_id__subscriptions__subscription_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        subscription_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SubscriptionUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Subscription"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_deliveries_api_v1_workspaces__workspace_id__subscriptions__subscription_id__deliveries_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        subscription_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DeliveryPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  redeliver_api_v1_workspaces__workspace_id__subscriptions__subscription_id__deliveries__delivery_id__redeliver_post: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        subscription_id: string;
-        delivery_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["WebhookDelivery"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_threads_api_v1_workspaces__workspace_id__threads_get: {
-    parameters: {
-      query?: {
-        session_id?: string | null;
-        label?: string[] | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ThreadPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_thread_api_v1_workspaces__workspace_id__threads_post: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["NewThread"];
-      };
-    };
-    responses: {
-      /** @description The replayed submission in its current state */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Submitted"];
-        };
-      };
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Submitted"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_thread_api_v1_workspaces__workspace_id__threads__thread_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ThreadView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_thread_api_v1_workspaces__workspace_id__threads__thread_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ThreadUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ThreadView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  archive_thread_api_v1_workspaces__workspace_id__threads__thread_id__archive_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ThreadView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_mounts_api_v1_workspaces__workspace_id__threads__thread_id__environments_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MountPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  add_mount_api_v1_workspaces__workspace_id__threads__thread_id__environments_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MountCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MountView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  remove_mount_api_v1_workspaces__workspace_id__threads__thread_id__environments__name__delete: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_inbox_api_v1_workspaces__workspace_id__threads__thread_id__inbox_get: {
-    parameters: {
-      query?: {
-        status?: components["schemas"]["EntryStatus"][] | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EntryPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  submit_message_api_v1_workspaces__workspace_id__threads__thread_id__inbox_post: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["Message"];
-      };
-    };
-    responses: {
-      /** @description The replayed submission in its current state */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Submitted"];
-        };
-      };
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Submitted"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  reorder_inbox_api_v1_workspaces__workspace_id__threads__thread_id__inbox_order_put: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["InboxOrder"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ThreadView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_entry_api_v1_workspaces__workspace_id__threads__thread_id__inbox__entry_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        thread_id: string;
-        entry_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["EntryView"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  withdraw_entry_api_v1_workspaces__workspace_id__threads__thread_id__inbox__entry_id__delete: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-        entry_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Submitted"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  edit_entry_api_v1_workspaces__workspace_id__threads__thread_id__inbox__entry_id__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-        entry_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["EntryUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Submitted"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_mounts_api_v1_workspaces__workspace_id__threads__thread_id__memories_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryMountPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  add_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories_post: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemoryMount"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryMount"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  remove_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories__name__delete: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  update_mount_api_v1_workspaces__workspace_id__threads__thread_id__memories__name__patch: {
-    parameters: {
-      query?: never;
-      header?: {
-        /** @description The resource's ETag: `"{id}:{version}"` of its current view */
-        "If-Match"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-        name: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemoryMountUpdate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["MemoryMount"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_thread_runs_api_v1_workspaces__workspace_id__threads__thread_id__runs_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["RunPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  thread_stream_api_v1_workspaces__workspace_id__threads__thread_id__stream_get: {
-    parameters: {
-      query?: never;
-      header?: {
-        "Last-Event-ID"?: string | null;
-      };
-      path: {
-        workspace_id: string;
-        thread_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "text/event-stream": unknown;
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_toolsets_api_v1_workspaces__workspace_id__toolsets_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ToolsetCatalog"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_trace_backend_api_v1_workspaces__workspace_id__trace_backend_get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["TraceBackend"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_traces_api_v1_workspaces__workspace_id__traces_get: {
-    parameters: {
-      query?: {
-        session_id?: string | null;
-        thread_id?: string | null;
-        run_id?: string | null;
-        /** @description key:value, an exact root span attribute */
-        attribute?: string[] | null;
-        started_after?: string | null;
-        started_before?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SpanPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  get_trace_api_v1_workspaces__workspace_id__traces__trace_id__get: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace_id: string;
-        trace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Span"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  list_trace_spans_api_v1_workspaces__workspace_id__traces__trace_id__spans_get: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-        trace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SpanPage"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  create_upload_api_v1_workspaces__workspace_id__uploads_post: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "multipart/form-data": components["schemas"]["UploadCreate"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Upload"];
-        };
-      };
-      400: components["responses"]["Error"];
-      default: components["responses"]["Error"];
-    };
-  };
-  summarize_usage_api_v1_workspaces__workspace_id__usage_get: {
-    parameters: {
-      query?: {
-        run_id?: string | null;
-        thread_id?: string | null;
-        session_id?: string | null;
-        ingested_after?: string | null;
-        ingested_before?: string | null;
-      };
-      header?: never;
-      path: {
-        workspace_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["UsageSummary"];
         };
       };
       400: components["responses"]["Error"];

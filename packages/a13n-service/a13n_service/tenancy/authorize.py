@@ -13,8 +13,8 @@ from a13n_service.infra.errors import ServiceError
 type Verb = Literal["read", "run", "write", "admin"]
 
 VERBS: frozenset[Verb] = frozenset({"read", "run", "write", "admin"})
-# What any grant in an organization, or a workspace credential, may do with the organization's shared resources.
-SHARED_USE: frozenset[Verb] = frozenset({"read", "run"})
+# What a workspace grant, or a credential confined to a workspace, may do at its organization's own scope.
+ORGANIZATION_READ: frozenset[Verb] = frozenset({"read"})
 
 BUILT_IN_ROLES: Mapping[str, frozenset[Verb]] = MappingProxyType(
     {
@@ -83,11 +83,11 @@ def allowed_verbs(principal: Principal, resource: Scoped) -> frozenset[Verb]:
         if grant.organization_id != resource.organization_id:
             continue
         if resource.workspace_id is None:
-            verbs.update(grant.verbs if grant.workspace_id is None else grant.verbs & SHARED_USE)
+            verbs.update(grant.verbs if grant.workspace_id is None else grant.verbs & ORGANIZATION_READ)
         elif grant.workspace_id in {None, resource.workspace_id}:
             verbs.update(grant.verbs)
     if confinement is not None and resource.workspace_id is None:
-        verbs.intersection_update(SHARED_USE)
+        verbs.intersection_update(ORGANIZATION_READ)
     return frozenset(verbs)
 
 
@@ -97,8 +97,7 @@ def authorize(
     if authority is not None and (
         authority.principal_id != principal.id
         or authority.organization_id != resource.organization_id
-        or resource.workspace_id not in {None, authority.workspace_id}
-        or (resource.workspace_id is None and verb not in SHARED_USE)
+        or resource.workspace_id != authority.workspace_id
         or verb not in authority.verbs
     ):
         raise ServiceError("forbidden", "Execution delegation does not cover this operation", {"verb": verb})

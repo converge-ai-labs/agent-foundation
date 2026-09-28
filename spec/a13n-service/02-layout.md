@@ -37,7 +37,6 @@ a13n_service/
     web_providers/    runtime
     connections/      tables  schemas  service  routes  access  authorization  oauth  account  credentials
                       operations  discovery  headers  runtime
-    secrets/          tables  schemas  service  routes
     uploads/          schemas  service  routes
     assets/           tables  schemas  service  routes
     memories/         tables  schemas  service  routes  store  files  records  purge
@@ -48,7 +47,7 @@ a13n_service/
     sessions.py  threads.py  archive.py  inbox.py  entries.py  inputs.py  attachments.py  placement.py
     submit.py  accept.py  admission.py  resume.py  claim.py  worker.py  attempts.py  execute.py  seal.py
     agent.py  host.py  calls.py  boundaries.py  checkpoints.py  display.py  deferred.py  children.py  subagents.py
-    configuration.py  assets.py  skills.py  secrets.py  web.py
+    configuration.py  assets.py  skills.py  web.py
     stream.py  webhooks.py  usage.py  traces.py  backlog.py  runs.py  runtime.py
     requests.py  schemas.py  routes.py  trace_routes.py
     environments/     tables  schemas  service  routes  lifecycle  maintenance  mounts  execution  adapters
@@ -105,7 +104,7 @@ Generic mechanisms belong in `infra`: the outbox table and its claim, settle and
 The resource packages depend on each other in one direction:
 
 ```
-agents     ->  connections, environment_templates, memories, models, providers, secrets, skills
+agents     ->  connections, environment_templates, memories, models, providers, skills
 connections  ->  connector_providers, providers
 models, environment_templates, connector_providers, web_providers, memories  ->  providers
 skills, assets  ->  uploads
@@ -167,7 +166,7 @@ Every service function follows the same conventions:
 | A column holding an immutable object key ends in `_ref`; a run's state and display objects are named by the typed pointers `checkpoint` and `display`.                                                                                                                                                                | `package_ref`, `content_ref`, `runs.checkpoint`                                                           |
 | A content hash is `digest` (SHA-256, hex). A hashed secret is `secret_hash`.                                                                                                                                                                                                                                          | `agent_revisions.digest`, `api_keys.secret_hash`                                                          |
 | Counters: `number` for revisions and attempts, `version` for mutable-row concurrency, `position` for inbox order, `seq` for checkpoints and memory changes, `generation` for invalidation.                                                                                                                            | `run_attempts.number`, `inbox_entries.position`, `incorporated_checkpoint_seq`, `environments.generation` |
-| Who: `principal_id` is the identity something executes as or belongs to, `created_by_id` and `updated_by_id` are authors, `actor_id` is the audit subject.                                                                                                                                                            | `runs.principal_id`, `secrets.principal_id`                                                               |
+| Who: `principal_id` is the identity something executes as or belongs to, `created_by_id` and `updated_by_id` are authors, `actor_id` is the audit subject.                                                                                                                                                            | `runs.principal_id`, `inbox_entries.principal_id`                                                         |
 | Row classes end in `Row`; API types are the plain noun, except the read types of runs, threads, sessions, inbox entries, attempts, environments, mounts and grants, which end in `View` because their plain nouns already name Harness or domain types those modules use; frozen configuration types end in `Config`. | `AgentRow`, `Agent`, `RunView`, `AgentConfig`, `McpConfig`                                                |
 | Functions are verb phrases.                                                                                                                                                                                                                                                                                           | `create_agent`, `resolve_connection`, `accept`, `claim`, `execute`, `seal`                                |
 | Modules are named for what they hold, never for a phase or a quality.                                                                                                                                                                                                                                                 | `accept.py`, `claim.py`, `mounts.py`                                                                      |
@@ -183,7 +182,7 @@ Object IDs follow the platform's [data conventions](../data-conventions.md#servi
 | `ws`                | workspaces                                                            | `envtpl`              | environment_templates                        |
 | `usr`, `sa`         | principals (user, service account)                                    | `conn`                | connections                                  |
 | `key`               | api_keys                                                              | `connop`              | connection operations                        |
-| `ase`, `prt`, `ect` | tokens (login session, password reset, email change)                  | `sec`                 | secrets                                      |
+| `ase`, `prt`, `ect` | tokens (login session, password reset, email change)                  | `wrk`                 | worker IDs                                   |
 | `rb`                | grants                                                                | `ast`                 | assets                                       |
 | `inv`               | invitations                                                           | `sub`                 | subscriptions                                |
 | `audit`             | audit_events                                                          | `sess`                | sessions                                     |
@@ -193,7 +192,7 @@ Object IDs follow the platform's [data conventions](../data-conventions.md#servi
 | `mprov`             | model_providers                                                       | `rat`                 | run_attempts                                 |
 | `eprov`             | environment_providers                                                 | `env`                 | environments                                 |
 | `cprov`             | connector_providers                                                   | `envoper`, `envrenew` | environment operations, environment renewals |
-| `wprov`             | web_providers                                                         | `wrk`                 | worker IDs                                   |
+| `wprov`             | web_providers                                                         |                       |                                              |
 | `memprov`           | memory_providers                                                      |                       |                                              |
 | `ctl`               | control sweep claim owners (outbox delivery, environment maintenance) | `req`                 | request IDs                                  |
 | `mem`               | memories                                                              | `mfile`               | memory_files                                 |

@@ -5,10 +5,10 @@ import { SettingsLayout } from "./layout";
 
 vi.mock("../../layout/workspace", () => {
   const useAccess = () => ({
-    basePath: "/workspace/design",
-    workspace: { id: "workspace", key: "design", name: "Design" },
+    basePath: "/workspace/ws_design",
+    workspace: { id: "ws_design", name: "Design" },
     organization: { id: "organization", key: "acme", name: "Acme" },
-    workspaces: [{ id: "workspace", key: "design", name: "Design" }],
+    workspaces: [{ id: "ws_design", name: "Design" }],
     organizationCan: () => true,
     can: () => true,
   });
@@ -30,7 +30,7 @@ function mount(entry: string) {
     <MemoryRouter initialEntries={[entry]}>
       <Location />
       <Routes>
-        {["/workspace/:workspaceKey/settings/:section?"].map((path) => (
+        {["/workspace/:workspaceId/settings/:section?"].map((path) => (
           <Route
             key={path}
             path={path}
@@ -52,7 +52,7 @@ function mount(entry: string) {
 }
 
 it("lists every scope the reader can reach without a disclosure", () => {
-  mount("/workspace/design/settings/members");
+  mount("/workspace/ws_design/settings/members");
   const navigation = screen.getByRole("navigation", {
     name: "Settings navigation",
   });

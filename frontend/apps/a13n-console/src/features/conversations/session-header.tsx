@@ -71,7 +71,7 @@ export function SessionHeader({
         {agent.data ? (
           <Link
             className={styles.agentLink}
-            to={`${basePath}/agents/${agent.data.key}`}
+            to={`${basePath}/agents/${agent.data.id}`}
           >
             <AgentAvatar
               name={agent.data.name}

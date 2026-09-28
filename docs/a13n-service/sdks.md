@@ -16,7 +16,7 @@ The SDK repositories own installation, language-specific methods, examples, comp
 
 ## Connect to your deployment
 
-Start with the Service URL, credentials authorized for the intended scope, and an explicit workspace ID or key. To submit a message, also select an existing Agent. [Get started](get-started.md) covers deployment and initial setup; [identity and access](identity.md) explains API keys versus login sessions.
+Start with the Service URL and credentials for the intended workspace: an API key acts in its own workspace, and a login session names a workspace ID (see [HTTP conventions](http.md#workspace)). To submit a message, also select an existing Agent. [Get started](get-started.md) covers deployment and initial setup; [identity and access](identity.md) explains API keys versus login sessions.
 
 The clients expose resource operations and language-appropriate observation helpers, while Service owns authorization and durable execution. A submission may remain queued without a Run. A local timeout or disconnected stream does not stop remote work. Follow the selected client's guide for handling receipts, conditional writes, streaming and recovery.
 

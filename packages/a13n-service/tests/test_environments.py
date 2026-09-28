@@ -52,10 +52,10 @@ async def env(service) -> SimpleNamespace:  # type: ignore[no-untyped-def]
 
 
 async def test_templates_validate_their_provider_and_recipe(env) -> None:  # type: ignore[no-untyped-def]
-    client, templates = env.client, f"{env.workspace}/environment-templates"
+    client, templates = env.client, f"{env.api}/environment-templates"
     invalid = await client.post(
         templates,
-        json={"key": "bad", "name": "Bad", "provider_id": env.provider["id"], "config": {"recipe": {"cpu": 2}}},
+        json={"name": "Bad", "provider_id": env.provider["id"], "config": {"recipe": {"cpu": 2}}},
     )
     assert invalid.status_code == 400, invalid.text
     path = f"{templates}/{env.template['id']}"
@@ -80,7 +80,7 @@ async def test_acceptance_freezes_mounts_and_edits_follow_the_thread_version(env
     [primary] = run["environment_mounts"]
     assert primary["name"] == "workspace" and primary["working_directory"] is None
     assert (await environment(env, primary["environment_id"]))["status"] == "creating"
-    mounts = f"{env.workspace}/threads/{thread_id}/environments"
+    mounts = f"{env.api}/threads/{thread_id}/environments"
     listing = await client.get(mounts)
     assert [item["name"] for item in listing.json()["items"]] == ["workspace"]
     version = listing.headers["etag"]
@@ -100,12 +100,12 @@ async def test_acceptance_freezes_mounts_and_edits_follow_the_thread_version(env
     assert removed.status_code == 204
     assert (await client.delete(f"{mounts}/data", headers={"if-match": removed.headers["etag"]})).status_code == 404
     # The accepted run keeps the set frozen at its acceptance.
-    frozen = await client.get(f"{env.workspace}/runs/{run['id']}")
+    frozen = await client.get(f"{env.api}/runs/{run['id']}")
     assert frozen.json()["environment_mounts"] == run["environment_mounts"]
 
 
 async def test_a_reserved_sandbox_is_created_by_maintenance_and_mounted_by_a_new_thread(env) -> None:  # type: ignore[no-untyped-def]
-    client, environments = env.client, f"{env.workspace}/environments"
+    client, environments = env.client, f"{env.api}/environments"
     sandbox = await reserve(env, env.template["id"])
     assert (sandbox["status"], sandbox["template_id"], sandbox["name"]) == ("creating", env.template["id"], "Box")
     assert sandbox["device_id"] is None and sandbox["owner_principal_id"] is None
@@ -117,7 +117,7 @@ async def test_a_reserved_sandbox_is_created_by_maintenance_and_mounted_by_a_new
     mounts = [{"name": "workspace", "environment_id": sandbox["id"], "working_directory": "/work/app"}]
     submitted = await start(env, environments=mounts)
     assert submitted["run"]["environment_mounts"] == mounts
-    listing = await client.get(f"{env.workspace}/threads/{submitted['thread']['id']}/environments")
+    listing = await client.get(f"{env.api}/threads/{submitted['thread']['id']}/environments")
     assert listing.json()["items"] == mounts
     assert [item["id"] for item in (await client.get(environments)).json()["items"]] == [sandbox["id"]]
 
@@ -139,13 +139,13 @@ async def test_a_reserved_sandbox_is_created_by_maintenance_and_mounted_by_a_new
         refused = await new_thread(env, "refused", environments=initial)
         error = refused.json()["error"]
         assert refused.status_code == status and refusal in {None, error["code"], error["details"].get("reason")}, error
-    assert len((await client.get(f"{env.workspace}/threads")).json()["items"]) == 1
+    assert len((await client.get(f"{env.api}/threads")).json()["items"]) == 1
 
     # An unmounted sandbox follows its template's idle policy: deleted once idle past `delete_after_seconds`.
     spare = await reserve(env, env.template["id"], name="spare")
     await maintain_environments(env.runtime, owner="sweep")
     assert (await environment(env, spare["id"]))["status"] == "ready"
-    template = f"{env.workspace}/environment-templates/{env.template['id']}"
+    template = f"{env.api}/environment-templates/{env.template['id']}"
     etag = (await client.get(template)).headers["etag"]
     policy = {"config": {"delete_after_seconds": 3600}}
     updated = await client.patch(template, json=policy, headers={"if-match": etag})
@@ -172,7 +172,7 @@ async def test_a_fork_shares_its_origins_mounts_and_adds_its_own(env, scripted_m
     first, second = [(await reserve(env, env.template["id"]))["id"] for _ in range(2)]
     thread = await runs_kit.get_thread(env, origin["thread"]["id"])
     added = await env.client.post(
-        f"{env.workspace}/threads/{thread['id']}/environments",
+        f"{env.api}/threads/{thread['id']}/environments",
         json={"name": "data", "environment_id": first},
         headers=runs_kit.if_match(thread),
     )
@@ -180,7 +180,7 @@ async def test_a_fork_shares_its_origins_mounts_and_adds_its_own(env, scripted_m
 
     async def fork(text: str, **fields: object) -> httpx2.Response:
         return await env.client.post(
-            f"{env.workspace}/runs/{origin['run']['id']}/fork",
+            f"{env.api}/runs/{origin['run']['id']}/fork",
             json=runs_kit.message(agent, text, **fields),
             headers=runs_kit.fresh_key(),
         )
@@ -235,7 +235,7 @@ async def test_a_disabled_provider_still_stops_its_sandboxes(env) -> None:  # ty
     run_id, environment_id = submitted["run"]["id"], submitted["run"]["environment_mounts"][0]["environment_id"]
     await advance(env.runtime, environment_id, owner="test")
     await interrupt(env, run_id)
-    provider = f"{env.organization}/environment-providers/{env.provider['id']}"
+    provider = f"{env.api}/environment-providers/{env.provider['id']}"
     current = (await env.client.get(provider)).headers["etag"]
     disabled = await env.client.patch(provider, json={"enabled": False}, headers={"if-match": current})
     assert disabled.status_code == 200, disabled.text
@@ -263,7 +263,7 @@ async def test_delete_never_retires_a_sandbox_its_type_cannot_destroy(env) -> No
     assert BACKEND.instances == {environment_id: "running"}
 
     # Nor does its template's idle policy: maintenance only stops it.
-    template = f"{env.workspace}/environment-templates/{env.template['id']}"
+    template = f"{env.api}/environment-templates/{env.template['id']}"
     etag = (await env.client.get(template)).headers["etag"]
     policy = {"config": {"delete_after_seconds": 3600}}
     assert (await env.client.patch(template, json=policy, headers={"if-match": etag})).status_code == 200
@@ -280,7 +280,7 @@ async def test_managed_sandboxes_are_bounded_per_workspace(env) -> None:  # type
     reserved = await reserve(env, env.template["id"])
     await start(env)
 
-    refused = await env.client.post(f"{env.workspace}/environments", json={"template_id": env.template["id"]})
+    refused = await env.client.post(f"{env.api}/environments", json={"template_id": env.template["id"]})
     assert refused.status_code == 409 and reason(refused.json()) == "environment_limit", refused.text
     # A new thread's primary sandbox counts too: its first entry fails in place.
     failed = await start(env, "one more")
@@ -315,9 +315,7 @@ async def test_acceptances_that_reserve_and_mount_in_one_workspace_do_not_deadlo
     monkeypatch.setattr(lifecycle, "advisory_lock", holding)
     body = {"agent_id": env.agent["id"], "payload": {"content": [{"type": "text", "text": "again"}]}}
     message = asyncio.create_task(
-        env.client.post(
-            f"{env.workspace}/threads/{first['thread']['id']}/inbox", json=body, headers={"idempotency-key": "y"}
-        )
+        env.client.post(f"{env.api}/threads/{first['thread']['id']}/inbox", json=body, headers={"idempotency-key": "y"})
     )
     async with asyncio.timeout(10):
         await held.wait()
@@ -368,7 +366,7 @@ async def test_a_thread_mounts_a_bounded_number_of_environments(env) -> None:  #
     assert (await new_thread(env, "too many", environments=[*initial, extra])).status_code == 400
 
     thread_id = (await start(env, environments=initial))["thread"]["id"]
-    mounts = f"{env.workspace}/threads/{thread_id}/environments"
+    mounts = f"{env.api}/threads/{thread_id}/environments"
     version = (await env.client.get(mounts)).headers["etag"]
     refused = await env.client.post(mounts, json=extra, headers={"if-match": version})
     assert refused.status_code == 409 and reason(refused.json()) == "mount_limit", refused.text
@@ -377,11 +375,9 @@ async def test_a_thread_mounts_a_bounded_number_of_environments(env) -> None:  #
 async def test_a_template_moved_to_another_provider_fails_its_uncreated_sandboxes(env) -> None:  # type: ignore[no-untyped-def]
     """A reservation keeps its provider; the recipe of another provider's template is never built on it."""
     sandbox = await reserve(env, env.template["id"])
-    other = await env.client.post(
-        f"{env.organization}/environment-providers", json={"workspace_id": None, "type": "fake", "name": "Other"}
-    )
+    other = await env.client.post(f"{env.api}/environment-providers", json={"type": "fake", "name": "Other"})
     assert other.status_code == 201, other.text
-    template = f"{env.workspace}/environment-templates/{env.template['id']}"
+    template = f"{env.api}/environment-templates/{env.template['id']}"
     etag = (await env.client.get(template)).headers["etag"]
     moved = await env.client.patch(template, json={"provider_id": other.json()["id"]}, headers={"if-match": etag})
     assert moved.status_code == 200, moved.text
@@ -398,19 +394,19 @@ async def test_a_draining_worker_yields_while_a_sandbox_is_being_created(env, ru
     async with asyncio.timeout(10):
         await (await runs_kit.attempt(env, handoff=True))
     assert (await runs_kit.get_run(env, run_id))["status"] == "accepted"
-    attempts = (await env.client.get(f"{env.workspace}/runs/{run_id}/attempts")).json()["items"]
+    attempts = (await env.client.get(f"{env.api}/runs/{run_id}/attempts")).json()["items"]
     assert [item["status"] for item in attempts] == ["yielded"]
 
 
 async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     """Edges pinning one revision still differ in what their children mount."""
-    model_id = await runs_kit.create_model(env, scripted_model)
-    worker = await runs_kit.add_agent(env, "worker", model_id, instructions="Role: worker")
+    model = await runs_kit.create_model(env, scripted_model)
+    worker = await runs_kit.add_agent(env, "worker", model, instructions="Role: worker")
     pinned = {"agent_id": worker["id"], "revision_id": worker["default_revision_id"]}
     coordinator = await runs_kit.add_agent(
         env,
         "coordinator",
-        model_id,
+        model,
         instructions="Role: coordinator",
         default_environment_template_id=env.template["id"],
         subagent_mode="async",
@@ -435,7 +431,7 @@ async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_
         children = {child.subagent: child.id for child in spawned}
 
     async def mounted(thread_id: str) -> list[dict]:
-        return (await env.client.get(f"{env.workspace}/threads/{thread_id}/environments")).json()["items"]
+        return (await env.client.get(f"{env.api}/threads/{thread_id}/environments")).json()["items"]
 
     assert await mounted(children["researcher"]) == []
     assert await mounted(children["builder"]) == [primary]
@@ -496,7 +492,7 @@ async def test_an_uncertain_operation_is_continued_never_replaced(env, caplog) -
     assert (code, body["status"]) == (202, "deleting")
     await advance(env.runtime, environment_id, owner="test")
     assert (await environment(env, environment_id))["status"] == "deleted" and BACKEND.instances == {}
-    mounts = f"{env.workspace}/threads/{thread['id']}/environments"
+    mounts = f"{env.api}/threads/{thread['id']}/environments"
     version = (await env.client.get(mounts)).headers["etag"]
     body = {"name": "old", "environment_id": environment_id}
     refused = await env.client.post(mounts, json=body, headers={"if-match": version})
@@ -518,7 +514,7 @@ async def test_maintenance_stops_idle_sandboxes_and_deletes_unmounted_ones(env) 
     assert (await environment(env, environment_id))["status"] == "stopped"
     assert BACKEND.instances == {environment_id: "stopped"}
 
-    template = f"{env.workspace}/environment-templates/{env.template['id']}"
+    template = f"{env.api}/environment-templates/{env.template['id']}"
     etag = (await env.client.get(template)).headers["etag"]
     policy = {"config": {"delete_after_seconds": 3600}}
     assert (await env.client.patch(template, json=policy, headers={"if-match": etag})).status_code == 200
@@ -541,13 +537,13 @@ async def test_authorization_and_private_devices(env) -> None:  # type: ignore[n
         key = await client.post(f"{accounts}/{account['id']}/keys", json={"name": role})
         bearers[role] = {"authorization": "Bearer " + key.json()["secret"]}
 
-    templates = f"{env.workspace}/environment-templates"
-    body = {"key": "other", "name": "Other", "provider_id": env.provider["id"]}
+    templates = f"{env.api}/environment-templates"
+    body = {"name": "Other", "provider_id": env.provider["id"]}
     assert (await client.post(templates, json=body, headers=bearers["runner"])).status_code == 403
     assert (await client.get(templates, headers=bearers["viewer"])).status_code == 200
-    etag = (await client.get(f"{env.workspace}/environments/{environment_id}")).headers["etag"]
+    etag = (await client.get(f"{env.api}/environments/{environment_id}")).headers["etag"]
     stop = await client.post(
-        f"{env.workspace}/environments/{environment_id}/stop", headers={**bearers["runner"], "if-match": etag}
+        f"{env.api}/environments/{environment_id}/stop", headers={**bearers["runner"], "if-match": etag}
     )
     assert stop.status_code == 403
 
@@ -569,14 +565,14 @@ async def test_authorization_and_private_devices(env) -> None:  # type: ignore[n
         target.token = seal(env.runtime.keys, target, "laptop-token")
         session.add(target)
     assert (await environment(env, device))["device_id"] == "laptop"
-    mounts = f"{env.workspace}/threads/{thread}/environments"
+    mounts = f"{env.api}/threads/{thread}/environments"
     version = (await client.get(mounts)).headers["etag"]
     attach = {"name": "data", "environment_id": device}
     # The viewer may not run; the runner may, but not on someone else's device, nor start a thread with it.
     for role in ("viewer", "runner"):
         refused = await client.post(mounts, json=attach, headers={**bearers[role], "if-match": version})
         assert refused.status_code == 403, role
-    threads = f"{env.workspace}/threads"
+    threads = f"{env.api}/threads"
     started = {"agent_id": env.agent["id"], "payload": {"content": [{"type": "text", "text": "use it"}]}}
     refused = await client.post(
         threads, json={**started, "environments": [attach]}, headers={**bearers["runner"], "idempotency-key": "k"}
@@ -589,22 +585,19 @@ async def test_authorization_and_private_devices(env) -> None:  # type: ignore[n
 
     # Reserving a sandbox for threads is a run operation, like the reservation acceptance makes.
     body = {"template_id": env.template["id"]}
-    viewer = await client.post(f"{env.workspace}/environments", json=body, headers=bearers["viewer"])
+    viewer = await client.post(f"{env.api}/environments", json=body, headers=bearers["viewer"])
     assert viewer.status_code == 403, viewer.text
-    runner = await client.post(f"{env.workspace}/environments", json=body, headers=bearers["runner"])
+    runner = await client.post(f"{env.api}/environments", json=body, headers=bearers["runner"])
     assert runner.status_code == 201 and runner.json()["owner_principal_id"] is None, runner.text
 
 
 async def test_the_local_provider_keeps_one_directory_per_environment(env, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     client = env.client
-    provider = await client.post(
-        f"{env.organization}/environment-providers", json={"workspace_id": None, "type": "local", "name": "Local"}
-    )
+    provider = await client.post(f"{env.api}/environment-providers", json={"type": "local", "name": "Local"})
     assert provider.status_code == 201, provider.text
     template = await client.post(
-        f"{env.workspace}/environment-templates",
+        f"{env.api}/environment-templates",
         json={
-            "key": "local",
             "name": "Local",
             "provider_id": provider.json()["id"],
             "config": {"recipe": {"root": {"path": str(tmp_path)}}},

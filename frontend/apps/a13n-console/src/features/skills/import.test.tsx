@@ -12,7 +12,9 @@ import { ImportSkill } from "./import-dialog";
 import type { Schema } from "../../shared/api";
 
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" } }),
 }));
@@ -100,10 +102,10 @@ it("publishes a new version using the chosen GitHub source and the skill the use
   await user.click(dialog.getByRole("button", { name: "Publish version" }));
   await waitFor(() => expect(http.POST).toHaveBeenCalledTimes(1));
   expect(http.POST.mock.calls[0][0]).toBe(
-    "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/revisions",
+    "/api/v1/skills/{skill_id}/revisions",
   );
   expect(http.POST.mock.calls[0][1]).toEqual({
-    params: { path: { workspace_id: "ws_test", skill_id: "sk_test" } },
+    params: { path: { skill_id: "sk_test" } },
     headers: { "If-Match": '"sk_test:3"' },
     body: {
       source: {
@@ -138,7 +140,7 @@ it("requires validation of the currently selected ZIP before publishing", async 
         }
       : path.endsWith("/skills/validate")
         ? manifest
-        : { id: "sk_new", key: "review-documents" },
+        : { id: "sk_new" },
     response: new Response(),
   }));
   const user = userEvent.setup();
@@ -167,15 +169,14 @@ it("requires validation of the currently selected ZIP before publishing", async 
   expect(receipt.getByText("Review a document for clarity.")).toBeTruthy();
   await waitFor(() => expect(publish.disabled).toBe(false));
   const [uploadPath, upload] = http.POST.mock.calls[0];
-  expect(uploadPath).toBe("/api/v1/workspaces/{workspace_id}/uploads");
-  expect(upload.params.path).toEqual({ workspace_id: "ws_test" });
+  expect(uploadPath).toBe("/api/v1/uploads");
+  expect(upload.params.path).toBeUndefined();
   expect(upload.params.header["Idempotency-Key"]).toBeTruthy();
   expect(upload.body.file).toHaveProperty("name", "review.zip");
   expect(upload.bodySerializer().get("file")).toBe(upload.body.file);
   expect(http.POST.mock.calls[1]).toEqual([
-    "/api/v1/workspaces/{workspace_id}/skills/validate",
+    "/api/v1/skills/validate",
     {
-      params: { path: { workspace_id: "ws_test" } },
       body: { source: { kind: "upload", upload_id: "upl_test" } },
     },
   ]);
@@ -200,7 +201,7 @@ it("imports the validated package it previewed", async () => {
             size: 4,
             source: { kind: "upload", upload_id: "upl_test" },
           }
-        : { id: "sk_new", key: "review-documents" },
+        : { id: "sk_new" },
     response: new Response(),
   }));
   const user = setup();
@@ -217,9 +218,8 @@ it("imports the validated package it previewed", async () => {
   await user.click(dialog.getByRole("button", { name: "Import" }));
   await waitFor(() => expect(http.POST).toHaveBeenCalledTimes(3));
   expect(http.POST.mock.calls[2]).toEqual([
-    "/api/v1/workspaces/{workspace_id}/skills",
+    "/api/v1/skills",
     {
-      params: { path: { workspace_id: "ws_test" } },
       body: { source: { kind: "upload", upload_id: "upl_test" } },
     },
   ]);

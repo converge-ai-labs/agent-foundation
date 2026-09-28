@@ -127,25 +127,32 @@ async def test_organizations_and_workspaces(service) -> None:  # type: ignore[no
     renamed = await client.patch(service.organization, headers=if_match(organization), json={"name": "Acme"})
     assert renamed.status_code == 200 and renamed.json()["name"] == "Acme"
     assert renamed.json()["version"] == organization["version"] + 1
-    created = await client.post(f"{service.organization}/workspaces", json={"key": "research", "name": "Research"})
+    # Organizations and workspaces are named and identified by ID alone.
+    assert "key" not in organization
+    rekeyed = await client.patch(service.organization, headers=if_match(renamed.json()), json={"key": "acme"})
+    assert rekeyed.status_code == 400
+    created = await client.post(f"{service.organization}/workspaces", json={"name": "Research"})
     assert created.status_code == 201, created.text
-    duplicate = await client.post(f"{service.organization}/workspaces", json={"key": "research", "name": "Again"})
-    assert duplicate.status_code == 409 and duplicate.json()["error"]["code"] == "already_exists"
+    research = created.json()
+    assert "key" not in research
+    keyed = await client.post(f"{service.organization}/workspaces", json={"key": "research", "name": "Again"})
+    assert keyed.status_code == 400
     listed = (await client.get(f"{service.organization}/workspaces")).json()["items"]
-    assert {item["key"] for item in listed} == {"default", "research"}
+    assert {item["id"] for item in listed} == {service.tenant.workspace_id, research["id"]}
     everywhere = (await client.get("/api/v1/workspaces")).json()["items"]
     assert [item["id"] for item in everywhere] == [item["id"] for item in listed]
-    by_key = await client.get("/api/v1/workspaces/research")
-    assert by_key.status_code == 200 and by_key.json()["permissions"] == ["admin", "read", "run", "write"]
-    workspace = by_key.json()
-    updated = await client.patch("/api/v1/workspaces/research", headers=if_match(workspace), json={"name": "R&D"})
+    path = f"/api/v1/workspaces/{research['id']}"
+    read = await client.get(path)
+    assert read.status_code == 200 and read.json()["permissions"] == ["admin", "read", "run", "write"]
+    updated = await client.patch(path, headers=if_match(read.json()), json={"name": "R&D"})
     assert updated.status_code == 200 and updated.json()["name"] == "R&D"
-    archived = await client.post("/api/v1/workspaces/research/archive", headers=if_match(updated.json()))
+    assert (await client.patch(path, headers=if_match(updated.json()), json={"key": "rd"})).status_code == 400
+    archived = await client.post(f"{path}/archive", headers=if_match(updated.json()))
     assert archived.status_code == 200 and archived.json()["archived_at"] is not None
     assert archived.json()["permissions"] == ["read"]
-    refused = await client.patch("/api/v1/workspaces/research", headers=if_match(archived.json()), json={"name": "x"})
+    refused = await client.patch(path, headers=if_match(archived.json()), json={"name": "x"})
     assert refused.status_code == 422 and refused.json()["error"]["code"] == "disabled"
-    again = await client.post("/api/v1/workspaces/research/archive", headers=if_match(archived.json()))
+    again = await client.post(f"{path}/archive", headers=if_match(archived.json()))
     assert again.status_code == 409 and again.json()["error"]["details"]["reason"] == "archived"
     events = (await client.get(f"{service.organization}/audit-events")).json()["items"]
     assert {"organization.update", "workspace.create", "workspace.update", "workspace.archive"} <= {
@@ -154,32 +161,45 @@ async def test_organizations_and_workspaces(service) -> None:  # type: ignore[no
     assert all(event["actor"]["email"] == ADMIN for event in events if event["action"] == "workspace.create")
 
 
-async def test_organization_and_workspace_keys_change(service) -> None:  # type: ignore[no-untyped-def]
-    client = service.client
-    organization = (await client.get(service.organization)).json()
-    rekeyed = await client.patch(service.organization, headers=if_match(organization), json={"key": "acme"})
-    assert rekeyed.status_code == 200 and (rekeyed.json()["key"], rekeyed.json()["name"]) == (
-        "acme",
-        organization["name"],
+async def test_business_resources_resolve_only_in_the_request_workspace(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    """IDs are unique across workspaces, yet a row is found only in the workspace its request acts in."""
+    client, api = service.client, service.api
+    agent = await runs_kit.add_agent(service, "helper", await runs_kit.create_model(service, scripted_model))
+    shared_key = {"idempotency-key": "shared"}
+    started = await client.post(f"{api}/threads", json=runs_kit.message(agent, "hi"), headers=shared_key)
+    assert started.status_code == 201, started.text
+    memory = await client.post(f"{api}/memories", json={"name": "team"})
+    composer = await client.post(f"{api}/agent-composer")
+    assert (memory.status_code, composer.status_code) == (201, 200)
+    second = (await client.post(f"{service.organization}/workspaces", json={"name": "Second"})).json()["id"]
+    elsewhere = {"x-workspace-id": second}
+    for path in (
+        f"/agents/{agent['id']}",
+        f"/agents/{agent['id']}/revisions/{agent['default_revision_id']}",
+        f"/threads/{started.json()['thread']['id']}",
+        f"/runs/{started.json()['run']['id']}",
+        f"/memories/{memory.json()['id']}",
+    ):
+        assert (await client.get(api + path)).status_code == 200, path
+        assert (await client.get(api + path, headers=elsewhere)).status_code == 404, path
+    moved = await client.patch(
+        f"{api}/agents/{agent['id']}", json={"name": "Moved"}, headers={**if_match(agent), **elsewhere}
     )
-    async with transaction(service.runtime.storage) as session:
-        session.add(OrganizationRow(id=new_object_id("org"), key="taken", name="Taken"))
-    taken = await client.patch(service.organization, headers=if_match(rekeyed.json()), json={"key": "taken"})
-    assert taken.status_code == 409 and taken.json()["error"]["code"] == "already_exists"
-    await client.post(f"{service.organization}/workspaces", json={"key": "lab", "name": "Lab"})
-    workspace = (await client.get(service.workspace)).json()
-    clash = await client.patch(service.workspace, headers=if_match(workspace), json={"key": "lab"})
-    assert clash.status_code == 409 and clash.json()["error"]["details"] == {"kind": "workspace", "key": "lab"}
-    invalid = await client.patch(service.workspace, headers=if_match(workspace), json={"key": "Not a key"})
-    assert invalid.status_code == 400
-    moved = await client.patch(service.workspace, headers=if_match(workspace), json={"key": "main"})
-    assert moved.status_code == 200 and (moved.json()["key"], moved.json()["name"]) == ("main", workspace["name"])
-    # Paths by key follow the change; the workspace ID, which everything else references, stays.
-    assert (await client.get("/api/v1/workspaces/main")).json()["id"] == workspace["id"]
-    assert (await client.get("/api/v1/workspaces/default")).status_code == 404
-    events = (await client.get(f"{service.organization}/audit-events")).json()["items"]
-    changes = [(event["action"], event["details"]) for event in events if event["action"].endswith(".update")]
-    assert changes == [("workspace.update", {"fields": ["key"]}), ("organization.update", {"fields": ["key"]})]
+    assert moved.status_code == 404
+
+    client.headers["x-workspace-id"] = second
+    try:
+        theirs = await runs_kit.add_agent(service, "helper", await runs_kit.create_model(service, scripted_model))
+        # An idempotency key is the caller's within one workspace: reusing it elsewhere starts another thread.
+        again = await client.post(f"{api}/threads", json=runs_kit.message(theirs, "hi"), headers=shared_key)
+        # Each workspace prepares an Agent Composer of its own.
+        other = await client.post(f"{api}/agent-composer")
+    finally:
+        client.headers["x-workspace-id"] = service.tenant.workspace_id
+    assert again.status_code == 201, again.text
+    assert again.json()["thread"]["id"] != started.json()["thread"]["id"]
+    assert other.status_code == 200, other.text
+    assert (other.json()["workspace_id"], composer.json()["workspace_id"]) == (second, service.tenant.workspace_id)
 
 
 async def test_grants_expand_principals_and_keep_an_organization_admin(service) -> None:  # type: ignore[no-untyped-def]
@@ -190,13 +210,17 @@ async def test_grants_expand_principals_and_keep_an_organization_admin(service) 
         assert [(m["principal"]["email"], m["role"]) for m in members] == [("viewer@example.com", "viewer")]
         viewer_id = members[0]["principal"]["id"]
         assert (await viewer.get(service.workspace)).json()["permissions"] == ["read"]
-        await client.post(f"{service.organization}/workspaces", json={"key": "private", "name": "Private"})
+        private = await client.post(f"{service.organization}/workspaces", json={"name": "Private"})
         visible = (await viewer.get("/api/v1/workspaces")).json()["items"]
         assert [item["id"] for item in visible] == [service.tenant.workspace_id]
         # A viewer cannot administer: the denial is recorded after the rejected read.
         assert (await viewer.get(f"{service.workspace}/grants")).status_code == 403
         denied = await audit_actions(service, outcome="denied")
         assert denied == ["grant.list"]
+        # A business request acts only in a workspace the member's grants reach.
+        agents = f"{service.api}/agents"
+        assert (await viewer.get(agents, headers={"x-workspace-id": service.tenant.workspace_id})).status_code == 200
+        assert (await viewer.get(agents, headers={"x-workspace-id": private.json()["id"]})).status_code == 403
         body = {"principal_id": viewer_id, "role": "admin"}
         promoted = await client.post(f"{service.organization}/grants", json=body)
         assert promoted.status_code == 201 and promoted.json()["principal"]["name"] == "viewer"
@@ -334,7 +358,7 @@ async def test_custom_roles_and_grant_sources(serve, settings: Settings) -> None
 async def test_audit_pages_and_denials(service) -> None:  # type: ignore[no-untyped-def]
     client = service.client
     for name in ("one", "two"):
-        await client.post(f"{service.organization}/workspaces", json={"key": name, "name": name})
+        await client.post(f"{service.organization}/workspaces", json={"name": name})
     key = await client.post("/api/v1/users/me/keys", json={"workspace_id": service.tenant.workspace_id, "name": "k"})
     bearer = {"authorization": "Bearer " + key.json()["secret"]}
     first = await client.get(f"{service.organization}/audit-events", params={"limit": 1})
@@ -347,7 +371,7 @@ async def test_audit_pages_and_denials(service) -> None:  # type: ignore[no-unty
     assert [event["action"] for event in workspace_events] == ["credential.create", "organization.bootstrap"]
     assert {event["workspace_id"] for event in workspace_events} == {service.tenant.workspace_id}
     assert (await client.get(f"{service.workspace}/audit-events", headers=bearer)).status_code == 200
-    # A workspace key never administers its organization, even for an organization administrator.
+    # An API key never administers its organization, even for an organization administrator.
     assert (await client.get(f"{service.organization}/audit-events", headers=bearer)).status_code == 403
     async with short_session(service.runtime.storage) as session:
         denial = await session.scalar(select(AuditEventRow).where(AuditEventRow.outcome == "denied"))
@@ -375,7 +399,7 @@ async def test_account_trail_shows_only_the_callers_events(service) -> None:  # 
         key = await member.post(
             "/api/v1/users/me/keys", json={"workspace_id": service.tenant.workspace_id, "name": "k"}
         )
-        # The trail spans every tenant the account acted in, so a workspace key cannot read it.
+        # The trail spans every tenant the account acted in, so an API key cannot read it.
         assert (await member.get(trail, headers={"authorization": "Bearer " + key.json()["secret"]})).status_code == 403
     assert [(event["action"], event["actor_id"]) for event in theirs[:3]] == [
         ("login_session.create", member_id),
@@ -609,7 +633,7 @@ async def test_service_accounts_and_workspace_keys(service) -> None:  # type: ig
     assert (me["kind"], me["email"]) == ("service_account", None)
     assert (await client.get(service.workspace, headers=bearer)).json()["permissions"] == ["read", "run"]
     assert (await client.post(accounts, headers=bearer, json={"name": "escalate"})).status_code == 403
-    other = await client.post(f"{service.organization}/workspaces", json={"key": "other", "name": "Other"})
+    other = await client.post(f"{service.organization}/workspaces", json={"name": "Other"})
     outside = await client.post(
         f"/api/v1/workspaces/{other.json()['id']}/grants", json={"principal_id": account["id"], "role": "viewer"}
     )
@@ -692,7 +716,7 @@ async def test_service_account_description(service) -> None:  # type: ignore[no-
 
 async def test_archived_workspaces_allow_only_offboarding(service) -> None:  # type: ignore[no-untyped-def]
     client = service.client
-    lab = (await client.post(f"{service.organization}/workspaces", json={"key": "lab", "name": "Lab"})).json()
+    lab = (await client.post(f"{service.organization}/workspaces", json={"name": "Lab"})).json()
     path = f"/api/v1/workspaces/{lab['id']}"
     async with AsyncExitStack() as stack:
         member = await join(service, stack, "member@example.com", "builder", scope=path)
@@ -789,17 +813,16 @@ async def test_paths_resolve_only_within_membership(service) -> None:  # type: i
     async with transaction(service.runtime.storage) as session:
         session.add_all(
             [
-                OrganizationRow(id=second, key="second", name="Second"),
-                OrganizationRow(id=foreign, key="far", name="Far"),
+                OrganizationRow(id=second, name="Second"),
+                OrganizationRow(id=foreign, name="Far"),
             ]
         )
         await session.flush()
-        # The tenant's own workspace key, `default`, recurs in a second organization it can read.
         session.add_all(
             [
-                WorkspaceRow(id=shared, organization_id=second, key="default", name="Default"),
-                WorkspaceRow(id=closed, organization_id=second, key="closed", name="Closed"),
-                WorkspaceRow(id=hidden, organization_id=foreign, key="hidden", name="Hidden"),
+                WorkspaceRow(id=shared, organization_id=second, name="Default"),
+                WorkspaceRow(id=closed, organization_id=second, name="Closed"),
+                WorkspaceRow(id=hidden, organization_id=foreign, name="Hidden"),
                 PrincipalRow(id=outsider, kind="user", name="outsider", email="outsider@example.com"),
             ]
         )
@@ -818,18 +841,13 @@ async def test_paths_resolve_only_within_membership(service) -> None:  # type: i
                     created_by_id=principal_id,
                 )
             )
-    ambiguous = await client.get("/api/v1/workspaces/default")
-    assert ambiguous.status_code == 409 and ambiguous.json()["error"]["details"]["reason"] == "ambiguous_key"
     assert (await client.get(f"/api/v1/workspaces/{shared}")).status_code == 200
-    # Inside an organization it belongs to, the caller learns a workspace exists by ID but is refused; keys
-    # resolve only among workspaces it can read.
+    # Inside an organization it belongs to, the caller learns a workspace exists by ID but is refused.
     assert (await client.get(f"/api/v1/workspaces/{closed}")).status_code == 403
-    assert (await client.get("/api/v1/workspaces/closed")).status_code == 404
     assert (await client.get(f"/api/v1/workspaces/{shared}/grants")).status_code == 403
-    # Outside its organizations nothing is revealed, by ID or key, and nothing is recorded there.
+    # Outside its organizations nothing is revealed and nothing is recorded there.
     for path in (
         f"/api/v1/workspaces/{hidden}",
-        "/api/v1/workspaces/hidden",
         f"/api/v1/workspaces/{hidden}/grants",
         f"/api/v1/organizations/{foreign}",
         f"/api/v1/organizations/{foreign}/grants",
@@ -889,7 +907,7 @@ async def test_administration_rechecks_authority_inside_its_transaction(service)
     async with transaction(storage) as session:
         await lock_organization(session, organization_id)
         change = asyncio.create_task(
-            create_workspace(storage, access, authenticated, organization_id, WorkspaceCreate(key="late", name="Late"))
+            create_workspace(storage, access, authenticated, organization_id, WorkspaceCreate(name="Late"))
         )
         await asyncio.sleep(0.2)
         assert not change.done()
@@ -947,7 +965,7 @@ async def test_users_disable_their_own_account(service) -> None:  # type: ignore
 
 async def test_archiving_revokes_pending_invitations(service) -> None:  # type: ignore[no-untyped-def]
     client = service.client
-    lab = (await client.post(f"{service.organization}/workspaces", json={"key": "lab", "name": "Lab"})).json()
+    lab = (await client.post(f"{service.organization}/workspaces", json={"name": "Lab"})).json()
     path = f"/api/v1/workspaces/{lab['id']}"
     pending = await client.post(f"{path}/invitations", json={"email": "late@example.com", "role": "viewer"})
     organization_wide = await client.post(
@@ -1010,7 +1028,7 @@ async def test_administrators_change_each_others_grants_across_organizations(ser
         peer_id = (await peer.get("/api/v1/users/me")).json()["id"]
         other = new_object_id("org")
         async with transaction(service.runtime.storage) as session:
-            session.add(OrganizationRow(id=other, key="other", name="Other"))
+            session.add(OrganizationRow(id=other, name="Other"))
             await session.flush()
             for principal_id, role in ((peer_id, "admin"), (tenant.principal_id, "viewer")):
                 session.add(

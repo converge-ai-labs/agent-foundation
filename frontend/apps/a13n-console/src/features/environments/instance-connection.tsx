@@ -39,20 +39,17 @@ export function EnvironmentConnectionEditor({
           t("Version information is unavailable. Reload this page."),
         );
       const moved = endpoint.trim() !== basis.environment.endpoint;
-      return client.http
-        .PATCH(
-          "/api/v1/workspaces/{workspace_id}/environments/{environment_id}",
-          {
-            params: {
-              path: {
-                workspace_id: basis.environment.workspace_id,
-                environment_id: basis.environment.id,
-              },
+      return client
+        .workspace(basis.environment.workspace_id)
+        .PATCH("/api/v1/environments/{environment_id}", {
+          params: {
+            path: {
+              environment_id: basis.environment.id,
             },
-            headers: ifMatch(basis.etag),
-            body: { token, ...(moved && { endpoint: endpoint.trim() }) },
           },
-        )
+          headers: ifMatch(basis.etag),
+          body: { token, ...(moved && { endpoint: endpoint.trim() }) },
+        })
         .then(data);
     },
     onSuccess: async () => {

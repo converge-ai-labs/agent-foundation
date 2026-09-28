@@ -117,9 +117,8 @@ export function MemoriesPage() {
                   <ResourceIdentity
                     to={memory.id}
                     name={memory.name}
-                    description={memory.description ?? memory.key}
+                    description={memory.description ?? memory.id}
                     resourceId={memory.id}
-                    resourceKey={memory.key}
                     icon={<BrainIcon size={16} />}
                   />
                 ),

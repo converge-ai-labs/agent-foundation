@@ -48,7 +48,7 @@ async def test_an_endpoint_outside_the_operator_policy_is_never_dialed(service) 
     plaintext = await register(service, "http://envd.example")
     assert plaintext.status_code == 400
     assert {"field": "body.ExternalTargetCreate.endpoint", "reason": "value_error"} in details(plaintext)["fields"]
-    assert (await service.client.get(f"{service.workspace}/environments")).json()["items"] == []
+    assert (await service.client.get(f"{service.api}/environments")).json()["items"] == []
 
     # A target whose endpoint the policy now denies is refused at its next dial and at re-verification.
     environment_id = await insert(service, "https://10.1.2.3:8443")
@@ -64,7 +64,7 @@ async def test_deleting_a_target_keeps_its_device_and_drops_its_token(service) -
     renamed = await change(service, environment_id, {"name": "Laptop"})
     assert renamed.status_code == 200 and renamed.json()["name"] == "Laptop"
 
-    path = f"{service.workspace}/environments/{environment_id}"
+    path = f"{service.api}/environments/{environment_id}"
     current = await service.client.get(path)
     deleted = await service.client.delete(path, headers={"if-match": current.headers["etag"]})
     assert deleted.status_code == 202 and deleted.json()["status"] == "deleted"
@@ -75,16 +75,12 @@ async def test_deleting_a_target_keeps_its_device_and_drops_its_token(service) -
     assert gone.status_code == 409 and details(gone)["reason"] == "environment_deleted"
 
     # Only an external target has an endpoint and token.
-    provider = await service.client.post(
-        f"{service.organization}/environment-providers", json={"workspace_id": None, "type": "docker", "name": "D"}
-    )
+    provider = await service.client.post(f"{service.api}/environment-providers", json={"type": "docker", "name": "D"})
     template = await service.client.post(
-        f"{service.workspace}/environment-templates",
-        json={"key": "box", "name": "Box", "provider_id": provider.json()["id"]},
+        f"{service.api}/environment-templates",
+        json={"name": "Box", "provider_id": provider.json()["id"]},
     )
-    managed = await service.client.post(
-        f"{service.workspace}/environments", json={"template_id": template.json()["id"]}
-    )
+    managed = await service.client.post(f"{service.api}/environments", json={"template_id": template.json()["id"]})
     assert managed.status_code == 201, managed.text
     for body, field in (({"endpoint": "https://laptop.test", "token": TOKEN}, "endpoint"), ({"token": TOKEN}, "token")):
         refused = await change(service, managed.json()["id"], body)

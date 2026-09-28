@@ -107,7 +107,7 @@ async def test_a_child_result_waits_for_room_and_is_delivered_once(serve, settin
             assert deferred is not None and deferred > timedelta(seconds=FULL_INBOX_SECONDS - 5)
             await session.execute(update(OutboxRow).where(OutboxRow.id == row.id).values(available_at=func.now()))
         assert [entry["kind"] for entry in await runs_kit.inbox(service, thread_id)] == ["message", "message"]
-        interrupted = await service.client.post(f"{service.workspace}/runs/{busy.json()['run']['id']}/interrupt")
+        interrupted = await service.client.post(f"{service.api}/runs/{busy.json()['run']['id']}/interrupt")
         assert interrupted.status_code == 200, interrupted.text
 
         # A sender whose lease ran out and was claimed again delivers nothing; the new claim delivers it once.
@@ -260,5 +260,5 @@ async def test_a_wait_for_children_ends_when_the_worker_drains(service, scripted
     scripted_model.turns.clear()
 
     assert (await runs_kit.get_run(service, run_id))["status"] == "accepted"
-    attempts = (await service.client.get(f"{service.workspace}/runs/{run_id}/attempts")).json()["items"]
+    attempts = (await service.client.get(f"{service.api}/runs/{run_id}/attempts")).json()["items"]
     assert [item["status"] for item in attempts] == ["yielded"]

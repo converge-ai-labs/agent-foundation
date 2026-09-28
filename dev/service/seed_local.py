@@ -40,31 +40,28 @@ class Local:
     environment: Json
 
 
-def seed_local(api: Api, org: str, ws: str, model_url: str, environments: Path) -> Local:
+def seed_local(api: Api, model_url: str, environments: Path) -> Local:
     provider = api.post(
-        f"{org}/model-providers",
+        "/api/v1/model-providers",
         {
-            "workspace_id": None,
             "type": "openai",
             "name": "Local scripted model",
             "config": {"base_url": model_url},
             "credential": {"api_key": "local-scripted"},
         },
     )
-    model = _model(api, org, provider, MODEL_KEY, "Local scripted model", ())
+    model = _model(api, provider, MODEL_KEY, "Local scripted model", ())
     # A distinct upstream name: one run may resolve both models, and a shared name would be ambiguous.
-    media = _model(api, org, provider, "local-scripted-media", "Local scripted media model", (*MEDIA, "document"))
-    defaults = api.get(f"{ws}/media-understanding-defaults")
-    api.put(f"{ws}/media-understanding-defaults", defaults, dict.fromkeys(MEDIA, media["id"]))
+    media = _model(api, provider, "local-scripted-media", "Local scripted media model", (*MEDIA, "document"))
+    defaults = api.get("/api/v1/media-understanding-defaults")
+    api.put("/api/v1/media-understanding-defaults", defaults, dict.fromkeys(MEDIA, media["key"]))
     local = api.post(
-        f"{org}/environment-providers",
-        {"workspace_id": None, "type": "local", "name": "Local directories (development)", "config": {}},
+        "/api/v1/environment-providers", {"type": "local", "name": "Local directories (development)", "config": {}}
     )
     recipe = {"root": {"path": str(environments)}, "shell_profiles": [{"profile_id": "sh", "executable": "/bin/sh"}]}
     template = api.post(
-        f"{ws}/environment-templates",
+        "/api/v1/environment-templates",
         {
-            "key": "local-workspace",
             "name": "Local workspace",
             "description": "A directory on this machine; development only.",
             "provider_id": local["id"],
@@ -72,21 +69,21 @@ def seed_local(api: Api, org: str, ws: str, model_url: str, environments: Path) 
             "config": {"recipe": recipe},
         },
     )
-    environment = api.post(f"{ws}/environments", {"template_id": template["id"], "name": "Release review workspace"})
+    environment = api.post("/api/v1/environments", {"template_id": template["id"], "name": "Release review workspace"})
     return Local(model, media, template, environment)
 
 
-def _model(api: Api, org: str, provider: Json, key: str, name: str, understands: tuple[str, ...]) -> Json:
+def _model(api: Api, provider: Json, key: str, name: str, understands: tuple[str, ...]) -> Json:
     characteristics = {"capabilities": [f"{kind}_understanding" for kind in understands]}
     config = {"model_name": key, "model_api": "openai.chat_completions", "characteristics": characteristics}
-    body = {"workspace_id": None, "provider_id": provider["id"], "key": key, "name": name, "config": config}
-    return api.post(f"{org}/models", {**body, "pricing": PRICING})
+    body = {"provider_id": provider["id"], "key": key, "name": name, "config": config}
+    return api.post("/api/v1/models", {**body, "pricing": PRICING})
 
 
-def stopped_environment(api: Api, ws: str, template: Json) -> dict[str, str]:
+def stopped_environment(api: Api, template: Json) -> dict[str, str]:
     """A second instance, created and then stopped, so the lifecycle shows more than `ready`."""
-    reserved = api.post(f"{ws}/environments", {"template_id": template["id"], "name": "Sprint archive"})
-    path = f"{ws}/environments/{reserved['id']}"
+    reserved = api.post("/api/v1/environments", {"template_id": template["id"], "name": "Sprint archive"})
+    path = f"/api/v1/environments/{reserved['id']}"
     api.post(f"{path}/stop", current=api.until(path, lambda environment: environment["status"] == "ready"))
     api.until(path, lambda environment: environment["status"] == "stopped")
     return {"environment_stopped": reserved["id"]}

@@ -16,7 +16,9 @@ vi.mock("../connections/authorization-context", () => ({
   authorizeConnection: http.authorize,
   startBrowserAuthorization: http.start,
 }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
@@ -243,7 +245,7 @@ it("edits an already registered app and keeps its stored secret", async () => {
     ),
   );
   expect(http.PATCH.mock.calls[0][1]).toEqual({
-    params: { path: { workspace_id: "ws_test", connection_id: "conn_test" } },
+    params: { path: { connection_id: "conn_test" } },
     headers: { "If-Match": '"conn_test:1"' },
     body: {
       config: {

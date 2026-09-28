@@ -145,27 +145,25 @@ FAKE_RECORDS = MemoryProviderDefinition(
 )
 
 
-async def with_fake_records(service: SimpleNamespace, *, workspace_id: str | None = None) -> dict[str, Any]:
-    """Offer the fake record provider in `service` and configure one account of it, shared unless confined to
-    `workspace_id`. Deleting a record memory then needs the control sweeps paused, or they purge with the
-    registry they started with."""
+async def with_fake_records(service: SimpleNamespace) -> dict[str, Any]:
+    """Offer the fake record provider in `service` and configure one account of it in the workspace. Deleting a record
+    memory then needs the control sweeps paused, or they purge with the registry they started with."""
     service.runtime = replace(service.runtime, registry=Registry.of((*OSS.providers, FAKE_RECORDS)))
     service.app.state.runtime = service.runtime
     BACKEND.reset()
     created = await service.client.post(
-        f"{service.organization}/memory-providers",
-        json={"workspace_id": workspace_id, "type": "fake_records", "name": "Records", "config": {}},
+        f"{service.api}/memory-providers", json={"type": "fake_records", "name": "Records", "config": {}}
     )
     assert created.status_code == 201, created.text
     return created.json()
 
 
 async def create_record_memory(
-    service: SimpleNamespace, provider: dict[str, Any], key: str = "facts", **fields: Any
+    service: SimpleNamespace, provider: dict[str, Any], name: str = "facts", **fields: Any
 ) -> dict[str, Any]:
     created = await service.client.post(
-        f"{service.workspace}/memories",
-        json={"key": key, "name": key, "type": "fake_records", "provider_id": provider["id"], **fields},
+        f"{service.api}/memories",
+        json={"name": name, "type": "fake_records", "provider_id": provider["id"], **fields},
     )
     assert created.status_code == 201, created.text
     return created.json()
