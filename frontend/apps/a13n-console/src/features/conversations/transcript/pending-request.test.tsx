@@ -337,10 +337,7 @@ it.each([false, true])(
                 tool_call_id: "review",
                 tool_name: "review_invoice",
                 arguments: { invoice: 7 },
-                presentation: {
-                  title: "Review invoice",
-                  description: "Check the total",
-                },
+                presentation: null,
               },
             ],
           }}
@@ -348,7 +345,7 @@ it.each([false, true])(
       </QueryClientProvider>,
     );
     await user.click(screen.getByRole("button", { name: "Request details" }));
-    expect(screen.getByText(/Check the total/)).toBeTruthy();
+    expect(screen.getByText(/"invoice": 7/)).toBeTruthy();
     await user.click(screen.getByRole("combobox", { name: "Response" }));
     await user.click(
       await screen.findByRole("option", {

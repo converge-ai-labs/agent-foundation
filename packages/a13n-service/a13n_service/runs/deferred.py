@@ -6,7 +6,6 @@ metadata on resume. The public `Pending` projection is derived from them once, w
 
 from a13n_harness import DeferredToolResume
 from a13n_harness.tools.approval import APPROVAL_PRESENTATION_KEY
-from a13n_harness.tools.deferred import deferred_presentation
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai import ToolDenied, ToolFailed
 from pydantic_ai.messages import ToolCallPart
@@ -26,13 +25,11 @@ def load(value: JsonValue) -> DeferredToolRequests:
 
 
 def pending(requests: DeferredToolRequests) -> Pending:
-    """Expose only intentionally public presentation, never the entire native metadata."""
+    """Expose existing approval details; keep other native metadata in the checkpoint."""
 
     def project(part: ToolCallPart, *, approval: bool = False) -> PendingCall:
         metadata = requests.metadata.get(part.tool_call_id, {})
-        presentation = deferred_presentation(metadata)
-        if presentation is None and approval:
-            presentation = metadata.get(APPROVAL_PRESENTATION_KEY)
+        presentation = metadata.get(APPROVAL_PRESENTATION_KEY) if approval else None
         return PendingCall.model_validate(
             {
                 "tool_call_id": part.tool_call_id,

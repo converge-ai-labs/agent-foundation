@@ -57,7 +57,13 @@ export function PendingRequests({ pending }: { pending: Schema["Pending"] }) {
             className={styles.inlineDisclosure}
             title={<>{t("Request details")}</>}
           >
-            <JsonView value={action.presentation ?? action.arguments} />
+            <JsonView
+              value={
+                action.category === "approval"
+                  ? (action.presentation ?? action.arguments)
+                  : action.arguments
+              }
+            />
           </DisclosureSection>
         </ActionCard>
       ))}
@@ -236,7 +242,13 @@ export function RunFeedback({
                   className={styles.inlineDisclosure}
                   title={<>{t("Request details")}</>}
                 >
-                  <JsonView value={action.presentation ?? action.arguments} />
+                  <JsonView
+                    value={
+                      action.category === "approval"
+                        ? (action.presentation ?? action.arguments)
+                        : action.arguments
+                    }
+                  />
                 </DisclosureSection>
               )}
               {action.category === "approval" ? (

@@ -3,10 +3,8 @@
 import json
 
 import pytest
-from a13n_harness.tools.deferred import DEFERRED_PRESENTATION_KEY
 
 pytestmark = pytest.mark.anyio
-PRESENTATION = {"title": "Review invoice", "description": "Check the total", "invoice_id": "inv_7"}
 
 
 async def mixed_wait(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
@@ -22,7 +20,6 @@ async def mixed_wait(service, scripted_model, runs_kit):  # type: ignore[no-unty
                 "name": "review_invoice",
                 "description": "Ask a human to check the invoice",
                 "parameters_json_schema": {"type": "object"},
-                "metadata": {DEFERRED_PRESENTATION_KEY: PRESENTATION, "unpublished": "internal hint"},
             }
         ],
         toolsets={"configuration": {"enabled": True}},
@@ -61,8 +58,7 @@ async def mixed_wait(service, scripted_model, runs_kit):  # type: ignore[no-unty
     assert [x["tool_call_id"] for x in waiting["pending"]["approvals"]] == ["approve"]
     assert {x["tool_call_id"] for x in waiting["pending"]["calls"]} == {"review", "question"}
     review = next(x for x in waiting["pending"]["calls"] if x["tool_call_id"] == "review")
-    assert review["presentation"] == PRESENTATION
-    assert "unpublished" not in json.dumps(waiting["pending"])
+    assert review["presentation"] is None
     return agent, waiting
 
 

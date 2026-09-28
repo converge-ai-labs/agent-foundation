@@ -108,23 +108,28 @@ def test_resume_rejects_invalid_envelopes_and_limits(value):
         Resume.model_validate(value)
 
 
-def test_public_pending_preserves_only_opted_in_presentation():
-    from a13n_harness.tools.deferred import DEFERRED_PRESENTATION_KEY
+def test_public_pending_preserves_approval_details_without_exposing_call_metadata():
+    from a13n_harness.tools.approval import APPROVAL_PRESENTATION_KEY
     from a13n_service.runs.deferred import pending
     from pydantic_ai.messages import ToolCallPart
     from pydantic_ai.tools import DeferredToolRequests
 
+    details = {"target": "report.txt", "risk": "high"}
     native = DeferredToolRequests(
+        approvals=[ToolCallPart("delete_file", {"path": "report.txt"}, "approval")],
         calls=[ToolCallPart("review_invoice", {"invoice": 7}, "review")],
         metadata={
+            "approval": {APPROVAL_PRESENTATION_KEY: details, "internal": "private approval"},
             "review": {
-                DEFERRED_PRESENTATION_KEY: {"title": "Review invoice"},
+                APPROVAL_PRESENTATION_KEY: details,
                 "a13n.harness.deferred-function-id": "tool/private/review",
                 "internal": {"retained": True},
-            }
+            },
         },
     )
     public = pending(native)
-    assert public.calls[0].presentation == {"title": "Review invoice"}
+    assert public.approvals[0].presentation == details
+    assert public.calls[0].presentation is None
+    assert public.calls[0].arguments == {"invoice": 7}
     assert "internal" not in public.model_dump_json() and "tool/private" not in public.model_dump_json()
     assert native.metadata["review"]["internal"] == {"retained": True}

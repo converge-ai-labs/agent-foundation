@@ -260,10 +260,6 @@ The response is the successor run (`201`, or `200` for an idempotent replay). Re
 
 Ordinary messages remain separate and cannot close a wait. Queued messages retain their order; after resume, compatible steers can join the successor while `next_run` messages wait for a later run. Resume does not accept an accompanying ordinary message.
 
-### Custom human interactions
-
-A custom human-operated tool uses the same `pending.calls` and resume result maps as a client-executed tool. Put intentionally public information under `client_tools[].metadata["a13n.interaction.presentation"]`, for example `{"title": "Review invoice", "description": "Check the total", "invoice_id": "inv_7"}`. This JSON object is limited to 16 KiB and becomes the pending call's `presentation`. Other internal deferred metadata is not exposed. Console displays generic request details and accepts a JSON result or an explicit failure; built-in questions retain their specialized controls. Presentation never grants execution permission.
-
 ## Interrupt, fork and archive
 
 - **Interrupt**: `POST …/runs/{run_id}/interrupt` cancels a run. A run that has not started is `cancelled` at once; a running run is asked to stop at its next safe point and shows `cancel_requested_at` until then. Interrupting a cancelled run returns it; a completed, waiting or failed run answers `409` (`run_completed`, ...). Console's **Stop** interrupts the active run.
