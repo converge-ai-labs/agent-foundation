@@ -59,11 +59,18 @@ def test_harness_selects_direct_dependency_inputs(path: str, selected: bool) -> 
         assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"]) == selected
 
 
-@pytest.mark.parametrize("path", ["Makefile", "examples/mcp-apps/package-lock.json", "examples/mcp-apps/app.js"])
-def test_examples_ci_selects_build_inputs_and_prepares_node(path: str) -> None:
+@pytest.mark.parametrize(
+    "path,selected",
+    [
+        ("Makefile", False),
+        ("examples/mcp-apps/package-lock.json", True),
+        ("examples/mcp-apps/app.js", True),
+    ],
+)
+def test_examples_ci_selects_build_inputs_and_prepares_node(path: str, selected: bool) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-examples.yml").read_text())
     for event in ("pull_request", "push"):
-        assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
+        assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"]) == selected
     steps = workflow["jobs"]["examples"]["steps"]
     node = next(step for step in steps if step.get("uses", "").startswith("actions/setup-node@"))
     gate = next(step for step in steps if step.get("run") == "make examples-check-all")
