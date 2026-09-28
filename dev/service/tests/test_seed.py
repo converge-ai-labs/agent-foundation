@@ -46,7 +46,7 @@ def test_seeded_state_verifies_after_a_restart_and_private_resources_apply_once(
 ) -> None:
     with running(instance), Api(instance.service_url) as api:
         api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
-        seeded = seed(api, instance.model_url, instance.environments)
+        seeded = seed(api, instance)
         checks = verify(api, seeded)
         assert [name for name, passed in checks if not passed] == []
         write_report(instance.seed_report, instance.console_url, seeded, checks)

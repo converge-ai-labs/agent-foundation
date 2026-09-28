@@ -222,7 +222,7 @@ def _seed(checkout: Checkout) -> None:
     selected = applications(checkout, console=False)
     with lifecycle.running(checkout.root, selected, checkout.logs), Api(checkout.service_url) as api:
         api.login(ADMIN_EMAIL, ADMIN_PASSWORD)
-        seeded = seed(api, checkout.model_url, checkout.environments)
+        seeded = seed(api, checkout)
         checks = verify(api, seeded)
         if failed := [name for name, passed in checks if not passed]:
             raise RuntimeError("Seed verification failed: " + "; ".join(failed))

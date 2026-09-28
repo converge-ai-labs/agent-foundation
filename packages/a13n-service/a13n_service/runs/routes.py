@@ -6,7 +6,7 @@ from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
-from a13n_service.runs import archive, entries, resume, runs, sessions, stream, submit, threads, usage
+from a13n_service.runs import archive, entries, resume, runs, sessions, stream, submit, threads
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
     Attempts,
@@ -32,8 +32,6 @@ from a13n_service.runs.schemas import (
     ThreadPage,
     ThreadUpdate,
     ThreadView,
-    UsageFilter,
-    UsageSummary,
 )
 from a13n_service.tenancy.requests import Actor, Credential, WorkspaceId
 
@@ -383,13 +381,3 @@ async def run_lineage(
 @router.get("/runs/{run_id}/attempts", response_model=Attempts)
 async def run_attempts(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor) -> Attempts:
     return await runs.list_attempts(runtime.storage, actor, workspace_id, run_id)
-
-
-# Usage
-
-
-@router.get("/usage", response_model=UsageSummary)
-async def summarize_usage(
-    runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, where: Annotated[UsageFilter, Query()]
-) -> UsageSummary:
-    return await usage.summarize(runtime.storage, actor, workspace_id, where)

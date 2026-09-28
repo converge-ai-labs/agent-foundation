@@ -23,18 +23,15 @@ from a13n_harness.usage import (
 )
 from a13n_logging import get_logger
 from pydantic import Field, JsonValue, TypeAdapter
-from sqlalchemy import BigInteger, ColumnElement, Numeric, func, select
+from sqlalchemy import BigInteger, ColumnElement, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import Storage, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.models.service import ResolvedModel
-from a13n_service.resources.models.tables import ModelRow
-from a13n_service.runs.schemas import ModelUsage, UsageFilter, UsageSummary, canonical_json
+from a13n_service.runs.schemas import canonical_json
 from a13n_service.runs.tables import AttemptRow, RunRow, UsageRecordRow
-from a13n_service.tenancy.access import workspace_scope
-from a13n_service.tenancy.authorize import Principal
 
 logger = get_logger(__name__)
 
@@ -293,54 +290,3 @@ async def totals(session: AsyncSession, run_id: str) -> dict[str, int]:
         )
     ).one()
     return {"requests": int(requests), "input_tokens": int(input_tokens), "output_tokens": int(output_tokens)}
-
-
-async def summarize(storage: Storage, actor: Principal, workspace_id: str, where: UsageFilter) -> UsageSummary:
-    """Model usage recorded in the workspace, per model, including reports that arrived after a seal.
-
-    Cost sums each record's own priced cost; records the Harness could not price count tokens only.
-    """
-    query = (
-        select(
-            ModelRow.key,
-            func.count(UsageRecordRow.id),
-            _token_sum("input_tokens"),
-            _token_sum("output_tokens"),
-            _token_sum("cache_read_tokens"),
-            _token_sum("cache_write_tokens"),
-            func.sum(UsageRecordRow.record["request_usage"]["cost"].astext.cast(Numeric)),
-        )
-        .join(RunRow, RunRow.id == UsageRecordRow.run_id)
-        .outerjoin(ModelRow, ModelRow.id == UsageRecordRow.model_id)
-        .where(_MODEL_RECORDS)
-        .group_by(ModelRow.key)
-        .order_by(ModelRow.key)
-    )
-    async with transaction(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
-        query = query.where(UsageRecordRow.workspace_id == scope.workspace_id)
-        for column, value in (
-            (RunRow.id, where.run_id),
-            (RunRow.thread_id, where.thread_id),
-            (RunRow.session_id, where.session_id),
-        ):
-            if value is not None:
-                query = query.where(column == value)
-        if where.ingested_after is not None:
-            query = query.where(UsageRecordRow.ingested_at >= where.ingested_after)
-        if where.ingested_before is not None:
-            query = query.where(UsageRecordRow.ingested_at < where.ingested_before)
-        rows = (await session.execute(query)).all()
-    models = [
-        ModelUsage(
-            model=model,
-            requests=requests,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cache_read_tokens=cache_read,
-            cache_write_tokens=cache_write,
-            cost=cost,
-        )
-        for model, requests, input_tokens, output_tokens, cache_read, cache_write, cost in rows
-    ]
-    return UsageSummary(models=models)

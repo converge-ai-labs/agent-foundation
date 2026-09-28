@@ -298,14 +298,17 @@ A file `{path}` is the file's path in the memory, with its `/` separators. A fil
 
 ### Usage and traces
 
-| Path                                   | Methods | Owner                                        |
-| -------------------------------------- | ------- | -------------------------------------------- |
-| `/usage`                               | GET     | [07](07-facts-and-delivery.md#usage-records) |
-| `/runs/{run}/attempts/{attempt}/trace` | GET     | [07](07-facts-and-delivery.md#trace-query)   |
-| `/traces`                              | GET     | [07](07-facts-and-delivery.md#trace-query)   |
-| `/traces/{trace}`                      | GET     | [07](07-facts-and-delivery.md#trace-query)   |
-| `/traces/{trace}/spans`                | GET     | [07](07-facts-and-delivery.md#trace-query)   |
-| `/trace-backend`                       | GET     | [07](07-facts-and-delivery.md#trace-query)   |
+| Path                                   | Methods | Owner                                                   |
+| -------------------------------------- | ------- | ------------------------------------------------------- |
+| `/usage/overview`                      | GET     | [07](07-facts-and-delivery.md#workspace-usage-analysis) |
+| `/usage/agents`                        | GET     | [07](07-facts-and-delivery.md#workspace-usage-analysis) |
+| `/usage/models`                        | GET     | [07](07-facts-and-delivery.md#workspace-usage-analysis) |
+| `/usage`                               | GET     | [07](07-facts-and-delivery.md#usage-records)            |
+| `/runs/{run}/attempts/{attempt}/trace` | GET     | [07](07-facts-and-delivery.md#trace-query)              |
+| `/traces`                              | GET     | [07](07-facts-and-delivery.md#trace-query)              |
+| `/traces/{trace}`                      | GET     | [07](07-facts-and-delivery.md#trace-query)              |
+| `/traces/{trace}/spans`                | GET     | [07](07-facts-and-delivery.md#trace-query)              |
+| `/trace-backend`                       | GET     | [07](07-facts-and-delivery.md#trace-query)              |
 
 ## Exported contracts
 

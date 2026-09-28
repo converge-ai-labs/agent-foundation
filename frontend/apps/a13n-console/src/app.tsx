@@ -78,6 +78,12 @@ const ConnectionsPage = lazy(() =>
     default: module.ConnectionsPage,
   })),
 );
+const UsagePage = lazy(() =>
+  import("./features/usage/page").then((module) => ({
+    default: module.UsagePage,
+  })),
+);
+
 const TracesPage = lazy(() =>
   import("./features/traces/page").then((module) => ({
     default: module.TracesPage,
@@ -208,6 +214,7 @@ function AppContent() {
                           </Route>
                         </Route>
                       </Route>
+                      <Route path="usage" element={<UsagePage />} />
                       <Route path="traces" element={<TracesPage />} />
                       <Route
                         path="traces/:traceId"
