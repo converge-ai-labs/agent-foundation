@@ -89,7 +89,7 @@ Status is a pill: a 6px dot, 12px medium text, and a 10% tinted background of th
 
 **Empty state.** Centered on a surface: a 40px icon tile, 15px title, 13px explanation, and the primary action. When the empty state offers that action, the page header does not repeat it; the screen still offers it exactly once. Search results with no matches use a shorter inline message and keep the toolbar.
 
-**Loading.** Skeletons preserve the destination's layout and density. Gates show the animated logo above their status text; explicit actions keep the plain spinner. Existing content stays visible during background refreshes.
+**Loading.** Skeletons preserve the destination's layout and density; spinners are reserved for gates and explicit actions. Existing content stays visible during background refreshes.
 
 ## Collections
 
