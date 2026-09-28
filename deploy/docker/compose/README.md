@@ -12,9 +12,9 @@ docker compose -f a13n-service-quickstart.yaml up -d --wait
 
 From a checkout, use `-f deploy/docker/compose/a13n-service-quickstart.yaml` instead. The source file uses the published `dev` image; a Service release's copy pins that release's image. To test a local build, run `make image-a13n-service` and prefix the Compose command with `A13N_SERVICE_IMAGE=a13n-service:local`.
 
-Open <http://127.0.0.1:8080> and sign in with **`admin@example.com` / `local-public-password-123`**. These are public trial credentials, not deployment secrets. Do not expose this stack to other machines. Connect your own model provider under **Models → Add model**, create an agent, and select **Try agent**; no model, inference credits, or fake conversations are included. See [Get started](../../../docs/a13n-service/get-started.md) for the complete flow.
+Open <http://127.0.0.1:8080> and sign in with **`admin@example.com` / `local-public-password-123`**. **Do not expose this trial stack to other machines:** those credentials are public. Add your own model provider under **Models → Add model**, create an agent and select **Try agent**. See [Get started](../../../docs/a13n-service/get-started.md) for the full flow.
 
-Initialization migrates the schema, then creates the first organization, workspace, and administrator before the Service starts. An already-initialized database is left unchanged; other initialization failures block startup. Repeating `up` never resets a password, replaces resources, or reseeds content. To inspect a failure, run `docker compose -f a13n-service-quickstart.yaml logs init service`.
+The initializer migrates the schema and creates the first organization, workspace and administrator. Repeated starts preserve accounts and data; an initialization failure blocks Service startup. Inspect `docker compose -f a13n-service-quickstart.yaml logs init service` if startup fails.
 
 - **Stop and retain data:** `docker compose -f a13n-service-quickstart.yaml down`.
 - **Resume:** repeat `up -d --wait` with the same file and directory.
@@ -45,7 +45,7 @@ docker compose -f deploy/docker/compose/a13n-service.yaml exec service \
 
 `A13N_PORT` publishes another port and moves the public URL with it, and `A13N_SERVICE_IMAGE` selects another image tag; the default is the local build above. <http://127.0.0.1:8080/readyz> reports Service readiness.
 
-`make compose-smoke` checks both Compose files with the local image on disposable projects. The deployment check creates an administrator, stores a credential, restarts Service, and verifies sign-in and the generated key. The quickstart check changes the public password and confirms that the password, workspace, provider, and encryption key survive `down`/`up` and repeated initialization. Both checks remove their projects and volumes.
+`make compose-smoke` exercises both Compose stacks on disposable projects, including initialization, sign-in and credential persistence across restarts.
 
 ## Configuration
 
@@ -64,7 +64,7 @@ Add an environment provider of type `docker` in Console under **Workspace settin
 
 Docker templates have a private `/workspace` and may bind explicitly approved existing host directories. Mount sources resolve in the host Engine filesystem namespace and need permissions suitable for the container user. Environment deletion preserves these external paths. The hosted sandbox providers and external envd targets are also available; the development-only `local` provider is not offered.
 
-Environment containers run on the host Engine outside this Compose project and carry the label `a13n.environment=<environment ID>`. Unmount and delete environments through Console or the API before removing the stack.
+Environment containers run on the host Engine outside this Compose project. Delete them through Console or the API before removing the stack.
 
 ## Data
 

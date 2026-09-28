@@ -1,73 +1,72 @@
 # Agent Foundation
 
-**Build agents. Work with them. Run them as a managed service.**
+**The open-source, self-hosted foundation for enterprise AI agents.**
 
-Agent Foundation has one execution foundation and two ready-to-use applications. **Harness** is the SDK. **Harness UI** is its playground and interactive workbench for individuals and trusted small teams. **Service** is the managed-agent runtime.
+Agent Foundation is an open-source library and platform for building and running your own agent systems. Build on the managed Service, embed the Harness library, or explore agents interactively with Harness UI.
+
+## Choose your starting point
+
+| You want to                                 | Start with                                                                                                     |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Add managed agents to your application      | [Service quickstart](a13n-service/get-started.md) — run the stack, configure a model, and start a conversation |
+| Build an agent in Python                    | [Harness quickstart](a13n-harness/getting-started.md) — run an offline example, then add tools and models      |
+| Work interactively in a repository          | [Harness UI setup](a13n-harness-ui/setup.md) — connect a model and use the terminal or browser                 |
+| Give an application file and command access | [Environments quickstart](environments/getting-started.md) — use the same providers with or without an agent   |
+
+## How the pieces fit
+
+Service and Harness UI both run agents through Harness. Service manages identities, resources, and durable execution. Harness UI provides an interactive workbench for individuals and trusted collaborators. An embedded application supplies its own storage and access policy.
 
 ```mermaid
 flowchart TB
-    Harness["Harness · agent execution foundation"]
-    Harness --> UI["Harness UI · terminal and browser playground"]
-    Harness --> Service["Service · managed agents"]
+    Clients["Application / Console"] --> Service["Service"]
+    UI["Harness UI"] --> Harness["Harness"]
+    Service --> Harness
+    App["Python application"] --> Harness
+    Harness --> Models["Models and tools"]
+    Harness --> Environments["Environments"]
 ```
 
-Both applications embed Harness. Choose by who owns execution and access, not by whether the machine is local or remote.
+### Run Service
 
-## Start here
+The [Docker Compose quickstart](a13n-service/get-started.md) starts Service, Console, PostgreSQL, and Redis and creates a local administrator. Add your model provider credentials in Console, create an agent, and send a message.
 
-| Your goal                                         | Guide                                                                                                       |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Work on a project with an agent                   | [Harness UI](a13n-harness-ui/index.md) — install, connect a model, and start in the terminal or browser     |
-| Experiment with models, tools, and agent behavior | [Configure Harness UI](a13n-harness-ui/configuration-recipes.md) — editable resources and practical recipes |
-| Build agents into your own Python application     | [Harness](a13n-harness/index.md) — composition, execution, streaming, and continuation                      |
-| Operate managed agents for users or applications  | [Service](a13n-service/index.md) — deployment, access control, durable runs, Console, and API               |
+For application integration, follow [Agents, threads and runs](a13n-service/agents-and-runs.md) and [SDKs and CLI](a13n-service/sdks.md). For a shared deployment, start with [configuration](a13n-service/configuration.md) and [identity and access](a13n-service/identity.md).
 
-## Try the playground
+### Embed Harness
+
+Compose an agent from instructions, tools, and capabilities. Run it, consume its stream, and save the returned state for the next turn. Your application owns persistence and recovery.
+
+Start with the [offline quickstart](a13n-harness/getting-started.md), then follow [Agents and Runs](a13n-harness/agents-and-runs.md) and [Embedding in a Host](a13n-harness/hosting.md). The [example projects](packages.md#runnable-example-projects) demonstrate complete integrations.
+
+### Use Harness UI
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
 
-```console
+```bash
 uv tool install a13n-harness-ui
 cd your-repository
+a13n-harness-ui
+# Or: a13n-harness-ui webui
 ```
 
-Run `a13n-harness-ui` for the terminal or `a13n-harness-ui webui` for the browser workbench. First-use setup connects a model and asks you to choose execution permissions. No SDK code, Service deployment, or Node.js is required.
+First-use setup connects a model and selects execution permissions. Ask the agent to explain a codebase, make a change, or run checks. The browser adds shared conversations, files, Git changes, terminals, and configuration editing.
 
-Ask the agent to explain a codebase, make a focused change, or run checks. The browser also offers shared conversations and drafts, files, Git changes, terminal sessions, and configuration editing.
-
-**Share deliberately.** Harness UI is for trusted people using one instance, not isolated tenants. Full Control runs as the host account. WebUI shares native host files and terminals by default; `--no-share-computer` disables those browser features. Closing a browser does not stop active work, but losing the server process can lose work since the last checkpoint. See [browser access and lifecycle](a13n-harness-ui/webui.md).
-
-[Install and upgrade](a13n-harness-ui/installation.md) · [Use the terminal](a13n-harness-ui/everyday-use.md) · [Use the browser](a13n-harness-ui/webui.md)
-
-## Build with Harness
-
-Embed Harness when your application should own users, storage, credentials, and delivery. Compose agents from instructions, tools, and capabilities; execute scoped runs; consume typed observations; and persist returned state when your application accepts a checkpoint.
-
-Start with the [offline quickstart](a13n-harness/getting-started.md), then follow [Agents and Runs](a13n-harness/agents-and-runs.md) and [Embedding in a Host](a13n-harness/hosting.md).
-
-## Operate managed agents
-
-Use Service when agents need centrally managed resources, permissions, durable acceptance, and worker recovery. Organizations and workspaces hold versioned agents, models, tools, environments, and conversations. Console and API clients use the same managed runtime.
-
-Harness UI does not become Service when shared over a network. Service adds its own resource and execution lifecycle; it is not a remote mode of the playground.
-
-[Deploy Service](a13n-service/get-started.md) · [Identity and access](a13n-service/identity.md) · [SDKs and CLI](a13n-service/sdks.md)
+Full Control runs as your host account. Share the browser only with trusted collaborators; `--no-share-computer` disables its native host file and terminal access. See [execution permissions](a13n-harness-ui/environments-and-projects.md#execution-permissions) and [browser access](a13n-harness-ui/webui.md).
 
 ## Supporting components
 
-These components support the foundation rather than adding more top-level products. Use only what your integration needs.
+| Component                                        | Use it for                                                               |
+| ------------------------------------------------ | ------------------------------------------------------------------------ |
+| [Environments](environments/index.md)            | Portable file, command, process, and computer access                     |
+| [Envd](a13n-envd/index.md)                       | File and process operations through the Environment Interaction Protocol |
+| [Stream Protocol](a13n-stream-protocol/index.md) | Convert Harness observations into typed UI events                        |
+| [Logging](a13n-logging/index.md)                 | Structured logs and process-wide logging setup                           |
 
-| Component                                        | Purpose                                                                                             |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| [Environments](environments/index.md)            | Portable file, command, and process access; also usable without an agent                            |
-| [Envd](a13n-envd/index.md)                       | Native daemon for the Environment Interaction Protocol; it does not run agents                      |
-| [Stream Protocol](a13n-stream-protocol/index.md) | Project Harness observations into typed UI events; it does not store continuation or deliver events |
-| [Logging](a13n-logging/index.md)                 | Shared structured logging                                                                           |
+The [package catalog](packages.md) lists source locations, examples, and release groups.
 
-See the [package catalog](packages.md) for source locations, distribution names, release boundaries, and independent Service clients.
+## Versions and contributions
 
-## Releases and contributions
+This site tracks `main`. For published packages, check their release notes and dependency metadata. Agent Foundation is in active `0.x` development; APIs and configuration may change between minor releases.
 
-This site tracks the repository's `main` branch. Use the locked source setup to reproduce examples; match published packages to their release notes and dependency metadata. Agent Foundation is in active `0.x` development, so APIs and configuration may change between minor releases.
-
-Harness and Stream Protocol share an exact release version. Harness UI, Service, and supporting components have their own release boundaries. Development setup and validation live in [Contributing](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md); accepted architecture lives in the [specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec).
+See [Contributing](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md) for source setup and validation, and the [specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec) for architecture contracts.

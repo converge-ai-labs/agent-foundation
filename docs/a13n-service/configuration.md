@@ -6,7 +6,7 @@ The Service reads its settings once, at startup, from an optional TOML file and 
 
 Select the file with `a13n-service --config service.toml ...` or the `A13N_SETTINGS_FILE` environment variable. Any `A13N_<SECTION>__<FIELD>` variable overrides that field of the file, for example `A13N_DATABASE__URL` for `database.url`. Nothing else is read: there is no automatic `.env` file and no configuration search path.
 
-Unknown sections, unknown fields and unknown `A13N_` variables stop startup, so a typo never falls back to a default. A validation failure reports only the error type, because input values can contain deployment secrets. A distribution that adds its own settings section cannot reuse a core section's name (`server`, `database`, ...); startup refuses the clash.
+Unknown settings stop startup rather than falling back to defaults. Validation errors avoid printing secret values.
 
 Every field that takes a list, a map or a nested section, such as `server.trusted_proxies`, the `providers` lists (`private_domains`, `private_cidrs`, `http_origins`, `return_urls`, `mcp_servers`), `encryption.keys`, `plugins.keys` or the nested `auth.mail` section, takes JSON as an environment variable, for example `A13N_PLUGINS__KEYS='["notes"]'` or `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`.
 
@@ -49,11 +49,11 @@ Supply credentials such as the database password, the encryption key ring and ob
 
 ### PostgreSQL
 
-PostgreSQL holds all durable state and decides who owns each piece of work. `database.pool_size`, `connect_timeout` and `statement_timeout` bound each process's use of it. The `migration_*` timeouts bound schema migrations; see [schema migrations](operations.md#schema-migrations).
+PostgreSQL stores the Service's durable state. Set connection and statement timeouts for your deployment; see [schema migrations](operations.md#schema-migrations) for migration ownership.
 
 ### Redis
 
-Redis only accelerates the Service: it keeps rate-limit counters, wakes idle workers and carries the live output of thread streams. PostgreSQL remains the authority. While Redis is unreachable, rate limits are not enforced (each skipped check is logged), workers find new runs by their periodic scan, readiness reports `"degraded": ["redis"]`, and thread streams report `unavailable`; stored run results remain readable.
+Redis holds rate-limit counters, worker wakeups and provisional thread-stream events; PostgreSQL retains the durable state. If Redis is unavailable, stored results remain readable and workers scan for work, but live streams are unavailable and rate limits are skipped. Readiness reports `"degraded": ["redis"]`.
 
 ### Objects
 
@@ -159,15 +159,7 @@ The Service exports the Harness spans of every attempt to one trace backend and 
 
 ## Nested bounds
 
-Some settings must fit inside others, or valid-looking values would break every call. Startup refuses a configuration unless:
-
-- `worker.scan_seconds` and the thread stream's one-second block are below `redis.timeout`;
-- three times `worker.authority_seconds` and three times `objects.timeout` are below `worker.lease_seconds`;
-- twice each delivery operation timeout is below its resolved kind’s `lease_seconds`: webhook, mail, memory purge and checkpoint reclamation use their respective kind overrides;
-- `worker.drain_seconds` is below `server.shutdown_timeout`;
-- `objects.upload_bytes` is below `server.request_bytes`;
-- `worker.output_bytes` plus 64 KiB is at most `control.inbox_bytes`, so a child result always fits its parent's empty inbox.
-- `environments.scan_seconds` plus twice `environments.renewal_seconds` plus 10 seconds is below 150 seconds, half of what one renewal keeps a hosted sandbox, so a renewal always comes before the sandbox ends.
+Startup also validates related limits together: leases must cover authority and object-store calls; shutdown must cover worker drain; request and inbox budgets must fit uploads and child output; environment scans must renew hosted sandboxes in time. If you change these limits, check the startup validation error before widening individual timeouts.
 
 ## Container deployments
 

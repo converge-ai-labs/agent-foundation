@@ -102,9 +102,6 @@ def test_overview_has_mermaid_markup_and_local_theme_assets(built_site: Path) ->
     css = (built_site / "assets/a13n/theme.css").read_text(encoding="utf-8")
     assert 'url("icons/' not in css
     assert '--md-code-copy-icon: url("data:image/svg+xml,' in css
-    warning = (built_site / "a13n-harness-ui/index.html").read_text(encoding="utf-8")
-    assert "Choose permissions deliberately." in warning
-    assert "!!! warning" not in warning
 
 
 def test_mermaid_fences_disable_shrink_to_fit(built_site: Path) -> None:
@@ -173,6 +170,24 @@ def test_ui_command_reference_covers_registered_commands_and_options() -> None:
         assert f"`{command.usage.replace('|', r'\|')}`" in text, command.name
         for alias in command.aliases:
             assert f"`/{alias}`" in text
+
+
+def test_ui_http_input_examples_match_current_schemas() -> None:
+    from a13n_harness_ui.webui import CreateThreadRequest, RootSteerRequest, SubmitRequest
+
+    text = (ROOT / "docs/a13n-harness-ui/http-api.md").read_text(encoding="utf-8")
+    quickstart = text.split("## Create a Thread and submit input", 1)[1].split("## Memory observation", 1)[0]
+    bodies = re.findall(r"--data '([^']+)'", quickstart)
+    assert len(bodies) == 2
+    CreateThreadRequest.model_validate_json(bodies[0])
+    SubmitRequest.model_validate_json(bodies[1])
+    for heading in ("## Run-only execution environment", "### Ordered input bodies"):
+        section = text.split(heading, 1)[1]
+        match = re.search(r"^```json\n(.*?)^```", section, re.MULTILINE | re.DOTALL)
+        assert match is not None, heading
+        SubmitRequest.model_validate_json(match[1])
+        if heading == "### Ordered input bodies":
+            RootSteerRequest.model_validate_json(match[1])
 
 
 def test_content_plugin_authoring_examples_match_current_schemas() -> None:

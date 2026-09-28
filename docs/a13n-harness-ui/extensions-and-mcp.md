@@ -1,6 +1,6 @@
 # Tools and extension types
 
-Harness UI separates reusable configuration from executable integrations. A YAML file selects an installed capability or extension; it does not install Python code or invent a provider implementation.
+Choose an integration by what it provides, then select its installed key or resource ID in configuration. YAML selects executable integrations but does not install their Python code.
 
 | Mechanism                 | Adds                                                                    | Configured through                                                     |
 | ------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -11,15 +11,15 @@ Harness UI separates reusable configuration from executable integrations. A YAML
 | MCP server                | External tools from a command or remote server                          | `mcp/*.yaml` or `mcp/*.json`, then Agent/default `mcp_servers`         |
 | Content Plugin            | Editable Skill and Markdown subagent content, not a Python extension    | `a13n-harness-ui plugin` commands                                      |
 
-For the guided multi-select, all nine upstream native tools, subscription differences, required resources, and every built-in Web provider configuration, see [Native tools and Web providers](native-and-web-tools.md).
+For provider-native tools and built-in search/scrape, use [Native tools and Web providers](native-and-web-tools.md).
 
 ## Native search and image generation
 
-Use [Native tools and Web providers](native-and-web-tools.md#native-search-and-image-generation) for the complete configuration recipe, provider support, saved-image lifecycle, and independent Host search behavior.
+Follow the [native search and image-generation recipe](native-and-web-tools.md#native-search-and-image-generation); these are Agent tool choices, separate from Host Web search.
 
 ## MCP servers
 
-See [MCP servers](mcp.md) for JSON/YAML formats, environment and literal credentials, command/remote transports, enablement, and Run capture.
+[Configure an MCP server](mcp.md), then select its ID in the Agent or defaults.
 
 ### MCP field reference
 

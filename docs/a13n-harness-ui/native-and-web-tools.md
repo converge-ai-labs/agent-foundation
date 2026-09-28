@@ -2,15 +2,23 @@
 
 Native tools execute through the selected Model provider. Host tools execute through Harness UI and its Environment. They are independent: native search is not a local crawler, provider code execution is not your workspace shell, and provider file search does not index your Thread files.
 
-Configure provider-native tools through Agent capabilities. **`native_image_generation`** additionally saves completed images through a Host saver and returns readable paths. It does not create a separate image-generation service or automatically fall back to another model. Available tools depend on the selected provider, model, and account.
+Configure provider-native tools on the Agent. Available choices depend on its provider, Model and account. Native image generation saves a completed result to the current Thread's `tmp/` and returns a path; it does not switch models or providers.
+
+| Selected native tool | Host Web behavior                                     |
+| -------------------- | ----------------------------------------------------- |
+| Native Web Search    | Host search off; Host fetch/download remain available |
+| Native Web Fetch     | Host scrape off; Host fetch/download remain available |
+| Neither              | Host search and scrape use their configured providers |
+
+These are creation-time setup choices; [Host Web configuration](#host-web-capability-every-built-in-provider) can be edited separately.
 
 ## Guided setup
 
 1. Run `a13n-harness-ui setup`, or follow the first-launch landing screen. Choose a subscription or an API provider, authenticate, and choose a model.
 2. Review **Choose native Agent tools** (skipped when the connection has no native candidates). Use Up/Down to move, Space to toggle, and Enter to confirm. You can also type comma-separated numbers or names, or `none`. Recommended choices start checked; unchecking every item selects no native tools. Host Web remains enabled, including fetch/download, keyless search and HTML-to-Markdown scraping. Native Search disables only Host search; native Web Fetch disables only Host scrape. No separate web credential step is needed for the built-in providers.
 3. Selecting File Search asks for existing provider store IDs. Remote MCP asks for a provider-accessible URL and server label. Advisor asks for its provider model ID. Setup does not create those remote resources or check account entitlement.
-4. Esc returns to the previous step without losing your choices. Changing the connection or model resets tool recommendations and resource inputs. The step counter follows the currently applicable questions, including native tools and selected resource inputs; its total updates when a choice changes the remaining flow. The final summary shows the chosen tools before publication.
-5. Setup publishes ordinary Agent `capabilities`. Edit the YAML later and run `a13n-harness-ui config validate`. Validation does not invoke paid tools or prove service availability.
+4. Review the final selection. Esc goes back; changing the connection or Model resets its tool suggestions and resource inputs.
+5. Setup saves ordinary Agent `capabilities`. Edit the YAML later and run `a13n-harness-ui config validate`. Validation checks configuration, not provider entitlement.
 
 **Add Agent** uses the same tool picker, including when reusing an existing Model. **Add Model** saves only the connection, then offers to create an Agent for that Model and configure its tools. Keeping only the Model or cancelling the subsequent Agent setup leaves the saved Model in place. Existing Agents and defaults are not silently changed. Model input modalities in `model_characteristics.capabilities` are separate from Agent tools.
 
@@ -195,9 +203,7 @@ capabilities:
 
 `NativeTool` accepts the upstream native tool specification, including the explicit `tool: {kind: web_search}` form. Multiple entries can select different native tools. The example enables live search, matching the Codex setup default; set `external_web_access: false` to explicitly request cached search on compatible providers. Options and availability depend on the actual Model/provider, not merely its brand or API compatibility label.
 
-`native_image_generation` wraps the Model's native `ImageGenerationTool` and saves the returned images before reporting their paths. It does not call a separate image API or fall back to another Model. Harness UI supplies its saver automatically: files land at `tmp/image-<id>.<extension>` under the **current Thread's** file area. Replies, transcripts, and resumed history carry readable file paths rather than image bytes. The Agent can use `view` to inspect a saved image later; a file reference does not automatically send its pixels to a later Model. Saving failures fail the Run instead of silently losing the image.
-
-These images survive Run completion and application restart, but are subject to ordinary Thread scratch cleanup. Ask the Agent to copy an important image into your Project or another retained destination. Generated images are not submitted attachments.
+Generated images are saved in Thread scratch storage. Copy important results to your Project; see [image saving and retention](#image-generation).
 
 The `web` entry above keeps fetch, scrape, and download available without registering a second search tool. Set its `search.mode` to `host` to expose the independent keyless DuckDuckGo search implementation, even alongside native search. Native search uses the selected Model provider's account and billing; Host search uses the UI's Web transport. Neither is implied merely by installing a Capability.
 
@@ -205,7 +211,7 @@ Setup writes reviewed starter choices into **new Agent resources**: Codex uses l
 
 ## Host Web Capability: every built-in provider
 
-New Agents include `web` by default, even when both native Web Search and Web Fetch are selected. The UI supplies fresh providers for each Run. There are no Tavily, Exa, Firecrawl or browser bindings hidden behind arbitrary backend names.
+New Agents include `web` by default. Each Run gets fresh instances of the following Host providers; native search/fetch selections control which Host functions are exposed.
 
 | Component          | UI implementation                       | Credentials / configuration                                                                                                                                                                      |
 | ------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

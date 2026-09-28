@@ -1,6 +1,6 @@
 # Configuration reference
 
-Harness UI uses ordinary YAML and Markdown files. **The root file controls application defaults; Model and Agent files control agent behavior.** Start with `a13n-harness-ui setup`, then edit those files when you need more control. Do not edit the local database to change configuration.
+Harness UI uses YAML and Markdown files. **The root file controls application defaults; Model and Agent files control agent behavior.** Start with `a13n-harness-ui setup`, then edit those files as needed.
 
 For task-oriented examples, start with [common configuration recipes](configuration-recipes.md). This page is the root-file and loading reference. The [built-in configuration Skill](skills-and-content-plugins.md#built-in-configuration-skill) gives the Agent offline guidance matching its installed release.
 
@@ -46,7 +46,7 @@ The root file's directory also contains:
 | `extensions/*.yaml`        | Harness Plugins, Environment profiles, Run Extensions | [Extensions](extensions-and-mcp.md)                                     |
 | `mcp/*.yaml`, `mcp/*.json` | MCP server definitions                                | [MCP](mcp.md)                                                           |
 
-Only immediate lowercase `.yaml` or `.md` files are scanned, plus `.json` in `mcp/`; `subagents/README.md` is ignored. Filenames are for people; the resource `id` owns references. There is no recursive scan, YAML include, ancestor configuration merge, or symlink-based resource discovery. One file defines one resource, except MCP files may contain a multi-server `mcpServers` object. MCP environment/header values accept literals and environment references; see [MCP configuration](mcp.md). Unknown fields, unsupported schema versions, duplicate IDs/keys, aliases, anchors, and invalid references reject the candidate configuration.
+Only immediate lowercase `.yaml` or `.md` files are scanned, plus `.json` in `mcp/`; `subagents/README.md` is ignored. Filenames are for people; resource references use `id`. One file defines one resource, except MCP's multi-server `mcpServers` format. MCP environment/header values accept literals and environment references; see [MCP configuration](mcp.md). Supported-version unknown additive fields are preserved with warnings, **not applied**; unsupported schema versions, duplicate IDs/keys, YAML aliases/anchors and invalid references still reject the candidate. There is no recursive scan or ancestor configuration merge.
 
 ### Skipped Capabilities
 
@@ -58,7 +58,7 @@ Only valid selections are captured for a new Run. Already captured Runs do not c
 
 ## Complete root document
 
-This example shows every root option. Replace the example default IDs with resources you actually created, or leave those selections `null`.
+This starter document shows the main root settings. Optional integrations are described below. Replace resource IDs with your own, or leave those selections `null`.
 
 ```yaml
 schema_version: "1"
@@ -126,11 +126,9 @@ memory:
     instructions: Keep decisions concise and preserve useful source references.
 ```
 
-Organization instructions are additional guidance, for example the summary language or preferred topic grouping; they do not replace the built-in scope and evidence rules. The organizer preserves whether information is proposed, verified or uncertain, does not turn a one-task request into a standing preference, respects user corrections and deletions, and may leave valid files unchanged. Its summary explains changes or why none were needed, including unresolved conflicts or verification limits. Foreground Agents are guided to treat memory as historical context, not current proof or permission to act.
+Use `instructions` for preferences such as summary language and topic grouping. The organizer reports its changes and preserves uncertainty and user corrections. Agents treat memory as historical context.
 
-**Organization model** defaults to **Use global default Agent's model**: omit `model` or set it to `null` to follow the Model configured on `defaults.agent`. Changing that Agent or its Model affects later organization attempts. You can still select an existing **Model** explicitly to override this default; saved overrides remain unchanged. Setup enables both switches and leaves the Model override null, preserving existing choices. The organizer never follows Project defaults or the current conversation Model and inherits no Agent instructions or tools. Without a global default Agent or its Model, automatic requests remain unavailable unless you select an explicit organization Model.
-
-Existing configurations with an omitted/null organization Model now use this default and can make automatic requests when both switches are enabled. To keep automatic requests off, use `auto_organize.enabled: false` rather than a null Model.
+**Organization model** follows the Model on `defaults.agent` when `model` is omitted or null. Select a Model ID to override it. Organization needs one of these Models configured; it uses only scoped memory tools, not the Agent's other tools or instructions. Setup enables memory and organization while preserving existing choices.
 
 Automatic organization is **WebUI-only**. New conversation inputs offer parallel background maintenance for changed files in their scopes. It does not read old conversations or sweep other Projects. Each scope keeps one read-only Memory Thread, separate from your ordinary conversations. Its only tools are scoped memory tools; your Agent's other tools and instructions are not inherited. It may make additional model requests and consume quota or incur cost. General settings shows current-process availability, activity, outcomes and reported usage.
 
@@ -173,7 +171,7 @@ These settings take effect when the application starts; restart after changing t
 
 | Field                           | Default  | Meaning                                                                                  |
 | ------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
-| `process.pricing_auto_update`   | `true`   | Update the App-owned upstream pricing catalog; not an authorization to buy credits       |
+| `process.pricing_auto_update`   | `true`   | Download updated model prices for later Agent builds                                     |
 | `process.terminal_update_check` | `true`   | Check for a package update at terminal startup; installation still requires confirmation |
 | `process.log_level`             | `INFO`   | `CRITICAL`, `ERROR`, `WARNING`, `INFO`, or `DEBUG`; normalized uppercase                 |
 | `process.log_format`            | `pretty` | Noninteractive logging: `pretty` or `json`; interactive diagnostics use files            |
@@ -255,7 +253,7 @@ For all built-ins use `[code-reviewer, executor, explorer]`; for a subset use, f
 
 ## What wins, and when edits apply
 
-At startup, an Agent or effective reviewer reference to a nonexistent Model aborts the application, even when a previously accepted configuration exists. The error log identifies the configuration file, field, and Model ID. Correct the reference or add the intended Model resource, then restart. Harness UI does not silently drop permission rules, select a different Model, or fall back to the previous generation for this startup error. A disabled root shell-review shortcut is not an effective reviewer reference.
+At startup, a missing Model referenced by an Agent or effective reviewer blocks the application. The error names its file, field and Model ID. Fix the reference or add the Model, then restart. A disabled shell-review shortcut does not require its reviewer Model.
 
 The open App observes configuration changes and accepts a stable, complete, valid tree. This is not synchronous with an editor's save. Invalid or incomplete candidates leave the previous accepted generation active and produce diagnostics. `config validate` deliberately checks the tree; `config show` reports accepted configuration, which can differ from invalid files on disk.
 
@@ -285,7 +283,7 @@ The data root owns local sessions, per-Project terminal Model preferences, immut
 2. `A13N_HARNESS_UI_DATA_ROOT`.
 3. `<configuration-directory>/data`.
 
-Changing it opens separate state; it does not migrate old sessions. Relative bootstrap paths resolve from the launch directory. Project roots must be absolute after `~` expansion and refer to existing directories.
+Changing it opens separate state; it does not migrate old sessions. Relative bootstrap paths resolve from the launch directory. Project roots must be absolute after `~` expansion; a missing root can be saved but cannot be used for a Run until available.
 
 | Input                                                       | Purpose                                                                                    |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |

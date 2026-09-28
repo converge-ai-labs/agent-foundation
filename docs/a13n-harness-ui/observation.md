@@ -90,20 +90,14 @@ The development template declares `OTEL_RESOURCE_ATTRIBUTES=deployment.environme
 
 Start at `harness_ui.root` (or a child trace's `harness_ui.subagent`):
 
-1. Check its application status and Thread/Run or execution IDs. The root covers preparation and saving as well as inference.
-2. Expand `configuration` in root observation metadata. It is a compact summary of the captured Run composition after reconstruction: Agent/model selection, allowlisted model parameters, active Capability IDs, plugin/MCP selections, tool allowlist mode, immediate subagent roster, Environment provider/adapter and Run Extensions. The configuration generation, Thread configuration version and package prompt revision identify the inputs used for this run. Request-level model fields remain authoritative if a resolver changes the model later.
-3. Follow `harness.run`, native Agent/model/tool spans and material Harness operations for timing, outcomes, recovery, token usage and request-local cost provenance.
-4. Use child execution lineage and `root_thread_id` to follow work across traces and sessions.
-
-Configuration details stay on the operation root, not every generation or tool. The summary is capped at 8 KiB, lists at 16 entries with explicit counts and omissions. It includes only a fixed allowlist of numeric/boolean model settings and recognized reasoning/service-tier choices. It excludes instructions, global guidance, credentials and references, headers, request bodies, endpoint URLs, filesystem roots and arbitrary plugin/MCP/Environment configuration. It is available even with `trace_content=none`; disabling or sampling out the operation skips summary construction entirely. It is diagnostic context, not a complete replay recipe or another source of configuration authority.
+1. Check root status and Thread/Run IDs. This span includes preparation and checkpoint saving, not only inference.
+2. Expand `configuration` to see the captured Agent, Model, capabilities, selected integrations and Environment. This is a bounded summary, not a replay recipe; it omits credentials, prompts, endpoints and filesystem roots.
+3. Follow `harness.run` and model/tool spans for timing, recovery, usage and cost. Check request-level model fields if a resolver changed the Model.
+4. Filter by `root_thread_id` and child execution IDs to follow delegated work across traces.
 
 ### Host phases and skill inspection
 
-`harness_ui.prepare` covers configuration/state loading and Agent reconstruction before `harness.run`. `harness_ui.finalize` covers Environment finalization and continuation saving after it. These are sibling spans, not another execution wrapper. Inspect the last `a13n.phase.step` and `a13n.ui.continuation.status` to distinguish inference, cleanup and saving problems. No per-file/per-hook span framework is introduced. Child preparation before task admission remains in the caller's context rather than being backdated into the child trace.
-
-Phase metadata and output expose the actual decisions: preparation reports continuation/deferred-resume selection and Capability count; finalization reports continuation status, Environment finalization and cleanup-error count. A failed save remains visible even when Harness returned an answer. `none` keeps these structural metadata fields but omits phase output bodies; no checkpoint or answer body is duplicated into phase output.
-
-The operation root and `harness.run` expose bounded available/accessed skill summaries. They report this Thread's observations, never a child's reads as the parent's. The actual native read-tool span carries the skill name/source; `harness.skills.resolve` measures catalog resolution at its real execution point. Access includes partial/repeated successful reads through recognized file tools. It is not proof of full loading, use from history, shell access, or compliance.
+`harness_ui.prepare` loads configuration and state; `harness_ui.finalize` saves continuation and finishes the Environment. Check `a13n.phase.step` and `a13n.ui.continuation.status` when a reply appears but saving fails. Skill summaries on the operation root and `harness.run` show available/read Skills for **that Thread**. A read is not proof the Agent followed the Skill.
 
 ## Content and limitations
 

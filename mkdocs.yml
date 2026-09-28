@@ -1,5 +1,5 @@
 site_name: Agent Foundation
-site_description: Build agents with Harness, experiment in Harness UI, and operate managed agents with Service
+site_description: Build and run your own agent systems with the Harness library, self-hosted Service, and Harness UI workbench
 site_url: https://agent-foundation-docs.converge.ai/
 repo_name: converge-ai-labs/agent-foundation
 repo_url: https://github.com/converge-ai-labs/agent-foundation
@@ -22,6 +22,30 @@ watch:
 
 nav:
   - Home: index.md
+  - Service:
+      - Overview: a13n-service/index.md
+      - Get started: a13n-service/get-started.md
+      - Use:
+          - Identity and access: a13n-service/identity.md
+          - Agents, threads and runs: a13n-service/agents-and-runs.md
+          - Agent Composer: a13n-service/agent-composer.md
+      - Configure resources:
+          - Resource basics: a13n-service/resources.md
+          - Models: a13n-service/models.md
+          - Tools and connections: a13n-service/tools.md
+          - Skills: a13n-service/skills.md
+          - Environments: a13n-service/environments.md
+          - Memory: a13n-service/memory.md
+          - Files and webhooks: a13n-service/files-and-webhooks.md
+      - Integrate:
+          - SDKs and CLI: a13n-service/sdks.md
+          - HTTP conventions: a13n-service/http.md
+          - HTTP reference: a13n-service/api-reference.md
+      - Operate:
+          - Configure Service: a13n-service/configuration.md
+          - Run and maintain: a13n-service/operations.md
+          - Monitor and troubleshoot: a13n-service/monitoring.md
+          - Settings reference: a13n-service/configuration-reference.md
   - Harness UI:
       - Overview: a13n-harness-ui/index.md
       - Get started:
@@ -87,31 +111,6 @@ nav:
           - Observation: a13n-harness/observation.md
           - Embedding in a Host: a13n-harness/hosting.md
           - Plugins and Extensions: a13n-harness/plugins.md
-  - Service:
-      - Overview: a13n-service/index.md
-      - Get started: a13n-service/get-started.md
-      - Use:
-          - Identity and access: a13n-service/identity.md
-          - Agents, threads and runs: a13n-service/agents-and-runs.md
-          - Agent Composer: a13n-service/agent-composer.md
-      - Configure resources:
-          - Resource basics: a13n-service/resources.md
-          - Models: a13n-service/models.md
-          - Tools and connections: a13n-service/tools.md
-          - Skills: a13n-service/skills.md
-          - Environments: a13n-service/environments.md
-          - Memory: a13n-service/memory.md
-          - Files and webhooks: a13n-service/files-and-webhooks.md
-      - Integrate:
-          - SDKs and CLI: a13n-service/sdks.md
-          - HTTP conventions: a13n-service/http.md
-          - HTTP reference: a13n-service/api-reference.md
-      - Operate:
-          - Configure Service: a13n-service/configuration.md
-          - Run and maintain: a13n-service/operations.md
-          - Monitor and troubleshoot: a13n-service/monitoring.md
-          - Settings reference: a13n-service/configuration-reference.md
-
   - Reference:
       - Package catalog: packages.md
       - Envd:

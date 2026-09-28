@@ -1,62 +1,45 @@
 # Agent Harness
 
-Harness is Agent Foundation's embeddable execution foundation: compose agents, run and stream their work, connect tools and environments, and save state for continuation. It powers both [Harness UI](../a13n-harness-ui/README.md), the interactive playground, and [Service](../a13n-service/README.md), the managed-agent runtime.
-
-Start with the [Harness quickstart](../../docs/a13n-harness/getting-started.md). The repository directory is `packages/a13n-harness`, the Python distribution is `a13n-harness`, and the import package is `a13n_harness`.
+Harness (`a13n-harness`) is the embeddable execution SDK behind [Harness UI](../a13n-harness-ui/README.md) and [Service](../a13n-service/README.md). It builds reusable agents, runs them with current tools and Environments, streams observations, and returns state for continuation. Start with the [offline quickstart](../../docs/a13n-harness/getting-started.md); the Python import is `a13n_harness`.
 
 ## Capability composition
 
-Agent definitions compose behavior through Capabilities. The first-party feature Capabilities own lifecycle hooks and select pure Toolsets; the Toolsets depend only on provider-neutral ports such as `FileOperator`, `MediaReader`, `DocumentConverter`, and `WebClient`. Native MCP composition uses `pydantic_ai.capabilities.MCP` in `AgentSpec.capabilities` or as a trusted process-local Capability; the default Harness dependency includes local MCP client support rather than requiring a separate extra.
+Build an `AgentSpec` with only the behavior your application needs. For example, to expose Environment tools and working state:
 
 ```python
-from a13n_harness.capabilities import (
-    HandoffCapability,
-    RuntimeContextCapability,
-    UserInteractionCapability,
-    WorkingStateCapability,
-)
-from a13n_harness.environment import (
-    DynamicEnvironmentCapability,
-    DynamicEnvironmentConfiguration,
-)
-from a13n_harness.models import SelfHealingModelCapability
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.capabilities import WorkingStateCapability
+from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 
-capabilities = (
-    DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
-    RuntimeContextCapability(),
-    SelfHealingModelCapability(),
-    HandoffCapability(),
-    WorkingStateCapability(),
-    UserInteractionCapability(),
+executable = HarnessBuilder().build(
+    AgentSpec(model="openai-responses:gpt-5"),
+    output_type=str,
+    capabilities=(
+        DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
+        WorkingStateCapability(),
+    ),
 )
 ```
 
-Embedding code constructs one fresh Provider `Environment` per independent Run and passes it through `run(..., environment=...)`, or supplies a named mapping of `Environment` and `EnvironmentMount` values through `environments=...`. The Host selects Provider configuration and current state before construction; Harness enters the adapters, owns only Run-local routing and access policy, exports cached state, and closes adapters without destroying backing targets. Only explicit Host policy constructs a fresh lifecycle adapter and calls `destroy()`. Ordinary calls can omit `RunBindings`; an advanced `EnvironmentRuntime` uses fresh `RunBindings.embedded()` values. General media URL reading, document conversion, and Web implementations stay behind typed run collaborators. Environment file multimedia understanding has built-in image, video, and audio understanding Agents selected by `A13N_HARNESS_*_UNDERSTANDING_MODEL`, with native support declared through the `model_characteristics` construction key and read from `AgentSpec.model_characteristics.capabilities`, plus a typed run collaborator available as an override. Static callers may import reusable Toolsets from `a13n_harness.toolsets`; their model-facing JSON results use named `TypedDict` contracts in the corresponding Toolset modules. Managed invocation policy and client-tool contracts are available from `a13n_harness.tools`.
-
-The shell Toolset is derived from effective Environment actions. A shell-only Environment exposes completion-only `shell_exec`; a process-capable Environment exposes exactly `shell_exec`, `shell_wait`, `shell_input`, and `shell_signal`. `shell_exec` waits briefly and returns a Run-owned `process-*` reference only when the command remains live. `shell_wait` reads retained output non-consumingly from explicit caller offsets, while input and signal tools never read output. Run cleanup kills and releases every owned process before Environment close. Process references, offsets, and observations never enter `AgentContextState` or `HarnessState`, and continuation Runs cannot rebind them.
-
-`SubagentCapability()` provides Harness-private inline delegation with no Host scheduler. It recursively runs declared children, borrows the active parent Environment mapping without re-entering or closing adapters, and stores complete child continuation only in parent Agent state. `SubagentCapability(async_enabled=True, operator=...)` instead exposes the standard six async tools through a Host-owned `SubagentOperator`. Harness resolves child Identity, context, and usage ceilings before dispatch but provides no default async manager, execution store, background task registry, parent-state mirror, or shutdown lifecycle.
+Supply a fresh Provider `Environment` to each `run(..., environment=...)`, or use `environments={...}` for named mounts. Harness enters and closes adapters; your application selects their configuration, current state, access policy, and when to destroy a backing target. See [Environments](../../docs/a13n-harness/environments.md) and [Capabilities](../../docs/a13n-harness/capabilities.md).
 
 ## Model construction
 
-`a13n_harness.infer_model()` is an optional construction helper that returns a native `Model`. It normalizes supported compatibility aliases, accepts caller-owned ordinary or gateway provider factories, applies synchronous Model patches in order, and can wrap the result with case-insensitive common request-header defaults. Request-specific native headers win. `create_model_http_client()` creates a caller-owned `httpx2` provider client with transport timeouts and a configurable retry transport. Its default policy retries transient transport failures and HTTP `429`/`502`/`503`/`504` up to five total attempts, respects `Retry-After`, and can be customized with `ModelHttpRetryConfig` or disabled with `retry=None`; request headers remain native `ModelSettings.extra_headers`. Callers can bypass both helpers and pass any self-constructed Model to `HarnessBuilder.build(model=...)`; provider credentials, clients, retries, and resource lifecycle remain owned by the caller's integration.
+Pass a native model directly through `HarnessBuilder.build(model=...)`, or select one in `AgentSpec.model`. `a13n_harness.infer_model()` constructs a model from supported aliases and caller-owned provider factories. `create_model_http_client()` builds a caller-owned `httpx2` client for provider requests. Configure credentials and close owned clients in your application. See [Models](../../docs/a13n-harness/models.md) and [Model authentication](../../docs/a13n-harness/model-authentication.md).
 
 ## Execution boundary and filters
 
-Every built Agent includes one outer `ToolExecutionBoundaryCapability` and one innermost `MessageIntegrityFilterCapability`; application definitions do not install either boundary manually. First-party Toolsets own semantic progressive disclosure and can use the shared typed helper to save a fuller redacted result in a run-private model-readable file. The execution boundary preserves native tool dispatch and remains the sole mandatory final validation, redaction, and larger hard-size fallback for locally executable function-tool text/JSON results. Metadata-absent tools, including locally executed dynamic MCP tools, default to explicit truncation when oversized. Complete trusted `HarnessToolMetadata` additionally selects managed authorization, credentials, grants, retry, and invocation events.
+Each built Agent includes the tool execution boundary and message integrity filter. Add Capabilities for policy, context, memory, delegation, or model recovery. Toolsets are available from `a13n_harness.toolsets`, and managed tool contracts from `a13n_harness.tools`.
 
-Request/history filters live in `a13n_harness.filters`. Message integrity is mandatory; `ContentFilterCapability` is optional for native multimodal request compatibility. `AgentSpec.cold_start_filter` enables cold compression of already-consumed tool-result strings after one hour of model inactivity by default; configure it with `ColdStartFilterConfiguration` or set it to `None` to disable automatic installation. `SelfHealingModelCapability` is the recommended explicit selection for known one-shot provider-history repairs: it installs `SelfHealingModel` around the final effective request Model. It is not enabled implicitly. Interrupted-stream `ModelAttempt` recovery remains in the Harness rather than a request filter or the self-healing wrapper.
-
-Every `HarnessState` carries the stable `thread_id` of one independently advancing history. A trusted Host can select the initial ID through `HarnessState.new(thread_id=...)`; resume preserves it, and `HarnessState.fork(thread_id=...)` creates a distinct Host-selected or generated branch. Each process-local `HarnessRunStream`, event, and result pairs that stable identity with a fresh `run_id`. The stream's public union is `HarnessStreamEvent`.
+A completed Run returns a `HarnessState` with a stable `thread_id`. Pass it as `previous_state` to continue the Thread; each new Run receives a fresh `run_id`. The Host persists accepted state and reconstructs credentials and other current authority on resume. [State and resume](../../docs/a13n-harness/state-and-resume.md) covers serialization and interrupted calls.
 
 ## Runnable examples and guides
 
-The [Agent Application example](../../examples/agent-app/README.md) is one repeated conversation with Harness stream output, successful-turn state persistence, recovery after application restart, and one fresh Direct Local Environment per turn. The [plugin integration example](../../examples/plugins/README.md) publishes and selects real Harness and Environment extension distributions.
-
-The [Agent Harness user guide](../../docs/a13n-harness/index.md) covers installation, first-party feature families, filters, Environments, results, resume, and usage. The [plugin guide](../../docs/a13n-harness/plugins.md) covers packaging, configuration, lifecycle, and discovery from a Host-managed plugin directory without a process restart.
+- [Agent application](../../examples/agent-app/README.md): offline streaming turns, checkpointing, and restart recovery.
+- [Environment Providers](../../examples/environment-provider/README.md): construction, re-entry, and lifecycle.
+- [Plugins and extensions](../../examples/plugins/README.md): packaged middleware, Capabilities, and Environment integrations.
+- [Harness guide](../../docs/a13n-harness/index.md): the public API by task.
 
 ## Versioning
 
-Agent Harness and `a13n-stream-protocol` form the Harness release group. A `release/a13n-harness-v<version>` tag publishes both distributions at exactly the same version, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Python package metadata represents the RC as `X.Y.ZrcN`. Published Stream Protocol metadata pins the exact Harness version.
-
-The accepted architecture and public contract are defined in the [Agent Harness specification](../../spec/a13n-harness/README.md).
+Harness and `a13n-stream-protocol` publish together at one exact version. Harness UI releases independently. The [Harness specification](../../spec/a13n-harness/README.md) owns the accepted contracts.

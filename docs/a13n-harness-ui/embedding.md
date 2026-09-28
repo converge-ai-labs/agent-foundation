@@ -2,7 +2,7 @@
 
 Use the Python App boundary when you need Harness UI's accepted configuration, saved Threads, attachments, root-operation receipts, and child coordination inside another local interface. Use [Harness directly](../a13n-harness/hosting.md) when your application should own those product decisions instead.
 
-The reusable App is process-local. It is not a durable remote job queue or the managed [Service](../a13n-service/index.md). Imports come from the owning submodules; `a13n_harness_ui` itself exports only the distribution version.
+The App is process-local; use [Service](../a13n-service/index.md) if work must survive process failure and resume on another worker. Import APIs from their owning submodules (`a13n_harness_ui` itself exports only the version).
 
 ## Open, submit, and wait
 
@@ -30,7 +30,7 @@ async def run_once(configuration_file: Path, prompt: str):
         return thread.thread_id, operation
 ```
 
-Pass the selected configuration path **as well as** process settings. Constructing bare `HarnessUiSettings()` is not equivalent to loading a user's YAML tree. The loader returns settings, selected path, existence/explicit-selection metadata, and any candidate error. An App can retain an accepted configuration while reporting a rejected candidate; this example deliberately rejects a bad explicit candidate before opening.
+Pass both the loaded settings and selected configuration path. Bare `HarnessUiSettings()` does not load the user's resource tree. Reject a bad candidate before submitting work, as the example does.
 
 `load_harness_ui_settings(path=None, data_root=None)` uses the normal configuration/data-root selection rules. Use an explicit separate data root for a distinct App instance or test; do not point a fixture at the user's real conversation store. Startup opens storage, accepts/indexes configuration, prunes eligible scratch files, and can start the pricing updater. Deterministic offline fixtures disable `pricing_auto_update` and use test Model/runtime collaborators rather than provider requests.
 
@@ -38,7 +38,15 @@ Pass the selected configuration path **as well as** process settings. Constructi
 
 ## Receipts are not saved continuation
 
-`submit_thread()` returns `RootRunReceipt(receipt_id, thread_id, submitted_at)`. It acknowledges an App operation, not successful model output. One root operation can be active per Thread; another submit is rejected, not durably queued.
+```mermaid
+flowchart TD
+    A[Open App and select Thread] --> B[Submit input]
+    B --> C[Receive operation receipt]
+    C --> D[Wait or watch]
+    D --> E[Inspect execution, saved state and cleanup]
+```
+
+`submit_thread()` returns `RootRunReceipt(receipt_id, thread_id, submitted_at)` to acknowledge admission, not a successful answer. Wait for that receipt and inspect its outcome; only the saved Thread can be read after restart. Another submission while the Thread has an active root operation is rejected rather than queued.
 
 `get_root_operation()` reads current status. `wait_root_operation(receipt_id, timeout_seconds=None)` waits for that exact operation; a bounded wait can return active state. `active_root_operation(thread_id)` discovers current local activity. Use `steer_root_operation(receipt_id=..., message=...)` and `cancel_root_operation(receipt_id)` only for that receipt's available actions.
 
@@ -74,7 +82,7 @@ Read `thread_decisions(thread_id=..., expected_continuation_id=...)` or the deta
 
 `respond_decisions()` accepts `DecisionResponseBatch`, including questions, approvals, and external results. `respond_thread()` accepts the lower-level `ThreadDeferredResponse` with `ApprovalDecision` / `ExternalToolResult`. A denied external result needs a denial message and cannot also carry a successful result. Approval argument overrides and denial messages have mutually exclusive rules.
 
-Do not substitute an ordinary prompt for pending feedback, authenticate approval by request ID alone, or collect a partial batch and pretend it resolved the selected continuation. The Host UI authenticates the human/executor and submits the exact current contract. Child Runs do not create durable deferred work.
+Authenticate the responding human or executor and submit the complete current decision set. Ordinary prompts cannot answer pending decisions. Child Runs do not create durable deferred work.
 
 ## Attach files
 

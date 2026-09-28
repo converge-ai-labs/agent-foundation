@@ -19,7 +19,7 @@ Type `$` in the CLI or WebUI composer to discover Skill names. For example, ask 
 
 ## Automatic sources and precedence
 
-When two sources provide the same Skill `name`, the following priority applies, highest first:
+If two sources use the same Skill name, the first available source in this precedence list wins:
 
 1. Explicit `roots`, with a later entry winning over an earlier one.
 2. The first Project root's `.agents/skills` directory.
@@ -30,9 +30,7 @@ When two sources provide the same Skill `name`, the following priority applies, 
 
 Without a Project, only the two Project tiers disappear. Built-in, user, plugin, and explicit sources still work. The configuration directory does not implicitly become a Project Skill source.
 
-The Run prepares its catalog after initial Environment entry and freezes that catalog for the logical Run. Later mount changes do not silently rescan it; a changed route can invalidate a selected Skill. Later Runs prepare their own catalogs. Source configuration and selection are captured, but Skill file bytes are not an immutable copy inside the Run composition.
-
-Missing automatic Project/user directories contribute no Skills. Invalid optional plugin entries are skipped with diagnostics without hiding valid siblings. Required explicit or built-in sources fail preparation when unavailable. Bounds fail explicitly rather than silently truncating an ambiguous catalog.
+The catalog is selected at Run preparation. New Run captures can see source changes; the active Run does not rescan mounts. Missing optional directories are simply absent, while unavailable explicit roots fail preparation. Skill file contents are read when used, not copied into the Run.
 
 ## Explicit Skill roots
 
@@ -165,7 +163,7 @@ The two declared directories are relative to that plugin root. Put each Skill's 
 
 At least one of `skills` or `subagents` is required. Declared paths use `./...`, remain inside their owner, and cannot escape through traversal or links. Unknown fields are rejected. The version label is provenance, not an automatic update resolver.
 
-Manifest input is bounded to 1 MiB. The installed tree is bounded to 4096 files, 16 MiB per file, and 64 MiB total; unsupported links and filesystem node types are rejected. Each Git operation has a 300-second timeout. YAML parsing is bounded to 100,000 nodes and depth 64. The generated `.a13n-plugin/origin.json` records installation provenance separately from the editable manifest.
+Installation enforces size, file-type, Git-operation and YAML-parser limits rather than accepting arbitrary repository content. `.a13n-plugin/origin.json` records provenance separately from the editable manifest.
 
 ## Troubleshoot discovery
 

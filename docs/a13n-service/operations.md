@@ -15,11 +15,9 @@ a13n-service --config service.toml run --role worker
 | `worker`        | Only `/healthz` and `/readyz`.                                                                                | Claims accepted runs and executes them with the Harness. |
 | `all` (default) | Everything `control` serves.                                                                                  | Everything `control` and `worker` do.                    |
 
-Run `all` for a single process. For larger deployments, run any number of `control` replicas behind a load balancer and any number of `worker` replicas; workers accept no API traffic. Sweeps coordinate through database row claims, so every control replica runs them safely.
+Use `all` for one process. Scale `control` replicas behind a load balancer and `worker` replicas separately; workers accept no API traffic. Control replicas coordinate maintenance work through database claims.
 
-Each worker executes up to `worker.slots` attempts at once. It holds a lease on each attempt and renews it every `worker.authority_seconds`, rechecking cancellation and the principal's current access at the same time. When a worker stops renewing, for example because it crashed, the lease expires and another worker continues the run from its last checkpoint. A run fails after it has been charged `worker.max_attempts` attempts.
-
-On shutdown a worker stops claiming, asks its attempts to hand off at their next safe boundary and waits up to `worker.drain_seconds`; another worker then continues them without charging an attempt. Attempts that do not finish in time are recovered after their lease expires.
+Each worker executes up to `worker.slots` attempts. If it crashes, another worker continues the run from its last checkpoint in a new attempt after the lease expires; a run fails after `worker.max_attempts` charged attempts. During shutdown, the worker stops claiming and allows up to `worker.drain_seconds` for a checkpointed handoff. External side effects are not automatically rolled back or guaranteed safe to repeat.
 
 ## Schema migrations
 
@@ -43,7 +41,7 @@ Readiness returns `503 {"status": "unavailable", "dependency": "runtime"}` befor
 
 ## Background work
 
-Control processes run these sweeps. Each pass handles a bounded batch (`control.sweep_batch`), and a failed pass is logged (`Sweep failed`) and retried at the next interval.
+Control processes maintain queued work and deliveries in bounded sweeps. Failed passes are logged and retried at the next interval.
 
 | Sweep                           | Interval                           | Work                                                                                                                       |
 | ------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -112,6 +110,4 @@ parallel = 2
 
 Environment overrides follow the existing section convention: `A13N_OUTBOX__DEFAULTS` and `A13N_OUTBOX__BY_KIND` carry JSON objects. The environment replaces the corresponding TOML field, then each kind inherits unspecified policy fields from defaults. Unknown fields and kinds fail startup. Configuration is resolved once per process; restart to apply a change.
 
-This replaces `control.outbox_batch`, `control.outbox_attempts`, `control.outbox_lease_seconds` and `control.outbox_retention_days`. Move batch, attempts and lease to `outbox.defaults.batch`, `max_attempts` and `lease_seconds`; replace retention days with separate success/dead retention seconds. Per-kind values override these shared defaults. The pre-public schema migration is validated from an empty database; it does not backfill obsolete development data.
-
-Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1`, using the maximum across replicas. Defaults flag at least 10,000 due rows or an oldest due age of five minutes sustained for five minutes. Dead rows flag immediately at the next 15-second sample. Inspect the failing dependency, restore delivery capacity or reduce producers; retention cannot cap pending work during an indefinite outage. PostgreSQL autovacuum reuses deleted row space without a Service-managed table rewrite.
+Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1`, taking the maximum across control replicas. Check the failing destination and restore delivery capacity; retention does not discard pending work.

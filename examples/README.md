@@ -1,64 +1,28 @@
 # Examples
 
-This directory contains runnable, tested examples of public Agent Foundation extension points. Each independent project is small enough to read end to end while using the same packaging and runtime boundaries as an application or integration package.
+These five independent projects show public Harness integration points. Each has its own manifest, lockfile, source, and tests.
 
 ## Start Here
 
-| Goal                                        | Example                                                                          | What it demonstrates                                                                                              |
-| ------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Host an interactive MCP tool result         | [Stateful MCP App example](mcp-apps/README.md)                                   | Real stdio server, bundled App SDK, post-Run interaction, approval, resources and explicit context                |
-| Build a recoverable Agent application       | [Agent application example](agent-app/README.md)                                 | Offline streaming turns, successful-turn state persistence, restart recovery, and a fresh Environment per turn    |
-| Use the built-in Environment Providers      | [Environment Provider example](environment-provider/README.md)                   | Direct Local, Local Envd, and Docker Host lifecycles, state re-entry, non-destructive close, and explicit destroy |
-| Extend Agent-loop behavior                  | [Custom Capability example](plugins/README.md#custom-capability)                 | Host-authorized `AgentSpec` reconstruction and direct code composition of one custom Capability                   |
-| Wrap the complete Harness run               | [Harness plugin example](plugins/README.md#harness-plugin)                       | YAML/JSON configuration, runtime directory discovery, direct objects, parameters, and per-run isolation           |
-| Span the complete Environment lifecycle     | [Environment run-extension example](plugins/README.md#environment-run-extension) | Explicit factory selection, public Harness execution, aggregate setup, and reverse-order cleanup                  |
-| Publish and compose an Environment Provider | [Environment Provider example](plugins/README.md#environment-provider)           | Entry-point and explicit Provider catalogs, strict configuration, fresh adapters, and multi-mount routing         |
-| Install an Environment Provider package     | [Installed Environment Provider plugin example](provider-plugin/README.md)       | Selected package metadata, an Environment-only manifest, direct use, and Harness UI loading                       |
+| Goal                                                       | Example                                                 | Start with                                               |
+| ---------------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------- |
+| Save a conversation and recover after restart              | [Agent application](agent-app/README.md)                | Offline CLI turns and `HarnessState` persistence         |
+| Construct or re-enter an Environment                       | [Environment Providers](environment-provider/README.md) | Direct Local; remote, Envd, and Docker paths are opt-in  |
+| Add Capabilities, middleware, Providers, or Run extensions | [Plugins](plugins/README.md)                            | Installed entry points and explicit composition          |
+| Install a Provider as a separate distribution              | [Provider plugin](provider-plugin/README.md)            | Entry-point loading and fresh workspace adapters         |
+| Render an interactive MCP tool result                      | [MCP App](mcp-apps/README.md)                           | Stdio server, bundled UI resource, and real client tests |
 
-Run every example and its focused checks from the repository root:
+From the repository root, `make examples-check-all` runs the complete examples gate. To work on one example, follow its README instead. All five have offline test paths; live model credentials are not needed. Building the MCP App first requires Node.js/npm. Remote Envd and Docker demos require their respective runtimes.
 
-```bash
-make examples-check-all
-```
-
-Or enter each project and run its paths directly:
+For the quickest interactive application:
 
 ```bash
 cd examples/agent-app
 uv sync --locked
-uv run agent-app-example
 uv run agent-app-example "first turn" "second turn"
-uv run pytest
-
-cd ../environment-provider
-uv sync --locked
-uv run environment-provider-example direct_local
-uv run pytest
-
-cd ../plugins
-uv sync --locked
-uv run plugin-example-capability-agent-spec
-uv run plugin-example-capability-code
-uv run plugin-example-environment-entrypoint
-uv run plugin-example-environment-code
-uv run plugin-example-environment-extension-entrypoint
-uv run plugin-example-environment-extension-code
-uv run plugin-example-harness-entrypoint
-uv run plugin-example-harness-code
-uv run pytest
-
-cd ../provider-plugin
-uv sync --locked
 uv run pytest
 ```
 
-The default smoke paths need no model API key or network access after dependencies are installed. Local Envd and Docker examples are explicit opt-in paths because they require provisioned external runtimes; Docker may also pull the selected sandbox image.
-
 ## How to Use These Examples
 
-1. Read the example README before copying code; it identifies the owning extension point and trust boundary.
-2. Run the demo to observe the complete integration path.
-3. Read the implementation and focused tests.
-4. Copy only the module that matches your extension point and replace example policy, configuration, and persistence choices with application-owned ones.
-
-Examples are executable teaching material, not additional product APIs. Accepted behavior remains owned by [`spec/`](../spec/README.md), while user documentation remains under [`docs/`](../docs/index.md).
+Run the example, then read its source and tests for the integration boundary. Copy the smallest part that matches your application and replace demo policy and persistence with your own. Accepted contracts live in [`spec/`](../spec/README.md); task-oriented guides live in [`docs/`](../docs/index.md).

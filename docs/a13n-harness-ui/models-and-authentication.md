@@ -19,15 +19,15 @@ A Model chooses a provider connection, request settings, and context budget. Sto
 
 ## Create and manage Models
 
-In the browser, open **Settings → Models** to add, edit or clone a saved Model. The list shows its route and owning source file. First-use setup uses the same editor, and an Agent's **Add model** action saves a new Model inline before selecting it. These operations do not send a model request or change an active Run.
+In the browser, open **Settings → Models** to add, edit or clone a saved Model. First-use setup and an Agent's **Add model** action use the same flow. Saving a Model changes no active Run.
 
 1. Choose **Codex subscription**, **Grok subscription**, or an API connection. Subscriptions keep their native account stores and transports; they are not API-key presets.
 2. Connect the shared subscription account, choose a saved API key, save a new key, or name a server environment variable. Credential writes happen independently; cancelling the Model draft does not undo a completed login or key save.
-3. Search recommendations and the API directory, or enter a custom Model ID. Directory failure does not block manual IDs. Subscription choices are maintained separately. Directory context, release and modality metadata are descriptive, not an account-access test or permission to enable runtime capabilities.
-4. Choose **Use this model**, then adjust reasoning, service speed and working context as offered for that connection. Changing an existing connection requires **Apply connection & defaults**; simply opening the editor preserves your settings. Presets change their owned settings and preserve unrelated native parameters.
-5. Save the ordinary Model YAML. Advanced source editing retains access to `settings`, `model_configuration` and `model_characteristics`. Conversation selectors contain saved Models only, not every directory entry.
+3. Choose a suggestion or enter a case-sensitive Model ID. Suggestions describe known routes, not your account's entitlement; manual IDs remain available if the directory fails.
+4. Choose **Use this model** and adjust offered reasoning, speed and working context. For an existing connection, **Apply connection & defaults** deliberately changes its preset settings.
+5. Save the Model YAML. Only saved Models appear in conversation selectors; advanced YAML editing remains available.
 
-Native tools belong to **Agents**, not Models. The Model editor describes support; the Agent editor offers choices for its selected saved Model. Changing a Model does not silently replace an Agent's tools. Tools requiring provider stores, server URLs or other parameters remain configurable in advanced YAML. Provider usage charges may apply.
+Choose native tools on the **Agent**, after selecting its saved Model. Changing a Model does not rewrite an Agent's tools. See [Native tools](native-and-web-tools.md) for required provider resources and YAML examples.
 
 Terminal `setup`, `add model`, and the new-Model branch of `add agent` use the same backend choices and preparation rules. API connections can reuse saved-key metadata or an environment-variable reference without exposing key bytes. Subscription setup offers inline device/browser login or an explicit configure-later choice when an account is unavailable.
 

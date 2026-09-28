@@ -1,14 +1,6 @@
 # Harness UI HTTP API
 
-The optional browser server exposes a local App API. Its bundled browser currently implements workbench entry, setup, provider-account/key management, configuration editing, Project readiness and page presence. These endpoints do not imply that browser chat, Host Files, Git or terminal panels are implemented.
-
-This is **not Service Native `/api/v1`**. It has a shared instance access key, process-local operation receipts, and best-effort live subscriptions. Use the [browser-server guide](webui.md) to start/configure the listener and [Python embedding guide](embedding.md) for App ownership.
-
-## Memory observation
-
-`GET /api/threads?memory=true` selects only Memory Threads; the default list excludes them. Project filters and pagination retain their ordinary semantics; `projectless=true` selects Global memory. `POST /api/threads/lookup` accepts the same `memory` discriminator. A Memory Thread exposes its `memory_scope` and supports the existing transcript, live, configuration-inspection and usage reads, but mutation or execution control returns `memory_thread_read_only`.
-
-`GET /api/memory/files` lists current Global memory files. Add `project_id` for a configured Project's scope. `GET /api/memory/file?path=MEMORY.md` reads a relative scope file, with the same optional Project selector. These routes are authenticated, read-only, independent of native computer sharing, and unavailable when Memory is disabled. They expose neither arbitrary Host paths nor internal bookkeeping and never trigger organization.
+The browser server exposes the same process-local App used by the terminal. Its API powers setup, configuration, conversations, live output, and optional native Host Files, Git, and terminal panels. This is not the managed Service `/api/v1` API: callers share one instance access key, operation receipts belong to the running process, and live events are best-effort. Start with [Use the browser](webui.md); use [Python embedding](embedding.md) when no HTTP listener is needed.
 
 ## Authenticate and discover the contract
 
@@ -26,6 +18,38 @@ The status contract has `api_version: "1"`, package/build information, App statu
 
 Authentication and Host/Origin validation apply at the listener boundary. Use a header-capable HTTP/fetch client. Do not put access keys in API query strings or logs, or confuse model-provider credentials managed under `/api/auth/*` with the listener key. The deliberate dangerous-bypass mode is not a production authentication mechanism.
 
+## Create a Thread and submit input
+
+First inspect `/api/selectors` and `/api/setup` to confirm usable accepted configuration. Configure an Agent, Model credentials, and Environment profile before running; the following uses their defaults and can invoke model/tool side effects.
+
+```bash
+curl --fail-with-body "$HUI_URL/api/threads" \
+  -H "Authorization: Bearer $HUI_API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data '{"title":"API conversation"}'
+```
+
+Save the returned `thread_id` as `THREAD_ID`:
+
+```bash
+curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/submit" \
+  -H "Authorization: Bearer $HUI_API_KEY" \
+  -H 'Content-Type: application/json' \
+  --data '{"parts":["Explain this project without changing files."]}'
+```
+
+Ordinary `/submit` also accepts optional `model_id` and `thinking` for that Run only. Omitted or null thinking inherits the effective Model settings; false explicitly requests Off. Read the Model's `thinking` descriptor from `/api/selectors` for its accepted values, configured-default summary, and disabled reasons rather than assuming every model accepts every level. Invalid or blocked selections are rejected without fallback. Neither override updates sticky Thread configuration, and steering rejects them. Captured configuration exposes a requested-thinking summary separately from current resource defaults.
+
+The returned `RootRunReceipt` has `receipt_id`, `thread_id`, and `submitted_at`. Read `/api/operations/{receipt_id}` until terminal status; there is no root-operation HTTP `wait` endpoint. Preparing/running is not completion. Completed/suspended/failed/cancelled describes the operation; inspect any `outcome.execution`, `outcome.continuation`, and `outcome.environment` separately.
+
+Only one active root operation is allowed per Thread. A second submit is rejected, not queued. There is no Service-style durable acceptance/idempotency contract here. After losing an acknowledgement, read current Thread/root activity before deciding what to do; do not blindly submit the input again. After process restart, old receipts can be unavailable while the saved continuation remains readable.
+
+## Memory observation
+
+`GET /api/threads?memory=true` selects only Memory Threads; the default list excludes them. Project filters and pagination retain their ordinary semantics; `projectless=true` selects Global memory. `POST /api/threads/lookup` accepts the same `memory` discriminator. A Memory Thread exposes its `memory_scope` and supports the existing transcript, live, configuration-inspection and usage reads, but mutation or execution control returns `memory_thread_read_only`.
+
+`GET /api/memory/files` lists current Global memory files. Add `project_id` for a configured Project's scope. `GET /api/memory/file?path=MEMORY.md` reads a relative scope file, with the same optional Project selector. These routes are authenticated, read-only, independent of native computer sharing, and unavailable when Memory is disabled. They expose neither arbitrary Host paths nor internal bookkeeping and never trigger organization.
+
 ## Coordinator
 
 `ThreadSummary.role` is `ordinary`, `coordinator`, or `worker`. `coordinator_thread_id` identifies a worker's owner (otherwise null); `auto_followup` is the Coordinator's notification setting (otherwise null). Projects can contain multiple Coordinators and expose no singleton lead fields.
@@ -42,11 +66,11 @@ The old Project `/lead` routes and fields are removed. Startup migration convert
 
 ## Run-only execution environment
 
-`POST /api/threads/{thread_id}/submit` accepts an optional `environment` patch alongside the prompt or ordered input parts:
+`POST /api/threads/{thread_id}/submit` accepts an optional `environment` patch alongside ordered input parts:
 
 ```json
 {
-  "prompt": "Review this project",
+  "parts": ["Review this project"],
   "environment": {
     "environment_profile_id": "environment-sandbox",
     "local_roots": ["/absolute/path/to/code"],
@@ -195,7 +219,7 @@ Ordinary submit and root steering expand the immutable capture as native text wi
 
 `GET /api/drafts` lists nonempty shared rooms as `{thread_id, draft_id, unsent_since}` without returning text or joining editors. Selected pending/failed attachments count; whitespace and dormant attachment registry entries do not. The timestamp changes only when an empty draft becomes nonempty. A `draft` summary invalidation identifies a Thread whose empty/nonempty membership changed; refetch this index after hints or a summary reset, then use the existing Thread lookup APIs for titles, Projects, and archive state. This index is independent of recent-conversation pagination and disappears on App restart. It is not an execution queue or durable draft storage.
 
-`features.shared_drafts` advertises the backend protocol, not a finished browser editor. Connect to `/api/threads/{thread_id}/draft/connect` using the same first-frame authentication as the terminal. Only root Threads participate; computer sharing is not required. One App owns one in-memory document per participating Thread. Disconnect removes presence, not the document or an executing Run. App close drops drafts and presence; conversation history keeps its existing storage owner.
+`features.shared_drafts` advertises the in-memory composer protocol used by the browser. Connect to `/api/threads/{thread_id}/draft/connect` using the same first-frame authentication as the terminal. Only root Threads participate; computer sharing is not required. One App owns one in-memory document per participating Thread. Disconnect removes presence, not the document or an executing Run. App close drops drafts and presence; conversation history keeps its existing storage owner.
 
 `x-interactive.draft` describes the JSON envelopes. The server sends `DraftFrame` with a `draft_id`, connection-local `participant_id`, a base64 **Yjs v1 full-state update**, and current participant presence. The document uses two root types: `text` (`Y.Text`, plain text only) and `attachments` (`Y.Map<string>`). Inline map keys use `inline-<UUID>`; their values are existing attachment IDs from that same Thread, or the incomplete states `pending`/`failed`. The text contains opaque `U+FFFC + key + U+FFFC` identity tokens, rendered as atomic filename controls by the browser. Only live token occurrences select inline input; dormant registry entries support undo and remain bounded by the full CRDT-state limit. Missing registry entries and incomplete states block client submission. Tokens never cross the execution-input boundary. Native file/diff captures use those same IDs, not live paths or duplicated bytes. Clients expand token occurrences in authored text order. Legacy map keys without the `inline-` prefix are still selected in sorted-key order after the text; new clients retain this read compatibility. Collaborators inspect each selected handle through `GET /api/threads/{thread_id}/attachments/{attachment_id}/metadata`, which returns the existing `ThreadAttachment` projection without downloading its bytes. It preserves the Thread scope and immutable file/diff provenance; removing a draft selection does not delete retained input files. The server uses pycrdt/Yrs; CRDT item identities and merging are library-owned.
 
@@ -210,11 +234,11 @@ Send is a client action, not a draft endpoint:
 3. On a positive submission acknowledgement, delete only the text and legacy selections visible in that captured clone and merge its full deletion update back into the live replica. Keep inline registry entries: an uncaptured occurrence pasted by a peer can reuse a key and arrive after acknowledgement. This preserves concurrent inserts and replaced/added selections. Do not clear the current editor by offsets or replace it with an empty document.
 4. On rejection or unknown outcome, retain the draft. Never retry submission automatically. Resending a CRDT editing update is not resending an execution request.
 
-Explicit root steering accepts ordered `parts`, or legacy `prompt` and optional `attachment_ids`, using the same attachment preparation and limits as ordinary submission. Images become native image input; ordinary files and binary or larger captures retain readable Thread attachment references. Captured NUL-free UTF-8 file/diff/comment context of at most 64 KiB also supplies attributed inline text. Attachment-only steering is valid, and ordered parts retain their authored order and metadata. A later Host edit cannot change either path's captured bytes or source attribution.
+Explicit root steering accepts ordered `parts`, using the same attachment preparation and limits as ordinary submission. Images become native image input; ordinary files and binary or larger captures retain readable Thread attachment references. Captured NUL-free UTF-8 file/diff/comment context of at most 64 KiB also supplies attributed inline text. Attachment-only steering is valid, and ordered parts retain their authored order and metadata. A later Host edit cannot change either path's captured bytes or source attribution.
 
 ### Ordered input bodies
 
-Root `/submit` and root `/steer` accept `parts` containing strings and `{ "attachment_id": "..." }` references in authored order:
+`POST /api/threads/{thread_id}/submit` and `POST /api/operations/{receipt_id}/steer` require `parts` containing strings and `{ "attachment_id": "..." }` references in authored order:
 
 ```json
 {
@@ -227,45 +251,19 @@ Root `/submit` and root `/steer` accept `parts` containing strings and `{ "attac
 }
 ```
 
-Stage the bytes through the existing attachment endpoint first. References retain their original Thread-scoped IDs; the App does not duplicate uploads. A repeated ID is a distinct occurrence and counts again toward count/byte limits. The body permits at most 1024 parts and 256 Ki authored text characters in total, subject to the existing attachment limits. Empty input is rejected. Do not combine `parts` with a nonempty `prompt` or `attachment_ids`. Omitting `parts` preserves the legacy prompt-plus-trailing-attachments behavior. No client-supplied media metadata, Host paths, or editor tokens are accepted as references.
+Stage the bytes through the existing attachment endpoint first. References retain their original Thread-scoped IDs; the App does not duplicate uploads. A repeated ID is a distinct occurrence and counts again toward count/byte limits. The body permits at most 1024 parts and 256 Ki authored text characters in total, subject to the existing attachment limits. Empty input is rejected. Root HTTP input uses `parts`; `prompt` and `attachment_ids` are not accepted fields. Attachment references identify staged Thread bytes, not Host paths or editor tokens.
 
 Native input content carries the existing `source_id` and `harness_ui.composer.index` presentation metadata. A single attachment can expand into text and binary pieces with the same authored index; displays group those pieces by source/index, not attachment ID alone. Live and retained-history projections preserve this metadata.
 
-## Create a Thread and submit input
-
-First inspect `/api/selectors` and `/api/setup` to confirm usable accepted configuration. Configure an Agent, Model credentials, and Environment profile before running; the following uses their defaults and can invoke model/tool side effects.
-
-```bash
-curl --fail-with-body "$HUI_URL/api/threads" \
-  -H "Authorization: Bearer $HUI_API_KEY" \
-  -H 'Content-Type: application/json' \
-  --data '{"title":"API conversation"}'
-```
-
-Save the returned `thread_id` as `THREAD_ID`:
-
-```bash
-curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/submit" \
-  -H "Authorization: Bearer $HUI_API_KEY" \
-  -H 'Content-Type: application/json' \
-  --data '{"prompt":"Explain this project without changing files."}'
-```
-
-Ordinary `/submit` also accepts optional `model_id` and `thinking` for that Run only. Omitted or null thinking inherits the effective Model settings; false explicitly requests Off. Read the Model's `thinking` descriptor from `/api/selectors` for its accepted values, configured-default summary, and disabled reasons rather than assuming every model accepts every level. Invalid or blocked selections are rejected without fallback. Neither override updates sticky Thread configuration, and steering rejects them. Captured configuration exposes a requested-thinking summary separately from current resource defaults.
-
-The returned `RootRunReceipt` has `receipt_id`, `thread_id`, and `submitted_at`. Read `/api/operations/{receipt_id}` until terminal status; there is no root-operation HTTP `wait` endpoint. Preparing/running is not completion. Completed/suspended/failed/cancelled describes the operation; inspect any `outcome.execution`, `outcome.continuation`, and `outcome.environment` separately.
-
-Only one active root operation is allowed per Thread. A second submit is rejected, not queued. There is no Service-style durable acceptance/idempotency contract here. After losing an acknowledgement, read current Thread/root activity before deciding what to do; do not blindly submit the input again. After process restart, old receipts can be unavailable while the saved continuation remains readable.
-
 ## Current route map
 
-These are all schema-listed operations; the grouped table preserves method distinctions. Exact field schemas live in OpenAPI.
+Use this route map for common operations; consult the live OpenAPI document for the complete route and field schemas, including the specialized routes described above.
 
 | Method and route                                                    | Purpose                                                                 |
 | ------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `GET /api/status`                                                   | Listener/API/App status                                                 |
 | `GET /api/presence`                                                 | Current per-tab directory and optional same-page membership             |
-| `POST /api/threads/{thread_id}/comments`                            | Publish or reconcile one immutable saved-output comment                 |
+| `POST /api/threads/{thread_id}/comments`                            | Publish or reconcile a saved-output comment                             |
 | `GET /api/threads/{thread_id}/comments`                             | Cursor-page comments under the root Thread, optionally by exact target  |
 | `GET /api/threads/{thread_id}/comments/{comment_id}`                | Read a scoped committed publication                                     |
 | `POST /api/threads/{thread_id}/saved-output`                        | Bounded selected or comment-retained original assistant text            |
@@ -340,7 +338,7 @@ These are all schema-listed operations; the grouped table preserves method disti
 | `POST /api/threads/{thread_id}/attachments`                         | Stage raw bytes with a filename                                         |
 | `GET /api/threads/{thread_id}/attachments/{attachment_id}`          | Download a scoped attachment                                            |
 | `GET /api/threads/{thread_id}/attachments/{attachment_id}/metadata` | Inspect its name, size, media type and immutable capture source         |
-| `POST /api/threads/{thread_id}/submit`                              | Submit ordinary prompt and attachment IDs                               |
+| `POST /api/threads/{thread_id}/submit`                              | Submit ordered text and attachment references                           |
 | `GET /api/threads/{thread_id}/decisions`                            | Exact pending-decision projection                                       |
 | `POST /api/threads/{thread_id}/decisions`                           | Respond to the complete pending set                                     |
 | `GET /api/operations/{receipt_id}`                                  | Query exact process-local operation                                     |
@@ -348,13 +346,13 @@ These are all schema-listed operations; the grouped table preserves method disti
 | `POST /api/operations/{receipt_id}/cancel`                          | Request cancellation                                                    |
 | `WS /api/realtime/connect`                                          | Multiplexed summary and focused observation channels                    |
 
-`GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. Serving an application shell at a recognized browser route does not implement that screen. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. `features.host_terminal` reports native POSIX terminal availability. `features.shared_drafts` reports the in-memory shared composer protocol. `features.page_presence` and `features.output_comments` report transient page awareness and durable saved-output comments, independently of native sharing. These backend features do not imply browser panels exist.
+`GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. `features.host_terminal` reports native POSIX terminal availability. `features.shared_drafts` reports the in-memory shared composer protocol. `features.page_presence` and `features.output_comments` report transient page awareness and durable saved-output comments, independently of native sharing.
 
 ## Skill catalogs and references
 
 `POST /api/threads/skills-preview` accepts `NewThreadDefaults` and returns a `SkillCatalogView` without creating a Thread. `GET /api/threads/{thread_id}/skills` returns the idle Thread's next-Run catalog or the active Run's pinned catalog. `POST /api/threads/{thread_id}/skills` accepts an `EnvironmentSelectionPatch` to preview Run-only local-root choices without changing the Thread; an active Run still returns its pinned catalog. Items expose `item_id`, `name`, `description`, `source_id`, and `logical_path`; the response includes `catalog_id` and `context_kind`.
 
-Submit and root steer accept an optional `skill_references` array (at most 512 entries), each with `catalog_id`, `item_id`, and `name`. The App validates these references before admission. Old-catalog references resolve by name; references claiming the applicable catalog must match its item identity. Missing, ambiguous, or duplicate references reject input. Keep `$name` in the ordinary prompt or ordered text parts; the references do not expand Skill bytes or grant permissions. Omitting this field preserves existing input behavior.
+Submit and root steer accept an optional `skill_references` array (at most 512 entries), each with `catalog_id`, `item_id`, and `name`. The App validates these references before admission. Old-catalog references resolve by name; references claiming the applicable catalog must match its item identity. Missing, ambiguous, or duplicate references reject input. Keep `$name` in the text parts; the references do not expand Skill bytes or grant permissions. Omitting this field preserves existing input behavior.
 
 ## Native Git Changes
 
@@ -385,9 +383,9 @@ Native revisions are opaque OS metadata observations, not content hashes or hist
 
 `POST /api/threads/{thread_id}/host-file-captures` accepts `path`, the reviewed target's `expected_revision`, and optionally both `start_line` and `end_line` (inclusive, one-based). The reply contains an ordinary `attachment` with its `source` (Host location, requested/resolved paths, revision, and range), and `prompt_text` when the captured text fits 64 KiB. The source file is read **at selection time**, not at Send.
 
-Pass that `attachment.attachment_id` in the ordinary `/submit` body's `attachment_ids`. Small-text captures add their attributed content inline to model input; binary and larger-text captures remain retained attachments rather than pretending to be inline text. Existing attachment count, total-input limits, Thread scope, and scratch/retention rules apply. Normal uploaded text attachments without captured source provenance retain their existing behavior.
+Add `{"attachment_id": "<returned attachment ID>"}` to the `/submit` body's `parts`. Small-text captures add their attributed content inline to model input; binary and larger-text captures remain retained attachments rather than pretending to be inline text. Existing attachment count, total-input limits, Thread scope, and scratch/retention rules apply. Normal uploaded text attachments without captured source provenance retain their existing behavior.
 
-Root steering accepts ordered `parts` or `prompt` plus optional `attachment_ids`; the App prepares images, ordinary files, and captured context exactly as for ordinary submission. Selected content is never silently omitted. Child steering remains `prompt` only. Shared editing is provided by the separate [composer protocol](#shared-composer).
+Root steering accepts ordered `parts`; the App prepares images, ordinary files, and captured context exactly as for ordinary submission. Selected content is never silently omitted. Child steering remains `prompt` only. Shared editing is provided by the separate [composer protocol](#shared-composer).
 
 ## Inspect configuration and working state
 
@@ -436,7 +434,7 @@ Metadata PATCH accepts `expected_version` plus `patch`; use the Thread's current
 
 Decision responses carry `expected_continuation_id` and every selected request exactly once. Question, approval, and external-result kinds must match their pending contract. Do not replace a suspended continuation with an ordinary prompt or submit only the answers convenient to the current UI.
 
-Attachment upload uses raw bytes with a `name` query parameter, not multipart form data. The contract advertises `application/octet-stream`; preserve the returned attachment ID and use it only within its Thread. Limits are 10 MiB each, eight per input, and 20 MiB combined. Downloads return bytes with attachment disposition, not JSON. Root steering accepts the same ordered parts or legacy prompt/attachment fields as submission. Child steering uses the text-only `SteerRequest` (`prompt`) and rejects attachment fields rather than ignoring them.
+Attachment upload uses raw bytes with a `name` query parameter, not multipart form data. The contract advertises `application/octet-stream`; preserve the returned attachment ID and use it only within its Thread. Limits are 10 MiB each, eight per input, and 20 MiB combined. Downloads return bytes with attachment disposition, not JSON. Root steering accepts the same ordered `parts` as submission. Child steering uses the text-only `SteerRequest` (`prompt`) and rejects attachment fields rather than ignoring them.
 
 ## Navigate and inspect child work
 

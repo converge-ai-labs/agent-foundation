@@ -14,13 +14,13 @@ docker compose -f a13n-service-quickstart.yaml up -d --wait
 
 Open <http://127.0.0.1:8080> and sign in with **`admin@example.com` / `local-public-password-123`**. The administrator, organization, and workspace are already created. Continue at [Add a model](#add-a-model); bring your own model provider credentials for real responses.
 
-This is a **local-only trial with public credentials**, not a shared deployment. Only loopback access is published, and the host Docker socket is not mounted. Repeated starts retain accounts, passwords, resources, conversations, and the encryption key; initialization does not overwrite them. The source file uses the development image; Service release assets pin their release's image. See the [Compose guide](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#local-quickstart) for stop/resume, port conflicts, and reset commands.
+**Keep this trial on your own machine:** its administrator password is public. It binds only to loopback, does not mount the host Docker socket, and preserves data and credentials across restarts. The [Compose guide](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#local-quickstart) covers the stack in detail.
 
 ## Add a model
 
 1. Open **Models → Add model → Connect a new provider**, choose the provider type (for example OpenAI or Anthropic) and enter its API key.
 2. Select **Connect provider**, then choose a model from the catalog or select **Custom model** and enter an upstream model ID.
-3. Give the model a name, check the upstream ID and API, then select **Add model**. For an OpenAI-compatible endpoint, choose the API it supports, such as **OpenAI Chat Completions**. Use a model your provider account can access; the catalog is not a check of your account's entitlement.
+3. Give the model a name, check the upstream ID and API, then select **Add model**. For an OpenAI-compatible endpoint, choose the API it supports, such as **OpenAI Chat Completions**. Choose a model available to your provider account.
 
 Outbound requests reject private addresses and plain HTTP by default. To use a model server on your own network, allow it first; see [outbound requests](configuration.md#outbound-requests). See [Models](models.md) for every provider type.
 
@@ -32,11 +32,11 @@ Outbound requests reject private addresses and plain HTTP by default. To use a m
 
 This first conversation needs no execution environment, tools, or memory setup. Those can be added after the model connection works.
 
-The conversation shows the agent's reasoning, tool calls and answer as they stream. Send more messages while it works to guide it, or stop it. When the agent asks for approval or a question, answer in the conversation. The file and terminal tools need an [environment](environments.md); add an environment template to the agent to give each conversation its own sandbox.
+You can send another message, stop the run, or answer an approval or question in the conversation. To use file and terminal tools, add an [environment template](environments.md#templates) to the agent.
 
 ## Use the API
 
-For application code or shell workflows, choose a [Service SDK or the remote CLI](sdks.md) and follow its repository-owned quick start. The curl examples below illustrate the Service HTTP boundary without duplicating those client guides.
+Use a [Service SDK or the remote CLI](sdks.md), or call the API directly with curl:
 
 Create an API key under **Workspace settings → My API keys** and export it with the Service URL. Requests with the key act in its workspace, so their paths name no workspace:
 
@@ -44,27 +44,36 @@ Create an API key under **Workspace settings → My API keys** and export it wit
 export A13N_URL=http://127.0.0.1:8080 A13N_API_KEY=a13n_...
 ```
 
-Create an agent with the key of the model you added, such as `gpt-5.5` (`GET /api/v1/models` lists them):
+Find the key of the model you added under **Models** or with `GET /api/v1/models`. Set `MODEL_KEY` to that key before creating an agent:
 
 ```sh
+MODEL_KEY=your-model-key
 curl -X POST "$A13N_URL/api/v1/agents" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"name": "Helper", "config": {"model": "gpt-5.5", "instructions": "Answer briefly."}}'
+  -d "{\"name\": \"Helper\", \"config\": {\"model\": \"$MODEL_KEY\", \"instructions\": \"Answer briefly.\"}}"
 ```
 
-Start a conversation with its first message, naming the agent by the `id` the creation returned. The `Idempotency-Key` makes a retry after a lost response safe:
+Set `AGENT_ID` to the returned `id` and generate a key for this message:
+
+```sh
+AGENT_ID=ap_replace_with_the_returned_id
+MESSAGE_KEY=$(uuidgen)
+```
+
+Start a conversation. To retry after a lost response, repeat this request with the same `MESSAGE_KEY`:
 
 ```sh
 curl -X POST "$A13N_URL/api/v1/threads" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
-  -d '{"agent_id": "ap_...", "payload": {"content": [{"type": "text", "text": "What is a13n?"}]}}'
+  -H "Idempotency-Key: $MESSAGE_KEY" \
+  -d "{\"agent_id\": \"$AGENT_ID\", \"payload\": {\"content\": [{\"type\": \"text\", \"text\": \"What is a13n?\"}]}}"
 ```
 
-The response holds the new `thread`, the message's inbox `entry` and the `run` it started. Read the run until its `status` is `completed`, `waiting`, `failed` or `cancelled`; a completed run's answer is in `output`:
+The response contains `thread`, `entry`, and possibly `run`. If a run started, set `RUN_ID` to its `id` and read it until its status is `completed`, `waiting`, `failed`, or `cancelled`; a completed run's answer is in `output`:
 
 ```sh
-curl "$A13N_URL/api/v1/runs/run_..." -H "Authorization: Bearer $A13N_API_KEY"
+RUN_ID=run_replace_with_the_returned_id
+curl "$A13N_URL/api/v1/runs/$RUN_ID" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
 Instead of polling, follow the [thread stream](agents-and-runs.md#follow-a-thread-stream) or subscribe to [webhooks](files-and-webhooks.md#webhooks). Continue the conversation with `POST …/threads/{thread_id}/inbox`; see [Agents, threads and runs](agents-and-runs.md).

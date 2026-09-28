@@ -37,7 +37,7 @@ Try a bounded first task:
 Explain this repository's main entry point and tests. Do not modify any files.
 ```
 
-> **Choose permissions deliberately.** Full Control is not a sandbox: commands inherit your host account's filesystem and network access. Sandbox is available on supported Linux/macOS configurations; the built-in Windows mode is Full Control. See [execution permissions](environments-and-projects.md#execution-permissions).
+Full Control runs commands with your host account's filesystem and network access; it is not a sandbox. Sandbox requires supported Linux/macOS isolation; built-in Windows execution is Full Control only. See [execution permissions](environments-and-projects.md#execution-permissions).
 
 [Installation and upgrades](installation.md) covers source development and dependency updates. [Setup](setup.md) covers login, cancellation, and advanced choices.
 
@@ -90,6 +90,6 @@ See [Use the terminal](everyday-use.md) for attachments, approvals, questions, h
 
 ## Sharing and execution boundaries
 
-Harness UI is for trusted collaborators sharing one instance. Participants share its credentials, configuration, and accessible files; collaboration names are not separate authenticated identities. It provides no multi-tenant or per-participant execution isolation. WebUI enables native host files and terminals by default; `--no-share-computer` disables those browser features independently of the Agent's execution environment.
+Share a WebUI instance only with trusted collaborators: they share credentials, configuration and accessible files, not separate participant permissions. Native Host Files and terminals are on by default; `--no-share-computer` turns them off independently of the Agent's execution mode.
 
-Its running process owns active execution. Closing a browser does not stop work, but process loss can discard unsaved input, output, and work after the last complete checkpoint. Persisted conversations support continuation, not guaranteed durable task acceptance. Use [Service](../a13n-service/index.md) when you need managed identities, permissions, durable runs, and worker recovery.
+Closing a browser does not stop an active Run; stopping the application does. Saved conversations can resume from the last checkpoint, but input or output since then may be lost. Use [Service](../a13n-service/index.md) for managed identities and recoverable runs.

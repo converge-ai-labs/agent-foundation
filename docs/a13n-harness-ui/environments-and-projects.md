@@ -18,6 +18,13 @@ Windows supports **Full Control only** for the built-in local modes. Setup and t
 
 ## Files, Projects, and recovery
 
+```mermaid
+flowchart LR
+    P[Project file: ordered roots and defaults] --> T[New Thread: saved root paths]
+    T --> R[Run: Environment mounts]
+    P -. Later edits affect new Threads only .-> N[New Thread]
+```
+
 Model, Agent, Device, extension, MCP, and Project resources live in sibling YAML directories. A Project selects local directories, Device working environments, or both. Without an explicit default environment, the first local directory is its default working directory. Launching the CLI in that first directory uses the same Project and all its roots. For example, a Project with roots `[code, notes]` is entered from `code`; adding `notes` later does not create a new Project or hide existing CLI sessions.
 
 The first prompt creates a single-root Project only when no Project's first directory matches. It never adopts a parent Project, treats a secondary root as another entry point, or rewrites an existing Project. Multiple matching Projects require resuming a specific session or editing their roots. To retain a conversation's workspace, launch the CLI in its Project's first directory. An explicit resume from another directory selects the launch directory's Project and local path references, and makes `workspace` the default. History, remote bindings, and the local execution mode are preserved. Resuming within the same Project keeps the Thread's saved environment choices even if that Project's roots have since changed. `--resume` cannot be combined with Agent, Environment, or title overrides; resume first, then use an explicit slash command.
@@ -62,7 +69,7 @@ roots:
 | `roots`          | `[]`               | Up to 64 ordered unique local `{path: ...}` directories; at least one local root or Device binding is required |
 | `defaults`       | `{}`               | Optional creation combination; see below                                                                       |
 
-Local paths must be absolute after `~` expansion and must exist. The first local root is the terminal entry point and the automatic working directory when no explicit default environment is selected. A remote-only Project has no local terminal entry point. Project roots initialize new Threads as path references only; no files, directories, or worktrees are copied. Later Project edits do not change existing Threads. Project roots organize work and Environment mounts; they do not confine Full Control's host authority.
+Local paths must be absolute after `~` expansion. You can save a Project whose directory is temporarily unavailable, but execution that selects it fails until the directory is available. The first local root is the terminal entry point and default working directory unless another default is selected. A remote-only Project has no local terminal entry point. New Threads capture root path references, not copies of files or worktrees; later Project edits do not change existing Threads. Roots organize Environment mounts but do not confine Full Control.
 
 ### Defaults for new conversations
 

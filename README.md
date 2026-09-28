@@ -32,11 +32,11 @@ Open **<http://127.0.0.1:8080>** and sign in:
 | ------------------- | --------------------------- |
 | `admin@example.com` | `local-public-password-123` |
 
-**Local trial only.** These credentials are public. The stack listens only on loopback and does not mount your host Docker socket. Do not expose it to a network or use this account for a shared deployment. The source Compose file uses the development image; Service release assets pin it to their release version.
+These public credentials are for the loopback-only local trial. For shared deployments, use your own credentials and the [deployment guide](deploy/docker/compose/README.md). The source Compose file uses the development image; release assets pin a release version.
 
-Bring your own model provider API key. In Console, **add a model → create an agent → try it**. The quickstart includes no model or inference credits; plain chat needs no sandbox.
+Bring your model provider API key. In Console, **add a model → create an agent → try it**. Plain chat needs no sandbox.
 
-**Continue with the [Service quickstart](docs/a13n-service/get-started.md)** for the guided first conversation, API usage, stop/resume, and troubleshooting. For a shared deployment with your own administrator credentials and optional host Docker environments, use the [deployment guide](deploy/docker/compose/README.md).
+Continue with the [Service quickstart](docs/a13n-service/get-started.md) for your first conversation, API usage, stop/resume, and troubleshooting.
 
 ## Use Harness UI
 
@@ -49,13 +49,13 @@ a13n-harness-ui          # Terminal
 # Or: a13n-harness-ui webui
 ```
 
-First-use setup connects a model and asks you to choose execution permissions. **Full Control runs as your host account, not in a sandbox.** The browser shares the instance's authority; it is not a multi-tenant Service. Native host file and terminal access is enabled by default; `--no-share-computer` disables those browser features. See [installation](docs/a13n-harness-ui/installation.md), [execution permissions](docs/a13n-harness-ui/environments-and-projects.md#execution-permissions), and [browser access](docs/a13n-harness-ui/webui.md).
+First-use setup connects a model and selects execution permissions. Full Control runs as your host account. Share the browser only with trusted collaborators; `--no-share-computer` disables its native host file and terminal access. See [installation](docs/a13n-harness-ui/installation.md), [execution permissions](docs/a13n-harness-ui/environments-and-projects.md#execution-permissions), and [browser access](docs/a13n-harness-ui/webui.md).
 
 ## Build on Harness
 
 Harness gives your application reusable agents, typed tools and outputs, streaming observations, portable execution environments, and state you can save and resume. Your application owns persistence, credentials, and recovery policy.
 
-Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). Supporting components such as Envd, Stream Protocol, and logging are covered in the [package catalog](docs/packages.md); you do not need to deploy every component.
+Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). The [package catalog](docs/packages.md) covers supporting components such as Envd, Stream Protocol, and logging.
 
 ## Work from source
 

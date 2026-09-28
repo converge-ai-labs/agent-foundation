@@ -14,9 +14,9 @@ a13n-harness-ui login --help
 
 One-shot mode prints the final text or a structured operation object, then exits. It shares workspace, model, continuation, and permission semantics with interactive mode. Failed or suspended operations exit nonzero. It does not open an interactive approval prompt. Use interactive resume to answer pending decisions.
 
-Help and version do not load provider or database modules. A lightweight startup view appears before execution dependencies load. Unused model-provider SDKs are not imported merely to start the terminal. Startup shows runtime loading, local storage/configuration, and session preparation separately; phase timings are written to the data root’s `logs/terminal.log`. App initialization precedes chat, and startup, setup, and conversation keep the same alternate screen without a terminal reset; model construction, Environment acquisition, and selected MCP connections happen only when needed. The terminal and browser share the reusable `HarnessUiApp` application boundary rather than owning separate execution engines.
+Help and version do not start the App. Startup initializes local configuration and storage before chat; models, Environments and MCP connections are prepared when needed. Startup timings go to `<data-root>/logs/terminal.log`.
 
-If interactive startup or `--resume` fails, the terminal prints the nested exception chain and traceback locations after cleanup, including application error codes, rather than only a TaskGroup error count. A private diagnostic report retains the full exception details. Local variables, source lines, and raw provider messages are not printed; review the report for sensitive content before sharing it. Nothing is uploaded automatically.
+If startup or `--resume` fails, read the displayed error chain and diagnostic-report path. Review the private report for sensitive content before sharing it; nothing is uploaded automatically.
 
 ## Execution tracing
 
@@ -24,13 +24,11 @@ See [Tracing Harness UI](observation.md) for automatic OTLP export, Langfuse and
 
 ## Long-running work
 
-Harness UI sets `request_limit=None` for root Agents and subagents instead of inheriting the Harness library's 1,000-request limit. Long-running work therefore does not stop solely because it reaches that request count. Cancellation, explicit child execution limits, provider limits, and the model-recovery budget still apply. This is not a guarantee of uninterrupted execution or crash recovery; longer Runs can consume more tokens and incur additional provider costs.
+Root Agents and subagents have no fixed Harness request-count limit. You can cancel them, and provider or child limits still apply. Long Runs may use more tokens; a process crash does not resume active work automatically.
 
 ## Model connection interruptions
 
-Harness UI automatically continues eligible interrupted model requests from the available history, for up to five consecutive failed attempts including the first. A complete successful primary model response resets this budget and the retry delay; partial output and successful auxiliary requests do not. Intermittent failures therefore do not exhaust a lifetime Run budget, while continuous failures still stop. Permanent or unrecognized failures are not automatically retried. This applies to root Agents and subagents. The terminal shows a short `[System] Retrying model request…` notice rather than an error for each retry. If recovery succeeds, the same Run continues normally. If the budget is exhausted, a terminal error reports the attempt count and suggests continuing the conversation again.
-
-Recovery does not restart completed work or directly replay tool calls. Cancellation, usage limits, tool failures, and pending approvals do not trigger this mechanism. Before manually repeating a side-effecting action after an interruption, check whether it already completed. These in-process retries do not recover a crashed process.
+Eligible transient model interruptions retry from available history, up to five consecutive attempts including the first. A successful primary response resets the budget; permanent errors stop. The terminal shows `[System] Retrying model request…` while the same Run continues. Retries do **not** replay completed tool calls or recover a crashed process. Check whether a side-effecting action completed before repeating it manually.
 
 ## Browser UI
 

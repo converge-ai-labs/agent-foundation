@@ -1,6 +1,6 @@
 # Configure Providers
 
-An Environment has separate desired configuration, backend access, runtime collaborators, and current state. They answer different questions and should not be combined into a portable credential-bearing blob.
+Configure the target, backend connection, and credentials separately. Keep runtime clients in memory and save `EnvironmentState` to reconnect later.
 
 | Value                                         | Owns                                            | Example                                                  |
 | --------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------- |
@@ -10,11 +10,11 @@ An Environment has separate desired configuration, backend access, runtime colla
 | Runtime collaborator                          | Live clients, sessions, and Host allocations    | Supplied by the Host or acquired by `runtime_factory`    |
 | `EnvironmentState`                            | Validated reference to an exact retained target | Container/sandbox identity and configuration fingerprint |
 
-Use `definition.create(recipe, configuration=..., credential=..., state=...)` to let the Provider acquire its runtime. Alternatively, pass `runtime=...` without account configuration or credentials to borrow a Host-owned runtime; mixing both sources is rejected. It validates the account configuration, enforces the declared credential rule, validates the recipe, and only then acquires the runtime collaborator, so everything before that acquisition is pure. `definition.describe_environment(recipe)` explains the intended capability without preparing the target; actual readiness still comes from the entered adapter. [Providers and runtime](providers.md) covers catalog selection and runtime construction.
+Call `definition.create(recipe, configuration=..., credential=..., state=...)` to acquire a runtime, or pass `runtime=...` to borrow one you already manage. With a borrowed runtime, omit account configuration and credentials. Creation validates the recipe before account inputs and acquires the runtime after validation. See [Providers and runtime](providers.md) for catalog selection and construction.
 
 A definition owns exactly one model of each kind. There is no configuration schema version: changing the meaning of an input changes the Provider type.
 
-The [complete generated field reference](configuration-reference.md) covers built-in desired/backend/credential models and nested roots, mounts, and shell profiles. It does not read secrets or evaluate a Host-specific default factory. Cross-field and target validation still apply beyond JSON-schema field bounds.
+The [generated field reference](configuration-reference.md) lists built-in recipes, account settings, credentials, roots, mounts, and shell profiles.
 
 ## Direct Local
 
