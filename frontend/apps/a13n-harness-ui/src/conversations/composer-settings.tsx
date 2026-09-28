@@ -6,7 +6,6 @@ import {
   useState,
   type ReactNode,
   type ComponentProps,
-  type RefObject,
 } from "react";
 import {
   Button,
@@ -26,81 +25,39 @@ import {
   CaretRight,
   Check,
   SlidersHorizontal,
-  DotsThree,
   X,
 } from "@phosphor-icons/react";
-import type { Schema } from "../transport/client";
 import styles from "./composer-settings.module.css";
 
 type SearchOption = ComponentProps<
   typeof SearchPicker
 >["groups"][number]["options"][number];
 
-type Page =
-  | "root"
-  | "model"
-  | "agent"
-  | "thinking"
-  | "reasoning"
-  | "fast"
-  | "environments";
+type Page = "root" | "model" | "agent" | "reasoning";
 const titles: Record<Page, string> = {
-  root: "Run settings",
+  root: "Agent & Model",
   model: "Select model",
   agent: "Select agent",
-  thinking: "Thinking",
   reasoning: "Reasoning mode",
-  fast: "Fast mode",
-  environments: "Environments",
 };
 const SettingsContext = createContext<{
   page: Page;
   navigate: (page: Page) => void;
-  environmentDraft?: Schema<"EnvironmentSelectionPatch">;
-  setEnvironmentDraft: (
-    value: Schema<"EnvironmentSelectionPatch"> | undefined,
-  ) => void;
 } | null>(null);
 export const useComposerSettings = () => useContext(SettingsContext);
-
-/** Container width, not device identity, decides which shortcuts fit. */
-export function useCompactComposer(host: RefObject<HTMLElement | null>) {
-  const [compact, setCompact] = useState(false);
-  useEffect(() => {
-    const element = host.current;
-    if (!element) return;
-    const measure = (width: number) => {
-      if (width > 0) setCompact(width <= 720);
-    };
-    measure(element.getBoundingClientRect().width);
-    const observer = new ResizeObserver(([entry]) =>
-      measure(entry.contentRect.width),
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [host]);
-  return compact;
-}
 
 export function ComposerSettings({
   children,
   className,
-  kind = "run",
 }: {
   children: ReactNode;
   className?: string;
-  kind?: "run" | "model";
 }) {
-  const rootTitle = kind === "model" ? "Agent & Model" : "Run settings";
-  const label =
-    kind === "model" ? "Agent & Model settings" : "Composer options";
-  const navigationLabel =
-    kind === "model" ? "Agent & Model settings" : "run settings";
+  const rootTitle = "Agent & Model";
+  const label = "Agent & Model settings";
+  const navigationLabel = label;
   const [open, setOpen] = useState(false);
   const [page, navigate] = useState<Page>("root");
-  // Keep staged edits above the responsive Dialog/Popover subtree.
-  const [environmentDraft, setEnvironmentDraft] =
-    useState<Schema<"EnvironmentSelectionPatch">>();
   const [mobile, setMobile] = useState(
     () => window.matchMedia("(max-width: 639px)").matches,
   );
@@ -118,14 +75,11 @@ export function ComposerSettings({
     setOpen(next);
     if (!next) {
       navigate("root");
-      setEnvironmentDraft(undefined);
     }
   };
   const Title = mobile ? DialogTitle : PopoverTitle;
   const content = (
-    <SettingsContext
-      value={{ page, navigate, environmentDraft, setEnvironmentDraft }}
-    >
+    <SettingsContext value={{ page, navigate }}>
       <div className={styles.header} ref={heading} tabIndex={-1}>
         {page !== "root" && (
           <Button
@@ -169,7 +123,7 @@ export function ComposerSettings({
   return mobile ? (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger render={trigger} {...triggerProps}>
-        {kind === "model" ? <SlidersHorizontal /> : <DotsThree />}
+        <SlidersHorizontal />
       </DialogTrigger>
       <DialogPopup
         bottomStickOnMobile
@@ -182,21 +136,13 @@ export function ComposerSettings({
   ) : (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger render={trigger} {...triggerProps}>
-        {kind === "model" ? <SlidersHorizontal /> : <DotsThree />}
+        <SlidersHorizontal />
       </PopoverTrigger>
-      <PopoverPopup
-        side="top"
-        align={kind === "model" ? "start" : "end"}
-        className={styles.popup}
-      >
+      <PopoverPopup side="top" align="end" className={styles.popup}>
         {content}
       </PopoverPopup>
     </Popover>
   );
-}
-
-export function SettingsHome({ children }: { children: ReactNode }) {
-  return useComposerSettings()?.page === "root" ? <>{children}</> : null;
 }
 
 export function SettingsRow({

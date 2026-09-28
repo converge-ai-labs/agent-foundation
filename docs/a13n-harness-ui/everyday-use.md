@@ -46,7 +46,7 @@ The Agent completes the protocol by returning `[GOAL_COMPLETE]` on its own line.
 
 Set `max_goal_iterations: 10` at the root of `a13n-harness-ui.yaml` to change the budget for new Goals. Zero or a negative value disables automatic follow-up checks. A suspended Goal keeps its captured budget when you answer its pending decision. Reopening a conversation alone never restarts unfinished work. Send ordinary input to return to normal behavior, or use `/goal` again to begin a new Goal and budget.
 
-The WebUI offers the same policy through the composer's **Goal** toggle; on narrow screens, expand the composer options first. The selection applies to one Send, resets after confirmed acceptance, and stays selected if submission is rejected or uncertain. Open the Goal status for the original objective, audit state, and token totals. **Prepare new Goal** fills a draft for review; it does not send it.
+The WebUI offers the same policy through the composer's **Goal** toggle, directly available in the header on desktop and narrow screens. The selection applies to one Send, resets after confirmed acceptance, and stays selected if submission is rejected or uncertain. Open the Goal status for the original objective, audit state, and token totals. **Prepare new Goal** fills a draft for review; it does not send it.
 
 ### Find a saved conversation
 

@@ -31,11 +31,7 @@ export function RunEnvironments({
   onChange: (value: Schema<"EnvironmentSelectionPatch"> | undefined) => void;
   disabled: boolean;
 }) {
-  const settings = useComposerSettings();
-  const [localEditing, setLocalEditing] =
-    useState<Schema<"EnvironmentSelectionPatch">>();
-  const editing = settings ? settings.environmentDraft : localEditing;
-  const setEditing = settings?.setEnvironmentDraft ?? setLocalEditing;
+  const [editing, setEditing] = useState<Schema<"EnvironmentSelectionPatch">>();
   const roots = value?.local_roots ?? configuration?.local_roots ?? [];
   const bindings =
     value?.environment_bindings ?? configuration?.environment_bindings ?? [];
@@ -54,7 +50,6 @@ export function RunEnvironments({
     });
   const closeEditor = () => {
     setEditing(undefined);
-    settings?.navigate("root");
   };
   const footer = (
     <>
@@ -91,33 +86,6 @@ export function RunEnvironments({
       onChange={(patch) => setEditing({ ...editing, ...patch })}
     />
   );
-  if (settings)
-    return (
-      <>
-        {settings.page === "root" && (
-          <SettingsRow
-            label="Environments"
-            value={`${count ? `${count} environment${count === 1 ? "" : "s"}` : "Thread files"}${value ? " · Override active" : ""}`}
-            disabled={disabled || !configuration}
-            onClick={() => {
-              beginEditing();
-              settings.navigate("environments");
-            }}
-          />
-        )}
-        {settings.page === "environments" && (
-          <fieldset disabled={disabled}>
-            <p className={panelStyles.hint}>
-              Changes apply to subsequent Runs in this tab until reset, not to
-              conversation defaults. No files are copied. Steering keeps the
-              active environment.
-            </p>
-            {content}
-            <div className={panelStyles.footer}>{footer}</div>
-          </fieldset>
-        )}
-      </>
-    );
   return (
     <>
       <Button
@@ -143,7 +111,7 @@ export function RunEnvironments({
         description="Choose environments for subsequent Runs in this tab until reset. Conversation defaults and the active Run stay unchanged."
         footer={footer}
       >
-        {content}
+        <fieldset disabled={disabled}>{content}</fieldset>
       </ModalFrame>
     </>
   );
@@ -210,7 +178,7 @@ export function ThreadRunChoices(props: RunChoiceProps) {
         <span aria-hidden>·</span>
         <span>{modelName}</span>
       </span>
-      <ComposerSettings kind="model">
+      <ComposerSettings>
         <AgentModelChoices {...props} />
       </ComposerSettings>
     </div>

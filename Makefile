@@ -103,8 +103,9 @@ k8s-smoke: ## Check the running local kind deployment: Console, administrator si
 	@python3 scripts/deploy_smoke.py kind
 
 .PHONY: compose-smoke
-compose-smoke: ## Start a disposable single-host Compose stack from the local images, exercise its first run, then remove it
+compose-smoke: ## Exercise single-host and quickstart Compose startup and persistence, then remove their disposable stacks
 	@python3 scripts/deploy_smoke.py compose
+	@python3 scripts/deploy_smoke.py quickstart
 
 .PHONY: dev
 dev: ## Prepare and start this checkout's scripted model, Service and Console in the background (TRACES=auto|langfuse|none)

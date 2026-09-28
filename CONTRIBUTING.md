@@ -1,6 +1,25 @@
 # Contributing
 
-Contributions to Agent Foundation are welcome. The project uses GitHub Issues for discussion and progress tracking, and pull requests for every reviewed change to specifications, documentation, code, tests, and automation. Repository-wide code quality principles and component engineering requirements are defined in [DEVELOPMENT.md](DEVELOPMENT.md).
+Contributions to Agent Foundation are welcome: documentation fixes, reproducible bug reports, examples, tests, and focused features all help. Harness is the agent execution foundation; Harness UI is its interactive playground for individuals and trusted small teams; Service is the managed-agent runtime. Start with the component your change affects.
+
+The project uses GitHub Issues for discussion and progress tracking, and pull requests for reviewed changes. Repository-wide engineering standards live in [DEVELOPMENT.md](DEVELOPMENT.md); this guide owns setup, validation, and contribution workflow.
+
+For suspected security vulnerabilities, follow [SECURITY.md](SECURITY.md) and report privately to [support@converge.ai](mailto:support@converge.ai). Do not post vulnerability details in public issues or pull requests.
+
+## Find your path
+
+| Contribution                             | Start here                                                                                                         | Validation                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| Report a bug                             | Search existing issues; include the component, version or commit, reproduction, expected result, and actual result | Remove credentials and private content from logs and diagnostic reports |
+| Improve user documentation               | Edit `docs/`; update `mkdocs.yml` only when navigation changes                                                     | `make docs-build` and formatting for changed Markdown                   |
+| Improve Harness                          | [Harness quickstart](docs/a13n-harness/getting-started.md) and [local scenarios](dev/harness/README.md)            | Focused package tests and affected consumers                            |
+| Improve Harness UI                       | [Local UI development](dev/harness-ui/README.md); `make cli` or `make webui`                                       | Checks for the affected App, terminal, or browser behavior              |
+| Improve Service or Console               | [Local Service development](dev/service/README.md); `make dev`                                                     | Relevant Service/Console checks; migration checks when applicable       |
+| Propose a product or architecture change | An issue describing the problem and unresolved decisions                                                           | Accepted contracts and implementation stay aligned in the PR            |
+
+For a first change: fork the repository, create a focused branch, make the smallest useful change, run the relevant checks, and open a pull request explaining the outcome. A typo or clear documentation correction does not need a design proposal. You do not need the full Service stack for a documentation-only change.
+
+Read [Local setup](#local-setup) and [Local validation](#local-validation) for the toolchain and exact check-selection policy. [Documentation changes](#documentation-changes), [Writing issues and pull requests](#writing-issues-and-pull-requests), and [Releases](#releases) cover those specific workflows.
 
 ## Repository Language
 
@@ -18,7 +37,9 @@ Before changing a surface, read the relevant sections of this guide, [DEVELOPMEN
 
 ## Local Setup
 
-Requirements:
+Install the tools needed for the surface you are changing. Documentation and Python work use Git, Python 3.13, uv, and Make. Frontend work adds Node.js and pnpm; Rust work adds the Rust toolchain; Service development and container-backed checks add Docker. `make install` prepares the full development checkout, including frontends and Git hooks.
+
+Full-checkout requirements:
 
 - Git
 - Python 3.13
@@ -220,7 +241,7 @@ Local EIP derives its canonical native version from installed `a13n-envd-client`
 
 a13n Logging releases use `release/a13n-logging-v<version>` and advance independently of Service, Harness, and Harness UI. The workflow versions only `a13n-logging` and its root lock entry, builds its wheel and source distribution, publishes through the existing `foundation-pypi` environment using `PYPI_TOKEN`, and attaches both artifacts to one GitHub Release. The environment's deployment tag policy must allow `release/a13n-logging-v*` alongside `release/a13n-service-v*`; the token must permit publishing `a13n-logging`. No new environment is required.
 
-a13n Service releases use `release/a13n-service-v<version>`. The workflow versions the repository root and `a13n-service`; it publishes only the `a13n-service` Python distribution through the `foundation-pypi` environment, the a13n-service image and its `a13n-docker-environment` companion for `linux/amd64` and `linux/arm64`, and the Helm Chart at the same version as `oci://ghcr.io/converge-ai-labs/charts/a13n-service`, and attaches the Compose file `a13n-service.yaml`, with its image pinned to the release, to the GitHub Release. The companion image publishes first at the exact canonical Service tag, including RCs, before the Python package and Service image that default to it; it does not publish `latest` or alter `dev`. It excludes and does not republish `a13n-logging`, Harness, or Harness UI, and selects compatible published Harness libraries through its own dependency management.
+a13n Service releases use `release/a13n-service-v<version>`. The workflow versions the repository root and `a13n-service`; it publishes only the `a13n-service` Python distribution through the `foundation-pypi` environment, the a13n-service image and its `a13n-docker-environment` companion for `linux/amd64` and `linux/arm64`, and the Helm Chart at the same version as `oci://ghcr.io/converge-ai-labs/charts/a13n-service`, and attaches the Compose files `a13n-service.yaml` and `a13n-service-quickstart.yaml`, with their images pinned to the release, to the GitHub Release. The companion image publishes first at the exact canonical Service tag, including RCs, before the Python package and Service image that default to it; it does not publish `latest` or alter `dev`. It excludes and does not republish `a13n-logging`, Harness, or Harness UI, and selects compatible published Harness libraries through its own dependency management.
 
 a13n-envd releases use `release/a13n-envd-v<version>`. The workflow versions the Cargo workspace, `a13n-envd-client`, and their lock files with one canonical release identity. It builds the Python wheel and source distribution concurrently with Linux GNU and macOS tar archives plus Windows x64 and ARM64 ZIP archives. After every distribution and the crate package validate, the workflow creates the GitHub Release with the Python distributions, native archives, and `SHA256SUMS`, before publishing `a13n-envd-client` to PyPI with `PYPI_TOKEN` from the `agent-envd-client-pypi` environment. Crate publication uses `CARGO_REGISTRY_TOKEN` from `agent-envd-crates-io` and is independent of client publication. The sandbox image publishes only after both registry jobs succeed. Release retries use the published version to skip existing releases; they do not compare rebuilt native or crate bytes. Standalone installers own archive SHA verification using the published `SHA256SUMS` file. A visible GitHub Release proves native assets are available, not that registry or image publication completed. Successful completion of the overall workflow is the all-channel completion signal. Linux binaries target the current GitHub-hosted Ubuntu/glibc baseline; use the sandbox image when a fixed userspace is required.
 
@@ -250,6 +271,9 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 
 - Keep each continuous Markdown paragraph on one source line; preserve semantic line breaks, separate list items, tables, and code blocks. The shared `.mdformat.toml` rule applies through the existing formatting hooks and `make lint`.
 - Keep user-facing documentation in `docs/`.
+- Lead with Agent Foundation's own product boundaries: Harness is the foundation; Harness UI is the playground and interactive workbench; Service operates managed agents. Describe user outcomes before implementation details.
+- Keep third-party framework branding out of product introductions and feature pitches. Retain exact imports, configuration keys, protocol names, integration names, and attribution where needed for accurate technical instructions and licensing; do not invent replacement APIs to hide a dependency.
+- Keep README, component entry pages, and package descriptions consistent with implemented capabilities. Distinguish Harness UI's trusted shared instance from Service's managed identities, permissions, and durable execution.
 - Every source file under `docs/` must be Markdown.
 - Update `mkdocs.yml` when adding, removing, or moving a page.
 - Run `make docs-build` after documentation or site configuration changes.

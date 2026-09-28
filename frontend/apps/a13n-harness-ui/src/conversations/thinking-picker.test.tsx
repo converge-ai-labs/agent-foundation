@@ -56,7 +56,9 @@ it("renders backend labels and preserves false separately from default", async (
   expect(blocked.hasAttribute("disabled")).toBe(true);
   await user.click(blocked);
   expect(onChange).toHaveBeenCalledTimes(1);
-  await user.click(screen.getByRole("button", { name: /^Default/ }));
+  await user.click(
+    screen.getByRole("button", { name: "Use default thinking" }),
+  );
   expect(onChange).toHaveBeenLastCalledWith(null);
 });
 
@@ -77,7 +79,9 @@ it("keeps unknown and stale selections explicit without inventing options", asyn
   expect(screen.getByText("No reviewed controls")).toBeTruthy();
   expect(screen.getAllByRole("button")).toHaveLength(1);
   expect(onChange).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: /^Default/ }));
+  await user.click(
+    screen.getByRole("button", { name: "Use default thinking" }),
+  );
   expect(onChange).toHaveBeenLastCalledWith(null);
 });
 
@@ -150,12 +154,12 @@ it("renders boolean controls without inventing effort levels", async () => {
     />,
   );
   screen.getByRole("button", { name: /^Off/ }).focus();
-  await user.keyboard("[Tab][Space]");
+  await user.keyboard("[ArrowRight][Space]");
   expect(onChange).toHaveBeenLastCalledWith(true);
   expect(screen.queryByRole("button", { name: "High" })).toBeNull();
 });
 
-it("shows larger option sets as a keyboard-navigable list with backend descriptions", async () => {
+it("keeps larger option sets keyboard-navigable with backend descriptions", async () => {
   const user = userEvent.setup();
   const onChange = vi.fn();
   const efforts = ["minimal", "low", "medium", "high", "xhigh"] as const;
@@ -185,7 +189,9 @@ it("shows larger option sets as a keyboard-navigable list with backend descripti
     />,
   );
   screen.getByRole("button", { name: /^low/ }).focus();
-  await user.keyboard("[Tab][Space]");
+  await user.keyboard("[ArrowRight][Space]");
   expect(onChange).toHaveBeenLastCalledWith("medium");
-  expect(screen.getByText("Details for xhigh")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "xhigh" }).title).toBe(
+    "Details for xhigh",
+  );
 });

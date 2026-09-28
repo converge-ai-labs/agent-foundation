@@ -15,7 +15,7 @@ cd agent-foundation
 uv sync --locked --package a13n-harness
 ```
 
-The Harness workspace package installs Pydantic AI with the provider integrations selected by Agent Foundation. Provider credentials, endpoints, model selection, and any client lifecycle remain application configuration.
+The Harness workspace package installs its runtime dependencies and supported provider integrations. Provider credentials, endpoints, model selection, and client lifecycle remain application configuration. The offline example below imports test-model and message types from the runtime dependency; application construction uses the Harness API.
 
 ## Run an offline Agent
 
@@ -88,13 +88,11 @@ flowchart LR
 - `HarnessRunResult` normalizes completion, suspension, failure, cancellation, state, usage, and correlation.
 - `ExecutableAgent` is immutable reusable build output; each `run()` owns and closes its temporary resources.
 
-The concrete model is trusted build input, so `AgentSpec.model` remains unset. Use exactly one model source: either put a model selection in `AgentSpec.model` or pass a concrete Pydantic AI `Model` through `model=`.
+The concrete model is trusted build input, so `AgentSpec.model` remains unset. Use exactly one model source: either put a model selection in `AgentSpec.model` or pass a concrete native `Model` through `model=`.
 
 ### Which `AgentSpec` should I import?
 
-The builder accepts both Pydantic AI's native `AgentSpec` and the Harness extension exported as `a13n_harness.AgentSpec`.
-
-Use the Harness import in application code unless you intentionally need a Pydantic-only definition. It preserves the native fields and adds Harness-owned configuration such as `system_prompt`, `toolset_instructions`, `cold_start_filter`, definition usage limits, resolved model characteristics, and `with_updates()`.
+Use `a13n_harness.AgentSpec` in application code. It includes instructions, tools, and capabilities along with Harness configuration such as `system_prompt`, `toolset_instructions`, `cold_start_filter`, definition usage limits, resolved model characteristics, and `with_updates()`. The builder also accepts compatible native definitions from the runtime dependency.
 
 ## Use a real model
 
@@ -115,7 +113,7 @@ executable = HarnessBuilder().build(
 )
 ```
 
-Configure the selected provider as documented by [Pydantic AI](https://ai.pydantic.dev/models/). For this OpenAI example, set the provider credential before running the application:
+Configure the selected provider using [Models](models.md) and [Authentication and HTTP clients](model-authentication.md). For this OpenAI example, set the provider credential before running the application:
 
 ```bash
 export OPENAI_API_KEY=your-api-key

@@ -236,7 +236,15 @@ def test_service_release_publishes_both_architectures_and_pins_its_compose_image
         "${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:1.2.3-rc.1}",
     )
     assert pinned != source
-    assert [path.name for path in (tmp_path / "dist").iterdir()] == ["a13n-service.yaml"]
+    quickstart = (compose / "a13n-service-quickstart.yaml").read_text()
+    assert (tmp_path / "dist/a13n-service-quickstart.yaml").read_text() == quickstart.replace(
+        "${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:dev}",
+        "${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:1.2.3-rc.1}",
+    )
+    assert sorted(path.name for path in (tmp_path / "dist").iterdir()) == [
+        "a13n-service-quickstart.yaml",
+        "a13n-service.yaml",
+    ]
 
 
 @pytest.mark.parametrize("version", ["0.1.0", "0.1.0-rc.1"])
@@ -259,3 +267,44 @@ def test_service_publishes_companion_before_consumers_without_mutable_tags(versi
     assert "publish-environment-image" in jobs["publish-python"]["needs"]
     assert "publish-python" in jobs["publish-image"]["needs"]
     assert "publish-image" in jobs["create-release"]["needs"]
+
+
+def test_quickstart_waits_for_initialization_without_host_authority() -> None:
+    document = yaml.safe_load((ROOT / "deploy/docker/compose/a13n-service-quickstart.yaml").read_text())
+    services = document["services"]
+    assert document["name"] != "a13n-service"
+    assert services["service"]["depends_on"]["init"]["condition"] == "service_completed_successfully"
+    assert services["init"]["depends_on"]["postgres"]["condition"] == "service_healthy"
+    assert services["service"]["environment"]["A13N_DATABASE__AUTO_MIGRATE"] == "false"
+    assert services["service"]["ports"] == ["127.0.0.1:${A13N_PORT:-8080}:8000"]
+    assert services["service"]["volumes"] == ["service-data:/app/var"]
+    assert services["init"]["healthcheck"] == {"disable": True}
+    for name, service in services.items():
+        assert "user" not in service
+        if name != "service":
+            assert "ports" not in service
+
+
+@pytest.mark.parametrize(
+    ("migration_status", "bootstrap_status", "expected"), [(0, 0, 0), (0, 3, 0), (0, 1, 1), (0, 2, 2), (1, 0, 1)]
+)
+def test_quickstart_initializer_propagates_failures(
+    tmp_path, monkeypatch, migration_status, bootstrap_status, expected
+):
+    document = yaml.safe_load((ROOT / "deploy/docker/compose/a13n-service-quickstart.yaml").read_text())
+    command = document["services"]["init"]["command"]
+    calls = tmp_path / "calls"
+    executable = tmp_path / "a13n-service"
+    executable.write_text(
+        "#!/bin/sh\n"
+        f'echo "$3" >> "{calls}"\n'
+        f'if [ "$3" = migrate ]; then exit {migration_status}; fi\n'
+        "read -r password\n"
+        '[ "$password" = local-public-password-123 ] || exit 99\n'
+        f"exit {bootstrap_status}\n"
+    )
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:/usr/bin:/bin")
+    result = subprocess.run([*command[:2], command[2].replace("$$", "$")], check=False)
+    assert result.returncode == expected
+    assert calls.read_text().splitlines() == (["migrate"] if migration_status else ["migrate", "bootstrap"])

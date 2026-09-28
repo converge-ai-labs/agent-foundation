@@ -657,7 +657,6 @@ it("distinguishes inherited choices and sends an independent model without chang
     (await screen.findByRole("button", { name: /Agent default/ })).textContent,
   ).toContain("Other model");
   await user.click(screen.getByRole("button", { name: "Primary model" }));
-  await user.click(screen.getByRole("button", { name: "Thinking" }));
   await user.click(screen.getByRole("button", { name: /Quick thinking/ }));
   await user.keyboard("[Escape]");
   await user.click(screen.getByRole("link", { name: "Settings" }));

@@ -1,6 +1,10 @@
 # a13n Service
 
-The hosted a13n Service: a managed-agent runtime with tenancy, configured resources, durable run execution on the Harness, and the HTTP API the Console and SDKs use. It is a workspace package with one executable, `a13n-service`.
+Service is Agent Foundation's managed-agent runtime, built on [Harness](../a13n-harness/README.md). It adds organizations and workspaces, configured resources, versioned agents, permissions, durable runs, and worker recovery. Console, the HTTP API, and independent SDKs expose the same managed resources. The server executable is `a13n-service`.
+
+Use [Harness UI](../a13n-harness-ui/README.md) for an interactive playground and trusted small-team collaboration. Choose Service when applications or users need managed access and durable execution.
+
+Start with the [deployment quickstart](../../docs/a13n-service/get-started.md) or [SDKs and CLI](../../docs/a13n-service/sdks.md). For operator commands:
 
 ```sh
 a13n-service --config service.toml migrate

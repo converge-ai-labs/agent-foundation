@@ -1,6 +1,6 @@
 # Installation and upgrades
 
-## Install the terminal application
+## Install Harness UI
 
 Use [uv](https://docs.astral.sh/uv/getting-started/installation/) to keep Harness UI in an isolated tool environment:
 
@@ -64,7 +64,13 @@ Source documentation tracks `main`. When using a published wheel, consult the do
 
 ## Other interfaces
 
-The installed wheel also contains the browser assets. `a13n-harness-ui webui` runs a foreground HTTP server with an authentication/status page; browser conversation and management controls are not implemented. Container and listener configuration are covered under [Browser UI](webui.md).
+The installed package includes both interfaces. Start the browser workbench with:
+
+```console
+a13n-harness-ui webui
+```
+
+Open the printed login link to configure models, start conversations, and work with trusted collaborators. The foreground server owns active execution; keep it running while using the browser. Native host file and terminal sharing are enabled by default; use `--no-share-computer` to disable them. See [Use the browser](webui.md) for access controls, collaboration boundaries, containers, and listener configuration.
 
 ## Next step
 

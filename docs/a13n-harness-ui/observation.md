@@ -33,7 +33,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=https://cloud.langfuse.com/api/public/otel
 export OTEL_EXPORTER_OTLP_HEADERS='Authorization=Basic%20BASE64_PUBLIC_KEY_COLON_SECRET_KEY,x-langfuse-ingestion-version=4'
 ```
 
-Replace the placeholder with the base64 encoding of your project's `public-key:secret-key`; use the endpoint for your region or self-hosted server. The v4 header selects real-time OTLP ingestion. Shared Harness enrichment adds bounded trace name, Thread/session ID, tags and filterable metadata to selected descendants, with both automatic and explicit providers. It preserves native Pydantic model, token and tool observations. No Langfuse SDK is required for this OTLP path.
+Replace the placeholder with the base64 encoding of your project's `public-key:secret-key`; use the endpoint for your region or self-hosted server. The v4 header selects real-time OTLP ingestion. Shared Harness enrichment adds bounded trace name, Thread/session ID, tags and filterable metadata to selected descendants, with both automatic and explicit providers. It preserves native model, token, and tool observations. No Langfuse SDK is required for this OTLP path.
 
 Look for `harness_ui.root`, its nested `harness.run`, and native Agent/model/tool spans. Async children have their own linked trace and Thread/session ID. Later turns on the same Thread are separate traces. Root application status can be failed even when the nested Harness completed, for example if continuation saving failed. Normal cancellation is not converted into an error.
 
@@ -48,7 +48,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=https://logfire-us.pydantic.dev
 export OTEL_EXPORTER_OTLP_HEADERS='Authorization=YOUR_LOGFIRE_WRITE_TOKEN'
 ```
 
-For an EU project use `https://logfire-eu.pydantic.dev`. Replace both endpoint and headers when switching from Langfuse; remove any conflicting `OTEL_EXPORTER_OTLP_TRACES_*` overrides. No second Pydantic instrumentor is needed.
+For an EU project use `https://logfire-eu.pydantic.dev`. Replace both endpoint and headers when switching from Langfuse; remove any conflicting `OTEL_EXPORTER_OTLP_TRACES_*` overrides. No second agent instrumentor is needed.
 
 An embedding application that already owns a Logfire or OTel provider can supply that exact provider instead:
 

@@ -1,6 +1,6 @@
 import type { Schema } from "../transport/client";
 import { SettingsRow, useComposerSettings } from "./composer-settings";
-import { ThinkingPicker, thinkingSummary } from "./thinking-picker";
+import { ThinkingPicker } from "./thinking-picker";
 import {
   ReasoningModePicker,
   reasoningModeLabel,
@@ -27,7 +27,7 @@ export function modelControlRequest(
   );
 }
 
-/** Compact summaries and in-panel choices share the backend's capability catalog. */
+/** Direct controls share the backend's capability catalog. */
 export function ModelControlPanel({
   model,
   controls,
@@ -38,9 +38,7 @@ export function ModelControlPanel({
   disabled?: boolean;
 }) {
   const settings = useComposerSettings()!;
-  const thinking = model?.thinking;
   const reasoning = model?.reasoning_mode;
-  const fast = model?.fast;
   const showReasoning =
     reasoning?.supported ||
     controls.reasoning_mode != null ||
@@ -49,15 +47,6 @@ export function ModelControlPanel({
     onControlsChange({ ...controls, ...next });
     settings.navigate("root");
   };
-  if (settings.page === "thinking")
-    return (
-      <ThinkingPicker
-        model={model}
-        value={controls.thinking}
-        disabled={disabled}
-        onChange={(thinking) => choose({ thinking })}
-      />
-    );
   if (settings.page === "reasoning")
     return (
       <ReasoningModePicker
@@ -67,27 +56,14 @@ export function ModelControlPanel({
         onChange={(reasoning_mode) => choose({ reasoning_mode })}
       />
     );
-  if (settings.page === "fast")
-    return (
-      <FastPicker
-        model={model}
-        value={controls.fast}
-        disabled={disabled}
-        onChange={(fast) => choose({ fast })}
-      />
-    );
   if (settings.page !== "root") return null;
   return (
     <div className={styles.modelControls}>
-      <SettingsRow
-        label="Thinking"
-        value={
-          controls.thinking == null
-            ? `Default · ${thinking?.default_summary ?? "Unavailable"}`
-            : thinkingSummary(model, controls.thinking)
-        }
+      <ThinkingPicker
+        model={model}
+        value={controls.thinking}
         disabled={disabled}
-        onClick={() => settings.navigate("thinking")}
+        onChange={(thinking) => onControlsChange({ ...controls, thinking })}
       />
       {showReasoning && (
         <SettingsRow
@@ -103,19 +79,11 @@ export function ModelControlPanel({
           onClick={() => settings.navigate("reasoning")}
         />
       )}
-      <SettingsRow
-        label="Fast mode"
-        value={
-          !fast?.supported
-            ? "Unavailable"
-            : controls.fast == null
-              ? `Default · ${fast.state === "on" ? "On" : fast.state === "off" ? "Off" : "Provider default"}`
-              : controls.fast
-                ? "On"
-                : "Off"
-        }
+      <FastPicker
+        model={model}
+        value={controls.fast}
         disabled={disabled}
-        onClick={() => settings.navigate("fast")}
+        onChange={(fast) => onControlsChange({ ...controls, fast })}
       />
     </div>
   );

@@ -6,88 +6,86 @@
 
 [![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://agent-foundation-docs.converge.ai/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-**Build agents in code, use them locally, or run them as managed services.**
+**The open-source, self-hosted foundation for enterprise AI agents.**
 
-Agent Foundation is a Python-first open-source toolkit for building agents and multi-agent systems on [Pydantic AI](https://ai.pydantic.dev/). Start with a library, run a personal Agent locally, or operate Agents as a managed service without switching execution frameworks.
+Agent Foundation is an open-source library and platform for building and running your own agent systems. Managed agents, memory, sandboxes, computer use, and durable execution come together in a self-hosted service, ready to integrate into your applications.
 
-> Agent Foundation is under active 0.x development. APIs may change between minor releases on the way to the first stable release.
+- **Build with Service.** Configure agents and connect them to your product through APIs, with resource management, permissions, and execution recovery already in place.
+- **Extend with Harness.** Embed the runtime directly and shape its behavior through plugins, custom tools, and providers.
+- **Explore with Harness UI.** Try models, tools, and agent configurations in a terminal and web playground—without building an application first.
 
-## Choose your path
+> Agent Foundation is in active `0.x` development. APIs and configuration may change between minor releases. This README and the documentation site track `main`; check release notes and package metadata when using a published version.
 
-| You want to...                   | Start with                                                                                | You get                                                                                            |
-| -------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Build Agents into an application | [Agent Harness](https://agent-foundation-docs.converge.ai/a13n-harness/) (`a13n-harness`) | A code-first Python library for composing, running, resuming, and observing Agents                 |
-| Run Agents on your own machine   | [Harness UI](packages/a13n-harness-ui/README.md) (`a13n-harness-ui`)                      | A local single-user experience with continuation-backed Sessions and full-terminal interaction     |
-| Operate managed Agents           | [a13n Service](packages/a13n-service/README.md) (`a13n-service`)                          | A durable service with APIs, managed definitions, authorization, persistence, and scalable workers |
+## Try Service locally
 
-Harness UI and a13n Service both embed Agent Harness, but they own different lifecycles:
+Start Service, Console, PostgreSQL, and Redis with **Docker Compose**. The local quickstart creates an administrator and workspace for you; no Python, Node.js, or source build is needed.
 
-| Direct Agent use                                                                                | Managed Agent use                                                                                                               |
-| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| An application embeds `a13n-harness`, or a person runs `a13n-harness-ui`.                       | A client uses Console, the HTTP API, or a Service SDK.                                                                          |
-| The application or UI owns execution, configuration, continuation storage, and recovery policy. | The Service owns managed resources and revisions, durable acceptance, scheduling, Runs and Attempts, permissions, and recovery. |
-| Models and execution Environments may still be remote.                                          | The Service may still run on the same machine as its client.                                                                    |
+Download the [quickstart Compose file](deploy/docker/compose/a13n-service-quickstart.yaml) into an empty directory, then run:
 
-`a13n` identifies Service client packages, not an umbrella package or another Agent execution engine. Console is the repository's Service management browser application; [Get started](docs/a13n-service/get-started.md) signs in to it. Service SDKs and the remote CLI are maintained and released in independent repositories; [SDKs and CLI](docs/a13n-service/sdks.md) links to their Markdown quick starts and application guides. Detailed language APIs and command recipes stay with those repositories rather than being duplicated here.
+```bash
+docker compose -f a13n-service-quickstart.yaml up -d --wait
+```
 
-Harness UI interaction is provided by the terminal CLI. Its optional `a13n-harness-ui webui` server retains the HTTP API; the bundled browser page provides authentication, status, and version information, not browser chat or Service management. See [the browser-server guide](docs/a13n-harness-ui/webui.md).
+Open **<http://127.0.0.1:8080>** and sign in:
 
-## Highlights
+| Email               | Password                    |
+| ------------------- | --------------------------- |
+| `admin@example.com` | `local-public-password-123` |
 
-- **Pydantic AI native**: use upstream models, messages, tools, events, output validation, and Agent-loop semantics.
-- **One foundation, three paths**: start in application code, move to a personal UI, or run a managed service.
-- **Portable Environments**: give Agents consistent access to files, commands, processes, and ports across local and isolated backends.
-- **State and resume**: preserve conversation state and continue work across process restarts or Host boundaries.
-- **Composable behavior**: combine Capabilities, Skills, delegation, CodeAct, middleware, and trusted plugins.
-- **Built for observation**: consume typed streams, usage records, OpenTelemetry signals, and AG-UI projections.
+**Local trial only.** These credentials are public. The stack listens only on loopback and does not mount your host Docker socket. Do not expose it to a network or use this account for a shared deployment. The source Compose file uses the development image; Service release assets pin it to their release version.
 
-## Quick start
+Bring your own model provider API key. In Console, **add a model → create an agent → try it**. The quickstart includes no model or inference credits; plain chat needs no sandbox.
 
-### Use Harness UI
+**Continue with the [Service quickstart](docs/a13n-service/get-started.md)** for the guided first conversation, API usage, stop/resume, and troubleshooting. For a shared deployment with your own administrator credentials and optional host Docker environments, use the [deployment guide](deploy/docker/compose/README.md).
 
-Install the published CLI with [`uv`](https://docs.astral.sh/uv/getting-started/installation/), then launch it in your project:
+## Use Harness UI
+
+For individual work or trusted collaborators, Harness UI offers a terminal agent and browser workbench over the same Harness. Explore repositories, edit files, run commands, and try models, tools, Skills, and environments interactively.
 
 ```bash
 uv tool install a13n-harness-ui
 cd your-repository
-a13n-harness-ui
+a13n-harness-ui          # Terminal
+# Or: a13n-harness-ui webui
 ```
 
-For a shorter command, add `alias anui='a13n-harness-ui'` to your Bash or Zsh configuration. Update whenever you choose with `a13n-harness-ui update` (or `anui update`). See the [Harness UI README](packages/a13n-harness-ui/README.md#install-and-run) for setup, PATH help, and update behavior.
+First-use setup connects a model and asks you to choose execution permissions. **Full Control runs as your host account, not in a sandbox.** The browser shares the instance's authority; it is not a multi-tenant Service. Native host file and terminal access is enabled by default; `--no-share-computer` disables those browser features. See [installation](docs/a13n-harness-ui/installation.md), [execution permissions](docs/a13n-harness-ui/environments-and-projects.md#execution-permissions), and [browser access](docs/a13n-harness-ui/webui.md).
 
-### Work from Source
+## Build on Harness
 
-The documentation tracks source `main`; match published packages to their release contracts. To work against the current source:
+Harness gives your application reusable agents, typed tools and outputs, streaming observations, portable execution environments, and state you can save and resume. Your application owns persistence, credentials, and recovery policy.
+
+Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). Supporting components such as Envd, Stream Protocol, and logging are covered in the [package catalog](docs/packages.md); you do not need to deploy every component.
+
+## Work from source
 
 ```bash
 git clone https://github.com/converge-ai-labs/agent-foundation.git
 cd agent-foundation
 ```
 
-Then choose a path from the repository root:
+| Work on             | Command                                   | Guide                                                   |
+| ------------------- | ----------------------------------------- | ------------------------------------------------------- |
+| Harness             | `uv sync --locked --package a13n-harness` | [Getting started](docs/a13n-harness/getting-started.md) |
+| Harness UI terminal | `make cli`                                | [Local UI development](dev/harness-ui/README.md)        |
+| Harness UI browser  | `make webui`                              | [Local UI development](dev/harness-ui/README.md)        |
+| Service and Console | `make dev`                                | [Local Service development](dev/service/README.md)      |
+| Documentation       | `make docs-serve`                         | [Contributing](CONTRIBUTING.md)                         |
 
-| Path              | Command                                   | Continue with                                                |
-| ----------------- | ----------------------------------------- | ------------------------------------------------------------ |
-| Agent Harness     | `uv sync --locked --package a13n-harness` | [Getting Started](docs/a13n-harness/getting-started.md)      |
-| Harness UI        | `make a13n-harness-ui`                    | [Harness UI guide](packages/a13n-harness-ui/README.md)       |
-| a13n Service      | `make dev`                                | [Service development guide](packages/a13n-service/README.md) |
-| Runnable examples | `make examples-check-all`                 | [Examples](examples/README.md)                               |
+Source development uses Python 3.13, uv, and Make. Browser builds also need Node.js 24 and the pinned pnpm version; Service development needs Docker. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the toolchain and checks relevant to your change.
 
-Working from source requires Git, Python 3.13, and [`uv`](https://docs.astral.sh/uv/). The Harness UI, a13n Service, and example commands use Make; a13n Service development also requires Node.js 24 and Docker. See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete toolchain and validation workflow.
+## Contribute
 
-## Documentation
+Bug reports, documentation fixes, examples, and focused improvements are welcome. Search [GitHub Issues](https://github.com/converge-ai-labs/agent-foundation/issues) and read the [contribution guide](CONTRIBUTING.md) before starting. Discuss unresolved product or architecture decisions before implementing them.
 
 - [User documentation](https://agent-foundation-docs.converge.ai/)
-- [Agent Harness getting started](docs/a13n-harness/getting-started.md)
-- [Runnable examples](examples/README.md)
-- [Accepted architecture and specifications](spec/README.md)
 - [Development standards](DEVELOPMENT.md)
+- [Accepted specifications](spec/README.md)
+- [Maintainers](MAINTAINERS.md)
 
-## Contributing
+## Security
 
-Bug reports, feature ideas, and design discussions are welcome in [GitHub Issues](https://github.com/converge-ai-labs/agent-foundation/issues). Pull requests are welcome for specifications, documentation, implementation, tests, examples, and automation.
-
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before making a change. From a configured checkout, run `make check` for fast feedback and `make check-all` before finalizing broad work.
+Report suspected vulnerabilities privately to [support@converge.ai](mailto:support@converge.ai), not in public issues or pull requests. See [SECURITY.md](SECURITY.md) for what to include.
 
 ## License
 
