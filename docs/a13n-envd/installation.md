@@ -46,7 +46,7 @@ Use Windows PowerShell 5.1 or PowerShell 7 on Windows. With a **published** clie
 ```powershell
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/main/scripts/install-a13n-envd.ps1' -OutFile install-a13n-envd.ps1
 # Inspect the downloaded script before running it.
-$envdVersion = python -c 'from importlib.metadata import version; import re; print(re.sub(r"rc([0-9]+)$", r"-rc.\1", version("a13n-envd-client")))'
+$envdVersion = python -c "from importlib.metadata import version; import re; print(re.sub(r'rc([0-9]+)$', r'-rc.\1', version('a13n-envd-client')))"
 & .\install-a13n-envd.ps1 --version $envdVersion --install-dir "$env:LOCALAPPDATA\A13N\bin"
 & "$env:LOCALAPPDATA\A13N\bin\a13n-envd.exe" --version
 ```
