@@ -1,6 +1,6 @@
 # Service quickstart
 
-Run Service on your machine, connect a model, and get your first agent response in Console. Then use the same agent from your application through the API.
+Run Service on your machine, connect a model, and get your first agent response in Console. Already have a running Service? [Use your team's platform](use-platform.md) or [connect your application](connect-application.md).
 
 You need Docker with Docker Compose and a model provider API key. No Python, Node.js, or source build is required. Model calls use your provider account and may incur charges.
 
@@ -32,51 +32,11 @@ Outbound requests reject private addresses and plain HTTP by default. To use a m
 
 This first conversation needs no execution environment, tools, or memory setup. Those can be added after the model connection works.
 
-You can send another message, stop the run, or answer an approval or question in the conversation. To use file and terminal tools, add an [environment template](environments.md#templates) to the agent.
+Continue with the [Console guide](use-platform.md) for follow-ups, approvals, questions, and files.
 
 ## Use the API
 
-Use a [Service SDK or the remote CLI](sdks.md), or call the API directly with curl:
-
-Create an API key under **Workspace settings → My API keys** and export it with the Service URL. Requests with the key act in its workspace, so their paths name no workspace:
-
-```sh
-export A13N_URL=http://127.0.0.1:8080 A13N_API_KEY=a13n_...
-```
-
-Find the key of the model you added under **Models** or with `GET /api/v1/models`. Set `MODEL_KEY` to that key before creating an agent:
-
-```sh
-MODEL_KEY=your-model-key
-curl -X POST "$A13N_URL/api/v1/agents" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d "{\"name\": \"Helper\", \"config\": {\"model\": \"$MODEL_KEY\", \"instructions\": \"Answer briefly.\"}}"
-```
-
-Set `AGENT_ID` to the returned `id` and generate a key for this message:
-
-```sh
-AGENT_ID=ap_replace_with_the_returned_id
-MESSAGE_KEY=$(uuidgen)
-```
-
-Start a conversation. To retry after a lost response, repeat this request with the same `MESSAGE_KEY`:
-
-```sh
-curl -X POST "$A13N_URL/api/v1/threads" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $MESSAGE_KEY" \
-  -d "{\"agent_id\": \"$AGENT_ID\", \"payload\": {\"content\": [{\"type\": \"text\", \"text\": \"What is a13n?\"}]}}"
-```
-
-The response contains `thread`, `entry`, and possibly `run`. If a run started, set `RUN_ID` to its `id` and read it until its status is `completed`, `waiting`, `failed`, or `cancelled`; a completed run's answer is in `output`:
-
-```sh
-RUN_ID=run_replace_with_the_returned_id
-curl "$A13N_URL/api/v1/runs/$RUN_ID" -H "Authorization: Bearer $A13N_API_KEY"
-```
-
-Instead of polling, follow the [thread stream](agents-and-runs.md#follow-a-thread-stream) or subscribe to [webhooks](files-and-webhooks.md#webhooks). Continue the conversation with `POST …/threads/{thread_id}/inbox`; see [Agents, threads and runs](agents-and-runs.md).
+Follow [Connect your application](connect-application.md) to create a workspace API key, select an agent, submit a message, and read the result. Choose a [Service SDK or remote CLI](sdks.md) for language-specific integration.
 
 ## Stop, resume, or reset the trial
 

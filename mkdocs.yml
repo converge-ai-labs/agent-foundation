@@ -21,10 +21,16 @@ watch:
   - frontend/packages/a13n-ui/src/styles/tokens.css
 
 nav:
-  - Home: index.md
+  - Home:
+      - Overview: index.md
+      - Choose your path: choose-your-path.md
+      - Core concepts: core-concepts.md
   - Service:
       - Overview: a13n-service/index.md
-      - Get started: a13n-service/get-started.md
+      - Get started:
+          - Deploy and try locally: a13n-service/get-started.md
+          - Use an existing platform: a13n-service/use-platform.md
+          - Connect your application: a13n-service/connect-application.md
       - Use:
           - Identity and access: a13n-service/identity.md
           - Agents, threads and runs: a13n-service/agents-and-runs.md

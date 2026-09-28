@@ -2,12 +2,22 @@
 
 Service runs agents for users and applications through a browser Console or HTTP API. It manages workspaces, access, agent configurations and conversations; workers keep running after clients disconnect. [Get started](get-started.md) with a local deployment and your first agent.
 
+## Start here
+
+| Your situation                          | Guide                                              |
+| --------------------------------------- | -------------------------------------------------- |
+| Set up Service and get a first response | [Deploy and try locally](get-started.md)           |
+| Your team already runs Service          | [Use an existing platform](use-platform.md)        |
+| Call an agent from your application     | [Connect your application](connect-application.md) |
+
 ## Concepts
 
 - **Organization and workspace:** an organization manages members; each workspace contains its own agents, resources and conversations.
 - **Agent and revision:** an agent has saved configurations; each run uses a selected revision.
 - **Session, thread and run:** a session groups conversations; a thread holds messages; each run advances that thread.
 - **Provider and environment:** providers connect models, tools and sandboxes; a thread can mount an environment for file and terminal work.
+
+[Core concepts](../core-concepts.md) follows one conversation through these pieces.
 
 ## How the pieces fit
 
@@ -31,7 +41,7 @@ Control and worker are roles of one executable; a single process can run both. S
 
 ## Guides
 
-- [Get started](get-started.md): deploy, connect a model and send a first message.
+- [Get started](get-started.md): deploy, connect a model and send a first message; [use Console](use-platform.md) on an existing deployment.
 - [Identity and access](identity.md): workspaces, members, API keys and service accounts.
 - [Agents, threads and runs](agents-and-runs.md): configure agents and integrate conversations; [Agent Composer](agent-composer.md) can help build them.
 - [Resources](resources.md): discover [models](models.md), [tools and connections](tools.md), [skills](skills.md), [environments](environments.md), [memory](memory.md), and [files and webhooks](files-and-webhooks.md).

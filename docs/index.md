@@ -6,12 +6,16 @@ Agent Foundation is an open-source library and platform for building and running
 
 ## Choose your starting point
 
-| You want to                                 | Start with                                                                                                     |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Add managed agents to your application      | [Service quickstart](a13n-service/get-started.md) — run the stack, configure a model, and start a conversation |
-| Build an agent in Python                    | [Harness quickstart](a13n-harness/getting-started.md) — run an offline example, then add tools and models      |
-| Work interactively in a repository          | [Harness UI setup](a13n-harness-ui/setup.md) — connect a model and use the terminal or browser                 |
-| Give an application file and command access | [Environments quickstart](environments/getting-started.md) — use the same providers with or without an agent   |
+| You want to                                 | Start with                                                                                                   |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Deploy a shared agent platform              | [Service quickstart](a13n-service/get-started.md) — run the stack and configure a model                      |
+| Use your team's agents                      | [Console guide](a13n-service/use-platform.md) — start a conversation on an existing platform                 |
+| Add managed agents to your application      | [Application integration](a13n-service/connect-application.md) — authenticate, submit work, and read results |
+| Build an agent in Python                    | [Harness quickstart](a13n-harness/getting-started.md) — run an offline example, then add tools and models    |
+| Work interactively in a repository          | [Harness UI setup](a13n-harness-ui/setup.md) — connect a model and use the terminal or browser               |
+| Give an application file and command access | [Environments quickstart](environments/getting-started.md) — use the same providers with or without an agent |
+
+See [Choose your path](choose-your-path.md) for prerequisites, or [Core concepts](core-concepts.md) for a walkthrough of one conversation.
 
 ## How the pieces fit
 
@@ -31,7 +35,7 @@ flowchart TB
 
 The [Docker Compose quickstart](a13n-service/get-started.md) starts Service, Console, PostgreSQL, and Redis and creates a local administrator. Add your model provider credentials in Console, create an agent, and send a message.
 
-For application integration, follow [Agents, threads and runs](a13n-service/agents-and-runs.md) and [SDKs and CLI](a13n-service/sdks.md). For a shared deployment, start with [configuration](a13n-service/configuration.md) and [identity and access](a13n-service/identity.md).
+Already have a platform? [Use Console](a13n-service/use-platform.md) or [connect your application](a13n-service/connect-application.md). For a shared deployment, start with [configuration](a13n-service/configuration.md) and [identity and access](a13n-service/identity.md).
 
 ### Embed Harness
 
