@@ -94,6 +94,7 @@ from a13n_service.tenancy.tables import (
     TokenRow,
     WorkspaceRow,
 )
+from a13n_service.usage.routes import router as usage_router
 
 # Background work needs the assembled runtime, so a distribution lists factories.
 type SweepFactory = Callable[[Runtime], Sweep]
@@ -305,6 +306,7 @@ OSS = Distribution(
         skills_router,
         subscriptions_router,
         runs_router,
+        usage_router,
         traces_router,
         environment_templates_router,
         environments_router,

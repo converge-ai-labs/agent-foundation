@@ -109,7 +109,7 @@ async def test_explicit_values_survive_failure_restart_and_json_continuation() -
     )
     assert isinstance(seen[0], ToolReturnPart) and seen[0].outcome == "failed"
     assert seen[1].content == {"ids": [1, 2]}
-    assert isinstance(seen[2], RetryPromptPart)
+    assert isinstance(seen[2], ToolReturnPart) and seen[2].outcome == "failed"
     assert seen[3].content == {"ids": [1, 2]}
     assert _values(result.state) == {"search.results": {"ids": [1, 2]}}
     assert result.state is not None
@@ -190,7 +190,7 @@ async def test_rejected_store_preserves_previous_value(config: CodeActConfig, re
     result, seen, _ = await _run(
         [_code('await store(key="first", value=1)'), _code(rejected), _code('await load(key="first")')], config=config
     )
-    assert isinstance(seen[1], RetryPromptPart) or seen[1].outcome == "failed"
+    assert isinstance(seen[1], ToolReturnPart) and seen[1].outcome == "failed"
     assert seen[2].content == 1
     assert _values(result.state) == {"first": 1}
 

@@ -1,0 +1,198 @@
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.timezone,
+.footnote {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.customRange {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.customRange p {
+  flex-basis: 100%;
+  color: var(--a13n-danger);
+  font-size: 13px;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--a13n-border-soft);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.metrics > div {
+  padding: 22px 24px;
+  background: var(--a13n-canvas);
+}
+.metrics dt {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.metrics dd {
+  font-size: 26px;
+  font-weight: 550;
+  letter-spacing: -0.6px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.notice {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: 13px;
+}
+.trend,
+.breakdown {
+  margin-top: 16px;
+  min-width: 0;
+}
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.sectionHeading h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.chartReadout {
+  height: 32px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.chartReadout strong {
+  color: var(--a13n-text);
+}
+.chart {
+  display: flex;
+  height: 190px;
+  gap: 16px;
+}
+.axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 56px;
+  align-items: flex-end;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.plot {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.grid {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+}
+.grid i {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.bars {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  gap: 4px;
+  align-items: stretch;
+}
+.barSlot {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: flex-end;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.barSlot:focus-visible {
+  outline: 2px solid var(--a13n-text);
+  outline-offset: 2px;
+}
+.bar {
+  display: block;
+  width: 100%;
+  max-width: 48px;
+  background: var(--a13n-accent, #6076d8);
+  opacity: 0.75;
+  border-radius: 3px 3px 0 0;
+}
+.barSlot[aria-pressed="true"] .bar {
+  opacity: 1;
+}
+.bar[data-unknown] {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--a13n-secondary) 0 2px,
+    transparent 2px 4px
+  );
+}
+.dates {
+  display: flex;
+  justify-content: space-between;
+  margin: 10px 0 0 72px;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.identity strong {
+  font-weight: 500;
+}
+.identity span {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.partial {
+  color: var(--a13n-secondary);
+}
+.footnote {
+  line-height: 1.7;
+  margin-top: 8px;
+}
+@media (width < 768px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .metrics > div {
+    padding: 16px;
+  }
+  .metrics dd {
+    font-size: 23px;
+  }
+  .chart {
+    height: 160px;
+  }
+  .chartReadout {
+    height: auto;
+    min-height: 40px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sectionHeading {
+    flex-wrap: wrap;
+  }
+}

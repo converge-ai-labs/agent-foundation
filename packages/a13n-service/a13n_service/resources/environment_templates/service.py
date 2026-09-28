@@ -57,7 +57,8 @@ async def _validated_config(
         recipe = definition.environment_model.model_validate(config.recipe)
     except ValidationError as error:
         raise invalid("config.recipe", f"invalid for {provider.type}: {rejection_reason(error)}") from None
-    normalized = config.model_copy(update={"recipe": recipe.model_dump(mode="json", exclude_defaults=True)})
+    # An explicit value remains a pin even when it equals today's provider default.
+    normalized = config.model_copy(update={"recipe": recipe.model_dump(mode="json", exclude_unset=True)})
     if current is None or (provider_id, normalized.recipe) != (current.provider_id, current.config["recipe"]):
         await resolve_provider(session, actor, EnvironmentProviderRow, scope, provider_id, verb="write")
     # The idle policy is stored in full: maintenance reads it in SQL.

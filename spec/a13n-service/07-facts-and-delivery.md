@@ -44,6 +44,20 @@ Legacy record delivery remains append-only for compatibility: checkpoint and ter
 
 `GET /usage` (`read`) sums model records per model, including late arrivals, and names each by its key in `model`: `requests`, input, output, cache-read and cache-write tokens, and `cost`, the sum of each record's own priced cost (null when no record of that model was priced). It filters by `run_id`, `thread_id`, `session_id`, `ingested_after` and `ingested_before`. `model` is null for unattributed records. A crash before a provider report reaches the Service can leave an unknown charge; ingestion preserves received facts, not discovery of every billable operation.
 
+### Workspace usage analysis
+
+The `usage` package owns the read API and aggregation over durable consumption. Run execution owns ingestion, current snapshots and contribution projections. Querying usage needs the Workspace's `read` permission and does not depend on a telemetry backend.
+
+`GET /usage/overview`, `GET /usage/agents` and `GET /usage/models` require timezone-aware `start` and `end`, selecting the half-open interval `[start, end)`, at most 366 days. Consumption selects model contribution rows by their first `ingested_at`; Run metrics independently select Runs by `started_at`. The queries exclude non-model provider receipts and snapshot envelope rows. Later observations replace the contribution counted at its original ingestion time. No precomputed totals or background aggregation are required.
+
+Model metrics are `requests`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_hit_rate`, `cost` and `unpriced_requests`. Cached input is a subset of input; the rate divides summed cached input by summed input, or is null with no input. `cost` is the recorded USD subtotal, serialized as a decimal string: zero for no requests, null when every request is unpriced, and the known subtotal otherwise. `unpriced_requests` counts null costs, including within a partially priced group. Recorded counters and costs do not establish complete provider billing coverage.
+
+Run metrics are `runs` and `average_duration_seconds`. Each started Run counts once regardless of its request count. The average uses only Runs with `sealed_at`, subtracting `started_at`; it does not join successor Runs or attribute a Run's duration to a model. Runs with no model contributions still appear in Agent aggregates, and late contributions from Runs outside the window still appear in consumption.
+
+The overview returns `usage`, `runs` and `daily`. `timezone` is an IANA timezone, default `UTC`, used only to group the daily consumption. Every intersecting local date is returned in chronological order, including zero-usage dates; boundary days include only the selected interval. Daylight-saving changes follow that timezone's calendar. Totals and daily consumption are computed in one database statement.
+
+Agent rows carry `agent_id`, `name`, `usage` and `runs`; attribution uses the owning Service Run's Agent, without additional subagent rollups. Model rows carry `model` (the model key), `name` and `usage`; null model/name identify unattributed consumption. Both collections use the standard `items`, `next_cursor`, `limit` and query-bound `cursor` contract. Order is known cost descending, then Agent ID or model key ascending, with unknown cost last. Empty consumption on a Run-only Agent has known zero cost. Pagination is a live view; later consumption can change ordering, and reloading starts from the first page.
+
 ## Objects
 
 The object store holds immutable bytes under owner-named keys: lowercase slash-separated segments of at most 1024 characters. Its contract, on both the local and S3 backends, is create-only write, read, prefix listing and delete. A write of identical bytes to an existing key succeeds, so an uncertain write is resolved by repeating it; different bytes are refused and never replace what is stored. There is no conditional replacement and no object catalog table. A committed reference names a key, digest and size, and a read that finds missing or different bytes is `unavailable` (dependency `objects`).

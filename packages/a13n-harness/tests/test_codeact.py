@@ -320,14 +320,8 @@ async def test_failed_inline_result_validation_discards_session_state(
 
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         del info
-        retries = [
-            part
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, RetryPromptPart) and part.tool_name == "run_code"
-        ]
-        if not retries:
+        returns = _tool_returns(messages, "run_code")
+        if not returns:
             yield {
                 0: DeltaToolCall(
                     name="run_code",
@@ -336,6 +330,7 @@ async def test_failed_inline_result_validation_discards_session_state(
                 )
             }
         else:
+            assert returns[-1].outcome == "failed"
             yield "reset" if reset_count > 0 else "retained"
 
     executable = HarnessBuilder().build(
@@ -454,12 +449,7 @@ async def test_codeact_resource_failure_resets_inline_state(source: str, config:
         if requests == 1:
             code = "saved = 42\n" + source
         elif requests == 2:
-            assert any(
-                isinstance(part, RetryPromptPart) and part.tool_name == "run_code"
-                for message in messages
-                if isinstance(message, ModelRequest)
-                for part in message.parts
-            )
+            assert _tool_returns(messages, "run_code")[-1].outcome == "failed"
             code = "retained = False\ntry:\n    saved\n    retained = True\nexcept NameError:\n    pass\nretained"
         else:
             assert _tool_returns(messages, "run_code")[-1].content is False
@@ -642,3 +632,155 @@ async def test_run_program_unreadable_source_returns_tool_failure_and_continues(
     result = await executable.run("run a program", bindings=RunBindings.embedded(environment=environment))
     assert result.status == "completed"
     assert requests == 2
+
+
+@pytest.mark.parametrize("runner", ["run_code", "run_program"])
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param("if True print('invalid')", id="syntax"),
+        pytest.param("1 / 0", id="runtime"),
+        pytest.param(
+            "import asyncio\nawait asyncio.gather(*[view(file_path=p) for p in ['AGENTS.md']])",
+            id="unavailable-tool",
+        ),
+        pytest.param("await double(value='invalid')", id="nested-validation"),
+    ],
+)
+async def test_codeact_repeated_source_failures_do_not_exhaust_model_retries(
+    tmp_path: Path, runner: str, source: str
+) -> None:
+    requests = 0
+    calls: list[int] = []
+
+    def double(value: int) -> int:
+        calls.append(value)
+        return value * 2
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        del info
+        requests += 1
+        if requests <= 3:
+            code = source
+        elif requests == 4:
+            code = "await double(value=21)"
+        else:
+            returns = _tool_returns(messages, runner)
+            assert [part.outcome for part in returns] == ["failed", "failed", "failed", "success"]
+            assert returns[-1].content == 42
+            assert not any(
+                isinstance(part, RetryPromptPart)
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+            )
+            yield "recovered"
+            return
+        if runner == "run_code":
+            arguments = {"code": code}
+        else:
+            lines = code.splitlines()
+            lines[-1] = "return " + lines[-1]
+            (tmp_path / "job.codeact.py").write_text(
+                "async def main(inputs):\n" + "\n".join("    " + line for line in lines) + "\n",
+                encoding="utf-8",
+            )
+            arguments = {"path": "/workspace/job.codeact.py"}
+        yield {0: DeltaToolCall(name=runner, json_args=json.dumps(arguments), tool_call_id=f"attempt-{requests}")}
+
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 0}),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(CodeActCapability(), _codeact_tools(double, allowed=("double",))),
+    )
+    result = await executable.run(
+        "recover from source errors", bindings=RunBindings.embedded(environment=_local_environment(tmp_path))
+    )
+
+    assert result.output_or_raise() == "recovered"
+    assert requests == 5
+    assert calls == [21]
+
+
+@pytest.mark.parametrize(
+    ("runner", "arguments", "config"),
+    [
+        pytest.param("run_code", {"code": "'too long'"}, CodeActConfig(max_source_bytes=4), id="source-size"),
+        pytest.param("run_program", {"path": "job.py"}, CodeActConfig(), id="program-suffix"),
+        pytest.param("run_program", {"path": "job.codeact.py"}, CodeActConfig(), id="program-entrypoint"),
+        pytest.param(
+            "run_program",
+            {"path": "job.codeact.py", "inputs": {"value": "too long"}},
+            CodeActConfig(max_output_bytes=4),
+            id="program-input-size",
+        ),
+    ],
+)
+async def test_codeact_preflight_failure_returns_to_model_with_no_retries(
+    tmp_path: Path, runner: str, arguments: dict[str, Any], config: CodeActConfig
+) -> None:
+    (tmp_path / "job.codeact.py").write_text("def main(inputs):\n    return inputs\n", encoding="utf-8")
+    requests = 0
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        del info
+        requests += 1
+        if requests == 1:
+            yield {0: DeltaToolCall(name=runner, json_args=json.dumps(arguments), tool_call_id="preflight")}
+        else:
+            assert _tool_returns(messages, runner)[-1].outcome == "failed"
+            yield "handled"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 0}),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(CodeActCapability(config),),
+    )
+    result = await executable.run(
+        "handle invalid input", bindings=RunBindings.embedded(environment=_local_environment(tmp_path))
+    )
+    assert result.output_or_raise() == "handled"
+    assert requests == 2
+
+
+@pytest.mark.parametrize("start_tool", [False, True])
+async def test_codeact_failure_metadata_tracks_started_calls_without_replay(start_tool: bool) -> None:
+    calls: list[int] = []
+    requests = 0
+
+    def record(value: int) -> None:
+        calls.append(value)
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        del info
+        requests += 1
+        if requests == 1:
+            source = "await record(value=7)\n" if start_tool else ""
+            source += "raise ValueError('private-value-not-for-diagnostics')"
+            yield {0: DeltaToolCall(name="run_code", json_args=json.dumps({"code": source}), tool_call_id="failure")}
+        else:
+            returned = _tool_returns(messages, "run_code")[-1]
+            assert returned.outcome == "failed"
+            payload = json.loads(str(returned.content))
+            assert payload["codeact"]["status"] == "failed"
+            assert payload["codeact"]["tool_call_count"] == int(start_tool)
+            assert payload["codeact"]["side_effect_uncertain"] is start_tool
+            assert payload["error"]["type"] == "MontyRuntimeError"
+            assert "private-value-not-for-diagnostics" not in str(returned.content)
+            yield "handled"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(retries={"tools": 0}),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(CodeActCapability(), _codeact_tools(record, allowed=("record",))),
+    )
+    result = await executable.run("handle execution failure", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "handled"
+    assert requests == 2
+    assert calls == ([7] if start_tool else [])

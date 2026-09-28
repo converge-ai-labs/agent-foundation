@@ -1,6 +1,7 @@
 import {
   type Icon,
   BrainIcon,
+  ChartBarIcon,
   PulseIcon,
   HeartIcon,
   CubeIcon,
@@ -43,7 +44,10 @@ export const navigationGroups: {
   },
   {
     label: "Observe",
-    entries: [["traces", "Traces", PulseIcon]],
+    entries: [
+      ["usage", "Usage", ChartBarIcon],
+      ["traces", "Traces", PulseIcon],
+    ],
   },
 ];
 

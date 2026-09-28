@@ -14,7 +14,7 @@ from functools import partial
 from pathlib import Path
 
 from dev.service.api import Api
-from dev.service.checkout import ADMIN_EMAIL, ADMIN_PASSWORD
+from dev.service.checkout import ADMIN_EMAIL, ADMIN_PASSWORD, Checkout
 from dev.service.seed_agents import seed_agents
 from dev.service.seed_assets import examples, store
 from dev.service.seed_connections import seed_connections
@@ -25,6 +25,7 @@ from dev.service.seed_local import seed_local, stopped_environment
 from dev.service.seed_memories import recorded, remembered, seed_memories
 from dev.service.seed_providers import seed_providers
 from dev.service.seed_resources import seed_skills, seed_subscription, seed_templates
+from dev.service.seed_usage import seed_usage
 
 # The Service's default `worker.slots`: more parallel conversations would only queue.
 PARALLEL_CONVERSATIONS = 4
@@ -37,8 +38,9 @@ class Seeded:
     index: dict[str, str]  # IDs of what the report names
 
 
-def seed(api: Api, model_url: str, environments: Path) -> Seeded:
-    """Seed the default workspace and its organization; `environments` holds the `local` environments."""
+def seed(api: Api, checkout: Checkout) -> Seeded:
+    """Seed this checkout with public resources, real execution and fictional usage history."""
+    model_url, environments = checkout.model_url, checkout.environments
     workspace = api.first_workspace()
     api.workspace_id = workspace["id"]
     org, ws = f"/api/v1/organizations/{workspace['organization_id']}", f"/api/v1/workspaces/{workspace['id']}"
@@ -69,6 +71,7 @@ def seed(api: Api, model_url: str, environments: Path) -> Seeded:
     api.until("/api/v1/threads?limit=100", lambda page: all(item["current_run_id"] is None for item in page["items"]))
     deliveries = f"/api/v1/subscriptions/{subscription['id']}/deliveries"
     api.until(deliveries, lambda page: any(item["status"] == "delivered" for item in page["items"]))
+    index |= seed_usage(api, checkout, local)
     return Seeded(workspace["organization_id"], workspace["id"], index)
 
 

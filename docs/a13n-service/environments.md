@@ -38,8 +38,7 @@ A template describes how to build a managed environment and when to stop and del
 curl -X POST "$A13N_URL/api/v1/environment-templates" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "Python sandbox", "provider_id": "eprov_...",
-       "config": {"recipe": {"image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev",
-                             "cpus": 2, "memory_gb": 4, "init_script": "pip install pandas"},
+       "config": {"recipe": {"cpus": 2, "memory_gb": 4, "init_script": "pip install pandas"},
                   "stop_after_seconds": 1800, "delete_after_seconds": 604800}}'
 ```
 
@@ -49,6 +48,20 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.
 
 To give every conversation of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount starts, the Service reserves a new environment from that template and mounts it as `workspace`.
+
+### Docker image versions
+
+Leave `recipe.image` unset to use `ghcr.io/converge-ai-labs/a13n-docker-environment` at the installed Service version:
+
+| Service build                                         | Image tag    |
+| ----------------------------------------------------- | ------------ |
+| Stable, such as `0.1.0`                               | `0.1.0`      |
+| RC, such as Python version `0.1.0rc1`                 | `0.1.0-rc.1` |
+| Source (`0.0.0`, including local suffixes) or `.devN` | `dev`        |
+
+Release images support `linux/amd64` and `linux/arm64`. Set `recipe.image` explicitly to keep a particular tag across Service upgrades, or use a digest to pin exact content. The Engine uses local images and pulls missing ones.
+
+Each instance saves its resolved image before its first create; upgrades and interrupted creates keep that image. Legacy instances without a saved image keep `:dev`. Create a new environment to use a changed image or template.
 
 ## Instances
 

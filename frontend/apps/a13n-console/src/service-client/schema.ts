@@ -2295,6 +2295,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/usage/agents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Usage Agents */
+    get: operations["usage_agents_api_v1_usage_agents_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/usage/models": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Usage Models */
+    get: operations["usage_models_api_v1_usage_models_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/usage/overview": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Usage Overview */
+    get: operations["usage_overview_api_v1_usage_overview_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/users/me": {
     parameters: {
       query?: never;
@@ -3254,6 +3305,22 @@ export interface components {
       /** Name */
       name?: string | null;
     };
+    /** AgentUsage */
+    AgentUsage: {
+      /** Agent Id */
+      agent_id: string;
+      /** Name */
+      name: string;
+      runs: components["schemas"]["RunMetrics"];
+      usage: components["schemas"]["ModelMetrics"];
+    };
+    /** AgentUsagePage */
+    AgentUsagePage: {
+      /** Items */
+      items: components["schemas"]["AgentUsage"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /**
      * AgentValidate
      * @description A configuration to check as creating a revision would, storing nothing.
@@ -3860,6 +3927,15 @@ export interface components {
      * @enum {string}
      */
     CredentialMode: "required" | "optional" | "forbidden";
+    /** DailyUsage */
+    DailyUsage: {
+      /**
+       * Date
+       * Format: date
+       */
+      date: string;
+      usage: components["schemas"]["ModelMetrics"];
+    };
     /** DelegationContextPolicy */
     DelegationContextPolicy: {
       /**
@@ -5049,6 +5125,23 @@ export interface components {
       /** Provider Id */
       provider_id: string;
     };
+    /** ModelMetrics */
+    ModelMetrics: {
+      /** Cache Hit Rate */
+      cache_hit_rate: number | null;
+      /** Cache Read Tokens */
+      cache_read_tokens: number;
+      /** Cost */
+      cost: string | null;
+      /** Input Tokens */
+      input_tokens: number;
+      /** Output Tokens */
+      output_tokens: number;
+      /** Requests */
+      requests: number;
+      /** Unpriced Requests */
+      unpriced_requests: number;
+    };
     /** ModelPage */
     ModelPage: {
       /** Items */
@@ -5154,6 +5247,21 @@ export interface components {
       output_tokens: number;
       /** Requests */
       requests: number;
+    };
+    /** ModelUsageGroup */
+    ModelUsageGroup: {
+      /** Model */
+      model: string | null;
+      /** Name */
+      name: string | null;
+      usage: components["schemas"]["ModelMetrics"];
+    };
+    /** ModelUsagePage */
+    ModelUsagePage: {
+      /** Items */
+      items: components["schemas"]["ModelUsageGroup"][];
+      /** Next Cursor */
+      next_cursor: string | null;
     };
     /** MountCreate */
     MountCreate: {
@@ -5795,6 +5903,13 @@ export interface components {
       labels: {
         [key: string]: string;
       };
+    };
+    /** RunMetrics */
+    RunMetrics: {
+      /** Average Duration Seconds */
+      average_duration_seconds: number | null;
+      /** Runs */
+      runs: number;
     };
     /**
      * RunOptions
@@ -6923,6 +7038,13 @@ export interface components {
       tool_calls_limit?: number | null;
       /** Total Tokens Limit */
       total_tokens_limit?: number | null;
+    };
+    /** UsageOverview */
+    UsageOverview: {
+      /** Daily */
+      daily: components["schemas"]["DailyUsage"][];
+      runs: components["schemas"]["RunMetrics"];
+      usage: components["schemas"]["ModelMetrics"];
     };
     /** UsageSummary */
     UsageSummary: {
@@ -12295,6 +12417,95 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["UsageSummary"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  usage_agents_api_v1_usage_agents_get: {
+    parameters: {
+      query: {
+        start: string;
+        end: string;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AgentUsagePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  usage_models_api_v1_usage_models_get: {
+    parameters: {
+      query: {
+        start: string;
+        end: string;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelUsagePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  usage_overview_api_v1_usage_overview_get: {
+    parameters: {
+      query: {
+        start: string;
+        end: string;
+        timezone?: string;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UsageOverview"];
         };
       };
       400: components["responses"]["Error"];

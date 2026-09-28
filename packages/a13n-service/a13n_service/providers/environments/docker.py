@@ -11,8 +11,9 @@ Harness defaults; container CPU, memory and process limits bound the operator's 
 
 from collections.abc import Sequence
 from dataclasses import replace
+from importlib.metadata import version
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Annotated, Any
 
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.docker.configuration import (
@@ -23,11 +24,32 @@ from a13n_harness.providers.environment.docker.provider import DOCKER as HARNESS
 from a13n_harness.providers.environment.docker.provider import (
     DockerConnectionConfiguration as HarnessAccount,
 )
+from packaging.version import Version
 from pydantic import Field, field_validator
 
 from a13n_service.providers.endpoints import engine_endpoint
 
 _MOUNTS = HarnessRecipe.model_fields["mounts"]
+
+
+def default_image() -> str:
+    """The Service release's companion image; source and development builds use the mutable dev tag."""
+    installed = Version(version("a13n-service"))
+    if installed.base_version == "0.0.0" or installed.is_devrelease:
+        tag = "dev"
+    else:
+        if (
+            installed.epoch
+            or len(installed.release) != 3
+            or installed.local is not None
+            or installed.post is not None
+            or (installed.pre is not None and (installed.pre[0] != "rc" or installed.pre[1] < 1))
+        ):
+            raise ValueError(f"No Docker environment image release for a13n-service {installed}")
+        tag = installed.base_version
+        if installed.pre is not None:
+            tag += f"-rc.{installed.pre[1]}"
+    return f"ghcr.io/converge-ai-labs/a13n-docker-environment:{tag}"
 
 
 def _worker_bound(name: str) -> Any:
@@ -59,6 +81,7 @@ def docker(*, host: str | None, mount_roots: Sequence[PurePosixPath]) -> Environ
             return value
 
     class DockerEnvironmentConfiguration(HarnessRecipe):
+        image: Annotated[str, Field(min_length=1, max_length=1024)] = default_image()
         mounts: tuple[DockerMountConfiguration, ...] = Field(
             default=(),
             title=_MOUNTS.title,
