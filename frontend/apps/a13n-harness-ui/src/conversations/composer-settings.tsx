@@ -26,6 +26,7 @@ import {
   CaretRight,
   Check,
   SlidersHorizontal,
+  DotsThree,
   X,
 } from "@phosphor-icons/react";
 import type { Schema } from "../transport/client";
@@ -35,11 +36,22 @@ type SearchOption = ComponentProps<
   typeof SearchPicker
 >["groups"][number]["options"][number];
 
-type Page = "root" | "model" | "agent" | "execution" | "environments";
+type Page =
+  | "root"
+  | "model"
+  | "agent"
+  | "thinking"
+  | "reasoning"
+  | "fast"
+  | "execution"
+  | "environments";
 const titles: Record<Page, string> = {
   root: "Run settings",
   model: "Select model",
   agent: "Select agent",
+  thinking: "Thinking",
+  reasoning: "Reasoning mode",
+  fast: "Fast mode",
   execution: "Execution mode",
   environments: "Working environments",
 };
@@ -75,10 +87,17 @@ export function useCompactComposer(host: RefObject<HTMLElement | null>) {
 export function ComposerSettings({
   children,
   className,
+  kind = "run",
 }: {
   children: ReactNode;
   className?: string;
+  kind?: "run" | "model";
 }) {
+  const rootTitle = kind === "model" ? "Agent & Model" : "Run settings";
+  const label =
+    kind === "model" ? "Agent & Model settings" : "Composer options";
+  const navigationLabel =
+    kind === "model" ? "Agent & Model settings" : "run settings";
   const [open, setOpen] = useState(false);
   const [page, navigate] = useState<Page>("root");
   // Keep staged edits above the responsive Dialog/Popover subtree.
@@ -114,19 +133,21 @@ export function ComposerSettings({
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Back to run settings"
-            title="Back to run settings"
+            aria-label={`Back to ${navigationLabel}`}
+            title={`Back to ${navigationLabel}`}
             onClick={() => navigate("root")}
           >
             <CaretLeft />
           </Button>
         )}
-        <Title className={styles.title}>{titles[page]}</Title>
+        <Title className={styles.title}>
+          {page === "root" ? rootTitle : titles[page]}
+        </Title>
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="Close run settings"
-          title="Close run settings"
+          aria-label={`Close ${navigationLabel}`}
+          title={`Close ${navigationLabel}`}
           onClick={() => changeOpen(false)}
         >
           <X />
@@ -139,8 +160,8 @@ export function ComposerSettings({
     <Button variant="ghost" size="icon-sm" className={className} />
   );
   const triggerProps = {
-    "aria-label": "Composer options",
-    title: "Run settings",
+    "aria-label": label,
+    title: rootTitle,
     // Do not bring the mobile keyboard back when the panel closes.
     onClick: () => {
       if (document.activeElement instanceof HTMLElement)
@@ -150,7 +171,7 @@ export function ComposerSettings({
   return mobile ? (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger render={trigger} {...triggerProps}>
-        <SlidersHorizontal />
+        {kind === "model" ? <SlidersHorizontal /> : <DotsThree />}
       </DialogTrigger>
       <DialogPopup
         bottomStickOnMobile
@@ -163,9 +184,13 @@ export function ComposerSettings({
   ) : (
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger render={trigger} {...triggerProps}>
-        <SlidersHorizontal />
+        {kind === "model" ? <SlidersHorizontal /> : <DotsThree />}
       </PopoverTrigger>
-      <PopoverPopup side="top" align="end" className={styles.popup}>
+      <PopoverPopup
+        side="top"
+        align={kind === "model" ? "start" : "end"}
+        className={styles.popup}
+      >
         {content}
       </PopoverPopup>
     </Popover>

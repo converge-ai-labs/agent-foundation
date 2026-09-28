@@ -370,11 +370,7 @@ it("keeps Goal intent and authored input while toggling options, and disables Go
             }
             canRun
             leadingControls={<span>Full Control</span>}
-            controls={(expanded) => (
-              <span>
-                {expanded ? "Expanded settings" : "Collapsed settings"}
-              </span>
-            )}
+            controls={() => <span>Agent and model summary</span>}
             profile={{ display_name: "Test", color: "#2563eb" }}
             unauthorized={() => {}}
             reconcile={() => {}}
@@ -394,15 +390,16 @@ it("keeps Goal intent and authored input while toggling options, and disables Go
     goal.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    editor.compareDocumentPosition(screen.getByText("Collapsed settings")) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
+    editor.compareDocumentPosition(
+      screen.getByText("Agent and model summary"),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   const options = screen.getByRole("button", { name: "Composer options" });
   fireEvent.click(options);
   expect(options.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByText("Expanded settings")).toBeTruthy();
+  expect(screen.getAllByText("Agent and model summary")).toHaveLength(1);
   fireEvent.click(options);
-  expect(screen.getByText("Collapsed settings")).toBeTruthy();
+  expect(screen.getByText("Agent and model summary")).toBeTruthy();
   expect(draft.mode).toBe("goal");
   expect(draft.doc.getText("text").toString()).toBe(
     "Verify the full objective",

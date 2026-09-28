@@ -104,3 +104,37 @@
     min-height: 44px;
   }
 }
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+.identity > button {
+  flex-shrink: 0;
+}
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.summary > span:not([aria-hidden]) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modelControls {
+  margin-top: 12px;
+}
+@media (pointer: coarse) {
+  .identity > button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

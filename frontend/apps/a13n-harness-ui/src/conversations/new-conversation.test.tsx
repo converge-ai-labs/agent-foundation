@@ -447,7 +447,7 @@ async function fill() {
   });
   await waitFor(() =>
     expect(
-      screen.getByRole("combobox", { name: "Agent" }).textContent,
+      screen.getByLabelText(/^Agent: Writer\. Model:/).textContent,
     ).toContain("Writer"),
   );
   act(() => drafts.get(id)!.doc.getText("text").insert(0, "Build this"));
@@ -638,27 +638,30 @@ it("distinguishes inherited choices and sends an independent model without chang
   mount();
   await fill();
   expect(screen.queryByRole("button", { name: "Composer help" })).toBeNull();
-  await user.click(screen.getByRole("combobox", { name: "Agent" }));
+  await user.click(
+    screen.getByRole("button", { name: "Agent & Model settings" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Agent" }));
   expect(
-    await screen.findByRole("option", { name: /Writer.*Default/ }),
+    await screen.findByRole("button", { name: /Writer.*Default/ }),
   ).toBeTruthy();
   expect(
-    screen.getByRole("option", { name: /Writer.*agent-one/ }),
+    screen.getByRole("button", { name: /Writer.*agent-one/ }),
   ).toBeTruthy();
-  await user.click(screen.getByRole("option", { name: /Reviewer.*agent-two/ }));
+  await user.click(screen.getByRole("button", { name: /Reviewer.*agent-two/ }));
   await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
-  await user.click(screen.getByRole("button", { name: "Model settings" }));
-  await user.click(screen.getByRole("button", { name: "Change model" }));
+  await user.click(screen.getByRole("button", { name: "Model" }));
   expect(
     (await screen.findByRole("button", { name: /Agent default/ })).textContent,
   ).toContain("Other model");
   await user.click(screen.getByRole("button", { name: "Primary model" }));
-  await user.click(screen.getByRole("button", { name: "Quick thinking" }));
+  await user.click(screen.getByRole("button", { name: "Thinking" }));
+  await user.click(screen.getByRole("button", { name: /Quick thinking/ }));
   await user.keyboard("[Escape]");
   await user.click(screen.getByRole("link", { name: "Settings" }));
   await user.click(screen.getByRole("link", { name: "Return to draft" }));
   expect(
-    screen.getByRole("button", { name: "Model settings" }).textContent,
+    screen.getByLabelText(/^Agent: Reviewer\. Model:/).textContent,
   ).toContain("Primary model");
   await waitFor(() =>
     expect(
@@ -795,9 +798,9 @@ it("restores text and choices after a full reload and persists deleting the inpu
     "Build this",
   );
   expect(creations.current!.threadId).toBe(id);
-  expect(
-    screen.getByRole("button", { name: "Model settings" }).textContent,
-  ).toContain("Other model");
+  expect(screen.getByLabelText(/^Agent: .*\. Model:/).textContent).toContain(
+    "Other model",
+  );
   act(() => {
     const text = creations.current!.composer.doc.getText("text");
     text.delete(0, text.length);
@@ -2017,8 +2020,11 @@ it("acknowledges Agent changes without waiting for background detail or refetchi
   );
   const user = userEvent.setup();
   mount(`/threads/${id}`);
-  const agent = await screen.findByRole("combobox", { name: "Agent" });
-  await waitFor(() => expect(agent.textContent).toContain("Writer"));
+  await user.click(
+    await screen.findByRole("button", { name: "Agent & Model settings" }),
+  );
+  const agent = () => screen.getByRole("button", { name: "Agent" });
+  await waitFor(() => expect(agent().textContent).toContain("Writer"));
   const historyReads = reads.filter((path) =>
     path.endsWith("/transcript"),
   ).length;
@@ -2039,16 +2045,16 @@ it("acknowledges Agent changes without waiting for background detail or refetchi
         "fetching",
       ),
     );
-    expect((agent as HTMLButtonElement).disabled).toBe(false);
-    await user.click(agent);
+    expect((agent() as HTMLButtonElement).disabled).toBe(false);
+    await user.click(agent());
     await user.click(
-      await screen.findByRole("option", { name: /Reviewer.*agent-two/ }),
+      await screen.findByRole("button", { name: /Reviewer.*agent-two/ }),
     );
-    await waitFor(() => expect(agent.textContent).toContain("Reviewer"));
+    await waitFor(() => expect(agent().textContent).toContain("Reviewer"));
     await waitFor(() =>
       expect(screen.queryByText("Updating conversation settings…")).toBeNull(),
     );
-    expect((agent as HTMLButtonElement).disabled).toBe(false);
+    expect((agent() as HTMLButtonElement).disabled).toBe(false);
     expect(queries.getQueryState(["thread", id, "detail"])?.fetchStatus).toBe(
       "fetching",
     );
@@ -2065,7 +2071,7 @@ it("acknowledges Agent changes without waiting for background detail or refetchi
     await act(() => refresh);
   }
   // The old detail response must not roll back the confirmed Agent/version.
-  expect(agent.textContent).toContain("Reviewer");
+  expect(agent().textContent).toContain("Reviewer");
   expect(
     queries.getQueryData<Schema<"ThreadDetail">>(["thread", id, "detail"])
       ?.thread.configuration.version,
@@ -2075,8 +2081,11 @@ it("acknowledges Agent changes without waiting for background detail or refetchi
 it("keeps private Model selection responsive during a background detail read", async () => {
   const user = userEvent.setup();
   mount(`/threads/${id}`);
-  const model = await screen.findByRole("button", { name: "Model settings" });
-  await waitFor(() => expect(model.textContent).toContain("Primary model"));
+  await user.click(
+    await screen.findByRole("button", { name: "Agent & Model settings" }),
+  );
+  const model = () => screen.getByRole("button", { name: "Model" });
+  await waitFor(() => expect(model().textContent).toContain("Primary model"));
   let release!: () => void;
   readPaused = new Promise<void>((resolve) => {
     release = resolve;
@@ -2089,10 +2098,9 @@ it("keeps private Model selection responsive during a background detail read", a
     });
   });
   try {
-    await user.click(model);
-    await user.click(screen.getByRole("button", { name: "Change model" }));
+    await user.click(model());
     await user.click(screen.getByRole("button", { name: "Other model" }));
-    expect(model.textContent).toContain("Other model");
+    expect(model().textContent).toContain("Other model");
     expect(drafts.get(id)?.modelId).toBe("model-two");
     expect(writes).toHaveLength(0);
   } finally {

@@ -132,42 +132,7 @@
   }
 }
 
-.runChoices,
-.secondaryChoices {
-  display: contents;
-}
-.runChoice,
-.modelChoice {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.runChoice {
-  flex: 1;
-}
-.modelChoice {
-  flex: 1.4;
-}
-.choiceLabel {
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-}
-.runChoice > button,
-.modelChoice > button {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  height: 32px;
-  padding-inline: 8px;
-  font-size: 13px;
-  font-weight: 400;
-  box-shadow: none;
-}
-.location > button:hover,
-.runChoice > button:hover {
+.location > button:hover {
   background: var(--a13n-hover);
 }
 

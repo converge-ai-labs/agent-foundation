@@ -2,12 +2,13 @@ import { Button, ModalFrame, SearchPicker } from "a13n-ui";
 import { FoldersIcon, ShieldWarning } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import type { Schema } from "../transport/client";
-import { ModelPicker, ModelOptions } from "./model-picker";
+import { ModelOptions } from "./model-picker";
 import { EnvironmentBindings } from "../configuration/environment-bindings";
 import { ProjectFolders } from "../configuration/project-folders";
 import styles from "./new-conversation.module.css";
 import panelStyles from "./composer-settings.module.css";
 import {
+  ComposerSettings,
   SettingsChoices,
   SettingsRow,
   useComposerSettings,
@@ -325,8 +326,75 @@ export function EnvironmentPicker({
   );
 }
 
-export function ThreadRunChoices({
-  expanded = false,
+type RunChoiceProps = ModelControlProps & {
+  catalog?: Schema<"ThreadSelectorCatalog">;
+  agentId: string;
+  defaultAgentId?: string;
+  defaultModelId?: string | null;
+  modelId?: string;
+  disabled: boolean;
+  onAgentChange: (value: string) => void;
+  onModelChange: (value: string | undefined) => void;
+};
+
+export function ThreadRunChoices(props: RunChoiceProps) {
+  const {
+    catalog,
+    agentId,
+    defaultAgentId,
+    defaultModelId,
+    modelId,
+    onControlsChange,
+  } = props;
+  const agent = catalog?.agents.find(
+    (item) => item.agent_id === (agentId || defaultAgentId),
+  );
+  const inheritedModelId = defaultModelId ?? agent?.model_id;
+  const selectedModelId = modelId ?? inheritedModelId;
+  const model = catalog?.models?.find(
+    (item) => item.model_id === selectedModelId,
+  );
+  const agentName =
+    agent?.name ?? (agentId ? `${agentId} (unavailable)` : "Default agent");
+  const modelName =
+    model?.name ??
+    (selectedModelId
+      ? `${selectedModelId} (unavailable)`
+      : "Model unavailable");
+  const selectionKey = agent
+    ? JSON.stringify([agent.agent_id, selectedModelId])
+    : undefined;
+  const previousSelection = useRef(selectionKey);
+  useEffect(() => {
+    if (selectionKey === undefined) return;
+    if (
+      previousSelection.current !== undefined &&
+      previousSelection.current !== selectionKey
+    ) {
+      // Cover a collaborator's Agent change or a new inherited default as well.
+      onControlsChange({});
+    }
+    previousSelection.current = selectionKey;
+  }, [selectionKey, onControlsChange]);
+  return (
+    <div className={panelStyles.identity}>
+      <span
+        className={panelStyles.summary}
+        title={`${agentName} · ${modelName}`}
+        aria-label={`Agent: ${agentName}. Model: ${modelName}`}
+      >
+        <span>{agentName}</span>
+        <span aria-hidden>·</span>
+        <span>{modelName}</span>
+      </span>
+      <ComposerSettings kind="model">
+        <AgentModelChoices {...props} />
+      </ComposerSettings>
+    </div>
+  );
+}
+
+function AgentModelChoices({
   catalog,
   agentId,
   defaultAgentId,
@@ -337,37 +405,12 @@ export function ThreadRunChoices({
   disabled,
   onAgentChange,
   onModelChange,
-}: ModelControlProps & {
-  expanded?: boolean;
-  catalog?: Schema<"ThreadSelectorCatalog">;
-  agentId: string;
-  defaultAgentId?: string;
-  defaultModelId?: string | null;
-  modelId?: string;
-  disabled: boolean;
-  onAgentChange: (value: string) => void;
-  onModelChange: (value: string | undefined) => void;
-}) {
-  const settings = useComposerSettings();
+}: RunChoiceProps) {
+  const settings = useComposerSettings()!;
   const agent = catalog?.agents.find(
     (item) => item.agent_id === (agentId || defaultAgentId),
   );
   const inheritedModelId = defaultModelId ?? agent?.model_id;
-  const selectionKey = agent
-    ? JSON.stringify([agent.agent_id, modelId ?? inheritedModelId])
-    : undefined;
-  const previousSelection = useRef(selectionKey);
-  useEffect(() => {
-    if (settings || selectionKey === undefined) return;
-    if (
-      previousSelection.current !== undefined &&
-      previousSelection.current !== selectionKey
-    ) {
-      // Also cover a collaborator's Agent change or a new inherited default.
-      onControlsChange({});
-    }
-    previousSelection.current = selectionKey;
-  }, [selectionKey, onControlsChange, settings]);
   const agentGroups = [
     {
       label: "Agents",
@@ -405,91 +448,60 @@ export function ThreadRunChoices({
   const model = catalog?.models?.find(
     (item) => item.model_id === (modelId ?? inheritedModelId),
   );
-  if (settings) {
-    if (settings.page === "model")
-      return (
-        <ModelOptions
-          models={catalog?.models ?? []}
-          defaultModelId={inheritedModelId ?? undefined}
-          defaultSource={defaultModelId != null ? "thread" : "agent"}
-          value={modelId}
-          disabled={disabled || !catalog}
-          onChange={(next) => {
-            onModelChange(next);
-            settings.navigate("root");
-          }}
-        />
-      );
-    if (settings.page === "agent")
-      return (
-        <SettingsChoices
-          label="agents"
-          options={agentGroups[0].options}
-          value={agentId}
-          disabled={disabled || !catalog}
-          onChange={(next) => {
-            onAgentChange(next);
-            settings.navigate("root");
-          }}
-        />
-      );
-    if (settings.page !== "root") return null;
+  if (settings.page === "model")
     return (
-      <>
-        <SettingsRow
-          label="Model"
-          value={
-            model?.name ??
-            `${modelId ?? inheritedModelId ?? "Model"} (unavailable)`
-          }
-          disabled={disabled || !catalog}
-          onClick={() => settings.navigate("model")}
-        />
-        <ModelControlPanel
-          model={model}
-          controls={controls}
-          onControlsChange={onControlsChange}
-          disabled={disabled}
-        />
-        <SettingsRow
-          label="Agent"
-          value={agent?.name ?? (agentId || "Default agent")}
-          disabled={disabled || !catalog}
-          onClick={() => settings.navigate("agent")}
-        />
-      </>
+      <ModelOptions
+        models={catalog?.models ?? []}
+        defaultModelId={inheritedModelId ?? undefined}
+        defaultSource={defaultModelId != null ? "thread" : "agent"}
+        value={modelId}
+        disabled={disabled || !catalog}
+        onChange={(next) => {
+          onModelChange(next);
+          settings.navigate("root");
+        }}
+      />
     );
-  }
+  if (settings.page === "agent")
+    return (
+      <SettingsChoices
+        label="agents"
+        options={agentGroups[0].options}
+        value={agentId}
+        disabled={disabled || !catalog}
+        onChange={(next) => {
+          onAgentChange(next);
+          settings.navigate("root");
+        }}
+      />
+    );
   return (
-    <div className={styles.runChoices}>
-      <div className={styles.secondaryChoices} data-expanded={expanded}>
-        <div className={styles.runChoice} title={agent?.name ?? agentId}>
-          <span className={styles.choiceLabel}>Agent</span>
-          <SearchPicker
+    <>
+      {settings.page === "root" && (
+        <>
+          <SettingsRow
             label="Agent"
-            popupClassName={styles.choicePopup}
-            placeholder={agent?.name ?? (agentId || "Default agent")}
-            emptyMessage="No agents found."
-            value={agentId}
+            value={agent?.name ?? (agentId || "Default agent")}
             disabled={disabled || !catalog}
-            onValueChange={onAgentChange}
-            groups={agentGroups}
+            onClick={() => settings.navigate("agent")}
           />
-        </div>
-      </div>
-      <div className={styles.modelChoice}>
-        <span className={styles.choiceLabel}>Model</span>
-        <ModelPicker
-          models={catalog?.models ?? []}
-          defaultModelId={inheritedModelId ?? undefined}
-          defaultSource={defaultModelId != null ? "thread" : "agent"}
-          value={modelId}
-          disabled={disabled || !catalog}
-          onChange={onModelChange}
-          controls={controls}
-          onControlsChange={onControlsChange}
-        />
-      </div>
-    </div>
+          <SettingsRow
+            label="Model"
+            value={
+              model?.name ??
+              `${modelId ?? inheritedModelId ?? "Model"} (unavailable)`
+            }
+            disabled={disabled || !catalog}
+            onClick={() => settings.navigate("model")}
+          />
+        </>
+      )}
+      <ModelControlPanel
+        model={model}
+        controls={controls}
+        onControlsChange={onControlsChange}
+        disabled={disabled || !catalog}
+      />
+    </>
   );
 }

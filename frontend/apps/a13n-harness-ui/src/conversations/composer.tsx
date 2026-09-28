@@ -344,7 +344,7 @@ export function Composer({
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
   onReviewOutcome?: () => void;
-  controls?: (expanded: boolean) => ReactNode;
+  controls?: () => ReactNode;
   leadingControls?: ReactNode;
   modelId?: string;
 }) {
@@ -1126,9 +1126,7 @@ export function Composer({
           >
             <Plus />
           </Button>
-          <div className={styles.composerChoices} hidden={compact}>
-            {controls?.(false)}
-          </div>
+          <div className={styles.composerChoices}>{controls?.()}</div>
           <div className={styles.composerTrailing}>
             {compact && ownerControl}
             {compact &&
@@ -1179,7 +1177,6 @@ export function Composer({
             </span>
           </div>
           <ComposerSettings className={styles.optionsButton}>
-            {controls?.(true)}
             {leadingControls}
             <SettingsHome>
               {goalToggle}

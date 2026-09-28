@@ -54,15 +54,19 @@ Opening a conversation does not dismiss the reminder. Send successfully and clea
 
 These are shared Thread drafts, not a personal task queue. Synchronized drafts can be rediscovered after refreshing the browser while the same server is running; server restart discards them. The separate, not-yet-created New conversation draft still opens through Home.
 
+## Agent and Model settings
+
+The composer footer shows the current Agent and Model names as a read-only summary. Use the adjacent **Agent & Model settings** icon to change Agent, Model, Thinking, Reasoning mode, or Fast mode. Each compact row shows its current choice and opens the available options inside the same panel. Default choices name the inherited setting rather than presenting it as an explicit override.
+
+This layout is shared by new and saved conversations at every width. On phones, the panel opens as a bottom sheet. **Composer options** separately opens Run settings for Working environments, Execution mode, Goal, and Coordinator; wide composers also retain their non-model shortcuts. Long names are truncated without squeezing the action buttons, and the full names are available through the summary's title and accessible label.
+
 ## Fast mode
 
-Open **Model settings** to find the **Fast** button beside the current Model, with thinking controls below. This layout is shared by new and saved conversations; Agent and Model remain in the composer footer, while Goal stays in the header. It lights up when Fast is on and stays unlit otherwise, without a Default label or a separate reset button. Before you click it, it follows the Model's configured Fast setting; an unspecified default stays unlit without changing the Model settings. Click to explicitly request Fast or standard processing for subsequent Sends in this tab. Switching Agent or Model clears the temporary choice and follows the newly selected Model. Fast does not change thinking, save Model configuration, or accompany steering.
+Open **Agent & Model settings → Fast mode** and choose **Default**, **On**, or **Off**. Default follows the Model's configured Fast setting; Provider default leaves the request to the provider rather than claiming Off. On and Off explicitly request Fast or standard processing for subsequent Sends in this tab. Choose Default to clear the override. Switching Agent or Model also clears the temporary choice and follows the newly selected Model. Fast does not change thinking, save Model configuration, or accompany steering.
 
-On phones, Model stays beside Send and Agent is available under **Composer options**. The Model button puts the thinking summary on a second line so long model names have more room. Environment controls wrap in the header instead of squeezing the editor; touch controls have larger targets.
+The Context / Cost / Cache / Time row shows **Fast On**, **Off**, or **Default** from the active or saved Run's captured settings, not the next-Send selection. Default means the Model or provider decides; an unavailable capture shows a dash. This is a request setting, not confirmation of faster service. Fast may increase API cost or subscription credit usage.
 
-The Context / Cost / Cache / Time row shows **Fast On**, **Off**, or **Default** from the active or saved Run's captured settings, not the next-Send toggle. Default means the Model or provider decides; an unavailable capture shows a dash. This is a request setting, not confirmation of faster service. Fast may increase API cost or subscription credit usage.
-
-Controls use the connection's native semantics: OpenAI API and Codex subscription priority processing, reviewed direct Anthropic Fast speed, or reviewed Gemini API priority processing. Unsupported or unreviewed connections show a disabled control with a reason. Claude subscription, Grok subscription, Vertex provisioned throughput, and arbitrary compatible gateways are not assumed to have the same Fast capability. Custom endpoint support and account entitlement remain the provider's responsibility; there is no automatic paid probe or fallback.
+Controls use the connection's native semantics: OpenAI API and Codex subscription priority processing, reviewed direct Anthropic Fast speed, or reviewed Gemini API priority processing. Unsupported or unreviewed connections disable explicit choices with a reason, while keeping Default available to clear a stale override. Claude subscription, Grok subscription, Vertex provisioned throughput, and arbitrary compatible gateways are not assumed to have the same Fast capability. Custom endpoint support and account entitlement remain the provider's responsibility; there is no automatic paid probe or fallback.
 
 ## Navigate conversation inputs
 
@@ -158,7 +162,7 @@ Open **Configuration** to distinguish saved conversation defaults from the envir
 
 ### Thinking for the next Run
 
-The composer places **Thinking** beside Agent and Model. **Default** shows the selected Model's configured thinking and inherits its settings unchanged. The menu comes from the server's model-aware controls: effort levels and token-budget presets depend on the model and installed adapter. Off appears only where supported; minimal effort does not necessarily mean Off. Unknown models keep Default and explain why overrides are unavailable.
+Open **Agent & Model settings → Thinking** in the composer. **Default** shows the selected Model's configured thinking and inherits its settings unchanged. The menu comes from the server's model-aware controls: effort levels and token-budget presets depend on the model and installed adapter. Off appears only where supported; minimal effort does not necessarily mean Off. Unknown models keep Default and explain why overrides are unavailable.
 
 Your explicit choice stays private to the current tab and is sent with the next Run, not with steering. Selecting another Agent or Model clears it. It does not edit Model settings or persist a Thread preference. Running work keeps its captured selection; inspect **Configuration** for the requested thinking captured for that Run. Thinking controls do not change the output-token limit. A disabled budget or custom-settings conflict must be resolved in Model configuration rather than silently reduced or ignored.
 

@@ -217,7 +217,7 @@ settings:
   openai_reasoning_summary: detailed
 ```
 
-The WebUI offers the same independent Reasoning mode control in Model settings, with the Model default always visible and a Use default action. The Model resource editor saves a permanent Standard/Pro choice; its Provider default choice removes the native field. Changing these settings never relabels an already captured Run. Pro access, usage, and latency depend on the provider; selecting Pro does not guarantee entitlement.
+The WebUI offers the same independent Reasoning mode control in Agent & Model settings, with an explicit Default choice that names the inherited target. The Model resource editor saves a permanent Standard/Pro choice; its Provider default choice removes the native field. Changing these settings never relabels an already captured Run. Pro access, usage, and latency depend on the provider; selecting Pro does not guarantee entitlement.
 
 ## Fast mode and service tiers
 

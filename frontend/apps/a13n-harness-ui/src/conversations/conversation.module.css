@@ -785,11 +785,10 @@
   gap: 8px;
   margin-top: 8px;
 }
-.composerHeader[hidden],
-.composerChoices[hidden] {
+.composerHeader[hidden] {
   display: none;
 }
-.composerChoices:not([hidden]) {
+.composerChoices {
   display: flex;
   flex: 1;
   align-items: center;
@@ -801,9 +800,6 @@
   align-items: center;
   gap: 8px;
   margin-left: auto;
-}
-.composer[data-compact="true"] .composerTrailing {
-  flex: 1;
 }
 .composerTrailing .composerSync {
   margin-left: auto;
