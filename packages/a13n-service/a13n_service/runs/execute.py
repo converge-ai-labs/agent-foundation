@@ -208,7 +208,13 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         revision = await load_revision(session, run.agent_id, run.agent_revision_id)
         options = RunOptions.model_validate(run.options)
         resolved = await agent.resolve(
-            session, principal, scope, revision, authority=authority, override=options.overrides
+            session,
+            principal,
+            scope,
+            revision,
+            authority=authority,
+            override=options.overrides,
+            registry=runtime.registry,
         )
         host = await resolve_host(session, run, principal, scope, resolved, authority=authority)
         assigned = [Offered.of(entry) for entry in await inbox.assigned_entries(session, run.id)]
@@ -394,7 +400,7 @@ class _Attempt:
                 deferred_resume=self.plan.resume,
                 tool_recovery="declared",
                 bindings=host.bindings(
-                    root, self._bindings(policies=host.policies(), resolver=agent.model_resolver(models))
+                    root, self._bindings(policies=host.policies(), resolver=agent.model_resolver(root, models))
                 ),
                 # The call check enforces the run's own request limit across attempts.
                 usage_limits=UsageLimits(request_limit=None),

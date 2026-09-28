@@ -41,11 +41,20 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.capabilities.web import WebCapability
 from a13n_harness.environment import DynamicEnvironmentCapability
+from a13n_harness.metering import ModelUsageBinding
+from a13n_harness.model_affinity import derive_model_affinity_id
+from a13n_harness.models.inference import RequestHeadersModel
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPluginFactoryContext
 from a13n_harness.token_pricing import TokenPricingCapability
 from a13n_harness.tools.client import ClientToolsCapability, ClientToolsSpec
 from a13n_harness.tools.permissions import ToolPermissionsCapability
-from a13n_harness.toolsets.file_media import AgentMediaUnderstandingProvider, NativeInputMediaKind
+from a13n_harness.toolsets.file_media import (
+    AgentMediaUnderstandingProvider,
+    MediaUnderstandingError,
+    MediaUnderstandingRequest,
+    MediaUnderstandingResult,
+    NativeInputMediaKind,
+)
 from a13n_logging import get_logger
 from pydantic import JsonValue
 from pydantic_ai.agent.abstract import AgentRetries
@@ -55,13 +64,14 @@ from pydantic_ai.settings import ModelSettings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import ServiceError
+from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents import definition, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, SubagentSelection, apply_override
 from a13n_service.resources.agents.service import SelectedRevision
 from a13n_service.resources.agents.validation import connection_types, subagent_graph
 from a13n_service.resources.models.media import workspace_media
 from a13n_service.resources.models.runtime import open_model
-from a13n_service.resources.models.service import ResolvedModel, require_understanding, resolve_model
+from a13n_service.resources.models.service import ResolvedModel, model_settings, require_understanding, resolve_model
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
@@ -118,6 +128,7 @@ async def resolve(
     *,
     authority: ExecutionAuthority,
     override: AgentOverride | None,
+    registry: Registry,
 ) -> ResolvedAgent:
     """The revision with the run's override applied, and every model and inline subagent it reaches.
 
@@ -142,6 +153,14 @@ async def resolve(
             try:
                 resolved[kind] = await model(model_id)
                 require_understanding(resolved[kind], kind)
+                selected_model = resolved[kind]
+                model_settings(
+                    selected_model.config,
+                    selected_model.provider,
+                    {},
+                    registry=registry,
+                    field=f"media_understanding.{kind}",
+                )
             except ServiceError as error:
                 if kind in selected:
                     raise
@@ -166,12 +185,25 @@ async def resolve(
                 if config.subagent_mode == "inline"
                 else None,
             )
+        primary = await model(config.model.model_id)
+        model_settings(
+            primary.config, primary.provider, config.model.settings, registry=registry, field="model.settings"
+        )
+        reviewer = None if config.reviewer is None else await model(config.reviewer.model)
+        if reviewer is not None and config.reviewer is not None:
+            model_settings(
+                reviewer.config,
+                reviewer.provider,
+                config.reviewer.model_settings or {},
+                registry=registry,
+                field="reviewer.model_settings",
+            )
         return ResolvedAgent(
             agent_id=agent_id,
             revision_id=revision_id,
             config=config,
-            model=await model(config.model.model_id),
-            reviewer=None if config.reviewer is None else await model(config.reviewer.model),
+            model=primary,
+            reviewer=reviewer,
             media=await media(config),
             connection_types=await connection_types(session, scope.workspace_id, config.connection_tools),
             subagents=subagents,
@@ -197,11 +229,13 @@ async def open_models(stack: AsyncExitStack, runtime: Runtime, agent: ResolvedAg
     return opened
 
 
-def model_resolver(models: Mapping[str, Model]) -> RunModelResolver:
+def model_resolver(agent: ResolvedAgent, models: Mapping[str, Model]) -> RunModelResolver:
     """The run's resolution of the model IDs the definition selects, to the models `open_models` opened."""
 
+    selected = {model.id: model for model in agent.models()}
+
     async def resolve(context: ModelResolutionContext[AgentContext], model_id: str) -> Model:
-        return models[model_id]
+        return _thread_model(selected[model_id], models[model_id], context.deps.thread_id)
 
     return resolve
 
@@ -235,13 +269,39 @@ def build(
     )
 
 
-def media_understanding(agent: ResolvedAgent, models: Mapping[str, Model]) -> AgentMediaUnderstandingProvider:
-    """The agent's media understanding binding; a kind without a selected model is unavailable, never inferred."""
-    return AgentMediaUnderstandingProvider(
-        models={kind: models[model.id] for kind, model in agent.media.items()},
-        model_settings={kind: _settings(model, {}) for kind, model in agent.media.items()},
-        model_ids={kind: model.id for kind, model in agent.media.items()},
-    )
+def _thread_model(selected: ResolvedModel, native: Model, thread_id: str) -> Model:
+    """Bind a detached view, never mutate a client shared by root and child calls."""
+    header = selected.provider.config.get("session_affinity_header")
+    if isinstance(header, str):
+        return RequestHeadersModel(native, common_headers={header: derive_model_affinity_id(thread_id)})
+    return native
+
+
+@dataclass(frozen=True, slots=True)
+class _MediaUnderstanding:
+    agent: ResolvedAgent
+    models: Mapping[str, Model]
+
+    async def understand(
+        self, request: MediaUnderstandingRequest, *, usage: ModelUsageBinding | None = None
+    ) -> MediaUnderstandingResult:
+        # Media calls bypass the primary resolver. Their existing usage binding names the calling Thread.
+        if usage is None or usage.owner is None:
+            raise MediaUnderstandingError("media_understanding_context_missing")
+        provider = AgentMediaUnderstandingProvider(
+            models={
+                kind: _thread_model(model, self.models[model.id], usage.owner.thread_id)
+                for kind, model in self.agent.media.items()
+            },
+            model_settings={kind: _settings(model, {}) for kind, model in self.agent.media.items()},
+            model_ids={kind: model.id for kind, model in self.agent.media.items()},
+        )
+        return await provider.understand(request, usage=usage)
+
+
+def media_understanding(agent: ResolvedAgent, models: Mapping[str, Model]) -> _MediaUnderstanding:
+    """The agent's media binding, with affinity derived only when its calling Thread is known."""
+    return _MediaUnderstanding(agent, models)
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,16 +391,10 @@ class _Host:
 
 def _settings(model: ResolvedModel, settings: Mapping[str, JsonValue]) -> ModelSettings:
     """The agent's native settings layered over the model's own defaults."""
-    defaults = {
-        name: value
-        for name, value in (
-            ("max_tokens", model.config.max_tokens),
-            ("temperature", model.config.temperature),
-            ("top_p", model.config.top_p),
-        )
-        if value is not None
-    }
-    return cast(ModelSettings, {**defaults, **settings})
+    effective = {**model.config.defaults(), **settings}
+    if isinstance(headers := effective.get("extra_headers"), dict):
+        effective["extra_headers"] = {name.lower(): value for name, value in headers.items()}
+    return cast(ModelSettings, effective)
 
 
 def _characteristics(agent: ResolvedAgent) -> HarnessModelCharacteristics:

@@ -105,7 +105,9 @@ export function ModelSection({
           readOnly={readOnly}
           label={t("Provider-specific settings")}
           hideLabel
-          hint={t("JSON passed to the provider on top of the model defaults.")}
+          hint={t(
+            "Request overrides, including extra_body and extra_headers. Store secrets on the provider.",
+          )}
           code
           value={draft.settings}
           onChange={draft.setSettings}

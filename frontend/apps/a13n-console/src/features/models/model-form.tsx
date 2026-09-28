@@ -49,8 +49,20 @@ type Draft = {
 /** The request defaults a model's configuration carries, as Settings JSON. */
 function requestDefaults(config?: Schema["ModelConfig-Output"]) {
   return Object.fromEntries(
-    (["max_tokens", "temperature", "top_p"] as const).flatMap((name) =>
-      config?.[name] == null ? [] : [[name, config[name]]],
+    (
+      [
+        "max_tokens",
+        "temperature",
+        "top_p",
+        "extra_body",
+        "extra_headers",
+      ] as const
+    ).flatMap((name) =>
+      config?.[name] == null ||
+      (typeof config[name] === "object" &&
+        Object.keys(config[name]).length === 0)
+        ? []
+        : [[name, config[name]]],
     ),
   );
 }
@@ -108,9 +120,7 @@ export function useModelDraft({
     JSON.stringify(requestDefaults(original?.value.config), null, 2),
   );
   const [initialSettingsJson] = useState(settingsJson);
-  const [settingsExpanded, setSettingsExpanded] = useState(
-    Object.keys(requestDefaults(original?.value.config)).length > 0,
-  );
+  const [settingsExpanded, setSettingsExpanded] = useState(false);
   const providers = useQuery({
     queryKey: ["model-provider-choices", scope.kind, scope.id],
     enabled: active,
@@ -434,7 +444,7 @@ export function ModelFields({ model }: { model: ModelDraft }) {
         <TextAreaField
           label={t("Settings JSON")}
           hint={t(
-            "Model request defaults. Agent and Run settings can override them.",
+            "Request defaults, including extra_body and extra_headers. Store secrets on the provider.",
           )}
           value={model.settingsJson}
           onChange={model.setSettingsJson}

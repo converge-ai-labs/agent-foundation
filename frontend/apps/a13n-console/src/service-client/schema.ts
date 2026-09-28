@@ -5030,6 +5030,14 @@ export interface components {
     /** ModelConfig */
     "ModelConfig-Input": {
       characteristics?: components["schemas"]["HarnessModelCharacteristics-Input"];
+      /** Extra Body */
+      extra_body?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Extra Headers */
+      extra_headers?: {
+        [key: string]: string;
+      };
       /** Max Tokens */
       max_tokens?: number | null;
       /** Model Api */
@@ -5044,6 +5052,14 @@ export interface components {
     /** ModelConfig */
     "ModelConfig-Output": {
       characteristics?: components["schemas"]["HarnessModelCharacteristics-Output"];
+      /** Extra Body */
+      extra_body?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Extra Headers */
+      extra_headers?: {
+        [key: string]: string;
+      };
       /** Max Tokens */
       max_tokens?: number | null;
       /** Model Api */

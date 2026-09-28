@@ -6431,6 +6431,25 @@
           "characteristics": {
             "$ref": "#/components/schemas/HarnessModelCharacteristics-Input"
           },
+          "extra_body": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Extra Body",
+            "type": "object"
+          },
+          "extra_headers": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$": {
+                "maxLength": 2048,
+                "pattern": "^[\\x20-\\x7e]*$",
+                "type": "string"
+              }
+            },
+            "title": "Extra Headers",
+            "type": "object"
+          },
           "max_tokens": {
             "anyOf": [
               {
@@ -6495,6 +6514,25 @@
         "properties": {
           "characteristics": {
             "$ref": "#/components/schemas/HarnessModelCharacteristics-Output"
+          },
+          "extra_body": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Extra Body",
+            "type": "object"
+          },
+          "extra_headers": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$": {
+                "maxLength": 2048,
+                "pattern": "^[\\x20-\\x7e]*$",
+                "type": "string"
+              }
+            },
+            "title": "Extra Headers",
+            "type": "object"
           },
           "max_tokens": {
             "anyOf": [

@@ -59,7 +59,28 @@ Create the model in `/api/v1/organizations/{organization_id}/models` with its `c
 
 A model spends its provider's credential, so creating a model or changing its `config` needs `write` on the provider as well; models of a shared provider are managed with organization-scope grants. A workspace provider serves only its own workspace's models.
 
-Change a model with `PATCH` (`name`, `description`, `config`, `pricing`, `catalog_ref`, `enabled`) and its `If-Match`. Disable it with `{"enabled": false}`; models have no delete operation. Model-API-specific settings, such as reasoning effort, belong to the agent revision that uses the model (`model.settings`), where they are validated against the provider type's `settings_schemas`. These schemas leave out transport and raw request options (`extra_body`, `extra_headers`, `timeout`), upstream model selection and provider-account conversation state (such as `openai_previous_response_id`, `bedrock_inference_profile` or `openrouter_models`), and server-side tools a provider bills and runs outside the request, such as `openai_native_tools`, which `max_usage` cannot see: the settings form simply does not offer them.
+Change a model with `PATCH` (`name`, `description`, `config`, `pricing`, `catalog_ref`, `enabled`) and its `If-Match`. Disable it with `{"enabled": false}`; models have no delete operation. Model-API-specific settings, such as reasoning effort, belong to the agent revision that uses the model (`model.settings`), where they are validated against the provider type's `settings_schemas`. These schemas leave out operator timeouts, upstream model selection and provider-account conversation state (such as `openai_previous_response_id`, `bedrock_inference_profile`, `openrouter_models` or auxiliary `openai_moderation` models), and server-side tools such as `openai_native_tools`, which `max_usage` cannot fully account for.
+
+### Advanced request settings
+
+Use **Advanced → Settings JSON** on a Model, or **Provider-specific settings** on an Agent. Both accept `extra_headers`; `openai.responses` and `openai.chat_completions` also accept `extra_body` for inference options the installed SDK does not yet know:
+
+```json
+{
+  "extra_body": {"reasoning": {"effort": "future-effort"}},
+  "extra_headers": {"x-experiment": "candidate"}
+}
+```
+
+This Responses example illustrates passthrough, not an upstream-supported effort value. Chat Completions uses its own wire fields, such as `reasoning_effort`. Ordinary typed settings remain preferable when available. Raw values win over ordinary inference settings at the SDK's final shallow merge; a raw nested object replaces its generated counterpart rather than merging into it. Model selection, messages, tools, structured output and session state cannot be changed this way. Use native `openai_text_verbosity` instead of raw Responses `text`, whose container also carries structured output.
+
+Omit either object to inherit its Model default; set it to `{}` to clear that default for the Agent or Run. A Run's settings replace the Agent's entire settings object, so `settings: {}` still inherits Model defaults. To clear both defaults, send `settings: {"extra_body": {}, "extra_headers": {}}`. `null` is not accepted for these objects. Model and Provider changes apply to later attempts, including resumed work; settings are checked again before requests.
+
+Header values here are **readable configuration**. Put secrets in the Provider's credential or encrypted extra headers instead. Request settings cannot replace authentication, protocol, existing Provider header names or its session-affinity header, regardless of case.
+
+### Gateway session affinity
+
+Set **Session affinity** in the Provider's advanced connection settings to a header your gateway recognizes. The Service sends a stable Thread-derived UUID on every model path, including reviewers and media understanding. Continuing a Thread keeps the value; children and forks receive their own. It does not use the Service Session ID or Run ID, and clearing request header defaults does not disable it. The gateway must implement routing for that header; selecting a preset does not configure the gateway.
 
 A model's `config.model_api` must still be one the deployment offers; checking its settings, such as when an agent revision is saved, answers `503 unavailable` with `{"dependency": "model_api:<api>"}` for one it no longer does.
 

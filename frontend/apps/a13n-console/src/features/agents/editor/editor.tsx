@@ -83,6 +83,7 @@ export function AgentEditor({
     : undefined;
   const efforts = thinkingEfforts(settingsSchema);
   const thinkingOptions = [
+    { value: "default", label: t("Default") },
     { value: "true", label: t("On (default effort)") },
     { value: "false", label: t("Off") },
     ...efforts.map((value) => ({
@@ -90,7 +91,7 @@ export function AgentEditor({
       label: t(value.charAt(0).toUpperCase() + value.slice(1)),
     })),
     ...(draft.thinking &&
-    !["true", "false", ...efforts].includes(draft.thinking)
+    !["default", "true", "false", ...efforts].includes(draft.thinking)
       ? [{ value: draft.thinking, label: draft.thinking }]
       : []),
   ];

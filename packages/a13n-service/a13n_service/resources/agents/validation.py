@@ -27,7 +27,7 @@ from a13n_service.resources.connections.service import validate_selection
 from a13n_service.resources.connections.tables import ConnectionRow
 from a13n_service.resources.environment_templates.service import resolve_template
 from a13n_service.resources.memories.service import resolve_memory
-from a13n_service.resources.models.service import resolve_media_model, resolve_model
+from a13n_service.resources.models.service import model_settings, resolve_media_model, resolve_model
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import WebProviderRow
 from a13n_service.resources.skills.pins import require_pins
@@ -74,17 +74,21 @@ async def validate_config(
     )
     with at_field("model.model_id"):
         model = await resolve_model(session, actor, scope, config.model.model_id, verb=verb, authority=authority)
-    registry.check_model_settings(model.config.model_api, config.model.settings, field="model.settings")
+    model_settings(model.config, model.provider, config.model.settings, registry=registry, field="model.settings")
     if config.reviewer is not None:
         with at_field("reviewer.model"):
             reviewer = await resolve_model(session, actor, scope, config.reviewer.model, verb=verb, authority=authority)
-        if config.reviewer.model_settings is not None:
-            registry.check_model_settings(
-                reviewer.config.model_api, config.reviewer.model_settings, field="reviewer.model_settings"
-            )
+        model_settings(
+            reviewer.config,
+            reviewer.provider,
+            config.reviewer.model_settings or {},
+            registry=registry,
+            field="reviewer.model_settings",
+        )
     for kind, model_id in config.media_understanding.selections().items():
         with at_field(f"media_understanding.{kind}"):
-            await resolve_media_model(session, actor, scope, kind, model_id, verb=verb, authority=authority)
+            media = await resolve_media_model(session, actor, scope, kind, model_id, verb=verb, authority=authority)
+            model_settings(media.config, media.provider, {}, registry=registry, field=f"media_understanding.{kind}")
     types: dict[str, str] = {}
     for index, selection in enumerate(config.connection_tools):
         with at_field(f"connection_tools.{index}"):

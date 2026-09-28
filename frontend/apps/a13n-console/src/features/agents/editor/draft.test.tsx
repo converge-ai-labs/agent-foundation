@@ -138,3 +138,28 @@ it("publishes default memory mounts and keeps them out of advanced JSON", () => 
   const restated = buildDraftConfig(draft.current, undefined, asIs);
   expect(restated.ok).toBe(false);
 });
+
+it("preserves raw settings and distinguishes inheritance from explicit clearing", () => {
+  const settings = {
+    extra_body: { reasoning: { effort: "future" } },
+    extra_headers: { "x-experiment": "on" },
+  };
+  const draft = draftFor({ model: { model_id: vision, settings } });
+  expect(draft.current.thinking).toBe("default");
+  let built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.model.settings).toEqual(settings);
+  act(() =>
+    draft.current.setSettings('{"extra_body": {}, "extra_headers": {}}'),
+  );
+  built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.model.settings).toEqual({
+    extra_body: {},
+    extra_headers: {},
+  });
+  act(() => draft.current.setSettings("{}"));
+  built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.model.settings).toEqual({});
+  act(() => draft.current.setThinking("false"));
+  built = buildDraftConfig(draft.current, undefined, asIs);
+  expect(built.ok && built.config.model.settings).toEqual({ thinking: false });
+});

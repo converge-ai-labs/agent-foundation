@@ -15,7 +15,7 @@ import {
 export function thinkingSelection(value: unknown): string {
   if (value === false) return "false";
   if (typeof value === "string") return value;
-  return "true";
+  return value === true ? "true" : "default";
 }
 
 /** The effort levels a calling API's settings schema allows for `thinking`. */
@@ -136,12 +136,16 @@ export function buildDraftConfig(
       );
     modelSettings = {
       ...extraSettings,
-      thinking:
-        draft.thinking === "true"
-          ? true
-          : draft.thinking === "false"
-            ? false
-            : draft.thinking,
+      ...(draft.thinking === "default"
+        ? {}
+        : {
+            thinking:
+              draft.thinking === "true"
+                ? true
+                : draft.thinking === "false"
+                  ? false
+                  : draft.thinking,
+          }),
       ...(draft.maxTokens ? { max_tokens: Number(draft.maxTokens) } : {}),
     };
     if (settingsSchema) validateSettings(settingsSchema, modelSettings);

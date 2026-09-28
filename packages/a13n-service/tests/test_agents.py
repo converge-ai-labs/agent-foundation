@@ -404,8 +404,11 @@ async def test_references_are_checked_at_their_field_path(service) -> None:  # t
         ({"model": {"model_id": missing["mdl"]}}, "model.model_id"),
         ({"reviewer": {"model": missing["mdl"]}}, "reviewer.model"),
         ({"model": {"model_id": model_id, "settings": {"temperature": "warm"}}}, "model.settings.temperature"),
-        # The model's provider resource owns the transport; settings cannot carry another request body or timeout.
-        ({"model": {"model_id": model_id, "settings": {"extra_body": {"model": "other"}}}}, "model.settings"),
+        # Raw inference cannot change upstream selection, and timeouts remain operator-owned.
+        (
+            {"model": {"model_id": model_id, "settings": {"extra_body": {"model": "other"}}}},
+            "model.settings.extra_body",
+        ),
         ({"model": {"model_id": model_id, "settings": {"timeout": 30}}}, "model.settings"),
         ({"reviewer": {"model": model_id, "model_settings": {"unknown": 1}}}, "reviewer.model_settings"),
         ({"media_understanding": {"image": model_id}}, "media_understanding.image"),
@@ -904,7 +907,15 @@ async def test_workspace_media_defaults_fill_what_an_agent_leaves_unselected(ser
     async def media() -> dict[str, str]:
         async with short_session(service.runtime.storage) as session:
             revision = await select_revision(session, tenant.workspace_id, agent["id"], None)
-            resolved = await resolve(session, principal, scope, revision, authority=authority, override=None)
+            resolved = await resolve(
+                session,
+                principal,
+                scope,
+                revision,
+                authority=authority,
+                override=None,
+                registry=service.runtime.registry,
+            )
         return {kind: model.id for kind, model in resolved.media.items()}
 
     assert await media() == {"image": reader}

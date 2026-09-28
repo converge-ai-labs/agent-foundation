@@ -781,7 +781,8 @@ async def test_model_settings_follow_the_schema_of_their_calling_api(service) ->
     ):
         with pytest.raises(ServiceError) as refused:
             check(model_api, {key: value}, field="model.settings")
-        assert refused.value.details["field"] == "model.settings", key
+        expected = f"model.settings.{key}" if key in {"extra_body", "extra_headers"} else "model.settings"
+        assert refused.value.details["field"] == expected, key
 
 
 async def test_web_backends_carry_each_selected_account(service) -> None:  # type: ignore[no-untyped-def]

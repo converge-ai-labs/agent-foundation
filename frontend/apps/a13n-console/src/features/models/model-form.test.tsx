@@ -125,6 +125,8 @@ const model = {
     model_api: "openai.responses",
     characteristics: { capabilities: ["image_understanding"] },
     max_tokens: 4096,
+    extra_body: { reasoning: { effort: "future" } },
+    extra_headers: { "x-experiment": "candidate" },
   },
   pricing: pricing("company-smart", "1", "2"),
   catalog_ref: { provider: "openai", model: "gpt-5.5" },
@@ -476,6 +478,8 @@ it("saves an edited model under its ETag without offering a billable test", asyn
         enabled: false,
         config: {
           max_tokens: 4096,
+          extra_body: model.config.extra_body,
+          extra_headers: model.config.extra_headers,
           model_name: "company-smart",
           model_api: "openai.responses",
           characteristics: { capabilities: ["image_understanding"] },

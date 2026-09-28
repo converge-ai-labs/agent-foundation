@@ -4,11 +4,13 @@ from datetime import date, datetime
 from typing import Literal
 
 from a13n_harness.pricing import ModelPricingEntry
+from a13n_harness.providers.model.headers import ExtraHeaders
 from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from a13n_service.infra.ids import ObjectId
+from a13n_service.providers.model_settings import JsonSettings
 
 
 class ModelConfig(BaseModel):
@@ -22,6 +24,25 @@ class ModelConfig(BaseModel):
     max_tokens: int | None = Field(default=None, ge=1, le=1000000)
     temperature: float | None = Field(default=None, ge=0, le=2)
     top_p: float | None = Field(default=None, gt=0, le=1)
+    extra_body: JsonSettings = Field(default_factory=dict)
+    extra_headers: ExtraHeaders = Field(default_factory=dict)
+
+    def defaults(self) -> dict[str, JsonValue]:
+        """Only configured defaults; APIs without raw-body support do not receive an empty placeholder."""
+        values: dict[str, JsonValue] = {
+            name: value
+            for name, value in (
+                ("max_tokens", self.max_tokens),
+                ("temperature", self.temperature),
+                ("top_p", self.top_p),
+            )
+            if value is not None
+        }
+        if self.extra_body:
+            values["extra_body"] = dict(self.extra_body)
+        if self.extra_headers:
+            values["extra_headers"] = dict(self.extra_headers)
+        return values
 
 
 class CatalogRef(BaseModel):

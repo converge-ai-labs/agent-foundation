@@ -4,17 +4,17 @@ Skill and subagent edges may omit `revision_id` on input; revision creation and 
 to the head's default revision, so a stored configuration always names exact revisions.
 """
 
-import json
 from datetime import datetime
 from typing import Annotated, Literal, Self
 
 from a13n_harness.capabilities import ToolReviewConfig
 from a13n_harness.tools.client import ClientToolDefinition
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 from pydantic_ai.usage import UsageLimits
 
 from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
+from a13n_service.providers.model_settings import JsonSettings
 from a13n_service.resources.agents.toolsets import ToolsetOverrides, Toolsets, default_toolsets
 from a13n_service.resources.connections.schemas import ConnectionSelection
 from a13n_service.resources.memories.schemas import MemoryMounts
@@ -31,21 +31,7 @@ AgentDescription = Annotated[str, StringConstraints(max_length=8192)]
 JsonObject = dict[str, JsonValue]
 
 
-def bounded_settings(settings: JsonObject) -> JsonObject:
-    """Native model settings stay small and shallow; the provider interprets them at request time."""
-    if len(json.dumps(settings, ensure_ascii=False, allow_nan=False).encode()) > 64 * 1024:
-        raise ValueError("Model settings exceed 64 KiB")
-
-    def depth(value: JsonValue) -> int:
-        children = value.values() if isinstance(value, dict) else value if isinstance(value, list) else ()
-        return 1 + max(map(depth, children), default=0)
-
-    if depth(settings) > 16:
-        raise ValueError("Model settings nest deeper than 16 levels")
-    return settings
-
-
-ModelSettings = Annotated[JsonObject, AfterValidator(bounded_settings)]
+ModelSettings = JsonSettings
 
 
 class _Frozen(BaseModel):

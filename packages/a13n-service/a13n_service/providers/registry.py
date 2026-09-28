@@ -117,7 +117,9 @@ class Registry:
             )
         return definition
 
-    def check_model_settings(self, model_api: str, settings: Mapping[str, JsonValue], *, field: str) -> None:
+    def check_model_settings(
+        self, model_api: str, settings: Mapping[str, JsonValue], *, field: str
+    ) -> dict[str, JsonValue]:
         """Refuse settings the calling API does not accept, naming the most relevant failing path under `field`; an
         API no model type offers any more is an unavailable dependency, as an unregistered type is."""
         schema = self.model_settings.get(model_api)
@@ -125,7 +127,7 @@ class Registry:
             raise ServiceError(
                 "unavailable", f"Model API {model_api} is not available", {"dependency": f"model_api:{model_api}"}
             )
-        check_settings(schema, settings, field=field)
+        return check_settings(schema, settings, field=field)
 
     def environment_endpoint(self, type_: str, config: Mapping[str, JsonValue]) -> str | None:
         """The URL of the endpoint an environment account names that Service processes dial, a remote Docker
