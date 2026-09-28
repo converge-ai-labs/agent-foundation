@@ -255,9 +255,10 @@ async def test_retained_generation_decodes_historical_markdown_models_without_ch
 
 
 @pytest.mark.parametrize("child_name", ["explorer", "agent-worker"])
+@pytest.mark.parametrize("inject_apps", [False, True])
 @pytest.mark.anyio
 async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_agent_recipe(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child_name: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child_name: str, inject_apps: bool
 ) -> None:
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
@@ -268,6 +269,28 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
     path = _source(tmp_path, ("explorer",))
+    if inject_apps:
+        import sys
+
+        from .test_mcp_apps_connections import _SERVER
+
+        document = yaml.safe_load(path.read_text())
+        document["webui"] = {"mcp_apps": {"enabled": True, "servers": ["mcp-counter"]}}
+        path.write_text(yaml.safe_dump(document))
+        script = tmp_path / "counter.py"
+        script.write_text(_SERVER)
+        (tmp_path / "mcp").mkdir()
+        (tmp_path / "mcp/counter.yaml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "1",
+                    "kind": "mcp_server",
+                    "id": "mcp-counter",
+                    "name": "Counter",
+                    "transport": {"command": sys.executable, "arguments": [str(script)]},
+                }
+            )
+        )
     parent_path = tmp_path / "agents/main.yaml"
     parent = yaml.safe_load(parent_path.read_text())
     parent["subagents"] = [{"agent": "agent-worker"}]
@@ -295,6 +318,10 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
     reconstruct = AgentReconstructor.reconstruct
 
     def capture_memory(self, composition, **kwargs):
+        assert tuple(item.server_id for item in composition.root.mcp_servers) == (
+            ("mcp-counter",) if inject_apps else ()
+        )
+        assert all(not item.generic_selected for item in composition.root.mcp_servers)
         if kwargs.get("memory_positions"):
             memory_restores.append(dict(kwargs["memory_positions"]))
         return reconstruct(self, composition, **kwargs)
@@ -353,6 +380,7 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False),
         configuration_path=path,
+        host_mode="webui" if inject_apps else "local",
     ) as app:
         selected_root = tmp_path / "run-only"
         selected_root.mkdir()
@@ -370,6 +398,7 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
         for execution in page.executions:
             child = await app.get_thread(execution.child_thread_id)
             assert child.thread.configuration.local_roots == (str(selected_root),)
+            assert child.thread.configuration.mcp_server_ids == ()
             head = await app._store.child_executions.get(execution.execution_id)
             assert head is not None and head.selected_checkpoint is not None
             checkpoint = await app._store.objects.read_model(head.selected_checkpoint, StoredChildCheckpoint)

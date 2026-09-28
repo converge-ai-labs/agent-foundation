@@ -60,7 +60,7 @@ def test_demo_configuration_isolation_and_cleanup(tmp_path: Path, monkeypatch, o
         assert document.webui.mcp_apps.enabled
         assert document.webui.mcp_apps.servers == ("mcp-counter",)
         agent = loaded.configuration.agents["agent-counter"]
-        assert agent.mcp_servers == ("mcp-counter",)
+        assert loaded.configuration.selected_mcp_servers(agent) == ()
         assert agent.capabilities[0].configuration == {"rules": {"mcp/mcp-counter/reset_counter": "ask"}}
         assert prog_name == "a13n-harness-ui"
         assert args == [

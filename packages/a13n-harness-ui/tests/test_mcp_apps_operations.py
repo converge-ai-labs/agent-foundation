@@ -42,7 +42,7 @@ async def apps(tmp_path: Path):
     server["transport"] = {"command": sys.executable, "arguments": [str(script)]}
     mcp.write_text(yaml.safe_dump(server))
     source = await load_harness_ui_configuration(config)
-    resolver = AgentCompositionResolver(_catalog())
+    resolver = AgentCompositionResolver(_catalog(), host_mode="webui")
     async with open_local_store(StorageSettings(data_root=tmp_path / "state")) as store:
         configurations = CompositionAcceptanceService(store, resolver)
         await configurations.accept(source, expected_current_digest=None)
@@ -219,6 +219,45 @@ async def _child(operations: AppOperations):
     )
     assert (await owners.resolve("child")).route == (edge.name,)
     return edge
+
+
+@pytest.mark.parametrize("keep_generic", [False, True])
+async def test_app_selection_is_independent_of_generic_root_and_child_selection(apps, keep_generic) -> None:
+    from a13n_harness_ui.composition import ThreadCompositionSelection
+
+    operations, reference = apps
+    owners = operations.owners
+    connections = operations.snapshots.connections
+    connection = connections.get("thread-1", "mcp-docs")
+    thread = await owners.store.threads.get("thread-1")
+    if not keep_generic:
+        thread = await owners.store.threads.update_configuration(
+            thread_id=thread.thread_id,
+            expected_version=thread.configuration.version,
+            replacement=thread.configuration.model_copy(update={"version": 2, "mcp_server_ids": ()}),
+        )
+    await owners.retire_unselected(connections)
+    assert not connection.retired
+    view = await operations.activate(reference)
+    assert view.connection_generation == connection.generation
+    await _child(operations)
+    assert (await owners.resolve("child")).recipe("mcp-docs").apps_enabled
+
+    path = operations.configuration_root / "a13n-harness-ui.yaml"
+    document = yaml.safe_load(path.read_text())
+    document["webui"]["mcp_apps"]["servers"] = []
+    path.write_text(yaml.safe_dump(document))
+    await _accept(operations)
+    await owners.retire_unselected(connections)
+    assert connection.retired
+    with pytest.raises(HarnessUiError, match="not enabled"):
+        (await owners.resolve("child")).recipe("mcp-docs")
+    with pytest.raises(HarnessUiError, match="not enabled"):
+        await operations.activate(reference)
+    source = await owners.configurations.current()
+    node = owners.resolver.resolve_agent(source, ThreadCompositionSelection.from_thread(thread))
+    assert tuple(item.server_id for item in node.mcp_servers) == (("mcp-docs",) if keep_generic else ())
+    assert all(not item.apps_enabled for item in node.mcp_servers)
 
 
 async def test_current_child_route_uses_current_parent_policy_and_never_historical_fallback(apps) -> None:

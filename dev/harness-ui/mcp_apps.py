@@ -40,7 +40,6 @@ def write_configuration(root: Path, model_url: str) -> Path:
             "name": "Counter demo",
             "model": "model-demo",
             "instructions": "Open the counter when asked. This demonstration uses fictional data.",
-            "mcp_servers": ["mcp-counter"],
             "capabilities": [
                 {
                     "capability": "ToolPermissionsCapability",

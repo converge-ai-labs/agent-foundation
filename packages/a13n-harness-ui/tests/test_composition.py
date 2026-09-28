@@ -1210,6 +1210,121 @@ tool_proxy:
     assert source.agents["agent-assistant"].tool_proxy.groups["knowledge"].mcp_servers == ("mcp-docs",)
 
 
+@pytest.mark.parametrize("host_mode", ["local", "webui"])
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("generic_ids", [(), ("mcp-docs",)])
+async def test_apps_union_preserves_generic_selection_for_every_child(
+    tmp_path: Path, host_mode, enabled: bool, generic_ids: tuple[str, ...]
+) -> None:
+    import yaml
+    from a13n_harness_ui.subagent_operator import _initial_child_configuration
+    from a13n_harness_ui.subagent_operator import _selection as child_selection
+
+    path = _write_source(tmp_path)
+    document = yaml.safe_load(path.read_text())
+    document["webui"] = {"mcp_apps": {"enabled": enabled, "servers": ["mcp-docs", "mcp-app"]}}
+    path.write_text(yaml.safe_dump(document))
+    (tmp_path / "mcp/app.yaml").write_text(
+        "schema_version: '1'\nkind: mcp_server\nid: mcp-app\nname: App\ntransport: {url: 'https://example.test/app'}\n"
+    )
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent_path.write_text(
+        agent_path.read_text()
+        + "tool_proxy:\n  groups:\n    apps:\n      description: App tools\n      mcp_servers: [mcp-app]\n"
+    )
+    # Exercise nested Agent-resource children as well as root Markdown inheritance.
+    reviewer_path = tmp_path / "agents/reviewer.yaml"
+    reviewer_path.write_text(
+        reviewer_path.read_text().replace("subagents: []", "subagents: [{markdown: subagent-explorer}]")
+    )
+    source = await load_harness_ui_configuration(path)
+    resolver = AgentCompositionResolver(_catalog(), host_mode=host_mode)
+    composition = resolver.resolve_run(source, replace(_selection(), mcp_server_ids=generic_ids))
+    injected = enabled and host_mode == "webui"
+    expected = tuple(dict.fromkeys((*generic_ids, *(("mcp-docs", "mcp-app") if injected else ()))))
+    root = composition.root
+    assert tuple(item.server_id for item in root.mcp_servers) == expected
+    assert tuple(item.server_id for item in root.mcp_servers if item.generic_selected) == generic_ids
+    assert all(item.apps_enabled == injected for item in root.mcp_servers)
+    assert root.tool_proxy is not None
+    if injected:
+        assert root.tool_proxy.groups["apps"].mcp_servers == ("mcp-app",)
+    else:
+        assert root.tool_proxy.groups == {}
+    assert root.children[0].definition.tool_proxy == root.tool_proxy
+    assert root.children[0].definition.tools == ("glob", "grep")
+    assert source.agents["agent-assistant"].mcp_servers is None
+    assert source.agents["agent-reviewer"].mcp_servers == ()
+    assert type(composition).model_validate_json(composition.model_dump_json()) == composition
+
+    for edge in (*root.children, *root.children[1].definition.children):
+        inherited = generic_ids if edge is root.children[0] else ()
+        node = edge.definition
+        assert tuple(item.server_id for item in node.mcp_servers if item.generic_selected) == inherited
+        assert tuple(item.server_id for item in node.mcp_servers) == (
+            tuple(dict.fromkeys((*inherited, "mcp-docs", "mcp-app"))) if injected else inherited
+        )
+        configuration = _initial_child_configuration(composition, edge)
+        assert configuration.mcp_server_ids == inherited
+        # Child admission/resume reapplies the union to its generic sticky selection.
+        resumed = resolver.resolve_run(source, child_selection("child", configuration), parent_node=root)
+        assert resumed.root.mcp_servers == node.mcp_servers
+
+    # Removing the Apps selection affects future resolution, not captured recipes.
+    document["webui"]["mcp_apps"]["servers"] = []
+    path.write_text(yaml.safe_dump(document))
+    changed = await load_harness_ui_configuration(path)
+    for edge in root.children:
+        configuration = _initial_child_configuration(composition, edge)
+        resumed = resolver.resolve_run(changed, child_selection("child", configuration), parent_node=root)
+        assert tuple(item.server_id for item in resumed.root.mcp_servers) == configuration.mcp_server_ids
+        assert all(not item.apps_enabled for item in resumed.root.mcp_servers)
+    assert tuple(item.server_id for item in root.mcp_servers) == expected
+
+
+async def test_apps_union_supports_both_full_server_selections(tmp_path: Path) -> None:
+    from a13n_harness_ui.configuration.models import McpAppsConfiguration
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    generic_ids = tuple(f"mcp-generic-{index}" for index in range(128))
+    app_ids = tuple(f"mcp-app-{index}" for index in range(128))
+    template = source.mcp_servers["mcp-docs"]
+    source = source.model_copy(
+        update={
+            "mcp_servers": {
+                **source.mcp_servers,
+                **{key: template.model_copy(update={"id": key}) for key in (*generic_ids, *app_ids)},
+            },
+            "document": source.document.model_copy(
+                update={
+                    "webui": source.document.webui.model_copy(
+                        update={
+                            "mcp_apps": McpAppsConfiguration(enabled=True, servers=app_ids),
+                        }
+                    ),
+                }
+            ),
+        }
+    )
+    composition = AgentCompositionResolver(_catalog(), host_mode="webui").resolve_run(
+        source, replace(_selection(), mcp_server_ids=generic_ids)
+    )
+    assert tuple(item.server_id for item in composition.root.mcp_servers) == (*generic_ids, *app_ids)
+    assert type(composition).model_validate_json(composition.model_dump_json()) == composition
+
+
+async def test_legacy_mcp_recipes_preserve_generic_child_selection(tmp_path: Path) -> None:
+    from a13n_harness_ui.subagent_operator import _initial_child_configuration
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    payload = composition.model_dump_json()
+    assert '"generic_selected"' not in payload
+    restored = type(composition).model_validate_json(payload)
+    assert restored.model_dump_json() == payload
+    assert _initial_child_configuration(restored, restored.root.children[0]).mcp_server_ids == ("mcp-docs",)
+
+
 async def test_legacy_composition_missing_proxy_roundtrips_without_changing_payload(tmp_path: Path) -> None:
     source = await load_harness_ui_configuration(_write_source(tmp_path))
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())

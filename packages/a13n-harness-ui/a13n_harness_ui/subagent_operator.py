@@ -2044,7 +2044,7 @@ def _initial_child_configuration(
         default_environment=parent.default_environment,
         harness_plugin_ids=tuple(item.plugin_id for item in edge.definition.harness_plugins),
         environment_run_extension_ids=tuple(item.extension_id for item in parent.environment_run_extensions),
-        mcp_server_ids=tuple(item.server_id for item in edge.definition.mcp_servers),
+        mcp_server_ids=tuple(item.server_id for item in edge.definition.mcp_servers if item.generic_selected),
     )
 
 

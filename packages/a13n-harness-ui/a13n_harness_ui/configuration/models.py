@@ -220,7 +220,7 @@ class McpAppsSandboxConfiguration(ConfigurationModel):
 
 
 class McpAppsConfiguration(ConfigurationModel):
-    """Opt-in UI behavior for already selected MCP servers; never a server selection."""
+    """App servers automatically added to every root and child Agent in WebUI."""
 
     enabled: bool = False
     servers: tuple[ResourceId, ...] = Field(default=(), max_length=128)

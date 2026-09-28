@@ -121,9 +121,34 @@ class ThreadCompositionSelection:
 class AgentCompositionResolver:
     """Validate installed selections and capture a complete immutable Run value."""
 
-    def __init__(self, catalog: HarnessUiExtensionCatalog | None = None) -> None:
+    def __init__(
+        self, catalog: HarnessUiExtensionCatalog | None = None, *, host_mode: Literal["local", "webui"] = "local"
+    ) -> None:
         self.catalog = catalog or HarnessUiExtensionCatalog()
+        self._host_mode = host_mode
         self._model_adapter = PydanticAiModelAdapter()
+
+    def effective_mcp_server_ids(
+        self, source: LoadedHarnessUiConfiguration, generic_ids: tuple[str, ...]
+    ) -> tuple[str, ...]:
+        """Add WebUI Apps without changing the Agent or Thread's generic selection."""
+        apps = source.document.webui.mcp_apps
+        injected = apps.servers if self._host_mode == "webui" and apps.enabled else ()
+        return tuple(dict.fromkeys((*generic_ids, *injected)))
+
+    def _mcp_recipes(
+        self, source: LoadedHarnessUiConfiguration, generic_ids: tuple[str, ...]
+    ) -> tuple[ResolvedMcpRecipe, ...]:
+        apps = source.document.webui.mcp_apps
+        return tuple(
+            ResolvedMcpRecipe(
+                server_id=item,
+                transport=source.mcp_servers[item].transport,
+                apps_enabled=self._host_mode == "webui" and apps.enabled and item in apps.servers,
+                generic_selected=item in generic_ids,
+            )
+            for item in self.effective_mcp_server_ids(source, generic_ids)
+        )
 
     def validate_generation(self, source: LoadedHarnessUiConfiguration, *, warnings: list[str] | None = None) -> None:
         """Validate a generation, reporting unusable Agent Capabilities separately."""
@@ -334,14 +359,7 @@ class AgentCompositionResolver:
         plugin_ids = source.selected_plugins(agent) if root_plugins is None else root_plugins
         mcp_ids = source.selected_mcp_servers(agent) if root_mcp is None else root_mcp
         plugins = self._plugins(source, plugin_ids, plugin_catalog)
-        mcp = tuple(
-            ResolvedMcpRecipe(
-                server_id=item,
-                transport=source.mcp_servers[item].transport,
-                apps_enabled=source.document.webui.mcp_apps.enabled and item in source.document.webui.mcp_apps.servers,
-            )
-            for item in mcp_ids
-        )
+        mcp = self._mcp_recipes(source, mcp_ids)
         selected_model = model_overrides.model_id if model_overrides and model_overrides.model_id else agent.model
         if selected_model is None:
             raise CompositionError(
@@ -376,7 +394,9 @@ class AgentCompositionResolver:
             mcp_servers=mcp,
             tools=agent.tools,
             tool_proxy=(
-                agent.tool_proxy.selected(mcp_servers=mcp_ids, harness_plugins=plugin_ids)
+                agent.tool_proxy.selected(
+                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids), harness_plugins=plugin_ids
+                )
                 if agent.tool_proxy is not None
                 else None
             ),
@@ -481,18 +501,12 @@ class AgentCompositionResolver:
                 plugin_ids,
                 self.catalog.plugin_catalog(tuple(item.plugin_key for item in source.harness_plugins.values())),
             ),
-            mcp_servers=tuple(
-                ResolvedMcpRecipe(
-                    server_id=item,
-                    transport=source.mcp_servers[item].transport,
-                    apps_enabled=source.document.webui.mcp_apps.enabled
-                    and item in source.document.webui.mcp_apps.servers,
-                )
-                for item in mcp_ids
-            ),
+            mcp_servers=self._mcp_recipes(source, mcp_ids),
             tools=parent.tools if child.tools is None else child.tools,
             tool_proxy=(
-                parent.tool_proxy.selected(mcp_servers=mcp_ids, harness_plugins=plugin_ids)
+                parent.tool_proxy.selected(
+                    mcp_servers=self.effective_mcp_server_ids(source, mcp_ids), harness_plugins=plugin_ids
+                )
                 if parent.tool_proxy is not None
                 else None
             ),

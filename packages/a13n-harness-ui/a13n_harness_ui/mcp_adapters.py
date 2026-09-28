@@ -109,7 +109,8 @@ async def prepare_mcp_transport(
         init_timeout = 30
     else:
         raise TypeError("unsupported MCP transport")
-    return client_transport, repr((recipe.model_dump(), values)), init_timeout
+    # Selection provenance does not change the live server binding.
+    return client_transport, repr((transport.model_dump(), values)), init_timeout
 
 
 async def resolve_mcp_values(

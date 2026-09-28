@@ -33,7 +33,7 @@ uv run --locked pytest
 uv run --locked mcp-apps-example
 ```
 
-The final command speaks MCP on stdin/stdout and waits for an MCP client. It is not an HTTP server. Configure a selected Harness UI Agent to include `mcp-counter`, add the following resource under the selected configuration directory's `mcp/`, and enable that server in the root YAML:
+The final command speaks MCP on stdin/stdout and waits for an MCP client. It is not an HTTP server. Add the following resource under the selected configuration directory's `mcp/` and enable it in the root YAML. WebUI automatically adds it to every root and child Agent; no Agent `mcp_servers` entry is needed:
 
 ```yaml
 schema_version: '1'

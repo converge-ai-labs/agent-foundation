@@ -42,7 +42,7 @@ async def test_http_original_activation_approval_reconciliation_and_close_use_re
     )
     agent_path = tmp_path / "agents/assistant.yaml"
     agent = yaml.safe_load(agent_path.read_text())
-    agent["mcp_servers"] = ["mcp-counter"]
+    agent["mcp_servers"] = []
     agent_path.write_text(yaml.safe_dump(agent))
     calls = 0
     received = []
@@ -85,9 +85,20 @@ async def test_http_original_activation_approval_reconciliation_and_close_use_re
             httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url="http://127.0.0.1") as client,
         ):
             thread = await app.create_thread()
+            assert thread.configuration.mcp_server_ids == ()
+            proxy = await app.inspect_agent_tool_proxy(thread.configuration.agent_source.id)
+            assert next(item for item in proxy.sources if item.resource_id == "mcp-counter").enabled
+            inspection = await app.inspect_thread_configuration(thread.thread_id)
+            assert inspection.next_run.configuration.mcp_server_ids == ()
+            assert next(
+                item for item in inspection.next_tool_proxy.sources if item.resource_id == "mcp-counter"
+            ).enabled
             receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Open a counter")
             result = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=20)
             assert result.status.value == "completed", result
+            inspection = await app.inspect_thread_configuration(thread.thread_id)
+            assert inspection.next_run.configuration.mcp_server_ids == ()
+            assert inspection.captured.mcp_server_ids == ("mcp-counter",)
             history = await app.get_thread_transcript(thread_id=thread.thread_id)
             reference = next(ref for entry in history.entries for part in entry.parts for ref in part.mcp_apps)
             base = f"/api/threads/{thread.thread_id}/apps"
@@ -279,3 +290,10 @@ async def test_http_original_activation_approval_reconciliation_and_close_use_re
             assert await app._root_runs.active(thread.thread_id) is None
             assert calls == 5
             assert all("Must not reach the model after revocation" not in value for value in received)
+            assert connection.retired
+            inspection = await app.inspect_thread_configuration(thread.thread_id)
+            assert inspection.next_run.configuration.mcp_server_ids == ()
+            assert not next(
+                item for item in inspection.next_tool_proxy.sources if item.resource_id == "mcp-counter"
+            ).enabled
+            assert inspection.captured.mcp_server_ids == ("mcp-counter",)

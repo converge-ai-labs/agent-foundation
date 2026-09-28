@@ -76,6 +76,8 @@ class ResolvedMcpRecipe(CompositionModel):
     server_id: str = Field(min_length=1, max_length=128)
     transport: McpTransport
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
+    # Historical recipes were all generically selected, including Apps-enabled ones.
+    generic_selected: bool = Field(default=True, exclude_if=lambda value: value)
 
 
 class ResolvedRunExtensionRecipe(CompositionModel):
@@ -123,7 +125,8 @@ class ResolvedAgentNode(CompositionModel):
     model: ResolvedModelRecipe
     capabilities: tuple[ResolvedCapabilityRecipe, ...] = Field(default=(), max_length=128)
     harness_plugins: tuple[ResolvedPluginRecipe, ...] = Field(default=(), max_length=128)
-    mcp_servers: tuple[ResolvedMcpRecipe, ...] = Field(default=(), max_length=128)
+    # Up to 128 generic servers plus 128 independently selected WebUI Apps.
+    mcp_servers: tuple[ResolvedMcpRecipe, ...] = Field(default=(), max_length=256)
     tools: tuple[str, ...] | None = Field(default=None, max_length=256)
     tool_proxy: AgentToolProxy | None = Field(default=None, exclude_if=lambda value: value is None)
     children: tuple[ResolvedSubagent, ...] = Field(default=(), max_length=256)

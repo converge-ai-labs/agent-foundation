@@ -144,7 +144,7 @@ To keep memory without automatic requests, set `auto_organize.enabled: false`. S
 
 ### WebUI MCP Apps
 
-Interactive MCP results are opt-in. Set `webui.mcp_apps.enabled: true` and allowlist the selected server IDs under `webui.mcp_apps.servers`; the Agent must independently select those servers. Restart WebUI when enabling Apps or changing its separate-origin sandbox listener. See [MCP Apps](mcp-apps.md) for the field reference, interaction permissions and local, Docker and reverse-proxy configuration.
+Interactive MCP results are opt-in. Set `webui.mcp_apps.enabled: true` and select server IDs under `webui.mcp_apps.servers`. WebUI automatically adds them to every root and child Agent alongside its generic MCP selection, deduplicating IDs without changing Agent files or saved Thread selections. CLI remains generic-only. Restart WebUI when enabling Apps or changing its separate-origin sandbox listener. See [MCP Apps](mcp-apps.md) for the field reference, interaction permissions and local, Docker and reverse-proxy configuration.
 
 ### WebUI Sidekick
 

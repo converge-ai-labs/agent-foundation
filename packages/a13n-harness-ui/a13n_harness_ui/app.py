@@ -393,7 +393,9 @@ class HarnessUiApp:
         self._mcp_app_owners = (
             mcp_operations.owners
             if mcp_operations is not None
-            else CurrentOwners(store, configurations, AgentCompositionResolver(catalog))
+            else CurrentOwners(
+                store, configurations, AgentCompositionResolver(catalog, host_mode="webui" if mcp_apps else "local")
+            )
         )
         self._restart = restart_coordinator
         self._memory_organizer = memory_organizer
@@ -1112,7 +1114,14 @@ class HarnessUiApp:
             source = await self._configurations.current()
             if source is None or agent_id not in source.agents:
                 raise HarnessUiError("The accepted Agent does not exist.", code="agent_not_found")
-            return agent_tool_proxy_view(source, source.agents[agent_id])
+            agent = source.agents[agent_id]
+            return agent_tool_proxy_view(
+                source,
+                agent,
+                mcp_server_ids=self._mcp_app_owners.resolver.effective_mcp_server_ids(
+                    source, source.selected_mcp_servers(agent)
+                ),
+            )
 
     async def inspect_operation_configuration(self, receipt_id: str) -> CapturedConfiguration | None:
         async with self._operation():
@@ -1180,7 +1189,9 @@ class HarnessUiApp:
                     else agent_tool_proxy_view(
                         source,
                         agent,
-                        mcp_server_ids=selected.mcp_server_ids,
+                        mcp_server_ids=self._mcp_app_owners.resolver.effective_mcp_server_ids(
+                            source, selected.mcp_server_ids
+                        ),
                         harness_plugin_ids=selected.harness_plugin_ids,
                     )
                 ),
@@ -2823,7 +2834,7 @@ async def open_harness_ui_app(
                 host_plugin_factories=selected_integrations.harness_plugin_factories,
                 host_run_extension_factories=(selected_integrations.environment_run_extension_factories),
             )
-            resolver = AgentCompositionResolver(catalog)
+            resolver = AgentCompositionResolver(catalog, host_mode=host_mode)
             configurations = CompositionAcceptanceService(store, resolver)
             compositions = RunCompositionService(store, resolver)
             candidate_error: HarnessUiError | None = configuration_error
@@ -2932,7 +2943,7 @@ async def open_harness_ui_app(
             if mcp_apps is not None and configuration_path is not None:
                 mcp_operations = AppOperations(
                     mcp_apps,
-                    CurrentOwners(store, configurations, AgentCompositionResolver(catalog)),
+                    CurrentOwners(store, configurations, resolver),
                     configuration_path.expanduser().resolve().parent,
                 )
                 # Drain admitted operations while their MCP transports and store still exist.
