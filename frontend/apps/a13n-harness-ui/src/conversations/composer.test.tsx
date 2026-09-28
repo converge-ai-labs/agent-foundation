@@ -349,7 +349,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
   query.clear();
 });
 
-it("keeps Goal intent and authored input while toggling options, and disables Goal during active work", () => {
+it("keeps Goal intent and authored input with direct shortcuts, and disables Goal during active work", () => {
   const draft = new ThreadDraft();
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -370,11 +370,7 @@ it("keeps Goal intent and authored input while toggling options, and disables Go
             }
             canRun
             leadingControls={<span>Full Control</span>}
-            controls={(expanded) => (
-              <span>
-                {expanded ? "Expanded settings" : "Collapsed settings"}
-              </span>
-            )}
+            controls={() => <span>Agent and model summary</span>}
             profile={{ display_name: "Test", color: "#2563eb" }}
             unauthorized={() => {}}
             reconcile={() => {}}
@@ -394,15 +390,16 @@ it("keeps Goal intent and authored input while toggling options, and disables Go
     goal.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   expect(
-    editor.compareDocumentPosition(screen.getByText("Collapsed settings")) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
+    editor.compareDocumentPosition(
+      screen.getByText("Agent and model summary"),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  const options = screen.getByRole("button", { name: "Composer options" });
-  fireEvent.click(options);
-  expect(options.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByText("Expanded settings")).toBeTruthy();
-  fireEvent.click(options);
-  expect(screen.getByText("Collapsed settings")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Composer options" })).toBeNull();
+  expect(
+    (screen.getByRole("button", { name: "Clear context" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(screen.getAllByText("Agent and model summary")).toHaveLength(1);
   expect(draft.mode).toBe("goal");
   expect(draft.doc.getText("text").toString()).toBe(
     "Verify the full objective",
@@ -453,7 +450,7 @@ it.each([false, true])(
     );
     try {
       const slot = screen.getByRole("button", {
-        name: "Composer options",
+        name: "Clear context",
       }).previousElementSibling!;
       act(() => draft.doc.getText("text").insert(0, "Pending edit"));
       await act(() => vi.advanceTimersByTimeAsync(699));
@@ -471,7 +468,7 @@ it.each([false, true])(
       act(acknowledge);
       expect(screen.queryByRole("status")).toBeNull();
       expect(
-        screen.getByRole("button", { name: "Composer options" })
+        screen.getByRole("button", { name: "Clear context" })
           .previousElementSibling,
       ).toBe(slot);
       act(() => {

@@ -54,6 +54,8 @@ a13n_service/
                       external
     memories/         tables  schemas  routes  mounts  execution
 
+  usage/              schemas  routes  service: workspace consumption and Run-duration queries
+
   providers/          what the Service calls
     registry.py       provider definitions by (kind, type)
     endpoints.py      the environment endpoints Service processes dial, checked by the endpoint policy
@@ -68,7 +70,7 @@ a13n_service/
   static/             the Console production build, placed before packaging; not in source control
 ```
 
-Four business packages answer four questions. `tenancy`: who is asking and what may they do ([03](03-tenancy.md)). `resources`: what has the tenant configured ([04](04-resources.md), [11](11-memory.md)). `runs`: how does one input become one sealed run ([05](05-runs.md), [06](06-environments.md), [07](07-facts-and-delivery.md)). `providers`: what does the Service call ([08](08-providers.md)). Shared mechanisms live under `infra/`; configuration and assembly stay at the root ([09](09-runtime.md)).
+Five business packages separate execution, configuration, access, providers and usage analysis. `tenancy`: who is asking and what may they do ([03](03-tenancy.md)). `resources`: what has the tenant configured ([04](04-resources.md), [11](11-memory.md)). `runs`: how does one input become one sealed run ([05](05-runs.md), [06](06-environments.md), [07](07-facts-and-delivery.md)). `providers`: what does the Service call ([08](08-providers.md)). `usage`: how recorded model consumption and Run durations aggregate within a workspace ([07](07-facts-and-delivery.md#workspace-usage-analysis)). Shared mechanisms live under `infra/`; configuration and assembly stay at the root ([09](09-runtime.md)).
 
 Packages under `resources/` own tenant-configured records: identity, scope, configuration, encrypted credentials, enabled state and their API. `providers/` owns backend adapters and contracts that receive plain values. For example, `resources/providers/` stores a web provider account, and the Harness definition registered in `providers/registry.py` builds the backend that serves it.
 
@@ -80,7 +82,7 @@ Each business layer's `runtime.py` owns its runtime type: tenancy and resources 
 
 ```
 app.py, cli.py, distribution.py, migrations/  ->  everything   (no infra, business or provider module imports them)
-runs  ->  resources  ->  tenancy  ->  infra
+usage ->  runs  ->  resources  ->  tenancy  ->  infra
 runs, resources  ->  providers.registry, providers.tools, providers.traces
 runs             ->  providers.envd
 tenancy, resources, runs  ->  settings.py
@@ -90,14 +92,14 @@ providers  ->  infra                                          (and the Harness)
 
 `packages/a13n-service/.importlinter` states these contracts, and `make service-boundaries` checks them; `make typecheck`, `make verify` and the Service CI workflow run it.
 
-| Contract                | Rule                                                                                                                       |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `layers`                | `runs` above `resources` above `tenancy` above `infra`; a lower layer never imports a higher one                           |
-| `providers`             | `providers` never imports `tenancy`, `resources` or `runs`: providers are adapters over infrastructure                     |
-| `assembly`              | `infra`, `tenancy`, `resources`, `runs` and `providers` never import `app`, `distribution` or `cli`                        |
-| `infrastructure`        | `infra` never imports `settings`; callers pass configuration values                                                        |
-| `environment-providers` | `tenancy`, `resources` and `runs` never import `providers.environments`; they reach environment types through the registry |
-| `acyclic-resources`     | the packages under `resources/` depend on each other without cycles                                                        |
+| Contract                | Rule                                                                                                                                |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `layers`                | `usage` above `runs` above `resources` above `tenancy` above `infra`; a lower layer never imports a higher one                      |
+| `providers`             | `providers` never imports `tenancy`, `resources`, `runs` or `usage`: providers are adapters over infrastructure                     |
+| `assembly`              | `infra`, `tenancy`, `resources`, `runs`, `usage` and `providers` never import `app`, `distribution` or `cli`                        |
+| `infrastructure`        | `infra` never imports `settings`; callers pass configuration values                                                                 |
+| `environment-providers` | `tenancy`, `resources`, `runs` and `usage` never import `providers.environments`; they reach environment types through the registry |
+| `acyclic-resources`     | the packages under `resources/` depend on each other without cycles                                                                 |
 
 Generic mechanisms belong in `infra`: the outbox table and its claim, settle and retry rules are there, while delivery handlers and scan predicates stay with their business owners and are wired in `distribution.py`.
 

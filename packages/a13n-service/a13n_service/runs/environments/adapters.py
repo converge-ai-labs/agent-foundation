@@ -62,9 +62,14 @@ async def construct(runtime: Runtime, target: Target, *, operation_id: str | Non
             policy=runtime.endpoint_policy,
         )
     registry = runtime.registry
+    recipe = dict(target.recipe)
+    if account.type == "docker" and "image" not in recipe:
+        # Legacy handles omitted the then-fixed default, including interrupted creates without portable state.
+        # New handles freeze the effective image before dispatch, so absence always retains the old meaning.
+        recipe["image"] = "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"
     await registry.check_environment_endpoint(account.type, account.config, runtime.endpoint_policy)
     return await registry.get("environment", account.type).create(
-        dict(target.recipe),
+        recipe,
         configuration=account.config,
         credential=account.reveal_credential(runtime.keys),
         environment_id=target.environment_id,

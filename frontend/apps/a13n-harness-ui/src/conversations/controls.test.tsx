@@ -513,9 +513,7 @@ it("edits Run-only local and remote selections without changing the Thread", asy
     { wrapper },
   );
   const user = userEvent.setup();
-  await user.click(
-    screen.getByRole("button", { name: "Working environments" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Environments" }));
   const path = screen.getByRole("textbox", { name: "Server directory" });
   await user.clear(path);
   await user.type(path, "/selected");
@@ -532,9 +530,7 @@ it("edits Run-only local and remote selections without changing the Thread", asy
     ],
     default_environment: "build",
   });
-  await user.click(
-    screen.getByRole("button", { name: "Working environments" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Environments" }));
   await user.click(
     screen.getByRole("button", { name: "Use conversation defaults" }),
   );

@@ -242,4 +242,4 @@ The [EIP contract](https://github.com/converge-ai-labs/agent-foundation/tree/mai
 uv run --locked pytest packages/a13n-envd-client/tests
 ```
 
-The client suite covers framing, sessions, errors, transfers, and output with protocol fixtures. Native process cleanup and daemon availability need the separate Envd integration checks. The Host, not envd, establishes any outer sandbox. For Host-owned process launch/runtime bootstrap, use [Local Envd](index.md#recommended-harness-path); for application tools, use [Environment operations](../environments/operations.md).
+The client suite covers framing, sessions, errors, transfers, and output with protocol fixtures. Native process cleanup and daemon availability need the separate Envd integration checks. The Host, not envd, establishes any outer sandbox. For Host-owned process launch/runtime bootstrap, use [Local Envd](index.md#try-local-envd); for application tools, use [Environment operations](../environments/operations.md).

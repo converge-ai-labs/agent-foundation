@@ -102,7 +102,7 @@ With `user_questions: true`, the model can ask the user a question with `ask_use
 ```
 
 - **Inline** (`subagent_mode: "inline"`, the default): a delegated agent runs inside the parent's run and attempt, as part of that run. Inline subagents may not lead back to the delegating agent, and the graph's depth and size are bounded. `usage_limits` bounds requests, tokens and tool calls of each delegation.
-- **Async** (`subagent_mode: "async"`): each delegation starts a **child thread** in the same session, with `origin: "child"` and `subagent` set to the edge name, whose first run executes the edge's revision under the parent run's principal and authority. The parent can check, wait for, steer, cancel and continue its children with the Harness [delegation tools](../a13n-harness/delegation-and-codeact.md#asynchronous-children). When a child run completes, fails or is cancelled, its result arrives in the parent thread's inbox as a `child_result` entry with `{child_run_id, subagent, status, output, failure}`: it joins the parent's active run, or starts a parent run with trigger `child_result`. A result is never dropped; if the parent's inbox is full, delivery is retried. A child waiting for a person counts as still running. For async edges, `usage_limits` takes only `request_limit`, which becomes the child run's `max_usage.requests`.
+- **Async** (`subagent_mode: "async"`): each delegation starts a child thread in the same session, using the parent run's principal. The parent can check, wait for, steer, cancel and continue children with the Harness [delegation tools](../a13n-harness/delegation-and-codeact.md#asynchronous-children). A child's result arrives as a `child_result` inbox entry and either steers the active parent run or starts its next run; delivery retries when the inbox is full. A child waiting for a person still counts as running. For async edges, only `usage_limits.request_limit` applies.
 
 An async child's environment follows its edge: `shared` (the default) mounts the parent run's environments, `dedicated` reserves a new one from `template_id`, and `none` mounts nothing. The child agent's own `default_environment_template_id` is not used. A run may start at most `worker.child_count` children, and children nest at most `worker.child_depth` levels.
 
@@ -145,7 +145,7 @@ A message's `payload.content` holds 1–32 parts:
 | `{"type": "url", "url": ...}`        | An HTTP(S) URL. The Service fetches it under its [outbound policy](configuration.md#outbound-requests); the model provider never does. |
 | `{"type": "json", "value": ...}`     | Structured input, nested at most 32 levels.                                                                                            |
 
-A refused address or another definitive failure status fails the entry at once. An unreachable URL, a timeout, or a transient status (408, 429 or 5xx) instead ends the attempt so a later attempt fetches it again, within the run's attempt budget.
+A refused URL fails its inbox entry. An unreachable URL or transient response can retry on another attempt, within the run's attempt budget.
 
 `agent_revision_id` pins a revision; otherwise the run uses the agent's default revision at the time it starts. `delivery` chooses what happens while a run is active:
 

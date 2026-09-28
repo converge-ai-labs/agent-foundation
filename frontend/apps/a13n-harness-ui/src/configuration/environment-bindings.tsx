@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
 import { Button, ChoiceField, ModalFrame } from "a13n-ui";
 import { PlusIcon } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
-import { DeviceDirectory } from "./device-directory";
+import { DeviceDirectory, useDeviceInfo } from "./device-directory";
+import { ConnectDevice } from "./connect-device";
 
 export type EnvironmentBinding = Schema<"EnvironmentBindingSelection">;
 const readOnly: Schema<"EnvironmentAction">[] = [
@@ -37,13 +37,22 @@ export function BindingSummary({
   bindings: readonly EnvironmentBinding[];
   defaultEnvironment?: string | null;
 }) {
+  const { client } = useTransport();
+  const devices = useQuery({
+    queryKey: ["devices"],
+    queryFn: ({ signal }) => result(client.GET("/api/devices", { signal })),
+    enabled: bindings.length > 0,
+  });
   return (
     <div className="flex flex-col gap-2">
       <p>Default: {defaultEnvironment ?? "Local workspace or Thread files"}</p>
       {bindings.map((binding) => (
         <div key={binding.alias} className="flex flex-col gap-1 text-sm">
           <strong>{binding.alias}</strong>
-          <span>{binding.device_id}</span>
+          <span>
+            {devices.data?.find((item) => item.id === binding.device_id)
+              ?.name ?? binding.device_id}
+          </span>
           <span className="break-all">{binding.working_directory}</span>
           {binding.permission_ceiling && (
             <details>
@@ -123,7 +132,7 @@ export function EnvironmentBindings({
       {bindings.map((binding, index) => (
         <div
           key={binding.alias}
-          className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 p-3"
+          className="flex flex-col gap-3 rounded-lg bg-muted/40 p-3 sm:flex-row sm:items-center sm:justify-between"
         >
           <div className="min-w-0 flex-1">
             <strong>{binding.alias}</strong>
@@ -135,8 +144,14 @@ export function EnvironmentBindings({
                 " · Not configured"}
             </p>
             <p className="break-all text-sm">{binding.working_directory}</p>
+            <p className="text-xs text-muted-foreground">
+              {binding.permission_ceiling
+                ? `${binding.permission_ceiling.operations?.length ?? 0} allowed actions`
+                : "Files and execution"}
+            </p>
           </div>
           <div className="flex gap-2">
+            <BindingStatus deviceId={binding.device_id} />
             <Button
               type="button"
               size="sm"
@@ -163,7 +178,7 @@ export function EnvironmentBindings({
         </div>
       ))}
       <ChoiceField
-        label="Default working environment"
+        label="Default working location"
         value={selectedDefault}
         onValueChange={(value) => onChange(bindings, value || null)}
         options={[
@@ -180,7 +195,10 @@ export function EnvironmentBindings({
             ? [
                 {
                   value: selectedDefault,
-                  label: `${selectedDefault} · Not selected`,
+                  label:
+                    selectedDefault === "workspace-0"
+                      ? "Removed local folder · Choose a replacement"
+                      : `${selectedDefault} · Not selected`,
                   disabled: true,
                 },
               ]
@@ -310,8 +328,18 @@ function BindingEditor({
     initial?.permission_ceiling ? "existing" : "full",
   );
   const [error, setError] = useState<Error>();
+  const [connected, setConnected] = useState<Schema<"DeviceSummary">>();
+  const availableDevices =
+    connected && !devices.some((item) => item.id === connected.id)
+      ? [...devices, connected]
+      : devices;
+  const selectDevice = (id: string, name: string) => {
+    setDeviceId(id);
+    setPath("");
+    if (!alias) setAlias(suggestAlias(name, usedAliases));
+  };
   const missingDevice =
-    deviceId && !devices.some((item) => item.id === deviceId);
+    deviceId && !availableDevices.some((item) => item.id === deviceId);
   return (
     <div className="flex flex-col gap-4">
       <ChoiceField
@@ -319,25 +347,29 @@ function BindingEditor({
         placeholder="Choose a Device"
         value={deviceId}
         onValueChange={(value) => {
-          setDeviceId(value);
-          setPath("");
+          selectDevice(
+            value,
+            availableDevices.find((item) => item.id === value)?.name ??
+              "device",
+          );
         }}
         options={[
           ...(missingDevice
             ? [{ value: deviceId, label: `${deviceId} · Not configured` }]
             : []),
-          ...devices.map((item) => ({ value: item.id, label: item.name })),
+          ...availableDevices.map((item) => ({
+            value: item.id,
+            label: item.name,
+          })),
         ]}
       />
-      {!devices.length && (
-        <p>
-          No Devices configured.{" "}
-          <Link to="/settings/environments">
-            Configure a Device in Settings
-          </Link>
-          .
-        </p>
-      )}
+      <ConnectDevice
+        label="Connect new Device"
+        onConnected={(device) => {
+          setConnected(device);
+          selectDevice(device.id, device.name);
+        }}
+      />
       {deviceId && (
         <DeviceDirectory
           key={deviceId}
@@ -384,8 +416,12 @@ function BindingEditor({
           type="button"
           disabled={!deviceId || !path || !alias}
           onClick={() => {
-            if (usedAliases.includes(alias)) {
-              setError(new Error("Choose a unique environment alias."));
+            if (usedAliases.includes(alias) || reservedAlias(alias)) {
+              setError(
+                new Error(
+                  "Choose a unique alias that is not reserved for Host mounts.",
+                ),
+              );
               return;
             }
             if (
@@ -400,6 +436,8 @@ function BindingEditor({
               return;
             }
             save({
+              ...initial,
+              permission_ceiling: undefined,
               device_id: deviceId,
               alias,
               working_directory: path,
@@ -417,5 +455,51 @@ function BindingEditor({
         </Button>
       </div>
     </div>
+  );
+}
+
+function reservedAlias(alias: string) {
+  return (
+    [
+      "workspace",
+      "thread-files",
+      "configuration",
+      "builtin-skills",
+      "user-skills",
+    ].includes(alias) || /^(workspace|content-plugin)-[0-9]+$/.test(alias)
+  );
+}
+
+export function suggestAlias(name: string, used: readonly string[]) {
+  const base =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .replace(/^[^a-z]+/, "")
+      .slice(0, 50)
+      .replace(/-+$/, "") || "device";
+  let alias = base;
+  for (let suffix = 2; reservedAlias(alias) || used.includes(alias); suffix++)
+    alias = `${base}-${suffix}`;
+  return alias;
+}
+
+function BindingStatus({ deviceId }: { deviceId: string }) {
+  const info = useDeviceInfo(deviceId, false);
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      loading={info.isFetching}
+      onClick={() => void info.refetch()}
+    >
+      {info.data
+        ? info.data.available
+          ? "Online · Check"
+          : "Offline · Retry"
+        : "Check connection"}
+    </Button>
   );
 }

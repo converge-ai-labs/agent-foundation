@@ -1,0 +1,66 @@
+# Local trial only: public sign-in, loopback access, no host Docker socket.
+# Sign in as admin@example.com / local-public-password-123.
+# Initialization never overwrites an existing account or workspace.
+name: a13n-quickstart
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: a13n_service
+      POSTGRES_USER: a13n_service
+      POSTGRES_PASSWORD: a13n_service
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U a13n_service -d a13n_service"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  init:
+    image: &service-image ${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:dev}
+    environment: &service-environment
+      A13N_SERVER__PUBLIC_URL: http://127.0.0.1:${A13N_PORT:-8080}
+      A13N_DATABASE__URL: postgresql+psycopg://a13n_service:a13n_service@postgres:5432/a13n_service
+      A13N_DATABASE__AUTO_MIGRATE: "false"
+      A13N_REDIS__URL: redis://redis:6379/0
+      A13N_ENCRYPTION__KEY_FILE: /app/var/encryption.key
+    command:
+      - sh
+      - -ec
+      - |
+        a13n-service --config /app/service.toml migrate
+        status=0
+        printf '%s\n' 'local-public-password-123' | a13n-service --config /app/service.toml bootstrap --email admin@example.com --password-stdin || status=$$?
+        if [ "$$status" -ne 0 ] && [ "$$status" -ne 3 ]; then exit "$$status"; fi
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+  service:
+    image: *service-image
+    environment: *service-environment
+    volumes:
+      - service-data:/app/var
+    ports:
+      - "127.0.0.1:${A13N_PORT:-8080}:8000"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    stop_grace_period: 30s
+volumes:
+  postgres:
+  redis:
+  service-data:

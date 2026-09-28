@@ -700,12 +700,9 @@
   cursor: default;
   opacity: 0.6;
 }
-.optionsButton {
-  display: inline-flex;
-  flex-shrink: 0;
-}
 .composerHeader {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 4px;
@@ -744,9 +741,6 @@
 .workerIdentity > button {
   flex-shrink: 0;
 }
-.composer[data-compact="true"] .workerIdentity {
-  max-width: 160px;
-}
 .composerEnvironment {
   display: flex;
   align-items: center;
@@ -768,9 +762,9 @@
 .composerSync {
   display: flex;
   align-items: center;
-  flex: 0 0 16px;
-  width: 16px;
-  height: 16px;
+}
+.composerSync:empty {
+  display: none;
 }
 .composerSync > span {
   display: flex;
@@ -785,28 +779,13 @@
   gap: 8px;
   margin-top: 8px;
 }
-.composerHeader[hidden],
-.composerChoices[hidden] {
-  display: none;
-}
-.composerChoices:not([hidden]) {
+.composerChoices {
   display: flex;
   flex: 1;
+  justify-content: flex-end;
   align-items: center;
   min-width: 0;
   gap: 8px;
-}
-.composerTrailing {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-.composer[data-compact="true"] .composerTrailing {
-  flex: 1;
-}
-.composerTrailing .composerSync {
-  margin-left: auto;
 }
 @container composer (max-width: 480px) {
   .composerBody {
@@ -814,7 +793,7 @@
     --composer-content-height: 56px;
   }
   .composerHeader {
-    align-items: flex-start;
+    align-items: center;
     gap: 4px;
     margin-bottom: 6px;
   }

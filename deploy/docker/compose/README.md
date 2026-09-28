@@ -1,4 +1,29 @@
-# Single-host Service with native Docker
+# Service with Docker Compose
+
+## Local quickstart
+
+`a13n-service-quickstart.yaml` is a standalone local trial: Service and Console, PostgreSQL, Redis, and a one-shot initializer. It publishes only `127.0.0.1:8080`, runs the Service as the image's non-root user, and does not mount the host Docker socket.
+
+Download the file into an empty directory and run:
+
+```sh
+docker compose -f a13n-service-quickstart.yaml up -d --wait
+```
+
+From a checkout, use `-f deploy/docker/compose/a13n-service-quickstart.yaml` instead. The source file uses the published `dev` image; a Service release's copy pins that release's image. To test a local build, run `make image-a13n-service` and prefix the Compose command with `A13N_SERVICE_IMAGE=a13n-service:local`.
+
+Open <http://127.0.0.1:8080> and sign in with **`admin@example.com` / `local-public-password-123`**. **Do not expose this trial stack to other machines:** those credentials are public. Add your own model provider under **Models → Add model**, create an agent and select **Try agent**. See [Get started](../../../docs/a13n-service/get-started.md) for the full flow.
+
+The initializer migrates the schema and creates the first organization, workspace and administrator. Repeated starts preserve accounts and data; an initialization failure blocks Service startup. Inspect `docker compose -f a13n-service-quickstart.yaml logs init service` if startup fails.
+
+- **Stop and retain data:** `docker compose -f a13n-service-quickstart.yaml down`.
+- **Resume:** repeat `up -d --wait` with the same file and directory.
+- **Use another port:** prefix the start command with `A13N_PORT=8081` and open <http://127.0.0.1:8081>.
+- **Delete all trial data:** `docker compose -f a13n-service-quickstart.yaml down --volumes`. The next start creates the public trial account again.
+
+The quickstart has its own Compose project and volumes, separate from the deployment below. Keep using the same file/project to resume your data. Plain chat needs no execution environment. Hosted sandbox providers and external Envd targets can be configured separately; local Docker environments require the explicit host authority described below.
+
+## Single-host deployment with native Docker
 
 `a13n-service.yaml` runs the Service with every role in one process (`run --role all`), PostgreSQL and Redis. Only the Service is published, on `127.0.0.1:8080`. It serves the Console and the API from one origin, which browsers, API clients and SDKs share. The Service migrates its schema when it starts. It uses the host Docker Engine through `/var/run/docker.sock`: the container starts as root only to join the group that owns the socket, then runs as the image's non-root `app` user. Access to this socket grants host Docker authority, so deploy only where the Service is trusted with that authority.
 
@@ -20,7 +45,7 @@ docker compose -f deploy/docker/compose/a13n-service.yaml exec service \
 
 `A13N_PORT` publishes another port and moves the public URL with it, and `A13N_SERVICE_IMAGE` selects another image tag; the default is the local build above. <http://127.0.0.1:8080/readyz> reports Service readiness.
 
-`make compose-smoke` checks the local image with this Compose file on a disposable project and port: it creates the first administrator, stores a credential, restarts the Service, signs in again, confirms the generated key survived, then removes the project and its volumes.
+`make compose-smoke` exercises both Compose stacks on disposable projects, including initialization, sign-in and credential persistence across restarts.
 
 ## Configuration
 
@@ -35,11 +60,15 @@ A13N_PROVIDERS__HTTP_ORIGINS: '["http://host.docker.internal:11434"]'
 
 ## Docker environments
 
-Add an environment provider of type `docker` in Console under **Workspace settings → Providers → Environment** or through `POST /api/v1/environment-providers`; its default Engine address is the mounted socket. Environment templates choose the image in their recipe. The default, `ghcr.io/converge-ai-labs/a13n-docker-environment:dev`, is published from `main` for `linux/amd64` and `linux/arm64`, and `make image-docker-environment` builds `a13n-docker-environment:local`. A locally built image is immediately available to templates using the same host Engine, and missing images are pulled when first needed. Pin a digest for reproducibility. Rebuilding or pulling a tag does not recreate existing environments; delete an environment and create another to use a new image version.
+Add a `docker` provider under **Workspace settings → Providers → Environment** or through `POST /api/v1/environment-providers`. It uses the mounted Engine socket by default.
+
+Templates default to `ghcr.io/converge-ai-labs/a13n-docker-environment:<service-version>`; source and development builds use `:dev`. Set `recipe.image` to choose another tag or pin a digest. Existing instances keep their image across upgrades; see [Docker image versions](../../../docs/a13n-service/environments.md#docker-image-versions).
+
+For local development, `make image-docker-environment` builds `a13n-docker-environment:local`. Select it in a template on the same Engine. The Engine uses local images and pulls missing ones. Create a new environment to use a changed image.
 
 Docker templates have a private `/workspace` and may bind explicitly approved existing host directories. Mount sources resolve in the host Engine filesystem namespace and need permissions suitable for the container user. Environment deletion preserves these external paths. The hosted sandbox providers and external envd targets are also available; the development-only `local` provider is not offered.
 
-Environment containers run on the host Engine outside this Compose project and carry the label `a13n.environment=<environment ID>`. Unmount and delete environments through Console or the API before removing the stack.
+Environment containers run on the host Engine outside this Compose project. Delete them through Console or the API before removing the stack.
 
 ## Data
 

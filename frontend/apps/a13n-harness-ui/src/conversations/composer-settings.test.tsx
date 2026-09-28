@@ -3,7 +3,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   act,
   cleanup,
-  fireEvent,
   render,
   screen,
   waitFor,
@@ -18,10 +17,8 @@ import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
 
-let width = 860;
 let mobile = false;
 const mediaListeners = new Set<() => void>();
-let resize: (width: number) => void;
 let query: QueryClient;
 let draft: ThreadDraft;
 const catalog: Schema<"ThreadSelectorCatalog"> = {
@@ -96,7 +93,6 @@ const get = vi.fn(async () => ({ data: [] }));
 const transport = { client: { GET: get } } as unknown as Transport;
 
 beforeEach(() => {
-  width = 860;
   mobile = false;
   mediaListeners.clear();
   draft = new ThreadDraft();
@@ -115,20 +111,15 @@ beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
-      constructor(private callback: ResizeObserverCallback) {}
-      observe(target: Element) {
-        if (!target.hasAttribute("data-compact")) return;
-        resize = (next) =>
-          this.callback(
-            [{ target, contentRect: { width: next } } as ResizeObserverEntry],
-            this as unknown as ResizeObserver,
-          );
-        resize(width);
-      }
+      observe() {}
       unobserve() {}
       disconnect() {}
     },
   );
+  Object.defineProperty(Element.prototype, "getAnimations", {
+    configurable: true,
+    value: () => [],
+  });
   Object.defineProperty(Range.prototype, "getClientRects", {
     configurable: true,
     value: () => [],
@@ -216,36 +207,52 @@ function mount() {
 }
 
 it.each([false, true])(
-  "keeps one settings surface and authored state in a narrow composer (mobile: %s)",
+  "keeps shortcuts and inline model controls available without losing authored state (mobile: %s)",
   async (onMobile) => {
     mobile = onMobile;
-    width = 380;
     const user = userEvent.setup();
     mount();
     const editor = screen.getByRole("textbox", { name: "Message" });
-    expect(editor.textContent).toBe("");
     expect(screen.queryByRole("button", { name: "Model settings" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Agent" })).toBeNull();
     expect(
-      screen.queryByRole("combobox", { name: "Execution mode" }),
-    ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Goal" })).toBeNull();
+      screen.getByLabelText("Agent: Writer. Model: Model One"),
+    ).toBeTruthy();
     act(() => draft.doc.getText("text").insert(0, "Keep this draft"));
-    const trigger = screen.getByRole("button", { name: "Composer options" });
-    await user.click(trigger);
-    const panel = await screen.findByRole("dialog", { name: "Run settings" });
-    expect(within(panel).getByText("Model default: Pro")).toBeTruthy();
+    const modelTrigger = screen.getByRole("button", {
+      name: "Agent & Model settings",
+    });
+    await user.click(modelTrigger);
+    let panel = await screen.findByRole("dialog", { name: "Agent & Model" });
+    expect(
+      within(panel).queryByRole("button", { name: "Environments" }),
+    ).toBeNull();
+    expect(within(panel).queryByRole("button", { name: "Goal" })).toBeNull();
+    await user.click(
+      within(panel).getByRole("button", { name: "Reasoning mode" }),
+    );
     await user.click(within(panel).getByRole("button", { name: "Standard" }));
     expect(draft.controls.reasoning_mode).toBe("standard");
-    await user.click(within(panel).getByRole("button", { name: "Low" }));
+    await user.click(within(panel).getByRole("button", { name: /Low/ }));
     await user.click(within(panel).getByRole("button", { name: "Fast mode" }));
-    await user.click(within(panel).getByRole("button", { name: "Goal" }));
-    expect(draft.mode).toBe("goal");
-    await user.click(
-      within(panel).getByRole("button", { name: "Coordinator" }),
-    );
-    expect(draft.coordinator).toBe(true);
-    await user.click(within(panel).getByRole("button", { name: "Model" }));
+    expect(draft.controls).toEqual({
+      thinking: "low",
+      fast: true,
+      reasoning_mode: "standard",
+    });
+    // The same panel and selections survive desktop/sheet transitions.
+    act(() => {
+      mobile = !mobile;
+      for (const listener of mediaListeners) listener();
+    });
+    panel = await screen.findByRole("dialog", { name: "Agent & Model" });
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(
+      within(panel)
+        .getByRole("button", { name: "Low" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    await user.click(within(panel).getByRole("button", { name: "Model" }));
     await user.type(
       screen.getByRole("textbox", { name: "Search models" }),
       "custom:two",
@@ -253,79 +260,64 @@ it.each([false, true])(
     await user.click(screen.getByRole("button", { name: "Model Two" }));
     expect(draft.modelId).toBe("two");
     expect(draft.controls).toEqual({});
-    expect(within(panel).getByText("Model default: Custom")).toBeTruthy();
-    expect(
-      (
-        within(panel).getByRole("button", {
-          name: "Fast mode",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
     await user.click(
-      within(panel).getByRole("button", { name: "Execution mode" }),
-    );
-    expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    expect(
-      screen.getAllByText(/Runs as your host account/).length,
-    ).toBeGreaterThan(0);
-    await user.click(screen.getByRole("button", { name: /^Sandbox/ }));
-    expect(draft.environment?.environment_profile_id).toBe("sandbox");
-    await user.click(
-      screen.getByRole("button", { name: "Close run settings" }),
+      screen.getByRole("button", { name: "Close Agent & Model settings" }),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(document.activeElement).toBe(trigger);
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Agent & Model settings" }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Composer options" }),
+    ).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Goal" }));
+    await user.click(screen.getByRole("button", { name: "Coordinator" }));
+    expect(draft.mode).toBe("goal");
+    expect(draft.coordinator).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Environments" }));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(
+      screen.getAllByText(/Full Control runs as the server account/).length,
+    ).toBeGreaterThan(0);
+    await user.click(screen.getByRole("combobox", { name: "Local mode" }));
+    await user.click(await screen.findByRole("option", { name: /Sandbox/ }));
+    expect(draft.environment?.environment_profile_id).toBeUndefined();
+    await user.click(screen.getByRole("button", { name: "Use for next Run" }));
+    expect(draft.environment?.environment_profile_id).toBe("sandbox");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
     expect(draft.doc.getText("text").toString()).toBe("Keep this draft");
-    expect(screen.getByRole("button", { name: "Turn off Goal" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Turn off Coordinator" }),
-    ).toBeTruthy();
-    act(() => resize(860));
-    expect(
-      screen.getByRole("button", { name: "Model settings" }).textContent,
-    ).toContain("Model Two");
-    expect(
-      screen.getByRole("button", { name: "Goal" }).getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
-    expect(draft.environment?.environment_profile_id).toBe("sandbox");
-    act(() => resize(380));
-    await user.click(screen.getByRole("button", { name: "Turn off Goal" }));
+    await user.click(screen.getByRole("button", { name: "Goal" }));
+    await user.click(screen.getByRole("button", { name: "Coordinator" }));
     expect(draft.mode).toBe("normal");
-    await user.click(
-      screen.getByRole("button", { name: "Turn off Coordinator" }),
-    );
     expect(draft.coordinator).toBe(false);
+    expect(
+      screen.getByLabelText("Agent: Writer. Model: Model Two"),
+    ).toBeTruthy();
   },
 );
 
 it("edits working folders in-place, cancels without applying, and locks pending selections", async () => {
   mobile = true;
-  width = 380;
   const user = userEvent.setup();
   mount();
-  await user.click(screen.getByRole("button", { name: "Composer options" }));
-  await user.click(
-    screen.getByRole("button", { name: "Working environments" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   const folder = screen.getByDisplayValue("/workspace");
   await user.clear(folder);
   await user.type(folder, "/changed");
-  await user.click(
-    screen.getByRole("button", { name: "Back to run settings" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
   expect(draft.environment).toBeUndefined();
-  await user.click(
-    screen.getByRole("button", { name: "Working environments" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Environments" }));
   expect(screen.getByDisplayValue("/workspace")).toBeTruthy();
   const restoredFolder = screen.getByDisplayValue("/workspace");
   await user.clear(restoredFolder);
   await user.type(restoredFolder, "/accepted");
   await user.click(screen.getByRole("button", { name: "Use for next Run" }));
   expect(draft.environment?.local_roots).toEqual(["/accepted"]);
+  await user.click(
+    screen.getByRole("button", { name: "Agent & Model settings" }),
+  );
   await user.click(screen.getByRole("button", { name: "Model" }));
   act(() => {
     draft.submission = { kind: "pending", action: "send" };
@@ -336,12 +328,12 @@ it("edits working folders in-place, cancels without applying, and locks pending 
       .disabled,
   ).toBe(true);
   await user.click(
-    screen.getByRole("button", { name: "Back to run settings" }),
+    screen.getByRole("button", { name: "Close Agent & Model settings" }),
   );
   expect(
     (
       screen.getByRole("button", {
-        name: "Execution mode",
+        name: "Environments",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -355,22 +347,17 @@ it.each([false, true])(
   "preserves staged environments across the viewport breakpoint (mobile: %s)",
   async (onMobile) => {
     mobile = onMobile;
-    width = 380;
     draft.environment = { environment_profile_id: "sandbox" };
     const user = userEvent.setup();
     mount();
     const editor = screen.getByRole("textbox", { name: "Message" });
-    await user.click(screen.getByRole("button", { name: "Composer options" }));
-    await user.click(
-      screen.getByRole("button", { name: "Working environments" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Environments" }));
     const folder = screen.getByDisplayValue("/workspace");
     await user.clear(folder);
     await user.type(folder, "/staged");
     act(() => {
       mobile = !mobile;
       for (const listener of mediaListeners) listener();
-      resize(mobile ? 380 : 860);
     });
     expect(await screen.findByDisplayValue("/staged")).toBeTruthy();
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
@@ -378,9 +365,6 @@ it.each([false, true])(
     await user.click(screen.getByRole("button", { name: "Use for next Run" }));
     expect(draft.environment?.local_roots).toEqual(["/staged"]);
     expect(draft.environment?.environment_profile_id).toBe("sandbox");
-    await user.click(
-      screen.getByRole("button", { name: "Close run settings" }),
-    );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   },

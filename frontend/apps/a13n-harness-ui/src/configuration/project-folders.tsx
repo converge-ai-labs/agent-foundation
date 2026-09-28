@@ -17,10 +17,12 @@ import styles from "./project-folders.module.css";
 export function ProjectFolders({
   roots,
   allowEmpty = false,
+  compact = false,
   onChange,
 }: {
   roots: { path: string }[];
   allowEmpty?: boolean;
+  compact?: boolean;
   onChange: (roots: { path: string }[]) => void;
 }) {
   const status = useStatus();
@@ -30,11 +32,13 @@ export function ProjectFolders({
     onChange(roots.map((root, i) => (i === index ? { ...root, path } : root)));
   return (
     <div className={styles.folders}>
-      <p className={styles.hint}>
-        Existing absolute directories on the server or container, not this
-        browser's computer. The first folder is the local workspace. These are
-        path references; no files or directories are copied.
-      </p>
+      {!compact && (
+        <p className={styles.hint}>
+          Existing absolute directories on the server or container, not this
+          browser's computer. The first folder is the local workspace. These are
+          path references; no files or directories are copied.
+        </p>
+      )}
       {roots.map((root, index) => (
         <div key={index} className={styles.folder}>
           <div className={styles.row}>
@@ -97,10 +101,10 @@ export function ProjectFolders({
           onClick={() => onChange([...roots, { path: "" }])}
         >
           <PlusIcon />
-          Add another directory
+          {roots.length ? "Add another directory" : "Add local directory"}
         </Button>
       </div>
-      {status.data && !status.data.features?.host_files && (
+      {roots.length > 0 && status.data && !status.data.features?.host_files && (
         <small className={styles.hint}>
           Folder browsing is unavailable while native computer sharing is
           disabled. You can still enter paths manually.

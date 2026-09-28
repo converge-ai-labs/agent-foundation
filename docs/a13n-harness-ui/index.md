@@ -1,8 +1,8 @@
 # Harness UI
 
-Harness UI is a terminal application for working with AI agents in your own projects. Ask it to explain a codebase, edit files, run checks, or delegate a focused investigation. Connect a subscription account or an API-key model, choose execution permissions, and work from the directory you already use.
+Harness UI is the [Harness](../a13n-harness/index.md) playground: a terminal and browser workbench for individuals and trusted small teams. Use it to work on real projects while experimenting with models, instructions, tools, Skills, and execution environments. Ask an agent to explain a codebase, edit files, run checks, or delegate a focused investigation.
 
-You do not need to learn the Harness SDK, create a Project resource, or deploy a server to start.
+The terminal offers a personal coding-agent workflow. The browser adds shared conversations and drafts, live execution, files, Git changes, terminals, and configuration editing. Both use the same application and agent foundation; neither requires SDK code or a Service deployment.
 
 ## Install and start
 
@@ -13,6 +13,14 @@ uv tool install a13n-harness-ui
 cd your-repository
 a13n-harness-ui
 ```
+
+For the browser workbench, run:
+
+```console
+a13n-harness-ui webui
+```
+
+Open the login link printed by the server. The browser includes guided setup; see [Use the browser](webui.md) for collaboration, authentication, native host access, and server lifecycle.
 
 The terminal supports macOS, Linux, and Windows. The installed application does not require Node.js or a repository checkout. If the command is missing from PATH, run `uv tool update-shell` and open a new terminal.
 
@@ -29,7 +37,7 @@ Try a bounded first task:
 Explain this repository's main entry point and tests. Do not modify any files.
 ```
 
-> **Choose permissions deliberately.** Full Control is not a sandbox: commands inherit your host account's filesystem and network access. Sandbox is available on supported Linux/macOS configurations; the built-in Windows mode is Full Control. See [execution permissions](environments-and-projects.md#execution-permissions).
+Full Control runs commands with your host account's filesystem and network access; it is not a sandbox. Sandbox requires supported Linux/macOS isolation; built-in Windows execution is Full Control only. See [execution permissions](environments-and-projects.md#execution-permissions).
 
 [Installation and upgrades](installation.md) covers source development and dependency updates. [Setup](setup.md) covers login, cancellation, and advanced choices.
 
@@ -56,7 +64,7 @@ Or type `/config` in chat. The default root file is **`~/.a13n-harness-ui/a13n-h
 
 Start with [common configuration recipes](configuration-recipes.md) for copyable edits, or [the configuration guide](configuration.md) for all root fields and precedence. `--config PATH` selects another configuration tree; it does not merge it with the default tree.
 
-## Daily controls
+## Terminal controls
 
 | Task                                    | In chat                        |
 | --------------------------------------- | ------------------------------ |
@@ -80,4 +88,8 @@ See [Use the terminal](everyday-use.md) for attachments, approvals, questions, h
 - **Script a task or diagnose a failure:** [Automation and troubleshooting](automation-and-troubleshooting.md).
 - **Build another interface:** [Embed the Python App](embedding.md) or [use the HTTP API](http-api.md).
 
-Harness UI is a local interactive Host built on [Harness](../a13n-harness/index.md). Its foreground process owns active work; it is not a detached worker service. The optional `webui` command currently provides an HTTP API and a bundled authentication/status page, not browser chat. See [browser support](webui.md) before choosing it as an interface.
+## Sharing and execution boundaries
+
+Share a WebUI instance only with trusted collaborators: they share credentials, configuration and accessible files, not separate participant permissions. Native Host Files and terminals are on by default; `--no-share-computer` turns them off independently of the Agent's execution mode.
+
+Closing a browser does not stop an active Run; stopping the application does. Saved conversations can resume from the last checkpoint, but input or output since then may be lost. Use [Service](../a13n-service/index.md) for managed identities and recoverable runs.

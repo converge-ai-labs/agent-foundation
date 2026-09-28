@@ -51,7 +51,7 @@ a13n-harness-ui setup --advanced
 
 Advanced setup exposes optional context, reasoning, shell-review, subagent, and instruction choices. Normal setup supplies starter values; these are still editable YAML, not hidden application state.
 
-Normal setup includes the three built-in child roles and initializes an absent root `security.shell_review` mapping for both subscription and API-key connections. It selects `enable: true`, `risk_threshold: extra_high`, and a Model resource: a separate subscription reviewer or the connected API-key Model. Review uses a Model request. Flagged shell commands ask for approval by default; non-timeout review failures add no restriction, and timeout denies. Existing root review settings stay unchanged. Add Agent can initialize a missing shortcut; Add Model never changes it or existing Agents. These are starter selections, not a guarantee that every command is reviewed or that Full Control becomes isolated. See [tool-review configuration](configuration-recipes.md#configure-tool-review).
+Normal setup includes three built-in child roles and, if absent, enables `security.shell_review` at the `extra_high` threshold. It uses a configured Model to review shell launches and asks for approval when flagged. Existing review settings are preserved. This review is not isolation and does not inspect every command; see [tool-review configuration](configuration-recipes.md#configure-tool-review) for the exact policy.
 
 Built-in subagents inherit the parent Model. Advanced setup offers all or none; edit `subagents.include` to choose individual roles. External Codex/Claude Code subagent import is a separate `/import` workflow, not part of setup.
 
@@ -70,7 +70,7 @@ Use `/agent` to switch the complete Agent. Use `/model` to temporarily try a con
 
 Use Up/Down and Enter, or type option numbers. Esc goes back; Ctrl+C or Ctrl+D cancels. Cancelling first-use setup returns to the shell without opening chat.
 
-A completed credential save or login is independent of configuration publication and is not undone by cancellation. Multi-file publication is not a filesystem transaction: a failure reports completed paths. Inspect them before retrying, and preserve any `.a13n-harness-ui-setup-recovery-*` file until its original content has been reviewed.
+A completed login or saved key remains even if setup is cancelled. If publishing several files fails, inspect the completed paths shown in the error before retrying. Keep any `.a13n-harness-ui-setup-recovery-*` file until you review its original content.
 
 ## Inspect what was saved
 

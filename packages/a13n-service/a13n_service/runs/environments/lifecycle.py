@@ -270,7 +270,13 @@ async def _refusal(
             # The recipe is the new provider's; the reservation's provider cannot build it.
             message = "The template moved to another provider after this reservation; reserve a new environment"
             return Fault("environment_template_moved", message, "not_dispatched", permanent=True)
-        environment.handle = Handle(recipe=template.config.recipe).model_dump(mode="json")
+        definition = runtime.registry.get("environment", provider.type)
+        # Freeze effective defaults too: rebuilding an adapter after an upgrade must use the same recipe.
+        try:
+            recipe = definition.validate_environment(template.config.recipe).model_dump(mode="json")
+        except EnvironmentProviderError as error:
+            return fault_of(error, dispatched=False)
+        environment.handle = Handle(recipe=recipe).model_dump(mode="json")
         environment.provider_identity = identity
     elif environment.provider_identity != identity:
         message = "The provider now points at another account or endpoint; restore it or delete this environment"

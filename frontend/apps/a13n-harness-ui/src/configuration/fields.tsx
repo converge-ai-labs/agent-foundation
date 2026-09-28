@@ -17,12 +17,9 @@ import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
 import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
-import { ProjectFolders } from "./project-folders";
+import { EnvironmentsEditor } from "./environments";
 import { DeviceFields } from "./device-fields";
-import {
-  EnvironmentBindings,
-  type EnvironmentBinding,
-} from "./environment-bindings";
+import { type EnvironmentBinding } from "./environment-bindings";
 
 export function ResourceFields({
   source,
@@ -218,36 +215,15 @@ export function ResourceFields({
       )}
       {kind === "project" && (
         <>
-          <SettingsSection title="Project folders">
-            <div className={styles.fieldGroup}>
-              {roots ? (
-                <ProjectFolders
-                  roots={roots}
-                  allowEmpty={bindings.length > 0}
-                  onChange={(value) => set(["roots"], value)}
-                />
-              ) : (
-                <p>
-                  Repair the host root list in advanced YAML before using the
-                  directory field.
-                </p>
-              )}
-            </div>
-          </SettingsSection>
           <SettingsSection
             title="Conversation defaults"
             description="Applies to new conversations. Existing conversations can explicitly apply Project defaults."
           >
             {scalar("Default agent", ["defaults", "agent"], agentOptions)}
-            {scalar(
-              "Local environment profile",
-              ["defaults", "environment_profile"],
-              environmentOptions,
-            )}
             {referenceLists(["defaults"])}
           </SettingsSection>
           <SettingsSection
-            title="Working environments"
+            title="Environments"
             description="Project defaults are copied into new conversations. Applying them to an existing Thread changes only specified selections."
           >
             <div className={styles.fieldGroup}>
@@ -258,23 +234,62 @@ export function ResourceFields({
                     ? "This selection replaces the Thread's added environments when Project defaults are applied."
                     : "Explicitly empty: applying Project defaults removes the Thread's added environments."}
               </p>
-              <EnvironmentBindings
-                bindings={bindings}
-                localRoots={roots?.map((root) => root.path) ?? []}
-                defaultEnvironment={
-                  text(["defaults", "default_environment"]) || null
-                }
-                allowUnsetDefault
-                allowEmpty={!!roots?.length}
-                onChange={(next, defaultEnvironment) => {
-                  // Editing only the default must not turn an unspecified collection into an empty override.
-                  setEnvironments(
-                    next === bindings && rawBindings == null ? undefined : next,
-                    defaultEnvironment,
-                  );
-                }}
-              />
-              <div className="mt-3 flex flex-wrap gap-2">
+              {roots ? (
+                <EnvironmentsEditor
+                  value={{
+                    local_roots: roots.map((root) => root.path),
+                    environment_profile_id:
+                      text(["defaults", "environment_profile"]) || null,
+                    environment_bindings: bindings,
+                    default_environment:
+                      text(["defaults", "default_environment"]) || null,
+                  }}
+                  profiles={selectors.data?.environments}
+                  allowUnsetDefault
+                  requireWorkspace
+                  onChange={(patch) => {
+                    let updated = source;
+                    if (patch.local_roots !== undefined)
+                      updated = updateDocument(
+                        updated,
+                        ["roots"],
+                        patch.local_roots?.map((path) => ({ path })),
+                      );
+                    if ("environment_profile_id" in patch)
+                      updated = updateDocument(
+                        updated,
+                        ["defaults", "environment_profile"],
+                        patch.environment_profile_id || undefined,
+                      );
+                    // Default-only edits keep an unspecified collection unspecified.
+                    if (
+                      patch.environment_bindings !== undefined &&
+                      !(
+                        patch.environment_bindings === bindings &&
+                        rawBindings == null
+                      )
+                    )
+                      updated = updateDocument(
+                        updated,
+                        ["defaults", "environment_bindings"],
+                        patch.environment_bindings,
+                      );
+                    if (patch.default_environment !== undefined)
+                      updated = updateDocument(
+                        updated,
+                        ["defaults", "default_environment"],
+                        patch.default_environment || undefined,
+                      );
+                    onChange(updated);
+                  }}
+                />
+              ) : (
+                <p>
+                  Repair the host root list in advanced YAML before using the
+                  directory field.
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2 [&_button]:h-auto [&_button]:whitespace-normal [&_button]:text-left">
                 {rawBindings == null && (
                   <Button
                     type="button"

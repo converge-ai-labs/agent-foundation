@@ -1,8 +1,12 @@
 import type { Schema } from "../transport/client";
-import { FastToggle } from "./fast-toggle";
+import { SettingsRow, useComposerSettings } from "./composer-settings";
 import { ThinkingPicker } from "./thinking-picker";
-import { ReasoningModePicker } from "./reasoning-mode-picker";
-import styles from "./model-picker.module.css";
+import {
+  ReasoningModePicker,
+  reasoningModeLabel,
+} from "./reasoning-mode-picker";
+import { FastPicker } from "./fast-picker";
+import styles from "./composer-settings.module.css";
 
 export type ModelControlValues = Pick<
   Schema<"SubmitRequest">,
@@ -23,7 +27,7 @@ export function modelControlRequest(
   );
 }
 
-/** Shared presentation, not a generic form renderer: each control keeps its semantics. */
+/** Direct controls share the backend's capability catalog. */
 export function ModelControlPanel({
   model,
   controls,
@@ -33,30 +37,54 @@ export function ModelControlPanel({
   model?: Schema<"ModelSummary">;
   disabled?: boolean;
 }) {
+  const settings = useComposerSettings()!;
+  const reasoning = model?.reasoning_mode;
+  const showReasoning =
+    reasoning?.supported ||
+    controls.reasoning_mode != null ||
+    (reasoning && reasoning.state !== "default");
+  const choose = (next: ModelControlValues) => {
+    onControlsChange({ ...controls, ...next });
+    settings.navigate("root");
+  };
+  if (settings.page === "reasoning")
+    return (
+      <ReasoningModePicker
+        control={reasoning}
+        value={controls.reasoning_mode}
+        disabled={disabled}
+        onChange={(reasoning_mode) => choose({ reasoning_mode })}
+      />
+    );
+  if (settings.page !== "root") return null;
   return (
-    <>
+    <div className={styles.modelControls}>
       <ThinkingPicker
         model={model}
         value={controls.thinking}
         disabled={disabled}
         onChange={(thinking) => onControlsChange({ ...controls, thinking })}
       />
-      <ReasoningModePicker
-        control={model?.reasoning_mode}
-        value={controls.reasoning_mode}
-        disabled={disabled}
-        onChange={(reasoning_mode) =>
-          onControlsChange({ ...controls, reasoning_mode })
-        }
-      />
-      <section className={styles.thinking} aria-label="Service speed">
-        <FastToggle
-          model={model}
-          value={controls.fast}
+      {showReasoning && (
+        <SettingsRow
+          label="Reasoning mode"
+          value={
+            controls.reasoning_mode == null
+              ? `Default · ${reasoningModeLabel(reasoning?.state)}`
+              : reasoning?.supported
+                ? reasoningModeLabel(controls.reasoning_mode)
+                : "Unavailable selection"
+          }
           disabled={disabled}
-          onChange={(fast) => onControlsChange({ ...controls, fast })}
+          onClick={() => settings.navigate("reasoning")}
         />
-      </section>
-    </>
+      )}
+      <FastPicker
+        model={model}
+        value={controls.fast}
+        disabled={disabled}
+        onChange={(fast) => onControlsChange({ ...controls, fast })}
+      />
+    </div>
   );
 }

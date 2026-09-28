@@ -1,23 +1,9 @@
-import { Button, ToggleGroup, ToggleGroupItem } from "a13n-ui";
 import { useId } from "react";
+import { Button, ToggleGroup, ToggleGroupItem } from "a13n-ui";
 import type { Schema } from "../transport/client";
-import styles from "./model-picker.module.css";
+import styles from "./composer-settings.module.css";
 
 type Selection = Schema<"SubmitRequest">["thinking"];
-
-export function thinkingSummary(
-  model: Schema<"ModelSummary"> | undefined,
-  value: Selection,
-) {
-  const control = model?.thinking;
-  if (value != null) {
-    const selected = control?.options.find((item) => item.value === value);
-    return !selected || selected.disabled_reason
-      ? "Unavailable thinking"
-      : selected.label;
-  }
-  return control?.status === "supported" ? control.default_summary : undefined;
-}
 
 /** Provider rules and native values belong to the backend catalog, not React. */
 export function ThinkingPicker({
@@ -35,34 +21,31 @@ export function ThinkingPicker({
   const control = model?.thinking;
   const options = control?.options ?? [];
   const explicit = options.filter((item) => item.value !== null);
-  const useList = explicit.length > 4;
   const inherited = options.find((item) => item.value === null);
   const selected = options.find((item) => item.value === (value ?? null));
   const unavailable =
     value != null && (!selected || !!selected.disabled_reason);
   return (
-    <section className={styles.thinking} aria-label="Thinking">
-      <div className={styles.heading}>
+    <section aria-label="Thinking">
+      <div className={styles.controlHeading}>
         <span>Thinking</span>
-        {inherited && (explicit.length > 0 || value != null) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-pressed={value == null}
-            disabled={disabled || !!inherited.disabled_reason}
-            title={inherited.disabled_reason ?? inherited.description}
-            onClick={() => onChange(null)}
-          >
-            {value == null ? "Using default" : "Use default"}
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Use default thinking"
+          aria-pressed={value == null}
+          disabled={disabled || !!inherited?.disabled_reason}
+          title={inherited?.disabled_reason ?? inherited?.description}
+          onClick={() => onChange(null)}
+        >
+          {value == null ? "Using default" : "Use default"}
+        </Button>
       </div>
       {explicit.length > 0 && (
         <ToggleGroup
           aria-label="Thinking level"
           aria-describedby={descriptionId}
-          className={useList ? styles.levelList : styles.levels}
-          orientation={useList ? "vertical" : "horizontal"}
+          className={styles.levels}
           value={value == null ? [] : [JSON.stringify(value)]}
           disabled={disabled}
           onValueChange={(keys) => {
@@ -81,7 +64,6 @@ export function ThinkingPicker({
               title={item.disabled_reason ?? item.description}
             >
               {item.label}
-              {useList && item.description && <small>{item.description}</small>}
             </ToggleGroupItem>
           ))}
         </ToggleGroup>

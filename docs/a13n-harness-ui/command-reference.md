@@ -1,6 +1,6 @@
 # Command reference
 
-This is the complete registered terminal command surface. Shell commands and in-chat slash commands are different parsers; an SDK method or HTTP endpoint does not automatically become a CLI command.
+Use shell commands to start or manage Harness UI; use slash commands inside an interactive conversation. For a workflow rather than a syntax lookup, start with [setup](setup.md) or [terminal use](everyday-use.md).
 
 ## Shell invocation
 
@@ -10,37 +10,37 @@ a13n-harness-ui [GLOBAL OPTIONS] [COMMAND] [COMMAND OPTIONS]
 
 Omitting `COMMAND` opens the interactive terminal. Put global options before the command; use `-h` or `--help` at each level. `--version` is an eager information option. Help and version do not initialize the App, database, Model, or Environment.
 
-Root defaults and startup behavior are described in [Configuration](configuration.md); the tables below describe parser defaults, not resolved configuration or successful provider authentication. `--resume` cannot be combined with new-session Agent, Environment, or title overrides.
+These tables show command-line defaults; [Configuration](configuration.md) explains effective defaults. `--resume` cannot be combined with new-session Agent, Environment, or title overrides.
 
 ### Global options
 
-| Parameter               | Type / choices        | Parser default     | Meaning                                                                                    |
-| ----------------------- | --------------------- | ------------------ | ------------------------------------------------------------------------------------------ |
-| `--config`              | path                  | `"Sentinel.UNSET"` | Explicit Harness UI configuration YAML (default: ~/.a13n-harness-ui/a13n-harness-ui.yaml). |
-| `--data-root`           | path                  | `"Sentinel.UNSET"` | Override the local Harness UI data root.                                                   |
-| `--resume`              | text                  | `"Sentinel.UNSET"` | Resume a saved session by ID.                                                              |
-| `--agent`               | text                  | `"Sentinel.UNSET"` | Select a configured Agent for this session.                                                |
-| `--environment-mode`    | full-control, sandbox | `"Sentinel.UNSET"` | Override the built-in Environment mode for this session.                                   |
-| `--environment-profile` | text                  | `"Sentinel.UNSET"` | Override the custom Environment profile for this session.                                  |
-| `--display`             | concise, detailed     | `not set`          | Presentation only; overrides display.mode (default concise). /mode switches live.          |
-| `--no-update-check`     | boolean               | `false`            | Skip startup update detection for this invocation.                                         |
-| `--version`             | boolean               | `false`            | Show the version and exit.                                                                 |
+| Parameter               | Type / choices        | Parser default | Meaning                                                                                    |
+| ----------------------- | --------------------- | -------------- | ------------------------------------------------------------------------------------------ |
+| `--config`              | path                  | not set        | Explicit Harness UI configuration YAML (default: ~/.a13n-harness-ui/a13n-harness-ui.yaml). |
+| `--data-root`           | path                  | not set        | Override the local Harness UI data root.                                                   |
+| `--resume`              | text                  | not set        | Resume a saved session by ID.                                                              |
+| `--agent`               | text                  | not set        | Select a configured Agent for this session.                                                |
+| `--environment-mode`    | full-control, sandbox | not set        | Override the built-in Environment mode for this session.                                   |
+| `--environment-profile` | text                  | not set        | Override the custom Environment profile for this session.                                  |
+| `--display`             | concise, detailed     | `not set`      | Presentation only; overrides display.mode (default concise). /mode switches live.          |
+| `--no-update-check`     | boolean               | `false`        | Skip startup update detection for this invocation.                                         |
+| `--version`             | boolean               | `false`        | Show the version and exit.                                                                 |
 
 ## Commands
 
-The following command paths are literal shell subcommands. Positional arguments follow the path. Authentication commands can mutate account/key stores; plugin installation writes local content; uninstall deletes it. Configuration inspection opens local application state and is not a side-effect-free YAML parser.
+Place global options before these subcommands. Authentication and plugin commands change local stores; `config` inspection also opens application state.
 
 ### `webui`
 
 Run one foreground WebUI server with bundled browser assets.
 
-| Parameter                                                       | Type / choices   | Parser default     | Meaning                                                                             |
-| --------------------------------------------------------------- | ---------------- | ------------------ | ----------------------------------------------------------------------------------- |
-| `--host`                                                        | text             | `"127.0.0.1"`      | Listener IPv4 or IPv6 address.                                                      |
-| `--port`                                                        | integer 1..65535 | `8765`             |                                                                                     |
-| `--apikey, --api-key`                                           | text             | `"Sentinel.UNSET"` | Listener API key; overrides A13N_HARNESS_UI_API_KEY (visible in shell arguments).   |
-| `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`            | Disable Web authentication only; does not change Agent permissions.                 |
-| `--share-computer` / `--no-share-computer`                      | boolean          | `true`             | Share native Host Files as the server OS account, independent of Agent permissions. |
+| Parameter                                                       | Type / choices   | Parser default | Meaning                                                                             |
+| --------------------------------------------------------------- | ---------------- | -------------- | ----------------------------------------------------------------------------------- |
+| `--host`                                                        | text             | `"127.0.0.1"`  | Listener IPv4 or IPv6 address.                                                      |
+| `--port`                                                        | integer 1..65535 | `8765`         |                                                                                     |
+| `--apikey, --api-key`                                           | text             | not set        | Listener API key; overrides A13N_HARNESS_UI_API_KEY (visible in shell arguments).   |
+| `--dangerous-skip-permissions, --dangerously-bypass-permission` | boolean          | `false`        | Disable Web authentication only; does not change Agent permissions.                 |
+| `--share-computer` / `--no-share-computer`                      | boolean          | `true`         | Share native Host Files as the server OS account, independent of Agent permissions. |
 
 ### `update`
 
@@ -76,15 +76,15 @@ Create a reusable model without creating or changing an agent.
 
 Execute one prompt without an interactive terminal.
 
-| Parameter               | Type / choices        | Parser default     | Meaning                                            |
-| ----------------------- | --------------------- | ------------------ | -------------------------------------------------- |
-| `PROMPT`                | text                  | `required`         | Required positional argument                       |
-| `--resume`              | text                  | `"Sentinel.UNSET"` | Continue a saved session.                          |
-| `--agent`               | text                  | `"Sentinel.UNSET"` | Agent used for a new session.                      |
-| `--environment-mode`    | full-control, sandbox | `"Sentinel.UNSET"` | Built-in execution mode used for a new session.    |
-| `--environment-profile` | text                  | `"Sentinel.UNSET"` | Custom Environment profile used for a new session. |
-| `--title`               | text                  | `"Sentinel.UNSET"` | Title used for a new session.                      |
-| `--format`              | text, json            | `"text"`           |                                                    |
+| Parameter               | Type / choices        | Parser default | Meaning                                            |
+| ----------------------- | --------------------- | -------------- | -------------------------------------------------- |
+| `PROMPT`                | text                  | `required`     | Required positional argument                       |
+| `--resume`              | text                  | not set        | Continue a saved session.                          |
+| `--agent`               | text                  | not set        | Agent used for a new session.                      |
+| `--environment-mode`    | full-control, sandbox | not set        | Built-in execution mode used for a new session.    |
+| `--environment-profile` | text                  | not set        | Custom Environment profile used for a new session. |
+| `--title`               | text                  | not set        | Title used for a new session.                      |
+| `--format`              | text, json            | `"text"`       |                                                    |
 
 ### `config path`
 
@@ -122,25 +122,25 @@ List package-owned subagents and their current inclusion.
 
 Preview or apply external subagent imports.
 
-| Parameter        | Type / choices             | Parser default     | Meaning                                                     |
-| ---------------- | -------------------------- | ------------------ | ----------------------------------------------------------- |
-| `--product`      | claude-code, cursor, codex | `required`         |                                                             |
-| `--scope`        | user, project              | `required`         |                                                             |
-| `--project-root` | path                       | `"Sentinel.UNSET"` |                                                             |
-| `--user-home`    | path                       | `"Sentinel.UNSET"` |                                                             |
-| `--apply`        | boolean                    | `false`            | Apply every ready candidate; omission is a dry-run preview. |
-| `--format`       | text, json                 | `"text"`           |                                                             |
+| Parameter        | Type / choices             | Parser default | Meaning                                                     |
+| ---------------- | -------------------------- | -------------- | ----------------------------------------------------------- |
+| `--product`      | claude-code, cursor, codex | `required`     |                                                             |
+| `--scope`        | user, project              | `required`     |                                                             |
+| `--project-root` | path                       | not set        |                                                             |
+| `--user-home`    | path                       | not set        |                                                             |
+| `--apply`        | boolean                    | `false`        | Apply every ready candidate; omission is a dry-run preview. |
+| `--format`       | text, json                 | `"text"`       |                                                             |
 
 ### `plugin install`
 
 Install one Content Plugin from a Git repository.
 
-| Parameter    | Type / choices | Parser default     | Meaning                                         |
-| ------------ | -------------- | ------------------ | ----------------------------------------------- |
-| `REPOSITORY` | text           | `required`         | Required positional argument                    |
-| `--plugin`   | text           | `"Sentinel.UNSET"` | Plugin ID when the repository contains several. |
-| `--ref`      | text           | `"Sentinel.UNSET"` | Git branch, tag, or commit to install.          |
-| `--format`   | text, json     | `"text"`           |                                                 |
+| Parameter    | Type / choices | Parser default | Meaning                                         |
+| ------------ | -------------- | -------------- | ----------------------------------------------- |
+| `REPOSITORY` | text           | `required`     | Required positional argument                    |
+| `--plugin`   | text           | not set        | Plugin ID when the repository contains several. |
+| `--ref`      | text           | not set        | Git branch, tag, or commit to install.          |
+| `--format`   | text, json     | `"text"`       |                                                 |
 
 ### `plugin list`
 

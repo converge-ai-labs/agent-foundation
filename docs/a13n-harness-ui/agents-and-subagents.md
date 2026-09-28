@@ -2,7 +2,15 @@
 
 An **Agent** is a reusable YAML configuration: it chooses a Model, instructions, tools, extensions, and a child roster. A **Markdown subagent** is a lightweight child role that inherits the parent's model. An existing Agent can also be referenced as a child when it needs an independent configuration.
 
-You do not need a separate executor or daemon. All three forms use the same Harness execution and captured Run lifecycle.
+Choose a child form by what it needs to change:
+
+```mermaid
+flowchart LR
+    Parent[Parent Agent] -->|markdown: child-role| Markdown[Instructions only; inherits parent Model]
+    Parent -->|agent: agent-reviewer| Resource[Separate Agent resource; own Model and tools]
+```
+
+Both forms execute through Harness; neither starts a separate daemon.
 
 | I want to…                               | Read…                                                                     |
 | ---------------------------------------- | ------------------------------------------------------------------------- |
@@ -16,7 +24,7 @@ You do not need a separate executor or daemon. All three forms use the same Harn
 
 ## Create an Agent from files
 
-This complete example creates a coding Agent and a separately configured reviewer. Paths below are relative to the directory containing your selected `a13n-harness-ui.yaml`, normally `~/.a13n-harness-ui/`.
+Create a Model and an Agent in sibling directories beside your selected `a13n-harness-ui.yaml` (normally under `~/.a13n-harness-ui/`). Add a separately configured reviewer only if it needs its own Model or tools.
 
 ### 1. Create a Model
 

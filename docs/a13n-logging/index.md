@@ -1,149 +1,62 @@
 # Logging
 
-`a13n-logging` supplies standard-library loggers, one process configuration call, pretty or JSON formatting, an optional rotating file, and fields bound to the current context. Use it when embedding Foundation packages in your own executable. It does not provide a log server, trace exporter, centralized storage or automatic secret redaction.
+`a13n-logging` configures standard Python logging for an application namespace. It writes Rich terminal output or JSON to stdout, optionally rotates a JSON file, and binds fields to a unit of work.
 
-## Install and emit a record
+## Run a local example
 
-```console
-uv add a13n-logging
-```
-
-Python 3.13 or later is required. This complete example configures one application namespace and writes JSON to stdout:
+Install `a13n-logging` in a Python 3.13+ application with `uv add a13n-logging`. Save this as `logging_example.py` and run `uv run python logging_example.py`:
 
 ```python
-from a13n_logging import LogFormat, configure_logging, get_logger
+from a13n_logging import LogFormat, configure_logging, get_logger, log_context
 
-configure_logging(
-    level="INFO",
-    log_format=LogFormat.json,
-    logger_names=("my_application",),
-)
-
-logger = get_logger("my_application.jobs")
-logger.info("job_started", extra={"job_id": "job-example", "attempt": 1})
-```
-
-A record contains a UTC timestamp, severity, logger name, message, and the supplied structured fields. Timestamp values vary. Switch to `LogFormat.pretty` for Rich terminal output with sorted `key=value` fields.
-
-## Configure at the process boundary
-
-Libraries call `get_logger(__name__)` or `logging.getLogger(__name__)`; the executable configures the namespaces it owns once. Importing this package and creating a logger do not install handlers.
-
-```python
-from a13n_logging import get_logger
-
-logger = get_logger(__name__)
-
-
-def report_ready() -> None:
-    logger.info("ready")
-```
-
-Calling `configure_logging()` applies `logging.config.dictConfig()` immediately. It replaces handler configuration for selected namespaces; it is not a per-request context manager.
-
-The default `logger_names=()` selects **no namespaces**. The helper does not configure the root logger or infer which Foundation packages to capture. Supply actual logger namespaces; distribution names such as `a13n-harness` are not necessarily Python logger names.
-
-## Bind fields to a unit of work
-
-`log_context(**fields)` adds fields to every record logged in its block, by any configured logger, including records of libraries and of tasks started inside the block:
-
-```python
-from a13n_logging import get_logger, log_context
-
+configure_logging(log_format=LogFormat.json, logger_names=("my_application",))
 logger = get_logger("my_application.jobs")
 
-
-async def run_job(job_id: str) -> None:
-    with log_context(job_id=job_id):
-        logger.info("job_started")  # carries job_id
-        await step()  # its records carry job_id too
+with log_context(job_id="job-example"):
+    logger.info("job_started", extra={"attempt": 1})
 ```
 
-The fields live in a context variable, so concurrent tasks never see each other's fields. An inner block adds to the outer one's fields and replaces a field of the same name. A field passed in `extra`, or a standard record attribute of the same name, wins over a bound field.
+The JSON record on stdout contains `timestamp` (UTC), `level`, `logger`, `message`, `job_id`, and `attempt`. Set `log_format=LogFormat.pretty` for Rich terminal output.
 
-The handlers `configure_logging()` creates add the bound fields. A handler you attach yourself, such as a test's capture handler, adds them only with `ContextFilter` from `a13n_logging.context`.
+## Configure at the executable boundary
 
-## Write a rotating file
+Call `configure_logging()` once in the executable, naming the Python logger namespaces you want to configure. Libraries only call `get_logger(__name__)` (or `logging.getLogger(__name__)`). Logger creation itself does not install handlers. The default `logger_names=()` configures **no** namespaces or root logger; `a13n-harness` is a distribution name, not necessarily a logger namespace.
 
-Pass a `LogFile` to write JSON records to a file, instead of or besides stdout:
+| Keyword argument              | Default            | Effect                                                                         |
+| ----------------------------- | ------------------ | ------------------------------------------------------------------------------ |
+| `level: str`                  | `"INFO"`           | Case-insensitive standard logging level; an invalid level fails configuration. |
+| `log_format: LogFormat`       | `LogFormat.pretty` | `pretty` (Rich) or `json` for stdout. Pass an enum member.                     |
+| `logger_names: Sequence[str]` | `()`               | Namespaces receiving handlers, level, and `propagate=False`.                   |
+| `stdout: bool`                | `True`             | Enable stdout output.                                                          |
+| `file: LogFile \| None`       | `None`             | Add a rotating JSON file, even with pretty stdout.                             |
+
+At least one output is required. Configuration applies `logging.config.dictConfig()` immediately, with `disable_existing_loggers=False`; unrelated loggers are not disabled. Default JSON writes to **stdout**, so do not use it on protocol stdout. Supply your own handler when another destination is required.
 
 ```python
 from pathlib import Path
-
 from a13n_logging import LogFile, LogFormat, configure_logging
 
+Path("logs").mkdir(exist_ok=True)
 configure_logging(
     log_format=LogFormat.pretty,
     logger_names=("my_application",),
-    file=LogFile(path=Path("/var/log/my-application/app.log"), max_bytes=100 * 1024 * 1024, backups=5),
+    file=LogFile(path=Path("logs/app.jsonl"), max_bytes=10_000_000, backups=5),
 )
 ```
 
-The file is always JSON, whatever `log_format` selects for stdout. When a record would take the active file past `max_bytes`, it becomes `app.log.1`, older files shift up, and the oldest beyond `backups` is deleted; the active file is not counted in `backups`. Both values must be at least 1, because standard logging never rotates when either is zero. The directory must exist and be writable, or configuration fails. One process owns one file: processes that share a path rotate it under each other.
+Rotation shifts the active file to `.1` when the next record would exceed `max_bytes`; `backups` excludes the active file. Both numbers must be positive. Assign each file path to one process; independent processes cannot safely rotate the same file.
 
-## Configuration reference
+## Bound fields and exceptions
 
-`configure_logging()` accepts keyword-only arguments:
+`log_context(**fields)` attaches fields to configured handlers' records in that context. Nested contexts override their parents' same-name fields, while `extra` and standard record attributes take precedence over bound fields. Context variables isolate concurrent tasks; tasks started inside a block inherit its values. A custom handler needs `a13n_logging.context.ContextFilter` to include those fields.
 
-| Argument                      | Default            | Meaning                                                                                 |
-| ----------------------------- | ------------------ | --------------------------------------------------------------------------------------- |
-| `level: str`                  | `"INFO"`           | Uppercased before passing to standard logging; invalid levels fail during configuration |
-| `log_format: LogFormat`       | `LogFormat.pretty` | Use the enum member `pretty` or `json`, not an arbitrary string                         |
-| `logger_names: Sequence[str]` | `()`               | Exact namespaces to attach to the generated handlers                                    |
-| `stdout: bool`                | `True`             | Write records to stdout in `log_format`                                                 |
-| `file: LogFile \| None`       | `None`             | Also write JSON records to a rotating file                                              |
+`JsonFormatter` emits a compact object with timestamp, level, logger, message, non-reserved extra fields, and `exception` when `exc_info` is present. `PrettyFormatter` emits the logger name and message plus sorted `key=value` fields through Rich. Unsupported JSON values use `str(value)`.
 
-At least one output is required: `stdout=False` without a `file` fails.
+`logger.exception(...)` includes exception text and traceback; neither this package nor its formatters removes secrets. For bounded diagnostics without exception messages, use `exception_details(error)`: it returns up to 32 entries with exception type, parent index, and the last 64 stack frames, plus integer status code or errno when available. It follows causes, contexts, and exception-group children. File paths and function names remain visible; messages, locals, source lines, and response bodies are omitted. Redact sensitive application data before logging it.
 
-The configuration uses logging schema version `1` and `disable_existing_loggers=False`. Each selected logger receives the chosen level, the output handlers, and `propagate=False`, preventing a second emission through ancestors. Other loggers are not disabled.
+The public exports are `LogFormat`, `LogFile`, `get_logger`, `configure_logging`, `log_context`, `JsonFormatter`, `PrettyFormatter`, and `exception_details`. For Harness traces and semantic events, see [Observation](../a13n-harness/observation.md).
 
-### Pretty output
-
-`PrettyFormatter` produces `logger-name message` followed by extra fields sorted by name. Field values are compact JSON; unsupported values fall back to their string representation.
-
-The configured handler is Rich's `RichHandler` with `markup=False`, `rich_tracebacks=True`, and `show_path=False`. Rich owns console rendering and traceback presentation.
-
-### JSON output
-
-`JsonFormatter` produces one compact Unicode JSON object per record:
-
-| Field             | Value                                                                    |
-| ----------------- | ------------------------------------------------------------------------ |
-| `timestamp`       | `record.created` formatted as an ISO UTC timestamp                       |
-| `level`           | Standard logging level name                                              |
-| `logger`          | Logger namespace                                                         |
-| `message`         | `record.getMessage()`, including standard logging argument interpolation |
-| Additional fields | Non-reserved record attributes whose names do not start with `_`         |
-| `exception`       | Formatted exception text when `exc_info` is present                      |
-
-The default JSON handler is `logging.StreamHandler` targeting `sys.stdout`, not stderr. This matters in processes whose stdout carries a protocol or machine-readable command result: supply a custom handler instead of contaminating that stream.
-
-`default=str` is used for unsupported JSON values. The formatter is not a typed telemetry schema validator or a guarantee that every arbitrary Python value meets a strict downstream JSON policy. Pass bounded, serializable application values.
-
-## Exceptions
-
-Use `logger.exception(...)` inside an exception handler to include traceback information. JSON records add `exception`; Rich renders the exception in its terminal format. The logging package does not remove tokens, personal data, model content, or sensitive exception strings. Redact at the owner before emitting the record.
-
-Use `exception_details(error)` when a structured diagnostic needs exception types and stack locations without copying exception messages or execution payloads. It returns at most 32 entries, follows causes or contexts (including suppressed context) and exception-group children, and keeps the last 64 traceback frames per entry. Each entry contains `type`, a `parent` entry index (or `None` for the root), and `frames` with `file`, `line`, and `function`; integer `status_code` and `errno` values are included when available. Messages, notes, source lines, locals, requests, and response bodies are omitted. File paths and function names remain visible.
-
-## Public API and ownership
-
-| Export                     | Role                                                            |
-| -------------------------- | --------------------------------------------------------------- |
-| `LogFormat`                | Enum containing `pretty` and `json`                             |
-| `get_logger(name)`         | Return the standard-library logger without configuring it       |
-| `configure_logging(...)`   | Configure the selected namespaces of the current process        |
-| `LogFile`                  | A rotating JSON log file: path, size limit and backups          |
-| `log_context(**fields)`    | Bind fields to every record logged in a block                   |
-| `JsonFormatter`            | Produce structured JSON records                                 |
-| `PrettyFormatter`          | Produce event-style text for Rich                               |
-| `exception_details(error)` | Return bounded exception structure without messages or payloads |
-
-For Harness traces, metrics, and semantic events, see [Observation](../a13n-harness/observation.md). Logging neither creates OpenTelemetry spans nor persists `HarnessState`.
-
-## Development and releases
-
-Logging has its own `a13n-logging` release channel; it is not co-versioned with Harness or Service. The source version is `0.0.0`; published consumers use their declared compatible dependency ranges.
+## Validate
 
 From the repository root:
 
@@ -151,4 +64,4 @@ From the repository root:
 uv run --locked pytest packages/a13n-logging/tests
 ```
 
-The [package source](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-logging) contains the complete small implementation and its focused tests.
+Logging has its own release channel; it is not co-versioned with Harness or Service. See the [package README](https://github.com/converge-ai-labs/agent-foundation/blob/main/packages/a13n-logging/README.md) and [release model](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/repository-model.md).

@@ -1,6 +1,6 @@
 # Providers and runtime configuration
 
-Choose a Provider for the target you actually operate. The target recipe is credential-free data; the runtime collaborator holds clients, credentials, and Host-owned bootstrap resources. Naming a Provider type does not install or authorize it.
+Choose a Provider for your local directory, container, cloud sandbox, or remote machine. The recipe describes the target; the runtime holds its clients and credentials.
 
 [Choose a backend](index.md#choose-a-backend) for the short comparison. This page covers catalogs, extension registration, and built-in runtime requirements.
 
@@ -25,7 +25,7 @@ definition = catalog.require("acme_sandbox")
 
 `load_provider_plugins()` imports only the entry-point names you list; an empty selection scans no installed metadata. It rejects a duplicate, malformed, missing, or ambiguous name, and reports the distribution name, version, and import target of each loaded plugin as provenance. The catalog then rejects a duplicate Provider type, so a plugin cannot shadow a built-in.
 
-Package presence is availability, not authorization. A catalog accepts no serialized import target, performs no ambient activation, mutates no process-global registry, and reloads no changed module. Use a fresh Host process to load changed Provider code.
+Select plugins explicitly and restart the Host after changing their code.
 
 An installed distribution publishes one manifest under the shared entry-point group:
 
@@ -250,7 +250,7 @@ finally:
     await environment.close()
 ```
 
-`create()` validates the account configuration, enforces the declared credential rule, validates the recipe, and only then calls the Provider's runtime factory. Everything before that factory is pure. A runtime you pass in stays yours to close; one `create()` acquires closes with the adapter.
+`create()` validates the recipe, then the account configuration and credential rule before calling the Provider's runtime factory. Everything before that factory is pure. A runtime you pass in stays yours to close; one `create()` acquires closes with the adapter.
 
 ### Cloud validation
 

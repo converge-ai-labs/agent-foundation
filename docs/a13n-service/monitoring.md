@@ -100,3 +100,13 @@ Start from the `X-Request-Id` of the response, which error bodies repeat as `req
 Per-tenant usage is recorded as facts in PostgreSQL, never in metrics. A workspace reads its own through the [usage API](agents-and-runs.md#usage). Operators can import the usage dashboard from the monitoring bundle, which reads runs and model usage per organization, workspace and model through a read-only database role.
 
 The outbox also exposes `a13n_outbox_backlog_alert{kind}` for a sustained threshold breach and `a13n_outbox_dead{kind}` for retained dead deliveries. Use the maximum across control replicas. Both are 0/1 gauges updated every 15 seconds; the backlog timer resets when the process restarts. See [outbox retention and capacity](operations.md#outbox-retention-and-capacity) for policy defaults, overrides and response guidance.
+
+### Workspace Usage in the Console
+
+Open **Observe → Usage** to inspect the current workspace. Choose the last 7 or 30 days, or apply a custom range of up to 366 days. The overview shows model costs, tokens, cached input, cache rate, Run count, request count and average Run time. Switch the daily chart between Spend and Tokens, then compare Agents or models in the paginated breakdown.
+
+Spend includes recorded model costs in USD. Requests without a price are counted separately: a partial subtotal is not the full cost, and entirely unknown costs display as unavailable. Cached input is already included in input tokens. Cache rate divides the summed cached input by summed input, rather than averaging request percentages.
+
+Usage dates follow ingestion time; Run counts follow start time. Average Run time covers started Runs that have sealed, measured from start to seal, including intervening execution waits. A waiting Run seals before human approval; a resumed successor is a separate Run. Late usage can update an earlier day's totals. The chart follows your browser's displayed timezone.
+
+These reads query stored facts directly and work without a trace backend. The HTTP endpoints are `GET /api/v1/usage/overview` (totals and daily buckets), `/api/v1/usage/agents` and `/api/v1/usage/models` (paged breakdowns). All take `start` and exclusive `end` RFC 3339 timestamps; overview also accepts an IANA `timezone`, and breakdowns accept `limit` and `cursor`. The existing `/api/v1/usage` continues to support per-Run, Thread and Session summaries.

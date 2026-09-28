@@ -3,7 +3,6 @@
 import hashlib
 import json
 from datetime import datetime
-from decimal import Decimal
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
@@ -512,27 +511,3 @@ class Submitted(BaseModel):
     thread: ThreadView
     entry: EntryView
     run: RunView | None
-
-
-class UsageFilter(_Frozen):
-    run_id: ObjectId | None = None
-    thread_id: ObjectId | None = None
-    session_id: ObjectId | None = None
-    ingested_after: AwareDatetime | None = None
-    ingested_before: AwareDatetime | None = None
-
-
-class ModelUsage(BaseModel):
-    # The model's key; None for records no model priced.
-    model: str | None
-    requests: int
-    input_tokens: int
-    output_tokens: int
-    cache_read_tokens: int
-    cache_write_tokens: int
-    # The sum of the costs priced at dispatch; None when no record of the model was priced.
-    cost: Decimal | None
-
-
-class UsageSummary(BaseModel):
-    models: list[ModelUsage]

@@ -2,7 +2,7 @@
 
 This private English-only React application provides collaborative conversations, execution/decision controls, instance authentication, guided setup, provider-account/key management, configuration resource editing and Project readiness. It uses the public `a13n-ui` design system, with local light/dark preferences and per-tab display profiles. Console localization is unchanged.
 
-The browser consumes the Python App's HTTP, summary realtime and page-presence WebSocket APIs. It does not own agent execution or import the Service SDK. Comment UI is disabled without removing backend records or APIs; historical captured references remain readable. Native Files and read-only Git Changes run beside Chat on wide screens and switch views on narrow screens. The terminal browser panel is the next workbench block, not an enabled placeholder control.
+The browser consumes the Python App's HTTP, summary realtime and page-presence WebSocket APIs. It does not own agent execution or import the Service SDK. Comment UI is disabled without removing backend records or APIs; historical captured references remain readable. Native Files and read-only Git Changes open beside Chat, with a resizable terminal panel below. Terminal sessions use server-owned POSIX PTYs under the same native computer-sharing gate. These panels operate on the listener Host, not the Agent's selected Environment.
 
 The npm package `a13n-harness-ui-webui` is private build input. Repository automation copies `dist/` into the generated `a13n_harness_ui/static/` tree for the Python wheel and sdist. Neither generated directory is committed. A wheel rebuilt from the sdist requires no Node.js.
 

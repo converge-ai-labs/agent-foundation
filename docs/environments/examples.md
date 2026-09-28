@@ -1,6 +1,6 @@
 # Built-in Provider Examples
 
-The runnable [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) project shows how Host code uses each built-in Environment Provider directly. It needs no Agent Harness or model credentials.
+The runnable [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) project shows how Host code uses selected built-in Environment Providers directly. For cloud backends, see [Cloud providers](providers.md#cloud-providers). It runs no Agent and needs no model credentials.
 
 Native and Envd backends follow the same Host-owned sequence:
 
@@ -69,7 +69,7 @@ Direct Local is appropriate only when the Environment may share the embedding Ho
 Build or install a compatible `a13n-envd`, then run:
 
 ```bash
-uv run environment-provider-example local-envd \
+uv run environment-provider-example local_envd \
   --executable /absolute/path/to/a13n-envd
 ```
 
@@ -152,8 +152,8 @@ The gate lints, type-checks, tests, and builds the independent project. Its smok
 For a one-command local trial, connection to an existing daemon, and a minimal Host WebSocket handler, use the [Remote Envd guide](remote-envd.md). Both examples use the same two-Run file round trip and preserve the daemon on Provider close. The local demo separately shows operator-owned startup and cleanup.
 
 ```bash
-uv run environment-provider-example remote-envd-demo \
+uv run environment-provider-example remote_envd_demo \
   --transport http --executable ../../target/debug/a13n-envd
-uv run environment-provider-example remote-envd-demo \
+uv run environment-provider-example remote_envd_demo \
   --transport websocket --executable ../../target/debug/a13n-envd
 ```

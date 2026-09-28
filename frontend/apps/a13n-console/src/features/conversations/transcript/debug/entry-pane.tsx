@@ -128,7 +128,7 @@ function ModelPane({ entry }: { entry: ModelEntry }) {
 /** Cache reads as a share of everything the request read, or null when unreported. */
 function cachedShare(usage: StepUsage | null) {
   if (!usage?.cacheReadTokens) return null;
-  const total = usage.inputTokens + usage.cacheReadTokens;
+  const total = usage.inputTokens;
   return total ? Math.round((usage.cacheReadTokens / total) * 100) : null;
 }
 

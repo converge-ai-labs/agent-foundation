@@ -2,9 +2,10 @@
 root_package = a13n_service
 
 [importlinter:contract:layers]
-name = Business packages depend downward: runs, resources, tenancy, infrastructure
+name = Business packages depend downward: usage, runs, resources, tenancy, infrastructure
 type = layers
 layers =
+    a13n_service.usage
     a13n_service.runs
     a13n_service.resources
     a13n_service.tenancy
@@ -19,6 +20,7 @@ forbidden_modules =
     a13n_service.tenancy
     a13n_service.resources
     a13n_service.runs
+    a13n_service.usage
 
 [importlinter:contract:assembly]
 name = Nothing imports assembly
@@ -28,6 +30,7 @@ source_modules =
     a13n_service.tenancy
     a13n_service.resources
     a13n_service.runs
+    a13n_service.usage
     a13n_service.providers
 forbidden_modules =
     a13n_service.app
@@ -49,6 +52,7 @@ source_modules =
     a13n_service.tenancy
     a13n_service.resources
     a13n_service.runs
+    a13n_service.usage
 forbidden_modules =
     a13n_service.providers.environments
 

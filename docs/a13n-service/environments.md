@@ -24,7 +24,7 @@ An environment provider is the account environments run on. Create it like any o
 | `runloop` | Runloop devboxes                                | `organization`; credential `{"api_key": ...}`                                                                                             | Suspends, keeping files                |
 | `local`   | Directories on the worker host, for development | Offered only with `environments.allow_local`. Commands run directly on the worker host, which is no isolation boundary.                   | Nothing to stop                        |
 
-Docker is operator trust: an engine runs its containers as root on its host. An account that names no `docker_host` uses the operator's `environments.docker_host` (by default the Service process's own Docker environment); a value it does name must be a remote engine over TCP or HTTPS passing the outbound [endpoint policy](configuration.md#outbound-requests) — a unix socket, `ssh://` or other local address is refused, since it would reach a host the operator owns. A template's recipe binds host directories only below `environments.docker_mount_roots` (empty by default, so no host mounts are allowed); the recipe has no privileged mode, capabilities, devices, host namespaces, security options, volume or runtime choice, and refuses unknown fields. A recipe also cannot raise the worker's own buffers for that container (`max_file_bytes`, `max_output_bytes_per_stream`, `max_spool_bytes`, `max_output_preview_bytes`, `max_query_entries`, `max_concurrent_processes`) above the Harness defaults; container CPU, memory and process limits stay the operator's to bound on the Docker engine itself, for example with a dedicated engine set through `environments.docker_host`. The [Compose deployment](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) mounts the host's socket for the operator's own engine, and the Kubernetes chart provides none.
+A Docker provider uses the operator's `environments.docker_host` by default; a provider-specific `docker_host` must be a remote TCP or HTTPS engine allowed by the [outbound policy](configuration.md#outbound-requests). Docker Engine access grants host-level authority. Templates may bind host directories only under `environments.docker_mount_roots` (none by default); privileged containers and host namespaces are not available. Bound CPU, memory and process use on the Engine. The [Compose deployment](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) connects the host Engine; the Kubernetes chart does not include one.
 
 The hosted types reach their vendor's fixed API: an account names an organization, team, workspace or app, never a host. Their sandboxes are billed to that account. The Service keeps a ready E2B, Modal, Vercel or Runloop sandbox alive by renewing it before the vendor would end it, so set the template's idle policy to bound what these sandboxes cost. If the provider's credential changes to one of another account that cannot see a sandbox, the environment shows the failure `provider_credential_changed` and stays usable once a credential of the sandbox's account is restored. Renewal cannot pass a vendor's hard limit: Modal ends a sandbox at its recipe's `timeout_seconds` (at most 24 hours), after which the environment shows as lost, and Vercel ends a session at its recipe's `timeout_seconds`, after which the environment is stopped and the next run resumes it. A template's idle stop that comes first keeps the files. See [provider configuration](../environments/configuration-reference.md) for every recipe field.
 
@@ -38,8 +38,7 @@ A template describes how to build a managed environment and when to stop and del
 curl -X POST "$A13N_URL/api/v1/environment-templates" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "Python sandbox", "provider_id": "eprov_...",
-       "config": {"recipe": {"image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev",
-                             "cpus": 2, "memory_gb": 4, "init_script": "pip install pandas"},
+       "config": {"recipe": {"cpus": 2, "memory_gb": 4, "init_script": "pip install pandas"},
                   "stop_after_seconds": 1800, "delete_after_seconds": 604800}}'
 ```
 
@@ -49,6 +48,20 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.
 
 To give every conversation of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount starts, the Service reserves a new environment from that template and mounts it as `workspace`.
+
+### Docker image versions
+
+Leave `recipe.image` unset to use `ghcr.io/converge-ai-labs/a13n-docker-environment` at the installed Service version:
+
+| Service build                                         | Image tag    |
+| ----------------------------------------------------- | ------------ |
+| Stable, such as `0.1.0`                               | `0.1.0`      |
+| RC, such as Python version `0.1.0rc1`                 | `0.1.0-rc.1` |
+| Source (`0.0.0`, including local suffixes) or `.devN` | `dev`        |
+
+Release images support `linux/amd64` and `linux/arm64`. Set `recipe.image` explicitly to keep a particular tag across Service upgrades, or use a digest to pin exact content. The Engine uses local images and pulls missing ones.
+
+Each instance saves its resolved image before its first create; upgrades and interrupted creates keep that image. Legacy instances without a saved image keep `:dev`. Create a new environment to use a changed image or template.
 
 ## Instances
 
@@ -103,9 +116,9 @@ These take the environment's `If-Match` and need `write`:
 
 - `PATCH …/environments/{environment_id}` with `{"name": ...}` renames it; an external target also takes a new `token` and `endpoint` (above).
 - `POST …/stop` stops a `ready` managed environment that no run is using, and answers `202`; a later run starts it again. Otherwise it answers `409 conflict` with a reason such as `in_use`, `environment_stopped`, `connect_only` (an external target), `stop_unsupported`, or the code of a permanent failure, such as `environment_lost`, that stopping would clear.
-- `DELETE …/environments/{environment_id}` retires an environment that no thread mounts and no run uses, and answers `202`; otherwise it answers `409 conflict` with reason `mounted`, `in_use` or `operation_unresolved`. A managed environment is destroyed with its files. An external target is only forgotten.
+- `DELETE …/environments/{environment_id}` retires an environment no active run uses. Unmount it from threads first; otherwise the request returns `409 conflict` with reason `mounted`. **Exception:** deleting a permanently failed environment also removes its thread mounts, so a thread with a default template can get a new `workspace` environment on its next run. An unresolved operation returns `409 conflict` with reason `operation_unresolved`. Deleting a managed environment destroys its files; deleting an external target only forgets its token, not the computer.
 
-An environment whose `failure` is `permanent` refuses new mounts and runs with the failure's code until you fix the cause or delete it. `environment_lost` means the provider no longer has the sandbox, so nothing can bring it back. Idle stops leave such an environment alone, since stopping would clear the failure. Deleting it also removes it from the threads that mount it, even while they do, and a thread that loses its `workspace` mount gets a new sandbox from its agent's default template at its next run. A failure that is not permanent, such as a renewal the provider refused once, leaves the environment usable and clears on the next success.
+A permanent failure, such as `environment_lost`, prevents new use; delete the environment or fix the cause where possible. A transient failure clears after a successful retry.
 
 ## Mount environments on a thread
 

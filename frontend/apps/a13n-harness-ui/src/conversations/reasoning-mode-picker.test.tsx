@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import {
@@ -8,9 +8,20 @@ import {
   type ModelControlValues,
   modelControlRequest,
 } from "./model-controls";
+import { ComposerSettings } from "./composer-settings";
 import { ReasoningModePicker } from "./reasoning-mode-picker";
 
-afterEach(cleanup);
+beforeEach(() =>
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  })),
+);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 it("distinguishes authored Pro from explicit Standard and restores the Model default", async () => {
   const user = userEvent.setup();
@@ -21,40 +32,43 @@ it("distinguishes authored Pro from explicit Standard and restores the Model def
     });
     return (
       <>
-        <ModelControlPanel
-          model={{
-            model_id: "model",
-            name: "Model",
-            route: "openai:gpt-5.6-sol",
-            reasoning_mode: { supported: true, state: "pro" },
-          }}
-          controls={controls}
-          onControlsChange={setControls}
-        />
+        <ComposerSettings>
+          <ModelControlPanel
+            model={{
+              model_id: "model",
+              name: "Model",
+              route: "openai:gpt-5.6-sol",
+              reasoning_mode: { supported: true, state: "pro" },
+            }}
+            controls={controls}
+            onControlsChange={setControls}
+          />
+        </ComposerSettings>
         <output>{JSON.stringify(modelControlRequest(controls))}</output>
       </>
     );
   }
   render(<Panel />);
-  const section = within(
-    screen.getByRole("region", { name: "Reasoning mode" }),
+  await user.click(
+    screen.getByRole("button", { name: "Agent & Model settings" }),
   );
-  expect(section.getByText("Model default: Pro")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Reasoning mode" }));
   expect(
-    section
-      .getByRole("button", { name: "Using default" })
+    screen
+      .getByRole("button", { name: /^Default/ })
       .getAttribute("aria-pressed"),
   ).toBe("true");
-  await user.click(section.getByRole("button", { name: "Standard" }));
+  await user.click(screen.getByRole("button", { name: "Standard" }));
   expect(JSON.parse(screen.getByRole("status").textContent!)).toEqual({
     thinking: "low",
     fast: false,
     reasoning_mode: "standard",
   });
   expect(
-    section.getByText(/Model default: Pro.*Override for next run/),
-  ).toBeTruthy();
-  await user.click(section.getByRole("button", { name: "Use default" }));
+    screen.getByRole("button", { name: "Reasoning mode" }).textContent,
+  ).toBe("Reasoning modeStandard");
+  await user.click(screen.getByRole("button", { name: "Reasoning mode" }));
+  await user.click(screen.getByRole("button", { name: /^Default/ }));
   expect(JSON.parse(screen.getByRole("status").textContent!)).toEqual({
     thinking: "low",
     fast: false,
@@ -80,7 +94,7 @@ it("keeps a stale unsupported selection resettable without claiming it is effect
       .disabled,
   ).toBe(true);
   expect(screen.getByText(/Unavailable selection/)).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "Use default" }));
+  await user.click(screen.getByRole("button", { name: /^Default/ }));
   expect(change).toHaveBeenCalledWith(null);
 });
 
@@ -94,7 +108,7 @@ it("does not interpret provider default as Standard and locks changes when disab
       onChange={change}
     />,
   );
-  expect(screen.getByText("Model default: Provider default")).toBeTruthy();
+  expect(screen.getByText("Provider default")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Pro" }));
   expect(change).not.toHaveBeenCalled();
 });

@@ -2805,25 +2805,6 @@ Responses:
 - **400** — .
 - **default** — .
 
-### `GET /api/v1/usage`
-
-Summarize Usage.
-
-| Parameter         | Location | Required | Type / schema  | Constraints and default                                        |
-| ----------------- | -------- | -------- | -------------- | -------------------------------------------------------------- |
-| `run_id`          | query    | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
-| `thread_id`       | query    | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
-| `session_id`      | query    | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
-| `ingested_after`  | query    | false    | string or null | format="date-time"                                             |
-| `ingested_before` | query    | false    | string or null | format="date-time"                                             |
-| `X-Workspace-ID`  | header   | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
-
-Responses:
-
-- **200** — Successful Response (`application/json: UsageSummary`).
-- **400** — .
-- **default** — .
-
 ## skills
 
 ### `GET /api/v1/skills`
@@ -3909,5 +3890,79 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: IssuedKey`).
+- **400** — .
+- **default** — .
+
+## usage
+
+### `GET /api/v1/usage`
+
+Summarize Usage.
+
+| Parameter         | Location | Required | Type / schema  | Constraints and default                                        |
+| ----------------- | -------- | -------- | -------------- | -------------------------------------------------------------- |
+| `run_id`          | query    | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+| `thread_id`       | query    | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+| `session_id`      | query    | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+| `ingested_after`  | query    | false    | string or null | format="date-time"                                             |
+| `ingested_before` | query    | false    | string or null | format="date-time"                                             |
+| `X-Workspace-ID`  | header   | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+
+Responses:
+
+- **200** — Successful Response (`application/json: UsageSummary`).
+- **400** — .
+- **default** — .
+
+### `GET /api/v1/usage/agents`
+
+Usage Agents.
+
+| Parameter        | Location | Required | Type / schema  | Constraints and default                                        |
+| ---------------- | -------- | -------- | -------------- | -------------------------------------------------------------- |
+| `start`          | query    | true     | string         | format="date-time"                                             |
+| `end`            | query    | true     | string         | format="date-time"                                             |
+| `limit`          | query    | false    | integer        | minimum=1; maximum=100; default=50                             |
+| `cursor`         | query    | false    | string or null | maxLength=2048                                                 |
+| `X-Workspace-ID` | header   | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+
+Responses:
+
+- **200** — Successful Response (`application/json: AgentUsagePage`).
+- **400** — .
+- **default** — .
+
+### `GET /api/v1/usage/models`
+
+Usage Models.
+
+| Parameter        | Location | Required | Type / schema  | Constraints and default                                        |
+| ---------------- | -------- | -------- | -------------- | -------------------------------------------------------------- |
+| `start`          | query    | true     | string         | format="date-time"                                             |
+| `end`            | query    | true     | string         | format="date-time"                                             |
+| `limit`          | query    | false    | integer        | minimum=1; maximum=100; default=50                             |
+| `cursor`         | query    | false    | string or null | maxLength=2048                                                 |
+| `X-Workspace-ID` | header   | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ModelUsagePage`).
+- **400** — .
+- **default** — .
+
+### `GET /api/v1/usage/overview`
+
+Usage Overview.
+
+| Parameter        | Location | Required | Type / schema  | Constraints and default                                        |
+| ---------------- | -------- | -------- | -------------- | -------------------------------------------------------------- |
+| `start`          | query    | true     | string         | format="date-time"                                             |
+| `end`            | query    | true     | string         | format="date-time"                                             |
+| `timezone`       | query    | false    | string         | maxLength=128; default="UTC"                                   |
+| `X-Workspace-ID` | header   | false    | string or null | maxLength=41; `pattern="^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$"` |
+
+Responses:
+
+- **200** — Successful Response (`application/json: UsageOverview`).
 - **400** — .
 - **default** — .

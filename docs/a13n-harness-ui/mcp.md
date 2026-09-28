@@ -1,8 +1,6 @@
 # MCP servers
 
-Configure a command or Streamable HTTP server, then select its resource ID on an Agent. This page owns all accepted MCP file formats, value resolution, transport constraints, and capture behavior. [Command reference](command-reference.md) covers the shell CLI; MCP server commands are external programs, not Harness UI subcommands.
-
-Creating a server file makes it available; selecting its ID enables it. There is no server-level `enabled` flag.
+Configure a command or Streamable HTTP server, then select its resource ID on an Agent. Creating a server file registers it; selecting its ID on an Agent or in defaults enables it. Use [Command reference](command-reference.md) for Harness UI shell commands. MCP command transports launch external programs.
 
 ## Copy a JSON configuration
 
@@ -29,7 +27,7 @@ Create `mcp/servers.json` beside your selected root configuration. Common client
 
 Replace the illustrative endpoint, path, and token. Enable these entries with `mcp_servers: [mcp-filesystem, mcp-docs]` on an Agent or under root `defaults`. Creating the JSON file alone does not enable them.
 
-A file can contain multiple servers. Names become lowercase, punctuation/underscore/space runs become hyphens, and `mcp-` is added unless already present: `My_Server` becomes `mcp-my-server`. Names with no ASCII letters or digits use `mcp-` plus the first 12 hex characters of their SHA-256 digest. Conflicting IDs across YAML/JSON files or after name normalization reject the configuration; no file silently wins. Names are limited to 256 characters and resulting IDs to 128.
+A `mcpServers` file can define several servers. Its names normalize to `mcp-` IDs: `My_Server` becomes `mcp-my-server`. Duplicate IDs across files reject the configuration, so check the normalized IDs before adding a second file.
 
 For a command entry, use `command`, optional `args`, and optional `env`. For a remote entry, use `url` and optional `headers`. Optional `type` accepts `stdio` for commands and `http` or `streamable-http` for remote endpoints. Remote connections use Streamable HTTP, not legacy SSE. OAuth login, JSONC comments, trailing commas, `disabled`, and unrelated client-specific fields are not supported. `mcpServers` is a common client convention, not a universal MCP protocol configuration standard.
 

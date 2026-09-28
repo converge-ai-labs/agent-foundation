@@ -1,12 +1,22 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Schema } from "../transport/client";
 import { ThinkingPicker } from "./thinking-picker";
 import { ThreadRunChoices } from "./thread-run-choices";
 
-afterEach(cleanup);
+beforeEach(() =>
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  })),
+);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const model: Schema<"ModelSummary"> = {
   model_id: "custom-model",
@@ -33,20 +43,22 @@ it("renders backend labels and preserves false separately from default", async (
   const user = userEvent.setup();
   const onChange = vi.fn();
   const view = render(<ThinkingPicker model={model} onChange={onChange} />);
-  await user.click(screen.getByRole("button", { name: "No thinking" }));
+  await user.click(screen.getByRole("button", { name: /No thinking/ }));
   expect(onChange).toHaveBeenLastCalledWith(false);
   view.unmount();
   render(<ThinkingPicker model={model} value={false} onChange={onChange} />);
   expect(
     screen
-      .getByRole("button", { name: "No thinking" })
+      .getByRole("button", { name: /No thinking/ })
       .getAttribute("aria-pressed"),
   ).toBe("true");
-  const blocked = screen.getByRole("button", { name: "Deep" });
+  const blocked = screen.getByRole("button", { name: /Deep/ });
   expect(blocked.hasAttribute("disabled")).toBe(true);
   await user.click(blocked);
   expect(onChange).toHaveBeenCalledTimes(1);
-  await user.click(screen.getByRole("button", { name: "Use default" }));
+  await user.click(
+    screen.getByRole("button", { name: "Use default thinking" }),
+  );
   expect(onChange).toHaveBeenLastCalledWith(null);
 });
 
@@ -67,7 +79,9 @@ it("keeps unknown and stale selections explicit without inventing options", asyn
   expect(screen.getByText("No reviewed controls")).toBeTruthy();
   expect(screen.getAllByRole("button")).toHaveLength(1);
   expect(onChange).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Use default" }));
+  await user.click(
+    screen.getByRole("button", { name: "Use default thinking" }),
+  );
   expect(onChange).toHaveBeenLastCalledWith(null);
 });
 
@@ -139,13 +153,13 @@ it("renders boolean controls without inventing effort levels", async () => {
       onChange={onChange}
     />,
   );
-  screen.getByRole("button", { name: "Off" }).focus();
+  screen.getByRole("button", { name: /^Off/ }).focus();
   await user.keyboard("[ArrowRight][Space]");
   expect(onChange).toHaveBeenLastCalledWith(true);
   expect(screen.queryByRole("button", { name: "High" })).toBeNull();
 });
 
-it("shows larger option sets as a keyboard-navigable list with backend descriptions", async () => {
+it("keeps larger option sets keyboard-navigable with backend descriptions", async () => {
   const user = userEvent.setup();
   const onChange = vi.fn();
   const efforts = ["minimal", "low", "medium", "high", "xhigh"] as const;
@@ -174,8 +188,10 @@ it("shows larger option sets as a keyboard-navigable list with backend descripti
       onChange={onChange}
     />,
   );
-  screen.getByRole("button", { name: "low" }).focus();
-  await user.keyboard("[ArrowDown][Space]");
+  screen.getByRole("button", { name: /^low/ }).focus();
+  await user.keyboard("[ArrowRight][Space]");
   expect(onChange).toHaveBeenLastCalledWith("medium");
-  expect(screen.getByText("Details for xhigh")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "xhigh" }).title).toBe(
+    "Details for xhigh",
+  );
 });

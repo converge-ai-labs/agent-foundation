@@ -8,6 +8,7 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   A13N_SERVICE_IMAGE: ghcr.io/converge-ai-labs/a13n-service
+  DOCKER_ENVIRONMENT_IMAGE: ghcr.io/converge-ai-labs/a13n-docker-environment
   A13N_CHART_REGISTRY: ghcr.io/converge-ai-labs/charts
 
 permissions:
@@ -80,9 +81,58 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  publish-environment-image:
+    name: Publish the Service's Docker environment image
+    needs: build-python
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU for arm64
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish the versioned environment image
+        uses: docker/build-push-action@v6
+        with:
+          context: deploy/docker/images/docker-environment
+          file: deploy/docker/images/docker-environment/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # Stable and RC releases use only their exact canonical tag, never dev or latest.
+          tags: ${{ env.DOCKER_ENVIRONMENT_IMAGE }}:${{ needs.build-python.outputs.version }}
+          build-args: |
+            BUILD_VERSION=${{ needs.build-python.outputs.version }}
+            BUILD_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=release-docker-environment
+          cache-to: type=gha,mode=max,scope=release-docker-environment
+
+      - name: Verify the published environment image
+        env:
+          IMAGE: ${{ env.DOCKER_ENVIRONMENT_IMAGE }}
+          VERSION: ${{ needs.build-python.outputs.version }}
+        run: |
+          platforms="$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}} {{end}}')"
+          [[ "$platforms" == *linux/amd64* && "$platforms" == *linux/arm64* ]]
+
   publish-python:
     name: Publish Python distributions
-    needs: build-python
+    needs: [build-python, publish-environment-image]
     runs-on: ubuntu-latest
     environment: foundation-pypi
     steps:
@@ -230,6 +280,9 @@ jobs:
           sed "s|\${A13N_SERVICE_IMAGE:-a13n-service:local}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
             deploy/docker/compose/a13n-service.yaml > dist/a13n-service.yaml
           grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service.yaml
+          sed "s|\${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:dev}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
+            deploy/docker/compose/a13n-service-quickstart.yaml > dist/a13n-service-quickstart.yaml
+          grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service-quickstart.yaml
 
       - name: Create release with channel-scoped notes
         env:

@@ -62,11 +62,16 @@ Complete-candidate writes publish via a same-filesystem rename after verificatio
 
 ## Installation and validation
 
+From the repository root, build the binary that matches this checkout's Python client:
+
 ```bash
-cargo install a13n-envd
+cargo build --locked --package a13n-envd
+./target/debug/a13n-envd --version
 ```
 
-The daemon and `a13n-envd-client` require the same release version. From the repository root, `make eip-check` validates generated protocol artifacts, the native runtime, and Python integration tests.
+On Windows, the executable is `target\debug\a13n-envd.exe`.
+
+For a published installation, [install the exact native release](../../docs/a13n-envd/installation.md) matching your `a13n-envd-client` version. `cargo install a13n-envd` without a version selects the latest crate, which may not match your client. Run `make eip-check` from the repository root to validate the generated protocol artifacts, native runtime, and Python integration tests.
 
 ## License
 

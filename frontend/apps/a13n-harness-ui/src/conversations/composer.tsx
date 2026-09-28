@@ -40,11 +40,6 @@ import { ComposerEditor } from "./composer-editor";
 import { CoordinatorIcon } from "./coordinator-icon";
 import { useCoordinatorMutation } from "./coordinator-settings";
 import { ClearContext } from "./clear-context";
-import {
-  ComposerSettings,
-  SettingsHome,
-  useCompactComposer,
-} from "./composer-settings";
 import { useStopOperation } from "./stop-operation";
 import { skillReferences, type LoadSkills } from "./skill-references";
 import styles from "./conversation.module.css";
@@ -349,7 +344,7 @@ export function Composer({
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
   onReviewOutcome?: () => void;
-  controls?: (expanded: boolean) => ReactNode;
+  controls?: () => ReactNode;
   leadingControls?: ReactNode;
   modelId?: string;
 }) {
@@ -408,8 +403,6 @@ export function Composer({
     )
       editor.current?.focus();
   }, [preparing]);
-  const composerHost = useRef<HTMLElement>(null);
-  const compact = useCompactComposer(composerHost);
   useEffect(() => {
     if (!referenceAdded) return;
     const frame = requestAnimationFrame(() => {
@@ -928,8 +921,6 @@ export function Composer({
   return (
     <section
       className={styles.composer}
-      ref={composerHost}
-      data-compact={compact}
       aria-label={busy ? "Next message" : "Message composer"}
     >
       {attachments.some((attachment) => commentReference(attachment.data)) && (
@@ -986,7 +977,7 @@ export function Composer({
         </div>
       )}
       <div className={styles.composerBody}>
-        <div className={styles.composerHeader} hidden={compact}>
+        <div className={styles.composerHeader}>
           {goalToggle}
           {ownerControl || coordinatorControl}
           <div className={styles.composerEnvironment}>{leadingControls}</div>
@@ -1133,78 +1124,36 @@ export function Composer({
           >
             <Plus />
           </Button>
-          <div className={styles.composerChoices} hidden={compact}>
-            {controls?.(false)}
-          </div>
-          <div className={styles.composerTrailing}>
-            {compact && ownerControl}
-            {compact &&
-              !owner &&
-              coordinator &&
-              (coordinatorActive
-                ? coordinatorControl
-                : draft.coordinator && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      disabled={coordinatorDisabled}
-                      aria-label="Turn off Coordinator"
-                      title="Turn off Coordinator"
-                      onClick={toggleCoordinator}
-                    >
-                      <CoordinatorIcon size={16} /> <X aria-hidden />
-                    </Button>
-                  ))}
-            {compact && draft.mode === "goal" && (
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={!canRun || busy || preparing || pending || unknown}
-                aria-label="Turn off Goal"
-                title="Turn off Goal"
-                onClick={() => {
-                  draft.mode = "normal";
-                  draft.notify();
-                }}
+          <span className={styles.composerSync}>
+            {showSyncStatus && draft.status === "Connected" && (
+              <span
+                role="status"
+                aria-label="Syncing edits…"
+                title="Syncing edits…"
               >
-                Goal <X aria-hidden />
-              </Button>
+                <CircleNotch
+                  className={styles.threadRunning}
+                  aria-hidden="true"
+                />
+              </span>
             )}
-            <span className={styles.composerSync}>
-              {showSyncStatus && draft.status === "Connected" && (
-                <span
-                  role="status"
-                  aria-label="Syncing edits…"
-                  title="Syncing edits…"
-                >
-                  <CircleNotch
-                    className={styles.threadRunning}
-                    aria-hidden="true"
-                  />
-                </span>
-              )}
-            </span>
-          </div>
-          <ComposerSettings className={styles.optionsButton}>
-            {controls?.(true)}
-            {leadingControls}
-            <SettingsHome>
-              {goalToggle}
-              {coordinatorControl}
-            </SettingsHome>
-          </ComposerSettings>
-          {!local && (
-            <ClearContext
-              threadId={threadId}
-              continuationId={continuationId}
-              disabled={
-                !canClearContext || busy || preparing || pending || unknown
-              }
-              onPendingChange={setClearing}
-              onCleared={() => setContextCleared(true)}
-              reconcile={reconcile}
-            />
-          )}
+          </span>
+          <ClearContext
+            threadId={threadId}
+            continuationId={continuationId}
+            disabled={
+              local ||
+              !canClearContext ||
+              busy ||
+              preparing ||
+              pending ||
+              unknown
+            }
+            onPendingChange={setClearing}
+            onCleared={() => setContextCleared(true)}
+            reconcile={reconcile}
+          />
+          <div className={styles.composerChoices}>{controls?.()}</div>
           <Button
             ref={sendButton}
             size="icon"

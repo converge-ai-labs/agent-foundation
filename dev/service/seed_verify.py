@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Iterator
+from decimal import Decimal
+from urllib.parse import urlencode
 
 from dev.service.api import Api, Json
 from dev.service.seed import Seeded
@@ -33,6 +35,7 @@ def verify(api: Api, seeded: Seeded) -> list[Check]:
         *_resources(api, index),
         *_execution(api, index),
         *_memories(api, index),
+        *_usage(api, index),
     ]
 
 
@@ -291,3 +294,66 @@ def _attached(items: list[Json], marker: str) -> set[str]:
     """The attachments whose model-facing text in a run's items contains `marker`."""
     texts = (item["content"]["text"] for item in items if item["kind"] == "text_message")
     return {found[1] for text in texts if marker in text and (found := ATTACHMENT.match(text))}
+
+
+def _usage(api: Api, index: dict[str, str]) -> Iterator[Check]:
+    window = {"start": index["usage_history_start"], "end": index["usage_history_end"]}
+    overview_path = "/api/v1/usage/overview?" + urlencode(window)
+    overview = api.get(overview_path)
+    agents = api.items("/api/v1/usage/agents", **window)
+    models = api.items("/api/v1/usage/models", **window)
+    total = overview["usage"]
+    for name, values in (
+        ("days", [day["usage"] for day in overview["daily"]]),
+        ("agents", [row["usage"] for row in agents]),
+        ("models", [row["usage"] for row in models]),
+    ):
+        yield (
+            f"Usage: {name} reconcile with overview tokens, requests and known USD cost",
+            (
+                all(
+                    sum(row[field] for row in values) == total[field]
+                    for field in ("requests", "input_tokens", "output_tokens", "cache_read_tokens", "unpriced_requests")
+                )
+                and sum(Decimal(row["cost"]) for row in values if row["cost"] is not None) == Decimal(total["cost"])
+            ),
+        )
+    yield (
+        "Usage: 30 daily buckets contain gaps and a visible peak",
+        (
+            len(overview["daily"]) == 30
+            and any(day["usage"]["requests"] == 0 for day in overview["daily"])
+            and max(day["usage"]["requests"] for day in overview["daily"])
+            > 2 * overview["daily"][0]["usage"]["requests"]
+        ),
+    )
+    yield (
+        "Usage: cached tokens are an input subset and the rate is weighted",
+        (
+            0 < total["cache_read_tokens"] < total["input_tokens"]
+            and abs(total["cache_hit_rate"] - total["cache_read_tokens"] / total["input_tokens"]) < 1e-12
+        ),
+    )
+    yield (
+        "Usage: unknown model prices stay unknown",
+        any(
+            row["model"] == "usage-unpriced" and row["usage"]["cost"] is None and row["usage"]["unpriced_requests"] > 0
+            for row in models
+        ),
+    )
+    yield (
+        "Usage: multiple model requests count each Run once",
+        (
+            sum(row["runs"]["runs"] for row in agents) == overview["runs"]["runs"] < total["requests"]
+            and overview["runs"]["average_duration_seconds"] > 0
+        ),
+    )
+    workspace = api.workspace_id
+    try:
+        api.workspace_id = index["empty_workspace"]
+        yield (
+            "Usage: the empty Workspace has no consumption",
+            api.get(overview_path)["usage"]["requests"] == 0,
+        )
+    finally:
+        api.workspace_id = workspace

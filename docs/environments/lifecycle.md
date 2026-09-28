@@ -1,6 +1,6 @@
 # Lifecycle and state
 
-Use this guide when embedding an Environment in a Host that retains work between Runs. A Provider creates adapters; an adapter connects to one target; state lets a later adapter identify that target. None is a durable worker lease.
+To retain work between Runs, save the Environment's state and supply it to a fresh adapter on the next Run. A Provider constructs adapters; each adapter connects to one target.
 
 For a first file operation without an Agent, start with [Getting started](getting-started.md).
 
@@ -21,7 +21,7 @@ flowchart LR
 A normal Run follows this sequence:
 
 1. The Host resolves an allowlisted Provider type from its catalog.
-2. The definition validates the account configuration, the credential, and the credential-free target recipe.
+2. The definition validates the credential-free target recipe, then the account configuration and credential (unless the Host supplied a runtime).
 3. The Host supplies the latest authoritative `EnvironmentState`.
 4. The definition acquires its runtime collaborator, then constructs one fresh adapter; everything before the runtime factory is pure. A runtime the Host passes in is borrowed; one the definition acquires belongs to the adapter.
 5. The Host prepares eagerly, or lets the first operation prepare lazily. Harness binds the local scope, uses operations, exports cached state, and closes it.
@@ -128,7 +128,7 @@ Do not use context exit, Harness completion, suspension, or cancellation as an i
 | Operation                                   | What it does                                                                                                 |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `enter()` / `async with`                    | Bind the one-use scope; no target preparation                                                                |
-| `prepare()`                                 | Create, resume, or connect according to current validated state; requires entry                              |
+| `prepare()`                                 | Create, resume, or connect from validated state; the Host may call it before entry                           |
 | `check_ready(operations)`                   | Check an entered connection without provisioning or recovery                                                 |
 | `ensure_ready(operations)`                  | Prepare on first use, check required families, and perform only Provider-supported recovery                  |
 | `recover()`                                 | Explicitly authorized in-scope recovery where supported; not generic mutation replay                         |

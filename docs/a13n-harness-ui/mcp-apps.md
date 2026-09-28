@@ -13,9 +13,9 @@ webui:
     servers: [mcp-counter]
 ```
 
-Apps are disabled by default. WebUI automatically adds these servers to every root and child Agent, including Agent-resource and Markdown children. You do not need to repeat them in an Agent's `mcp_servers`. The effective list combines generic MCP and WebUI App selections, with duplicate IDs included only once. Agent files and saved Thread generic selections stay unchanged; existing tool filters and permission rules still apply. CLI uses only the generic MCP selection. Restart WebUI after enabling Apps or changing the sandbox listener. Ordinary MCP tools continue to work without Apps support, and ordinary text results remain available when a presentation fails.
+Apps are off by default. WebUI adds the selected servers to root and child Agents without editing their YAML; existing tool filters and permissions still apply. The CLI continues to use only ordinary `mcp_servers` selections. Restart WebUI after enabling Apps or changing its sandbox listener. Text tool results remain usable if an App presentation fails.
 
-The server must provide the MCP Apps `ui.resourceUri` metadata and a `text/html;profile=mcp-app` resource. Legacy MCP-UI HTML conventions are not an alternative supported protocol. The initial Host supports inline display, same-server tools and resources, text/structured context, text messages, external links and theme changes. Image context, App-provided model tools, fullscreen mode and stable-origin-dependent browser storage are not supported.
+The server must provide the MCP Apps `ui.resourceUri` metadata and a `text/html;profile=mcp-app` resource. Legacy MCP-UI HTML conventions are not an alternative supported protocol. The Host supports inline display, same-server tools/resources, text or structured context, messages, external links and theme changes. It does not currently support image context, App-provided model tools, fullscreen mode or stable-origin browser storage.
 
 For a complete local example without a model account, run `make mcp-apps-demo` from a source checkout. See `examples/mcp-apps/README.md` in the repository for the real stdio counter, public App SDK bundle and standalone server instructions. The demo uses a scripted HTTP model but the normal Host, history and permission paths.
 
@@ -34,7 +34,7 @@ App tool operations do not use model review or custom Agent reviewers. A `review
 
 Removing a server from an Agent's generic selection does not remove it while WebUI Apps still selects it. Removing it from Apps settings disables new App interactions and retires the retained connection; generic MCP remains available if independently selected. Changes affect later Run captures, not an already admitted Run.
 
-Follow-up results belong to the open View; they do not replace the saved original. A page reload or later visit restores the original result and HTML, not the previous DOM or follow-up UI state. After reactivation, an App can explicitly read current server state. Restarting the Host cannot recover an MCP server's private in-memory state.
+On reload, Open App restores the saved original result, not its prior interactive state. Reactivate to read current server state; restarting WebUI does not restore a server's private memory.
 
 ## Context is opt-in
 

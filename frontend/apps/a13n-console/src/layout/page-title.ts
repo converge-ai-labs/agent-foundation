@@ -20,6 +20,7 @@ const destinations: Record<string, string> = {
   settings: "Settings",
   skills: "Skills",
   traces: "Traces",
+  usage: "Usage",
 };
 
 /**

@@ -18,7 +18,7 @@ from typing import Annotated, Any, Protocol, Self, cast, runtime_checkable
 from uuid import uuid4
 
 from pydantic import Field, JsonValue, ValidationError
-from pydantic_ai import FunctionToolset, ModelRetry, RunContext, Tool, ToolDefinition, ToolReturn
+from pydantic_ai import FunctionToolset, RunContext, Tool, ToolDefinition, ToolReturn
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed, UsageLimitExceeded, UserError
 from pydantic_ai.function_signature import FunctionSignature
 from pydantic_ai.messages import InstructionPart, ToolCallPart, UserContent
@@ -349,7 +349,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
     ) -> Any:
         raw = code.encode("utf-8")
         if len(raw) > self.config.max_source_bytes:
-            raise ModelRetry(f"Code exceeds max_source_bytes={self.config.max_source_bytes}")
+            raise ToolFailed(f"Code exceeds max_source_bytes={self.config.max_source_bytes}")
         return await self._execute(
             ctx,
             code,
@@ -375,7 +375,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 "inside an available Environment mount."
             ) from exc
         except (OSError, RuntimeError, TypeError, ValueError) as exc:
-            raise ModelRetry(f"CodeAct program could not be loaded or validated ({type(exc).__name__})") from exc
+            raise ToolFailed(f"CodeAct program could not be loaded or validated ({type(exc).__name__})") from exc
         return await self._execute(
             ctx,
             program.executable_source,
@@ -566,31 +566,30 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             if source_path is None:
                 await self.state.reset_inline()
             raise
-        except ModelRetry as exc:
-            error_type = type(exc).__name__
-            raise
         except TimeoutError as exc:
             status = "timed_out"
             error_type = type(exc).__name__
             if source_path is None:
                 await self.state.reset_inline()
-            return self._raise_or_fail(exc, "CodeAct execution exceeded its timeout", execution_id, budget)
+            return self._fail_execution(exc, "CodeAct execution exceeded its timeout", execution_id, budget)
         except (MontySyntaxError, MontyTypingError) as exc:
             error_type = type(exc).__name__
-            return self._raise_or_fail(
+            return self._fail_execution(
                 exc, "CodeAct source was rejected by the restricted sandbox", execution_id, budget
             )
         except (MontyCrashedError, MontyConversionError) as exc:
             error_type = type(exc).__name__
             if source_path is None:
                 await self.state.reset_inline()
-            return self._raise_or_fail(exc, "CodeAct sandbox failed and inline state was reset", execution_id, budget)
+            return self._fail_execution(exc, "CodeAct sandbox failed and inline state was reset", execution_id, budget)
         except MontyRuntimeError as exc:
             error_type = type(exc).__name__
-            return self._raise_or_fail(exc, "CodeAct source failed in the restricted sandbox", execution_id, budget)
+            return self._fail_execution(exc, "CodeAct source failed in the restricted sandbox", execution_id, budget)
         except Exception as exc:
             error_type = type(exc).__name__
-            return self._raise_or_fail(exc, f"CodeAct execution failed with {type(exc).__name__}", execution_id, budget)
+            return self._fail_execution(
+                exc, f"CodeAct execution failed with {type(exc).__name__}", execution_id, budget
+            )
         except BaseException as exc:
             error_type = type(exc).__name__
             if not is_sandbox_panic(exc):
@@ -599,7 +598,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 raise
             if source_path is None:
                 await self.state.reset_inline()
-            return self._raise_or_fail(exc, "CodeAct sandbox aborted and inline state was reset", execution_id, budget)
+            return self._fail_execution(exc, "CodeAct sandbox aborted and inline state was reset", execution_id, budget)
         finally:
             await _emit(
                 ctx,
@@ -627,10 +626,8 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         return ToolReturn(return_value=value, content=budget.ordered_supplemental() or None)
 
     @staticmethod
-    def _raise_or_fail(exc: BaseException, message: str, execution_id: str, budget: _ExecutionBudget) -> Any:
+    def _fail_execution(exc: BaseException, message: str, execution_id: str, budget: _ExecutionBudget) -> Any:
         safe_message = _truncate_utf8(message, _MAX_DIAGNOSTIC_BYTES)
-        if budget.started == 0:
-            raise ModelRetry(safe_message) from exc
         payload = {
             "codeact": {
                 "contract_version": _CODEACT_CONTRACT_VERSION,
@@ -638,7 +635,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 "execution_id": execution_id,
                 "tool_call_count": budget.started,
                 "cumulative_bytes": budget.cumulative_bytes,
-                "side_effect_uncertain": True,
+                "side_effect_uncertain": budget.started > 0,
             },
             "error": {"type": type(exc).__name__, "message": safe_message},
         }

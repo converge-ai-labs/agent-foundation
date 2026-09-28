@@ -2,7 +2,7 @@
 
 `helm/` holds the Helm Chart for a13n Service, `helm/a13n-service/`, and its values for a local kind cluster, `helm/values-local.yaml`; `kind-local.yaml` configures that cluster, and `examples/` holds Secret templates and a shared objects claim. The same Service image runs a `control` Deployment (API, Console, maintenance and delivery), a `worker` Deployment (run execution) and a schema migration Job. The Chart does not provision external infrastructure, seed users or models, or provision agent environments.
 
-Helm is the installation/upgrade tool; `helm/a13n-service/` is the Chart (deployment package); an installation such as `a13n` is a Helm release. Each Service release also publishes this Chart at the Service's version as `oci://ghcr.io/converge-ai-labs/charts/a13n-service`, and that Chart deploys the release's image by default. The Chart in a checkout deploys the development image `ghcr.io/converge-ai-labs/a13n-service:dev` unless values select another. `make dev` does not use this Chart.
+Each Service release publishes a Helm chart at `oci://ghcr.io/converge-ai-labs/charts/a13n-service` that selects the matching image. The checkout chart selects `ghcr.io/converge-ai-labs/a13n-service:dev` unless you override it. `make dev` uses a separate local stack.
 
 ## Topology
 
@@ -100,7 +100,7 @@ make image-a13n-service
 kind load docker-image a13n-service:local --name a13n-local
 ```
 
-The image builds the Console with Node.js 24 and the workspace-pinned pnpm version in a build stage. It installs only the root, Console and shared UI workspace dependencies before copying source files, so source-only changes reuse the dependency layer; the first build needs registry access. The runtime image carries only the built Console, which the Service serves.
+The image build includes Console; the first build needs dependency registry access.
 
 Create the two Secrets described above in this cluster, then install or update the release:
 
@@ -113,7 +113,7 @@ kubectl --context kind-a13n-local -n a13n-service get pods,jobs,pvc
 
 Create the administrator with the bootstrap command above (add `--context kind-a13n-local`), open <http://127.0.0.1:8080> and sign in. <http://127.0.0.1:8080/readyz> checks Control readiness. If rebuilding with the same `local` tag, Helm does not detect image-content changes: restart both Service Deployments after loading the image. Using a new tag for each build and setting the image tag on upgrade avoids this.
 
-The local values enable single-replica Redis 7 and PostgreSQL 17 StatefulSets for trusted development only; Redis is unauthenticated, uses AOF with `appendfsync everysec`, and has no host port or Ingress. Closing the terminal does not stop the Pods or the port mapping. Claims survive Pod replacement and uninstallation, not deletion of the kind cluster.
+The local values run development-only PostgreSQL and Redis. Redis has no authentication or external exposure, so keep this cluster local. Closing the terminal does not stop the Pods. Claims survive Pod replacement and uninstallation, but not deletion of the kind cluster.
 
 ## Other clusters
 
@@ -165,6 +165,6 @@ make k8s-check
 helm template a13n deploy/kubernetes/helm/a13n-service -f deploy/kubernetes/helm/values-local.yaml
 ```
 
-Templates use `.tpl` because they contain Go template syntax rather than standalone YAML. Rendering does not verify image availability, Kubernetes admission, credentials, storage semantics, database connectivity or rollout behavior.
+Rendering checks template output, not image availability, credentials, storage or rollout behavior.
 
 Uninstalling does not delete the retained objects claim, the PostgreSQL and Redis StatefulSet claims, or external resources. Record retained claim names before uninstalling; `persistence.existingClaim` reuses an objects claim in a later installation. Do not delete PVCs to resolve startup failures.

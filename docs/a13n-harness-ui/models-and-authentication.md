@@ -19,15 +19,15 @@ A Model chooses a provider connection, request settings, and context budget. Sto
 
 ## Create and manage Models
 
-In the browser, open **Settings → Models** to add, edit or clone a saved Model. The list shows its route and owning source file. First-use setup uses the same editor, and an Agent's **Add model** action saves a new Model inline before selecting it. These operations do not send a model request or change an active Run.
+In the browser, open **Settings → Models** to add, edit or clone a saved Model. First-use setup and an Agent's **Add model** action use the same flow. Saving a Model changes no active Run.
 
 1. Choose **Codex subscription**, **Grok subscription**, or an API connection. Subscriptions keep their native account stores and transports; they are not API-key presets.
 2. Connect the shared subscription account, choose a saved API key, save a new key, or name a server environment variable. Credential writes happen independently; cancelling the Model draft does not undo a completed login or key save.
-3. Search recommendations and the API directory, or enter a custom Model ID. Directory failure does not block manual IDs. Subscription choices are maintained separately. Directory context, release and modality metadata are descriptive, not an account-access test or permission to enable runtime capabilities.
-4. Choose **Use this model**, then adjust reasoning, service speed and working context as offered for that connection. Changing an existing connection requires **Apply connection & defaults**; simply opening the editor preserves your settings. Presets change their owned settings and preserve unrelated native parameters.
-5. Save the ordinary Model YAML. Advanced source editing retains access to `settings`, `model_configuration` and `model_characteristics`. Conversation selectors contain saved Models only, not every directory entry.
+3. Choose a suggestion or enter a case-sensitive Model ID. Suggestions describe known routes, not your account's entitlement; manual IDs remain available if the directory fails.
+4. Choose **Use this model** and adjust offered reasoning, speed and working context. For an existing connection, **Apply connection & defaults** deliberately changes its preset settings.
+5. Save the Model YAML. Only saved Models appear in conversation selectors; advanced YAML editing remains available.
 
-Native tools belong to **Agents**, not Models. The Model editor describes support; the Agent editor offers choices for its selected saved Model. Changing a Model does not silently replace an Agent's tools. Tools requiring provider stores, server URLs or other parameters remain configurable in advanced YAML. Provider usage charges may apply.
+Choose native tools on the **Agent**, after selecting its saved Model. Changing a Model does not rewrite an Agent's tools. See [Native tools](native-and-web-tools.md) for required provider resources and YAML examples.
 
 Terminal `setup`, `add model`, and the new-Model branch of `add agent` use the same backend choices and preparation rules. API connections can reuse saved-key metadata or an environment-variable reference without exposing key bytes. Subscription setup offers inline device/browser login or an explicit configure-later choice when an account is unavailable.
 
@@ -81,7 +81,7 @@ Stored API keys are plaintext in the data root's independent `auth.json`, with p
 
 Choose **GitHub Copilot subscription** in onboarding, Add Model, or the new-Model branch of Add Agent. Existing Models can be selected without editing them or signing in again. You can save a recipe before authentication is ready; it will need credentials before its first request. Cancelling Agent creation does not delete an independently saved inline Model.
 
-Native login uses Pydantic AI's device flow with the official Copilot CLI public App ID. No app registration, client secret, installed CLI, or Copilot SDK Agent loop is needed. The historical CLI scope baseline requests `read:user`, `read:org`, `repo`, and `gist`; review the broad repository permissions on GitHub's authorization screen. This is not a minimal-permission claim. Browser-callback login is not supported for Copilot.
+Native login uses device authorization with the official Copilot CLI public App ID. No app registration, client secret, installed CLI, or Copilot SDK Agent loop is needed. The historical CLI scope baseline requests `read:user`, `read:org`, `repo`, and `gist`; review the broad repository permissions on GitHub's authorization screen. This is not a minimal-permission claim. Browser-callback login is not supported for Copilot.
 
 Harness UI can reuse the selected official CLI GitHub.com account from `$COPILOT_HOME/config.json` (default `~/.copilot/config.json`) when the sibling `settings.json` explicitly has `storeTokenPlaintext: true`. It accepts the reviewed legacy token string and `{token: ...}` file forms and their snake_case aliases, without copying tokens into Harness UI. This compatibility was checked with synthetic CLI 1.0.88 Linux files. Current OS-keychain storage is not supported; Harness UI does not use a potentially stale file as a fallback. Prefer native login rather than weakening your CLI storage policy just for this integration.
 
@@ -174,7 +174,7 @@ Initial setup and new-Model creation offer these explicit subscription routes:
 
 Codex starter choices are release-owned defaults. Grok choices were reviewed against the official [xAI release notes](https://docs.x.ai/developers/release-notes) and [Grok 4.20 model page](https://docs.x.ai/developers/models/grok-4.20-beta-0309-reasoning) on September 7, 2026. The Grok 4.7 default was reviewed against the official [Grok 4.7 guide](https://docs.x.ai/developers/grok-4-7) on September 22, 2026. These choices do not query entitlement or promise that all subscription accounts can access every model. Grok choices are model generations, not three verified subscription price tiers. API-key setup offers provider-specific suggestions plus custom IDs. Lists expand to the terminal's available space and scroll with the focused choice. Suggestions are bundled starter choices, not live availability checks.
 
-GPT-6 Sol uses the native thinking profile provided by Pydantic AI 2.48.0 or later. The bundled model catalog does not yet declare media capabilities for this ID; configure supported media capabilities explicitly when needed. Existing saved Models are not migrated.
+GPT-6 Sol uses the thinking profile bundled with the installed runtime. The bundled model catalog does not yet declare media capabilities for this ID; configure supported media capabilities explicitly when needed. Existing saved Models are not migrated.
 
 Auxiliary Models are named **Codex shell review** or **Grok shell review**. They are not selectable root Agents. Codex review uses Luna with low reasoning; Grok review uses 4.7 with low reasoning. Existing user-edited reviewer resources are preserved.
 
@@ -200,7 +200,7 @@ A **working budget** controls local reminders and compaction. It does not increa
 
 Use `/thinking` to see the choices supported by the selected Model and installed adapter. The menu can offer effort levels, explicit token-budget presets, or Off; it does not offer a universal list. `/thinking default` returns to the selected Model's configured settings, including provider-native thinking fields. The status line describes the requested setting, not a measured provider result. High reasoning is independent of detailed display: you can use high reasoning while seeing concise output. Only provider-exposed reasoning is shown, and some providers do not return it.
 
-Codex subscription requests do **not** receive an API output-token cap copied from YAACLI presets. The official Pydantic AI Codex profile strips unsupported generic settings such as `max_tokens`; `openai_store` is forced false. Explicit `openai_*` settings otherwise follow upstream validation rather than a separate Harness filter.
+Codex subscription requests do **not** receive the API setup presets' output-token cap. The Codex adapter strips unsupported generic settings such as `max_tokens`; `openai_store` is forced false. Explicit `openai_*` settings otherwise follow upstream validation rather than a separate Harness filter.
 
 ## Pro reasoning mode
 
@@ -217,7 +217,7 @@ settings:
   openai_reasoning_summary: detailed
 ```
 
-The WebUI offers the same independent Reasoning mode control in Model settings, with the Model default always visible and a Use default action. The Model resource editor saves a permanent Standard/Pro choice; its Provider default choice removes the native field. Changing these settings never relabels an already captured Run. Pro access, usage, and latency depend on the provider; selecting Pro does not guarantee entitlement.
+The WebUI offers the same independent Reasoning mode control in Agent & Model settings, with an explicit Default choice that names the inherited target. The Model resource editor saves a permanent Standard/Pro choice; its Provider default choice removes the native field. Changing these settings never relabels an already captured Run. Pro access, usage, and latency depend on the provider; selecting Pro does not guarantee entitlement.
 
 ## Fast mode and service tiers
 
@@ -283,7 +283,7 @@ Each file uses `schema_version: "1"`, `kind: model`, a unique `model-` `id`, and
 | ----------------------- | -------- | -------------------------------------------------------------------------------------------- |
 | `route`                 | Required | Supported provider/model route, such as `openai-responses:gpt-5` or `openai-codex:gpt-6-sol` |
 | `authentication`        | Required | One explicit authentication form below                                                       |
-| `settings`              | `{}`     | Native request settings passed through to Harness/Pydantic AI                                |
+| `settings`              | `{}`     | Native request settings passed through to Harness and its model adapters                     |
 | `model_configuration`   | `{}`     | Optional `base_url` for supported HTTP/API-key providers; empty for subscriptions            |
 | `model_characteristics` | `null`   | Optional native Harness context/capability policy                                            |
 
@@ -328,7 +328,7 @@ These values guide Harness behavior; they do not give a model modalities or toke
 
 ### Account-store locations
 
-Codex shares its supported file store under `CODEX_HOME` (default `~/.codex`). Harness UI respects the upstream credential-store policy and reports unsupported stores rather than replacing them. Grok uses `GROK_AUTH_PATH` before `GROK_HOME` or its default file; inline `GROK_AUTH` is not a shared writable-login mode. Account inspection does not log in or refresh credentials. Codex model requests use Pydantic AI 2.41 or later with an explicit shared-store credential source. A provider caches credentials within its lifetime and rereads storage before refresh, not on every request. A new Run or account operation gets a fresh provider. If refreshed credentials cannot be saved, the request fails, but the provider retains the rotated credentials in memory; resolve the store conflict and start a new Run rather than assuming the rotation was persisted. Grok retains its Harness-owned refresh lifecycle.
+Codex shares its supported file store under `CODEX_HOME` (default `~/.codex`). Harness UI respects the upstream credential-store policy and reports unsupported stores rather than replacing them. Grok uses `GROK_AUTH_PATH` before `GROK_HOME` or its default file; inline `GROK_AUTH` is not a shared writable-login mode. Account inspection does not log in or refresh credentials. Codex model requests use an explicit shared-store credential source. A provider caches credentials within its lifetime and rereads storage before refresh, not on every request. A new Run or account operation gets a fresh provider. If refreshed credentials cannot be saved, the request fails, but the provider retains the rotated credentials in memory; resolve the store conflict and start a new Run rather than assuming the rotation was persisted. Grok retains its Harness-owned refresh lifecycle.
 
 Harness retains device login, Thread affinity, routing hints, and per-run turn state where the official Codex provider has no equivalent. Browser PKCE and callback handling use the official flow; a small login-exchange adapter retains the real ID token required by native Codex `auth.json`. New login and account switching write that ID token, and same-account refresh preserves it. No second Codex subscription store is created.
 
@@ -350,7 +350,7 @@ Logout and account replacement are explicit credential mutations; inspect which 
 
 ## API providers and settings presets
 
-The guided HTTP/API-key catalog maps to Pydantic AI integrations for OpenAI Responses, OpenAI-compatible Chat Completions, Anthropic, Google Gemini API, OpenRouter, DeepSeek, Z.AI / GLM, Moonshot AI / Kimi, Groq, Mistral, Together AI, and Fireworks AI. xAI has two separate API-key choices: `grok:` uses Chat Completions, while `xai:` uses the native SDK's default gRPC endpoint and exposes native X Search and other xAI tools. The native SDK choice skips the HTTP base-URL step. Both are separate from Grok subscription authentication. For other OpenAI-compatible services, select **OpenAI-compatible · Chat Completions** and provide that service's URL and model ID. Cloud IAM and subscription transports are not generic URL/key connections.
+The guided HTTP/API-key catalog includes integrations for OpenAI Responses, OpenAI-compatible Chat Completions, Anthropic, Google Gemini API, OpenRouter, DeepSeek, Z.AI / GLM, Moonshot AI / Kimi, Groq, Mistral, Together AI, and Fireworks AI. xAI has two separate API-key choices: `grok:` uses Chat Completions, while `xai:` uses the native SDK's default gRPC endpoint and exposes native X Search and other xAI tools. The native SDK choice skips the HTTP base-URL step. Both are separate from Grok subscription authentication. For other OpenAI-compatible services, select **OpenAI-compatible · Chat Completions** and provide that service's URL and model ID. Cloud IAM and subscription transports are not generic URL/key connections.
 
 The preset picker shows the output limit alongside thinking, and the last Environment or name question shows the assembled connection and settings before saving. First-use landing, `add model`, and `add agent` with a new Model share these creation-time presets. Presets write normal editable YAML:
 
@@ -402,9 +402,9 @@ model_configuration:
 
 Keep the gateway's model ID and endpoint. The native SDK adds its version and resource path; do not append `/v1beta` or `/v1beta1` merely to switch transports. Existing `google-gla:`, `google-vertex:`, and `gemini:` aliases use the same Cloud transport; `google-cloud:` makes that choice explicit. This API-key route does not configure Cloud IAM or service-account credentials. Validate the configuration, then test an actual request: acceptance alone does not prove gateway or model access.
 
-`settings` is a JSON-compatible object passed through to Harness/Pydantic AI, not a Harness UI parameter allowlist. Native provider-specific and future options, nested objects, explicit `null`, and string whitespace are preserved in saved compositions and fresh Agent construction. The installed native Model and provider own parameter meaning, precedence, supported values, and errors at use time. Loading configuration or creating a Project does not validate a provider's request parameters or make a model request.
+`settings` is a JSON-compatible object passed through to Harness and its model adapters, not a Harness UI parameter allowlist. Native provider-specific and future options, nested objects, explicit `null`, and string whitespace are preserved in saved compositions and fresh Agent construction. The installed native Model and provider own parameter meaning, precedence, supported values, and errors at use time. Loading configuration or creating a Project does not validate a provider's request parameters or make a model request.
 
-Use the documentation for your installed Pydantic AI/provider version. Examples include:
+Use the settings supported by your installed model adapter and provider. Examples include:
 
 | Setting                                                                               | Purpose                                                                                    |
 | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |

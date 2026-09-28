@@ -1,5 +1,5 @@
 site_name: Agent Foundation
-site_description: Use Harness UI or build agents with the Harness SDK, portable Environments, and typed streams
+site_description: Build and run your own agent systems with the Harness library, self-hosted Service, and Harness UI workbench
 site_url: https://agent-foundation-docs.converge.ai/
 repo_name: converge-ai-labs/agent-foundation
 repo_url: https://github.com/converge-ai-labs/agent-foundation
@@ -21,13 +21,44 @@ watch:
   - frontend/packages/a13n-ui/src/styles/tokens.css
 
 nav:
-  - Home: index.md
+  - Home:
+      - Overview: index.md
+      - Choose your path: choose-your-path.md
+      - Core concepts: core-concepts.md
+  - Service:
+      - Overview: a13n-service/index.md
+      - Get started:
+          - Deploy and try locally: a13n-service/get-started.md
+          - Use an existing platform: a13n-service/use-platform.md
+          - Connect your application: a13n-service/connect-application.md
+      - Use:
+          - Identity and access: a13n-service/identity.md
+          - Agents, threads and runs: a13n-service/agents-and-runs.md
+          - Agent Composer: a13n-service/agent-composer.md
+      - Configure resources:
+          - Resource basics: a13n-service/resources.md
+          - Models: a13n-service/models.md
+          - Tools and connections: a13n-service/tools.md
+          - Skills: a13n-service/skills.md
+          - Environments: a13n-service/environments.md
+          - Memory: a13n-service/memory.md
+          - Files and webhooks: a13n-service/files-and-webhooks.md
+      - Integrate:
+          - SDKs and CLI: a13n-service/sdks.md
+          - HTTP conventions: a13n-service/http.md
+          - HTTP reference: a13n-service/api-reference.md
+      - Operate:
+          - Configure Service: a13n-service/configuration.md
+          - Run and maintain: a13n-service/operations.md
+          - Monitor and troubleshoot: a13n-service/monitoring.md
+          - Settings reference: a13n-service/configuration-reference.md
   - Harness UI:
       - Overview: a13n-harness-ui/index.md
       - Get started:
           - Installation and upgrades: a13n-harness-ui/installation.md
           - Set up your first Agent: a13n-harness-ui/setup.md
           - Use the terminal: a13n-harness-ui/everyday-use.md
+          - Use the browser: a13n-harness-ui/webui.md
       - Configure:
           - Common recipes: a13n-harness-ui/configuration-recipes.md
           - Configuration reference: a13n-harness-ui/configuration.md
@@ -42,7 +73,6 @@ nav:
           - Native tools and Web providers: a13n-harness-ui/native-and-web-tools.md
       - Operate and reference:
           - Command reference: a13n-harness-ui/command-reference.md
-          - Browser server: a13n-harness-ui/webui.md
           - Embed the Python App: a13n-harness-ui/embedding.md
           - HTTP API: a13n-harness-ui/http-api.md
           - Automation and troubleshooting: a13n-harness-ui/automation-and-troubleshooting.md
@@ -87,49 +117,24 @@ nav:
           - Observation: a13n-harness/observation.md
           - Embedding in a Host: a13n-harness/hosting.md
           - Plugins and Extensions: a13n-harness/plugins.md
-  - Envd:
-      - Overview: a13n-envd/index.md
-      - Installation: a13n-envd/installation.md
-      - Sandbox image: a13n-envd/sandbox.md
-      - Configuration and transports: a13n-envd/configuration.md
-      - Session egress: a13n-envd/egress.md
-      - Sessions and output: a13n-envd/operations.md
-      - macOS computer use: a13n-envd/computer-use.md
-      - Python EIP client: a13n-envd/python-client.md
-      - Host security boundaries: a13n-envd/isolation.md
-  - Service:
-      - Overview: a13n-service/index.md
-      - Get started: a13n-service/get-started.md
-      - Use:
-          - Identity and access: a13n-service/identity.md
-          - Agents, threads and runs: a13n-service/agents-and-runs.md
-          - Agent Composer: a13n-service/agent-composer.md
-      - Configure resources:
-          - Resource basics: a13n-service/resources.md
-          - Models: a13n-service/models.md
-          - Tools and connections: a13n-service/tools.md
-          - Skills: a13n-service/skills.md
-          - Environments: a13n-service/environments.md
-          - Memory: a13n-service/memory.md
-          - Files and webhooks: a13n-service/files-and-webhooks.md
-      - Integrate:
-          - SDKs and CLI: a13n-service/sdks.md
-          - HTTP conventions: a13n-service/http.md
-          - HTTP reference: a13n-service/api-reference.md
-      - Operate:
-          - Configure Service: a13n-service/configuration.md
-          - Run and maintain: a13n-service/operations.md
-          - Monitor and troubleshoot: a13n-service/monitoring.md
-          - Settings reference: a13n-service/configuration-reference.md
-
-  - Stream Protocol:
-      - Overview: a13n-stream-protocol/index.md
-      - Getting started: a13n-stream-protocol/getting-started.md
-      - Events and processors: a13n-stream-protocol/events.md
-      - Replay and recovery: a13n-stream-protocol/replay.md
-      - API and payload reference: a13n-stream-protocol/api-reference.md
   - Reference:
       - Package catalog: packages.md
+      - Envd:
+          - Overview: a13n-envd/index.md
+          - Installation: a13n-envd/installation.md
+          - Sandbox image: a13n-envd/sandbox.md
+          - Configuration and transports: a13n-envd/configuration.md
+          - Session egress: a13n-envd/egress.md
+          - Sessions and output: a13n-envd/operations.md
+          - macOS computer use: a13n-envd/computer-use.md
+          - Python EIP client: a13n-envd/python-client.md
+          - Host security boundaries: a13n-envd/isolation.md
+      - Stream Protocol:
+          - Overview: a13n-stream-protocol/index.md
+          - Getting started: a13n-stream-protocol/getting-started.md
+          - Events and processors: a13n-stream-protocol/events.md
+          - Replay and recovery: a13n-stream-protocol/replay.md
+          - API and payload reference: a13n-stream-protocol/api-reference.md
       - Logging: a13n-logging/index.md
 
 theme:

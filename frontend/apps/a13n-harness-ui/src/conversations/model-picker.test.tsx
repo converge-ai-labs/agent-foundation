@@ -1,14 +1,26 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import type { Schema } from "../transport/client";
 import { ThreadRunChoices } from "./thread-run-choices";
 import type { ModelControlValues } from "./model-controls";
-import { ModelPicker } from "./model-picker";
+import { ComposerSettings } from "./composer-settings";
+import { ModelOptions } from "./model-picker";
+import { ModelControlPanel } from "./model-controls";
 
-afterEach(cleanup);
+beforeEach(() =>
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  })),
+);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const model: Schema<"ModelSummary"> = {
   model_id: "model-one",
@@ -82,181 +94,232 @@ function Choices({ defaultModelId }: { defaultModelId?: string } = {}) {
   );
 }
 
-it("shows two compact choices and keeps default thinking distinct from explicit effort", async () => {
+const button = (name: string | RegExp) => screen.getByRole("button", { name });
+
+it("shows only a read-only identity and one settings entry, with explicit default choices", async () => {
   const user = userEvent.setup();
   render(<Choices />);
-  const trigger = screen.getByRole("button", { name: "Model settings" });
-  expect(trigger.textContent).toBe("Reasoning modelHigh");
-  expect(trigger.title).toBe("Reasoning model · High");
-  expect(screen.getByRole("combobox", { name: "Agent" }).textContent).toBe(
-    "Writer",
-  );
-  expect(screen.queryByRole("combobox", { name: "Thinking" })).toBeNull();
+  expect(
+    screen.getByLabelText("Agent: Writer. Model: Reasoning model").textContent,
+  ).toBe("Writer·Reasoning model");
+  expect(screen.queryByRole("combobox", { name: "Agent" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Model settings" })).toBeNull();
+  const trigger = button("Agent & Model settings");
   trigger.focus();
   await user.keyboard("[Enter]");
-  expect(screen.getByText("Following agent default")).toBeTruthy();
+  expect(screen.getByRole("dialog", { name: "Agent & Model" })).toBeTruthy();
   expect(screen.getByText("Model default: High")).toBeTruthy();
-  expect(
-    screen
-      .getByRole("button", { name: "Using default" })
-      .getAttribute("aria-pressed"),
-  ).toBe("true");
-  await user.click(screen.getByRole("button", { name: "Low" }));
-  expect(trigger.textContent).toBe("Reasoning modelLow");
-  // Clicking the selected segment must not turn an explicit selection into default.
-  await user.click(screen.getByRole("button", { name: "Low" }));
-  expect(
-    screen.getByRole("button", { name: "Low" }).getAttribute("aria-pressed"),
-  ).toBe("true");
-  await user.click(screen.getByRole("button", { name: "Use default" }));
-  expect(trigger.textContent).toBe("Reasoning modelHigh");
+  expect(button("Use default thinking").getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  await user.click(button(/Low/));
+  expect(button("Low").getAttribute("aria-pressed")).toBe("true");
+  expect(button(/Low/).getAttribute("aria-pressed")).toBe("true");
+  await user.click(button(/Low/));
+  expect(button("Low").getAttribute("aria-pressed")).toBe("true");
+  await user.click(button("Use default thinking"));
+  expect(screen.getByText("Model default: High")).toBeTruthy();
   await user.keyboard("[Escape]");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(trigger);
 });
 
-it("searches models in the same popup, returns focus, and resets thinking on model change", async () => {
+it("searches models in one panel and resets overrides on model changes", async () => {
   const user = userEvent.setup();
   render(<Choices />);
-  await user.click(screen.getByRole("button", { name: "Model settings" }));
-  await user.click(screen.getByRole("button", { name: "Low" }));
-  await user.click(screen.getByRole("button", { name: "Change model" }));
-  const search = screen.getByRole("textbox", { name: "Search models" });
-  expect(document.activeElement).toBe(search);
-  await user.type(search, "custom:two");
+  await user.click(button("Agent & Model settings"));
+  await user.click(button(/Low/));
+  await user.click(button("Model"));
+  await user.type(
+    screen.getByRole("textbox", { name: "Search models" }),
+    "custom:two",
+  );
   expect(screen.queryByRole("button", { name: "Reasoning model" })).toBeNull();
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  await user.click(screen.getByRole("button", { name: "Other model" }));
-  expect(document.activeElement).toBe(
-    screen.getByRole("button", { name: "Change model" }),
-  );
-  expect(
-    screen.getByRole("button", { name: "Model settings" }).textContent,
-  ).toBe("Other model");
+  await user.click(button("Other model"));
+  expect(screen.getByText("Model default: Custom settings")).toBeTruthy();
   expect(screen.getByText("No reviewed controls")).toBeTruthy();
-  expect(screen.queryByRole("group", { name: "Thinking level" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Change model" }));
+  expect(screen.queryByRole("button", { name: /Low/ })).toBeNull();
+  await user.click(button("Model"));
   expect(
     (screen.getByRole("textbox", { name: "Search models" }) as HTMLInputElement)
       .value,
   ).toBe("");
-  await user.click(screen.getByRole("button", { name: /Agent default/ }));
-  expect(screen.getByText("Following agent default")).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: "Model settings" }).textContent,
-  ).toBe("Reasoning modelHigh");
+  await user.click(button(/Agent default/));
+  expect(screen.getByText("Model default: High")).toBeTruthy();
 });
 
 it("follows the saved Thread default and restores it after an explicit Run choice", async () => {
   const user = userEvent.setup();
   render(<Choices defaultModelId="model-two" />);
-  const trigger = screen.getByRole("button", { name: "Model settings" });
-  expect(trigger.textContent).toBe("Other model");
-  await user.click(trigger);
-  expect(screen.getByText("Following thread default")).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "Change model" }));
-  await user.click(screen.getByRole("button", { name: "Reasoning model" }));
-  expect(trigger.textContent).toBe("Reasoning modelHigh");
-  await user.click(screen.getByRole("button", { name: "Change model" }));
-  await user.click(screen.getByRole("button", { name: /Thread default/ }));
-  expect(trigger.textContent).toBe("Other model");
-  expect(screen.getByText("Following thread default")).toBeTruthy();
+  expect(
+    screen.getByLabelText("Agent: Writer. Model: Other model"),
+  ).toBeTruthy();
+  await user.click(button("Agent & Model settings"));
+  await user.click(button("Model"));
+  expect(button(/Thread default/).getAttribute("aria-pressed")).toBe("true");
+  await user.click(button("Reasoning model"));
+  expect(button("Model").textContent).toBe("ModelReasoning model");
+  await user.click(button("Model"));
+  await user.click(button(/Thread default/));
+  expect(button("Model").textContent).toBe("ModelOther model");
 });
 
 it("keeps unavailable selections visible and disambiguates duplicate model names", async () => {
   const user = userEvent.setup();
   const onChange = vi.fn();
-  const onThinkingChange = vi.fn();
   render(
-    <ModelPicker
+    <ModelOptions
       models={[model, { ...other, name: model.name }]}
       defaultModelId={model.model_id}
       value="removed-model"
-      controls={{ thinking: "max" }}
       onChange={onChange}
-      onControlsChange={onThinkingChange}
     />,
   );
-  const trigger = screen.getByRole("button", { name: "Model settings" });
-  expect(trigger.textContent).toContain("removed-model (unavailable)");
-  expect(trigger.textContent).toContain("Unavailable thinking");
-  expect(onChange).not.toHaveBeenCalled();
-  expect(onThinkingChange).not.toHaveBeenCalled();
-  await user.click(trigger);
-  await user.click(screen.getByRole("button", { name: "Change model" }));
-  expect(
-    screen.getByRole("button", {
-      name: /Reasoning model.*model-one.*custom:one/,
-    }),
-  ).toBeTruthy();
-  expect(
-    screen.getByRole("button", {
-      name: /Reasoning model.*model-two.*custom:two/,
-    }),
-  ).toBeTruthy();
+  expect(screen.getByText("removed-model (unavailable)")).toBeTruthy();
+  expect(button(/Reasoning model.*model-one.*custom:one/)).toBeTruthy();
+  expect(button(/Reasoning model.*model-two.*custom:two/)).toBeTruthy();
   await user.type(
     screen.getByRole("textbox", { name: "Search models" }),
     "missing",
   );
   expect(screen.getByText("No models found.")).toBeTruthy();
-  await user.click(
-    screen.getByRole("button", { name: "Back to model settings" }),
-  );
-  expect(document.activeElement).toBe(
-    screen.getByRole("button", { name: "Change model" }),
-  );
+  expect(onChange).not.toHaveBeenCalled();
 });
 
-it("keeps Fast inside model settings and resets it when the model changes", async () => {
+it("keeps Fast inside settings, distinguishes false from default, and resets on model changes", async () => {
   const user = userEvent.setup();
   render(<Choices />);
   expect(screen.queryByRole("button", { name: "Fast mode" })).toBeNull();
-  const trigger = screen.getByRole("button", { name: "Model settings" });
-  await user.click(trigger);
-  const fast = screen.getByRole("button", { name: "Fast mode" });
-  expect(fast.closest('[role="dialog"]')).toBeTruthy();
-  expect(fast.getAttribute("aria-pressed")).toBe("true");
-  await user.click(fast);
-  expect(fast.getAttribute("aria-pressed")).toBe("false");
-  expect(screen.getByRole("dialog")).toBeTruthy();
+  await user.click(button("Agent & Model settings"));
+  expect(screen.getByText("Default · On")).toBeTruthy();
+  await user.click(button("Fast mode"));
+  expect(button("Fast mode").getAttribute("aria-pressed")).toBe("false");
   await user.keyboard("[Escape]");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  await user.click(trigger);
-  expect(
-    screen
-      .getByRole("button", { name: "Fast mode" })
-      .getAttribute("aria-pressed"),
-  ).toBe("false");
-  await user.click(screen.getByRole("button", { name: "Change model" }));
-  await user.click(screen.getByRole("button", { name: "Other model" }));
-  const unsupported = screen.getByRole("button", {
-    name: "Fast mode",
-  }) as HTMLButtonElement;
-  expect(unsupported.disabled).toBe(true);
-  expect(unsupported.title).toBe("No Fast support");
-  await user.click(screen.getByRole("button", { name: "Change model" }));
-  await user.click(screen.getByRole("button", { name: /Agent default/ }));
-  expect(
-    screen
-      .getByRole("button", { name: "Fast mode" })
-      .getAttribute("aria-pressed"),
-  ).toBe("true");
+  await user.click(button("Agent & Model settings"));
+  expect(button("Fast mode").getAttribute("aria-pressed")).toBe("false");
+  await user.click(button("Use default Fast mode"));
+  expect(screen.getByText("Default · On")).toBeTruthy();
+  await user.click(button("Fast mode"));
+  await user.click(button("Model"));
+  await user.click(button("Other model"));
+  expect((button("Fast mode") as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText("No Fast support")).toBeTruthy();
+  await user.click(button("Model"));
+  await user.click(button(/Agent default/));
+  expect(screen.getByText("Default · On")).toBeTruthy();
 });
 
-it("cannot change selections while active work disables the controls", async () => {
+it("keeps unsupported overrides resettable instead of silently changing them", async () => {
+  const user = userEvent.setup();
+  const onControlsChange = vi.fn();
+  render(
+    <ComposerSettings>
+      <ModelControlPanel
+        model={other}
+        controls={{ thinking: "max", fast: true, reasoning_mode: "pro" }}
+        onControlsChange={onControlsChange}
+      />
+    </ComposerSettings>,
+  );
+  await user.click(button("Agent & Model settings"));
+  expect(screen.getAllByText(/Unavailable selection/).length).toBeGreaterThan(
+    0,
+  );
+  await user.click(button("Reasoning mode"));
+  expect((button("Pro") as HTMLButtonElement).disabled).toBe(true);
+  expect(onControlsChange).not.toHaveBeenCalled();
+  await user.click(button(/Default/));
+  expect(onControlsChange).toHaveBeenLastCalledWith({
+    thinking: "max",
+    fast: true,
+    reasoning_mode: null,
+  });
+  await user.click(button("Use default thinking"));
+  expect(onControlsChange).toHaveBeenLastCalledWith({
+    thinking: null,
+    fast: true,
+    reasoning_mode: "pro",
+  });
+  await user.click(button("Use default Fast mode"));
+  expect(onControlsChange).toHaveBeenLastCalledWith({
+    thinking: "max",
+    fast: null,
+    reasoning_mode: "pro",
+  });
+});
+
+it("cannot change selections while submission disables the controls", async () => {
   const user = userEvent.setup();
   const onChange = vi.fn();
   render(
-    <ModelPicker
-      models={[model]}
-      defaultModelId={model.model_id}
-      disabled
-      onChange={onChange}
+    <ThreadRunChoices
+      catalog={catalog}
+      agentId="agent"
       controls={{}}
-      onControlsChange={vi.fn()}
+      disabled
+      onAgentChange={onChange}
+      onModelChange={onChange}
+      onControlsChange={onChange}
     />,
   );
-  await user.click(screen.getByRole("button", { name: "Model settings" }));
-  expect(screen.queryByRole("dialog")).toBeNull();
+  await user.click(button("Agent & Model settings"));
+  for (const name of [
+    "Agent",
+    "Model",
+    "Low",
+    "Use default thinking",
+    "Fast mode",
+    "Use default Fast mode",
+  ]) {
+    expect((button(name) as HTMLButtonElement).disabled).toBe(true);
+    await user.click(button(name));
+  }
   expect(onChange).not.toHaveBeenCalled();
+});
+
+it("changes Agent inside settings and clears model controls for the new inherited Model", async () => {
+  const user = userEvent.setup();
+  function Agents() {
+    const [agentId, setAgentId] = useState("agent");
+    const [controls, setControls] = useState<ModelControlValues>({
+      thinking: "low",
+      fast: false,
+    });
+    return (
+      <ThreadRunChoices
+        catalog={{
+          ...catalog,
+          agents: [
+            ...catalog.agents,
+            {
+              agent_id: "reviewer",
+              name: "Reviewer",
+              model_id: other.model_id,
+              source_path: "agents/reviewer.yaml",
+            },
+          ],
+        }}
+        agentId={agentId}
+        controls={controls}
+        onControlsChange={setControls}
+        disabled={false}
+        onAgentChange={setAgentId}
+        onModelChange={vi.fn()}
+      />
+    );
+  }
+  render(<Agents />);
+  await user.click(button("Agent & Model settings"));
+  await user.click(button("Agent"));
+  await user.click(button(/^Reviewer/));
+  expect(
+    screen.getByLabelText("Agent: Reviewer. Model: Other model"),
+  ).toBeTruthy();
+  expect(screen.getByText("Model default: Custom settings")).toBeTruthy();
+  await user.click(button("Agent"));
+  await user.click(button(/^Writer/));
+  expect(screen.getByText("Model default: High")).toBeTruthy();
+  expect(screen.getByText("Default · On")).toBeTruthy();
 });

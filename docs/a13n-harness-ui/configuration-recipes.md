@@ -1,24 +1,13 @@
 # Common configuration recipes
 
-Use these recipes after [setup](setup.md). Each snippet says **which file to edit**. Merge fields into the existing document; do not replace unrelated settings or add a second copy of a YAML key.
-
-Find the selected directory first:
+Start with [setup](setup.md). To edit manually, find the selected directory and validate the result:
 
 ```console
 a13n-harness-ui config path
-```
-
-Paths below are relative to that directory, normally `~/.a13n-harness-ui/`. Validate after editing:
-
-```console
 a13n-harness-ui config validate
 ```
 
-With a custom tree, pass the same `--config /path/to/a13n-harness-ui.yaml` before every subcommand. Validation checks configuration, not provider entitlement, a live MCP connection, or whether every Project directory is currently available.
-
-Within supported configuration versions, unknown additive fields in configuration sections and resource metadata are preserved, with warnings that they are not applied. Check these warnings for typos. Known field types, references, authentication sources, MCP transports, and unsupported versions still fail validation. Guided updates preserve unrelated fields; replacing an entire file still replaces its contents. A newer field with meaningful behavior requires a version that understands it—preservation is not feature support.
-
-A missing Project directory does not make the whole configuration or saved history unreadable. Restore or update the directory before running a conversation that selects it; Harness UI will not silently switch that conversation to another directory or execution mode. Already released strict readers may still reject populated new fields, so this is not a guarantee that any older package can read any newer installation.
+Paths below are relative to that directory (normally `~/.a13n-harness-ui/`). Merge each snippet into its indicated file. If you use a custom tree, put `--config /path/to/a13n-harness-ui.yaml` before each subcommand. Validation catches incorrect fields and references, but does not connect to providers or MCP servers. Unknown additive fields in supported versions are preserved with a warning, not used; check warnings for typos. A Project directory may be unavailable during validation but must be available when selected for a Run.
 
 ## Change the default Agent
 
