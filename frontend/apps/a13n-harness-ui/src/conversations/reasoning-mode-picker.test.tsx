@@ -32,7 +32,7 @@ it("distinguishes authored Pro from explicit Standard and restores the Model def
     });
     return (
       <>
-        <ComposerSettings kind="model">
+        <ComposerSettings>
           <ModelControlPanel
             model={{
               model_id: "model",

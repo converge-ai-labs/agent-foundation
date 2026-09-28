@@ -108,18 +108,17 @@ it("shows only a read-only identity and one settings entry, with explicit defaul
   trigger.focus();
   await user.keyboard("[Enter]");
   expect(screen.getByRole("dialog", { name: "Agent & Model" })).toBeTruthy();
-  expect(button("Thinking").textContent).toBe("ThinkingDefault · High");
-  await user.click(button("Thinking"));
-  expect(button(/Default/).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByText("Model default: High")).toBeTruthy();
+  expect(button("Use default thinking").getAttribute("aria-pressed")).toBe(
+    "true",
+  );
   await user.click(button(/Low/));
-  expect(button("Thinking").textContent).toBe("ThinkingLow");
-  await user.click(button("Thinking"));
+  expect(button("Low").getAttribute("aria-pressed")).toBe("true");
   expect(button(/Low/).getAttribute("aria-pressed")).toBe("true");
   await user.click(button(/Low/));
-  expect(button("Thinking").textContent).toBe("ThinkingLow");
-  await user.click(button("Thinking"));
-  await user.click(button(/Default/));
-  expect(button("Thinking").textContent).toBe("ThinkingDefault · High");
+  expect(button("Low").getAttribute("aria-pressed")).toBe("true");
+  await user.click(button("Use default thinking"));
+  expect(screen.getByText("Model default: High")).toBeTruthy();
   await user.keyboard("[Escape]");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(trigger);
@@ -129,7 +128,6 @@ it("searches models in one panel and resets overrides on model changes", async (
   const user = userEvent.setup();
   render(<Choices />);
   await user.click(button("Agent & Model settings"));
-  await user.click(button("Thinking"));
   await user.click(button(/Low/));
   await user.click(button("Model"));
   await user.type(
@@ -139,20 +137,16 @@ it("searches models in one panel and resets overrides on model changes", async (
   expect(screen.queryByRole("button", { name: "Reasoning model" })).toBeNull();
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   await user.click(button("Other model"));
-  expect(button("Thinking").textContent).toBe(
-    "ThinkingDefault · Custom settings",
-  );
-  await user.click(button("Thinking"));
+  expect(screen.getByText("Model default: Custom settings")).toBeTruthy();
   expect(screen.getByText("No reviewed controls")).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Low/ })).toBeNull();
-  await user.click(button("Back to Agent & Model settings"));
   await user.click(button("Model"));
   expect(
     (screen.getByRole("textbox", { name: "Search models" }) as HTMLInputElement)
       .value,
   ).toBe("");
   await user.click(button(/Agent default/));
-  expect(button("Thinking").textContent).toBe("ThinkingDefault · High");
+  expect(screen.getByText("Model default: High")).toBeTruthy();
 });
 
 it("follows the saved Thread default and restores it after an explicit Run choice", async () => {
@@ -198,35 +192,30 @@ it("keeps Fast inside settings, distinguishes false from default, and resets on 
   render(<Choices />);
   expect(screen.queryByRole("button", { name: "Fast mode" })).toBeNull();
   await user.click(button("Agent & Model settings"));
-  expect(button("Fast mode").textContent).toBe("Fast modeDefault · On");
+  expect(screen.getByText("Default · On")).toBeTruthy();
   await user.click(button("Fast mode"));
-  await user.click(button("Off"));
-  expect(button("Fast mode").textContent).toBe("Fast modeOff");
+  expect(button("Fast mode").getAttribute("aria-pressed")).toBe("false");
   await user.keyboard("[Escape]");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(button("Agent & Model settings"));
-  expect(button("Fast mode").textContent).toBe("Fast modeOff");
+  expect(button("Fast mode").getAttribute("aria-pressed")).toBe("false");
+  await user.click(button("Use default Fast mode"));
+  expect(screen.getByText("Default · On")).toBeTruthy();
   await user.click(button("Fast mode"));
-  await user.click(button(/Default/));
-  expect(button("Fast mode").textContent).toBe("Fast modeDefault · On");
-  await user.click(button("Fast mode"));
-  await user.click(button("Off"));
   await user.click(button("Model"));
   await user.click(button("Other model"));
-  await user.click(button("Fast mode"));
-  expect((button("On") as HTMLButtonElement).disabled).toBe(true);
+  expect((button("Fast mode") as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText("No Fast support")).toBeTruthy();
-  await user.click(button("Back to Agent & Model settings"));
   await user.click(button("Model"));
   await user.click(button(/Agent default/));
-  expect(button("Fast mode").textContent).toBe("Fast modeDefault · On");
+  expect(screen.getByText("Default · On")).toBeTruthy();
 });
 
 it("keeps unsupported overrides resettable instead of silently changing them", async () => {
   const user = userEvent.setup();
   const onControlsChange = vi.fn();
   render(
-    <ComposerSettings kind="model">
+    <ComposerSettings>
       <ModelControlPanel
         model={other}
         controls={{ thinking: "max", fast: true, reasoning_mode: "pro" }}
@@ -235,7 +224,9 @@ it("keeps unsupported overrides resettable instead of silently changing them", a
     </ComposerSettings>,
   );
   await user.click(button("Agent & Model settings"));
-  expect(button("Thinking").textContent).toContain("Unavailable thinking");
+  expect(screen.getAllByText(/Unavailable selection/).length).toBeGreaterThan(
+    0,
+  );
   await user.click(button("Reasoning mode"));
   expect((button("Pro") as HTMLButtonElement).disabled).toBe(true);
   expect(onControlsChange).not.toHaveBeenCalled();
@@ -245,15 +236,13 @@ it("keeps unsupported overrides resettable instead of silently changing them", a
     fast: true,
     reasoning_mode: null,
   });
-  await user.click(button("Thinking"));
-  await user.click(button(/Default/));
+  await user.click(button("Use default thinking"));
   expect(onControlsChange).toHaveBeenLastCalledWith({
     thinking: null,
     fast: true,
     reasoning_mode: "pro",
   });
-  await user.click(button("Fast mode"));
-  await user.click(button(/Default/));
+  await user.click(button("Use default Fast mode"));
   expect(onControlsChange).toHaveBeenLastCalledWith({
     thinking: "max",
     fast: null,
@@ -276,7 +265,14 @@ it("cannot change selections while submission disables the controls", async () =
     />,
   );
   await user.click(button("Agent & Model settings"));
-  for (const name of ["Agent", "Model", "Thinking", "Fast mode"]) {
+  for (const name of [
+    "Agent",
+    "Model",
+    "Low",
+    "Use default thinking",
+    "Fast mode",
+    "Use default Fast mode",
+  ]) {
     expect((button(name) as HTMLButtonElement).disabled).toBe(true);
     await user.click(button(name));
   }
@@ -321,11 +317,9 @@ it("changes Agent inside settings and clears model controls for the new inherite
   expect(
     screen.getByLabelText("Agent: Reviewer. Model: Other model"),
   ).toBeTruthy();
-  expect(button("Thinking").textContent).toBe(
-    "ThinkingDefault · Custom settings",
-  );
+  expect(screen.getByText("Model default: Custom settings")).toBeTruthy();
   await user.click(button("Agent"));
   await user.click(button(/^Writer/));
-  expect(button("Thinking").textContent).toBe("ThinkingDefault · High");
-  expect(button("Fast mode").textContent).toBe("Fast modeDefault · On");
+  expect(screen.getByText("Model default: High")).toBeTruthy();
+  expect(screen.getByText("Default · On")).toBeTruthy();
 });

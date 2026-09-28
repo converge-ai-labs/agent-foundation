@@ -56,13 +56,13 @@ These are shared Thread drafts, not a personal task queue. Synchronized drafts c
 
 ## Agent and Model settings
 
-The composer footer shows the current Agent and Model names as a read-only summary. Use the adjacent **Agent & Model settings** icon to change Agent, Model, Thinking, Reasoning mode, or Fast mode. Each compact row shows its current choice and opens the available options inside the same panel. Default choices name the inherited setting rather than presenting it as an explicit override.
+The composer footer right-aligns the current Agent and Model names as a read-only summary. Use the adjacent **Agent & Model settings** icon to change them. Agent, Model, and Reasoning mode open their choices inside the same panel; Thinking levels and the Fast button are directly available on the overview. Each has a **Use default** action to restore inherited settings instead of guessing an explicit equivalent.
 
-This layout is shared by new and saved conversations at every width. On phones, the panel opens as a bottom sheet. **Composer options** separately opens Run settings for Environments, Goal, and Coordinator; wide composers also retain their non-model shortcuts. Long names are truncated without squeezing the action buttons, and the full names are available through the summary's title and accessible label.
+This layout is shared by new and saved conversations at every width. On phones, the panel opens as a bottom sheet. Goal, Coordinator, and Environments stay in the composer header, wrapping when needed; there is no separate Run settings menu. The **Clear context** eraser sits beside attachments and is disabled when no saved context is available. Long names are truncated without squeezing the action buttons, and the full names are available through the summary's title and accessible label.
 
 ## Fast mode
 
-Open **Agent & Model settings → Fast mode** and choose **Default**, **On**, or **Off**. Default follows the Model's configured Fast setting; Provider default leaves the request to the provider rather than claiming Off. On and Off explicitly request Fast or standard processing for subsequent Sends in this tab. Choose Default to clear the override. Switching Agent or Model also clears the temporary choice and follows the newly selected Model. Fast does not change thinking, save Model configuration, or accompany steering.
+Open **Agent & Model settings** and toggle **Fast** directly. The adjacent label distinguishes explicit **On** or **Off** from **Default**. Default follows the Model's configured Fast setting; Provider default leaves the request to the provider rather than claiming Off. On and Off explicitly request Fast or standard processing for subsequent Sends in this tab. Choose **Use default** to clear the override. Switching Agent or Model also clears the temporary choice and follows the newly selected Model. Fast does not change thinking, save Model configuration, or accompany steering.
 
 The Context / Cost / Cache / Time row shows **Fast On**, **Off**, or **Default** from the active or saved Run's captured settings, not the next-Send selection. Default means the Model or provider decides; an unavailable capture shows a dash. This is a request setting, not confirmation of faster service. Fast may increase API cost or subscription credit usage.
 

@@ -14,26 +14,29 @@ const model: Schema<"ModelSummary"> = {
   fast: { supported: true, state: "on" },
 };
 
-it("distinguishes inherited On, explicit Off and restored inheritance", async () => {
+it("toggles inherited On to explicit Off and restores inheritance", async () => {
   const user = userEvent.setup();
   function Control() {
     const [value, setValue] = useState<boolean | null>(null);
     return <FastPicker model={model} value={value} onChange={setValue} />;
   }
   render(<Control />);
-  const inherited = screen.getByRole("button", { name: /^Default.*On$/ });
+  const inherited = screen.getByRole("button", {
+    name: "Use default Fast mode",
+  });
+  const toggle = screen.getByRole("button", { name: "Fast mode" });
   expect(inherited.getAttribute("aria-pressed")).toBe("true");
-  const off = screen.getByRole("button", { name: "Off" });
-  await user.click(off);
-  expect(off.getAttribute("aria-pressed")).toBe("true");
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  await user.click(toggle);
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
   expect(inherited.getAttribute("aria-pressed")).toBe("false");
-  screen.getByRole("button", { name: "On" }).focus();
+  expect(screen.getByText("Off")).toBeTruthy();
+  toggle.focus();
   await user.keyboard("[Space]");
-  expect(
-    screen.getByRole("button", { name: "On" }).getAttribute("aria-pressed"),
-  ).toBe("true");
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
   await user.click(inherited);
   expect(inherited.getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByText("Default · On")).toBeTruthy();
 });
 
 it.each(["default", "off"] as const)(
@@ -49,14 +52,16 @@ it.each(["default", "off"] as const)(
     );
     expect(
       screen
-        .getByRole("button", { name: /^Default/ })
+        .getByRole("button", { name: "Use default Fast mode" })
         .getAttribute("aria-pressed"),
     ).toBe("true");
     expect(
-      screen.getByRole("button", { name: "Off" }).getAttribute("aria-pressed"),
-    ).toBe("false");
+      screen.getByText(
+        state === "default" ? "Default · Provider default" : "Default · Off",
+      ),
+    ).toBeTruthy();
     expect(change).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "On" }));
+    await user.click(screen.getByRole("button", { name: "Fast mode" }));
     expect(change).toHaveBeenLastCalledWith(true);
   },
 );
@@ -70,15 +75,14 @@ it("follows changed model settings without overriding explicit Off", () => {
       onChange={change}
     />,
   );
-  expect(
-    screen
-      .getByRole("button", { name: /^Default.*Off$/ })
-      .getAttribute("aria-pressed"),
-  ).toBe("true");
+  expect(screen.getByText("Default · Off")).toBeTruthy();
   view.rerender(<FastPicker model={model} value={false} onChange={change} />);
   expect(
-    screen.getByRole("button", { name: "Off" }).getAttribute("aria-pressed"),
-  ).toBe("true");
+    screen
+      .getByRole("button", { name: "Fast mode" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+  expect(screen.getByText("Off")).toBeTruthy();
   expect(change).not.toHaveBeenCalled();
 });
 
@@ -99,11 +103,26 @@ it("explains unavailable controls and only allows resetting a stale override", a
       onChange={change}
     />,
   );
-  const on = screen.getByRole("button", { name: "On" }) as HTMLButtonElement;
-  expect(on.disabled).toBe(true);
+  const toggle = screen.getByRole("button", {
+    name: "Fast mode",
+  }) as HTMLButtonElement;
+  expect(toggle.disabled).toBe(true);
   expect(screen.getByText("Unavailable connection")).toBeTruthy();
-  await user.click(on);
+  await user.click(toggle);
   expect(change).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: /^Default/ }));
+  await user.click(
+    screen.getByRole("button", { name: "Use default Fast mode" }),
+  );
   expect(change).toHaveBeenCalledWith(null);
+});
+
+it("locks both the toggle and default reset during submission", async () => {
+  const user = userEvent.setup();
+  const change = vi.fn();
+  render(<FastPicker model={model} value={false} disabled onChange={change} />);
+  for (const button of screen.getAllByRole("button")) {
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    await user.click(button);
+  }
+  expect(change).not.toHaveBeenCalled();
 });
