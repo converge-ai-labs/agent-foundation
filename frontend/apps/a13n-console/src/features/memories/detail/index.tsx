@@ -64,7 +64,6 @@ function MemoryTabs({ resource }: { resource: Resource }) {
             </IconTile>
           }
           name={memory.name}
-          resourceKey={memory.key}
           description={memory.description}
         />
       }

@@ -33,20 +33,17 @@ export function EnvironmentNameEditor({
         throw new Error(
           t("Version information is unavailable. Reload this page."),
         );
-      return client.http
-        .PATCH(
-          "/api/v1/workspaces/{workspace_id}/environments/{environment_id}",
-          {
-            params: {
-              path: {
-                workspace_id: basis.environment.workspace_id,
-                environment_id: basis.environment.id,
-              },
+      return client
+        .workspace(basis.environment.workspace_id)
+        .PATCH("/api/v1/environments/{environment_id}", {
+          params: {
+            path: {
+              environment_id: basis.environment.id,
             },
-            headers: ifMatch(basis.etag),
-            body: { name },
           },
-        )
+          headers: ifMatch(basis.etag),
+          body: { name },
+        })
         .then(data);
     },
     onSuccess: async () => {

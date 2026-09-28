@@ -21,7 +21,7 @@ from starlette.responses import Response
 
 from a13n_service.infra.audit import Scoped, record
 from a13n_service.infra.db import Storage, transaction
-from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
+from a13n_service.infra.errors import ServiceError, invalid, not_found
 from a13n_service.tenancy.authorize import (
     VERBS,
     Grant,
@@ -243,26 +243,13 @@ async def resolve_organization(session: AsyncSession, principal: Principal, orga
     return organization
 
 
-async def resolve_workspace(session: AsyncSession, principal: Principal, reference: str) -> WorkspaceRow:
-    """A workspace by ID in one of the principal's organizations, or by key among the workspaces it can read.
-
-    Anything else is not found, so a path never reveals another tenant's workspaces.
-    """
-    workspace = await session.get(WorkspaceRow, reference)
-    if workspace is not None and _member(principal, workspace.organization_id):
-        return workspace
-    rows = (
-        await session.scalars(
-            select(WorkspaceRow)
-            .where(WorkspaceRow.key == reference, WorkspaceRow.id.in_(readable_workspaces(principal)))
-            .limit(2)
-        )
-    ).all()
-    if not rows:
-        raise not_found("workspace", reference)
-    if len(rows) > 1:
-        raise conflict("workspace", reference, "ambiguous_key")
-    return rows[0]
+async def resolve_workspace(session: AsyncSession, principal: Principal, workspace_id: str) -> WorkspaceRow:
+    """A workspace of one of the principal's organizations; any other is not found, so an ID never reveals another
+    tenant's workspaces."""
+    workspace = await session.get(WorkspaceRow, workspace_id)
+    if workspace is None or not _member(principal, workspace.organization_id):
+        raise not_found("workspace", workspace_id)
+    return workspace
 
 
 async def workspace_scope(
@@ -337,12 +324,12 @@ class OrganizationPath:
 
 @dataclass(frozen=True, slots=True)
 class WorkspacePath:
-    """A workspace a route names by ID or key."""
+    """A workspace a route names by ID."""
 
-    workspace: str
+    workspace_id: str
 
     async def resolve(self, session: AsyncSession, principal: Principal) -> tuple[WorkspaceScope, WorkspaceRow]:
-        workspace = await resolve_workspace(session, principal, self.workspace)
+        workspace = await resolve_workspace(session, principal, self.workspace_id)
         return WorkspaceScope(workspace.organization_id, workspace.id), workspace
 
 
@@ -393,7 +380,7 @@ def administering_workspace(
     storage: Storage,
     access: Access,
     actor: Principal,
-    workspace: str,
+    workspace_id: str,
     *,
     action: str,
     reading: bool = False,
@@ -404,7 +391,7 @@ def administering_workspace(
         storage,
         access,
         actor,
-        WorkspacePath(workspace),
+        WorkspacePath(workspace_id),
         action=action,
         reading=reading,
         require_active=require_active,

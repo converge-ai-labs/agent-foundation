@@ -19,7 +19,6 @@ from functools import partial
 
 import anyio
 from a13n_harness import (
-    AgentContext,
     DeferredToolResume,
     HarnessError,
     HarnessEvent,
@@ -40,7 +39,6 @@ from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
-from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import UserContent
 from pydantic_ai.usage import UsageLimits
 
@@ -83,7 +81,6 @@ from a13n_service.runs.schemas import (
     canonical_json,
 )
 from a13n_service.runs.seal import release_attempt, seal, seal_attempt
-from a13n_service.runs.secrets import require_secrets
 from a13n_service.runs.stream import ThreadStream
 from a13n_service.runs.subagents import ChildRuns
 from a13n_service.runs.tables import RunRow, ThreadRow
@@ -226,7 +223,6 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         session_id, source_entry_id = run.session_id, run.source_entry_id
         mounts = tuple(EnvironmentMount.model_validate(mount) for mount in run.environment_mounts)
         memory_cursors = dict(run.memory_cursors)
-    await require_secrets(runtime, lease.workspace_id, principal.id, host.secrets)
     own, base, display = await asyncio.gather(
         checkpoints.load_state(runtime.objects, lease.organization_id, lease.run_id, checkpoint),
         checkpoints.load_state(runtime.objects, lease.organization_id, parent_id or lease.run_id, parent_checkpoint),
@@ -309,7 +305,7 @@ class _Attempt:
         # The memory cursors the run's history holds context as of; recovery starts from the committed ones.
         self.cursors = MemoryCursors(plan.memory_cursors)
         self.boundaries = Boundaries(self.cursors.snapshot)
-        models = {model.id: model for model in plan.agent.models()}
+        models = {model.key: model for model in plan.agent.models()}
         self.check = CallCheck(runtime, control, self._call_context(), models=models, used=plan.used, limit=plan.limit)
         self.usage = UsageBuffer(self.check.calls)
         self.usage_reporter = SnapshotReporter(runtime.storage, lease.run_id, lease.attempt_id, self.usage)
@@ -355,7 +351,6 @@ class _Attempt:
                     self.check,
                     self.plan.host,
                     models,
-                    root_revision_id=root.revision_id,
                     principal=self.plan.principal,
                     authority=self.plan.authority,
                     cursors=self.cursors,
@@ -393,9 +388,7 @@ class _Attempt:
                 resume_usage=False,
                 deferred_resume=self.plan.resume,
                 tool_recovery="declared",
-                bindings=host.bindings(
-                    root, self._bindings(policies=host.policies(), resolver=agent.model_resolver(models))
-                ),
+                bindings=host.bindings(root, self._bindings(agent.model_resolver(models))),
                 # The call check enforces the run's own request limit across attempts.
                 usage_limits=UsageLimits(request_limit=None),
             )
@@ -675,9 +668,7 @@ class _Attempt:
         """The child runs one async agent of the graph starts through its own edges."""
         return ChildRuns(self.runtime, self.lease, self.control, node.subagents)
 
-    def _bindings(
-        self, *, policies: tuple[AbstractCapability[AgentContext], ...], resolver: RunModelResolver
-    ) -> RunBindings:
+    def _bindings(self, resolver: RunModelResolver) -> RunBindings:
         lease = self.lease
         return RunBindings(
             instance=AgentInstanceContext(
@@ -688,7 +679,6 @@ class _Attempt:
             model_resolver=resolver,
             model_call_check=self.check,
             usage_reporter=self.usage_reporter,
-            capabilities=policies,
             observation=attempt_observation(
                 organization_id=lease.organization_id,
                 workspace_id=lease.workspace_id,

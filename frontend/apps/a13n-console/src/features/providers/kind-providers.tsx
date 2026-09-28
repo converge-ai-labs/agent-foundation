@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
+import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { useCursor } from "../../shared/collection";
 import {
@@ -37,7 +37,7 @@ import { ProviderEditor, ProviderGroup, ProviderName } from "./provider-editor";
 import { ProviderFacts } from "./provider-facts";
 import { ProviderTable } from "./provider-table";
 import providerStyles from "./providers.module.css";
-import { providerApi, type ProviderKind, type ProviderScope } from "./api";
+import { providerApi, type ProviderKind } from "./api";
 
 type Definition = Schema["ProviderType"];
 type Resource = { value: Schema["Provider"]; etag?: string };
@@ -76,13 +76,11 @@ function schema(value: unknown): Record<string, unknown> {
  */
 export function KindProviders({
   kind,
-  scope,
   notice,
   addDescription,
   testDescription,
 }: {
   kind: ProviderKind;
-  scope: ProviderScope;
   notice?: ReactNode;
   /** What the catalog step asks the reader to choose, as a translation key. */
   addDescription: string;
@@ -91,22 +89,20 @@ export function KindProviders({
 }) {
   const providerTypes = useProviderTypes(kind);
   const client = useClient(),
-    { can, organizationCan, organization } = useAccess(),
+    { can, workspace } = useWorkspace(),
     page = useCursor(),
-    api = providerApi(client, organization.id, scope, kind);
+    api = providerApi(client, workspace.id, kind);
   const rows = useResourceRows<Schema["Provider"]>();
   const query = useQuery({
-    queryKey: [`${kind}-providers`, scope.kind, scope.id, "list", page.cursor],
+    queryKey: [`${kind}-providers`, workspace.id, "list", page.cursor],
     queryFn: ({ signal }) => api.providers(signal, page.cursor),
   });
-  const manage =
-    scope.kind === "organization" ? organizationCan("write") : can("write");
+  const manage = can("write");
   const connectable = providerTypes.data?.items ?? [];
   const add =
     manage && connectable.length ? (
       <AddKindProvider
         kind={kind}
-        scope={scope}
         definitions={connectable}
         description={addDescription}
       />
@@ -119,11 +115,6 @@ export function KindProviders({
         <EditKindProvider
           key={rows.selected.id}
           kind={kind}
-          scope={
-            rows.selected.workspace_id
-              ? { kind: "workspace", id: rows.selected.workspace_id }
-              : { kind: "organization", id: rows.selected.organization_id }
-          }
           provider={rows.selected}
           testDescription={testDescription}
           {...rows.control}
@@ -137,9 +128,7 @@ export function KindProviders({
         page={page}
         nextCursor={query.data?.next_cursor}
         action={add}
-        canActivateRow={(item) =>
-          item.workspace_id ? manage : organizationCan("write")
-        }
+        canActivateRow={() => manage}
         onRowActivate={rows.activate}
         notice={notice}
         row={(item) => ({
@@ -147,7 +136,6 @@ export function KindProviders({
           name: item.name,
           type: item.type,
           definition: definitionFor(item.type)?.display_name ?? item.type,
-          workspaceId: item.workspace_id,
           credentials:
             definitionFor(item.type)?.credential_schema == null
               ? ("not_required" as const)
@@ -164,12 +152,10 @@ export function KindProviders({
 /** Catalog-first creation for the types the deployment offers. */
 function AddKindProvider({
   kind,
-  scope,
   definitions,
   description,
 }: {
   kind: ProviderKind;
-  scope: ProviderScope;
   definitions: Definition[];
   description: string;
 }) {
@@ -199,7 +185,6 @@ function AddKindProvider({
         <CatalogStep backLabel={t("All providers")} onBack={back}>
           <ProviderForm
             kind={kind}
-            scope={scope}
             definition={definition}
             definitions={definitions}
             close={() => change(false)}
@@ -213,7 +198,6 @@ function AddKindProvider({
 
 function EditKindProvider({
   kind,
-  scope,
   provider,
   testDescription,
   controlledOpen,
@@ -221,28 +205,19 @@ function EditKindProvider({
   finalFocus,
 }: ResourceEditorControl & {
   kind: ProviderKind;
-  scope: ProviderScope;
   provider: Schema["Provider"];
   testDescription: string;
 }) {
   const client = useClient(),
+    { workspace } = useWorkspace(),
     [generation, setGeneration] = useState(0),
     definitions = useProviderTypes(kind);
   const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
   const query = useQuery({
-    queryKey: [
-      `${kind}-providers`,
-      scope.kind,
-      scope.id,
-      "detail",
-      provider.id,
-    ],
+    queryKey: [`${kind}-providers`, workspace.id, "detail", provider.id],
     enabled: state.open,
     queryFn: ({ signal }) =>
-      providerApi(client, provider.organization_id, scope, kind).provider(
-        provider.id,
-        signal,
-      ),
+      providerApi(client, workspace.id, kind).provider(provider.id, signal),
   });
   const definition = definitions.data?.items.find(
     (item) => item.type === provider.type,
@@ -255,7 +230,6 @@ function EditKindProvider({
       id={provider.id}
       type={provider.type}
       definition={definition?.display_name}
-      scope={provider.workspace_id ? "workspace" : "organization"}
       loading={definitions.isPending || query.isPending}
       error={definitions.error ?? query.error}
     >
@@ -263,7 +237,6 @@ function EditKindProvider({
         <ProviderForm
           key={generation}
           kind={kind}
-          scope={scope}
           initial={query.data}
           definitions={definitions.data?.items ?? []}
           testDescription={testDescription}
@@ -280,7 +253,6 @@ function EditKindProvider({
 
 function ProviderForm({
   kind,
-  scope,
   initial,
   definition: chosen,
   definitions,
@@ -289,7 +261,6 @@ function ProviderForm({
   reload,
 }: {
   kind: ProviderKind;
-  scope: ProviderScope;
   initial?: Resource;
   definition?: Definition;
   definitions: Definition[];
@@ -301,7 +272,7 @@ function ProviderForm({
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation(),
-    { organization } = useAccess(),
+    { workspace } = useWorkspace(),
     [basis] = useState(initial),
     [name, setName] = useState(
       initial?.value.name ?? chosen?.display_name ?? "",
@@ -312,12 +283,7 @@ function ProviderForm({
       initial?.value.config ?? {},
     ),
     [advancedOpen, setAdvancedOpen] = useState(false);
-  const api = providerApi(
-      client,
-      basis?.value.organization_id ?? organization.id,
-      scope,
-      kind,
-    ),
+  const api = providerApi(client, workspace.id, kind),
     definition = definitions.find((item) => item.type === type) ?? chosen,
     configSchema = schema(definition?.configuration_schema),
     section = useCredentialSection(definition, configuration, basis?.value);

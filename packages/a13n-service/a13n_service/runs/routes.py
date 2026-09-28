@@ -35,9 +35,9 @@ from a13n_service.runs.schemas import (
     UsageFilter,
     UsageSummary,
 )
-from a13n_service.tenancy.requests import Actor, Credential
+from a13n_service.tenancy.requests import Actor, Credential, WorkspaceId
 
-router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}", tags=["runs"])
+router = APIRouter(prefix="/api/v1", tags=["runs"])
 
 
 def _created(response: Response, result: tuple[Submitted, bool]) -> Submitted:
@@ -54,7 +54,7 @@ def _created(response: Response, result: tuple[Submitted, bool]) -> Submitted:
 @router.get("/sessions", response_model=SessionPage)
 async def list_sessions(
     runtime: CurrentRuntime,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     actor: Actor,
     query: Annotated[SessionQuery, Query()],
 ) -> SessionPage:
@@ -63,14 +63,14 @@ async def list_sessions(
 
 @router.post("/sessions", response_model=SessionView, status_code=201)
 async def create_session(
-    runtime: CurrentRuntime, response: Response, workspace_id: str, body: SessionCreate, actor: Actor
+    runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, body: SessionCreate, actor: Actor
 ) -> SessionView:
     return tagged(response, await sessions.create_session(runtime.storage, actor, workspace_id, body))
 
 
 @router.get("/sessions/{session_id}", response_model=SessionView)
 async def get_session(
-    runtime: CurrentRuntime, response: Response, workspace_id: str, session_id: str, actor: Actor
+    runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, session_id: str, actor: Actor
 ) -> SessionView:
     return tagged(response, await sessions.get_session(runtime.storage, actor, workspace_id, session_id))
 
@@ -79,7 +79,7 @@ async def get_session(
 async def update_session(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     session_id: str,
     body: SessionUpdate,
     actor: Actor,
@@ -95,7 +95,7 @@ async def update_session(
 @router.get("/threads", response_model=ThreadPage)
 async def list_threads(
     runtime: CurrentRuntime,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     actor: Actor,
     session_id: str | None = None,
     label: Annotated[list[str] | None, Query()] = None,
@@ -120,7 +120,12 @@ async def list_threads(
     responses={200: {"model": Submitted, "description": "The replayed submission in its current state"}},
 )
 async def create_thread(
-    runtime: CurrentRuntime, response: Response, workspace_id: str, body: NewThread, actor: Actor, key: IdempotencyKey
+    runtime: CurrentRuntime,
+    response: Response,
+    workspace_id: WorkspaceId,
+    body: NewThread,
+    actor: Actor,
+    key: IdempotencyKey,
 ) -> Submitted:
     """Create a thread (and its session unless one is named) with its first message."""
     return _created(response, await submit.create_thread(runtime, actor, workspace_id, body, request_key=key))
@@ -128,7 +133,7 @@ async def create_thread(
 
 @router.get("/threads/{thread_id}", response_model=ThreadView)
 async def get_thread(
-    runtime: CurrentRuntime, response: Response, workspace_id: str, thread_id: str, actor: Actor
+    runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, thread_id: str, actor: Actor
 ) -> ThreadView:
     return tagged(response, await threads.get(runtime.storage, actor, workspace_id, thread_id))
 
@@ -137,7 +142,7 @@ async def get_thread(
 async def update_thread(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     thread_id: str,
     body: ThreadUpdate,
     actor: Actor,
@@ -151,7 +156,7 @@ async def update_thread(
 async def archive_thread(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     thread_id: str,
     actor: Actor,
     if_match: IfMatch = None,
@@ -163,7 +168,7 @@ async def archive_thread(
 @router.get("/threads/{thread_id}/runs", response_model=RunPage)
 async def list_thread_runs(
     runtime: CurrentRuntime,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     thread_id: str,
     actor: Actor,
     limit: PageLimit = 50,
@@ -181,7 +186,7 @@ async def list_thread_runs(
 async def thread_stream(
     request: Request,
     runtime: CurrentRuntime,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     thread_id: str,
     credential: Credential,
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID", pattern=stream.EVENT_ID)] = None,
@@ -201,7 +206,7 @@ async def thread_stream(
 @router.get("/threads/{thread_id}/inbox", response_model=EntryPage)
 async def list_inbox(
     runtime: CurrentRuntime,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     thread_id: str,
     actor: Actor,
     status: Annotated[list[EntryStatus] | None, Query()] = None,
@@ -223,7 +228,7 @@ async def list_inbox(
 async def submit_message(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     thread_id: str,
     body: Message,
     actor: Actor,
@@ -238,7 +243,7 @@ async def submit_message(
 
 @router.get("/threads/{thread_id}/inbox/{entry_id}", response_model=EntryView)
 async def get_entry(
-    runtime: CurrentRuntime, workspace_id: str, thread_id: str, entry_id: str, actor: Actor
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, thread_id: str, entry_id: str, actor: Actor
 ) -> EntryView:
     """One entry and its disposition; edits name the thread's ETag."""
     return await entries.get_entry(runtime.storage, actor, workspace_id, thread_id, entry_id)
@@ -248,7 +253,7 @@ async def get_entry(
 async def edit_entry(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     thread_id: str,
     entry_id: str,
     body: EntryUpdate,
@@ -264,7 +269,7 @@ async def edit_entry(
 async def withdraw_entry(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     thread_id: str,
     entry_id: str,
     actor: Actor,
@@ -280,7 +285,7 @@ async def withdraw_entry(
 async def reorder_inbox(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     thread_id: str,
     body: InboxOrder,
     actor: Actor,
@@ -294,7 +299,9 @@ async def reorder_inbox(
 
 
 @router.get("/runs/{run_id}", response_model=RunView)
-async def get_run(runtime: CurrentRuntime, response: Response, workspace_id: str, run_id: str, actor: Actor) -> RunView:
+async def get_run(
+    runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, run_id: str, actor: Actor
+) -> RunView:
     return tagged(response, await runs.get(runtime.storage, actor, workspace_id, run_id))
 
 
@@ -302,7 +309,7 @@ async def get_run(runtime: CurrentRuntime, response: Response, workspace_id: str
 async def update_run(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     run_id: str,
     body: RunLabels,
     actor: Actor,
@@ -315,7 +322,7 @@ async def update_run(
 
 @router.post("/runs/{run_id}/interrupt", response_model=RunView)
 async def interrupt_run(
-    runtime: CurrentRuntime, response: Response, workspace_id: str, run_id: str, actor: Actor
+    runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, run_id: str, actor: Actor
 ) -> RunView:
     return tagged(response, await runs.interrupt(runtime, actor, workspace_id, run_id))
 
@@ -329,7 +336,7 @@ async def interrupt_run(
 async def fork_run(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     run_id: str,
     body: Fork,
     actor: Actor,
@@ -348,7 +355,7 @@ async def fork_run(
 async def resume_run(
     runtime: CurrentRuntime,
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     run_id: str,
     body: ResumeRequest,
     actor: Actor,
@@ -361,20 +368,20 @@ async def resume_run(
 
 
 @router.get("/runs/{run_id}/items", response_model=RunItems)
-async def run_items(runtime: CurrentRuntime, workspace_id: str, run_id: str, actor: Actor) -> RunItems:
+async def run_items(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor) -> RunItems:
     return await runs.items(runtime, actor, workspace_id, run_id)
 
 
 @router.get("/runs/{run_id}/lineage", response_model=RunPage)
 async def run_lineage(
-    runtime: CurrentRuntime, workspace_id: str, run_id: str, actor: Actor, cursor: str | None = None
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor, cursor: str | None = None
 ) -> RunPage:
     """The run and its ancestors, nearest first, across fork origins."""
     return await runs.lineage(runtime.storage, actor, workspace_id, run_id, cursor=cursor)
 
 
 @router.get("/runs/{run_id}/attempts", response_model=Attempts)
-async def run_attempts(runtime: CurrentRuntime, workspace_id: str, run_id: str, actor: Actor) -> Attempts:
+async def run_attempts(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor) -> Attempts:
     return await runs.list_attempts(runtime.storage, actor, workspace_id, run_id)
 
 
@@ -383,6 +390,6 @@ async def run_attempts(runtime: CurrentRuntime, workspace_id: str, run_id: str, 
 
 @router.get("/usage", response_model=UsageSummary)
 async def summarize_usage(
-    runtime: CurrentRuntime, workspace_id: str, actor: Actor, where: Annotated[UsageFilter, Query()]
+    runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor, where: Annotated[UsageFilter, Query()]
 ) -> UsageSummary:
     return await usage.summarize(runtime.storage, actor, workspace_id, where)

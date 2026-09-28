@@ -7,11 +7,11 @@ An environment is the computer an agent works on: its files and terminal tools a
 
 Threads **mount** environments. Each run freezes the thread's mounts when it starts and uses them until it ends. Without a mounted environment, an agent has no file or terminal tools.
 
-In Console, **Environments → Templates** manages templates and **Environments → Instances** lists environments, and providers are under **Workspace settings → Providers → Environment**. All API paths below are under `/api/v1/workspaces/{workspace_id}` unless they say otherwise.
+In Console, **Environments → Templates** manages templates and **Environments → Instances** lists environments, and providers are under **Workspace settings → Providers → Environment**. All API paths below are under `/api/v1`.
 
 ## Providers
 
-An environment provider is the account environments run on. Create it like any other [provider](resources.md#providers), in `/api/v1/organizations/{organization_id}/environment-providers`, either shared by the organization or confined to one workspace. `GET /api/v1/provider-types/environment` returns each type's configuration, credential and recipe schemas.
+An environment provider is the account environments run on. Create it like any other [provider](resources.md#providers), in `/api/v1/environment-providers`. `GET /api/v1/provider-types/environment` returns each type's configuration, credential and recipe schemas.
 
 | Type      | Environments                                    | Account                                                                                                                                   | Stop                                   |
 | --------- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
@@ -35,17 +35,17 @@ Only a Docker provider can be tested (`POST …/{provider_id}/test`): the engine
 A template describes how to build a managed environment and when to stop and delete idle ones. Templates belong to a workspace; creating and changing them needs `write`.
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/environment-templates" \
+curl -X POST "$A13N_URL/api/v1/environment-templates" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"key": "python", "name": "Python sandbox", "provider_id": "eprov_...",
+  -d '{"name": "Python sandbox", "provider_id": "eprov_...",
        "config": {"recipe": {"image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev",
                              "cpus": 2, "memory_gb": 4, "init_script": "pip install pandas"},
                   "stop_after_seconds": 1800, "delete_after_seconds": 604800}}'
 ```
 
-- `config.recipe` is validated by the provider type's recipe schema. For Docker it sets the `image`, host directory `mounts` (their sources must lie below `environments.docker_mount_roots`), `environment` variables, an `init_script`, `disable_network`, the `user`, and resource limits; see [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerenvironmentconfiguration). A rejected recipe names each invalid field's location and the schema's own message, such as `mounts: Host mount sources must lie below a directory the operator allows`, never the value you sent.
+- `provider_id` names an environment provider of the workspace, and `config.recipe` is validated by its type's recipe schema. For Docker it sets the `image`, host directory `mounts` (their sources must lie below `environments.docker_mount_roots`), `environment` variables, an `init_script`, `disable_network`, the `user`, and resource limits; see [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerenvironmentconfiguration). A rejected recipe names each invalid field's location and the schema's own message, such as `mounts: Host mount sources must lie below a directory the operator allows`, never the value you sent.
 - `stop_after_seconds` (default 1800, 60–2,592,000) stops an environment no run has used for that long. `delete_after_seconds` (60–31,536,000) deletes one that no run has used for that long and no thread mounts. `null` turns either off. Both count from the environment's last use.
-- `PATCH` changes the name, description, provider, config and labels with the template's `If-Match`. A new provider or recipe applies to environments created afterwards: an environment is built from the template as it is when its creation is dispatched, and keeps that recipe. The idle policy always applies as currently set. Creating a template, or changing its provider or recipe, needs `write` on the provider, since it directs that provider's backend; changing only the idle policy needs to read it.
+- `PATCH` changes the name, description, provider, config and labels with the template's `If-Match`. A new provider or recipe applies to environments created afterwards: an environment is built from the template as it is when its creation is dispatched, and keeps that recipe. The idle policy always applies as currently set.
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.
 
 To give every conversation of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount starts, the Service reserves a new environment from that template and mounts it as `workspace`.
@@ -68,7 +68,7 @@ To give every conversation of an agent its own environment, set the agent's `def
 Environments are usually reserved automatically for agents with a template. To create one yourself, for example to share it between threads:
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/environments" \
+curl -X POST "$A13N_URL/api/v1/environments" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"template_id": "envtpl_...", "name": "Shared data"}'
 ```
@@ -80,7 +80,7 @@ It needs `run`, starts in `creating`, and becomes `ready` in the background. The
 Run the `a13n-envd` daemon over HTTP(S) on the target computer, with a device ID and token (see [Connect to an existing HTTP daemon](../environments/remote-envd.md#connect-to-an-existing-http-daemon)). Then register it with its endpoint and token:
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/environments" \
+curl -X POST "$A13N_URL/api/v1/environments" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"endpoint": "https://build-box.example.com:8443", "token": "...", "name": "Build box"}'
 ```
@@ -90,7 +90,7 @@ Registration needs `write`. The endpoint is the daemon's HTTP(S) origin; plain H
 Every later connection expects the same device, so a different daemon answering at that endpoint is refused with `provider_device_mismatch`, and runs that mount the environment fail. When the daemon moves or its token changes, send the token again, with the new endpoint if it moved:
 
 ```sh
-curl -X PATCH "$A13N_URL/api/v1/workspaces/$WORKSPACE/environments/$ENVIRONMENT" \
+curl -X PATCH "$A13N_URL/api/v1/environments/$ENVIRONMENT" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" -H "If-Match: $ENVIRONMENT_ETAG" \
   -d '{"endpoint": "https://build-box-2.example.com:8443", "token": "..."}'
 ```
@@ -112,7 +112,7 @@ An environment whose `failure` is `permanent` refuses new mounts and runs with t
 A thread's mounts decide what its later runs use:
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/threads/$THREAD/environments" \
+curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" -H "If-Match: $THREAD_ETAG" \
   -d '{"name": "data", "environment_id": "env_...", "working_directory": "/srv/data"}'
 ```

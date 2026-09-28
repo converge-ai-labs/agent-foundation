@@ -44,12 +44,12 @@ function pin(current: string, value: string, revision?: string | null) {
 export function agentDependencies(config: AgentConfig): AgentDependency[] {
   const refs: AgentDependency[] = [
     {
-      path: "model.model_id",
+      path: "model",
       kind: "model",
-      value: config.model.model_id,
+      value: config.model,
       replace: (value) => ({
         ...config,
-        model: { ...config.model, model_id: value },
+        model: value,
       }),
     },
   ];
@@ -196,32 +196,30 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
 
 export async function inspectAgentDependencies(
   client: Client,
-  organizationId: string,
   workspaceId: string,
   config: AgentConfig,
   signal: AbortSignal,
 ): Promise<DependencyCheck[]> {
   const refs = agentDependencies(config);
-  const path = { workspace_id: workspaceId };
-  const scope = { kind: "workspace" as const, id: workspaceId };
   async function choices(kind: DependencyKind): Promise<DependencyOption[]> {
     switch (kind) {
       case "model": {
-        const api = modelApi(client, organizationId, scope);
+        const api = modelApi(client, workspaceId);
         const items = await allPages((cursor) => api.models(signal, cursor));
         return items
           .filter((item) => item.enabled)
           .map((item) => ({
-            value: item.id,
+            value: item.key,
             label: `${item.name} · ${item.key}`,
-            id: item.id,
+            id: item.key,
           }));
       }
       case "skill": {
         const items = await allPages((cursor) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/skills", {
-              params: { path, query: { cursor, limit: 100 } },
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/skills", {
+              params: { query: { cursor, limit: 100 } },
               signal,
             })
             .then(data),
@@ -230,15 +228,16 @@ export async function inspectAgentDependencies(
           .filter((item) => !item.archived_at)
           .map((item) => ({
             value: item.id,
-            label: `${item.name} · ${item.key}`,
+            label: `${item.name} · ${item.id}`,
             id: item.id,
           }));
       }
       case "connection": {
         const items = await allPages((cursor) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/connections", {
-              params: { path, query: { cursor, limit: 100 } },
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/connections", {
+              params: { query: { cursor, limit: 100 } },
               signal,
             })
             .then(data),
@@ -253,24 +252,26 @@ export async function inspectAgentDependencies(
       }
       case "memory": {
         const items = await allPages((cursor) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/memories", {
-              params: { path, query: { cursor, limit: 100 } },
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/memories", {
+              params: { query: { cursor, limit: 100 } },
               signal,
             })
             .then(data),
         );
         return items.map((item) => ({
           value: item.id,
-          label: `${item.name} · ${item.key}`,
+          label: `${item.name} · ${item.id}`,
           id: item.id,
         }));
       }
       case "agent": {
         const items = await allPages((cursor) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/agents", {
-              params: { path, query: { cursor, limit: 100 } },
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/agents", {
+              params: { query: { cursor, limit: 100 } },
               signal,
             })
             .then(data),
@@ -279,7 +280,7 @@ export async function inspectAgentDependencies(
           .filter((item) => !item.archived_at)
           .map((item) => ({
             value: item.id,
-            label: `${item.name} · ${item.key}`,
+            label: `${item.name} · ${item.id}`,
             id: item.id,
           }));
       }
@@ -292,7 +293,7 @@ export async function inspectAgentDependencies(
           .map((item) => ({ value: item.id, label: item.name, id: item.id }));
       }
       case "web": {
-        const api = webProviderApi(client, organizationId, scope);
+        const api = webProviderApi(client, workspaceId);
         const items = await allPages((cursor) => api.providers(signal, cursor));
         return items
           .filter((item) => item.enabled && item.credential_configured)
@@ -323,31 +324,27 @@ export async function inspectAgentDependencies(
         const revisions =
           ref.kind === "skill"
             ? await allPages((cursor) =>
-                client.http
-                  .GET(
-                    "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/revisions",
-                    {
-                      params: {
-                        path: { workspace_id: workspaceId, skill_id: id },
-                        query: { cursor, limit: 100 },
-                      },
-                      signal,
+                client
+                  .workspace(workspaceId)
+                  .GET("/api/v1/skills/{skill_id}/revisions", {
+                    params: {
+                      path: { skill_id: id },
+                      query: { cursor, limit: 100 },
                     },
-                  )
+                    signal,
+                  })
                   .then(data),
               )
             : await allPages((cursor) =>
-                client.http
-                  .GET(
-                    "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/revisions",
-                    {
-                      params: {
-                        path: { workspace_id: workspaceId, agent_id: id },
-                        query: { cursor, limit: 100 },
-                      },
-                      signal,
+                client
+                  .workspace(workspaceId)
+                  .GET("/api/v1/agents/{agent_id}/revisions", {
+                    params: {
+                      path: { agent_id: id },
+                      query: { cursor, limit: 100 },
                     },
-                  )
+                    signal,
+                  })
                   .then(data),
               );
         const pinned = revisions.find(

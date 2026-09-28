@@ -2,8 +2,9 @@
 
 Every tool acts as the run's principal within the run's delegated authority, through the same service functions
 the HTTP API calls, so it can read and change exactly what that principal could through the API. The toolset's
-write tools ask for the user's approval by default. A retried `create_agent` meets the unique agent key; a
-retried `create_agent_revision` appends an equal revision, which changes nothing a run executes.
+write tools ask for the user's approval by default, so a repeated `create_agent` creates another agent only once
+the user approves it again; a retried `create_agent_revision` appends an equal revision, which changes nothing a
+run executes.
 """
 
 from collections.abc import Awaitable, Callable, Iterator
@@ -128,14 +129,7 @@ class ConfigurationCapability(AbstractCapability[AgentContext]):
                 case "agent":
                     page = await agents.list_agents(storage, actor, workspace_id, labels=[], limit=_PAGE, cursor=cursor)
                 case "model":
-                    page = await models.list_models(
-                        storage,
-                        actor,
-                        self.scope.organization_id,
-                        workspace_id=workspace_id,
-                        limit=_PAGE,
-                        cursor=cursor,
-                    )
+                    page = await models.list_models(storage, actor, workspace_id, limit=_PAGE, cursor=cursor)
                 case "skill":
                     page = await skills.list_skills(storage, actor, workspace_id, labels=[], limit=_PAGE, cursor=cursor)
                 case "connection":
@@ -149,7 +143,9 @@ class ConfigurationCapability(AbstractCapability[AgentContext]):
     async def read_resource(
         self,
         kind: ResourceKind,
-        resource_id: Annotated[str, Field(min_length=1, max_length=128)],
+        reference: Annotated[
+            str, Field(min_length=1, max_length=128, description="A model's key, any other resource's ID")
+        ],
         revision_id: Annotated[
             str | None, Field(min_length=1, max_length=128, description="An agent's revision to read, not its default")
         ] = None,
@@ -161,7 +157,7 @@ class ConfigurationCapability(AbstractCapability[AgentContext]):
                 raise invalid("revision_id", "only an agent is read at a revision")
             match kind:
                 case "agent":
-                    agent = await agents.get_agent(storage, actor, workspace_id, resource_id)
+                    agent = await agents.get_agent(storage, actor, workspace_id, reference)
                     selected = revision_id or agent.default_revision_id
                     revision = (
                         None
@@ -173,13 +169,13 @@ class ConfigurationCapability(AbstractCapability[AgentContext]):
                         "revision": None if revision is None else revision.model_dump(mode="json"),
                     }
                 case "model":
-                    view = await models.get_model(storage, actor, self.scope.organization_id, resource_id)
+                    view = await models.get_model(storage, actor, workspace_id, reference)
                 case "skill":
-                    view = await skills.get_skill(storage, actor, workspace_id, resource_id)
+                    view = await skills.get_skill(storage, actor, workspace_id, reference)
                 case "connection":
-                    view = await connections.get_connection(storage, actor, workspace_id, resource_id)
+                    view = await connections.get_connection(storage, actor, workspace_id, reference)
                 case "environment_template":
-                    view = await templates.get_template(storage, actor, workspace_id, resource_id)
+                    view = await templates.get_template(storage, actor, workspace_id, reference)
         return view.model_dump(mode="json")
 
     async def describe_agent_config(self) -> JsonValue:
@@ -191,13 +187,12 @@ class ConfigurationCapability(AbstractCapability[AgentContext]):
 
     async def create_agent(
         self,
-        key: Annotated[str, Field(description="Unique in the workspace: lowercase letters, digits, - and _")],
         name: Annotated[str, Field(min_length=1, max_length=128)],
         config: Annotated[dict[str, JsonValue], Field(description="An agent configuration; see describe_agent_config")],
         description: Annotated[str, Field(max_length=2048)] = "",
     ) -> JsonValue:
         with self._acting("write"):
-            body = _parsed(AgentCreate, {"key": key, "name": name, "description": description, "config": config})
+            body = _parsed(AgentCreate, {"name": name, "description": description, "config": config})
             agent = await agents.create_agent(
                 self.runtime.storage,
                 self.principal,
@@ -206,7 +201,7 @@ class ConfigurationCapability(AbstractCapability[AgentContext]):
                 registry=self.runtime.registry,
                 plugins=self.runtime.plugins,
             )
-        return {"agent_id": agent.id, "key": agent.key, "default_revision_id": agent.default_revision_id}
+        return {"agent_id": agent.id, "default_revision_id": agent.default_revision_id}
 
     async def create_agent_revision(
         self,

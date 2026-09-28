@@ -58,9 +58,9 @@ async def _views(session: AsyncSession, scope: WorkspaceScope, rows: Sequence[Pr
 
 
 async def create_service_account(
-    storage: Storage, access: Access, actor: Principal, workspace: str, body: ServiceAccountCreate
+    storage: Storage, access: Access, actor: Principal, workspace_id: str, body: ServiceAccountCreate
 ) -> ServiceAccount:
-    async with administering_workspace(storage, access, actor, workspace, action="service_account.create") as (
+    async with administering_workspace(storage, access, actor, workspace_id, action="service_account.create") as (
         session,
         scope,
     ):
@@ -87,10 +87,10 @@ async def create_service_account(
 
 
 async def list_service_accounts(
-    storage: Storage, access: Access, actor: Principal, workspace: str, *, limit: int, cursor: str | None
+    storage: Storage, access: Access, actor: Principal, workspace_id: str, *, limit: int, cursor: str | None
 ) -> ServiceAccountPage:
     async with administering_workspace(
-        storage, access, actor, workspace, action="service_account.list", reading=True
+        storage, access, actor, workspace_id, action="service_account.list", reading=True
     ) as (session, scope):
         rows, next_cursor = await cursors.id_page(
             session,
@@ -105,10 +105,10 @@ async def list_service_accounts(
 
 
 async def get_service_account(
-    storage: Storage, access: Access, actor: Principal, workspace: str, account_id: str
+    storage: Storage, access: Access, actor: Principal, workspace_id: str, account_id: str
 ) -> ServiceAccount:
     async with administering_workspace(
-        storage, access, actor, workspace, action="service_account.read", reading=True
+        storage, access, actor, workspace_id, action="service_account.read", reading=True
     ) as (session, scope):
         row = await session.scalar(_accounts(scope).where(PrincipalRow.id == account_id))
         if row is None:
@@ -121,14 +121,14 @@ async def update_service_account(
     storage: Storage,
     access: Access,
     actor: Principal,
-    workspace: str,
+    workspace_id: str,
     account_id: str,
     body: ServiceAccountUpdate,
     *,
     if_match: str | None,
 ) -> ServiceAccount:
     async with administering_workspace(
-        storage, access, actor, workspace, action="service_account.update", require_active=not _only_disables(body)
+        storage, access, actor, workspace_id, action="service_account.update", require_active=not _only_disables(body)
     ) as (session, scope):
         if body.role is not None:
             access.check_role(body.role)
@@ -172,11 +172,11 @@ async def update_service_account(
 
 
 async def delete_service_account(
-    storage: Storage, access: Access, actor: Principal, workspace: str, account_id: str, *, if_match: str | None
+    storage: Storage, access: Access, actor: Principal, workspace_id: str, account_id: str, *, if_match: str | None
 ) -> ServiceAccount:
     """Retire: remove its grants, revoke its keys and disable it. History keeps the identity."""
     async with administering_workspace(
-        storage, access, actor, workspace, action="service_account.delete", require_active=False
+        storage, access, actor, workspace_id, action="service_account.delete", require_active=False
     ) as (session, scope):
         row = await _lock_account(session, scope, account_id, if_match)
         for grant in (await session.scalars(select(GrantRow).where(GrantRow.principal_id == row.id))).all():

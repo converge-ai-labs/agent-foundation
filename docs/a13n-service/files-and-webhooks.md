@@ -5,7 +5,7 @@
 An upload stages one file in a workspace for later use: as a [skill package](skills.md#add-a-skill) or as an asset. Send it as multipart form data with a part named `file` and an `Idempotency-Key`:
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/uploads" \
+curl -X POST "$A13N_URL/api/v1/uploads" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Idempotency-Key: report-2026-09" -F file=@report.pdf
 ```
 
@@ -15,7 +15,7 @@ The response gives the `upload_id`, filename, content type, size and SHA-256 `di
 
 An asset is immutable content with a name, usable in messages and published by agents.
 
-- **Create** from an upload with `POST /api/v1/workspaces/{workspace_id}/assets` and `{"upload_id": ..., "name": ...}`. The first creation returns `201`; repeating it with the same upload and name returns the same asset with `200`. An upload becomes at most one asset.
+- **Create** from an upload with `POST /api/v1/assets` and `{"upload_id": ..., "name": ...}`. The first creation returns `201`; repeating it with the same upload and name returns the same asset with `200`. An upload becomes at most one asset.
 - **Read** with `GET …/assets`, `GET …/assets/{asset_id}`, and `GET …/assets/{asset_id}/content`, which returns the bytes as an attachment.
 - **Retire** with `DELETE …/assets/{asset_id}` and its `If-Match`. A retired asset cannot be attached to new messages, but its content stays readable for the history that references it.
 
@@ -28,7 +28,7 @@ Agents with the `assets` toolset enabled can publish a file from their environme
 A subscription delivers run lifecycle events of a workspace to an HTTPS endpoint. Managing subscriptions and reading their deliveries requires workspace `admin`.
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/subscriptions" \
+curl -X POST "$A13N_URL/api/v1/subscriptions" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "Run outcomes", "url": "https://hooks.example.com/a13n",
        "kinds": ["run.completed", "run.failed", "run.waiting"],

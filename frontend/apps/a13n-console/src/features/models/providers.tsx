@@ -1,45 +1,35 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
+import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { credentialMode } from "../../shared/provider-authentication";
 import { useCursor } from "../../shared/collection";
 import { useResourceEditorState, useResourceRows } from "../../shared/dialogs";
 import { EditProviderDialog, ProviderTable } from "../providers";
 import { AddProvider } from "./add-provider";
-import { modelApi, type ModelScope } from "./api";
+import { modelApi } from "./api";
 import { useModelProviderDefinitions } from "./provider-definitions";
 import { ProviderForm } from "./provider-form";
 
-export function Providers({ scope }: { scope: ModelScope }) {
+export function Providers() {
   const client = useClient(),
-    { organization, organizationCan, can } = useAccess(),
+    { workspace, can } = useWorkspace(),
     page = useCursor();
   const rows = useResourceRows<Schema["Provider"]>();
   const { selected } = rows;
-  const api = modelApi(client, organization.id, scope);
+  const api = modelApi(client, workspace.id);
   const query = useQuery({
-    queryKey: ["model-providers", scope.kind, scope.id, page.cursor],
+    queryKey: ["model-providers", workspace.id, page.cursor],
     queryFn: ({ signal }) => api.providers(signal, page.cursor),
   });
   const definitions = useModelProviderDefinitions();
-  const manage =
-    scope.kind === "organization" ? organizationCan("write") : can("write");
-  const add = manage ? <AddProvider scope={scope} /> : undefined;
+  const manage = can("write");
+  const add = manage ? <AddProvider /> : undefined;
   return (
     <>
       {selected && (
-        <EditProvider
-          key={selected.id}
-          scope={
-            selected.workspace_id
-              ? { kind: "workspace", id: selected.workspace_id }
-              : { kind: "organization", id: organization.id }
-          }
-          provider={selected}
-          {...rows.control}
-        />
+        <EditProvider key={selected.id} provider={selected} {...rows.control} />
       )}
       <ProviderTable
         category="models"
@@ -49,9 +39,7 @@ export function Providers({ scope }: { scope: ModelScope }) {
         page={page}
         nextCursor={query.data?.next_cursor}
         action={add}
-        canActivateRow={(item) =>
-          item.workspace_id ? manage : organizationCan("write")
-        }
+        canActivateRow={() => manage}
         onRowActivate={rows.activate}
         row={(item) => ({
           id: item.id,
@@ -60,7 +48,6 @@ export function Providers({ scope }: { scope: ModelScope }) {
           definition: definitions.data?.items.find(
             (definition) => definition.type === item.type,
           )?.display_name,
-          workspaceId: item.workspace_id,
           credentials:
             credentialMode(
               definitions.data?.items.find(
@@ -81,26 +68,24 @@ export function Providers({ scope }: { scope: ModelScope }) {
 
 /** Editing an existing provider; creation goes through {@link AddProvider}. */
 export function EditProvider({
-  scope,
   provider,
   controlledOpen,
   onClose,
   finalFocus,
 }: {
-  scope: ModelScope;
   provider: Schema["Provider"];
   controlledOpen?: boolean;
   onClose?: () => void;
   finalFocus?: React.RefObject<HTMLElement | null>;
 }) {
   const client = useClient(),
-    { organization } = useAccess(),
+    { workspace } = useWorkspace(),
     [generation, setGeneration] = useState(0);
   const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
-  const api = modelApi(client, organization.id, scope);
+  const api = modelApi(client, workspace.id);
   const definitions = useModelProviderDefinitions();
   const resource = useQuery({
-    queryKey: ["model-provider", scope.kind, scope.id, provider.id],
+    queryKey: ["model-provider", workspace.id, provider.id],
     enabled: state.open,
     queryFn: ({ signal }) => api.provider(provider.id, signal),
   });
@@ -115,7 +100,6 @@ export function EditProvider({
         definitions.data?.items.find((item) => item.type === provider.type)
           ?.display_name
       }
-      scope={scope.kind}
       loading={definitions.isPending || resource.isPending}
       error={
         (!definitions.data && definitions.error) ||
@@ -131,7 +115,6 @@ export function EditProvider({
             const result = await resource.refetch();
             if (!result.error) setGeneration((value) => value + 1);
           }}
-          scope={scope}
           resource={resource.data}
           definitions={definitions.data.items}
           close={() => state.setOpen(false)}

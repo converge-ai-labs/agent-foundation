@@ -279,8 +279,18 @@ class Versioned(Protocol):
     def version(self) -> int: ...
 
 
-def etag(resource_id: str, version: int) -> str:
-    return f'"{resource_id}:{version}"'
+class KeyVersioned(Protocol):
+    """A view of a kind identified by key: a model."""
+
+    @property
+    def key(self) -> str: ...
+
+    @property
+    def version(self) -> int: ...
+
+
+def etag(identifier: str, version: int) -> str:
+    return f'"{identifier}:{version}"'
 
 
 def tagged[V: Versioned](response: Response, resource: V) -> V:
@@ -289,8 +299,15 @@ def tagged[V: Versioned](response: Response, resource: V) -> V:
     return resource
 
 
-def require_match(value: str | None, resource_id: str, version: int) -> None:
-    current = etag(resource_id, version)
+def key_tagged[V: KeyVersioned](response: Response, resource: V) -> V:
+    """`tagged` for a kind identified by key."""
+    response.headers["ETag"] = etag(resource.key, resource.version)
+    return resource
+
+
+def require_match(value: str | None, identifier: str, version: int) -> None:
+    """`identifier` is the resource's ID, or its key for a kind identified by key."""
+    current = etag(identifier, version)
     if value is None:
         raise ServiceError("precondition_required", "If-Match is required", {"header": "If-Match"})
     if value != current:
@@ -312,11 +329,14 @@ def download_headers(filename: str | None) -> dict[str, str]:
 
 
 # The ETag a client read, presented to change that resource; `require_match` decides whether it is current. The
-# tag is the view's `"{id}:{version}"`, so a list row gives it without another read.
+# tag is the view's `"{id}:{version}"`, or `"{key}:{version}"` for a kind identified by key, so a list row gives
+# it without another read.
 IfMatch = Annotated[
     str | None,
     Header(
-        alias="If-Match", max_length=512, description='The resource\'s ETag: `"{id}:{version}"` of its current view'
+        alias="If-Match",
+        max_length=512,
+        description='The resource\'s ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model',
     ),
 ]
 

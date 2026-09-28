@@ -98,14 +98,44 @@ test("multipart uploads keep their form boundary through the transport", async (
       return json({});
     },
   });
-  await client.http.POST("/api/v1/workspaces/{workspace_id}/uploads", {
-    params: {
-      path: { workspace_id: "ws_one" },
-      header: { "Idempotency-Key": "key" },
-    },
+  await client.workspace("ws_one").POST("/api/v1/uploads", {
+    params: { header: { "Idempotency-Key": "key" } },
     body: { file: form.get("file") },
     bodySerializer: () => form,
   });
+});
+
+test("business requests name their workspace; management requests do not", async () => {
+  const requests = [];
+  const client = createClient({
+    baseUrl,
+    auth: { type: "session", csrfToken: "csrf-proof" },
+    fetch: async (request) => {
+      requests.push(request);
+      return request.url.endsWith("/avatar?v=2")
+        ? new Response(new Blob(["image"], { type: "image/png" }))
+        : json({});
+    },
+  });
+  await client.workspace("ws_one").PATCH("/api/v1/agents/{agent_id}", {
+    params: { path: { agent_id: "agt_one" } },
+    headers: { "If-Match": '"agt_one:1"' },
+    body: { name: "A" },
+  });
+  const image = await client.workspaceBlob(
+    "ws_two",
+    "/api/v1/agents/agt_one/avatar?v=2",
+  );
+  await client.http.GET("/api/v1/workspaces/{workspace_id}", {
+    params: { path: { workspace_id: "ws_one" } },
+  });
+  assert.equal(requests[0].url, `${baseUrl}/api/v1/agents/agt_one`);
+  assert.equal(requests[0].headers.get("X-Workspace-ID"), "ws_one");
+  assert.equal(requests[0].headers.get("If-Match"), '"agt_one:1"');
+  assert.equal(requests[0].headers.get("X-CSRF-Token"), "csrf-proof");
+  assert.equal(requests[1].headers.get("X-Workspace-ID"), "ws_two");
+  assert.equal(await image.text(), "image");
+  assert.equal(requests[2].headers.get("X-Workspace-ID"), null);
 });
 
 function chunks(text) {
@@ -184,9 +214,7 @@ test("Thread stream resumes after its last cursor and reports control frames", a
   });
   await assert.rejects(stream.next(), ProtocolError);
   assert.equal(requests.length, 1);
-  assert.equal(
-    requests[0].url,
-    `${baseUrl}/api/v1/workspaces/ws_one/threads/th_one/stream`,
-  );
+  assert.equal(requests[0].url, `${baseUrl}/api/v1/threads/th_one/stream`);
+  assert.equal(requests[0].headers.get("X-Workspace-ID"), "ws_one");
   assert.equal(requests[0].headers.get("Last-Event-ID"), "4-0");
 });

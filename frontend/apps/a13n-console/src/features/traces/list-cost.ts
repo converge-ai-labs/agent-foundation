@@ -34,19 +34,17 @@ export function useListCosts(
             for (let page = 0; page < 20 && !accessError; page++) {
               signal.throwIfAborted();
               const collection = data(
-                await client.http.GET(
-                  "/api/v1/workspaces/{workspace_id}/traces/{trace_id}/spans",
-                  {
+                await client
+                  .workspace(workspace)
+                  .GET("/api/v1/traces/{trace_id}/spans", {
                     params: {
                       path: {
-                        workspace_id: workspace,
                         trace_id: root.trace_id,
                       },
                       query: { limit: 100, cursor },
                     },
                     signal,
-                  },
-                ),
+                  }),
               );
               for (const observation of collection.items)
                 observations.set(observation.id, observation);

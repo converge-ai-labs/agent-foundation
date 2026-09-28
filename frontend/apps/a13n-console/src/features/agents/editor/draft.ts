@@ -40,7 +40,7 @@ export type AgentDraft = ReturnType<typeof useAgentDraft>;
  * save bar publishes them; nothing is written while the draft changes.
  */
 export function useAgentDraft(initial: AgentConfig) {
-  const initialSettings = initial.model.settings ?? {};
+  const initialSettings = initial.model_settings ?? {};
   const {
     thinking: initialThinking,
     max_tokens: initialMaxTokens,
@@ -50,7 +50,7 @@ export function useAgentDraft(initial: AgentConfig) {
     typeof initialMaxTokens === "number" ? String(initialMaxTokens) : "";
   const initialSettingsText = JSON.stringify(initialExtraSettings, null, 2);
   const [instructions, setInstructions] = useState(initial.instructions ?? ""),
-    [model, setModel] = useState(initial.model.model_id),
+    [model, setModel] = useState(initial.model),
     [mediaUnderstanding, setMediaUnderstanding] = useState(
       initial.media_understanding ?? {},
     ),
@@ -75,7 +75,7 @@ export function useAgentDraft(initial: AgentConfig) {
       (initial.default_environment_template_id ?? null) ||
     JSON.stringify(toolsets) !== JSON.stringify(initial.toolsets ?? {}) ||
     instructions !== (initial.instructions ?? "") ||
-    model !== initial.model.model_id ||
+    model !== initial.model ||
     thinking !== thinkingSelection(initialThinking) ||
     maxTokens !== initialMaxTokensText ||
     settings !== initialSettingsText ||
@@ -162,11 +162,8 @@ export function buildDraftConfig(
           instructions: draft.instructions,
           toolsets: draft.toolsets,
           reviewer: initial.reviewer,
-          model: {
-            ...initial.model,
-            model_id: draft.model,
-            settings: modelSettings,
-          },
+          model: draft.model,
+          model_settings: modelSettings,
           skills: draft.skills,
           // Absent, not empty, while every kind inherits: the saved configuration stays silent.
           ...(mediaSelected(draft.mediaUnderstanding).length

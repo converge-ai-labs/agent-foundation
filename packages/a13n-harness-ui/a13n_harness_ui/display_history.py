@@ -82,7 +82,10 @@ def _message_digest(encoded: bytes) -> str:
 
 def saved_display_history(state: HarnessState) -> DisplayHistory | None:
     """Read inspection state without changing the continuation's stored schema."""
-    entry = state.agent_context_state.entries.get(_STATE_KEY)
+    return _read_display_history(state, state.agent_context_state.entries.get(_STATE_KEY))
+
+
+def _read_display_history(state: HarnessState, entry: CapabilityState | None) -> DisplayHistory | None:
     if entry is None:
         return None
     if entry.version != "1":
@@ -102,6 +105,21 @@ def with_display_history(state: HarnessState, display: DisplayHistory) -> Harnes
     entries = state.agent_context_state.entries
     entries[_STATE_KEY] = CapabilityState(version="1", data=display.model_dump(mode="json"))
     return state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
+
+
+def detach_display_history(state: HarnessState) -> tuple[HarnessState, DisplayHistory | None]:
+    """Restore and remove inspection state with one namespace decode.
+
+    Validate before returning native execution state. Every durable root selection
+    must reattach the collector's current history with ``with_display_history``.
+    """
+    entries = state.agent_context_state.entries
+    entry = entries.pop(_STATE_KEY, None)
+    display = _read_display_history(state, entry)
+    if entry is None:
+        return state, display
+    runtime = state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
+    return runtime, display
 
 
 def _context_boundary(messages: Sequence[ModelMessage]) -> tuple[object, ...]:
@@ -131,7 +149,8 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
     id = _STATE_KEY
 
     def __init__(self, model_history: Sequence[ModelMessage], saved: DisplayHistory | None = None) -> None:
-        self._messages = list(clone_messages(model_history if saved is None else saved.messages))
+        # Saved messages are already freshly decoded and detached from their envelope.
+        self._messages = list(clone_messages(model_history) if saved is None else saved.messages)
         self._positions: list[int | None] = (
             list(range(len(model_history))) if saved is None else list(saved.model_positions)
         )
@@ -139,7 +158,13 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
             raise ValueError("Display history does not match the selected model history")
         self._pending_response_position = saved.pending_response_position if saved is not None else None
         self._boundary = deepcopy(_context_boundary(model_history))
-        self._completed_responses = set(saved.completed_responses if saved is not None else ())
+        self._completed_responses = {
+            position
+            for position, message in enumerate(self._messages)
+            if saved is not None
+            and isinstance(message, ModelResponse)
+            and (message.metadata or {}).get(_COMPLETED_KEY) is True
+        }
         self._active_run_id: str | None = None
         self._unmapped_run_id: str | None = None
         self._operations: set[str] = {
@@ -192,13 +217,13 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         if ctx.run_id == self._active_run_id:
-            self.capture(ctx.messages)
+            self._collect(ctx.messages)
         return request_context
 
     async def on_event(self, ctx: RunContext[AgentContext], *, event: AgentStreamEvent) -> None:
         if ctx.run_id != self._active_run_id or not isinstance(event, (HandoffSummaryEvent, CompactionSummaryEvent)):
             return
-        self.capture(ctx.messages)
+        self._collect(ctx.messages)
         if event.operation_id in self._operations:
             return
         self._operations.add(event.operation_id)
@@ -211,6 +236,16 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
         )
 
     def capture(self, history: Sequence[ModelMessage], *, completed: bool = False) -> DisplayHistory:
+        self._collect(history, completed=completed)
+        return DisplayHistory(
+            messages=tuple(self._messages),
+            model_positions=tuple(self._positions),
+            pending_response_position=self._pending_response_position,
+            model_history_digest=_message_digest(encode_messages(history)),
+        )
+
+    def _collect(self, history: Sequence[ModelMessage], *, completed: bool = False) -> None:
+        """Advance inspection copies without serializing an unused checkpoint."""
         self._initialize_positions(history)
         boundary = _context_boundary(history)
         if boundary != self._boundary:
@@ -273,9 +308,3 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
         for position in self._completed_responses:
             message = self._messages[position]
             message.metadata = {**(message.metadata or {}), _COMPLETED_KEY: True}
-        return DisplayHistory(
-            messages=tuple(self._messages),
-            model_positions=tuple(self._positions),
-            pending_response_position=self._pending_response_position,
-            model_history_digest=_message_digest(encode_messages(history)),
-        )

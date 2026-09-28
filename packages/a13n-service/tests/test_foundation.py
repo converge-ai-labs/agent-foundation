@@ -66,7 +66,7 @@ def test_contract_describes_binary_downloads(contract: dict) -> None:
         "/skills/{skill_id}/revisions/{revision_id}/files/{path}": "application/octet-stream",
     }
     for path, media_type in downloads.items():
-        responses = paths[f"/api/v1/workspaces/{{workspace_id}}{path}"]["get"]["responses"]
+        responses = paths[f"/api/v1{path}"]["get"]["responses"]
         assert responses["200"]["content"] == {media_type: {"schema": {"type": "string", "format": "binary"}}}
         assert responses["default"] == {"$ref": "#/components/responses/Error"}
 
@@ -80,7 +80,7 @@ def test_contract_describes_idempotent_creation_and_replay(contract: dict) -> No
         "/runs/{run_id}/resume": "RunView",
     }
     for path, model in submissions.items():
-        operation = paths[f"/api/v1/workspaces/{{workspace_id}}{path}"]["post"]
+        operation = paths[f"/api/v1{path}"]["post"]
         for status in ("200", "201"):
             assert operation["responses"][status]["content"]["application/json"]["schema"] == {
                 "$ref": f"#/components/schemas/{model}"

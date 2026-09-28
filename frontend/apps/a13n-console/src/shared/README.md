@@ -93,7 +93,6 @@ How a resource presents itself.
 - `ResourceIdentity` — name, tile, and secondary line; see `shared/collection`.
 - `ResourceReference` — the hash affordance that reveals the ID, key, and any related identifiers, each with a copy button.
 - `ResourceKeyChip` — the key chip beside a detail-page title.
-- `ResourceKeyField` — the URL key input with its pattern and warning.
 - `CopyButton`, `Identifier`, `CopyableId`, `CopyableResourceKey` — copyable identifiers; identifiers are sans-serif, 12px, and muted.
 - `ProviderIcon` — the brand or built-in mark for a provider type.
 - `ScopeBadge` — workspace versus organization ownership.
@@ -101,7 +100,7 @@ How a resource presents itself.
 
 ## `shared/` root
 
-Infrastructure with no visual surface: `api.ts` (typed request helpers and pagination), `idempotency.ts`, `keys.ts` (readable keys suggested from names, and derived keys for new agents and workspaces), `download.ts`, `paths.ts`, `time.ts`, `local-date-time.ts`, `markdown.tsx`, `cost.ts`, `unknown.ts` (the one mark for a value the service never reported), `authorization-link.tsx`, `configuration-summary.tsx`, and `shared.module.css` — layout utilities (`stack`, `form`, `twoColumns`, `filters`, `cardGrid`, `card`, `muted`) that feature screens reuse.
+Infrastructure with no visual surface: `api.ts` (typed request helpers and pagination), `idempotency.ts`, `download.ts`, `paths.ts`, `time.ts`, `local-date-time.ts`, `markdown.tsx`, `cost.ts`, `unknown.ts` (the one mark for a value the service never reported), `authorization-link.tsx`, `configuration-summary.tsx`, and `shared.module.css` — layout utilities (`stack`, `form`, `twoColumns`, `filters`, `cardGrid`, `card`, `muted`) that feature screens reuse.
 
 ## Page anatomies
 

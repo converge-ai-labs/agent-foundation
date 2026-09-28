@@ -2,7 +2,7 @@
 
 `make service-e2e` runs the Service as operators deploy it and drives it as clients use it. It needs Docker.
 
-Ordinary journeys share one Control and two Worker processes per pytest session, started with `a13n-service run` over HTTPS, with a 3-second lease and sub-second scans. Each journey creates a fresh Workspace and workspace-scoped providers, with its own scripted model process, HTTP clients and temporary directory. Each Service stack logs in once; clients copy its cookies and CSRF token without sharing an async client across event loops.
+Ordinary journeys share one Control and two Worker processes per pytest session, started with `a13n-service run` over HTTPS, with a 3-second lease and sub-second scans. Each journey creates a fresh Workspace with its own providers and models, scripted model process, HTTP clients and temporary directory. Each Service stack logs in once; clients copy its cookies and CSRF token without sharing an async client across event loops, and name the journey's workspace in `X-Workspace-ID`, as a login session does for business routes. An API key's client names none: the key acts in its own workspace.
 
 Journeys that stop or suspend Service processes use `@pytest.mark.isolated_service` and get a dedicated stack. Journeys needing custom worker capacity can use `@pytest.mark.isolated_service(worker_slots=1)`; holding one run then directs the next to the other worker without suspending active heartbeats. Every stack owns a database cloned from a template migrated and bootstrapped through the installed CLI, and an object directory. PostgreSQL and Redis containers belong to the session; no journey clears shared Redis. Read-only database assertions select their own workspace or resource.
 

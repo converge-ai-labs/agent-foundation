@@ -33,20 +33,18 @@ export function archiveQuery(
     queryFn: async ({ signal }) =>
       new Uint8Array(
         data(
-          await client.http.GET(
-            "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/revisions/{revision_id}/content",
-            {
+          await client
+            .workspace(revision.workspace_id)
+            .GET("/api/v1/skills/{skill_id}/revisions/{revision_id}/content", {
               params: {
                 path: {
-                  workspace_id: revision.workspace_id,
                   skill_id: revision.skill_id,
                   revision_id: revision.id,
                 },
               },
               parseAs: "arrayBuffer",
               signal,
-            },
-          ),
+            }),
         ),
       ),
     staleTime: Infinity,

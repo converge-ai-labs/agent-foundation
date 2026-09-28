@@ -63,9 +63,9 @@ async def test_a_run_recalls_at_its_first_input_and_writes_through_the_tools(ser
 
 async def test_a_mount_and_the_toolset_limit_recall_and_tools(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     memory = await facts(service, "likes green tea")
-    model_id = await runs_kit.create_model(service, scripted_model)
+    model = await runs_kit.create_model(service, scripted_model)
     no_list = {"memory": {"tools": {"record_list": {"enabled": False}}}}
-    reader = await runs_kit.add_agent(service, "reader", model_id, toolsets=no_list)
+    reader = await runs_kit.add_agent(service, "reader", model, toolsets=no_list)
     scripted_model.say("Read")
     await runs_kit.start_thread(service, reader, "Which tea?", memories=[mount(memory, "read", recall=False)])
     await (await runs_kit.attempt(service))
@@ -74,7 +74,7 @@ async def test_a_mount_and_the_toolset_limit_recall_and_tools(service, scripted_
     assert BACKEND.calls == []
 
     # Without the toolset the run still recalls, with no tool.
-    silent = await runs_kit.add_agent(service, "silent", model_id, toolsets={"memory": {"enabled": False}})
+    silent = await runs_kit.add_agent(service, "silent", model, toolsets={"memory": {"enabled": False}})
     scripted_model.say("Quiet")
     await runs_kit.start_thread(service, silent, "Which tea?", memories=[mount(memory)])
     await (await runs_kit.attempt(service))
@@ -94,7 +94,7 @@ async def test_a_failing_recall_or_an_unusable_memory_does_not_fail_the_run(serv
     assert (await runs_kit.get_run(service, started["run"]["id"]))["status"] == "completed"
 
     # A disabled provider leaves the memory out of the run altogether.
-    provider_item = f"{service.organization}/memory-providers/{memory['provider_id']}"
+    provider_item = f"{service.api}/memory-providers/{memory['provider_id']}"
     provider = (await service.client.get(provider_item)).json()
     disabled = await service.client.patch(provider_item, json={"enabled": False}, headers=runs_kit.if_match(provider))
     assert disabled.status_code == 200, disabled.text
@@ -135,9 +135,7 @@ async def test_a_record_memory_deleted_mid_run_refuses_its_next_call(service, sc
     await runs_kit.start_thread(service, agent, "list them", memories=[mount(memory)])
     running = await runs_kit.attempt(service)
     await scripted_model.request()
-    deleted = await service.client.delete(
-        f"{service.workspace}/memories/{memory['id']}", headers=runs_kit.if_match(memory)
-    )
+    deleted = await service.client.delete(f"{service.api}/memories/{memory['id']}", headers=runs_kit.if_match(memory))
     assert deleted.status_code == 204, deleted.text
     gate.set()
     await running
@@ -181,7 +179,7 @@ async def test_record_store_calls_recheck_the_run_and_the_provider(service) -> N
             await store.add("prefers window seats")
         assert refused.value.code == "forbidden"
 
-        provider_item = f"{service.organization}/memory-providers/{memory['provider_id']}"
+        provider_item = f"{service.api}/memory-providers/{memory['provider_id']}"
         provider = (await service.client.get(provider_item)).json()
         headers = {"if-match": f'"{provider["id"]}:{provider["version"]}"'}
         assert (await service.client.patch(provider_item, json={"enabled": False}, headers=headers)).status_code == 200

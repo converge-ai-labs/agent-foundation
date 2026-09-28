@@ -12,7 +12,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { SkillsPage } from "./page";
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => false }),
 }));
@@ -30,15 +32,15 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-const skill = (name: string, key: string) => ({
-  id: `sk_${key}`,
+const skill = (name: string, id: string) => ({
+  id,
   workspace_id: "ws_test",
   name,
-  key,
+  description: "",
   version: 1,
-  default_revision_id: `skr_${key}`,
+  default_revision_id: `skr_${id}`,
   default_revision: {
-    id: `skr_${key}`,
+    id: `skr_${id}`,
     number: 3,
     source: { kind: "github", repository: "example/skills" },
   },
@@ -55,7 +57,7 @@ function renderList() {
         <Routes>
           <Route path="/workspace/test/skills" element={<SkillsPage />} />
           <Route
-            path="/workspace/test/skills/review-docs"
+            path="/workspace/test/skills/sk_review"
             element={<p>Readable skill detail</p>}
           />
         </Routes>
@@ -65,7 +67,7 @@ function renderList() {
   return { cache, user: userEvent.setup() };
 }
 
-it("searches the server by name or key from the first page and links by key", async () => {
+it("searches the server from the first page and links by ID", async () => {
   http.GET.mockImplementation(async (path: string, options) => {
     const { q, cursor } = options.params.query;
     const response = path.endsWith("/agents")
@@ -73,13 +75,13 @@ it("searches the server by name or key from the first page and links by key", as
       : q
         ? {
             items:
-              q === "review" ? [skill("Document helper", "review-docs")] : [],
+              q === "review" ? [skill("Document helper", "sk_review")] : [],
             next_cursor: null,
           }
         : cursor
-          ? { items: [skill("Second skill", "second")], next_cursor: null }
+          ? { items: [skill("Second skill", "sk_second")], next_cursor: null }
           : {
-              items: [skill("First skill", "first")],
+              items: [skill("First skill", "sk_first")],
               next_cursor: "page-two",
             };
     return { data: response, response: new Response() };
@@ -98,10 +100,9 @@ it("searches the server by name or key from the first page and links by key", as
   await user.click(await screen.findByRole("option", { name: "GitHub" }));
   await waitFor(() =>
     expect(http.GET).toHaveBeenCalledWith(
-      "/api/v1/workspaces/{workspace_id}/skills",
+      "/api/v1/skills",
       expect.objectContaining({
         params: {
-          path: { workspace_id: "ws_test" },
           query: {
             q: "review",
             source: "github",
@@ -113,7 +114,7 @@ it("searches the server by name or key from the first page and links by key", as
     ),
   );
   const found = await screen.findByRole("link", { name: /Document helper/ });
-  expect(found.getAttribute("href")).toBe("/workspace/test/skills/review-docs");
+  expect(found.getAttribute("href")).toBe("/workspace/test/skills/sk_review");
   const matching = http.GET.mock.calls.filter(
     ([, options]) => options.params.query?.q === "review",
   );
@@ -145,9 +146,9 @@ it("counts the unarchived agents using each skill and adds archived skills on re
         : { items: [], next_cursor: null }
       : {
           items: [
-            skill("Used skill", "used"),
-            skill("Idle skill", "idle"),
-            ...(query.archived === false ? [] : [skill("Old skill", "old")]),
+            skill("Used skill", "sk_used"),
+            skill("Idle skill", "sk_idle"),
+            ...(query.archived === false ? [] : [skill("Old skill", "sk_old")]),
           ],
           next_cursor: null,
         };
@@ -161,10 +162,9 @@ it("counts the unarchived agents using each skill and adds archived skills on re
   const idle = screen.getByRole("link", { name: /Idle skill/ }).closest("tr")!;
   expect(await within(idle).findByText("Unused")).toBeTruthy();
   expect(http.GET).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace_id}/agents",
+    "/api/v1/agents",
     expect.objectContaining({
       params: {
-        path: { workspace_id: "ws_test" },
         query: { skill_id: "sk_used", archived: false, cursor: undefined },
       },
     }),

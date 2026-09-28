@@ -4,7 +4,7 @@ the default pointer."""
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Annotated, Any, ClassVar, Protocol
 
@@ -29,7 +29,7 @@ from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 from sqlalchemy.orm.attributes import flag_modified
 
 from a13n_service.infra import cursors
-from a13n_service.infra.db import Base, Storage, assign, immutable, now, rules, short_session, unique_key
+from a13n_service.infra.db import Base, Storage, assign, immutable, now, rules, short_session
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
@@ -40,7 +40,7 @@ from a13n_service.tenancy.authorize import Principal
 # Revision numbers are PostgreSQL `integer`s; a cursor past them is refused before it reaches SQL.
 _MAX_NUMBER = 2**31 - 1
 
-# A list's `q`: text a head's key, name or description contains, ignoring case.
+# A list's `q`: text a head's name or description contains, ignoring case.
 Search = Annotated[str, StringConstraints(min_length=1, max_length=256)]
 
 
@@ -50,7 +50,6 @@ class HeadRow(Protocol):
     id: Mapped[str]
     organization_id: Mapped[str]
     workspace_id: Mapped[str]
-    key: Mapped[str]
     name: Mapped[str]
     description: Mapped[str]
     default_revision_id: Mapped[str | None]
@@ -109,31 +108,25 @@ def config_digest(value: object) -> str:
 
 
 async def resolve_head[H: HeadRow](
-    session: AsyncSession, table: type[H], workspace_id: str, reference: str, *, lock: bool = False
+    session: AsyncSession, table: type[H], workspace_id: str, head_id: str, *, lock: bool = False
 ) -> H:
-    """A head of the workspace by ID or key; an ID match wins over another head whose key equals it. A locked head
-    also refreshes any stale copy already loaded in this session."""
-    query = (
-        select(table)
-        .where(table.workspace_id == workspace_id, (table.id == reference) | (table.key == reference))
-        .order_by((table.id == reference).desc())
-        .limit(1)
-    )
+    """A head of the workspace by its ID. A locked head also refreshes any stale copy already loaded in this
+    session."""
+    query = select(table).where(table.workspace_id == workspace_id, table.id == head_id)
     if lock:
         query = query.with_for_update().execution_options(populate_existing=True)
     row = await session.scalar(query)
     if row is None:
-        raise not_found(table.KIND, reference)
+        raise not_found(table.KIND, head_id)
     return row
 
 
 def head_filter(table: type[HeadRow], *, q: str | None, archived: bool | None) -> ColumnElement[bool]:
-    """The list filters every kind shares: `q` matches the key, name or description by case-insensitive
-    substring; `archived` keeps only archived heads, or only open ones when False."""
+    """The list filters every kind shares: `q` matches the name or the description by case-insensitive substring;
+    `archived` keeps only archived heads, or only open ones when False."""
     conditions = []
     if q is not None:
-        columns = (table.key, table.name, table.description)
-        conditions.append(or_(*(column.icontains(q, autoescape=True) for column in columns)))
+        conditions.append(or_(*(column.icontains(q, autoescape=True) for column in (table.name, table.description))))
     if archived is not None:
         conditions.append(table.archived_at.is_not(None) if archived else table.archived_at.is_(None))
     return and_(true(), *conditions)
@@ -149,25 +142,18 @@ def require_open(head: HeadRow, if_match: str | None) -> None:
 
 
 async def open_head[H: HeadRow](
-    session: AsyncSession, table: type[H], workspace_id: str, reference: str, if_match: str | None
+    session: AsyncSession, table: type[H], workspace_id: str, head_id: str, if_match: str | None
 ) -> H:
     """The locked head, once it accepts changes."""
-    head = await resolve_head(session, table, workspace_id, reference, lock=True)
+    head = await resolve_head(session, table, workspace_id, head_id, lock=True)
     require_open(head, if_match)
     return head
-
-
-async def flush_head(session: AsyncSession, head: HeadRow) -> None:
-    """Write the head; a key another head of the workspace holds is `already_exists`."""
-    # Read before flushing: a failed flush expires the row.
-    with unique_key(head.KIND, f"uq_{head.__tablename__}_workspace_id_key", head.key):
-        await session.flush()
 
 
 async def update_head(session: AsyncSession, actor: Principal, head: HeadRow, values: Mapping[str, object]) -> None:
     """Apply a metadata change to an open, locked head."""
     if record_update(session, actor, head, assign(head, values)):
-        await flush_head(session, head)
+        await session.flush()
 
 
 async def set_archived(
@@ -199,30 +185,30 @@ async def find_revision[R: RevisionColumns](session: AsyncSession, table: type[R
     return row
 
 
-async def get_revision[V: BaseModel](
+async def get_revision[H: HeadRow, R: RevisionColumns, V: BaseModel](
     storage: Storage,
     actor: Principal,
-    heads: type[HeadRow],
-    table: type[RevisionColumns],
-    view: type[V],
+    heads: type[H],
+    table: type[R],
+    view: Callable[[H, R], V],
     workspace_id: str,
-    reference: str,
+    head_id: str,
     revision_id: str,
 ) -> V:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        head = await resolve_head(session, heads, scope.workspace_id, reference)
-        return view.model_validate(await find_revision(session, table, head.id, revision_id))
+        head = await resolve_head(session, heads, scope.workspace_id, head_id)
+        return view(head, await find_revision(session, table, head.id, revision_id))
 
 
-async def list_revisions[V: BaseModel](
+async def list_revisions[H: HeadRow, R: RevisionColumns, V: BaseModel](
     storage: Storage,
     actor: Principal,
-    heads: type[HeadRow],
-    table: type[RevisionColumns],
-    view: type[V],
+    heads: type[H],
+    table: type[R],
+    view: Callable[[H, R], V],
     workspace_id: str,
-    reference: str,
+    head_id: str,
     *,
     limit: int,
     cursor: str | None,
@@ -230,9 +216,9 @@ async def list_revisions[V: BaseModel](
     """One page of the head's revisions, newest first."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
-        head = await resolve_head(session, heads, scope.workspace_id, reference)
+        head = await resolve_head(session, heads, scope.workspace_id, head_id)
         rows, next_cursor = await revision_page(session, table, head.id, cursor=cursor, limit=limit)
-        return [view.model_validate(row) for row in rows], next_cursor
+        return [view(head, row) for row in rows], next_cursor
 
 
 async def revision_page[R: RevisionColumns](

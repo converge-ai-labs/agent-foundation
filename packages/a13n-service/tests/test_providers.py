@@ -1,4 +1,4 @@
-"""Provider resources of every kind: scope rules, write-only credentials, preconditions, tests and types."""
+"""Provider resources of every kind: workspace ownership, write-only credentials, preconditions, tests and types."""
 
 import json
 import socket
@@ -23,8 +23,6 @@ from a13n_service.infra.db import Base, short_session, transaction, violated_con
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.connections.tables import ConnectionRow
-from a13n_service.resources.environment_templates.schemas import TemplateConfig, TemplateCreate, TemplateUpdate
-from a13n_service.resources.environment_templates.service import create_template, update_template
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.resources.providers import service as providers
@@ -50,9 +48,7 @@ def etag(resource: dict) -> str:
 async def add_workspace(service) -> str:  # type: ignore[no-untyped-def]
     workspace_id = new_object_id("ws")
     async with transaction(service.runtime.storage) as session:
-        session.add(
-            WorkspaceRow(id=workspace_id, organization_id=service.tenant.organization_id, key="second", name="Second")
-        )
+        session.add(WorkspaceRow(id=workspace_id, organization_id=service.tenant.organization_id, name="Second"))
     return workspace_id
 
 
@@ -70,20 +66,22 @@ def principal(service, *grants: tuple[str | None, str], confined_to: str | None 
     )
 
 
-async def create(service, kind: str, body: dict) -> dict:  # type: ignore[no-untyped-def]
-    response = await service.client.post(f"{service.organization}/{kind}-providers", json=body)
+async def create(service, kind: str, body: dict, workspace_id: str | None = None) -> dict:  # type: ignore[no-untyped-def]
+    """`workspace_id` names another workspace than the session's own."""
+    headers = {"x-workspace-id": workspace_id} if workspace_id else {}
+    response = await service.client.post(f"{service.api}/{kind}-providers", json=body, headers=headers)
     assert response.status_code == 201, response.text
     assert response.headers["etag"] == etag(response.json())
     return response.json()
 
 
-async def test_shared_provider_keeps_its_credential_write_only(service) -> None:  # type: ignore[no-untyped-def]
-    body = {"workspace_id": None, "type": "openai", "name": "OpenAI", "credential": {"api_key": SECRET}}
+async def test_a_provider_keeps_its_credential_write_only(service) -> None:  # type: ignore[no-untyped-def]
+    body = {"type": "openai", "name": "OpenAI", "credential": {"api_key": SECRET}}
     created = await create(service, "model", body)
-    assert created["workspace_id"] is None
+    assert created["workspace_id"] == service.tenant.workspace_id
     assert created["credential_configured"] is True
     for path in (f"/model-providers/{created['id']}", "/model-providers"):
-        response = await service.client.get(service.organization + path)
+        response = await service.client.get(service.api + path)
         assert response.status_code == 200, response.text
         assert SECRET not in response.text
 
@@ -100,10 +98,8 @@ async def test_shared_provider_keeps_its_credential_write_only(service) -> None:
 
 
 async def test_patch_requires_the_current_etag_and_replaces_or_removes_the_credential(service) -> None:  # type: ignore[no-untyped-def]
-    created = await create(
-        service, "model", {"workspace_id": None, "type": "openai", "name": "OpenAI", "credential": {"api_key": SECRET}}
-    )
-    item = f"{service.organization}/model-providers/{created['id']}"
+    created = await create(service, "model", {"type": "openai", "name": "OpenAI", "credential": {"api_key": SECRET}})
+    item = f"{service.api}/model-providers/{created['id']}"
 
     missing = await service.client.patch(item, json={"name": "Renamed"})
     assert missing.status_code == 428 and missing.json()["error"]["code"] == "precondition_required"
@@ -153,15 +149,13 @@ async def test_patch_requires_the_current_etag_and_replaces_or_removes_the_crede
 
 async def test_a_change_compares_only_the_fields_it_sets(service) -> None:  # type: ignore[no-untyped-def]
     """A stored configuration stays as it was normalized when it was written, even if normalization changed since."""
-    created = await create(
-        service, "model", {"workspace_id": None, "type": "openai", "name": "OpenAI", "credential": {"api_key": SECRET}}
-    )
+    created = await create(service, "model", {"type": "openai", "name": "OpenAI", "credential": {"api_key": SECRET}})
     written = {"auth_mode": "bearer"}
     async with transaction(service.runtime.storage) as session:
         await session.execute(
             update(ModelProviderRow).where(ModelProviderRow.id == created["id"]).values(config=written)
         )
-    item = f"{service.organization}/model-providers/{created['id']}"
+    item = f"{service.api}/model-providers/{created['id']}"
     current = (await service.client.get(item)).json()
     renamed = await service.client.patch(item, json={"name": "Renamed"}, headers={"if-match": etag(current)})
     assert renamed.status_code == 200, renamed.text
@@ -179,29 +173,21 @@ async def test_a_change_compares_only_the_fields_it_sets(service) -> None:  # ty
 
 async def test_rows_of_an_archived_workspace_are_read_but_never_changed(service) -> None:  # type: ignore[no-untyped-def]
     workspace_id = service.tenant.workspace_id
-    body = {"workspace_id": workspace_id, "type": "openai", "name": "Own", "credential": {"api_key": SECRET}}
-    provider = await create(service, "model", body)
+    provider = await create(service, "model", {"type": "openai", "name": "Own", "credential": {"api_key": SECRET}})
     config = {"model_name": "gpt", "model_api": "openai.chat_completions"}
     model = await service.client.post(
-        f"{service.organization}/models",
-        json={
-            "workspace_id": workspace_id,
-            "provider_id": provider["id"],
-            "key": "gpt",
-            "name": "GPT",
-            "config": config,
-        },
+        f"{service.api}/models", json={"provider_id": provider["id"], "key": "gpt", "name": "GPT", "config": config}
     )
     assert model.status_code == 201, model.text
     workspace = (await service.client.get(service.workspace)).json()
     archived = await service.client.post(f"{service.workspace}/archive", headers={"if-match": etag(workspace)})
     assert archived.status_code == 200, archived.text
 
-    for path, row in (
-        (f"{service.organization}/model-providers/{provider['id']}", provider),
-        (f"{service.organization}/models/{model.json()['id']}", model.json()),
+    for path, row, current in (
+        (f"{service.api}/model-providers/{provider['id']}", provider, etag(provider)),
+        (f"{service.api}/models/gpt", model.json(), model.headers["etag"]),
     ):
-        refused = await service.client.patch(path, json={"name": "Renamed"}, headers={"if-match": etag(row)})
+        refused = await service.client.patch(path, json={"name": "Renamed"}, headers={"if-match": current})
         assert refused.status_code == 422, refused.text
         assert refused.json()["error"]["details"] == {"kind": "workspace", "id": workspace_id}
         assert (await service.client.get(path)).json()["name"] == row["name"]
@@ -209,128 +195,106 @@ async def test_rows_of_an_archived_workspace_are_read_but_never_changed(service)
 
 async def test_config_and_credential_follow_the_type_schema(service) -> None:  # type: ignore[no-untyped-def]
     async def refused(kind: str, body: dict) -> dict:
-        response = await service.client.post(f"{service.organization}/{kind}-providers", json=body)
+        response = await service.client.post(f"{service.api}/{kind}-providers", json=body)
         assert response.status_code in {400, 503}, response.text
         assert SECRET not in response.text
         return response.json()["error"]
 
-    shared = {"workspace_id": None, "name": "Account"}
-    assert (await refused("web", {**shared, "type": "tavily"}))["details"]["field"] == "credential"
-    forbidden = await refused("web", {**shared, "type": "duckduckgo", "credential": {"api_key": SECRET}})
+    named = {"name": "Account"}
+    assert (await refused("web", {**named, "type": "tavily"}))["details"]["field"] == "credential"
+    forbidden = await refused("web", {**named, "type": "duckduckgo", "credential": {"api_key": SECRET}})
     assert forbidden["details"]["field"] == "credential"
-    extra = await refused("web", {**shared, "type": "tavily", "credential": {"api_key": SECRET, "extra": SECRET}})
+    extra = await refused("web", {**named, "type": "tavily", "credential": {"api_key": SECRET, "extra": SECRET}})
     assert extra["details"]["field"] == "credential"
-    config = await refused("model", {**shared, "type": "openai", "config": {"unknown": 1}, "credential": {}})
+    config = await refused("model", {**named, "type": "openai", "config": {"unknown": 1}, "credential": {}})
     assert config["details"]["field"] == "config"
-    unknown = await refused("web", {**shared, "type": "nope"})
+    unknown = await refused("web", {**named, "type": "nope"})
     assert unknown["code"] == "unavailable" and unknown["details"]["dependency"] == "web:nope"
     # The development-only local provider is not offered unless the operator allows it.
-    environment = await refused("environment", {**shared, "type": "local"})
+    environment = await refused("environment", {**named, "type": "local"})
     assert environment["details"]["dependency"] == "environment:local"
-    # The scope is explicit: a create without `workspace_id` is refused rather than defaulted.
-    implicit = await service.client.post(
-        f"{service.organization}/web-providers", json={"type": "duckduckgo", "name": "Search"}
-    )
-    assert implicit.status_code == 400
+    # The workspace comes from the request, never from the body.
+    placed = await refused("web", {**named, "type": "duckduckgo", "workspace_id": service.tenant.workspace_id})
+    assert placed["details"]["fields"][0] == {"field": "body.workspace_id", "reason": "extra_forbidden"}
 
-    created = await create(service, "web", {**shared, "type": "duckduckgo"})
+    created = await create(service, "web", {**named, "type": "duckduckgo"})
     assert created["config"] == {} and created["credential_configured"] is False
 
 
-async def test_lists_return_shared_rows_plus_the_requested_or_readable_workspaces(service) -> None:  # type: ignore[no-untyped-def]
-    organization_id, first = service.tenant.organization_id, service.tenant.workspace_id
-    second = await add_workspace(service)
+async def test_lists_return_the_rows_of_the_request_workspace(service) -> None:  # type: ignore[no-untyped-def]
+    first, second = service.tenant.workspace_id, await add_workspace(service)
     rows = {
-        name: (await create(service, "web", {"workspace_id": workspace, "type": "duckduckgo", "name": name}))["id"]
-        for name, workspace in (("shared", None), ("first", first), ("second", second))
+        name: (await create(service, "web", {"type": "duckduckgo", "name": name}, workspace_id=workspace))["id"]
+        for name, workspace in (("one", first), ("two", first), ("second", second))
     }
 
-    collection = f"{service.organization}/web-providers"
-    everything = await service.client.get(collection)
-    assert {item["id"] for item in everything.json()["items"]} == set(rows.values())
-    filtered = await service.client.get(collection, params={"workspace_id": first})
-    assert {item["id"] for item in filtered.json()["items"]} == {rows["shared"], rows["first"]}
-    page = await service.client.get(collection, params={"limit": 2})
-    rest = await service.client.get(collection, params={"limit": 2, "cursor": page.json()["next_cursor"]})
-    assert len(page.json()["items"]) == 2 and len(rest.json()["items"]) == 1 and rest.json()["next_cursor"] is None
-    # A cursor continues its list whether the caller names the workspace by key or by ID.
-    key = (await service.client.get(service.workspace)).json()["key"]
-    by_key = await service.client.get(collection, params={"workspace_id": key, "limit": 1})
-    continued = await service.client.get(
-        collection, params={"workspace_id": first, "limit": 1, "cursor": by_key.json()["next_cursor"]}
+    collection = f"{service.api}/web-providers"
+    own = await service.client.get(collection)
+    assert {item["id"] for item in own.json()["items"]} == {rows["one"], rows["two"]}
+    other = await service.client.get(collection, headers={"x-workspace-id": second})
+    assert [item["id"] for item in other.json()["items"]] == [rows["second"]]
+    page = await service.client.get(collection, params={"limit": 1})
+    rest = await service.client.get(collection, params={"limit": 1, "cursor": page.json()["next_cursor"]})
+    assert len(page.json()["items"]) == 1 and len(rest.json()["items"]) == 1 and rest.json()["next_cursor"] is None
+    # A cursor continues only the workspace's list that issued it.
+    crossed = await service.client.get(
+        collection, params={"cursor": page.json()["next_cursor"]}, headers={"x-workspace-id": second}
     )
-    assert continued.status_code == 200, continued.text
-    listed = [*by_key.json()["items"], *continued.json()["items"]]
-    assert {item["id"] for item in listed} == {rows["shared"], rows["first"]}
+    assert crossed.status_code == 400 and crossed.json()["error"]["code"] == "invalid_cursor"
 
     storage = service.runtime.storage
     api_key = principal(service, (None, "admin"), confined_to=first)
-    visible = await providers.list_providers(
-        storage, api_key, WebProviderRow, organization_id, workspace_id=None, limit=50, cursor=None
-    )
-    assert {item.id for item in visible.items} == {rows["shared"], rows["first"]}
+    visible = await providers.list_providers(storage, api_key, WebProviderRow, first, limit=50, cursor=None)
+    assert {item.id for item in visible.items} == {rows["one"], rows["two"]}
     with pytest.raises(ServiceError, match="cannot perform"):
-        await providers.list_providers(
-            storage, api_key, WebProviderRow, organization_id, workspace_id=second, limit=50, cursor=None
-        )
-    # A row of a workspace the caller cannot read is not found rather than forbidden, revealing nothing.
+        await providers.list_providers(storage, api_key, WebProviderRow, second, limit=50, cursor=None)
+    # A row of another workspace is not found rather than forbidden, revealing nothing.
     with pytest.raises(ServiceError) as hidden:
-        await providers.get_provider(storage, api_key, WebProviderRow, organization_id, rows["second"])
+        await providers.get_provider(storage, api_key, WebProviderRow, first, rows["second"])
     assert hidden.value.code == "not_found"
     outsider = Principal(service.tenant.principal_id, "user", (Grant("org_elsewhere", None, BUILT_IN_ROLES["admin"]),))
-    with pytest.raises(ServiceError, match="cannot perform"):
-        await providers.list_providers(
-            storage, outsider, WebProviderRow, organization_id, workspace_id=None, limit=50, cursor=None
-        )
+    with pytest.raises(ServiceError) as unknown:
+        await providers.list_providers(storage, outsider, WebProviderRow, first, limit=50, cursor=None)
+    assert unknown.value.code == "not_found"
 
 
-async def test_only_organization_scope_grants_change_shared_providers(service) -> None:  # type: ignore[no-untyped-def]
+async def test_only_workspace_writers_change_its_providers(service) -> None:  # type: ignore[no-untyped-def]
     runtime = service.runtime
     storage, context = runtime.storage, {"registry": runtime.registry, "keys": runtime.keys}
-    organization_id, workspace_id = service.tenant.organization_id, service.tenant.workspace_id
-    shared = await create(service, "web", {"workspace_id": None, "type": "duckduckgo", "name": "Shared"})
-
-    def body(workspace: str | None) -> ProviderCreate:
-        return ProviderCreate(workspace_id=workspace, type="duckduckgo", name="Search")
+    workspace_id, second = service.tenant.workspace_id, await add_workspace(service)
+    body = ProviderCreate(type="duckduckgo", name="Search")
 
     builder = principal(service, (workspace_id, "builder"))
     api_key = principal(service, (None, "admin"), confined_to=workspace_id)
     for actor in (builder, api_key):
-        with pytest.raises(ServiceError, match="cannot perform"):
-            await providers.create_provider(storage, actor, WebProviderRow, organization_id, body(None), **context)
-        with pytest.raises(ServiceError, match="cannot perform"):
-            await providers.update_provider(
-                storage,
-                actor,
-                WebProviderRow,
-                organization_id,
-                shared["id"],
-                ProviderUpdate(enabled=False),
-                if_match=etag(shared),
-                **context,
-            )
-        # Shared rows remain readable and usable from the workspace.
-        assert (await providers.get_provider(storage, actor, WebProviderRow, organization_id, shared["id"])).enabled
-        async with short_session(storage) as session:
-            resolved = await providers.resolve_provider(
-                session, actor, WebProviderRow, WorkspaceScope(organization_id, workspace_id), shared["id"]
-            )
-        assert resolved.type == "duckduckgo"
-        created = await providers.create_provider(
-            storage, actor, WebProviderRow, organization_id, body(workspace_id), **context
-        )
+        created = await providers.create_provider(storage, actor, WebProviderRow, workspace_id, body, **context)
         assert created.workspace_id == workspace_id
+        updated = await providers.update_provider(
+            storage,
+            actor,
+            WebProviderRow,
+            workspace_id,
+            created.id,
+            ProviderUpdate(enabled=False),
+            if_match=f'"{created.id}:{created.version}"',
+            **context,
+        )
+        assert not updated.enabled
+        # Neither reaches another workspace of the organization.
+        with pytest.raises(ServiceError, match="cannot perform"):
+            await providers.create_provider(storage, actor, WebProviderRow, second, body, **context)
 
     viewer = principal(service, (workspace_id, "viewer"))
     with pytest.raises(ServiceError, match="cannot perform"):
-        await providers.create_provider(storage, viewer, WebProviderRow, organization_id, body(workspace_id), **context)
+        await providers.create_provider(storage, viewer, WebProviderRow, workspace_id, body, **context)
+    readable = await providers.get_provider(storage, viewer, WebProviderRow, workspace_id, created.id)
     with pytest.raises(ServiceError, match="cannot perform"):
         await providers.test_provider(
             storage,
             viewer,
             WebProviderRow,
-            organization_id,
-            shared["id"],
+            workspace_id,
+            readable.id,
             policy=runtime.endpoint_policy,
             settings=runtime.settings.providers,
             **context,
@@ -381,7 +345,6 @@ def models_endpoint() -> Iterator[tuple[str, list[str], list[dict[str, str]]]]:
 async def test_provider_test_probes_without_paid_calls(service) -> None:  # type: ignore[no-untyped-def]
     def openai(name: str, base_url: str) -> dict:
         return {
-            "workspace_id": None,
             "type": "openai",
             "name": name,
             "config": {"base_url": base_url},
@@ -390,7 +353,7 @@ async def test_provider_test_probes_without_paid_calls(service) -> None:  # type
 
     with models_endpoint() as (base_url, requests, _):
         created = await create(service, "model", openai("Local", base_url))
-        item = f"{service.organization}/model-providers/{created['id']}"
+        item = f"{service.api}/model-providers/{created['id']}"
         passed = await service.client.post(item + "/test")
         assert passed.status_code == 200, passed.text
         assert passed.json() == {
@@ -407,15 +370,15 @@ async def test_provider_test_probes_without_paid_calls(service) -> None:  # type
         assert failed["message"] and "bad" not in failed["message"]
         assert requests == ["/v1/models", "/v1/models"]
 
-        tavily = {"workspace_id": None, "type": "tavily", "name": "Tavily", "credential": {"api_key": SECRET}}
+        tavily = {"type": "tavily", "name": "Tavily", "credential": {"api_key": SECRET}}
         web = await create(service, "web", tavily)
-        unsupported = (await service.client.post(f"{service.organization}/web-providers/{web['id']}/test")).json()
+        unsupported = (await service.client.post(f"{service.api}/web-providers/{web['id']}/test")).json()
         assert unsupported["status"] == "unsupported"
         assert len(requests) == 2
 
     # Outside the operator's endpoint allowlist, the probe is refused before any connection.
     private = await create(service, "model", openai("Private", "http://10.1.2.3/v1"))
-    denied = (await service.client.post(f"{service.organization}/model-providers/{private['id']}/test")).json()
+    denied = (await service.client.post(f"{service.api}/model-providers/{private['id']}/test")).json()
     assert denied["status"] == "failed"
 
 
@@ -426,10 +389,8 @@ async def test_a_configuration_change_never_carries_the_stored_credential(servic
         return {"config": {"base_url": base_url}, "credential": {"api_key": "good"}}
 
     with models_endpoint() as (first, first_requests, _), models_endpoint() as (second, second_requests, _):
-        created = await create(
-            service, "model", {"workspace_id": None, "type": "openai", "name": "OpenAI", **account(first)}
-        )
-        item = f"{service.organization}/model-providers/{created['id']}"
+        created = await create(service, "model", {"type": "openai", "name": "OpenAI", **account(first)})
+        item = f"{service.api}/model-providers/{created['id']}"
 
         moved = await service.client.patch(
             item, json={"config": {"base_url": second}}, headers={"if-match": etag(created)}
@@ -453,7 +414,6 @@ async def test_model_provider_headers_are_write_only_secrets_sent_with_each_requ
             service,
             "model",
             {
-                "workspace_id": None,
                 "type": "openai",
                 "name": "Gateway",
                 "config": {"base_url": base_url},
@@ -462,8 +422,8 @@ async def test_model_provider_headers_are_write_only_secrets_sent_with_each_requ
             },
         )
         assert created["header_names"] == ["x-gateway-key", "x-team"]
-        item = f"{service.organization}/model-providers/{created['id']}"
-        for path in (item, f"{service.organization}/model-providers"):
+        item = f"{service.api}/model-providers/{created['id']}"
+        for path in (item, f"{service.api}/model-providers"):
             assert gateway not in (await service.client.get(path)).text
         assert (await service.client.post(item + "/test")).json()["status"] == "succeeded"
         assert (received[-1]["x-gateway-key"], received[-1]["x-team"]) == (gateway, "research")
@@ -513,8 +473,8 @@ async def test_model_provider_headers_are_write_only_secrets_sent_with_each_requ
 
     # Only model providers send extra headers.
     web = await service.client.post(
-        f"{service.organization}/web-providers",
-        json={"workspace_id": None, "type": "duckduckgo", "name": "Search", "extra_headers": {"x-team": "a"}},
+        f"{service.api}/web-providers",
+        json={"type": "duckduckgo", "name": "Search", "extra_headers": {"x-team": "a"}},
     )
     assert web.status_code == 400 and web.json()["error"]["details"]["field"] == "extra_headers"
 
@@ -553,8 +513,8 @@ async def test_environment_provider_tests_only_read_the_engine(  # type: ignore[
     service, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def tested(body: dict) -> dict:
-        created = await create(service, "environment", {"workspace_id": None, "name": body["type"], **body})
-        response = await service.client.post(f"{service.organization}/environment-providers/{created['id']}/test")
+        created = await create(service, "environment", {"name": body["type"], **body})
+        response = await service.client.post(f"{service.api}/environment-providers/{created['id']}/test")
         assert response.status_code == 200, response.text
         return response.json()
 
@@ -583,8 +543,8 @@ async def test_environment_provider_tests_only_read_the_engine(  # type: ignore[
 async def test_docker_accounts_name_only_remote_engines_the_endpoint_policy_allows(service) -> None:  # type: ignore[no-untyped-def]
     """An engine runs containers as root on its host: an account that names none uses the operator's, and one that
     names an engine reaches it only over TCP or HTTPS, checked by the endpoint policy before any dial."""
-    collection = f"{service.organization}/environment-providers"
-    docker = {"workspace_id": None, "type": "docker", "name": "Docker"}
+    collection = f"{service.api}/environment-providers"
+    docker = {"type": "docker", "name": "Docker"}
     for docker_host in (
         "unix:///var/run/docker.sock",
         "ssh://root@127.0.0.1",
@@ -607,15 +567,15 @@ async def test_docker_accounts_name_only_remote_engines_the_endpoint_policy_allo
     assert requests == []
 
 
-async def _docker_template(service: SimpleNamespace, key: str, recipe: dict) -> httpx2.Response:
-    provider = await create(service, "environment", {"workspace_id": None, "type": "docker", "name": key})
-    body = {"key": key, "name": key, "provider_id": provider["id"], "config": {"recipe": recipe}}
-    return await service.client.post(f"{service.workspace}/environment-templates", json=body)
+async def _docker_template(service: SimpleNamespace, name: str, recipe: dict) -> httpx2.Response:
+    provider = await create(service, "environment", {"type": "docker", "name": name})
+    body = {"name": name, "provider_id": provider["id"], "config": {"recipe": recipe}}
+    return await service.client.post(f"{service.api}/environment-templates", json=body)
 
 
-async def _mount_template(service: SimpleNamespace, key: str, source: str) -> int:
+async def _mount_template(service: SimpleNamespace, name: str, source: str) -> int:
     recipe = {"mounts": [{"source": source, "target": "/data"}]}
-    return (await _docker_template(service, key, recipe)).status_code
+    return (await _docker_template(service, name, recipe)).status_code
 
 
 async def test_docker_recipes_bind_no_host_directory_by_default(service) -> None:  # type: ignore[no-untyped-def]
@@ -654,46 +614,22 @@ async def test_docker_recipes_bind_only_host_directories_the_operator_allows(ser
             assert await _mount_template(service, f"outside-{index}", source) == 400, source
 
 
-async def test_templates_direct_their_provider_only_for_its_writers(service) -> None:  # type: ignore[no-untyped-def]
-    """A template's provider and recipe direct the provider's backend; its idle policy only reads the provider."""
-    workspace_id = service.tenant.workspace_id
-    storage, registry = service.runtime.storage, service.runtime.registry
-    shared = await create(service, "environment", {"workspace_id": None, "type": "docker", "name": "Shared"})
-    own = await create(service, "environment", {"workspace_id": workspace_id, "type": "docker", "name": "Own"})
-    builder = principal(service, (workspace_id, "builder"))
-
-    with pytest.raises(ServiceError, match="cannot perform"):
-        await create_template(
-            storage,
-            builder,
-            workspace_id,
-            TemplateCreate(key="shared", name="Shared", provider_id=shared["id"]),
-            registry=registry,
-        )
-    response = await service.client.post(
-        f"{service.workspace}/environment-templates",
-        json={"key": "shared", "name": "Shared", "provider_id": shared["id"]},
+async def test_templates_use_only_providers_of_their_workspace(service) -> None:  # type: ignore[no-untyped-def]
+    """A template's provider runs the environments created from it, so it must be one of the template's workspace."""
+    own = await create(service, "environment", {"type": "docker", "name": "Own"})
+    other = await create(service, "environment", {"type": "docker", "name": "Other"}, await add_workspace(service))
+    templates = f"{service.api}/environment-templates"
+    hidden = await service.client.post(templates, json={"name": "Box", "provider_id": other["id"]})
+    assert hidden.status_code == 404, hidden.text
+    assert hidden.json()["error"]["details"] == {"kind": "environment_provider", "id": other["id"]}
+    created = await service.client.post(templates, json={"name": "Box", "provider_id": own["id"]})
+    assert created.status_code == 201, created.text
+    moved = await service.client.patch(
+        f"{templates}/{created.json()['id']}",
+        json={"provider_id": other["id"]},
+        headers={"if-match": etag(created.json())},
     )
-    assert response.status_code == 201, response.text
-    template = response.json()
-
-    async def update(body: TemplateUpdate) -> str:
-        current = (await service.client.get(f"{service.workspace}/environment-templates/{template['id']}")).json()
-        updated = await update_template(
-            storage, builder, workspace_id, template["id"], body, if_match=etag(current), registry=registry
-        )
-        return updated.config.model_dump_json()
-
-    idle = TemplateConfig(stop_after_seconds=600, delete_after_seconds=3600)
-    assert '"delete_after_seconds":3600' in await update(TemplateUpdate(config=idle, enabled=False))
-    with pytest.raises(ServiceError, match="cannot perform"):
-        await update(TemplateUpdate(config=idle.model_copy(update={"recipe": {"image": "other"}})))
-    # Moving to a provider the builder writes needs write on the new provider only.
-    assert '"image":"other"' in await update(
-        TemplateUpdate(provider_id=own["id"], config=idle.model_copy(update={"recipe": {"image": "other"}}))
-    )
-    with pytest.raises(ServiceError, match="cannot perform"):
-        await update(TemplateUpdate(provider_id=shared["id"]))
+    assert moved.status_code == 404, moved.text
 
 
 async def test_provider_types_describe_each_registered_definition(service) -> None:  # type: ignore[no-untyped-def]
@@ -756,11 +692,11 @@ async def test_model_settings_follow_the_schema_of_their_calling_api(service) ->
     check("openai.responses", {"thinking": "high", "max_tokens": 1024}, field="settings")
     check("bedrock.converse", {"bedrock_guardrail_config": {"guardrailIdentifier": "g"}}, field="settings")
     with pytest.raises(ServiceError) as unknown:
-        check("anthropic.messages", {"thinkng": True}, field="model.settings")
-    assert unknown.value.details["field"] == "model.settings"
+        check("anthropic.messages", {"thinkng": True}, field="model_settings")
+    assert unknown.value.details["field"] == "model_settings"
     with pytest.raises(ServiceError) as mistyped:
-        check("openai.chat_completions", {"max_tokens": "many"}, field="model.settings")
-    assert mistyped.value.details["field"] == "model.settings.max_tokens"
+        check("openai.chat_completions", {"max_tokens": "many"}, field="model_settings")
+    assert mistyped.value.details["field"] == "model_settings.max_tokens"
     with pytest.raises(ServiceError) as level:
         check("openai.responses", {"thinking": "maximal"}, field="settings")
     assert level.value.details["field"] == "settings.thinking"
@@ -780,8 +716,8 @@ async def test_model_settings_follow_the_schema_of_their_calling_api(service) ->
         ("google.generate_content", "google_cached_content", "cachedContents/other"),
     ):
         with pytest.raises(ServiceError) as refused:
-            check(model_api, {key: value}, field="model.settings")
-        assert refused.value.details["field"] == "model.settings", key
+            check(model_api, {key: value}, field="model_settings")
+        assert refused.value.details["field"] == "model_settings", key
 
 
 async def test_web_backends_carry_each_selected_account(service) -> None:  # type: ignore[no-untyped-def]
@@ -791,7 +727,7 @@ async def test_web_backends_carry_each_selected_account(service) -> None:  # typ
     admin = principal(service, (None, "admin"))
     accounts = {}
     for key in ("account-a", "account-b"):
-        body = {"workspace_id": workspace_id, "type": "tavily", "name": key, "credential": {"api_key": key}}
+        body = {"type": "tavily", "name": key, "credential": {"api_key": key}}
         accounts[key] = (await create(service, "web", body))["id"]
     context = {"registry": runtime.registry, "keys": runtime.keys, "policy": runtime.endpoint_policy}
 
@@ -807,7 +743,7 @@ async def test_web_backends_carry_each_selected_account(service) -> None:  # typ
         async with open_scrape_backend(provider, ScrapeOptions(), **context) as scrape:
             assert scrape.backend_id == accounts[key]
 
-    item = f"{service.organization}/web-providers/{accounts['account-b']}"
+    item = f"{service.api}/web-providers/{accounts['account-b']}"
     current = (await service.client.get(item)).headers["etag"]
     assert (await service.client.patch(item, json={"enabled": False}, headers={"if-match": current})).status_code == 200
     elsewhere = WorkspaceScope(organization_id, await add_workspace(service))
@@ -826,37 +762,38 @@ async def test_the_database_keeps_provider_references_within_their_workspace(ser
     second = await add_workspace(service)
 
     async def accounts(kind: str, type_: str, **body: object) -> list[str]:
-        """A shared provider the rows below use, then one confined to the second workspace."""
+        """A provider of this workspace the rows below use, then one of the second workspace."""
         return [
-            (await create(service, kind, {"workspace_id": workspace, "type": type_, "name": type_, **body}))["id"]
-            for workspace in (None, second)
+            (await create(service, kind, {"type": type_, "name": type_, **body}, workspace_id=workspace))["id"]
+            for workspace in (first, second)
         ]
 
-    shared_model, confined_model = await accounts("model", "openai", credential={"api_key": SECRET})
-    shared_environment, confined_environment = await accounts("environment", "docker")
-    _, confined_connector = await accounts("connector", "composio", credential={"api_key": SECRET})
+    own_model, other_model = await accounts("model", "openai", credential={"api_key": SECRET})
+    own_environment, other_environment = await accounts("environment", "docker")
+    _, other_connector = await accounts("connector", "composio", credential={"api_key": SECRET})
 
     config = {"model_name": "gpt", "model_api": "openai.chat_completions"}
-    model = {"workspace_id": first, "provider_id": shared_model, "key": "gpt", "name": "GPT", "config": config}
-    template = {"key": "box", "name": "Box", "provider_id": shared_environment}
+    model = {"provider_id": own_model, "key": "gpt", "name": "GPT", "config": config}
+    template = {"name": "Box", "provider_id": own_environment}
     connection = {"type": "mcp", "name": "Remote", "config": {"url": "http://127.0.0.1:9/mcp"}, "auth": "oauth"}
     created = {}
     for name, path, body in (
-        ("model", f"{service.organization}/models", model),
-        ("template", f"{service.workspace}/environment-templates", template),
-        ("connection", f"{service.workspace}/connections", connection),
+        ("model", f"{service.api}/models", model),
+        ("template", f"{service.api}/environment-templates", template),
+        ("connection", f"{service.api}/connections", connection),
     ):
         response = await service.client.post(path, json=body)
         assert response.status_code == 201, response.text
-        created[name] = response.json()["id"]
+        created[name] = response.json().get("id")
     created["environment"] = new_object_id("env")
     async with transaction(service.runtime.storage) as session:
+        created["model"] = await session.scalar(select(ModelRow.id).where(ModelRow.key == "gpt"))
         session.add(
             EnvironmentRow(
                 id=created["environment"],
                 organization_id=organization_id,
                 workspace_id=first,
-                provider_id=shared_environment,
+                provider_id=own_environment,
                 template_id=created["template"],
                 name="box",
                 status="deleted",
@@ -867,18 +804,18 @@ async def test_the_database_keeps_provider_references_within_their_workspace(ser
 
     account = {"type": "composio", "auth": "account"}
     cases: list[tuple[type[Base], str, str, dict[str, object]]] = [
-        (ModelRow, created["model"], "provider_id", {"provider_id": confined_model}),
-        (EnvironmentTemplateRow, created["template"], "provider_id", {"provider_id": confined_environment}),
-        (EnvironmentRow, created["environment"], "provider_id", {"provider_id": confined_environment}),
+        (ModelRow, created["model"], "model_providers", {"provider_id": other_model}),
+        (EnvironmentTemplateRow, created["template"], "environment_providers", {"provider_id": other_environment}),
+        (EnvironmentRow, created["environment"], "environment_providers", {"provider_id": other_environment}),
         (
             ConnectionRow,
             created["connection"],
-            "connector_provider_id",
-            {**account, "connector_provider_id": confined_connector},
+            "connector_providers",
+            {**account, "connector_provider_id": other_connector},
         ),
     ]
-    for table, row_id, column, values in cases:
+    for table, row_id, providers_table, values in cases:
         with pytest.raises(IntegrityError) as refused:
             async with transaction(service.runtime.storage) as session:
                 await session.execute(update(table).where(table.__table__.c.id == row_id).values(values))
-        assert violated_constraint(refused.value) == f"{table.__tablename__}_{column}_in_scope"
+        assert violated_constraint(refused.value) == f"fk_{table.__tablename__}_workspace_id_{providers_table}"

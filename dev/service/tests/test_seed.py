@@ -74,19 +74,21 @@ name = "Brave (blank)"
 credential = {{ api_key = "" }}
 """)
         resources.chmod(0o600)
-        org = seeded.organization
 
         assert dev_resources.apply_to(instance, resources) == "1 model providers, 1 models"
-        provider = next(item for item in api.items(f"{org}/model-providers") if item["name"] == "Private scripted")
-        assert provider["credential_configured"]
-        assert "Brave (blank)" not in {item["name"] for item in api.items(f"{org}/web-providers")}
+        providers = api.items("/api/v1/model-providers")
+        provider = next(item for item in providers if item["name"] == "Private scripted")
+        assert provider["credential_configured"] and provider["workspace_id"] == seeded.workspace
+        assert api.get("/api/v1/models/private-scripted")["provider_id"] == provider["id"]
+        assert "Brave (blank)" not in {item["name"] for item in api.items("/api/v1/web-providers")}
         digests = (instance.state / "dev-resources.json").read_text()
         assert "sk-private-one" not in digests
 
         dev_resources.apply_to(instance, resources)
-        assert api.get(f"{org}/model-providers/{provider['id']}")["version"] == provider["version"]
+        path = f"/api/v1/model-providers/{provider['id']}"
+        assert api.get(path)["version"] == provider["version"]
 
         resources.write_text(resources.read_text().replace("sk-private-one", "sk-private-two"))
         dev_resources.apply_to(instance, resources)
-        assert api.get(f"{org}/model-providers/{provider['id']}")["version"] > provider["version"]
+        assert api.get(path)["version"] > provider["version"]
         assert json.loads((instance.state / "dev-resources.json").read_text()) != json.loads(digests)

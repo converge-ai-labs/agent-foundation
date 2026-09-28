@@ -1,26 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
+import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { useCursor } from "../../shared/collection";
 import { useResourceRows } from "../../shared/dialogs";
 import { credentialMode } from "../../shared/provider-authentication";
 import { ProviderTable } from "../providers";
-import { webProviderApi, type WebProviderScope } from "./api";
+import { webProviderApi } from "./api";
 import { AddWebProvider, WebProviderEditor } from "./editor";
 
-export function WebProviders({ scope }: { scope: WebProviderScope }) {
+export function WebProviders() {
   const client = useClient(),
-    { can, organizationCan, organization } = useAccess(),
+    { can, workspace } = useWorkspace(),
     page = useCursor();
   const rows = useResourceRows<Schema["Provider"]>();
   const query = useQuery({
-    queryKey: ["web-providers", scope.kind, scope.id, page.cursor],
+    queryKey: ["web-providers", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
-      webProviderApi(client, organization.id, scope).providers(
-        signal,
-        page.cursor,
-      ),
+      webProviderApi(client, workspace.id).providers(signal, page.cursor),
   });
   const definitions = useQuery({
     queryKey: ["web-provider-types"],
@@ -32,9 +29,8 @@ export function WebProviders({ scope }: { scope: WebProviderScope }) {
         })
         .then(data),
   });
-  const manage =
-    scope.kind === "organization" ? organizationCan("write") : can("write");
-  const add = manage ? <AddWebProvider scope={scope} /> : undefined;
+  const manage = can("write");
+  const add = manage ? <AddWebProvider /> : undefined;
   const definitionFor = (type: string) =>
     definitions.data?.items.find((item) => item.type === type);
   return (
@@ -42,15 +38,8 @@ export function WebProviders({ scope }: { scope: WebProviderScope }) {
       {rows.selected && (
         <WebProviderEditor
           key={rows.selected.id}
-          scope={scope}
           providerId={rows.selected.id}
-          readOnly={
-            !(
-              manage &&
-              (scope.kind === "organization" ||
-                rows.selected.workspace_id === scope.id)
-            )
-          }
+          readOnly={!manage}
           {...rows.control}
         />
       )}
@@ -68,7 +57,6 @@ export function WebProviders({ scope }: { scope: WebProviderScope }) {
           name: item.name,
           type: item.type,
           definition: definitionFor(item.type)?.display_name,
-          workspaceId: item.workspace_id,
           credentials:
             credentialMode(definitionFor(item.type), item.config) !== "required"
               ? "not_required"

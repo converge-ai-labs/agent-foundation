@@ -4,12 +4,12 @@
 models outside any session, and `build` composes the definition without I/O. A definition is built per
 attempt, so its capabilities hold state for one Harness run only.
 
-The definition selects every model by its model ID, which `model_resolver` resolves to the opened model, so
+The definition selects every model by its model key, which `model_resolver` resolves to the opened model, so
 each model call names the model it calls: the call check admits it, and its usage is attributed and priced, as
 that model, whatever upstream model name it shares with another.
 
 Everything bound to the attempt stays the worker's: boundaries, connections, environments, web backends,
-skill content, secrets, asset publishing, the async subagent operator and the run bindings. `build` asks the
+skill content, asset publishing, the async subagent operator and the run bindings. `build` asks the
 worker for them once per agent of the inline graph.
 """
 
@@ -127,10 +127,10 @@ async def resolve(
     graph = await subagent_graph(session, scope.workspace_id, revision.agent_id, config)
     models: dict[str, ResolvedModel] = {}
 
-    async def model(model_id: str) -> ResolvedModel:
-        if model_id not in models:
-            models[model_id] = await resolve_model(session, principal, scope, model_id, authority=authority)
-        return models[model_id]
+    async def model(key: str) -> ResolvedModel:
+        if key not in models:
+            models[key] = await resolve_model(session, principal, scope, key, authority=authority)
+        return models[key]
 
     defaults = (await workspace_media(session, scope.workspace_id)).selections()
 
@@ -138,9 +138,9 @@ async def resolve(
         """The agent's own selection, which must stay usable, over the workspace's defaults, which may not."""
         selected = config.media_understanding.selections()
         resolved = {}
-        for kind, model_id in (defaults | selected).items():
+        for kind, key in (defaults | selected).items():
             try:
-                resolved[kind] = await model(model_id)
+                resolved[kind] = await model(key)
                 require_understanding(resolved[kind], kind)
             except ServiceError as error:
                 if kind in selected:
@@ -149,7 +149,7 @@ async def resolve(
                 resolved.pop(kind, None)
                 logger.warning(
                     "Workspace media default skipped",
-                    extra={"workspace_id": scope.workspace_id, "kind": kind, "model_id": model_id, "code": error.code},
+                    extra={"workspace_id": scope.workspace_id, "kind": kind, "model": key, "code": error.code},
                 )
         return resolved
 
@@ -170,7 +170,7 @@ async def resolve(
             agent_id=agent_id,
             revision_id=revision_id,
             config=config,
-            model=await model(config.model.model_id),
+            model=await model(config.model),
             reviewer=None if config.reviewer is None else await model(config.reviewer.model),
             media=await media(config),
             connection_types=await connection_types(session, scope.workspace_id, config.connection_tools),
@@ -181,11 +181,11 @@ async def resolve(
 
 
 async def open_models(stack: AsyncExitStack, runtime: Runtime, agent: ResolvedAgent) -> dict[str, Model]:
-    """Every model of the agent and its inline subagents, by model ID, opened once and closed by `stack`."""
+    """Every model of the agent and its inline subagents, by model key, opened once and closed by `stack`."""
     opened: dict[str, Model] = {}
     for model in agent.models():
-        if model.id not in opened:
-            opened[model.id] = await stack.enter_async_context(
+        if model.key not in opened:
+            opened[model.key] = await stack.enter_async_context(
                 open_model(
                     model,
                     registry=runtime.registry,
@@ -198,7 +198,7 @@ async def open_models(stack: AsyncExitStack, runtime: Runtime, agent: ResolvedAg
 
 
 def model_resolver(models: Mapping[str, Model]) -> RunModelResolver:
-    """The run's resolution of the model IDs the definition selects, to the models `open_models` opened."""
+    """The run's resolution of the model keys the definition selects, to the models `open_models` opened."""
 
     async def resolve(context: ModelResolutionContext[AgentContext], model_id: str) -> Model:
         return models[model_id]
@@ -229,7 +229,7 @@ def build(
     """
     root = _Host(capabilities, child_bindings, operators, plugins).compose(agent)
     # Each call is priced by its selected model's own pricing; inline subagents inherit the root's policy.
-    prices = TokenPricingCapability({model.id: model.pricing for model in agent.models() if model.pricing is not None})
+    prices = TokenPricingCapability({model.key: model.pricing for model in agent.models() if model.pricing is not None})
     return HarnessBuilder(instrumentation=instrumentation, configured_plugins_enabled=False).build(
         root.with_updates(capabilities=(*root.capabilities, prices))
     )
@@ -238,9 +238,9 @@ def build(
 def media_understanding(agent: ResolvedAgent, models: Mapping[str, Model]) -> AgentMediaUnderstandingProvider:
     """The agent's media understanding binding; a kind without a selected model is unavailable, never inferred."""
     return AgentMediaUnderstandingProvider(
-        models={kind: models[model.id] for kind, model in agent.media.items()},
+        models={kind: models[model.key] for kind, model in agent.media.items()},
         model_settings={kind: _settings(model, {}) for kind, model in agent.media.items()},
-        model_ids={kind: model.id for kind, model in agent.media.items()},
+        model_ids={kind: model.key for kind, model in agent.media.items()},
     )
 
 
@@ -276,9 +276,9 @@ class _Host:
             )
         return AgentDefinition(
             agent=AgentSpec(
-                model=agent.model.id,
+                model=agent.model.key,
                 instructions=config.instructions or None,
-                model_settings=cast(dict[str, Any], _settings(agent.model, config.model.settings)) or None,
+                model_settings=cast(dict[str, Any], _settings(agent.model, config.model_settings)) or None,
                 retries=None if config.retries is None else AgentRetries(**config.retries.model_dump()),
                 model_characteristics=_characteristics(agent),
             ),
@@ -309,7 +309,7 @@ class _Host:
         review = reviewer.model_copy(
             update={"model_settings": _settings(agent.reviewer, reviewer.model_settings or {})}
         )
-        # The run's model resolver resolves `review.model`, the reviewer's model ID.
+        # The run's model resolver resolves `review.model`, the reviewer's model key.
         return ToolPermissionsCapability(permissions, review=review)
 
     def _subagent(self, name: str, subagent: ResolvedSubagent) -> SubagentDefinition:
@@ -345,7 +345,7 @@ def _settings(model: ResolvedModel, settings: Mapping[str, JsonValue]) -> ModelS
 
 def _characteristics(agent: ResolvedAgent) -> HarnessModelCharacteristics:
     """What the model declares, under the agent's context policy."""
-    declared, policy = agent.model.config.characteristics, agent.config.model.characteristics
+    declared, policy = agent.model.config.characteristics, agent.config.model_characteristics
     return HarnessModelCharacteristics(
         capabilities=declared.capabilities,
         context_window_tokens=policy.context_window_tokens or declared.context_window_tokens,

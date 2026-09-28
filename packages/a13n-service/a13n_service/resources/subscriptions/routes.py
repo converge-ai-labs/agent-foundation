@@ -14,14 +14,14 @@ from a13n_service.resources.subscriptions.schemas import (
     SubscriptionUpdate,
     WebhookDelivery,
 )
-from a13n_service.tenancy.requests import Actor
+from a13n_service.tenancy.requests import Actor, WorkspaceId
 
-router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}/subscriptions", tags=["subscriptions"])
+router = APIRouter(prefix="/api/v1/subscriptions", tags=["subscriptions"])
 
 
 @router.post("", response_model=CreatedSubscription, status_code=201)
 async def create_subscription(
-    response: Response, workspace_id: str, body: SubscriptionCreate, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, body: SubscriptionCreate, actor: Actor, runtime: CurrentRuntime
 ) -> CreatedSubscription:
     """The response is the only time the signing secret is returned."""
     result = await service.create_subscription(
@@ -39,7 +39,7 @@ async def create_subscription(
 
 @router.get("", response_model=SubscriptionPage)
 async def list_subscriptions(
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     actor: Actor,
     runtime: CurrentRuntime,
     limit: PageLimit = 50,
@@ -52,7 +52,7 @@ async def list_subscriptions(
 
 @router.get("/{subscription_id}", response_model=Subscription)
 async def get_subscription(
-    response: Response, workspace_id: str, subscription_id: str, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, subscription_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Subscription:
     result = await service.get_subscription(runtime.storage, runtime.access, actor, workspace_id, subscription_id)
     return tagged(response, result)
@@ -61,7 +61,7 @@ async def get_subscription(
 @router.patch("/{subscription_id}", response_model=Subscription)
 async def update_subscription(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     subscription_id: str,
     body: SubscriptionUpdate,
     actor: Actor,
@@ -84,7 +84,7 @@ async def update_subscription(
 
 @router.delete("/{subscription_id}", status_code=204)
 async def delete_subscription(
-    workspace_id: str, subscription_id: str, actor: Actor, runtime: CurrentRuntime, if_match: IfMatch = None
+    workspace_id: WorkspaceId, subscription_id: str, actor: Actor, runtime: CurrentRuntime, if_match: IfMatch = None
 ) -> Response:
     await service.delete_subscription(
         runtime.storage, runtime.access, actor, workspace_id, subscription_id, if_match=if_match
@@ -94,7 +94,7 @@ async def delete_subscription(
 
 @router.get("/{subscription_id}/deliveries", response_model=DeliveryPage)
 async def list_deliveries(
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     subscription_id: str,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -108,6 +108,6 @@ async def list_deliveries(
 
 @router.post("/{subscription_id}/deliveries/{delivery_id}/redeliver", response_model=WebhookDelivery)
 async def redeliver(
-    workspace_id: str, subscription_id: str, delivery_id: str, actor: Actor, runtime: CurrentRuntime
+    workspace_id: WorkspaceId, subscription_id: str, delivery_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> WebhookDelivery:
     return await service.redeliver(runtime.storage, runtime.access, actor, workspace_id, subscription_id, delivery_id)

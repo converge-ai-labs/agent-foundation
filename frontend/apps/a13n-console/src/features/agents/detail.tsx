@@ -28,7 +28,6 @@ import {
   RailSection,
   useTabParam,
 } from "../../shared/page";
-import { isResourceKey } from "../../shared/paths";
 import { environmentTemplates } from "../environments/api";
 import { useAgentComposer } from "./composer";
 import { AgentAvatar } from "./avatar";
@@ -43,7 +42,7 @@ import styles from "./agents.module.css";
 export { CreateAgent } from "./create";
 
 export function AgentDetail() {
-  const { agentKey = "" } = useParams(),
+  const { agentId = "" } = useParams(),
     client = useClient(),
     { t } = useTranslation(),
     { workspace, can, basePath } = useWorkspace(),
@@ -54,36 +53,31 @@ export function AgentDetail() {
   const [generation, setGeneration] = useState(0);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const query = useQuery({
-    queryKey: ["agent", workspace.id, agentKey],
-    enabled: isResourceKey(agentKey),
+    queryKey: ["agent", workspace.id, agentId],
+    enabled: !!agentId,
     queryFn: async ({ signal }) => {
       const resource = representation(
-        await client.http.GET(
-          "/api/v1/workspaces/{workspace_id}/agents/{agent_id}",
-          {
-            params: {
-              path: { workspace_id: workspace.id, agent_id: agentKey },
-            },
-            signal,
+        await client.workspace(workspace.id).GET("/api/v1/agents/{agent_id}", {
+          params: {
+            path: { agent_id: agentId },
           },
-        ),
+          signal,
+        }),
       );
       if (!resource.value.default_revision_id)
         throw new Error(t("Agent configuration is unavailable."));
       const revision = data(
-        await client.http.GET(
-          "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/revisions/{revision_id}",
-          {
+        await client
+          .workspace(workspace.id)
+          .GET("/api/v1/agents/{agent_id}/revisions/{revision_id}", {
             params: {
               path: {
-                workspace_id: workspace.id,
                 agent_id: resource.value.id,
                 revision_id: resource.value.default_revision_id,
               },
             },
             signal,
-          },
-        ),
+          }),
       );
       return { ...resource, revision };
     },
@@ -106,9 +100,10 @@ export function AgentDetail() {
           t("Version information is unavailable. Reload this page."),
         );
       const { etag, ...requestBody } = body;
-      return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/agents/{agent_id}/revisions", {
-          params: { path: { workspace_id: workspace.id, agent_id: agentKey } },
+      return client
+        .workspace(workspace.id)
+        .POST("/api/v1/agents/{agent_id}/revisions", {
+          params: { path: { agent_id: agentId } },
           headers: ifMatch(etag),
           body: requestBody,
         })
@@ -116,7 +111,7 @@ export function AgentDetail() {
     },
     onSuccess: async () => {
       await cache.invalidateQueries({
-        queryKey: ["agent", workspace.id, agentKey],
+        queryKey: ["agent", workspace.id, agentId],
       });
       void cache.invalidateQueries({
         queryKey: ["agent-revisions", workspace.id],
@@ -124,8 +119,7 @@ export function AgentDetail() {
       setGeneration((value) => value + 1);
     },
   });
-  if (!isResourceKey(agentKey))
-    return <ErrorNotice error={new Error(t("Agent not found"))} />;
+  if (!agentId) return <ErrorNotice error={new Error(t("Agent not found"))} />;
   if (query.isPending) return <Loading variant="detail" page />;
   if (!query.data)
     return (
@@ -133,7 +127,7 @@ export function AgentDetail() {
     );
   const agent = query.data.value;
   const revision = query.data.revision;
-  const editorKey = `${agent.id}:${agent.key}:${generation}`;
+  const editorKey = `${agent.id}:${generation}`;
   const reload = async () => {
     await query.refetch();
     save.reset();
@@ -232,7 +226,6 @@ export function AgentDetail() {
           }
           name={agent.name}
           status={<StatePill state={state} />}
-          resourceKey={agent.key}
           description={agent.description}
           edit={
             editable && (

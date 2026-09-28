@@ -33,17 +33,17 @@ async def mem0() -> AsyncIterator[httpx2.AsyncClient]:
             yield client
 
 
-async def create_memory(api, key: str, files: dict[str, str], **fields: object) -> dict:  # type: ignore[no-untyped-def]
-    memory = expect(await api.client.post(f"{api.path}/memories", json={"key": key, "name": key, **fields}), 201)
+async def create_memory(api, name: str, files: dict[str, str], **fields: object) -> dict:  # type: ignore[no-untyped-def]
+    memory = expect(await api.client.post("/api/v1/memories", json={"name": name, **fields}), 201)
     for path, content in files.items():
         body = {"path": path, "content": content}
-        expect(await api.client.post(f"{api.path}/memories/{memory['id']}/files", json=body), 201)
+        expect(await api.client.post(f"/api/v1/memories/{memory['id']}/files", json=body), 201)
     return memory
 
 
 async def history(api, memory: dict, path: str) -> list[tuple[str, str | None, str | None]]:  # type: ignore[no-untyped-def]
     """A file's revisions, newest first, as (op, run, tool call)."""
-    listing = await api.client.get(f"{api.path}/memories/{memory['id']}/revisions", params={"path": path})
+    listing = await api.client.get(f"/api/v1/memories/{memory['id']}/revisions", params={"path": path})
     return [(item["op"], item["run_id"], item["tool_call_id"]) for item in expect(listing, 200)["items"]]
 
 
@@ -70,19 +70,14 @@ def recalls(request: dict) -> list[tuple[str, list[str]]]:
     ]
 
 
-async def record_memory(api, mem0: httpx2.AsyncClient, key: str, *texts: str) -> dict:  # type: ignore[no-untyped-def]
+async def record_memory(api, mem0: httpx2.AsyncClient, name: str, *texts: str) -> dict:  # type: ignore[no-untyped-def]
     """A record memory in the journey's fake mem0 server, holding `texts`."""
-    body = {
-        "workspace_id": api.tenant["workspace_id"],
-        "type": "mem0_oss",
-        "name": key,
-        "config": {"base_url": str(mem0.base_url)},
-    }
-    provider = expect(await api.client.post(f"{api.organization}/memory-providers", json=body), 201)
-    body = {"key": key, "name": key, "type": "mem0_oss", "provider_id": provider["id"]}
-    memory = expect(await api.client.post(f"{api.path}/memories", json=body), 201)
+    body = {"type": "mem0_oss", "name": name, "config": {"base_url": str(mem0.base_url)}}
+    provider = expect(await api.client.post("/api/v1/memory-providers", json=body), 201)
+    body = {"name": name, "type": "mem0_oss", "provider_id": provider["id"]}
+    memory = expect(await api.client.post("/api/v1/memories", json=body), 201)
     for text in texts:
-        expect(await api.client.post(f"{api.path}/memories/{memory['id']}/records", json={"text": text}), 201)
+        expect(await api.client.post(f"/api/v1/memories/{memory['id']}/records", json={"text": text}), 201)
     return memory
 
 
@@ -112,7 +107,7 @@ def workers_of(stack, run_id: str) -> list[str]:  # type: ignore[no-untyped-def]
 @pytest.mark.isolated_service(worker_slots=1)
 async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     memory = await create_memory(api, "prefs", {"prefs.md": "- likes tea\n- reply in English\n"})
     mounts = [{"name": "prefs", "memory_id": memory["id"], "access": "write"}]
     view = {"memory": "prefs", "path": "prefs.md"}
@@ -144,7 +139,7 @@ async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack
     assert a_worker != b_worker
 
     # The disjoint edits both apply; the edit based on the stale view fails and shows the current content.
-    current = expect(await api.client.get(f"{api.path}/memories/{memory['id']}/files/prefs.md"), 200)
+    current = expect(await api.client.get(f"/api/v1/memories/{memory['id']}/files/prefs.md"), 200)
     assert current["content"] == "- likes coffee\n- reply in Chinese\n"
     stale = result_of((await model.requests("[mem-a]"))[-1], "call_a_stale")
     assert "no_match" in stale and "reply in Chinese" in stale
@@ -171,7 +166,7 @@ async def test_two_workers_edit_one_file_and_the_next_run_gets_the_changes(stack
 @pytest.mark.isolated_service
 async def test_a_recovered_attempt_continues_from_the_committed_memory_cursors(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     memory = await create_memory(api, "notes", {"README.md": "# Notes\n"}, always_load=["README.md"])
     mounts = [{"name": "notes", "memory_id": memory["id"], "access": "write"}]
     entry = {"memory": "notes", "path": "log.md", "content": "- first entry\n"}
@@ -208,7 +203,7 @@ async def test_a_recovered_attempt_continues_from_the_committed_memory_cursors(s
 
 async def test_a_memory_deleted_during_a_run_refuses_its_next_call(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     memory = await create_memory(api, "todo", {"todo.md": "- buy milk\n"})
     mounts = [{"name": "todo", "memory_id": memory["id"], "access": "write"}]
     append = {"memory": "todo", "path": "todo.md", "content": "- call Sam\n"}
@@ -217,21 +212,21 @@ async def test_a_memory_deleted_during_a_run_refuses_its_next_call(stack) -> Non
     receipt = await api.start(agent, "[gone] Add a todo", memories=mounts)
     await model.arrived("[gone]", status="held")
 
-    path = f"{api.path}/memories/{memory['id']}"
+    path = f"/api/v1/memories/{memory['id']}"
     current = await api.client.get(path)
     expect(await api.client.delete(path, headers={"if-match": current.headers["etag"]}), 204)
     await model.open("gone")
     run = await api.sealed(receipt["run"]["id"])
     assert (run["status"], run["output"]) == ("completed", "The list is gone.")
     assert "memory_deleted" in result_of((await model.requests("[gone]"))[-1], "call_append")
-    mounted = await api.client.get(f"{api.path}/threads/{receipt['thread']['id']}/memories")
+    mounted = await api.client.get(f"/api/v1/threads/{receipt['thread']['id']}/memories")
     assert expect(mounted, 200)["items"] == []
     assert (await api.client.get(path)).status_code == 404
 
 
 async def test_a_run_recalls_records_and_writes_through_the_record_tools(stack, mem0) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     memory = await record_memory(api, mem0, "facts", "likes green tea", "lives in Lisbon")
     mounts = [{"name": "facts", "memory_id": memory["id"], "access": "write"}]
     add = {"memory": "facts", "text": "prefers window seats"}
@@ -251,7 +246,7 @@ async def test_a_run_recalls_records_and_writes_through_the_record_tools(stack, 
 
 async def test_a_failing_recall_does_not_fail_the_run(stack, mem0) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     memory = await record_memory(api, mem0, "facts", "likes green tea")
     expect(await mem0.put("/fixture/failing", json={"operations": ["search"]}), 200)
     await model.say("No memories today.", to="[norecall]")
@@ -267,7 +262,7 @@ async def test_deleting_a_record_memory_purges_its_namespace_through_the_outbox(
     api = stack.api
     memory = await record_memory(api, mem0, "facts", "likes green tea", "lives in Lisbon")
     kept = await record_memory(api, mem0, "other", "never purged")
-    path = f"{api.path}/memories/{memory['id']}"
+    path = f"/api/v1/memories/{memory['id']}"
     expect(await api.client.delete(path, headers={"if-match": (await api.client.get(path)).headers["etag"]}), 204)
 
     async def purged() -> bool:

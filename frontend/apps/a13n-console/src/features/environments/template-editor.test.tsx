@@ -10,7 +10,10 @@ const state = vi.hoisted(() => ({
   POST: vi.fn(),
 }));
 vi.mock("../../auth/context", () => ({
-  useClient: () => ({ http: state }),
+  useClient: () => ({ http: state, workspace: () => state }),
+}));
+vi.mock("../../layout/workspace", () => ({
+  useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -39,11 +42,7 @@ it("keeps a failed template list query out of the create dialog", async () => {
     .catch(() => undefined);
   render(
     <QueryClientProvider client={cache}>
-      <TemplateEditor
-        scope={{ kind: "workspace", id: "ws_test" }}
-        controlledOpen
-        onClose={vi.fn()}
-      />
+      <TemplateEditor controlledOpen onClose={vi.fn()} />
     </QueryClientProvider>,
   );
   expect(await screen.findByText("Template configuration editor")).toBeTruthy();
@@ -54,7 +53,7 @@ it("keeps a failed template list query out of the create dialog", async () => {
 it("keeps settings drafts across tabs and saves against the original version", async () => {
   const template = {
     id: "et_test",
-    workspace_id: "ws_test",
+
     key: "original",
     name: "Original template",
     description: "Original description",
@@ -79,12 +78,7 @@ it("keeps settings drafts across tabs and saves against the original version", a
         })
       }
     >
-      <TemplateEditor
-        scope={{ kind: "workspace", id: "ws_test" }}
-        templateId={template.id}
-        controlledOpen
-        onClose={close}
-      />
+      <TemplateEditor templateId={template.id} controlledOpen onClose={close} />
     </QueryClientProvider>,
   );
   await user.click(await screen.findByRole("tab", { name: "Settings" }));
@@ -104,10 +98,10 @@ it("keeps settings drafts across tabs and saves against the original version", a
   ).toBe("Unsaved draft");
   await user.click(screen.getByRole("switch", { name: "Archived" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
-  const path = { workspace_id: "ws_test", template_id: template.id };
+  const path = { template_id: template.id };
   await waitFor(() =>
     expect(state.PATCH).toHaveBeenCalledWith(
-      "/api/v1/workspaces/{workspace_id}/environment-templates/{template_id}",
+      "/api/v1/environment-templates/{template_id}",
       {
         params: { path },
         headers: { "If-Match": '"version-1"' },

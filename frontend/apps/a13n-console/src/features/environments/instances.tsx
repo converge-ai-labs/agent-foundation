@@ -36,18 +36,17 @@ import { EnvironmentPanel } from "./instance-details";
 /** The environments that exist right now, with their lifecycle state. */
 export function EnvironmentInstances() {
   const client = useClient(),
-    { workspace, organization, can } = useWorkspace(),
+    { workspace, can } = useWorkspace(),
     { t } = useTranslation(),
     page = useCursor(),
     [selected, setSelected] = useState<Schema["EnvironmentView"]>();
-  const scope = { kind: "workspace", id: workspace.id } as const;
   const query = useQuery({
     queryKey: ["environments", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/environments", {
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/environments", {
           params: {
-            path: { workspace_id: workspace.id },
             query: { cursor: page.cursor },
           },
           signal,
@@ -56,13 +55,10 @@ export function EnvironmentInstances() {
     refetchInterval: 15_000,
   });
   const providers = useQuery({
-    queryKey: ["environment-provider-options", "workspace", workspace.id],
+    queryKey: ["environment-provider-options", workspace.id],
     queryFn: ({ signal }) =>
       allPages((cursor) =>
-        environmentApi(client, organization.id, scope).providers(
-          signal,
-          cursor,
-        ),
+        environmentApi(client, workspace.id).providers(signal, cursor),
       ),
     enabled: can("read"),
   });
@@ -243,9 +239,9 @@ function EnvironmentForm({ close }: { close: () => void }) {
         token,
         ...named,
       };
-      return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/environments", {
-          params: { path: { workspace_id: workspace.id } },
+      return client
+        .workspace(workspace.id)
+        .POST("/api/v1/environments", {
           body,
         })
         .then(data);

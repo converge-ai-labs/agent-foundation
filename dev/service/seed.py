@@ -24,7 +24,7 @@ from dev.service.seed_lifecycle import revise_after_runs
 from dev.service.seed_local import seed_local, stopped_environment
 from dev.service.seed_memories import recorded, remembered, seed_memories
 from dev.service.seed_providers import seed_providers
-from dev.service.seed_resources import seed_configuration, seed_skills, seed_subscription
+from dev.service.seed_resources import seed_skills, seed_subscription, seed_templates
 
 # The Service's default `worker.slots`: more parallel conversations would only queue.
 PARALLEL_CONVERSATIONS = 4
@@ -32,42 +32,44 @@ PARALLEL_CONVERSATIONS = 4
 
 @dataclass(frozen=True, slots=True)
 class Seeded:
-    organization: str  # API path
-    workspace: str  # API path
+    organization: str  # ID
+    workspace: str  # ID
     index: dict[str, str]  # IDs of what the report names
 
 
 def seed(api: Api, model_url: str, environments: Path) -> Seeded:
     """Seed the default workspace and its organization; `environments` holds the `local` environments."""
-    workspace = api.get("/api/v1/workspaces/default")
+    workspace = api.first_workspace()
+    api.workspace_id = workspace["id"]
     org, ws = f"/api/v1/organizations/{workspace['organization_id']}", f"/api/v1/workspaces/{workspace['id']}"
     index = seed_identity(api, org, ws)
-    providers = seed_providers(api, org, workspace["id"])
-    local = seed_local(api, org, ws, model_url, environments)
-    skills = seed_skills(api, ws)
-    seed_configuration(api, ws, providers["environment"], local.template)
-    subscription = seed_subscription(api, ws, model_url)
-    connections = seed_connections(api, ws, model_url, providers["connector"]["composio"])
+    providers = seed_providers(api)
+    local = seed_local(api, model_url, environments)
+    skills = seed_skills(api)
+    seed_templates(api, providers["environment"], local.template)
+    subscription = seed_subscription(api, model_url)
+    connections = seed_connections(api, model_url, providers["connector"]["composio"])
     search = providers["web"]["brave"]
-    cast = seed_agents(api, ws, local, skills, connections["ready"], search)
-    memories = seed_memories(api, org, ws, local.model, model_url)
-    assets = {example.name: store(api, ws, example) for example in examples()}
-    talk = Talk(api, ws)
+    cast = seed_agents(api, local, connections["ready"], search, skills)
+    memories = seed_memories(api, local.model, model_url)
+    assets = {example.name: store(api, example) for example in examples()}
+    talk = Talk(api)
     jobs = (
         *scenarios(talk, cast, local.environment, assets),
         partial(remembered, talk, memories),
         partial(recorded, talk, memories),
-        partial(stopped_environment, api, ws, local.template),
+        partial(stopped_environment, api, local.template),
     )
     with ThreadPoolExecutor(PARALLEL_CONVERSATIONS) as pool:
         for found in pool.map(lambda job: job(), jobs):
             index |= found
-    index |= revise_after_runs(talk, cast, skills, api.get(f"{ws}/runs/{index['conversation_last_run']}"))
+    last_run = api.get(f"/api/v1/runs/{index['conversation_last_run']}")
+    index |= revise_after_runs(talk, cast, skills["release-notes"], last_run)
     # A sub-agent's result continues its parent thread after the scenario returned.
-    api.until(f"{ws}/threads?limit=100", lambda page: all(item["current_run_id"] is None for item in page["items"]))
-    deliveries = f"{ws}/subscriptions/{subscription['id']}/deliveries"
+    api.until("/api/v1/threads?limit=100", lambda page: all(item["current_run_id"] is None for item in page["items"]))
+    deliveries = f"/api/v1/subscriptions/{subscription['id']}/deliveries"
     api.until(deliveries, lambda page: any(item["status"] == "delivered" for item in page["items"]))
-    return Seeded(org, ws, index)
+    return Seeded(workspace["organization_id"], workspace["id"], index)
 
 
 def write_report(path: Path, console_url: str, seeded: Seeded, checks: Sequence[tuple[str, bool]]) -> None:

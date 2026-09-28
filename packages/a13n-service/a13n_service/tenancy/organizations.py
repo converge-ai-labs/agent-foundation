@@ -1,4 +1,4 @@
-"""Organizations: the caller's organizations, their names, keys and icons."""
+"""Organizations: the caller's organizations, their names and icons."""
 
 from collections.abc import Mapping
 
@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors, images
 from a13n_service.infra.audit import record
-from a13n_service.infra.db import Storage, assign, lock, short_session, unique_key
+from a13n_service.infra.db import Storage, assign, lock, short_session
 from a13n_service.infra.http import require_match
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.tenancy.access import Access, AdminPath, OrganizationPath, administering, resolve_organization
@@ -22,7 +22,6 @@ _UPDATE = "organization.update"
 def organization_view(row: OrganizationRow, actor: Principal) -> Organization:
     return Organization(
         id=row.id,
-        key=row.key,
         name=row.name,
         image_url=images.url(f"/api/v1/organizations/{row.id}/icon", row.image),
         version=row.version,
@@ -33,7 +32,7 @@ def organization_view(row: OrganizationRow, actor: Principal) -> Organization:
 
 
 async def list_organizations(storage: Storage, actor: Principal, *, limit: int, cursor: str | None) -> OrganizationPage:
-    """Organizations where the caller holds any grant; a workspace key sees only its own organization."""
+    """Organizations where the caller holds any grant; an API key sees only its own organization."""
     member_of = {grant.organization_id for grant in actor.grants}
     if actor.confinement is not None:
         member_of &= {actor.confinement.organization_id}
@@ -145,11 +144,10 @@ async def _lock(session: AsyncSession, organization_id: str, if_match: str | Non
 
 
 async def _save(session: AsyncSession, row: OrganizationRow, changed: list[str], *, actor_id: str) -> None:
-    """Write and audit the changed fields; a key another organization holds is `already_exists`."""
+    """Write and audit the changed fields."""
     if not changed:
         return
-    with unique_key("organization", "uq_organizations_key", row.key):
-        await session.flush()
+    await session.flush()
     record(
         session,
         Scope(row.id),

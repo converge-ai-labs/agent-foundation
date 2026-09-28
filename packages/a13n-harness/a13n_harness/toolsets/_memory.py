@@ -67,7 +67,7 @@ def _tool(function: Callable[..., Any], kind: str, key: str, spec: MemoryTool, n
     def prepare(ctx: RunContext[AgentContext], tool_def: ToolDefinition) -> ToolDefinition:
         del ctx
         schema = deepcopy(tool_def.parameters_json_schema)
-        schema["properties"]["memory"]["enum"] = names
+        schema["properties"]["memory"]["enum"] = names.copy()
         return replace(tool_def, parameters_json_schema=schema)
 
     tool = HarnessTool(

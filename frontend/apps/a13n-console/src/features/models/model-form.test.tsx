@@ -23,15 +23,16 @@ const state = vi.hoisted(() => ({
 vi.mock("../../auth/context", () => ({
   useClient: () => ({
     http: { GET: state.GET, POST: state.POST, PATCH: state.PATCH },
+    workspace: () => ({ GET: state.GET, POST: state.POST, PATCH: state.PATCH }),
   }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useAccess: () => ({
+  useWorkspace: () => ({
     organization: { id: "org_test" },
-    workspace: { key: "workspace-test" },
+    workspace: { id: "ws_test" },
   }),
 }));
 const provider = {
@@ -113,8 +114,6 @@ const compatibleEntry = {
   pricing_warning: null,
 };
 const model = {
-  id: "mdl_test",
-  organization_id: "org_test",
   workspace_id: "ws_test",
   provider_id: "mprov_test",
   key: "smart",
@@ -131,9 +130,8 @@ const model = {
   enabled: true,
   version: 3,
 };
-const response = () =>
-  new Response(null, { headers: { ETag: '"mdl_test:3"' } });
-function mount(ids: { providerId?: string; modelId?: string } = {}) {
+const response = () => new Response(null, { headers: { ETag: '"smart:3"' } });
+function mount(ids: { providerId?: string; modelKey?: string } = {}) {
   render(
     <QueryClientProvider
       client={
@@ -143,17 +141,12 @@ function mount(ids: { providerId?: string; modelId?: string } = {}) {
       }
     >
       <MemoryRouter>
-        <ModelEditor
-          scope={{ kind: "workspace", id: "ws_test" }}
-          {...ids}
-          controlledOpen
-          onClose={state.close}
-        />
+        <ModelEditor {...ids} controlledOpen onClose={state.close} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
-const modelsPath = "/api/v1/organizations/{organization_id}/models";
+const modelsPath = "/api/v1/models";
 
 beforeEach(() => {
   state.catalog = {
@@ -168,14 +161,14 @@ beforeEach(() => {
         ? { items: state.types, next_cursor: null }
         : path === "/api/v1/model-catalog"
           ? state.catalog
-          : path.endsWith("{model_id}")
+          : path.endsWith("{key}")
             ? model
             : { items: state.providers, next_cursor: null },
     response: response(),
   }));
   state.POST.mockImplementation(
     async (_path: string, args: { body?: unknown }) => ({
-      data: { id: "mdl_test", ...(args.body as object) },
+      data: { ...(args.body as object) },
       response: response(),
     }),
   );
@@ -222,9 +215,7 @@ it("creates a manual model with JSON request defaults in its configuration", asy
   await user.click(screen.getByRole("button", { name: "Add model" }));
   await waitFor(() =>
     expect(state.POST).toHaveBeenCalledWith(modelsPath, {
-      params: { path: { organization_id: "org_test" } },
       body: {
-        workspace_id: "ws_test",
         provider_id: "mprov_test",
         key: "smart",
         name: "Smart",
@@ -275,7 +266,7 @@ it("keeps the catalog identity and price for an edited gateway upstream ID", asy
       modelsPath,
       expect.objectContaining({
         body: expect.objectContaining({
-          key: "gpt-5-5",
+          key: null,
           name: "GPT-5.5",
           config: expect.objectContaining({
             model_name: "company-smart",
@@ -306,11 +297,9 @@ it("applies a newly selected model immediately, including its catalog values", a
   await user.click(screen.getByRole("button", { name: "Add model" }));
   await waitFor(() =>
     expect(state.POST).toHaveBeenCalledWith(modelsPath, {
-      params: { path: { organization_id: "org_test" } },
       body: {
-        workspace_id: "ws_test",
         provider_id: "mprov_test",
-        key: "gpt-5-5",
+        key: null,
         name: "GPT-5.5",
         description: "",
         enabled: true,
@@ -356,7 +345,7 @@ it("uses the official model price for an OpenAI-compatible connection", async ()
       modelsPath,
       expect.objectContaining({
         body: expect.objectContaining({
-          key: "minimax-m3",
+          key: null,
           config: expect.objectContaining({
             model_name: "gateway-minimax-m3",
             model_api: "openai.chat_completions",
@@ -450,7 +439,7 @@ it("lets the reader enter a model ID when the catalog is unavailable", async () 
 });
 
 it("saves an edited model under its ETag without offering a billable test", async () => {
-  mount({ modelId: "mdl_test" });
+  mount({ modelKey: "smart" });
   const user = userEvent.setup();
   const name = await screen.findByLabelText("Name");
   expect(screen.queryByRole("button", { name: "Check connection" })).toBeNull();
@@ -465,11 +454,11 @@ it("saves an edited model under its ETag without offering a billable test", asyn
   await user.click(screen.getByRole("switch", { name: "Enabled" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() =>
-    expect(state.PATCH).toHaveBeenCalledWith(`${modelsPath}/{model_id}`, {
+    expect(state.PATCH).toHaveBeenCalledWith(`${modelsPath}/{key}`, {
       params: {
-        path: { organization_id: "org_test", model_id: "mdl_test" },
+        path: { key: "smart" },
       },
-      headers: { "If-Match": '"mdl_test:3"' },
+      headers: { "If-Match": '"smart:3"' },
       body: {
         name: "Smarter",
         description: "Company gateway model",

@@ -102,6 +102,40 @@ def test_upstream_profiles_and_host_prerequisites_limit_candidates():
     assert [choice.key for choice in tool_choices("openai-responses:custom") if choice.recommended] == []
 
 
+@pytest.mark.parametrize(
+    "route,module",
+    [
+        ("openai-chat:gpt-5", None),
+        ("custom:unknown", None),
+        ("openai-responses:gpt-5", "openai"),
+        ("anthropic:claude-sonnet-4-6", "anthropic"),
+        ("google:gemini-3.1-pro-preview", "google"),
+        ("openrouter:openai/gpt-5", "openrouter"),
+        ("xai:grok-4.6", "xai"),
+    ],
+)
+def test_native_choices_import_only_the_selected_adapter(route, module, monkeypatch):
+    import builtins
+
+    from a13n_harness_ui import tool_presets
+
+    original_import = builtins.__import__
+    imported = []
+
+    def observe_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if globals is tool_presets.__dict__ and name.startswith("pydantic_ai.models."):
+            imported.append(name)
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", observe_import)
+    choices = tool_choices(route, authentication="api_key")
+    assert imported == ([] if module is None else [f"pydantic_ai.models.{module}"])
+    if module is None:
+        assert choices == ()
+    else:
+        assert choices
+
+
 def test_google_file_search_requires_deselecting_other_native_tools():
     model = ModelResource.model_validate(
         {

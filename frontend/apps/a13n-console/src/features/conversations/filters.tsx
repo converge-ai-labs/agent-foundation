@@ -88,10 +88,10 @@ export function SessionFilterBar({
     staleTime: 60_000,
     queryFn: ({ signal }) =>
       allPages((cursor) =>
-        client.http
-          .GET("/api/v1/workspaces/{workspace_id}/agents", {
+        client
+          .workspace(workspace.id)
+          .GET("/api/v1/agents", {
             params: {
-              path: { workspace_id: workspace.id },
               query: { cursor, limit: 100 },
             },
             signal,

@@ -30,10 +30,10 @@ export function usedByQuery(
   return queryOptions({
     queryKey: ["skills", skill.workspace_id, skill.id, "used-by", cursor],
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/agents", {
+      client
+        .workspace(skill.workspace_id)
+        .GET("/api/v1/agents", {
           params: {
-            path: { workspace_id: skill.workspace_id },
             query: { skill_id: skill.id, archived: false, cursor },
           },
           signal,
@@ -77,9 +77,9 @@ export function UsedByAgents({ skill }: { skill: Schema["Skill"] }) {
               />
             }
             name={
-              <Link to={`${basePath}/agents/${agent.key}`}>{agent.name}</Link>
+              <Link to={`${basePath}/agents/${agent.id}`}>{agent.name}</Link>
             }
-            secondary={agent.key}
+            secondary={agent.id}
           />
         ))}
       </ListRows>

@@ -10,12 +10,12 @@ import { MemoriesPage } from "./page";
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/workspace/design",
+    basePath: "/workspace/ws_1",
     organization: { id: "org_1" },
-    workspace: { id: "ws_1", key: "design" },
+    workspace: { id: "ws_1" },
     can: (verb: string) => permissions.includes(verb),
   }),
-  useAccess: () => ({ workspace: { id: "ws_1", key: "design" } }),
+  useAccess: () => ({ workspace: { id: "ws_1" } }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -36,7 +36,7 @@ afterEach(() => {
 
 const handbook = {
   id: "mem_1",
-  key: "handbook",
+
   name: "Team handbook",
   description: null,
   kind: "file",
@@ -50,7 +50,7 @@ const handbook = {
 const facts = {
   ...handbook,
   id: "mem_2",
-  key: "facts",
+
   name: "Team facts",
   kind: "record",
   type: "mem0_oss",
@@ -64,8 +64,7 @@ const provider = (id: string, name: string, enabled = true) => ({
   name,
   enabled,
   type: "mem0_oss",
-  organization_id: "org_1",
-  workspace_id: null,
+  workspace_id: "ws_1",
 });
 
 function setup(
@@ -92,7 +91,7 @@ function setup(
       return Response.json({
         items: [{ type: "mem0_oss", display_name: "Mem0 (self-hosted)" }],
       });
-    if (url.pathname === "/api/v1/organizations/org_1/memory-providers")
+    if (url.pathname === "/api/v1/memory-providers")
       return Response.json({ items: providers, next_cursor: null });
     const { searchParams } = url;
     return Response.json({
@@ -114,14 +113,14 @@ function setup(
   });
   render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={["/workspace/design/memories"]}>
+      <MemoryRouter initialEntries={["/workspace/ws_1/memories"]}>
         <Routes>
           <Route
-            path="/workspace/:workspaceKey/memories"
+            path="/workspace/:workspaceId/memories"
             element={<MemoriesPage />}
           />
           <Route
-            path="/workspace/:workspaceKey/memories/:memoryId"
+            path="/workspace/:workspaceId/memories/:memoryId"
             element={<p>Memory detail</p>}
           />
         </Routes>
@@ -170,7 +169,7 @@ it("offers creation from the empty state only to people who may configure memori
   expect(screen.queryByRole("button", { name: "Create memory" })).toBeNull();
 });
 
-it("creates a memory with a key suggested from its name", async () => {
+it("creates a memory identified by its ID", async () => {
   const { user, requests } = setup([]);
   await screen.findByText("No memories yet");
   await user.click(
@@ -181,10 +180,7 @@ it("creates a memory with a key suggested from its name", async () => {
     within(dialog).getByRole("textbox", { name: "Name" }),
     "Team Handbook",
   );
-  expect(
-    (within(dialog).getByRole("textbox", { name: "Key" }) as HTMLInputElement)
-      .value,
-  ).toBe("team-handbook");
+  expect(within(dialog).queryByRole("textbox", { name: "Key" })).toBeNull();
   await user.click(within(dialog).getByRole("button", { name: "Custom" }));
   await user.type(
     within(dialog).getByRole("textbox", { name: "Guide" }),
@@ -199,7 +195,6 @@ it("creates a memory with a key suggested from its name", async () => {
   );
   await screen.findByText("Memory detail");
   expect(requests.find((item) => item.method === "POST")?.body).toEqual({
-    key: "team-handbook",
     type: "postgres",
     name: "Team Handbook",
     description: null,
@@ -253,7 +248,6 @@ it("creates a record memory on an enabled provider, adopting a namespace", async
   );
   await screen.findByText("Memory detail");
   expect(requests.find((item) => item.method === "POST")?.body).toEqual({
-    key: "team-facts",
     type: "mem0_oss",
     provider_id: "memprov_1",
     namespace: "user-42",
@@ -282,7 +276,7 @@ it("points to provider settings when no memory provider is enabled", async () =>
     within(dialog)
       .getByRole("link", { name: "Manage providers" })
       .getAttribute("href"),
-  ).toBe("/workspace/design/settings/providers?category=memory");
+  ).toBe("/workspace/ws_1/settings/providers?category=memory");
   expect(
     (
       within(dialog).getByRole("button", {

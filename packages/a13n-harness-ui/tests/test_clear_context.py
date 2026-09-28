@@ -81,7 +81,13 @@ async def test_clear_context_retains_history_but_restarts_model_and_working_stat
         ) == transcript_content(history.entries)
         assert (await app.thread_notes(thread_id=thread.thread_id)).total == 0
         assert (await app.thread_tasks(thread_id=thread.thread_id)).total == 0
-        assert (await app.context_usage(thread.thread_id)).latest_request_tokens is None
+
+        async def unexpected_usage_read(*, thread_id):
+            pytest.fail("Cleared context must not scan retained usage that it will discard.")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(app._store.usage, "latest_root_request", unexpected_usage_read)
+            assert (await app.context_usage(thread.thread_id)).latest_request_tokens is None
         selected = await app._store.threads.get(thread.thread_id)
         assert selected is not None and selected.continuation is not None
         stored = await app._store.objects.read_model(selected.continuation, StoredContinuation)
@@ -95,6 +101,9 @@ async def test_clear_context_retains_history_but_restarts_model_and_working_stat
         assert transcript_content(
             (await app.get_thread_transcript(thread_id=thread.thread_id)).entries
         ) == transcript_content(history.entries)
+        with monkeypatch.context() as patch:
+            patch.setattr(app._store.usage, "latest_root_request", unexpected_usage_read)
+            assert (await app.context_usage(thread.thread_id)).latest_request_tokens is None
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Fresh prompt")
         assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
         assert len(calls) == 3

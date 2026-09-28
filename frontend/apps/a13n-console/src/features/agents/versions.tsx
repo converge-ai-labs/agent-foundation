@@ -15,7 +15,7 @@ import {
 import { Confirm } from "../../shared/dialogs";
 import { JsonView } from "../../shared/forms";
 import { useAgentComposer } from "./composer";
-import { editableAgent, useModelsById } from "./queries";
+import { editableAgent, useModelsByKey } from "./queries";
 import styles from "../../shared/shared.module.css";
 
 export function AgentVersions({
@@ -33,19 +33,19 @@ export function AgentVersions({
     cache = useQueryClient(),
     page = useCursor(),
     composer = useAgentComposer(),
-    models = useModelsById();
+    models = useModelsByKey();
   const [selected, setSelected] = useState<Schema["AgentRevision"]>();
   // Revisions name their model by ID; versions show the model's key.
   const modelKey = (revision: Schema["AgentRevision"]) =>
-    models.get(revision.config.model.model_id)?.key ??
-    revision.config.model.model_id;
+    models.get(revision.config.model)?.key ?? revision.config.model;
   const query = useQuery({
     queryKey: ["agent-revisions", workspace.id, agent.id, page.cursor],
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/agents/{agent_id}/revisions", {
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/agents/{agent_id}/revisions", {
           params: {
-            path: { workspace_id: workspace.id, agent_id: agent.id },
+            path: { agent_id: agent.id },
             query: { cursor: page.cursor, limit: 20 },
           },
           signal,
@@ -119,13 +119,13 @@ export function AgentVersions({
                           "Version information is unavailable. Reload this page.",
                         ),
                       );
-                    await client.http
+                    await client
+                      .workspace(workspace.id)
                       .POST(
-                        "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/revisions/{revision_id}/set-default",
+                        "/api/v1/agents/{agent_id}/revisions/{revision_id}/set-default",
                         {
                           params: {
                             path: {
-                              workspace_id: workspace.id,
                               agent_id: agent.id,
                               revision_id: item.id,
                             },

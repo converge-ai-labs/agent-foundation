@@ -576,9 +576,10 @@ class ThreadProjectionService:
         assert inspection.run_composition is not None
         composition = await self._store.objects.read_model(inspection.run_composition, ResolvedRunComposition)
         latest = inspection.latest_request_tokens
-        observed = await self._store.usage.latest_root_request(thread_id=thread_id)
-        if observed is not None and not inspection.context_empty:
-            latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
+        if not inspection.context_empty:
+            observed = await self._store.usage.latest_root_request(thread_id=thread_id)
+            if observed is not None:
+                latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
         model = composition.root.model
         from a13n_harness_ui.model_thinking import summarize_thinking
 

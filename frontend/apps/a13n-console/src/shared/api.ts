@@ -37,9 +37,8 @@ export async function uploadFile(
   key: string,
 ): Promise<Schema["Upload"]> {
   return data(
-    await client.http.POST("/api/v1/workspaces/{workspace_id}/uploads", {
+    await client.workspace(workspaceId).POST("/api/v1/uploads", {
       params: {
-        path: { workspace_id: workspaceId },
         header: commandHeaders(key),
       },
       body: { file },

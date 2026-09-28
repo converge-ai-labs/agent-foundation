@@ -69,9 +69,14 @@ it("loads file identity but downloads authenticated content only on request", as
   await user.click(screen.getByRole("button", { name: "Download review.md" }));
   await waitFor(() => expect(downloadBlob).toHaveBeenCalledOnce());
   expect(new URL(requests[1]!.url).pathname).toBe(
-    "/api/v1/workspaces/workspace/assets/ast_fixture/content",
+    "/api/v1/assets/ast_fixture/content",
   );
   expect(vi.mocked(downloadBlob).mock.calls[0]?.[1]).toBe("review.md");
+  expect(
+    requests.every(
+      (request) => request.headers.get("X-Workspace-ID") === "workspace",
+    ),
+  ).toBe(true);
 });
 
 it("retains the asset reference without reading or downloading when permission is absent", () => {

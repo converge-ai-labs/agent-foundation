@@ -9,7 +9,8 @@ export function ResourceModalTitle({
   icon,
 }: {
   name: string;
-  id: string;
+  /** Omitted for resources identified by key alone. */
+  id?: string;
   resourceKey?: string;
   /** A brand or built-in mark, framed the way a creation step frames it. */
   icon?: ReactNode;
@@ -20,7 +21,7 @@ export function ResourceModalTitle({
         {name}
       </span>
       {resourceKey && <ResourceKeyChip value={resourceKey} />}
-      <ResourceReference id={id} />
+      {id && <ResourceReference id={id} />}
     </span>
   );
   return icon ? (

@@ -12,7 +12,9 @@ const http = vi.hoisted(() => ({
   POST: vi.fn(),
   PATCH: vi.fn(),
 }));
-vi.mock("../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../layout/workspace", () => ({
   useWorkspace: () => ({
     basePath: "/workspace/design",
@@ -52,33 +54,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// The scope only changes the body's workspace_id, so each surface takes the
-// other scope in the edit journey instead of repeating both journeys per scope.
-const createCases = [
-  { kind: "workspace", surface: "connector" },
-  { kind: "organization", surface: "environment" },
-  { kind: "workspace", surface: "memory" },
-] as const;
-const editCases = [
-  { kind: "organization", surface: "connector" },
-  { kind: "workspace", surface: "environment" },
-  { kind: "organization", surface: "memory" },
-] as const;
+const surfaces = ["connector", "environment", "memory"] as const;
 
-function setup(
-  kind: "workspace" | "organization",
-  surface: string,
-  overrides: Record<string, unknown> = {},
-) {
+function setup(surface: string, overrides: Record<string, unknown> = {}) {
   const connector = surface === "connector";
-  const scope = { kind, id: kind === "workspace" ? "ws_test" : "org_test" };
   const type = { connector: "composio", environment: "e2b" }[surface] ?? "mem0";
   const provider = {
     id: `${surface}_test`,
     name: "Existing provider",
     type,
-    organization_id: "org_test",
-    workspace_id: kind === "workspace" ? "ws_test" : null,
+    workspace_id: "ws_test",
     config: {},
     enabled: true,
     version: 3,
@@ -103,7 +88,7 @@ function setup(
     },
     ...overrides,
   };
-  const listPath = `/api/v1/organizations/{organization_id}/${surface}-providers`;
+  const listPath = `/api/v1/${surface}-providers`;
   const detailPath = `${listPath}/{provider_id}`;
   // The Service's strong ETag of the provider's `{id, version}`.
   const response = () =>
@@ -127,22 +112,22 @@ function setup(
   render(
     <QueryClientProvider client={cache}>
       {connector ? (
-        <ConnectorProviders scope={scope} />
+        <ConnectorProviders />
       ) : surface === "memory" ? (
-        <MemoryProviders scope={scope} />
+        <MemoryProviders />
       ) : (
-        <EnvironmentProviders scope={scope} />
+        <EnvironmentProviders />
       )}
     </QueryClientProvider>,
   );
   return { connector, type, listPath, detailPath, provider };
 }
 
-it.each(createCases)(
-  "creates a $kind $surface provider after loading the first list page",
-  async ({ kind, surface }) => {
+it.each(surfaces)(
+  "creates a workspace %s provider after loading the first list page",
+  async (surface) => {
     const user = userEvent.setup();
-    const { connector, type, listPath, detailPath } = setup(kind, surface);
+    const { connector, type, listPath, detailPath } = setup(surface);
     await screen.findByText("Existing provider");
     await user.click(screen.getByRole("button", { name: "Add provider" }));
     // Every category starts creation from the provider catalog.
@@ -177,9 +162,7 @@ it.each(createCases)(
       expect(http.POST).toHaveBeenCalledWith(
         listPath,
         expect.objectContaining({
-          params: { path: { organization_id: "org_test" } },
           body: {
-            workspace_id: kind === "workspace" ? "ws_test" : null,
             name: "New provider",
             type,
             config: {},
@@ -202,11 +185,11 @@ it.each(createCases)(
   },
 );
 
-it.each(editCases)(
-  "edits the exact $kind $surface provider after loading the list",
-  async ({ kind, surface }) => {
+it.each(surfaces)(
+  "edits the exact workspace %s provider after loading the list",
+  async (surface) => {
     const user = userEvent.setup();
-    const { connector, detailPath, provider } = setup(kind, surface);
+    const { connector, detailPath, provider } = setup(surface);
     await screen.findByText("Existing provider");
     // Every provider surface carries the shared row overflow menu.
     expect(screen.getByRole("columnheader", { name: "Actions" })).toBeTruthy();
@@ -235,7 +218,7 @@ it.each(editCases)(
         detailPath,
         expect.objectContaining({
           params: {
-            path: { organization_id: "org_test", provider_id: provider.id },
+            path: { provider_id: provider.id },
           },
           headers: { "If-Match": `"${provider.id}:3"` },
           body: { name: "Renamed provider", enabled: true },
@@ -248,7 +231,7 @@ it.each(editCases)(
 
 it("checks a saved environment provider's connection with its read-only probe", async () => {
   const user = userEvent.setup();
-  const { detailPath, provider } = setup("workspace", "environment", {
+  const { detailPath, provider } = setup("environment", {
     supports_test: true,
   });
   await screen.findByText("Existing provider");
@@ -268,7 +251,7 @@ it("checks a saved environment provider's connection with its read-only probe", 
   expect(await screen.findByText("provider_unavailable")).toBeTruthy();
   expect(http.POST).toHaveBeenCalledWith(`${detailPath}/test`, {
     params: {
-      path: { organization_id: "org_test", provider_id: provider.id },
+      path: { provider_id: provider.id },
     },
   });
   // An unsaved draft is not what the probe would check.
@@ -284,7 +267,7 @@ it("checks a saved environment provider's connection with its read-only probe", 
 
 it("saves connector name, credentials and enabled state in one atomic update", async () => {
   const user = userEvent.setup();
-  const { detailPath, provider } = setup("workspace", "connector");
+  const { detailPath, provider } = setup("connector");
   const response = new Response(null);
   http.PATCH.mockResolvedValue({
     data: { ...provider, name: "Renamed", version: 4 },
@@ -318,7 +301,7 @@ it("saves connector name, credentials and enabled state in one atomic update", a
 
 it("preserves structured Connector credentials and setup help", async () => {
   const user = userEvent.setup();
-  const { listPath } = setup("workspace", "connector", {
+  const { listPath } = setup("connector", {
     setup_url: "https://example.com/keys",
     setup_label: "Create Connector credentials",
     credential_schema: {
@@ -366,7 +349,7 @@ it("preserves structured Connector credentials and setup help", async () => {
 
 it("allows explicit removal of required Connector credentials", async () => {
   const user = userEvent.setup();
-  const { detailPath } = setup("workspace", "connector");
+  const { detailPath } = setup("connector");
   await user.click(await screen.findByText("Existing provider"));
   await user.click(await screen.findByRole("button", { name: "Remove" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));

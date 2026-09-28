@@ -8,11 +8,7 @@ import { useClient } from "../../auth/context";
 import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
-import {
-  connectionPath,
-  requireTestSuccess,
-  testConnection,
-} from "../connections/api";
+import { requireTestSuccess, testConnection } from "../connections/api";
 import styles from "../../shared/shared.module.css";
 import mcp from "./mcp.module.css";
 
@@ -35,17 +31,15 @@ export function MCPAuthorization({
   const credentials = useMutation({
     gcTime: 0,
     mutationFn: () =>
-      client.http
-        .PATCH(
-          "/api/v1/workspaces/{workspace_id}/connections/{connection_id}",
-          {
-            params: { path: connectionPath(basis) },
-            headers: ifMatch(rowTag(basis)),
-            body: {
-              credential: mode === "bearer" ? { token: bearer } : { headers },
-            },
+      client
+        .workspace(basis.workspace_id)
+        .PATCH("/api/v1/connections/{connection_id}", {
+          params: { path: { connection_id: basis.id } },
+          headers: ifMatch(rowTag(basis)),
+          body: {
+            credential: mode === "bearer" ? { token: bearer } : { headers },
           },
-        )
+        })
         .then(data),
     onSuccess: () => {
       setBearer("");

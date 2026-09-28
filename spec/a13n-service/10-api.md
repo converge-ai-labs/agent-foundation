@@ -13,7 +13,7 @@ Resource routes are served by the `all` and `control` roles; the `worker` role s
 Every route requires a credential except the health routes, the OpenAPI document (`/api/v1/openapi.json`), the API docs (`/api/v1/docs` and `/api/v1/docs/oauth2-redirect`) and the public account flows: authentication configuration, login, bootstrap while the Service is uninitialized ([03](03-tenancy.md#bootstrap)), password-reset request and confirmation, email-change confirmation, invitation acceptance and the connection OAuth callback. [03](03-tenancy.md#authentication) owns the credentials:
 
 - **Login session.** `POST /auth/login` sets the `__Host-a13n_session` cookie, or `a13n_session` when `server.public_url` is plain HTTP ([03](03-tenancy.md#authentication)). A cookie request with a method other than GET, HEAD or OPTIONS must send `X-CSRF-Token`, and a present `Origin` must be a public origin of `server.public_url`; either failure is 403 `forbidden`. Login and the other public account `POST`s check `Origin` the same way.
-- **API key.** `Authorization: Bearer a13n_…`. A key is confined to exactly one workspace and holds only its principal's current verbs there, and at most `read` and `run` on organization-shared resources; account operations, issuing API keys or invitations and browser authorizations need a login session (403 `forbidden`, [03](03-tenancy.md#authorization)). When an `Authorization` header is present the cookie is ignored.
+- **API key.** `Authorization: Bearer a13n_…`. A key is confined to exactly one workspace and holds only its principal's current verbs there, and at most `read` on its organization; account operations, issuing API keys or invitations and browser authorizations need a login session (403 `forbidden`, [03](03-tenancy.md#authorization)). When an `Authorization` header is present the cookie is ignored.
 
 A missing or dead credential is 401 `unauthenticated`. Every authenticated response, a route's own response and an error after authentication included, carries `Cache-Control: no-store` (stored content keeps its own `private, no-store`, [representations](#representations)) and any renewed login cookie.
 
@@ -21,9 +21,9 @@ While the distribution keeps the local authenticator, the OpenAPI document decla
 
 ### Paths and scope
 
-- An organization path takes the organization ID. A workspace path takes the workspace ID or key; agent and skill paths take the head's ID or key, and an ID match wins. Every other path segment is an ID.
+- Only administration names its scope in the path: an organization path takes the organization ID, a workspace path the workspace ID. Account and public routes and the deployment-wide reads marked in the [route index](#route-index) act in no workspace. Every other route acts in one workspace, the API key's own or, for a login session, the one `X-Workspace-ID` names by ID; a login session without it is 400 `invalid_argument`, and an API key naming another workspace is 403 `forbidden` ([03](03-tenancy.md#authorization)). The OpenAPI document declares `X-Workspace-ID` on every route that acts in a workspace, as optional because an API key need not send it.
+- A model path segment is its key ([04](04-resources.md#keys)); every other segment is an ID.
 - Path resolution conceals other tenants, and every route authorizes its scope before it resolves a supplied ID, on replay and content routes too ([03](03-tenancy.md#authorization)).
-- Provider resources and models live in organization collections. Each row has a `workspace_id`, NULL when the organization shares it, and lists filter by `workspace_id`; there are no workspace-mirrored provider routes, and a connector provider's app catalogue is the only provider read under a workspace ([04](04-resources.md#provider-resources)).
 - A command that is not create, read, update or delete is `POST …/{id}/{verb}` with an imperative verb (`archive`, `interrupt`, `resume`, `set-default`, `test`, `redeliver`). A check that stores nothing is `POST …/{collection}/validate`.
 
 ### Representations
@@ -50,7 +50,7 @@ Some reads are bounded catalogues and return all their items with `next_cursor: 
 
 ### Preconditions
 
-Every mutable resource has a `version` that a database trigger advances on each change; an update that changes nothing, or changes only bookkeeping columns its table declares unversioned, keeps it ([04](04-resources.md#rules-every-kind-follows)). A resource's strong ETag is the quoted `"{id}:{version}"` of its view, so a client may form `If-Match` from any view, including a list row, without reading the item again; a response that represents one versioned resource also carries it in `ETag`. Rows without a version are immutable or have their own precondition: revisions, audit events, grants, members, login sessions, webhook deliveries and spans. Inbox entries and thread mounts are edited under the thread's ETag, which the mount routes also return in `ETag`.
+Every mutable resource has a `version` that a database trigger advances on each change; an update that changes nothing, or changes only bookkeeping columns its table declares unversioned, keeps it ([04](04-resources.md#rules-every-kind-follows)). A resource's strong ETag is the quoted `"{id}:{version}"` of its view, `"{key}:{version}"` for a model, so a client may form `If-Match` from any view, including a list row, without reading the item again; a response that represents one versioned resource also carries it in `ETag`. Rows without a version are immutable or have their own precondition: revisions, audit events, grants, members, login sessions, webhook deliveries and spans. Inbox entries and thread mounts are edited under the thread's ETag, which the mount routes also return in `ETag`.
 
 Every conditional route declares the `If-Match` header (at most 512 characters). The OpenAPI document marks the header optional, but the server requires it: a missing header is 428 `precondition_required` (details `{header: "If-Match"}`) and a stale one is 412 `precondition_failed` (details `{current_etag}`). These state changes take no `If-Match`:
 
@@ -99,7 +99,7 @@ Every failure, including a request no route answers, answers in one envelope; `/
 
 ## Route index
 
-Paths are relative to `/api/v1` unless they start at the root. `{org}` is an organization ID and `{ws}` a workspace ID or key.
+Paths are relative to `/api/v1` unless they start at the root. `{org}` is an organization ID and `{ws}` a workspace ID. Account, public and deployment-wide (marked) routes act in no workspace; any other path with neither acts in the request's workspace ([paths and scope](#paths-and-scope)). `{model}` is a model key.
 
 ### Health
 
@@ -116,6 +116,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | ------------------------------------ | ----------- | ----------------------------------------------- |
 | `/auth/configuration`                | GET         | [03](03-tenancy.md#identity-mail) (public)      |
 | `/auth/login`                        | POST        | [03](03-tenancy.md#authentication) (public)     |
+| `/auth/bootstrap`                    | POST        | [03](03-tenancy.md#bootstrap) (public)          |
 | `/auth/logout`                       | POST        | [03](03-tenancy.md#authentication)              |
 | `/auth/session`                      | GET         | [03](03-tenancy.md#authentication)              |
 | `/auth/password-reset`               | POST        | [03](03-tenancy.md#account-management) (public) |
@@ -168,145 +169,143 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 `{kind}-providers` stands for each of `model-providers`, `environment-providers`, `web-providers`, `connector-providers` and `memory-providers`.
 
-| Path                                                    | Methods    | Owner                                            |
-| ------------------------------------------------------- | ---------- | ------------------------------------------------ |
-| `/provider-types/{kind}`                                | GET        | [08](08-providers.md#provider-type-descriptions) |
-| `/organizations/{org}/{kind}-providers`                 | GET, POST  | [04](04-resources.md#provider-resources)         |
-| `/organizations/{org}/{kind}-providers/{provider}`      | GET, PATCH | [04](04-resources.md#provider-resources)         |
-| `/organizations/{org}/{kind}-providers/{provider}/test` | POST       | [04](04-resources.md#provider-resources)         |
-| `/model-catalog`                                        | GET        | [08](08-providers.md#model-catalog)              |
-| `/organizations/{org}/models`                           | GET, POST  | [04](04-resources.md#models)                     |
-| `/organizations/{org}/models/{model}`                   | GET, PATCH | [04](04-resources.md#models)                     |
-| `/workspaces/{ws}/media-understanding-defaults`         | GET, PUT   | [04](04-resources.md#models)                     |
+| Path                                | Methods    | Owner                                                         |
+| ----------------------------------- | ---------- | ------------------------------------------------------------- |
+| `/provider-types/{kind}`            | GET        | [08](08-providers.md#provider-type-descriptions) (deployment) |
+| `/{kind}-providers`                 | GET, POST  | [04](04-resources.md#provider-resources)                      |
+| `/{kind}-providers/{provider}`      | GET, PATCH | [04](04-resources.md#provider-resources)                      |
+| `/{kind}-providers/{provider}/test` | POST       | [04](04-resources.md#provider-resources)                      |
+| `/model-catalog`                    | GET        | [08](08-providers.md#model-catalog) (deployment)              |
+| `/models`                           | GET, POST  | [04](04-resources.md#models)                                  |
+| `/models/{model}`                   | GET, PATCH | [04](04-resources.md#models)                                  |
+| `/media-understanding-defaults`     | GET, PUT   | [04](04-resources.md#models)                                  |
 
 ### Agents, skills and toolsets
 
-| Path                                                                | Methods          | Owner                                  |
-| ------------------------------------------------------------------- | ---------------- | -------------------------------------- |
-| `/workspaces/{ws}/agents`                                           | GET, POST        | [04](04-resources.md#agents)           |
-| `/workspaces/{ws}/agents/validate`                                  | POST             | [04](04-resources.md#operations)       |
-| `/workspaces/{ws}/agents/{agent}`                                   | GET, PATCH       | [04](04-resources.md#operations)       |
-| `/workspaces/{ws}/agents/{agent}/archive`                           | POST             | [04](04-resources.md#revisioned-heads) |
-| `/workspaces/{ws}/agents/{agent}/unarchive`                         | POST             | [04](04-resources.md#revisioned-heads) |
-| `/workspaces/{ws}/agents/{agent}/duplicate`                         | POST             | [04](04-resources.md#operations)       |
-| `/workspaces/{ws}/agents/{agent}/avatar`                            | GET, PUT, DELETE | [04](04-resources.md#operations)       |
-| `/workspaces/{ws}/agents/{agent}/revisions`                         | GET, POST        | [04](04-resources.md#revisioned-heads) |
-| `/workspaces/{ws}/agents/{agent}/revisions/{revision}`              | GET              | [04](04-resources.md#revisioned-heads) |
-| `/workspaces/{ws}/agents/{agent}/revisions/{revision}/set-default`  | POST             | [04](04-resources.md#revisioned-heads) |
-| `/workspaces/{ws}/agent-composer`                                   | POST             | [04](04-resources.md#agent-composer)   |
-| `/workspaces/{ws}/toolsets`                                         | GET              | [04](04-resources.md#agents)           |
-| `/workspaces/{ws}/skills`                                           | GET, POST        | [04](04-resources.md#skills)           |
-| `/workspaces/{ws}/skills/validate`                                  | POST             | [04](04-resources.md#skills)           |
-| `/workspaces/{ws}/skills/{skill}`                                   | GET, PATCH       | [04](04-resources.md#skills)           |
-| `/workspaces/{ws}/skills/{skill}/archive`                           | POST             | [04](04-resources.md#revisioned-heads) |
-| `/workspaces/{ws}/skills/{skill}/unarchive`                         | POST             | [04](04-resources.md#revisioned-heads) |
-| `/workspaces/{ws}/skills/{skill}/revisions`                         | GET, POST        | [04](04-resources.md#skills)           |
-| `/workspaces/{ws}/skills/{skill}/revisions/{revision}`              | GET              | [04](04-resources.md#skills)           |
-| `/workspaces/{ws}/skills/{skill}/revisions/{revision}/content`      | GET              | [04](04-resources.md#skills)           |
-| `/workspaces/{ws}/skills/{skill}/revisions/{revision}/files/{path}` | GET              | [04](04-resources.md#skills)           |
-| `/workspaces/{ws}/skills/{skill}/revisions/{revision}/set-default`  | POST             | [04](04-resources.md#revisioned-heads) |
+| Path                                                | Methods          | Owner                                  |
+| --------------------------------------------------- | ---------------- | -------------------------------------- |
+| `/agents`                                           | GET, POST        | [04](04-resources.md#agents)           |
+| `/agents/validate`                                  | POST             | [04](04-resources.md#operations)       |
+| `/agents/{agent}`                                   | GET, PATCH       | [04](04-resources.md#operations)       |
+| `/agents/{agent}/archive`                           | POST             | [04](04-resources.md#revisioned-heads) |
+| `/agents/{agent}/unarchive`                         | POST             | [04](04-resources.md#revisioned-heads) |
+| `/agents/{agent}/duplicate`                         | POST             | [04](04-resources.md#operations)       |
+| `/agents/{agent}/avatar`                            | GET, PUT, DELETE | [04](04-resources.md#operations)       |
+| `/agents/{agent}/revisions`                         | GET, POST        | [04](04-resources.md#revisioned-heads) |
+| `/agents/{agent}/revisions/{revision}`              | GET              | [04](04-resources.md#revisioned-heads) |
+| `/agents/{agent}/revisions/{revision}/set-default`  | POST             | [04](04-resources.md#revisioned-heads) |
+| `/agent-composer`                                   | POST             | [04](04-resources.md#agent-composer)   |
+| `/toolsets`                                         | GET              | [04](04-resources.md#agents)           |
+| `/skills`                                           | GET, POST        | [04](04-resources.md#skills)           |
+| `/skills/validate`                                  | POST             | [04](04-resources.md#skills)           |
+| `/skills/{skill}`                                   | GET, PATCH       | [04](04-resources.md#skills)           |
+| `/skills/{skill}/archive`                           | POST             | [04](04-resources.md#revisioned-heads) |
+| `/skills/{skill}/unarchive`                         | POST             | [04](04-resources.md#revisioned-heads) |
+| `/skills/{skill}/revisions`                         | GET, POST        | [04](04-resources.md#skills)           |
+| `/skills/{skill}/revisions/{revision}`              | GET              | [04](04-resources.md#skills)           |
+| `/skills/{skill}/revisions/{revision}/content`      | GET              | [04](04-resources.md#skills)           |
+| `/skills/{skill}/revisions/{revision}/files/{path}` | GET              | [04](04-resources.md#skills)           |
+| `/skills/{skill}/revisions/{revision}/set-default`  | POST             | [04](04-resources.md#revisioned-heads) |
 
 ### Connections
 
-| Path                                                                 | Methods    | Owner                                      |
-| -------------------------------------------------------------------- | ---------- | ------------------------------------------ |
-| `/workspaces/{ws}/connections`                                       | GET, POST  | [04](04-resources.md#connections)          |
-| `/workspaces/{ws}/connections/{connection}`                          | GET, PATCH | [04](04-resources.md#connections)          |
-| `/workspaces/{ws}/connections/{connection}/authorize`                | POST       | [04](04-resources.md#connections)          |
-| `/workspaces/{ws}/connections/{connection}/revoke`                   | POST       | [04](04-resources.md#connections)          |
-| `/workspaces/{ws}/connections/{connection}/test`                     | POST       | [04](04-resources.md#connections)          |
-| `/workspaces/{ws}/connections/{connection}/tools`                    | GET        | [04](04-resources.md#connections)          |
-| `/workspaces/{ws}/connector-providers/{provider}/apps`               | GET        | [04](04-resources.md#provider-resources)   |
-| `/workspaces/{ws}/connector-providers/{provider}/apps/{app}`         | GET        | [04](04-resources.md#provider-resources)   |
-| `/workspaces/{ws}/connector-providers/{provider}/apps/{app}/actions` | GET        | [04](04-resources.md#provider-resources)   |
-| `/connections/callback`                                              | GET        | [04](04-resources.md#connections) (public) |
-| `/connections/redirect-uri`                                          | GET        | [04](04-resources.md#connections)          |
-| `/mcp-servers`                                                       | GET        | [08](08-providers.md#mcp-server-catalogue) |
+| Path                                                 | Methods    | Owner                                                   |
+| ---------------------------------------------------- | ---------- | ------------------------------------------------------- |
+| `/connections`                                       | GET, POST  | [04](04-resources.md#connections)                       |
+| `/connections/{connection}`                          | GET, PATCH | [04](04-resources.md#connections)                       |
+| `/connections/{connection}/authorize`                | POST       | [04](04-resources.md#connections)                       |
+| `/connections/{connection}/revoke`                   | POST       | [04](04-resources.md#connections)                       |
+| `/connections/{connection}/test`                     | POST       | [04](04-resources.md#connections)                       |
+| `/connections/{connection}/tools`                    | GET        | [04](04-resources.md#connections)                       |
+| `/connector-providers/{provider}/apps`               | GET        | [04](04-resources.md#provider-resources)                |
+| `/connector-providers/{provider}/apps/{app}`         | GET        | [04](04-resources.md#provider-resources)                |
+| `/connector-providers/{provider}/apps/{app}/actions` | GET        | [04](04-resources.md#provider-resources)                |
+| `/connections/callback`                              | GET        | [04](04-resources.md#connections) (public)              |
+| `/connections/redirect-uri`                          | GET        | [04](04-resources.md#connections) (deployment)          |
+| `/mcp-servers`                                       | GET        | [08](08-providers.md#mcp-server-catalogue) (deployment) |
 
-### Secrets, uploads and assets
+### Uploads and assets
 
-| Path                                      | Methods          | Owner                                    |
-| ----------------------------------------- | ---------------- | ---------------------------------------- |
-| `/workspaces/{ws}/secrets`                | GET, POST        | [04](04-resources.md#secrets)            |
-| `/workspaces/{ws}/secrets/{secret}`       | GET, PUT, DELETE | [04](04-resources.md#secrets)            |
-| `/workspaces/{ws}/uploads`                | POST             | [04](04-resources.md#uploads-and-assets) |
-| `/workspaces/{ws}/assets`                 | GET, POST        | [04](04-resources.md#uploads-and-assets) |
-| `/workspaces/{ws}/assets/{asset}`         | GET, DELETE      | [04](04-resources.md#uploads-and-assets) |
-| `/workspaces/{ws}/assets/{asset}/content` | GET              | [04](04-resources.md#uploads-and-assets) |
+| Path                      | Methods     | Owner                                    |
+| ------------------------- | ----------- | ---------------------------------------- |
+| `/uploads`                | POST        | [04](04-resources.md#uploads-and-assets) |
+| `/assets`                 | GET, POST   | [04](04-resources.md#uploads-and-assets) |
+| `/assets/{asset}`         | GET, DELETE | [04](04-resources.md#uploads-and-assets) |
+| `/assets/{asset}/content` | GET         | [04](04-resources.md#uploads-and-assets) |
 
 ### Subscriptions
 
-| Path                                                                            | Methods            | Owner                                             |
-| ------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------- |
-| `/workspaces/{ws}/subscriptions`                                                | GET, POST          | [04](04-resources.md#subscriptions)               |
-| `/workspaces/{ws}/subscriptions/{subscription}`                                 | GET, PATCH, DELETE | [04](04-resources.md#subscriptions)               |
-| `/workspaces/{ws}/subscriptions/{subscription}/deliveries`                      | GET                | [07](07-facts-and-delivery.md#lifecycle-webhooks) |
-| `/workspaces/{ws}/subscriptions/{subscription}/deliveries/{delivery}/redeliver` | POST               | [07](07-facts-and-delivery.md#lifecycle-webhooks) |
+| Path                                                            | Methods            | Owner                                             |
+| --------------------------------------------------------------- | ------------------ | ------------------------------------------------- |
+| `/subscriptions`                                                | GET, POST          | [04](04-resources.md#subscriptions)               |
+| `/subscriptions/{subscription}`                                 | GET, PATCH, DELETE | [04](04-resources.md#subscriptions)               |
+| `/subscriptions/{subscription}/deliveries`                      | GET                | [07](07-facts-and-delivery.md#lifecycle-webhooks) |
+| `/subscriptions/{subscription}/deliveries/{delivery}/redeliver` | POST               | [07](07-facts-and-delivery.md#lifecycle-webhooks) |
 
 ### Sessions, threads and runs
 
-| Path                                              | Methods            | Owner                                            |
-| ------------------------------------------------- | ------------------ | ------------------------------------------------ |
-| `/workspaces/{ws}/sessions`                       | GET, POST          | [05](05-runs.md#reads)                           |
-| `/workspaces/{ws}/sessions/{session}`             | GET, PATCH         | [05](05-runs.md#reads)                           |
-| `/workspaces/{ws}/threads`                        | GET, POST          | [05](05-runs.md#submit-and-accept)               |
-| `/workspaces/{ws}/threads/{thread}`               | GET, PATCH         | [05](05-runs.md#reads)                           |
-| `/workspaces/{ws}/threads/{thread}/archive`       | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/workspaces/{ws}/threads/{thread}/runs`          | GET                | [05](05-runs.md#reads)                           |
-| `/workspaces/{ws}/threads/{thread}/stream`        | GET                | [07](07-facts-and-delivery.md#the-thread-stream) |
-| `/workspaces/{ws}/threads/{thread}/inbox`         | GET, POST          | [05](05-runs.md#submit-and-accept)               |
-| `/workspaces/{ws}/threads/{thread}/inbox/order`   | PUT                | [05](05-runs.md#editing-queued-input)            |
-| `/workspaces/{ws}/threads/{thread}/inbox/{entry}` | GET, PATCH, DELETE | [05](05-runs.md#editing-queued-input)            |
-| `/workspaces/{ws}/runs/{run}`                     | GET, PATCH         | [05](05-runs.md#reads)                           |
-| `/workspaces/{ws}/runs/{run}/interrupt`           | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/workspaces/{ws}/runs/{run}/fork`                | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/workspaces/{ws}/runs/{run}/resume`              | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/workspaces/{ws}/runs/{run}/items`               | GET                | [05](05-runs.md#reads)                           |
-| `/workspaces/{ws}/runs/{run}/lineage`             | GET                | [05](05-runs.md#reads)                           |
-| `/workspaces/{ws}/runs/{run}/attempts`            | GET                | [05](05-runs.md#reads)                           |
+| Path                              | Methods            | Owner                                            |
+| --------------------------------- | ------------------ | ------------------------------------------------ |
+| `/sessions`                       | GET, POST          | [05](05-runs.md#reads)                           |
+| `/sessions/{session}`             | GET, PATCH         | [05](05-runs.md#reads)                           |
+| `/threads`                        | GET, POST          | [05](05-runs.md#submit-and-accept)               |
+| `/threads/{thread}`               | GET, PATCH         | [05](05-runs.md#reads)                           |
+| `/threads/{thread}/archive`       | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
+| `/threads/{thread}/runs`          | GET                | [05](05-runs.md#reads)                           |
+| `/threads/{thread}/stream`        | GET                | [07](07-facts-and-delivery.md#the-thread-stream) |
+| `/threads/{thread}/inbox`         | GET, POST          | [05](05-runs.md#submit-and-accept)               |
+| `/threads/{thread}/inbox/order`   | PUT                | [05](05-runs.md#editing-queued-input)            |
+| `/threads/{thread}/inbox/{entry}` | GET, PATCH, DELETE | [05](05-runs.md#editing-queued-input)            |
+| `/runs/{run}`                     | GET, PATCH         | [05](05-runs.md#reads)                           |
+| `/runs/{run}/interrupt`           | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
+| `/runs/{run}/fork`                | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
+| `/runs/{run}/resume`              | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
+| `/runs/{run}/items`               | GET                | [05](05-runs.md#reads)                           |
+| `/runs/{run}/lineage`             | GET                | [05](05-runs.md#reads)                           |
+| `/runs/{run}/attempts`            | GET                | [05](05-runs.md#reads)                           |
 
 ### Environments
 
-| Path                                                    | Methods            | Owner                                                                                                   |
-| ------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `/workspaces/{ws}/environment-templates`                | GET, POST          | [04](04-resources.md#environment-templates)                                                             |
-| `/workspaces/{ws}/environment-templates/{template}`     | GET, PATCH         | [04](04-resources.md#environment-templates)                                                             |
-| `/workspaces/{ws}/environments`                         | GET, POST          | [06](06-environments.md#mounts), [external targets](06-environments.md#external-targets)                |
-| `/workspaces/{ws}/environments/{environment}`           | GET, PATCH, DELETE | [06](06-environments.md#stop-start-and-delete), [external targets](06-environments.md#external-targets) |
-| `/workspaces/{ws}/environments/{environment}/stop`      | POST               | [06](06-environments.md#stop-start-and-delete)                                                          |
-| `/workspaces/{ws}/threads/{thread}/environments`        | GET, POST          | [06](06-environments.md#mounts)                                                                         |
-| `/workspaces/{ws}/threads/{thread}/environments/{name}` | DELETE             | [06](06-environments.md#mounts)                                                                         |
+| Path                                    | Methods            | Owner                                                                                                   |
+| --------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `/environment-templates`                | GET, POST          | [04](04-resources.md#environment-templates)                                                             |
+| `/environment-templates/{template}`     | GET, PATCH         | [04](04-resources.md#environment-templates)                                                             |
+| `/environments`                         | GET, POST          | [06](06-environments.md#mounts), [external targets](06-environments.md#external-targets)                |
+| `/environments/{environment}`           | GET, PATCH, DELETE | [06](06-environments.md#stop-start-and-delete), [external targets](06-environments.md#external-targets) |
+| `/environments/{environment}/stop`      | POST               | [06](06-environments.md#stop-start-and-delete)                                                          |
+| `/threads/{thread}/environments`        | GET, POST          | [06](06-environments.md#mounts)                                                                         |
+| `/threads/{thread}/environments/{name}` | DELETE             | [06](06-environments.md#mounts)                                                                         |
 
 ### Memories
 
-| Path                                                         | Methods            | Owner                                                |
-| ------------------------------------------------------------ | ------------------ | ---------------------------------------------------- |
-| `/workspaces/{ws}/memories`                                  | GET, POST          | [11](11-memory.md#memories)                          |
-| `/workspaces/{ws}/memories/{memory}`                         | GET, PATCH, DELETE | [11](11-memory.md#memories)                          |
-| `/workspaces/{ws}/memories/{memory}/files`                   | GET, POST          | [11](11-memory.md#files-and-history-through-the-api) |
-| `/workspaces/{ws}/memories/{memory}/files/move`              | POST               | [11](11-memory.md#files-and-history-through-the-api) |
-| `/workspaces/{ws}/memories/{memory}/files/{path}`            | GET, PUT, DELETE   | [11](11-memory.md#files-and-history-through-the-api) |
-| `/workspaces/{ws}/memories/{memory}/revisions`               | GET, DELETE        | [11](11-memory.md#files-and-history-through-the-api) |
-| `/workspaces/{ws}/memories/{memory}/revisions/{seq}`         | GET                | [11](11-memory.md#files-and-history-through-the-api) |
-| `/workspaces/{ws}/memories/{memory}/revisions/{seq}/restore` | POST               | [11](11-memory.md#files-and-history-through-the-api) |
-| `/workspaces/{ws}/memories/{memory}/records`                 | GET, POST          | [11](11-memory.md#records-through-the-api)           |
-| `/workspaces/{ws}/memories/{memory}/records/search`          | POST               | [11](11-memory.md#records-through-the-api)           |
-| `/workspaces/{ws}/memories/{memory}/records/{record}`        | PUT, DELETE        | [11](11-memory.md#records-through-the-api)           |
-| `/workspaces/{ws}/threads/{thread}/memories`                 | GET, POST          | [11](11-memory.md#mounts)                            |
-| `/workspaces/{ws}/threads/{thread}/memories/{name}`          | PATCH, DELETE      | [11](11-memory.md#mounts)                            |
+| Path                                         | Methods            | Owner                                                |
+| -------------------------------------------- | ------------------ | ---------------------------------------------------- |
+| `/memories`                                  | GET, POST          | [11](11-memory.md#memories)                          |
+| `/memories/{memory}`                         | GET, PATCH, DELETE | [11](11-memory.md#memories)                          |
+| `/memories/{memory}/files`                   | GET, POST          | [11](11-memory.md#files-and-history-through-the-api) |
+| `/memories/{memory}/files/move`              | POST               | [11](11-memory.md#files-and-history-through-the-api) |
+| `/memories/{memory}/files/{path}`            | GET, PUT, DELETE   | [11](11-memory.md#files-and-history-through-the-api) |
+| `/memories/{memory}/revisions`               | GET, DELETE        | [11](11-memory.md#files-and-history-through-the-api) |
+| `/memories/{memory}/revisions/{seq}`         | GET                | [11](11-memory.md#files-and-history-through-the-api) |
+| `/memories/{memory}/revisions/{seq}/restore` | POST               | [11](11-memory.md#files-and-history-through-the-api) |
+| `/memories/{memory}/records`                 | GET, POST          | [11](11-memory.md#records-through-the-api)           |
+| `/memories/{memory}/records/search`          | POST               | [11](11-memory.md#records-through-the-api)           |
+| `/memories/{memory}/records/{record}`        | PUT, DELETE        | [11](11-memory.md#records-through-the-api)           |
+| `/threads/{thread}/memories`                 | GET, POST          | [11](11-memory.md#mounts)                            |
+| `/threads/{thread}/memories/{name}`          | PATCH, DELETE      | [11](11-memory.md#mounts)                            |
 
 A file `{path}` is the file's path in the memory, with its `/` separators. A file's ETag names its current version; creating a file takes no `If-Match`, and a restore takes one only when a file exists at the revision's path. A `{record}` is the backend's record ID, at most 256 characters; records carry no ETag.
 
 ### Usage and traces
 
-| Path                                                   | Methods | Owner                                        |
-| ------------------------------------------------------ | ------- | -------------------------------------------- |
-| `/workspaces/{ws}/usage`                               | GET     | [07](07-facts-and-delivery.md#usage-records) |
-| `/workspaces/{ws}/runs/{run}/attempts/{attempt}/trace` | GET     | [07](07-facts-and-delivery.md#trace-query)   |
-| `/workspaces/{ws}/traces`                              | GET     | [07](07-facts-and-delivery.md#trace-query)   |
-| `/workspaces/{ws}/traces/{trace}`                      | GET     | [07](07-facts-and-delivery.md#trace-query)   |
-| `/workspaces/{ws}/traces/{trace}/spans`                | GET     | [07](07-facts-and-delivery.md#trace-query)   |
-| `/workspaces/{ws}/trace-backend`                       | GET     | [07](07-facts-and-delivery.md#trace-query)   |
+| Path                                   | Methods | Owner                                        |
+| -------------------------------------- | ------- | -------------------------------------------- |
+| `/usage`                               | GET     | [07](07-facts-and-delivery.md#usage-records) |
+| `/runs/{run}/attempts/{attempt}/trace` | GET     | [07](07-facts-and-delivery.md#trace-query)   |
+| `/traces`                              | GET     | [07](07-facts-and-delivery.md#trace-query)   |
+| `/traces/{trace}`                      | GET     | [07](07-facts-and-delivery.md#trace-query)   |
+| `/traces/{trace}/spans`                | GET     | [07](07-facts-and-delivery.md#trace-query)   |
+| `/trace-backend`                       | GET     | [07](07-facts-and-delivery.md#trace-query)   |
 
 ## Exported contracts
 

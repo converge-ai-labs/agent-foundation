@@ -14,16 +14,13 @@ import { useMCPServers } from "../mcp/catalog";
 export function useConnectionDirectory(search: string) {
   const client = useClient(),
     cache = useQueryClient(),
-    { workspace, organization, can } = useWorkspace();
+    { workspace, can } = useWorkspace();
   const providers = useQuery({
     queryKey: ["connector-providers", "workspace", workspace.id, "picker"],
     enabled: can("write"),
     queryFn: ({ signal }) =>
       allPages((cursor) =>
-        connectorApi(client, organization.id, {
-          kind: "workspace",
-          id: workspace.id,
-        }).providers(signal, cursor),
+        connectorApi(client, workspace.id).providers(signal, cursor),
       ),
   });
   const definitions = useQuery({
@@ -62,17 +59,15 @@ export function useConnectionDirectory(search: string) {
     options: { cursor?: string; refresh?: boolean } = {},
     signal?: AbortSignal,
   ) =>
-    client.http
-      .GET(
-        "/api/v1/workspaces/{workspace_id}/connector-providers/{provider_id}/apps",
-        {
-          params: {
-            path: { workspace_id: workspace.id, provider_id: provider.id },
-            query: { query: search, limit: 50, ...options },
-          },
-          signal,
+    client
+      .workspace(workspace.id)
+      .GET("/api/v1/connector-providers/{provider_id}/apps", {
+        params: {
+          path: { provider_id: provider.id },
+          query: { query: search, limit: 50, ...options },
         },
-      )
+        signal,
+      })
       .then(data);
   const queries = useQueries({
     queries: active.map((provider) => ({

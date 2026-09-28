@@ -15,16 +15,14 @@ MEMBERS = {
     "viewer": ("viewer@example.com", "Chen Jing"),
 }
 PENDING_EMAIL = "reviewer@example.com"
-EMPTY_WORKSPACE = "research-lab"
-ARCHIVED_WORKSPACE = "q2-pilot"
 
 
 def seed_identity(api: Api, org: str, ws: str) -> dict[str, str]:
     """Names and images, members of every built-in role, a pending invitation, keys, service accounts and
     workspaces. The expiry sweep deletes revoked and expired invitations, so none is seeded."""
     _brand(api, org, ws)
-    empty = api.post(f"{org}/workspaces", {"key": EMPTY_WORKSPACE, "name": "Research lab"})
-    archived = api.post(f"{org}/workspaces", {"key": ARCHIVED_WORKSPACE, "name": "Q2 pilot"})
+    empty = api.post(f"{org}/workspaces", {"name": "Research lab"})
+    archived = api.post(f"{org}/workspaces", {"name": "Q2 pilot"})
     api.post(f"/api/v1/workspaces/{archived['id']}/archive", current=archived)
     seeded = {"empty_workspace": empty["id"], "archived_workspace": archived["id"]}
     for role, (email, name) in MEMBERS.items():

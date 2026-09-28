@@ -45,7 +45,6 @@ from a13n_service.resources.memories.tables import (
     MemoryRow,
 )
 from a13n_service.resources.models.routes import router as models_router
-from a13n_service.resources.models.routes import workspace_router as media_router
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.resources.providers.routes import router as providers_router
 from a13n_service.resources.providers.tables import (
@@ -55,8 +54,6 @@ from a13n_service.resources.providers.tables import (
     ModelProviderRow,
     WebProviderRow,
 )
-from a13n_service.resources.secrets.routes import router as secrets_router
-from a13n_service.resources.secrets.tables import SecretRow
 from a13n_service.resources.skills.routes import router as skills_router
 from a13n_service.resources.skills.tables import SkillRevisionRow, SkillRow
 from a13n_service.resources.subscriptions.delivery import WebhookSender
@@ -276,7 +273,6 @@ OSS = Distribution(
         EnvironmentTemplateRow,
         ConnectionRow,
         SubscriptionRow,
-        SecretRow,
         AssetRow,
         SkillRow,
         SkillRevisionRow,
@@ -303,12 +299,10 @@ OSS = Distribution(
         member_router,
         providers_router,
         models_router,
-        media_router,
         agents_router,
         uploads_router,
         assets_router,
         skills_router,
-        secrets_router,
         subscriptions_router,
         runs_router,
         traces_router,

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -1205,6 +1207,338 @@ async def test_cleanup_failure_retains_complete_deferred_checkpoint(tmp_path: Pa
         assert detail.continuation_id is not None
         assert len(detail.deferred_requests) == 1
         assert detail.deferred_requests[0].kind == "external"
+
+
+@pytest.mark.parametrize("prior_continuation", [False, True])
+async def test_cancel_before_stream_entry_does_not_export_unavailable_state(
+    tmp_path: Path, monkeypatch, caplog, prior_continuation: bool
+) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        executor = app._root_runs._executor
+        executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        if prior_continuation:
+            first = await app.submit_thread(thread_id=thread.thread_id, prompt="first")
+            assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
+        prior = (await app.get_thread(thread.thread_id)).continuation_id
+        binding = Event()
+        exports = []
+        export = HarnessRunStream.export_state
+
+        @asynccontextmanager
+        async def paused_binding(**kwargs):
+            binding.set()
+            await sleep_forever()
+            yield
+
+        async def record_export(stream):
+            exports.append(stream.run_id)
+            return await export(stream)
+
+        monkeypatch.setattr(executor, "_bind_subagent_parent", paused_binding)
+        monkeypatch.setattr(HarnessRunStream, "export_state", record_export)
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="not yet entered")
+        with fail_after(5):
+            await binding.wait()
+            assert (await app.cancel_root_operation(receipt.receipt_id)).accepted
+            operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.cancelled
+        assert (await app.get_thread(thread.thread_id)).continuation_id == prior
+        assert exports == []
+        assert "Root continuation save failed" not in caplog.text
+
+
+@pytest.mark.parametrize("saved_kind", ["version", "position", "mapping", "stale", "absent"])
+async def test_display_restore_validates_before_runtime_detachment(
+    tmp_path: Path, monkeypatch, saved_kind: str
+) -> None:
+    from dataclasses import replace
+
+    from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
+
+    root = _write_configuration(tmp_path)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        executor = app._root_runs._executor
+        executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="original native history")
+        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
+        prior = (await app.get_thread(thread.thread_id)).continuation_id
+        capture = executor.capture
+        create_context = HarnessRunStream._create_context
+        contexts = []
+
+        async def altered_admission(**kwargs):
+            admission = await capture(**kwargs)
+            state = admission.previous_state
+            entries = state.agent_context_state.entries
+            key = "a13n.harness-ui.display-history"
+            entry = entries.pop(key)
+            data = entry.data
+            assert isinstance(data, dict)
+            if saved_kind == "position":
+                data["model_positions"] = [9999]
+            elif saved_kind == "mapping":
+                data["model_positions"] = []
+            elif saved_kind == "stale":
+                data["model_history_digest"] = "0" * 64
+            if saved_kind != "absent":
+                entries[key] = CapabilityState(version="future" if saved_kind == "version" else "1", data=data)
+            return replace(
+                admission,
+                previous_state=state.model_copy(
+                    update={"agent_context_state": AgentContextStateSnapshot(entries=entries)}
+                ),
+            )
+
+        async def record_context(stream, environment):
+            contexts.append(stream.run_id)
+            return await create_context(stream, environment)
+
+        monkeypatch.setattr(executor, "capture", altered_admission)
+        monkeypatch.setattr(HarnessRunStream, "_create_context", record_context)
+        second = await app.submit_thread(thread_id=thread.thread_id, prompt="next input")
+        result = await app.wait_root_operation(second.receipt_id)
+        if saved_kind in {"stale", "absent"}:
+            assert result.status is RootOperationStatus.completed
+            assert len(contexts) == 1
+            history = await app.get_thread_transcript(thread_id=thread.thread_id)
+            assert "original native history" in str(history) and "next input" in str(history)
+        else:
+            assert result.status is RootOperationStatus.failed
+            assert contexts == []
+            assert (await app.get_thread(thread.thread_id)).continuation_id == prior
+
+
+@pytest.mark.parametrize("failed_entry", [False, True])
+async def test_native_run_excludes_display_but_every_saved_checkpoint_retains_it(
+    tmp_path: Path, monkeypatch, failed_entry: bool
+) -> None:
+    from a13n_harness_ui.display_history import saved_display_history
+    from a13n_harness_ui.storage import StoredContinuation
+
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state")
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="display-only old prompt")
+        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
+        before = await app.get_thread(thread.thread_id)
+        assert before.continuation_id is not None
+        await app.clear_thread_context(thread_id=thread.thread_id, expected_continuation_id=before.continuation_id)
+
+    contexts = []
+    publications = []
+    create_context = HarnessRunStream._create_context
+
+    async def check_context(stream, environment):
+        context = await create_context(stream, environment)
+        entries = (await context.state.snapshot()).entries
+        assert "a13n.harness-ui.display-history" not in entries
+        contexts.append(entries)
+        assert not stream._previous_state.message_history
+        return context
+
+    def fail_after_context(*args, **kwargs):
+        raise RuntimeError("failed entry with independent saved display")
+
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        publish = app._store.objects.publish_model
+
+        async def check_publication(**kwargs):
+            if kwargs["object_kind"] is ObjectKind.continuation:
+                value = kwargs["value"]
+                assert isinstance(value, StoredContinuation)
+                display = saved_display_history(value.harness_state)
+                assert display is not None
+                assert "display-only old prompt" in str(display.messages)
+                publications.append(display)
+            return await publish(**kwargs)
+
+        monkeypatch.setattr(HarnessRunStream, "_create_context", check_context)
+        monkeypatch.setattr(app._store.objects, "publish_model", check_publication)
+        if failed_entry:
+            monkeypatch.setattr(HarnessRunStream, "_build_plugin_response", fail_after_context)
+        second = await app.submit_thread(thread_id=thread.thread_id, prompt="new prompt")
+        result = await app.wait_root_operation(second.receipt_id)
+        assert result.status is (RootOperationStatus.failed if failed_entry else RootOperationStatus.completed)
+        assert len(contexts) == 1
+        assert len(publications) == (1 if failed_entry else 2)
+
+    async with open_harness_ui_app(settings, configuration_path=root) as reopened:
+        history = await reopened.get_thread_transcript(thread_id=thread.thread_id)
+        assert "display-only old prompt" in str(history)
+        assert "root complete" in str(history)
+        if not failed_entry:
+            assert "new prompt" in str(history)
+
+
+@pytest.mark.parametrize("export_failure", [False, True])
+async def test_failed_stream_entry_still_exports_retained_state(
+    tmp_path: Path, monkeypatch, caplog, export_failure: bool
+) -> None:
+    root = _write_configuration(tmp_path)
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="first")
+        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
+        prior = (await app.get_thread(thread.thread_id)).continuation_id
+        exports = []
+        export = HarnessRunStream.export_state
+
+        def fail_after_context(*args, **kwargs):
+            raise RuntimeError("stream entry failed after context creation")
+
+        async def record_export(stream):
+            exports.append(stream.run_id)
+            if export_failure:
+                raise RuntimeError("retained state export failed")
+            return await export(stream)
+
+        monkeypatch.setattr(HarnessRunStream, "_build_plugin_response", fail_after_context)
+        monkeypatch.setattr(HarnessRunStream, "export_state", record_export)
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="entry failure")
+        with fail_after(5):
+            operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.failed
+        assert len(exports) == 1
+        selected = (await app.get_thread(thread.thread_id)).continuation_id
+        assert (selected == prior) is export_failure
+        assert ("Root continuation save failed" in caplog.text) is export_failure
+
+
+@pytest.mark.parametrize(
+    ("owner", "name"),
+    [
+        ("root", "with_goal"),
+        ("root", "detach_display_history"),
+        ("collector", "__init__"),
+        ("collector", "capture"),
+        ("root", "with_display_history"),
+        ("goal", "with_goal"),
+    ],
+)
+async def test_root_history_preparation_runs_off_loop(tmp_path: Path, monkeypatch, owner: str, name: str) -> None:
+    from a13n_harness_ui import goal, root_execution
+
+    root = _write_configuration(tmp_path)
+    loop_thread = threading.get_ident()
+    target = {"root": root_execution, "collector": root_execution.DisplayHistoryCollector, "goal": goal}[owner]
+    original = getattr(target, name)
+    calls = []
+
+    def checked(*args, **kwargs):
+        calls.append(threading.get_ident())
+        assert threading.get_ident() != loop_thread
+        return original(*args, **kwargs)
+
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        # Seed an actual saved display envelope before instrumenting its restore.
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="first")
+        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
+        monkeypatch.setattr(target, name, checked)
+        second = await app.submit_thread(thread_id=thread.thread_id, prompt="second")
+        with fail_after(5):
+            operation = await app.wait_root_operation(second.receipt_id)
+        assert calls
+        assert operation.status is RootOperationStatus.completed
+        transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+        assert "first" in str(transcript)
+        assert "second" in str(transcript)
+
+
+@pytest.mark.parametrize("stage", ["prepare", "checkpoint", "terminal"])
+async def test_root_history_worker_is_joined_before_cancellation_settles(
+    tmp_path: Path, monkeypatch, stage: str
+) -> None:
+    from a13n_harness_ui import root_execution
+    from anyio import from_thread
+
+    root = _write_configuration(tmp_path)
+    loop_thread = threading.get_ident()
+    started = Event()
+    release = threading.Event()
+    finished = threading.Event()
+    captures = []
+    model_calls = []
+    restore = root_execution.detach_display_history
+    capture = root_execution.DisplayHistoryCollector.capture
+
+    def blocked(call):
+        assert threading.get_ident() != loop_thread
+        from_thread.run_sync(started.set)
+        try:
+            assert release.wait(10), "History worker was not released"
+            return call()
+        finally:
+            finished.set()
+
+    def restore_history(state):
+        return blocked(lambda: restore(state)) if stage == "prepare" else restore(state)
+
+    def capture_history(self, history, *, completed=False):
+        if captures and started.is_set():
+            assert finished.is_set(), "Terminal capture raced the checkpoint worker"
+        captures.append(completed)
+        if (stage == "checkpoint" and len(captures) == 1) or (stage == "terminal" and completed):
+            return blocked(lambda: capture(self, history, completed=completed))
+        return capture(self, history, completed=completed)
+
+    async def model(messages, info):
+        model_calls.append(messages)
+        yield "finished response"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    monkeypatch.setattr(root_execution, "detach_display_history", restore_history)
+    monkeypatch.setattr(root_execution.DisplayHistoryCollector, "capture", capture_history)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        selections = []
+        select = app._store.threads.select_continuation
+
+        async def record_selection(**kwargs):
+            selections.append((kwargs["expected"], kwargs["replacement"]))
+            return await select(**kwargs)
+
+        monkeypatch.setattr(app._store.threads, "select_continuation", record_selection)
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="retain checkpoint input")
+        try:
+            with fail_after(10):
+                await started.wait()
+                assert (await app.cancel_root_operation(receipt.receipt_id)).accepted
+                # A bounded wait must not settle while the worker still owns history.
+                waiting = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=0.02)
+                assert waiting.status in {RootOperationStatus.preparing, RootOperationStatus.running}
+                assert not finished.is_set()
+                assert len(selections) == (1 if stage == "terminal" else 0)
+        finally:
+            release.set()
+            with fail_after(10):
+                operation = await app.wait_root_operation(receipt.receipt_id)
+        assert finished.is_set()
+        assert operation.status is (
+            RootOperationStatus.completed if stage == "terminal" else RootOperationStatus.cancelled
+        )
+        assert len(model_calls) == (1 if stage == "terminal" else 0)
+        assert len(selections) == (0 if stage == "prepare" else 2)
+        if selections:
+            assert selections[0][0] is None
+            assert selections[1][0] == selections[0][1]
+            assert (await app.get_thread(thread.thread_id)).continuation_id == selections[-1][1].logical_digest
+            history = await app.get_thread_transcript(thread_id=thread.thread_id)
+            assert "retain checkpoint input" in str(history)
 
 
 async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path, monkeypatch) -> None:

@@ -76,22 +76,18 @@ export function CreateMCP({
               ? { headers }
               : undefined;
         connection = data(
-          await client.http.POST(
-            "/api/v1/workspaces/{workspace_id}/connections",
-            {
-              params: { path: { workspace_id: workspace.id } },
-              body: {
-                type: "mcp",
-                name,
-                config: {
-                  url: endpoint,
-                  headers: mode === "headers" ? headerNames : [],
-                },
-                auth: mode,
-                ...(credential ? { credential } : {}),
+          await client.workspace(workspace.id).POST("/api/v1/connections", {
+            body: {
+              type: "mcp",
+              name,
+              config: {
+                url: endpoint,
+                headers: mode === "headers" ? headerNames : [],
               },
+              auth: mode,
+              ...(credential ? { credential } : {}),
             },
-          ),
+          }),
         );
         created.current = connection;
         void cache.invalidateQueries({ queryKey: ["connections"] });

@@ -12,7 +12,7 @@ import {
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
+import { useWorkspace } from "../../layout/workspace";
 import { allPages, type Schema } from "../../shared/api";
 import { CatalogStep } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
@@ -20,11 +20,11 @@ import { FormActions, TextAreaField, jsonObject } from "../../shared/forms";
 import { IconTile } from "../../shared/identity";
 import sharedStyles from "../../shared/shared.module.css";
 import { ManageProvidersLink } from "../providers";
-import { modelApi, type ModelScope } from "./api";
+import { modelApi } from "./api";
 import { CatalogPicker, catalogRefKey } from "./catalog-picker";
 import { ModelIcon } from "./model-icon";
 import { ModelInformation, characteristicsInput } from "./model-information";
-import { suggestedKey } from "./model-options";
+import { defaultModelKey, keyPattern } from "./model-options";
 import {
   ModelPricing,
   priceEntry,
@@ -62,14 +62,12 @@ export type ModelDraft = ReturnType<typeof useModelDraft>;
  * of the add dialog or edited in one pass.
  */
 export function useModelDraft({
-  scope,
   resource,
   providerId,
   active = true,
   close,
   onSaved,
 }: {
-  scope: ModelScope;
   resource?: { value: Schema["Model"]; etag?: string };
   providerId?: string;
   /** Closed dialogs keep their draft without fetching providers or the catalog. */
@@ -79,9 +77,9 @@ export function useModelDraft({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    { organization } = useAccess(),
+    { workspace } = useWorkspace(),
     cache = useQueryClient();
-  const api = modelApi(client, organization.id, scope);
+  const api = modelApi(client, workspace.id);
   const [original] = useState(resource);
   const [provider, setProvider] = useState(
     original?.value.provider_id ?? providerId ?? "",
@@ -112,7 +110,7 @@ export function useModelDraft({
     Object.keys(requestDefaults(original?.value.config)).length > 0,
   );
   const providers = useQuery({
-    queryKey: ["model-provider-choices", scope.kind, scope.id],
+    queryKey: ["model-provider-choices", workspace.id],
     enabled: active,
     queryFn: ({ signal }) =>
       allPages((cursor) => api.providers(signal, cursor)),
@@ -164,7 +162,6 @@ export function useModelDraft({
         ? callingApi
         : "openai.chat_completions",
       name: current.name || item.name,
-      key: current.key || suggestedKey(item.ref.model),
       characteristics: characteristicsInput(item.characteristics),
       pricing: priceTable(pricing),
     }));
@@ -184,7 +181,7 @@ export function useModelDraft({
   }
   function acceptProvider(item: Schema["Provider"], preferredApi?: string) {
     cache.setQueryData<Schema["Provider"][]>(
-      ["model-provider-choices", scope.kind, scope.id],
+      ["model-provider-choices", workspace.id],
       (items) => [
         ...(items ?? []).filter((value) => value.id !== item.id),
         item,
@@ -223,14 +220,14 @@ export function useModelDraft({
       if (!original)
         return api.createModel({
           ...body,
-          key: draft.key,
+          key: draft.key || null,
           provider_id: provider,
         });
       if (!original.etag)
         throw new Error(
           t("Version information is unavailable. Reload this page."),
         );
-      return api.updateModel(original.value.id, original.etag, body);
+      return api.updateModel(original.value.key, original.etag, body);
     },
     onSuccess: (model) => {
       void cache.invalidateQueries();
@@ -262,11 +259,7 @@ export function useModelDraft({
     setSettingsExpanded,
     dirty,
     save,
-    incomplete:
-      !draft.model_name.trim() ||
-      !draft.name.trim() ||
-      !draft.key.trim() ||
-      !callingApi,
+    incomplete: !draft.model_name.trim() || !draft.name.trim() || !callingApi,
   };
 }
 
@@ -382,14 +375,13 @@ export function ModelFields({ model }: { model: ModelDraft }) {
               onChange={(event) => model.change("name", event.target.value)}
             />
           </FormField>
-          <FormField label={t("Model key")} readOnly={!!original}>
-            <Input
-              required
-              maxLength={128}
-              value={draft.key}
-              onChange={(event) => model.change("key", event.target.value)}
-            />
-          </FormField>
+          {original ? (
+            <FormField label={t("Model key")} readOnly>
+              <Input value={draft.key} readOnly />
+            </FormField>
+          ) : (
+            <ModelKeyField model={model} />
+          )}
         </div>
         <FormField label={t("Description")}>
           <Input
@@ -446,6 +438,32 @@ export function ModelFields({ model }: { model: ModelDraft }) {
   );
 }
 
+/** The key agents name the model by; the Service derives one when left empty. */
+function ModelKeyField({ model }: { model: ModelDraft }) {
+  const { t } = useTranslation();
+  const derived = defaultModelKey(
+    model.selectedProvider?.type,
+    model.draft.model_name,
+  );
+  return (
+    <FormField
+      label={t("Model key")}
+      description={t(
+        "How agents refer to this model. Lowercase letters, numbers, hyphens and dots; it cannot change later.",
+      )}
+    >
+      <Input
+        required={!derived}
+        maxLength={128}
+        pattern={keyPattern}
+        placeholder={derived}
+        value={model.draft.key}
+        onChange={(event) => model.change("key", event.target.value)}
+      />
+    </FormField>
+  );
+}
+
 /** Whether agents can select the model. */
 export function ModelStatus({ model }: { model: ModelDraft }) {
   const { t } = useTranslation();
@@ -468,20 +486,18 @@ export function ModelStatus({ model }: { model: ModelDraft }) {
 
 /** One-pass editor for a model that already exists. */
 export function EditModelForm({
-  scope,
   resource,
   close,
   reload,
   onSaved,
 }: {
-  scope: ModelScope;
   resource?: { value: Schema["Model"]; etag?: string };
   close: () => void;
   reload: () => Promise<void>;
   onSaved?: (model: Schema["Model"]) => void;
 }) {
   const { t } = useTranslation();
-  const model = useModelDraft({ scope, resource, close, onSaved });
+  const model = useModelDraft({ resource, close, onSaved });
   const [changing, setChanging] = useState(false);
   if (changing)
     return (
@@ -516,15 +532,7 @@ export function EditModelForm({
         onChange={() => setChanging(true)}
         actions={
           model.selectedProvider && (
-            <ManageProvidersLink
-              variant="ghost"
-              category="models"
-              scope={
-                model.selectedProvider.workspace_id
-                  ? "workspace"
-                  : "organization"
-              }
-            />
+            <ManageProvidersLink variant="ghost" category="models" />
           )
         }
       />

@@ -2,7 +2,7 @@ import { StackIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
+import { useWorkspace } from "../../layout/workspace";
 import { allPages, type Schema } from "../../shared/api";
 import {
   CollectionFooter,
@@ -20,34 +20,30 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { ProviderIcon, ScopeBadge } from "../../shared/identity";
+import { ProviderIcon } from "../../shared/identity";
 import { PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
 import { ManageProvidersLink } from "../providers/manage-link";
-import {
-  environmentApi,
-  environmentTemplates,
-  type WorkspaceScope,
-} from "./api";
+import { environmentApi, environmentTemplates } from "./api";
 import { useEnvironmentTypes } from "./providers";
 import { TemplateEditor } from "./template-editor";
 
 /** Reusable environment definitions: one row per template. */
-export function EnvironmentTemplates({ scope }: { scope: WorkspaceScope }) {
+export function EnvironmentTemplates() {
   const client = useClient(),
-    { can, organization } = useAccess(),
+    { can, workspace } = useWorkspace(),
     { t } = useTranslation(),
     page = useCursor(),
-    api = environmentApi(client, organization.id, scope),
+    api = environmentApi(client, workspace.id),
     rows = useResourceRows<Schema["Template"]>(),
     providerTypes = useEnvironmentTypes();
   const query = useQuery({
-    queryKey: ["environment-templates", scope.kind, scope.id, page.cursor],
+    queryKey: ["environment-templates", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
-      environmentTemplates(client, scope.id, signal, page.cursor),
+      environmentTemplates(client, workspace.id, signal, page.cursor),
   });
   const providers = useQuery({
-    queryKey: ["environment-provider-options", scope.kind, scope.id],
+    queryKey: ["environment-provider-options", workspace.id],
     queryFn: ({ signal }) =>
       allPages((cursor) => api.providers(signal, cursor)),
   });
@@ -70,13 +66,12 @@ export function EnvironmentTemplates({ scope }: { scope: WorkspaceScope }) {
   return (
     <div className={styles.stack}>
       <PageActions>
-        <ManageProvidersLink category="environments" scope={scope.kind} />
-        {manage && <TemplateEditor scope={scope} />}
+        <ManageProvidersLink category="environments" />
+        {manage && <TemplateEditor />}
       </PageActions>
       {rows.selected && (
         <TemplateEditor
           key={rows.selected.id}
-          scope={scope}
           templateId={rows.selected.id}
           editable={manage}
           {...rows.control}
@@ -131,13 +126,6 @@ export function EnvironmentTemplates({ scope }: { scope: WorkspaceScope }) {
                 },
               },
               {
-                label: t("Scope"),
-                tone: "muted",
-                render: (item) => (
-                  <ScopeBadge workspaceId={item.workspace_id} />
-                ),
-              },
-              {
                 label: t("Version"),
                 render: (item) => `v${item.version}`,
               },
@@ -172,7 +160,7 @@ export function EnvironmentTemplates({ scope }: { scope: WorkspaceScope }) {
             description={t(
               "Create a template, then choose it when starting a conversation.",
             )}
-            action={manage ? <TemplateEditor scope={scope} /> : undefined}
+            action={manage ? <TemplateEditor /> : undefined}
           />
         )
       )}

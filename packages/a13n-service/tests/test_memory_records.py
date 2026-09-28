@@ -65,7 +65,7 @@ async def test_memory_providers_describe_and_probe_their_backend(service) -> Non
     types = (await service.client.get("/api/v1/provider-types/memory")).json()["items"]
     assert {item["type"]: item["supports_test"] for item in types}["fake_records"] is True
 
-    item = f"{service.organization}/memory-providers/{provider['id']}"
+    item = f"{service.api}/memory-providers/{provider['id']}"
     passed = (await service.client.post(item + "/test")).json()
     assert passed["status"] == "succeeded"
     # The probe lists one page of a namespace no memory owns.
@@ -76,7 +76,7 @@ async def test_memory_providers_describe_and_probe_their_backend(service) -> Non
 
 
 async def test_record_memories_own_a_provider_namespace(service) -> None:  # type: ignore[no-untyped-def]
-    base = f"{service.workspace}/memories"
+    base = f"{service.api}/memories"
     provider = await with_fake_records(service)
     memory = await create_record_memory(service, provider)
     assert (memory["kind"], memory["type"], memory["provider_id"]) == ("record", "fake_records", provider["id"])
@@ -84,25 +84,19 @@ async def test_record_memories_own_a_provider_namespace(service) -> None:  # typ
     assert len(memory["namespace"]) == len("a13n-") + 32
     assert (memory["file_count"], memory["content_bytes"], memory["history_bytes"]) == (None, None, None)
     assert memory["inherited_guide"] == DEFAULT_RECORD_GUIDE
-    file_memory = (await service.client.post(base, json={"key": "notes", "name": "Notes"})).json()
+    file_memory = (await service.client.post(base, json={"name": "notes"})).json()
     assert (file_memory["provider_id"], file_memory["namespace"]) == (None, None)
 
     # An explicit namespace adopts the records already in it, and no second memory may own it.
     team = "team:notes/été"
     BACKEND.seed(team, "The deploy window is Tuesday.")
-    adopted = await create_record_memory(service, provider, key="team", namespace=team)
+    adopted = await create_record_memory(service, provider, "team", namespace=team)
     assert adopted["namespace"] == team
     listed = await service.client.get(f"{base}/{adopted['id']}/records")
     assert [item["text"] for item in listed.json()["items"]] == ["The deploy window is Tuesday."]
     duplicate = await service.client.post(
         base,
-        json={
-            "key": "again",
-            "name": "Again",
-            "type": "fake_records",
-            "provider_id": provider["id"],
-            "namespace": team,
-        },
+        json={"name": "Again", "type": "fake_records", "provider_id": provider["id"], "namespace": team},
     )
     assert duplicate.status_code == 409 and error(duplicate)["code"] == "already_exists"
 
@@ -118,7 +112,7 @@ async def test_record_memories_own_a_provider_namespace(service) -> None:  # typ
         ({"provider_id": provider["id"]}, "provider_id"),
         ({"namespace": "mine"}, "namespace"),
     ):
-        refused = await service.client.post(base, json={"key": "bad", "name": "Bad", **body})
+        refused = await service.client.post(base, json={"name": "Bad", **body})
         assert refused.status_code == 400, refused.text
         assert refused_field(refused) == field
     # Type, provider and namespace are fixed once the memory exists.
@@ -127,35 +121,33 @@ async def test_record_memories_own_a_provider_namespace(service) -> None:  # typ
         changed = await service.client.patch(item, json={field: value}, headers={"if-match": etag(memory)})
         assert changed.status_code == 400, changed.text
 
-    async def listed_keys(**params: str) -> list[str]:
-        return sorted(item["key"] for item in (await service.client.get(base, params=params)).json()["items"])
+    async def listed_names(**params: str) -> list[str]:
+        return sorted(item["name"] for item in (await service.client.get(base, params=params)).json()["items"])
 
-    assert await listed_keys(kind="record") == ["facts", "team"]
-    assert await listed_keys(type="postgres") == ["notes"]
-    assert await listed_keys(kind="file", type="fake_records") == []
+    assert await listed_names(kind="record") == ["facts", "team"]
+    assert await listed_names(type="postgres") == ["notes"]
+    assert await listed_names(kind="file", type="fake_records") == []
 
 
 async def test_a_record_memory_needs_a_usable_enabled_provider(service) -> None:  # type: ignore[no-untyped-def]
-    base = f"{service.workspace}/memories"
-    elsewhere = await with_fake_records(service, workspace_id=await add_workspace(service))
+    base = f"{service.api}/memories"
+    provider = await with_fake_records(service)
+    elsewhere = await service.client.post(
+        f"{service.api}/memory-providers",
+        json={"type": "fake_records", "name": "Elsewhere", "config": {}},
+        headers={"x-workspace-id": await add_workspace(service)},
+    )
+    assert elsewhere.status_code == 201, elsewhere.text
     foreign = await service.client.post(
-        base, json={"key": "x", "name": "X", "type": "fake_records", "provider_id": elsewhere["id"]}
+        base, json={"name": "X", "type": "fake_records", "provider_id": elsewhere.json()["id"]}
     )
     assert foreign.status_code == 404 and error(foreign)["code"] == "not_found"
 
-    provider = (
-        await service.client.post(
-            f"{service.organization}/memory-providers",
-            json={"workspace_id": None, "type": "fake_records", "name": "Shared", "config": {}},
-        )
-    ).json()
     memory = await create_record_memory(service, provider)
-    provider_item = f"{service.organization}/memory-providers/{provider['id']}"
+    provider_item = f"{service.api}/memory-providers/{provider['id']}"
     disabled = await service.client.patch(provider_item, json={"enabled": False}, headers={"if-match": etag(provider)})
     assert disabled.status_code == 200, disabled.text
-    refused = await service.client.post(
-        base, json={"key": "y", "name": "Y", "type": "fake_records", "provider_id": provider["id"]}
-    )
+    refused = await service.client.post(base, json={"name": "Y", "type": "fake_records", "provider_id": provider["id"]})
     assert refused.status_code == 422 and error(refused)["code"] == "disabled"
     # A disabled provider also stops the records API of the memories that use it.
     listed = await service.client.get(f"{base}/{memory['id']}/records")
@@ -165,7 +157,7 @@ async def test_a_record_memory_needs_a_usable_enabled_provider(service) -> None:
 async def test_records_are_listed_searched_and_edited_in_the_backend(service) -> None:  # type: ignore[no-untyped-def]
     provider = await with_fake_records(service)
     memory = await create_record_memory(service, provider)
-    collection = f"{service.workspace}/memories/{memory['id']}/records"
+    collection = f"{service.api}/memories/{memory['id']}/records"
     added = []
     for text in ("The user prefers dark mode.", "Deploys happen on Tuesday.", "The user lives in Lisbon."):
         response = await service.client.post(collection, json={"text": text})
@@ -216,7 +208,7 @@ async def test_records_are_listed_searched_and_edited_in_the_backend(service) ->
 async def test_backend_refusals_map_to_service_errors(service) -> None:  # type: ignore[no-untyped-def]
     provider = await with_fake_records(service)
     memory = await create_record_memory(service, provider)
-    collection = f"{service.workspace}/memories/{memory['id']}/records"
+    collection = f"{service.api}/memories/{memory['id']}/records"
 
     BACKEND.failing["add"] = "write_unconfirmed"
     unconfirmed = await service.client.post(collection, json={"text": "Maybe written."})
@@ -250,9 +242,9 @@ async def test_backend_refusals_map_to_service_errors(service) -> None:  # type:
     assert (long.value.code, long.value.details["field"], BACKEND.calls) == ("invalid_argument", "text", [])
 
     # File routes refuse a record memory, and record routes a file memory.
-    file_memory = (await service.client.post(f"{service.workspace}/memories", json={"key": "n", "name": "N"})).json()
+    file_memory = (await service.client.post(f"{service.api}/memories", json={"name": "N"})).json()
     for path in (f"{memory['id']}/files", f"{file_memory['id']}/records"):
-        crossed = await service.client.get(f"{service.workspace}/memories/{path}")
+        crossed = await service.client.get(f"{service.api}/memories/{path}")
         assert crossed.status_code == 409 and error(crossed)["details"]["reason"] == "memory_kind"
 
 
@@ -267,7 +259,7 @@ async def test_record_verbs_follow_the_memory_rules(service) -> None:  # type: i
         )
 
     viewer, runner, builder = member("viewer"), member("runner"), member("builder")
-    create = MemoryCreate(key="facts", name="Facts", type="fake_records", provider_id=provider["id"])
+    create = MemoryCreate(name="Facts", type="fake_records", provider_id=provider["id"])
     for actor in (viewer, runner):
         with pytest.raises(ServiceError) as refused:
             await memories.create_memory(
@@ -300,7 +292,7 @@ async def test_record_verbs_follow_the_memory_rules(service) -> None:  # type: i
 
 async def test_deleting_a_record_memory_purges_its_namespace(service, runs_kit) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    base = f"{service.workspace}/memories"
+    base = f"{service.api}/memories"
     provider = await with_fake_records(service)
     memory = await create_record_memory(service, provider, namespace="shared-notes")
     BACKEND.seed("shared-notes", "Kept until the purge.")
@@ -313,7 +305,7 @@ async def test_deleting_a_record_memory_purges_its_namespace(service, runs_kit) 
     assert pending.target == {"provider_id": provider["id"], "namespace": "shared-notes"}
 
     # Until the purge settles, no memory may claim the namespace.
-    adopt = {"key": "again", "name": "Again", "type": "fake_records", "provider_id": provider["id"]}
+    adopt = {"name": "Again", "type": "fake_records", "provider_id": provider["id"]}
     purging = await service.client.post(base, json={**adopt, "namespace": "shared-notes"})
     assert purging.status_code == 409, purging.text
     assert error(purging)["details"] == {
@@ -340,9 +332,9 @@ async def test_a_purge_that_cannot_finish_ends_dead(service, runs_kit) -> None: 
     await runs_kit.pause_sweeps(service)
     provider = await with_fake_records(service)
 
-    async def deleted(key: str) -> dict[str, Any]:
-        memory = await create_record_memory(service, provider, key=key)
-        item = f"{service.workspace}/memories/{memory['id']}"
+    async def deleted(name: str) -> dict[str, Any]:
+        memory = await create_record_memory(service, provider, name)
+        item = f"{service.api}/memories/{memory['id']}"
         assert (await service.client.delete(item, headers={"if-match": etag(memory)})).status_code == 204
         return memory
 
@@ -373,29 +365,22 @@ async def test_a_backend_answer_over_the_byte_bound_is_a_classified_failure(serv
         do_GET = do_POST = do_DELETE = answer
 
     with serving(Oversized) as port:
-        body = {
-            "workspace_id": None,
-            "type": "mem0_oss",
-            "name": "mem0",
-            "config": {"base_url": f"http://127.0.0.1:{port}"},
-        }
-        provider = (await service.client.post(f"{service.organization}/memory-providers", json=body)).json()
+        body = {"type": "mem0_oss", "name": "mem0", "config": {"base_url": f"http://127.0.0.1:{port}"}}
+        provider = (await service.client.post(f"{service.api}/memory-providers", json=body)).json()
         memory = (
             await service.client.post(
-                f"{service.workspace}/memories",
-                json={"key": "facts", "name": "Facts", "type": "mem0_oss", "provider_id": provider["id"]},
+                f"{service.api}/memories",
+                json={"name": "Facts", "type": "mem0_oss", "provider_id": provider["id"]},
             )
         ).json()
-        collection = f"{service.workspace}/memories/{memory['id']}/records"
+        collection = f"{service.api}/memories/{memory['id']}/records"
         listed = await service.client.get(collection)
         assert listed.status_code == 503 and error(listed)["details"] == {"dependency": "memory:mem0_oss"}
         added = await service.client.post(collection, json={"text": "likes green tea"})
         assert added.status_code == 409 and error(added)["details"]["reason"] == "write_unconfirmed"
 
         assert (
-            await service.client.delete(
-                f"{service.workspace}/memories/{memory['id']}", headers={"if-match": etag(memory)}
-            )
+            await service.client.delete(f"{service.api}/memories/{memory['id']}", headers={"if-match": etag(memory)})
         ).status_code == 204
         await deliver_purges(service)
         [purge] = await purges(service)

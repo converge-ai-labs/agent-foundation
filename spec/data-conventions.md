@@ -114,7 +114,7 @@ The primary user-visible name of a managed resource is `name`, and a distinct te
 
 Internal domain, persistence, event, and adapter models use more explicit names when several identities or selection domains would otherwise be ambiguous, for example an Agent ID and AgentRevision ID beside a provider model identity. Typed values such as an AgentRevision reference or model selector carry semantics that a bare string and naming convention cannot.
 
-A type name states the concept rather than its repository, distribution, or module owner. It does not repeat qualifiers such as `Foundation`, `Service`, `Managed`, or `Workspace` when the surrounding namespace and fields already establish that context. A qualifier is retained only when two real concepts coexist at the same boundary, such as Workspace-Secret and invoking-User-Secret credential sources. Likewise, `managed` belongs in a type name only when the same boundary also exposes a distinct unmanaged form.
+A type name states the concept rather than its repository, distribution, or module owner. It does not repeat qualifiers such as `Foundation`, `Service`, `Managed`, or `Workspace` when the surrounding namespace and fields already establish that context. A qualifier is retained only when two real concepts coexist at the same boundary, such as an organization or workspace `Scope` beside a `WorkspaceScope` that always names a workspace. Likewise, `managed` belongs in a type name only when the same boundary also exposes a distinct unmanaged form.
 
 Where a domain exposes configured Providers as resources, each has its own `id`, while its `type` selects one trusted implementation family. Several Providers can have the same `type` while retaining independent configuration, credentials, names, ownership, and lifecycle. A field named `provider_id` identifies one configured Provider, while a Provider's own `type` is never presented as that resource's identity. On this resource boundary, `kind` is an optional object-category discriminator and does not select a Provider implementation.
 
@@ -126,9 +126,9 @@ Suffixes have stable domain meanings. `Revision` is an immutable member of a res
 
 The public boundary validates and normalizes input once. Internal code consumes the resulting typed meaning instead of repeatedly inferring whether a string is an object ID, symbolic selection, external identity, scoped reference, or secret. No universal field-suffix rule overrides clarity at either boundary.
 
-### Readable Resource Keys
+### Resource Keys
 
-Service organizations, workspaces, agents, skills, models and environment templates expose a mutable `key` beside their immutable `id` and display `name`. A key matches `^[a-z0-9][a-z0-9_-]{0,127}$` and is unique in its owning scope; a duplicate is `already_exists`. [Tenancy](a13n-service/03-tenancy.md) and [resources](a13n-service/04-resources.md) own each kind's scope, default and changes, and the [API](a13n-service/10-api.md#paths-and-scope) owns path resolution. Changing a key keeps the resource ID, references, revisions and authorization; links that name the previous key stop resolving.
+Only Service models have keys: a model is identified by an immutable workspace-unique key and exposes no ID ([resources](a13n-service/04-resources.md#keys)). Every other Service resource, skills, organizations and workspaces included, is identified by its ID alone; its `name` is display text.
 
 ## Ownership and Authority
 

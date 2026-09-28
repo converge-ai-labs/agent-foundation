@@ -194,36 +194,28 @@ async def with_fake_providers(service: SimpleNamespace) -> SimpleNamespace:
     BACKEND.expiries.clear()
     BACKEND.renewal_error = None
     client = service.client
-    provider = await client.post(
-        f"{service.organization}/environment-providers", json={"workspace_id": None, "type": "fake", "name": "Fake"}
-    )
+    provider = await client.post(f"{service.api}/environment-providers", json={"type": "fake", "name": "Fake"})
     assert provider.status_code == 201, provider.text
     template = await client.post(
-        f"{service.workspace}/environment-templates",
-        json={"key": "box", "name": "Box", "provider_id": provider.json()["id"]},
+        f"{service.api}/environment-templates", json={"name": "Box", "provider_id": provider.json()["id"]}
     )
     assert template.status_code == 201, template.text
     # Runs are only accepted and prepared here, so the model is never called.
-    shared = {"workspace_id": None, "name": "Unused"}
     config = {"base_url": "http://127.0.0.1:9/v1"}
     model_provider = await client.post(
-        f"{service.organization}/model-providers",
-        json={**shared, "type": "openai", "config": config, "credential": {"api_key": "sk-unused"}},
+        f"{service.api}/model-providers",
+        json={"name": "Unused", "type": "openai", "config": config, "credential": {"api_key": "sk-unused"}},
     )
     config = {"model_name": "unused", "model_api": "openai.chat_completions"}
     model = await client.post(
-        f"{service.organization}/models",
-        json={**shared, "provider_id": model_provider.json()["id"], "key": "unused", "config": config},
+        f"{service.api}/models",
+        json={"name": "Unused", "provider_id": model_provider.json()["id"], "key": "unused", "config": config},
     )
     agent = await client.post(
-        f"{service.workspace}/agents",
+        f"{service.api}/agents",
         json={
-            "key": "builder",
             "name": "Builder",
-            "config": {
-                "model": {"model_id": model.json()["id"]},
-                "default_environment_template_id": template.json()["id"],
-            },
+            "config": {"model": model.json()["key"], "default_environment_template_id": template.json()["id"]},
         },
     )
     assert agent.status_code == 201, agent.text
@@ -240,7 +232,7 @@ async def start(env: SimpleNamespace, text: str = "build it", **fields: object) 
 
 async def new_thread(env: SimpleNamespace, text: str, **fields: object) -> httpx2.Response:
     return await env.client.post(
-        f"{env.workspace}/threads",
+        f"{env.api}/threads",
         json={"agent_id": env.agent["id"], "payload": {"content": [{"type": "text", "text": text}]}, **fields},
         headers={"idempotency-key": uuid4().hex},
     )
@@ -248,22 +240,22 @@ async def new_thread(env: SimpleNamespace, text: str, **fields: object) -> httpx
 
 async def reserve(env: SimpleNamespace, template_id: str, **fields: object) -> dict:
     """A managed sandbox reserved from a template, in `creating` until maintenance creates it."""
-    response = await env.client.post(f"{env.workspace}/environments", json={"template_id": template_id, **fields})
+    response = await env.client.post(f"{env.api}/environments", json={"template_id": template_id, **fields})
     assert response.status_code == 201, response.text
     return response.json()
 
 
 async def environment(env: SimpleNamespace, environment_id: str) -> dict:
-    response = await env.client.get(f"{env.workspace}/environments/{environment_id}")
+    response = await env.client.get(f"{env.api}/environments/{environment_id}")
     assert response.status_code == 200, response.text
     return response.json()
 
 
 async def act(env: SimpleNamespace, method: str, path: str) -> tuple[int, dict]:
     """An environment command under the environment's current ETag."""
-    current = await env.client.get(f"{env.workspace}/environments/{path.split('/')[0]}")
+    current = await env.client.get(f"{env.api}/environments/{path.split('/')[0]}")
     response = await env.client.request(
-        method, f"{env.workspace}/environments/{path}", headers={"if-match": current.headers["etag"]}
+        method, f"{env.api}/environments/{path}", headers={"if-match": current.headers["etag"]}
     )
     return response.status_code, response.json()
 
@@ -273,7 +265,7 @@ def reason(body: dict) -> str:
 
 
 async def interrupt(env: SimpleNamespace, run_id: str) -> None:
-    response = await env.client.post(f"{env.workspace}/runs/{run_id}/interrupt")
+    response = await env.client.post(f"{env.api}/runs/{run_id}/interrupt")
     assert response.status_code == 200 and response.json()["status"] == "cancelled", response.text
 
 
@@ -286,7 +278,7 @@ async def backdate(env: SimpleNamespace, environment_id: str, **ago: timedelta) 
 
 async def follow_up(env: SimpleNamespace, thread_id: str, text: str) -> httpx2.Response:
     return await env.client.post(
-        f"{env.workspace}/threads/{thread_id}/inbox",
+        f"{env.api}/threads/{thread_id}/inbox",
         json={"agent_id": env.agent["id"], "payload": {"content": [{"type": "text", "text": text}]}},
         headers={"idempotency-key": uuid4().hex},
     )
@@ -294,9 +286,9 @@ async def follow_up(env: SimpleNamespace, thread_id: str, text: str) -> httpx2.R
 
 async def unmount(env: SimpleNamespace, thread_id: str) -> None:
     """Remove the primary mount under the thread's current ETag."""
-    thread = await env.client.get(f"{env.workspace}/threads/{thread_id}")
+    thread = await env.client.get(f"{env.api}/threads/{thread_id}")
     removed = await env.client.delete(
-        f"{env.workspace}/threads/{thread_id}/environments/workspace", headers={"if-match": thread.headers["etag"]}
+        f"{env.api}/threads/{thread_id}/environments/workspace", headers={"if-match": thread.headers["etag"]}
     )
     assert removed.status_code == 204, removed.text
 
@@ -306,11 +298,11 @@ EXTERNAL_TOKEN = "external-target-token"
 
 
 async def register(service: SimpleNamespace, endpoint: str, token: str = EXTERNAL_TOKEN) -> httpx2.Response:
-    return await service.client.post(f"{service.workspace}/environments", json={"endpoint": endpoint, "token": token})
+    return await service.client.post(f"{service.api}/environments", json={"endpoint": endpoint, "token": token})
 
 
 async def change(service: SimpleNamespace, environment_id: str, body: dict) -> httpx2.Response:
-    path = f"{service.workspace}/environments/{environment_id}"
+    path = f"{service.api}/environments/{environment_id}"
     current = await service.client.get(path)
     return await service.client.patch(path, json=body, headers={"if-match": current.headers["etag"]})
 

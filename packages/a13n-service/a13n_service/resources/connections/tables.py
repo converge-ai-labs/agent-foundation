@@ -17,7 +17,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
-from a13n_service.resources.providers.tables import provider_in_scope
 
 type ConnectionAuth = Literal["none", "bearer", "headers", "oauth", "account"]
 type ConnectionStatus = Literal["pending", "ready", "reauthorization_required"]
@@ -31,8 +30,8 @@ class ConnectionRow(Stamped, Base):
         UniqueConstraint("organization_id", "workspace_id", "id"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(
-            ["organization_id", "connector_provider_id"],
-            ["connector_providers.organization_id", "connector_providers.id"],
+            ["workspace_id", "connector_provider_id"],
+            ["connector_providers.workspace_id", "connector_providers.id"],
         ),
         CheckConstraint("auth IN ('none', 'bearer', 'headers', 'oauth', 'account')", name="auth"),
         CheckConstraint("status IN ('pending', 'ready', 'reauthorization_required')", name="status"),
@@ -68,7 +67,6 @@ class ConnectionRow(Stamped, Base):
         ),
         rules(
             identity_guarded("connections"),
-            *provider_in_scope("connections", "connector_provider_id", "connector_providers"),
             # What the Service maintains on its own keeps the ETag: tokens renewed under the credential's grant,
             # the outstanding operation and its failure, the pending browser flow and test outcomes.
             unversioned=(

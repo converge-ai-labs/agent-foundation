@@ -7,28 +7,22 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
-from a13n_service.resources.providers.tables import provider_in_scope
 
 
 class EnvironmentTemplateRow(Stamped, Base):
     __tablename__ = "environment_templates"
     KIND: ClassVar[str] = "environment_template"
     __table_args__ = (
-        UniqueConstraint("workspace_id", "key"),
         UniqueConstraint("workspace_id", "id"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(
-            ["organization_id", "provider_id"], ["environment_providers.organization_id", "environment_providers.id"]
+            ["workspace_id", "provider_id"], ["environment_providers.workspace_id", "environment_providers.id"]
         ),
-        rules(
-            identity_guarded("environment_templates"),
-            *provider_in_scope("environment_templates", "provider_id", "environment_providers"),
-        ),
+        rules(identity_guarded("environment_templates")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
-    key: Mapped[str]
     name: Mapped[str]
     description: Mapped[str | None]
     provider_id: Mapped[str]

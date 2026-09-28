@@ -309,6 +309,129 @@ async def test_tools_are_offered_per_access_and_selection() -> None:
     assert _tools().get_toolset() is None
 
 
+async def test_capability_tool_reuse_keeps_bindings_preparation_and_origins_isolated() -> None:
+    from copy import deepcopy
+    from dataclasses import replace
+
+    from a13n_harness.capabilities import FileMemoryCapability
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai.toolsets import FunctionToolset
+    from pydantic_ai.usage import RunUsage
+
+    first_store, second_store = FakeFileStore(), FakeFileStore()
+    first = FileMemoryCapability(
+        [FileMount("user", first_store, "write"), FileMount("team", second_store, "read")], origin=ORIGIN
+    )
+    other_origin = Origin(run_id="run-2", principal_id="user-2")
+    second = FileMemoryCapability([FileMount("other", second_store, "write")], origin=other_origin)
+    first_tools, second_tools = first.get_toolset(), second.get_toolset()
+    assert isinstance(first_tools, FunctionToolset)
+    assert isinstance(second_tools, FunctionToolset)
+    assert first.get_toolset() is first_tools
+    assert second.get_toolset() is second_tools
+    ctx = RunContext(deps=cast(AgentContext, None), model=TestModel(), usage=RunUsage(), max_retries=2)
+    original_schema = deepcopy(first_tools.tools["memory_file_create"].function_schema.json_schema)
+    for retries in (2, 5, 1):
+        prepared = await first_tools.get_tools(replace(ctx, max_retries=retries))
+        assert all(tool.max_retries == retries for tool in prepared.values())
+        assert prepared["memory_file_create"].tool_def.parameters_json_schema["properties"]["memory"]["enum"] == [
+            "user"
+        ]
+        assert prepared["memory_file_view"].tool_def.parameters_json_schema["properties"]["memory"]["enum"] == [
+            "user",
+            "team",
+        ]
+        prepared["memory_file_create"].tool_def.parameters_json_schema["properties"]["memory"]["description"] = (
+            "changed projection"
+        )
+        prepared["memory_file_create"].tool_def.parameters_json_schema["properties"]["memory"]["enum"].append(
+            "projection-only"
+        )
+    assert first_tools.tools["memory_file_create"].function_schema.json_schema == original_schema
+    assert first_tools.tools["memory_file_create"].max_retries is None
+    for name in first_tools.tools:
+        assert first_tools.tools[name] is not second_tools.tools[name]
+        assert first_tools.tools[name].function_schema is not second_tools.tools[name].function_schema
+    create = first_tools.tools["memory_file_create"].function_schema.call
+    for call_id in ("call-a", "call-b"):
+        await create({"memory": "user", "path": f"{call_id}.md", "content": "first"}, _ctx(call_id))
+    await second_tools.tools["memory_file_create"].function_schema.call(
+        {"memory": "other", "path": "other.md", "content": "second"}, _ctx("call-c")
+    )
+    assert first_store.origins == [replace(ORIGIN, tool_call_id=call_id) for call_id in ("call-a", "call-b")]
+    assert second_store.origins == [replace(other_origin, tool_call_id="call-c")]
+    assert (await _fails(create({"memory": "team", "path": "bad.md", "content": "bad"}, _ctx())))[
+        "error"
+    ] == "forbidden"
+    assert (await _fails(create({"memory": "other", "path": "bad.md", "content": "bad"}, _ctx())))[
+        "error"
+    ] == "unknown_memory"
+
+
+@pytest.mark.parametrize("changed", ["mounts", "limits", "origin", "tools"])
+async def test_changed_source_bindings_rebuild_tools_without_changing_a_captured_run(changed: str) -> None:
+    from a13n_harness.capabilities import FileMemoryCapability, FileMemoryLimits
+    from a13n_harness.capabilities.memory import _FileMemoryRun
+    from pydantic_ai.toolsets import FunctionToolset
+
+    store = FakeFileStore({"a.md": "abcdef"})
+    source = FileMemoryCapability([FileMount("user", store, "write")], origin=ORIGIN)
+    captured = _FileMemoryRun(source, cast(AgentContext, None))
+    original = captured.get_toolset()
+    assert isinstance(original, FunctionToolset)
+    assert source.get_toolset() is original
+    if changed == "mounts":
+        source.mounts = (FileMount("user", store, "read"),)
+    elif changed == "limits":
+        source.limits = FileMemoryLimits(format=FileFormat(max_file_bytes=3))
+    elif changed == "origin":
+        source.origin = Origin(run_id="new-run")
+    else:
+        source.tools = frozenset({"view"})
+    current = source.get_toolset()
+    assert isinstance(current, FunctionToolset)
+    assert current is not original
+    assert source.get_toolset() is current
+    assert _FileMemoryRun(source, cast(AgentContext, None)).get_toolset() is current
+    assert captured.get_toolset() is original
+    await original.tools["memory_file_create"].function_schema.call(
+        {"memory": "user", "path": "old.md", "content": "original"}, _ctx()
+    )
+    assert store.origins == [Origin(run_id="run-1", principal_id="user-1", tool_call_id="call-1")]
+    if changed in {"mounts", "tools"}:
+        assert "memory_file_create" not in current.tools
+    elif changed == "limits":
+        viewed = await current.tools["memory_file_view"].function_schema.call(
+            {"memory": "user", "path": "a.md"}, _ctx()
+        )
+        assert viewed["content"] == "abc" and viewed["truncated"] is True
+    else:
+        await current.tools["memory_file_create"].function_schema.call(
+            {"memory": "user", "path": "new.md", "content": "new"}, _ctx()
+        )
+        assert store.origins[-1] == Origin(run_id="new-run", tool_call_id="call-1")
+
+
+async def test_empty_memory_tool_surface_is_reused(monkeypatch: pytest.MonkeyPatch) -> None:
+    from a13n_harness.capabilities import FileMemoryCapability
+    from a13n_harness.capabilities.memory import _FileMemoryRun
+
+    builds = 0
+    original = MemoryFileToolset.get_toolset
+
+    def build(owner: MemoryFileToolset):
+        nonlocal builds
+        builds += 1
+        return original(owner)
+
+    monkeypatch.setattr(MemoryFileToolset, "get_toolset", build)
+    source = FileMemoryCapability([])
+    assert source.get_toolset() is None
+    assert _FileMemoryRun(source, cast(AgentContext, None)).get_toolset() is None
+    assert source.get_toolset() is None
+    assert builds == 1
+
+
 async def test_tool_metadata_declares_effects_and_recovery() -> None:
     toolset = _tools(FileMount("user", FakeFileStore(), "write")).get_toolset()
     assert toolset is not None

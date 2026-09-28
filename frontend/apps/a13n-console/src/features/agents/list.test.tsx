@@ -6,7 +6,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Agents } from "./list";
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
@@ -14,7 +16,7 @@ vi.mock("../../layout/workspace", () => ({
     can: () => false,
   }),
 }));
-vi.mock("./queries", () => ({ useModelsById: () => new Map() }));
+vi.mock("./queries", () => ({ useModelsByKey: () => new Map() }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, unknown>) =>
@@ -29,7 +31,6 @@ afterEach(() => {
 
 const agent = (name: string, archived = false) => ({
   id: `ap_${name.toLowerCase()}`,
-  key: name.toLowerCase(),
   name,
   description: "",
   source: "custom",
@@ -78,10 +79,9 @@ it("adds archived agents and searches on the Service, from the first page", asyn
   await user.click(screen.getByRole("button", { name: "Archived" }));
   await screen.findByRole("link", { name: /Retired/ });
   expect(http.GET).toHaveBeenLastCalledWith(
-    "/api/v1/workspaces/{workspace_id}/agents",
+    "/api/v1/agents",
     expect.objectContaining({
       params: {
-        path: { workspace_id: "ws_test" },
         query: { limit: 30, cursor: undefined },
       },
     }),
@@ -90,10 +90,9 @@ it("adds archived agents and searches on the Service, from the first page", asyn
   await user.type(screen.getByRole("searchbox"), "Scout");
   await screen.findByRole("link", { name: /Scout/ });
   expect(http.GET).toHaveBeenLastCalledWith(
-    "/api/v1/workspaces/{workspace_id}/agents",
+    "/api/v1/agents",
     expect.objectContaining({
       params: {
-        path: { workspace_id: "ws_test" },
         query: { limit: 30, cursor: undefined, archived: false, q: "scout" },
       },
     }),

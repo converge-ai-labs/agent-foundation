@@ -375,7 +375,7 @@ class _InstrumentationOwnershipCapability(AbstractCapability[Any]):
         )
         if not valid:
             raise DefinitionError(
-                "Run-resolved Pydantic AI Instrumentation is reserved to HarnessBuilder.",
+                "Run-resolved Agent instrumentation is reserved to HarnessBuilder.",
                 code="instrumentation_owner_conflict",
                 details={"source": "run_resolved"},
             )

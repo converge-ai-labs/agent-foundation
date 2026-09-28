@@ -265,6 +265,10 @@ export class ThreadDraft {
     let presenceExpiry: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     let joined = false;
+    // Keep one complete update in flight. Edits remain in the local CRDT and
+    // the next accepted snapshot flushes their latest merged state, not a queue
+    // of obsolete full documents. Deletions participate in acknowledgement.
+    let inFlight: Y.Snapshot | undefined;
     let latestPresence: Schema<"DraftPresence"> | undefined;
     let presenceUpdated = 0;
     const sendPresence = () => {
@@ -289,6 +293,9 @@ export class ThreadDraft {
     this.send = () => {
       if (
         !joined ||
+        inFlight ||
+        this.status !== "Connected" ||
+        this.synchronized ||
         this.replacement ||
         !this.draftId ||
         socket?.readyState !== WebSocket.OPEN
@@ -301,6 +308,7 @@ export class ThreadDraft {
         this.notify();
         return;
       }
+      inFlight = Y.snapshot(this.doc);
       socket.send(
         JSON.stringify({
           kind: "sync",
@@ -311,6 +319,7 @@ export class ThreadDraft {
     };
     const connect = () => {
       joined = false;
+      inFlight = undefined;
       this.status = "Connecting";
       this.notify();
       const url = new URL(
@@ -328,6 +337,9 @@ export class ThreadDraft {
           if (typeof frame !== "object" || frame === null)
             throw new Error("Invalid draft frame.");
           if ("error" in frame) {
+            // Do not retry a rejected update automatically. A subsequent local
+            // correction may send again, or reconnect may reconcile the room.
+            inFlight = undefined;
             const error = frame.error;
             this.error =
               typeof error === "object" && error !== null && "message" in error
@@ -349,7 +361,12 @@ export class ThreadDraft {
             throw new Error("Invalid draft frame.");
           const first = !joined;
           joined = true;
+          if (frame.draft_id !== this.draftId) inFlight = undefined;
           this.receive(frame as Schema<"DraftFrame">);
+          if (inFlight && this.accepted && covers(this.accepted, inFlight)) {
+            inFlight = undefined;
+            if (!this.error) this.send?.();
+          }
           clearTimeout(presenceExpiry);
           // A half-open receiver must not leave peer carets painted indefinitely.
           presenceExpiry = setTimeout(() => {

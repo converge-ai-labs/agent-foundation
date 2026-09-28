@@ -67,22 +67,15 @@ class Cast:
     analyst: Json  # a default template, so each thread reserves its own environment
 
 
-def seed_agents(api: Api, ws: str, local: Local, skills: dict[str, Json], connection: Json, search: Json) -> Cast:
-    def agent(
-        key: str, name: str, description: str, labels: dict[str, str], model: Json = local.model, **config: object
-    ) -> Json:
+def seed_agents(api: Api, local: Local, connection: Json, search: Json, skills: dict[str, Json]) -> Cast:
+    def agent(name: str, description: str, labels: dict[str, str], model: Json = local.model, **config: object) -> Json:
         instructions = f"You are the {name.lower()} of a fictional product team. Keep answers short."
-        body = {"model": {"model_id": model["id"]}, "instructions": instructions, **config}
-        return api.post(
-            f"{ws}/agents", {"key": key, "name": name, "description": description, "labels": labels, "config": body}
-        )
+        body = {"model": model["key"], "instructions": instructions, **config}
+        return api.post("/api/v1/agents", {"name": name, "description": description, "labels": labels, "config": body})
 
-    assistant = agent(
-        "docs-assistant", "Documentation assistant", "Answers questions about the docs.", {"team": "docs"}
-    )
+    assistant = agent("Documentation assistant", "Answers questions about the docs.", {"team": "docs"})
     cast = Cast(
         writer=agent(
-            "release-writer",
             "Release writer",
             "Drafts release notes in the shared review workspace.",
             {"team": "docs", "stage": "production"},
@@ -90,7 +83,6 @@ def seed_agents(api: Api, ws: str, local: Local, skills: dict[str, Json], connec
             toolsets={"assets": {"enabled": True}},
         ),
         reviewer=agent(
-            "release-reviewer",
             "Release reviewer",
             "Asks the user to review drafts before publishing.",
             {"team": "docs"},
@@ -98,7 +90,6 @@ def seed_agents(api: Api, ws: str, local: Local, skills: dict[str, Json], connec
             user_questions=True,
         ),
         lookup=agent(
-            "review-lookup",
             "Review lookup",
             "Looks up review records over MCP; lookups need approval.",
             {"team": "qa"},
@@ -111,23 +102,15 @@ def seed_agents(api: Api, ws: str, local: Local, skills: dict[str, Json], connec
                 }
             ],
         ),
-        structured=agent(
-            "structured-review",
-            "Structured review",
-            "Returns a typed review report.",
-            {"team": "qa"},
-            output_spec=REPORT,
-        ),
+        structured=agent("Structured review", "Returns a typed review report.", {"team": "qa"}, output_spec=REPORT),
         assistant=assistant,
         viewer=agent(
-            "media-reviewer",
             "Media reviewer",
             "Reviews screenshots, recordings and PDFs with a model that understands them.",
             {"team": "design"},
             model=local.media,
         ),
         coordinator=agent(
-            "release-coordinator",
             "Release coordinator",
             "Delegates reviews to the documentation assistant.",
             {"team": "docs"},
@@ -135,27 +118,24 @@ def seed_agents(api: Api, ws: str, local: Local, skills: dict[str, Json], connec
             subagents={"reviewer": {"agent_id": assistant["id"], "description": "Reviews one release note."}},
         ),
         analyst=agent(
-            "workspace-analyst",
             "Workspace analyst",
             "Works in an environment of its own, reserved from the local template.",
             {"team": "platform"},
             default_environment_template_id=local.template["id"],
             skills=[{"skill_id": skills["accessibility-review"]["id"]}],
-            secret_requirements=[{"key": "RELEASE_TOKEN"}],
         ),
     )
-    api.put(f"{ws}/agents/{cast.writer['id']}/avatar", cast.writer, png())
+    api.put(f"/api/v1/agents/{cast.writer['id']}/avatar", cast.writer, png())
     web_tools = {"search": {"enabled": True, "config": {"provider_id": search["id"]}}, "fetch": {"enabled": True}}
     agent(
-        "research-notes",
         "Research notes",
         "Searches the web; its fictional search account never answers.",
         {"team": "research"},
         toolsets={"web": {"enabled": True, "tools": web_tools}},
     )
-    legacy = agent("legacy-triage", "Legacy triage", "Replaced by the release reviewer.", {"team": "support"})
-    api.post(f"{ws}/agents/{legacy['id']}/archive", current=legacy)
-    api.post(f"{ws}/agent-composer")
-    for number, name in enumerate(CATALOG, start=1):
-        agent(f"catalog-{number:02d}", name, "An idle fictional agent.", {"team": "catalog"})
+    legacy = agent("Legacy triage", "Replaced by the release reviewer.", {"team": "support"})
+    api.post(f"/api/v1/agents/{legacy['id']}/archive", current=legacy)
+    api.post("/api/v1/agent-composer")
+    for name in CATALOG:
+        agent(name, "An idle fictional agent.", {"team": "catalog"})
     return cast

@@ -504,10 +504,10 @@ export function TraceList({ filters, page }: TraceListProps) {
   const query = useQuery({
     queryKey: ["trace-list", workspace.id, filters, page.cursor],
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/traces", {
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/traces", {
           params: {
-            path: { workspace_id: workspace.id },
             query: {
               started_after: filters.from,
               started_before: filters.to,

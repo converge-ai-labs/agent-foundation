@@ -63,7 +63,7 @@ export function SkillsSection({
               .map((skill) => ({
                 id: skill.id,
                 name: skill.name,
-                detail: skill.key,
+                detail: skill.description,
               }))}
             selected={selected}
             onToggle={(id, checked) =>
@@ -87,7 +87,9 @@ export function SkillsSection({
                 key={selection.skill_id}
                 icon={<PuzzlePieceIcon size={16} />}
                 name={skill?.name ?? selection.skill_id}
-                secondary={skill ? skill.key : t("Not in this workspace")}
+                secondary={
+                  skill ? skill.description : t("Not in this workspace")
+                }
                 control={
                   <label className={styles.rowSelect}>
                     {t("Version")}

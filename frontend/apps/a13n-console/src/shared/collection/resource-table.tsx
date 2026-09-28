@@ -26,8 +26,8 @@ export interface ResourceColumn<T> {
   render: (item: T) => ReactNode;
 }
 
-/** One table anatomy serves every resource list. */
-export function ResourceTable<T extends { id: string }>({
+/** One table anatomy serves every resource list; models are keyed rather than identified. */
+export function ResourceTable<T extends { id: string } | { key: string }>({
   items,
   columns,
   caption,
@@ -78,7 +78,7 @@ export function ResourceTable<T extends { id: string }>({
       <TableBody>
         {items.map((item) => (
           <TableRow
-            key={item.id}
+            key={"id" in item ? item.id : item.key}
             tabIndex={activates(item) ? 0 : undefined}
             className={
               activates(item)

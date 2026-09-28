@@ -24,7 +24,7 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions, TextAreaField } from "../../shared/forms";
 import { ProviderIcon, ResourceEditorButton } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
-import { type WorkspaceScope } from "./api";
+import { useWorkspace } from "../../layout/workspace";
 import { TemplateConfig, type ChosenProvider } from "./template-config";
 
 /**
@@ -32,18 +32,17 @@ import { TemplateConfig, type ChosenProvider } from "./template-config";
  * into a configuration; editing opens the configuration beside its settings.
  */
 export function TemplateEditor({
-  scope,
   templateId,
   editable = true,
   controlledOpen,
   onClose,
   finalFocus,
 }: ResourceEditorControl & {
-  scope: WorkspaceScope;
   templateId?: string;
   editable?: boolean;
 }) {
   const client = useClient(),
+    { workspace } = useWorkspace(),
     { t } = useTranslation(),
     [generation, setGeneration] = useState(0),
     [chosen, setChosen] = useState<ChosenProvider>(),
@@ -53,19 +52,17 @@ export function TemplateEditor({
       finalFocus,
     });
   const query = useQuery({
-    queryKey: ["environment-template", scope.kind, scope.id, templateId],
+    queryKey: ["environment-template", workspace.id, templateId],
     enabled: open && !!templateId,
     queryFn: ({ signal }) =>
-      client.http
-        .GET(
-          "/api/v1/workspaces/{workspace_id}/environment-templates/{template_id}",
-          {
-            params: {
-              path: { workspace_id: scope.id, template_id: templateId! },
-            },
-            signal,
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/environment-templates/{template_id}", {
+          params: {
+            path: { template_id: templateId! },
           },
-        )
+          signal,
+        })
         .then(representation),
   });
   async function reload() {
@@ -78,7 +75,6 @@ export function TemplateEditor({
       <ResourceModalTitle
         name={query.data.value.name}
         id={query.data.value.id}
-        resourceKey={query.data.value.key}
       />
     ) : creating && chosen ? (
       <BrandTitle mark={<ProviderIcon type={chosen.provider.type} />}>
@@ -122,7 +118,6 @@ export function TemplateEditor({
           <ErrorNotice error={query.error} />
         ) : creating ? (
           <TemplateConfig
-            scope={scope}
             close={() => setOpen(false)}
             onProviderChange={setChosen}
           />
@@ -136,7 +131,6 @@ export function TemplateEditor({
                 </TabsList>
                 <TabsPanel value="configuration" keepMounted>
                   <TemplateConfig
-                    scope={scope}
                     template={query.data}
                     close={() => setOpen(false)}
                     reload={reload}
@@ -179,24 +173,21 @@ export function TemplateSettings({
     [archived, setArchived] = useState(!initial.value.enabled);
   const save = useMutation({
     mutationFn: () =>
-      client.http
-        .PATCH(
-          "/api/v1/workspaces/{workspace_id}/environment-templates/{template_id}",
-          {
-            params: {
-              path: {
-                workspace_id: basis.value.workspace_id,
-                template_id: basis.value.id,
-              },
-            },
-            headers: ifMatch(basis.etag),
-            body: {
-              name,
-              description: description || null,
-              enabled: !archived,
+      client
+        .workspace(basis.value.workspace_id)
+        .PATCH("/api/v1/environment-templates/{template_id}", {
+          params: {
+            path: {
+              template_id: basis.value.id,
             },
           },
-        )
+          headers: ifMatch(basis.etag),
+          body: {
+            name,
+            description: description || null,
+            enabled: !archived,
+          },
+        })
         .then(data),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: ["environment-templates"] });

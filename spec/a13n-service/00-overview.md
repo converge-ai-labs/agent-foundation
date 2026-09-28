@@ -6,7 +6,7 @@ The a13n Service (`packages/a13n-service`, distribution and command `a13n-servic
 
 ```mermaid
 flowchart LR
-    Caller[Console, SDK or integration] -->|configure| Resources[Resources<br/>agents, skills, models,<br/>connections, templates, secrets]
+    Caller[Console, SDK or integration] -->|configure| Resources[Resources<br/>agents, skills, models,<br/>connections, templates, memories]
     Caller -->|submit input| Inbox[Thread inbox]
     Inbox -->|accept: start_run| Run[Run accepted]
     Run -->|claim| Attempt[Attempt on a worker]
@@ -20,7 +20,7 @@ flowchart LR
 ```
 
 1. A caller authenticates as a principal with grants in an organization and its workspaces ([03](03-tenancy.md)).
-2. The caller configures resources: agents and their immutable revisions, skills, provider accounts, models, environment templates, connections, secrets, assets and webhook subscriptions ([04](04-resources.md)), and memories ([11](11-memory.md)).
+2. The caller configures resources: agents and their immutable revisions, skills, provider accounts, models, environment templates, connections, assets and webhook subscriptions ([04](04-resources.md)), and memories ([11](11-memory.md)).
 3. Input is appended to a thread's inbox. Acceptance selects a queued entry and creates the thread's next run, freezing the agent revision, pins, overrides and mounts it needs ([05](05-runs.md)).
 4. A worker claims the run as a leased, fenced attempt and executes it through the Harness against the run's environments ([06](06-environments.md)) and the providers its resources select ([08](08-providers.md)). At each safe boundary it commits a checkpoint that makes the consumed input and the resumable state durable together.
 5. Sealing records the terminal outcome, or a wait for approval, client tools or user input, and schedules any successor or parent delivery. Usage records, audit events, lifecycle webhooks, the provisional thread stream and trace queries report what happened ([07](07-facts-and-delivery.md)).

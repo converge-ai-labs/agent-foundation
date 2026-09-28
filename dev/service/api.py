@@ -38,6 +38,20 @@ class Api:
     def base_url(self) -> str:
         return str(self._http.base_url)
 
+    @property
+    def workspace_id(self) -> str:
+        """The workspace business routes act in, which a login session names in `X-Workspace-ID` on every request;
+        management routes ignore it."""
+        return self._http.headers["x-workspace-id"]
+
+    @workspace_id.setter
+    def workspace_id(self, workspace_id: str) -> None:
+        self._http.headers["x-workspace-id"] = workspace_id
+
+    def first_workspace(self) -> Json:
+        """The workspace bootstrap created with the organization: the oldest one the caller can read."""
+        return min(self.items("/api/v1/workspaces"), key=lambda workspace: workspace["created_at"])
+
     def login(self, email: str, password: str) -> str:
         """Sign in; returns the principal ID."""
         return self._adopt(self._send("POST", "/api/v1/auth/login", json={"email": email, "password": password}))
@@ -102,8 +116,8 @@ class Api:
             time.sleep(0.1)
         return resource
 
-    def sealed_run(self, workspace: str, run_id: str, timeout: float = 60) -> Json:
-        return self.until(f"{workspace}/runs/{run_id}", lambda run: run["status"] in SEALED, timeout)
+    def sealed_run(self, run_id: str, timeout: float = 60) -> Json:
+        return self.until(f"/api/v1/runs/{run_id}", lambda run: run["status"] in SEALED, timeout)
 
     def _adopt(self, response: httpx2.Response) -> str:
         # The session cookie is Secure, which a cookie jar withholds over plain HTTP; loopback sends it explicitly.
@@ -121,4 +135,8 @@ class Api:
 
 
 def _if_match(current: Json | None) -> dict[str, str]:
-    return {} if current is None else {"if-match": f'"{current["id"]}:{current["version"]}"'}
+    if current is None:
+        return {}
+    # Models are identified by key alone; every other resource by ID.
+    identifier = current["id"] if "id" in current else current["key"]
+    return {"if-match": f'"{identifier}:{current["version"]}"'}

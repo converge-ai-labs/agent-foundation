@@ -37,7 +37,7 @@ export function AgentFilePreview({ file }: { file: AgentFile }) {
           <dl className={styles.previewFacts}>
             <div>
               <dt>{t("Model")}</dt>
-              <dd>{file.config.model.model_id}</dd>
+              <dd>{file.config.model}</dd>
             </div>
             <div>
               <dt>{t("Capabilities")}</dt>
@@ -117,7 +117,7 @@ export function ExportAgent({
                   new Blob([serializeAgentFile(file)], {
                     type: "application/yaml;charset=utf-8",
                   }),
-                  `${agent.key}.yaml`,
+                  `${agent.id}.yaml`,
                 );
                 setError(undefined);
               } catch {

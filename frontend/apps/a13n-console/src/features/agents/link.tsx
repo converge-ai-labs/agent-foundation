@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import { useAgent } from "./queries";
 
-/** Resolve historical IDs before constructing a current key-based link. */
+/** Read an agent's current name for a link to its ID. */
 export function AgentLink({
   agentId,
   children,
@@ -16,7 +16,7 @@ export function AgentLink({
   const { basePath } = useWorkspace();
   const { t } = useTranslation();
   return agent.data && !agent.error ? (
-    <Link to={`${basePath}/agents/${agent.data.key}`}>
+    <Link to={`${basePath}/agents/${agent.data.id}`}>
       {children ?? agent.data.name}
     </Link>
   ) : (

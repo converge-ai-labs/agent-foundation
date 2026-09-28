@@ -1,7 +1,6 @@
 import type { Client } from "../../service-client";
 import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import { authorizationHref } from "../../shared/authorization-link";
-import { connectionPath } from "./api";
 
 const storageKey = "a13n.connection-authorization";
 const callbackPath = "/connections/callback";
@@ -34,15 +33,13 @@ export function authorizeConnection(
   connection: Schema["Connection"],
   body: Schema["AuthorizationRequest"] = {},
 ) {
-  return client.http
-    .POST(
-      "/api/v1/workspaces/{workspace_id}/connections/{connection_id}/authorize",
-      {
-        params: { path: connectionPath(connection) },
-        headers: ifMatch(rowTag(connection)),
-        body,
-      },
-    )
+  return client
+    .workspace(connection.workspace_id)
+    .POST("/api/v1/connections/{connection_id}/authorize", {
+      params: { path: { connection_id: connection.id } },
+      headers: ifMatch(rowTag(connection)),
+      body,
+    })
     .then(data);
 }
 

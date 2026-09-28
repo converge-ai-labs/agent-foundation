@@ -30,7 +30,7 @@ from a13n_service.resources.memories.service import resolve_memory
 from a13n_service.resources.models.service import resolve_media_model, resolve_model
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import WebProviderRow
-from a13n_service.resources.skills.pins import require_pins
+from a13n_service.resources.skills.pins import require_distinct_names, require_pins
 from a13n_service.resources.skills.schemas import SkillPin
 from a13n_service.resources.skills.tables import SkillRow
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope
@@ -72,9 +72,9 @@ async def validate_config(
             ),
         }
     )
-    with at_field("model.model_id"):
-        model = await resolve_model(session, actor, scope, config.model.model_id, verb=verb, authority=authority)
-    registry.check_model_settings(model.config.model_api, config.model.settings, field="model.settings")
+    with at_field("model"):
+        model = await resolve_model(session, actor, scope, config.model, verb=verb, authority=authority)
+    registry.check_model_settings(model.config.model_api, config.model_settings, field="model_settings")
     if config.reviewer is not None:
         with at_field("reviewer.model"):
             reviewer = await resolve_model(session, actor, scope, config.reviewer.model, verb=verb, authority=authority)
@@ -82,9 +82,9 @@ async def validate_config(
             registry.check_model_settings(
                 reviewer.config.model_api, config.reviewer.model_settings, field="reviewer.model_settings"
             )
-    for kind, model_id in config.media_understanding.selections().items():
+    for kind, key in config.media_understanding.selections().items():
         with at_field(f"media_understanding.{kind}"):
-            await resolve_media_model(session, actor, scope, kind, model_id, verb=verb, authority=authority)
+            await resolve_media_model(session, actor, scope, kind, key, verb=verb, authority=authority)
     types: dict[str, str] = {}
     for index, selection in enumerate(config.connection_tools):
         with at_field(f"connection_tools.{index}"):
@@ -201,6 +201,9 @@ async def _pin_skills(
             checked[f"skills.{index}"] = SkillPin(skill_id=skill.skill_id, revision_id=revision_id)
         pinned.append(selection)
     await require_pins(session, workspace_id, checked)
+    await require_distinct_names(
+        session, workspace_id, {f"skills.{index}": skill.revision_id or "" for index, skill in enumerate(pinned)}
+    )
     return tuple(pinned)
 
 

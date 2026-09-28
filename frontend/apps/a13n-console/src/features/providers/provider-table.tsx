@@ -12,7 +12,7 @@ import {
 } from "../../shared/collection";
 import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
 import { PageActions } from "../../shared/page";
-import { ProviderIcon, ScopeBadge } from "../../shared/identity";
+import { ProviderIcon } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
 import { providerCategory, type ProviderCategoryValue } from "./categories";
 import { CredentialsPill, type CredentialState } from "./credentials-pill";
@@ -29,7 +29,6 @@ export interface ProviderRow {
   definition?: string | null;
   /** Brand identity for the tile. */
   type: string;
-  workspaceId?: string | null;
   credentials: CredentialState;
   /** Domain state for the status pill (`enabled`, `disabled`, …). */
   state: string;
@@ -38,7 +37,7 @@ export interface ProviderRow {
 
 /**
  * One table anatomy for models, web, environment, and connector
- * providers: brand identity, scope, credentials, status, overflow menu.
+ * providers: brand identity, credentials, status, overflow menu.
  */
 export function ProviderTable<T extends { id: string }>({
   category,
@@ -146,13 +145,6 @@ export function ProviderTable<T extends { id: string }>({
                 />
               );
             },
-          },
-          {
-            label: t("Scope"),
-            tone: "muted",
-            render: (item) => (
-              <ScopeBadge workspaceId={row(item).workspaceId} />
-            ),
           },
           {
             label: t("Credentials"),

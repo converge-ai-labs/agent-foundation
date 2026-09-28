@@ -7,7 +7,6 @@ from a13n_harness.providers.authentication import Authentication
 from a13n_harness.providers.model.headers import ExtraHeaders, HeaderName, HeaderValue, normalize_header_names
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, JsonValue
 
-from a13n_service.infra.ids import ObjectId
 from a13n_service.providers.registry import WebOperation
 
 Credential = dict[str, JsonValue]
@@ -19,8 +18,6 @@ HeaderUpdates = Annotated[
 
 class ProviderCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # Required: a workspace ID, or explicit null to share the provider with every workspace of the org.
-    workspace_id: ObjectId | None
     type: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=128)
     config: dict[str, JsonValue] = Field(default_factory=dict)
@@ -44,7 +41,7 @@ class ProviderUpdate(BaseModel):
 class Provider(BaseModel):
     id: str
     organization_id: str
-    workspace_id: str | None
+    workspace_id: str
     type: str
     name: str
     config: dict[str, JsonValue]

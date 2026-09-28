@@ -2,19 +2,9 @@ import { queryOptions } from "@tanstack/react-query";
 import type { Client } from "../../service-client";
 import { data, representation, type Schema } from "../../shared/api";
 import { providerApi } from "../providers/api";
-export type EnvironmentScope = {
-  kind: "workspace" | "organization";
-  id: string;
-};
-/** Templates belong to one workspace. */
-export type WorkspaceScope = EnvironmentScope & { kind: "workspace" };
-/** The organization's environment providers as the scope sees them. */
-export function environmentApi(
-  client: Client,
-  organizationId: string,
-  scope: EnvironmentScope,
-) {
-  return providerApi(client, organizationId, scope, "environment");
+/** The workspace's environment providers. */
+export function environmentApi(client: Client, workspaceId: string) {
+  return providerApi(client, workspaceId, "environment");
 }
 
 export function environmentTemplates(
@@ -23,9 +13,10 @@ export function environmentTemplates(
   signal: AbortSignal,
   cursor?: string,
 ) {
-  return client.http
-    .GET("/api/v1/workspaces/{workspace_id}/environment-templates", {
-      params: { path: { workspace_id: workspaceId }, query: { cursor } },
+  return client
+    .workspace(workspaceId)
+    .GET("/api/v1/environment-templates", {
+      params: { query: { cursor } },
       signal,
     })
     .then(data);
@@ -40,9 +31,9 @@ export function createManagedEnvironment(
   workspaceId: string,
   body: Schema["ManagedEnvironmentCreate"],
 ) {
-  return client.http
-    .POST("/api/v1/workspaces/{workspace_id}/environments", {
-      params: { path: { workspace_id: workspaceId } },
+  return client
+    .workspace(workspaceId)
+    .POST("/api/v1/environments", {
       body,
     })
     .then(data);
@@ -56,14 +47,12 @@ export function environmentQuery(
   return queryOptions({
     queryKey: ["environment", id],
     queryFn: ({ signal }) =>
-      client.http
-        .GET(
-          "/api/v1/workspaces/{workspace_id}/environments/{environment_id}",
-          {
-            params: { path: { workspace_id: workspaceId, environment_id: id } },
-            signal,
-          },
-        )
+      client
+        .workspace(workspaceId)
+        .GET("/api/v1/environments/{environment_id}", {
+          params: { path: { environment_id: id } },
+          signal,
+        })
         .then(representation),
   });
 }

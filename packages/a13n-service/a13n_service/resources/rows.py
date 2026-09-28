@@ -13,73 +13,85 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped
 
 from a13n_service.infra.audit import record
-from a13n_service.infra.errors import not_found
+from a13n_service.infra.errors import disabled, not_found
 from a13n_service.tenancy.access import refuse_archived
-from a13n_service.tenancy.authorize import Principal, Scope, Verb, WorkspaceScope, allowed_verbs, authorize
+from a13n_service.tenancy.authorize import (
+    ExecutionAuthority,
+    Principal,
+    Scope,
+    Verb,
+    WorkspaceScope,
+    allowed_verbs,
+    authorize,
+)
 from a13n_service.tenancy.tables import WorkspaceRow
 
 
-class _Row(Protocol):
+class Row(Protocol):
+    """A row of one workspace."""
+
     KIND: ClassVar[str]
     id: Mapped[str]
     organization_id: Mapped[str]
-
-
-class SharedRow(_Row, Protocol):
-    """A row of an organization collection: shared with every workspace (`workspace_id` None) or confined to one."""
-
-    workspace_id: Mapped[str | None]
-
-
-class WorkspaceOwnedRow(_Row, Protocol):
-    """A row of one workspace."""
-
     workspace_id: Mapped[str]
 
 
-type Row = SharedRow | WorkspaceOwnedRow
-
-
-class _EditedShared(SharedRow, Protocol):
+class EditedRow(Row, Protocol):
     updated_by_id: Mapped[str]
 
 
-class _EditedWorkspaceOwned(WorkspaceOwnedRow, Protocol):
-    updated_by_id: Mapped[str]
-
-
-type EditedRow = _EditedShared | _EditedWorkspaceOwned
+class _Switchable(Row, Protocol):
+    enabled: Mapped[bool]
 
 
 async def find_row[R: Row](
     session: AsyncSession,
     actor: Principal,
     row_type: type[R],
-    within: Scope | WorkspaceScope,
+    scope: WorkspaceScope,
     row_id: str,
     verb: Verb,
     *,
     lock: bool = False,
     require_active: bool = True,
 ) -> R:
-    """Row `row_id` of `within`, an organization collection or one workspace, on which the actor may `verb`.
+    """Row `row_id` of the workspace, on which the actor may `verb`.
 
-    The path's organization is checked first. A row the actor cannot read is not found, revealing nothing. Every
-    verb but `read` is refused on a row of an archived workspace unless `require_active=False` (offboarding):
-    resource rows apply that rule here, as `workspace_scope` does for workspace paths.
+    A row the actor cannot read is not found, revealing nothing. Every verb but `read` is refused on a row of an
+    archived workspace unless `require_active=False` (offboarding): resource rows apply that rule here, as
+    `workspace_scope` does for workspace paths.
     """
-    authorize(actor, Scope(within.organization_id), "read")
-    query = select(row_type).where(row_type.id == row_id, row_type.organization_id == within.organization_id)
-    if within.workspace_id is not None:
-        query = query.where(row_type.workspace_id == within.workspace_id)
+    query = select(row_type).where(row_type.id == row_id, row_type.workspace_id == scope.workspace_id)
     if lock:
         query = query.with_for_update().execution_options(populate_existing=True)
     row = await session.scalar(query)
-    if row is None or "read" not in allowed_verbs(actor, _scope(row)):
+    if row is None or "read" not in allowed_verbs(actor, scope):
         raise not_found(row_type.KIND, row_id)
-    authorize(actor, _scope(row), verb)
-    if require_active and verb != "read" and row.workspace_id is not None:
-        refuse_archived(await session.get_one(WorkspaceRow, row.workspace_id))
+    authorize(actor, scope, verb)
+    if require_active and verb != "read":
+        refuse_archived(await session.get_one(WorkspaceRow, scope.workspace_id))
+    return row
+
+
+async def usable_row[R: _Switchable](
+    session: AsyncSession,
+    actor: Principal,
+    row_type: type[R],
+    scope: WorkspaceScope,
+    row_id: str,
+    *,
+    verb: Verb,
+    authority: ExecutionAuthority | None,
+) -> R:
+    """An enabled row of the workspace the actor may `verb`, read in the caller's session."""
+    row = await session.scalar(
+        select(row_type).where(row_type.id == row_id, row_type.workspace_id == scope.workspace_id)
+    )
+    if row is None:
+        raise not_found(row_type.KIND, row_id)
+    authorize(actor, scope, verb, authority=authority)
+    if not row.enabled:
+        raise disabled(row_type.KIND, row_id)
     return row
 
 

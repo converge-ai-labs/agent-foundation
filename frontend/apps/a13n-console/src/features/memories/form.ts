@@ -89,15 +89,13 @@ export interface RecordBackend {
 
 /** A file memory the Service stores, or a record memory on `record`'s provider. */
 export function memoryCreate(
-  key: string,
   draft: MemoryDraft,
   record?: RecordBackend,
 ): Schema["MemoryCreate"] {
-  if (!record) return { key, type: "postgres", ...fields(draft) };
+  if (!record) return { type: "postgres", ...fields(draft) };
   const { always_load: _, ...rest } = fields(draft);
   const namespace = record.namespace.trim();
   return {
-    key,
     type: record.provider.type,
     provider_id: record.provider.id,
     ...(namespace && { namespace }),

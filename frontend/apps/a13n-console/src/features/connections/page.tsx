@@ -38,7 +38,7 @@ function endpointHost(url: string) {
 
 export function ConnectionsPage() {
   const client = useClient(),
-    { workspace, organization, can } = useWorkspace(),
+    { workspace, can } = useWorkspace(),
     { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
   const [cleanup, setCleanup] = useState<RemoteCleanup>();
@@ -47,10 +47,10 @@ export function ConnectionsPage() {
     enabled: can("read"),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ signal, pageParam }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/connections", {
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/connections", {
           params: {
-            path: { workspace_id: workspace.id },
             query: { cursor: pageParam },
           },
           signal,
@@ -65,10 +65,7 @@ export function ConnectionsPage() {
     enabled: can("read"),
     queryFn: ({ signal }) =>
       allPages((cursor) =>
-        connectorApi(client, organization.id, {
-          kind: "workspace",
-          id: workspace.id,
-        }).providers(signal, cursor),
+        connectorApi(client, workspace.id).providers(signal, cursor),
       ),
   });
   const select = (id?: string) =>
@@ -88,7 +85,7 @@ export function ConnectionsPage() {
       description={t("Connect accounts and remote tools for your agents.")}
       actions={
         <>
-          <ManageProvidersLink category="connectors" scope="workspace" />
+          <ManageProvidersLink category="connectors" />
           {create}
         </>
       }

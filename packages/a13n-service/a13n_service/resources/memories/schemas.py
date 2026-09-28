@@ -14,7 +14,6 @@ from a13n_service.resources.memories.tables import MemoryKind
 # The Service-owned file store; other types belong to Memory Providers.
 POSTGRES = "postgres"
 
-MemoryKey = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")]
 MemoryName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 Description = Annotated[str, StringConstraints(max_length=2048)]
 # The byte bound is `memory.guide_bytes`.
@@ -49,7 +48,6 @@ class MemoryCreate(BaseModel):
     provider's backend, under a new namespace or the existing one `namespace` adopts."""
 
     model_config = ConfigDict(extra="forbid")
-    key: MemoryKey
     name: MemoryName
     description: Description | None = None
     labels: Labels = Field(default_factory=dict)
@@ -77,7 +75,6 @@ class Memory(BaseModel):
     id: str
     organization_id: str
     workspace_id: str
-    key: str
     name: str
     description: str | None
     kind: MemoryKind

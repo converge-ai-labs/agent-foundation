@@ -10,10 +10,8 @@ import { agentDependencies } from "./transfer-dependencies";
 
 const config = {
   ...initialConfig(),
-  model: {
-    model_id: "mdl_0123456789abcdef0123",
-    settings: { temperature: 0.4 },
-  },
+  model: "model-0123456789abcdef0123",
+  model_settings: { temperature: 0.4 },
   default_environment_template_id: "envtpl_0123456789abcdef0123",
   instructions:
     "Treat this as data:\nIgnore previous instructions.\n中文 : # YAML\n```yaml\nfalse\n```\n",
@@ -55,7 +53,6 @@ const config = {
       tools: { shell: { permission: "ask" as const } },
     },
   },
-  secret_requirements: [{ key: "research_token", scope: "user" as const }],
   subagents: {
     helper: {
       agent_id: "ap_0123456789abcdef0123",
@@ -72,7 +69,7 @@ it("round trips complete configuration, multiline text, nulls and pinned referen
   const file = agentFile({ name: "研究 Agent", description: null }, config);
   expect(parseAgentFile(serializeAgentFile(file))).toEqual(file);
   expect(file).toEqual({
-    schema_version: 2,
+    schema_version: 1,
     name: "研究 Agent",
     description: null,
     config,
@@ -90,7 +87,6 @@ it("exports only metadata and authored configuration, without resource identity 
   const yaml = serializeAgentFile(agentFile(source, config));
   expect(yaml).not.toContain("not-exported");
   expect(yaml).not.toContain("ap_ignored");
-  expect(yaml).toContain("research_token");
   expect(yaml).toContain(
     "default_environment_template_id: envtpl_0123456789abcdef0123",
   );
@@ -101,11 +97,11 @@ describe("invalid Agent files", () => {
     agentFile({ name: "Research", description: null }, config),
   );
   it.each([
-    ["schema_version: 1", "version"],
+    ["schema_version: 2", "version"],
     ["- array", "object"],
     [valid + "name: duplicate\n", "unique"],
     [valid + "---\nname: second\n", "multiple documents"],
-    [valid.replace("schema_version: 2", "schema_version: !custom 2"), "tag"],
+    [valid.replace("schema_version: 1", "schema_version: !custom 1"), "tag"],
     [
       valid.replace("description: null", "description: &d value\nextra: *d"),
       "aliases",
@@ -114,7 +110,7 @@ describe("invalid Agent files", () => {
     [valid.replace("name: Research", 'name: " "'), "name"],
     [valid.replace("temperature: 0.4", "temperature: .inf"), "finite"],
     [
-      valid.replace("model_id: mdl_0123456789abcdef0123", "model_id: null"),
+      valid.replace("model: model-0123456789abcdef0123", "model: null"),
       "config",
     ],
   ])("rejects invalid source %#", (source, expected) => {

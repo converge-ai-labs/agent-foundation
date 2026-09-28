@@ -3,7 +3,7 @@ import { Button } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
+import { useWorkspace } from "../../layout/workspace";
 import { ApiError } from "../../service-client";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ListRow, ListRows } from "../../shared/collection";
@@ -40,7 +40,7 @@ import {
   credentialLabel,
   providerStyles,
 } from "../providers";
-import { webProviderApi, type WebProviderScope } from "./api";
+import { webProviderApi } from "./api";
 
 type Definition = Schema["ProviderType"];
 
@@ -61,10 +61,8 @@ function useWebProviderDefinitions(enabled = true) {
 
 /** Catalog-first creation: choose the service, then connect it. */
 export function AddWebProvider({
-  scope,
   onSaved,
 }: {
-  scope: WebProviderScope;
   onSaved?: (provider: Schema["Provider"]) => void;
 }) {
   const { t } = useTranslation();
@@ -94,7 +92,6 @@ export function AddWebProvider({
       {(definition, back) => (
         <CatalogStep backLabel={t("All providers")} onBack={back}>
           <WebProviderForm
-            scope={scope}
             definition={definition}
             definitions={definitions.data?.items ?? []}
             onCancel={() => change(false)}
@@ -109,9 +106,8 @@ export function AddWebProvider({
   );
 }
 
-/** Editing a saved provider, or reading one owned by another scope. */
+/** Editing a saved provider, or reading it without write access. */
 export function WebProviderEditor({
-  scope,
   providerId,
   onSaved,
   controlledOpen,
@@ -120,17 +116,16 @@ export function WebProviderEditor({
   readOnly = false,
 }: ResourceEditorControl & {
   readOnly?: boolean;
-  scope: WebProviderScope;
   providerId: string;
   onSaved?: (provider: Schema["Provider"]) => void;
 }) {
   const client = useClient(),
-    { organization } = useAccess();
+    { workspace } = useWorkspace();
   const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
-  const api = webProviderApi(client, organization.id, scope);
+  const api = webProviderApi(client, workspace.id);
   const definitions = useWebProviderDefinitions(state.open);
   const resource = useQuery({
-    queryKey: ["web-provider", scope.kind, scope.id, providerId],
+    queryKey: ["web-provider", workspace.id, providerId],
     enabled: state.open,
     queryFn: ({ signal }) => api.provider(providerId, signal),
   });
@@ -145,7 +140,6 @@ export function WebProviderEditor({
       id={providerId}
       type={resource.data?.value.type}
       definition={definition?.display_name}
-      scope={resource.data?.value.workspace_id ? "workspace" : "organization"}
       readOnly={readOnly}
       loading={definitions.isPending || resource.isPending}
       error={definitions.error ?? resource.error}
@@ -167,7 +161,6 @@ export function WebProviderEditor({
           />
         ) : (
           <WebProviderForm
-            scope={scope}
             resource={resource.data}
             definitions={definitions.data.items}
             onCancel={() => state.setOpen(false)}
@@ -182,14 +175,12 @@ export function WebProviderEditor({
 }
 
 export function WebProviderForm({
-  scope,
   resource,
   definition: chosen,
   definitions,
   onSaved,
   onCancel,
 }: {
-  scope: WebProviderScope;
   onCancel?: () => void;
   resource?: { value: Schema["Provider"]; etag?: string };
   /** Fixed by the catalog when creating. */
@@ -199,7 +190,7 @@ export function WebProviderForm({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    { organization } = useAccess(),
+    { workspace } = useWorkspace(),
     cache = useQueryClient();
   const [original, setOriginal] = useState(resource),
     type = resource?.value.type ?? chosen?.type ?? definitions[0]?.type ?? "",
@@ -215,7 +206,7 @@ export function WebProviderForm({
     [enabled, setEnabled] = useState(resource?.value.enabled ?? true);
   const [existing, setExisting] = useState<Schema["Provider"][]>();
   const [reloadError, setReloadError] = useState<unknown>();
-  const api = webProviderApi(client, organization.id, scope),
+  const api = webProviderApi(client, workspace.id),
     definition = definitions.find((item) => item.type === type) ?? chosen;
   const section = useCredentialSection(
     definition,
@@ -226,14 +217,7 @@ export function WebProviderForm({
     retry: false,
     mutationFn: () =>
       allPages((cursor) => api.providers(new AbortController().signal, cursor)),
-    onSuccess: (items) =>
-      setExisting(
-        items.filter((item) =>
-          scope.kind === "organization"
-            ? item.workspace_id === null
-            : item.workspace_id === scope.id,
-        ),
-      ),
+    onSuccess: setExisting,
   });
   const save = useMutation({
     gcTime: 0,

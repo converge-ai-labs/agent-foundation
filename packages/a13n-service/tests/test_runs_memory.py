@@ -28,9 +28,7 @@ CHANGES = '<memory-context memory="team" trust="untrusted" kind="changes">'
 
 async def team_memory(service: SimpleNamespace) -> dict[str, Any]:
     """A memory whose always-loaded README leads its context, with one more file in its index."""
-    created = await service.client.post(
-        f"{service.workspace}/memories", json={"key": "team", "name": "Team", "always_load": ["README.md"]}
-    )
+    created = await service.client.post(f"{service.api}/memories", json={"name": "Team", "always_load": ["README.md"]})
     assert created.status_code == 201, created.text
     memory = created.json()
     for path, content in (("README.md", "# Team\nIndent with tabs.\n"), ("notes/tea.md", "Oolong\n")):
@@ -40,7 +38,7 @@ async def team_memory(service: SimpleNamespace) -> dict[str, Any]:
 
 async def write_file(service: SimpleNamespace, memory: dict[str, Any], path: str, content: str) -> None:
     created = await service.client.post(
-        f"{service.workspace}/memories/{memory['id']}/files", json={"path": path, "content": content}
+        f"{service.api}/memories/{memory['id']}/files", json={"path": path, "content": content}
     )
     assert created.status_code == 201, created.text
 
@@ -129,9 +127,9 @@ async def test_each_run_gets_context_as_of_the_cursor_its_thread_committed(servi
 
 async def test_a_mount_and_the_toolset_limit_the_offered_tools(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     memory = await team_memory(service)
-    model_id = await runs_kit.create_model(service, scripted_model)
+    model = await runs_kit.create_model(service, scripted_model)
     no_grep = {"memory": {"tools": {"file_grep": {"enabled": False}}}}
-    reading = await runs_kit.add_agent(service, "reader", model_id, toolsets=no_grep)
+    reading = await runs_kit.add_agent(service, "reader", model, toolsets=no_grep)
     scripted_model.say("Read")
     await runs_kit.start_thread(service, reading, "look", memories=[mount(memory, "read")])
     await (await runs_kit.attempt(service))
@@ -139,7 +137,7 @@ async def test_a_mount_and_the_toolset_limit_the_offered_tools(service, scripted
     assert {name for name in tool_names(request) if name.startswith("memory_")} == {"memory_file_view"}
 
     # Without the toolset the run still gets its memories' context, but no tool.
-    silent = await runs_kit.add_agent(service, "silent", model_id, toolsets={"memory": {"enabled": False}})
+    silent = await runs_kit.add_agent(service, "silent", model, toolsets={"memory": {"enabled": False}})
     scripted_model.say("Quiet")
     await runs_kit.start_thread(service, silent, "look", memories=[mount(memory, "write")])
     await (await runs_kit.attempt(service))
@@ -150,8 +148,8 @@ async def test_a_mount_and_the_toolset_limit_the_offered_tools(service, scripted
 async def test_tool_permissions_apply_to_the_memory_tools(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     memory = await team_memory(service)
     rules = {"memory": {"tools": {"file_delete": {"permission": "deny"}, "file_append": {"permission": "ask"}}}}
-    model_id = await runs_kit.create_model(service, scripted_model)
-    agent = await runs_kit.add_agent(service, "careful", model_id, toolsets=rules)
+    model = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(service, "careful", model, toolsets=rules)
     tea = {"memory": "team", "path": "notes/tea.md"}
     scripted_model.call("memory_file_delete", {**tea, "version": "1"}, call_id="call_delete")
     scripted_model.call("memory_file_append", {**tea, "content": "Sencha\n"}, call_id="call_append")
@@ -161,7 +159,7 @@ async def test_tool_permissions_apply_to_the_memory_tools(service, scripted_mode
     # The denied delete never reached the store; the append waits for approval.
     assert (run["status"], run["wait_reason"]) == ("waiting", "approval"), run
     assert [item["tool_name"] for item in run["pending"]["items"]] == ["memory_file_append"]
-    tea_file = await service.client.get(f"{service.workspace}/memories/{memory['id']}/files/notes/tea.md")
+    tea_file = await service.client.get(f"{service.api}/memories/{memory['id']}/files/notes/tea.md")
     assert tea_file.json()["content"] == "Oolong\n"
 
 
@@ -192,9 +190,7 @@ async def test_a_memory_deleted_mid_run_refuses_its_next_call(service, scripted_
     await runs_kit.start_thread(service, agent, "look", memories=[mount(memory)])
     running = await runs_kit.attempt(service)
     await scripted_model.request()
-    deleted = await service.client.delete(
-        f"{service.workspace}/memories/{memory['id']}", headers=runs_kit.if_match(memory)
-    )
+    deleted = await service.client.delete(f"{service.api}/memories/{memory['id']}", headers=runs_kit.if_match(memory))
     assert deleted.status_code == 204, deleted.text
     gate.set()
     await running

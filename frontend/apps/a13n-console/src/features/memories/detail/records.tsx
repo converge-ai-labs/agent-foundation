@@ -229,18 +229,16 @@ function RecordActions({
         )}
         retry={refresh}
         action={() =>
-          client.http.DELETE(
-            "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records/{record_id}",
-            {
+          client
+            .workspace(workspace.id)
+            .DELETE("/api/v1/memories/{memory_id}/records/{record_id}", {
               params: {
                 path: {
-                  workspace_id: workspace.id,
                   memory_id: memory.id,
                   record_id: record.id,
                 },
               },
-            },
-          )
+            })
         }
         onSuccess={refresh}
         triggerElement={
@@ -305,21 +303,22 @@ function RecordForm({
     cache = useQueryClient(),
     { t } = useTranslation();
   const [text, setText] = useState(record?.text ?? "");
-  const path = { workspace_id: workspace.id, memory_id: memory.id };
+  const path = { memory_id: memory.id };
   const save = useMutation({
     mutationFn: () =>
       (record
-        ? client.http.PUT(
-            "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records/{record_id}",
-            {
+        ? client
+            .workspace(workspace.id)
+            .PUT("/api/v1/memories/{memory_id}/records/{record_id}", {
               params: { path: { ...path, record_id: record.id } },
               body: { text },
-            },
-          )
-        : client.http.POST(
-            "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/records",
-            { params: { path }, body: { text } },
-          )
+            })
+        : client
+            .workspace(workspace.id)
+            .POST("/api/v1/memories/{memory_id}/records", {
+              params: { path },
+              body: { text },
+            })
       ).then(data),
     onSuccess: () => {
       void refreshRecords(cache, workspace.id, memory.id);

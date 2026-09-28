@@ -13,13 +13,13 @@ const state = vi.hoisted(() => ({
   http: { GET: vi.fn(), PUT: vi.fn() },
 }));
 vi.mock("../../auth/context", () => ({
-  useClient: () => ({ http: state.http }),
+  useClient: () => ({ http: state.http, workspace: () => state.http }),
 }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     organization: { id: "org_test" },
-    workspace: { id: "ws_test", key: "design" },
-    basePath: "/workspace/design",
+    workspace: { id: "ws_test" },
+    basePath: "/workspace/ws_test",
     can: (verb: string) => verb !== "admin" || state.admin,
   }),
 }));
@@ -44,31 +44,29 @@ const response = (data: unknown, etag = '"ws_test:0"') => ({
   response: new Response(null, { status: 200, headers: { ETag: etag } }),
 });
 const model = (
-  id: string,
+  key: string,
   name: string,
   capabilities: string[],
   overrides: Record<string, unknown> = {},
 ) => ({
-  id,
-  key: name.toLowerCase(),
+  key,
   name,
   enabled: true,
   provider_id: "provider",
-  config: { model_name: `${id}-upstream`, characteristics: { capabilities } },
+  config: { model_name: `${key}-upstream`, characteristics: { capabilities } },
   ...overrides,
 });
 const models = [
-  model("mdl_vision", "Vision", ["image_understanding"]),
-  model("mdl_text", "Text", []),
-  model("mdl_disabled", "Disabled", ["image_understanding"], {
+  model("model-vision", "Vision", ["image_understanding"]),
+  model("model-text", "Text", []),
+  model("model-disabled", "Disabled", ["image_understanding"], {
     enabled: false,
   }),
-  model("mdl_offline", "Offline", ["image_understanding"], {
+  model("model-offline", "Offline", ["image_understanding"], {
     provider_id: "disabled",
   }),
 ];
-const defaultsPath =
-  "/api/v1/workspaces/{workspace_id}/media-understanding-defaults";
+const defaultsPath = "/api/v1/media-understanding-defaults";
 function setup(content = <MediaUnderstandingDefaults />) {
   const cache = new QueryClient({
     defaultOptions: {
@@ -114,7 +112,7 @@ beforeEach(() => {
     return response({ items: models, next_cursor: null });
   });
   state.http.PUT.mockResolvedValue(
-    response({ ...initial, version: 1, image: "mdl_vision" }, '"ws_test:1"'),
+    response({ ...initial, version: 1, image: "model-vision" }, '"ws_test:1"'),
   );
 });
 afterEach(cleanup);
@@ -130,9 +128,8 @@ it("offers only compatible enabled models and saves the whole selection on chang
   await user.click(vision);
   await waitFor(() =>
     expect(state.http.PUT).toHaveBeenCalledWith(defaultsPath, {
-      params: { path: { workspace_id: "ws_test" } },
       headers: { "If-Match": '"ws_test:0"' },
-      body: { image: "mdl_vision", video: null, audio: null },
+      body: { image: "model-vision", video: null, audio: null },
     }),
   );
   await waitFor(() => expect(image.textContent).toContain("Vision"));
@@ -146,7 +143,7 @@ it("shows the row saving and keeps the other rows out of reach", async () => {
       settle = () =>
         resolve(
           response(
-            { ...initial, version: 1, image: "mdl_vision" },
+            { ...initial, version: 1, image: "model-vision" },
             '"ws_test:1"',
           ),
         );
@@ -181,12 +178,12 @@ it("reloads the saved selection when the defaults changed elsewhere", async () =
 });
 
 it("warns on the row whose saved model is no longer eligible", async () => {
-  saved = { ...initial, image: "mdl_disabled" };
+  saved = { ...initial, image: "model-disabled" };
   setup();
   const image = await imageSelect();
   expect(image.textContent).toContain("Disabled");
   await screen.findByText(
-    /Saved model disabled is disabled or no longer declares image understanding\./,
+    /Saved model model-disabled is disabled or no longer declares image understanding\./,
   );
 });
 
@@ -200,7 +197,7 @@ it("explains a kind that no enabled model declares", async () => {
     screen
       .getAllByRole("link", { name: "Manage models" })[0]
       .getAttribute("href"),
-  ).toBe("/workspace/design/models");
+  ).toBe("/workspace/ws_test/models");
   expect(
     screen.queryByText(/No enabled model declares image understanding\./),
   ).toBeNull();

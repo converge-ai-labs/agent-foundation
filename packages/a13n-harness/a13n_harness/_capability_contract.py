@@ -210,7 +210,7 @@ def _validate_built_capability_tree(
             instrumentation_count += 1
             if capability is not expected_instrumentation:
                 raise DefinitionError(
-                    "Pydantic AI Instrumentation is reserved to HarnessBuilder.",
+                    "Agent instrumentation is reserved to HarnessBuilder.",
                     code="instrumentation_owner_conflict",
                     details={"source": "built"},
                 )
@@ -275,7 +275,7 @@ def _validate_built_capability_tree(
     expected_instrumentation_count = 1 if expected_instrumentation is not None else 0
     if instrumentation_count != expected_instrumentation_count:
         raise DefinitionError(
-            "The built Agent has an invalid Pydantic AI Instrumentation owner count.",
+            "The built Agent has an invalid instrumentation owner count.",
             code="instrumentation_owner_conflict",
             details={"source": "built"},
         )
@@ -314,7 +314,7 @@ def _validate_capability_source(
             )
         if isinstance(capability, Instrumentation):
             raise DefinitionError(
-                "Pydantic AI Instrumentation is reserved to HarnessBuilder.",
+                "Agent instrumentation is reserved to HarnessBuilder.",
                 code="instrumentation_owner_conflict",
                 details={"source": source},
             )
@@ -332,7 +332,7 @@ def _validate_capability_source(
 
     if any(isinstance(capability, Instrumentation) for capability in leaves):
         raise DefinitionError(
-            "Pydantic AI Instrumentation is reserved to HarnessBuilder.",
+            "Agent instrumentation is reserved to HarnessBuilder.",
             code="instrumentation_owner_conflict",
             details={"source": source},
         )

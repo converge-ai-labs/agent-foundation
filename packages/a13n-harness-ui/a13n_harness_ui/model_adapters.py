@@ -85,7 +85,7 @@ class PydanticAiModelAdapter:
 
         if not _MODEL_ROUTE.fullmatch(route) or route.partition(":")[0] not in _SUPPORTED_PROVIDERS:
             raise CompositionError(
-                "The Model route is not supported by the Harness UI Pydantic AI adapter.",
+                "The Model route is not supported by Harness UI.",
                 code="model_route_unsupported",
             )
         provider, _, model_id = route.partition(":")

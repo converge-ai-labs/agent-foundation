@@ -8,9 +8,7 @@ import {
 import { allPages, data, type Schema } from "../../shared/api";
 
 export type SessionFilters = Omit<
-  NonNullable<
-    paths["/api/v1/workspaces/{workspace_id}/sessions"]["get"]["parameters"]["query"]
-  >,
+  NonNullable<paths["/api/v1/sessions"]["get"]["parameters"]["query"]>,
   "limit" | "cursor"
 >;
 
@@ -42,10 +40,10 @@ export function conversationQueries(client: Client, workspaceId: string) {
       queryOptions({
         queryKey: [...keys.sessions(), filters, cursor],
         queryFn: ({ signal }) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/sessions", {
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/sessions", {
               params: {
-                path: { workspace_id: workspaceId },
                 query: { ...filters, cursor, limit: 20 },
               },
               signal,
@@ -56,9 +54,10 @@ export function conversationQueries(client: Client, workspaceId: string) {
       queryOptions({
         queryKey: keys.session(session_id),
         queryFn: ({ signal }) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/sessions/{session_id}", {
-              params: { path: { workspace_id: workspaceId, session_id } },
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/sessions/{session_id}", {
+              params: { path: { session_id } },
               signal,
             })
             .then(data),
@@ -67,9 +66,10 @@ export function conversationQueries(client: Client, workspaceId: string) {
       queryOptions({
         queryKey: keys.run(run_id),
         queryFn: ({ signal }) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/runs/{run_id}", {
-              params: { path: { workspace_id: workspaceId, run_id } },
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/runs/{run_id}", {
+              params: { path: { run_id } },
               signal,
             })
             .then(data),
@@ -78,9 +78,10 @@ export function conversationQueries(client: Client, workspaceId: string) {
       queryOptions({
         queryKey: keys.thread(thread_id),
         queryFn: ({ signal }) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/threads/{thread_id}", {
-              params: { path: { workspace_id: workspaceId, thread_id } },
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/threads/{thread_id}", {
+              params: { path: { thread_id } },
               signal,
             })
             .then(data),
@@ -100,10 +101,11 @@ export function conversationQueries(client: Client, workspaceId: string) {
         queryKey: keys.lineage(run_id),
         initialPageParam: undefined as string | undefined,
         queryFn: ({ signal, pageParam }) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/runs/{run_id}/lineage", {
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/runs/{run_id}/lineage", {
               params: {
-                path: { workspace_id: workspaceId, run_id },
+                path: { run_id },
                 query: { cursor: pageParam },
               },
               signal,
@@ -116,10 +118,10 @@ export function conversationQueries(client: Client, workspaceId: string) {
         queryKey: keys.threads(session_id),
         queryFn: ({ signal }) =>
           allPages((cursor) =>
-            client.http
-              .GET("/api/v1/workspaces/{workspace_id}/threads", {
+            client
+              .workspace(workspaceId)
+              .GET("/api/v1/threads", {
                 params: {
-                  path: { workspace_id: workspaceId },
                   query: { session_id, cursor },
                 },
                 signal,
@@ -132,17 +134,15 @@ export function conversationQueries(client: Client, workspaceId: string) {
         queryKey: keys.runs(thread_id),
         queryFn: ({ signal }) =>
           allPages((cursor) =>
-            client.http
-              .GET(
-                "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/runs",
-                {
-                  params: {
-                    path: { workspace_id: workspaceId, thread_id },
-                    query: { cursor },
-                  },
-                  signal,
+            client
+              .workspace(workspaceId)
+              .GET("/api/v1/threads/{thread_id}/runs", {
+                params: {
+                  path: { thread_id },
+                  query: { cursor },
                 },
-              )
+                signal,
+              })
               .then(data),
           ),
       }),
@@ -150,9 +150,10 @@ export function conversationQueries(client: Client, workspaceId: string) {
       queryOptions({
         queryKey: keys.attempts(run_id),
         queryFn: ({ signal }) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/runs/{run_id}/attempts", {
-              params: { path: { workspace_id: workspaceId, run_id } },
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/runs/{run_id}/attempts", {
+              params: { path: { run_id } },
               signal,
             })
             .then(data)
@@ -164,17 +165,15 @@ export function conversationQueries(client: Client, workspaceId: string) {
         queryKey: [...keys.inbox(thread_id), status],
         queryFn: ({ signal }) =>
           allPages((cursor) =>
-            client.http
-              .GET(
-                "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/inbox",
-                {
-                  params: {
-                    path: { workspace_id: workspaceId, thread_id },
-                    query: { status, cursor, limit: 100 },
-                  },
-                  signal,
+            client
+              .workspace(workspaceId)
+              .GET("/api/v1/threads/{thread_id}/inbox", {
+                params: {
+                  path: { thread_id },
+                  query: { status, cursor, limit: 100 },
                 },
-              )
+                signal,
+              })
               .then(data),
           ),
       }),
@@ -183,16 +182,14 @@ export function conversationQueries(client: Client, workspaceId: string) {
       queryOptions({
         queryKey: keys.entry(thread_id, entry_id),
         queryFn: ({ signal }) =>
-          client.http
-            .GET(
-              "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/inbox/{entry_id}",
-              {
-                params: {
-                  path: { workspace_id: workspaceId, thread_id, entry_id },
-                },
-                signal,
+          client
+            .workspace(workspaceId)
+            .GET("/api/v1/threads/{thread_id}/inbox/{entry_id}", {
+              params: {
+                path: { thread_id, entry_id },
               },
-            )
+              signal,
+            })
             .then(data),
       }),
   };

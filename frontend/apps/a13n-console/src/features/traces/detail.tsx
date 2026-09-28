@@ -53,12 +53,13 @@ export function TraceDetail({ traceId }: { traceId: string }) {
   const [tab, setTab] = useTabParam(TABS);
   const sourceHintId = useId();
   const backend = useTraceBackend();
-  const path = { workspace_id: workspace.id, trace_id: traceId };
+  const path = { trace_id: traceId };
   const query = useQuery({
     queryKey: ["traces", workspace.id, traceId],
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/traces/{trace_id}", {
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/traces/{trace_id}", {
           params: { path },
           signal,
         })
@@ -69,8 +70,9 @@ export function TraceDetail({ traceId }: { traceId: string }) {
     initialPageParam: undefined as string | undefined,
     enabled: query.isSuccess,
     queryFn: ({ pageParam, signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/traces/{trace_id}/spans", {
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/traces/{trace_id}/spans", {
           params: { path, query: { limit: 50, cursor: pageParam } },
           signal,
         })

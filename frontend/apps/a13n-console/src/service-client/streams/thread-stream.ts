@@ -1,6 +1,6 @@
 import { ApiError, isRecord, ProtocolError } from "../errors.js";
 import type { components } from "../schema.js";
-import { delay, type Transport } from "../transport.js";
+import { delay, workspaceHeaders, type Transport } from "../transport.js";
 import { decodeSse } from "./sse.js";
 
 type ItemRef = Pick<components["schemas"]["Item"], "id" | "kind" | "state">;
@@ -102,12 +102,15 @@ export async function* threadStream(
   let cursor = options.after;
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
-    const headers = new Headers({ Accept: "text/event-stream" });
+    const headers = new Headers({
+      Accept: "text/event-stream",
+      ...workspaceHeaders(workspaceId),
+    });
     if (cursor) headers.set("Last-Event-ID", cursor);
     try {
       const response = await transport.fetch(
         new Request(
-          `${transport.baseUrl}/api/v1/workspaces/${encodeURIComponent(workspaceId)}/threads/${encodeURIComponent(threadId)}/stream`,
+          `${transport.baseUrl}/api/v1/threads/${encodeURIComponent(threadId)}/stream`,
           { headers, signal },
         ),
       );

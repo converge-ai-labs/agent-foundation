@@ -10,7 +10,9 @@ const http = vi.hoisted(() => ({
   POST: vi.fn(),
   PATCH: vi.fn(),
 }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
 }));
@@ -68,10 +70,10 @@ it("submits a renamed Connection from the bottom action row", async () => {
   await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() =>
     expect(http.PATCH).toHaveBeenCalledWith(
-      "/api/v1/workspaces/{workspace_id}/connections/{connection_id}",
+      "/api/v1/connections/{connection_id}",
       {
         params: {
-          path: { workspace_id: "ws_test", connection_id: "connection_test" },
+          path: { connection_id: "connection_test" },
         },
         headers: { "If-Match": '"connection_test:2"' },
         body: { name: "Renamed" },
@@ -164,14 +166,14 @@ for (const kind of ["connector", "mcp"] as const) {
       );
       const request = {
         params: {
-          path: { workspace_id: "ws_test", connection_id: resource.id },
+          path: { connection_id: resource.id },
         },
         headers: { "If-Match": '"connection_test:3"' },
       };
       if (action === "Revoke") {
         await waitFor(() =>
           expect(http.POST).toHaveBeenCalledWith(
-            "/api/v1/workspaces/{workspace_id}/connections/{connection_id}/revoke",
+            "/api/v1/connections/{connection_id}/revoke",
             request,
           ),
         );
@@ -180,7 +182,7 @@ for (const kind of ["connector", "mcp"] as const) {
         // Availability is a field of the connection, changed like its name.
         await waitFor(() =>
           expect(http.PATCH).toHaveBeenCalledWith(
-            "/api/v1/workspaces/{workspace_id}/connections/{connection_id}",
+            "/api/v1/connections/{connection_id}",
             { ...request, body: { enabled: true } },
           ),
         );

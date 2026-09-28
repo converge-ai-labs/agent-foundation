@@ -12,7 +12,9 @@ const http = vi.hoisted(() => ({
   DELETE: vi.fn(),
 }));
 const access = vi.hoisted(() => ({ can: vi.fn((_verb: string) => true) }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" }, can: access.can }),
 }));
@@ -162,17 +164,17 @@ it.each([
       }),
     );
     const request = {
-      params: { path: { workspace_id: "ws_test", environment_id: "env_test" } },
+      params: { path: { environment_id: "env_test" } },
       headers: { "If-Match": '"env_test:1"' },
     };
     if (action === "stop")
       expect(http.POST).toHaveBeenCalledWith(
-        "/api/v1/workspaces/{workspace_id}/environments/{environment_id}/stop",
+        "/api/v1/environments/{environment_id}/stop",
         request,
       );
     else
       expect(http.DELETE).toHaveBeenCalledWith(
-        "/api/v1/workspaces/{workspace_id}/environments/{environment_id}",
+        "/api/v1/environments/{environment_id}",
         request,
       );
     await screen.findByText(phase);
@@ -309,10 +311,10 @@ it.each([
     await user.click(save);
     await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
     expect(http.PATCH).toHaveBeenCalledWith(
-      "/api/v1/workspaces/{workspace_id}/environments/{environment_id}",
+      "/api/v1/environments/{environment_id}",
       {
         params: {
-          path: { workspace_id: "ws_test", environment_id: "env_test" },
+          path: { environment_id: "env_test" },
         },
         headers: { "If-Match": '"env_test:1"' },
         body: { token: "rotated-token", ...moved },

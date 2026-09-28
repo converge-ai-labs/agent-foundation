@@ -4,11 +4,11 @@ Every request acts as a **principal**: a user, who signs in with an email addres
 
 ## Organizations and workspaces
 
-An **organization** is the administration boundary. It holds its members and the resources it shares with all of its workspaces, such as organization-wide model providers and models. A **workspace** is the boundary for work: agents, sessions, connections, environments and most other resources belong to exactly one workspace.
+An **organization** is the administration boundary. It holds its members and its workspaces. A **workspace** is the boundary for work: agents, sessions, providers, models, connections, environments and every other resource belong to exactly one workspace.
 
-[Bootstrap](get-started.md#create-the-first-administrator), in Console on a new Service or with the `bootstrap` command, creates the first organization (key `default`), its first workspace (key `default`) and an administrator. There is no API to create further organizations. Organization administrators create workspaces in Console under **Organization settings → Workspaces**, or with `POST /api/v1/organizations/{organization_id}/workspaces` and a `{key, name}` body.
+[Bootstrap](get-started.md#create-the-first-administrator), in Console on a new Service or with the `bootstrap` command, creates the first organization, its first workspace and an administrator. There is no API to create further organizations. Organization administrators create workspaces in Console under **Organization settings → Workspaces**, or with `POST /api/v1/organizations/{organization_id}/workspaces` and a `{name}` body.
 
-Administrators can rename an organization or workspace, change its key and set an icon (PNG, JPEG or WebP). Workspace keys are unique within their organization and organization keys are unique across the deployment; links that use an old key stop resolving. API paths accept a workspace ID or, among the workspaces you can read, its key.
+Administrators can rename an organization or workspace and set an icon (PNG, JPEG or WebP). Organizations and workspaces are identified by ID: workspace administration paths name the workspace ID, and every other request acts in the workspace its credential selects (see [HTTP conventions](http.md#workspace)).
 
 **Archiving** a workspace (`POST /api/v1/workspaces/{workspace_id}/archive`, organization administrators only) is permanent and revokes its pending invitations. An archived workspace stays readable, but every change is refused with `disabled`, except offboarding: deleting grants, retiring or disabling service accounts, and revoking API keys.
 
@@ -24,7 +24,7 @@ Administrators can rename an organization or workspace, change its key and set a
 A grant gives a role at one scope:
 
 - An organization grant applies to the organization and to every workspace in it.
-- A workspace grant applies to that workspace. On resources the organization shares (organization-wide providers and models), a workspace grant allows only `read` and `run`: its holders use shared resources but cannot change them.
+- A workspace grant applies to that workspace. In the organization itself it allows only `read`, so members of a workspace can see their organization.
 
 A principal's permissions are the union of its grants in the organization. Resource views carry a `permissions` list with the verbs you currently hold there.
 
@@ -74,12 +74,12 @@ Operations that check your current password share one rate limit per client addr
 
 ## API keys
 
-An API key authenticates as its principal and is always **confined to one workspace**. It carries no permissions of its own: each request gets the principal's current grants, limited to that workspace (and to `read` and `run` on organization-shared resources). Changing or removing a grant changes every key of that principal immediately.
+An API key authenticates as its principal and is always **confined to one workspace**. It carries no permissions of its own: each request gets the principal's current grants, limited to that workspace (and to `read` in its organization). Changing or removing a grant changes every key of that principal immediately.
 
-Create a personal key in Console under **Workspace settings → My API keys**, or with `POST /api/v1/users/me/keys` and `{name, workspace_id, expires_at?}`. You need at least `read` in that workspace, and a login session: an API key never mints one, for itself or anyone else, since the new key could outlive the one that made it (`403 forbidden`). The response contains the secret (`a13n_…`) exactly once; the Service stores only its hash. Send the key as a bearer token:
+Create a personal key in Console under **Workspace settings → My API keys**, or with `POST /api/v1/users/me/keys` and `{name, workspace_id, expires_at?}`. You need at least `read` in that workspace, and a login session: an API key never mints one, for itself or anyone else, since the new key could outlive the one that made it (`403 forbidden`). The response contains the secret (`a13n_…`) exactly once; the Service stores only its hash. Send the key as a bearer token; requests with it act in its workspace:
 
 ```sh
-curl "$A13N_URL/api/v1/workspaces/ws_.../agents" -H "Authorization: Bearer $A13N_API_KEY"
+curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
 List and revoke your keys under **My API keys** (`GET /api/v1/users/me/keys`, `DELETE /api/v1/users/me/keys/{key_id}`). Workspace administrators see and revoke every key confined to their workspace under **Member keys** (`/api/v1/workspaces/{workspace_id}/keys`). `last_used_at` shows recent use, updated at most once a minute.

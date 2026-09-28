@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator, Generator, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from uuid import uuid4
 
 import httpx2
 import pytest
@@ -213,10 +212,12 @@ async def stack(stores: Stores, tmp_path: Path, request: pytest.FixtureRequest) 
             workspace = expect(
                 await client.post(
                     f"/api/v1/organizations/{stores.tenant['organization_id']}/workspaces",
-                    json={"key": f"journey-{uuid4().hex}", "name": request.node.name},
+                    json={"name": request.node.name},
                 ),
                 201,
             )
+            # A login session names the workspace its business requests act in.
+            client.headers["x-workspace-id"] = workspace["id"]
             model = ScriptedModel(model_url)
             try:
                 yield Stack(

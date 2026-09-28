@@ -7,21 +7,21 @@ A memory is what agents keep across conversations: preferences, decisions, conve
 
 Threads **mount** memories under names. Each run freezes the thread's memory mounts when it is accepted, sees each memory's context or recalled records at its start, and changes the memories through the `memory_file_*` and `memory_record_*` tools.
 
-All API paths below are under `/api/v1/workspaces/{workspace_id}` unless they name an organization.
+All API paths below are under `/api/v1`.
 
 ## Create a file memory
 
 Creating and changing memories needs `write`:
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/memories" \
+curl -X POST "$A13N_URL/api/v1/memories" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"key": "team", "name": "Team conventions", "type": "postgres",
+  -d '{"name": "Team conventions", "type": "postgres",
        "guide": "Keep one file per topic. Record decisions with their reason.",
        "always_load": ["README.md"]}'
 ```
 
-- `key` is unique in the workspace. `type` is `postgres`, the Service's own store and the default.
+- `type` is `postgres`, the Service's own store and the default. The response's `id` (`mem_…`) identifies the memory; memories have no key.
 - `guide` tells agents what belongs in this memory and how to organize it, up to `memory.guide_bytes`. Leave it out or set it to `null` to use the deployment's guide for the memory's kind (`memory.default_guide.file` or `memory.default_guide.record`, else the built-in one); `""` gives the memory no guide. The memory's `inherited_guide` shows the guide `null` resolves to.
 - `always_load` names up to 64 paths whose full content leads the memory's context in every run. A path need not exist yet. Only people who may change the memory choose them, so a conversation cannot pin its own writes into every later one.
 - `PATCH …/memories/{memory_id}` with the memory's `If-Match` changes `name`, `description`, `labels`, `guide` and `always_load`. Runs that start afterwards use the change.
@@ -33,23 +33,22 @@ curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/memories" \
 
 ### Set up a Memory Provider
 
-A Memory Provider is a [provider](resources.md#providers) of kind `memory`: one account of a record memory backend. Add it under the organization, shared with every workspace (`"workspace_id": null`) or confined to one:
+A Memory Provider is a [provider](resources.md#providers) of kind `memory`: one account of a record memory backend. Add it to the workspace in `/api/v1/memory-providers`.
 
 For the hosted **mem0 Platform**, use type `mem0_platform` with an API key from the [mem0 dashboard](https://app.mem0.ai/dashboard/api-keys); `config.base_url` defaults to `https://api.mem0.ai`:
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/organizations/$ORG/memory-providers" \
+curl -X POST "$A13N_URL/api/v1/memory-providers" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"workspace_id": null, "type": "mem0_platform", "name": "mem0", "config": {},
-       "credential": {"api_key": "m0-..."}}'
+  -d '{"type": "mem0_platform", "name": "mem0", "config": {}, "credential": {"api_key": "m0-..."}}'
 ```
 
 For **self-hosted mem0**, run the [mem0 REST server](https://docs.mem0.ai/open-source/features/rest-api) with its own model, embedder and vector store, and use type `mem0_oss` with the server's address as `base_url`:
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/organizations/$ORG/memory-providers" \
+curl -X POST "$A13N_URL/api/v1/memory-providers" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"workspace_id": null, "type": "mem0_oss", "name": "mem0",
+  -d '{"type": "mem0_oss", "name": "mem0",
        "config": {"base_url": "https://mem0.internal.example.com"}, "credential": {"api_key": "..."}}'
 ```
 
@@ -60,13 +59,13 @@ The self-hosted credential is optional and is sent as `X-API-Key`; purging a del
 ### Create a record memory
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/memories" \
+curl -X POST "$A13N_URL/api/v1/memories" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -d '{"key": "user-facts", "name": "User facts", "type": "mem0_platform", "provider_id": "memprov_...",
+  -d '{"name": "User facts", "type": "mem0_platform", "provider_id": "memprov_...",
        "guide": "Record one stable fact about the user per record."}'
 ```
 
-- `type` is the provider's type, and the provider must be enabled and usable in the workspace. `always_load` does not apply.
+- `type` is the provider's type, and the provider must be an enabled Memory Provider of the workspace. `always_load` does not apply.
 - Each record memory owns a **namespace** in the backend, which is mem0's `user_id`. By default it is `a13n-` and 32 hex characters derived from the memory's ID. Set `namespace` to adopt records that already exist under a `user_id`, such as ones your application wrote; it is 1 to 256 printable characters with no whitespace and no `*`. One namespace belongs to one memory: another memory using it is `409 already_exists`.
 - `type`, `provider_id` and `namespace` never change.
 - Deleting a record memory deletes the records in its namespace too, in the background. Until that finishes, a new memory cannot take the namespace (`409 conflict` with reason `namespace_purging`). If the backend keeps refusing, the purge stops after `outbox.defaults.max_attempts` tries and the records stay in the backend. The mem0 Platform finishes a purge on its own after accepting it, so its records can linger briefly.
@@ -94,7 +93,7 @@ When a run starts, each mounted record memory with `recall` on searches for the 
 A thread's memory mounts decide what its later runs use:
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/threads/$THREAD/memories" \
+curl -X POST "$A13N_URL/api/v1/threads/$THREAD/memories" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" -H "If-Match: $THREAD_ETAG" \
   -d '{"name": "team", "memory_id": "mem_...", "access": "write"}'
 ```

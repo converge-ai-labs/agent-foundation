@@ -7,7 +7,6 @@ import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
-import { connectionPath } from "../connections/api";
 import { CallbackUrlField } from "../connections/callback-url";
 
 type AuthMethod = Schema["ClientAuthentication"];
@@ -54,31 +53,29 @@ export function MCPOAuthClientEditor({
   const save = useMutation({
     gcTime: 0,
     mutationFn: (remove: boolean) =>
-      client.http
-        .PATCH(
-          "/api/v1/workspaces/{workspace_id}/connections/{connection_id}",
-          {
-            params: { path: connectionPath(connection) },
-            headers: ifMatch(rowTag(connection)),
-            body: {
-              config: {
-                ...config,
-                // Without a client ID the Service registers a client itself.
-                oauth: remove
-                  ? { scopes: saved?.scopes ?? [] }
-                  : {
-                      ...saved,
-                      client_id: clientId,
-                      token_endpoint_auth_method: method,
-                      grant_type: grant,
-                    },
-              },
-              ...(!remove && method !== "none" && secret
-                ? { client_secret: secret }
-                : {}),
+      client
+        .workspace(connection.workspace_id)
+        .PATCH("/api/v1/connections/{connection_id}", {
+          params: { path: { connection_id: connection.id } },
+          headers: ifMatch(rowTag(connection)),
+          body: {
+            config: {
+              ...config,
+              // Without a client ID the Service registers a client itself.
+              oauth: remove
+                ? { scopes: saved?.scopes ?? [] }
+                : {
+                    ...saved,
+                    client_id: clientId,
+                    token_endpoint_auth_method: method,
+                    grant_type: grant,
+                  },
             },
+            ...(!remove && method !== "none" && secret
+              ? { client_secret: secret }
+              : {}),
           },
-        )
+        })
         .then(data),
     onSuccess: (updated, remove) => {
       setSecret("");

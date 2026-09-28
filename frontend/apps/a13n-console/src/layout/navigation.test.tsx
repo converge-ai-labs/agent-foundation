@@ -15,10 +15,10 @@ vi.mock("../auth/context", () => ({
 const access = vi.hoisted(() => ({ organizationAdmin: false }));
 vi.mock("./workspace", () => {
   const useAccess = () => ({
-    basePath: "/workspace/design",
-    workspace: { id: "workspace", key: "design", name: "Design" },
+    basePath: "/workspace/ws_design",
+    workspace: { id: "ws_design", name: "Design" },
     organization: { key: "acme", name: "Organization" },
-    workspaces: [{ id: "workspace", key: "design", name: "Design" }],
+    workspaces: [{ id: "ws_design", name: "Design" }],
     organizationCan: () => access.organizationAdmin,
     can: () => true,
   });
@@ -58,9 +58,9 @@ it.each([
     const user = userEvent.setup();
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <MemoryRouter initialEntries={["/workspace/design/agents"]}>
+        <MemoryRouter initialEntries={["/workspace/ws_design/agents"]}>
           <Routes>
-            <Route path="/workspace/:workspaceKey" element={<Shell />}>
+            <Route path="/workspace/:workspaceId" element={<Shell />}>
               <Route path="agents" element={<h1>Agent directory</h1>} />
               <Route
                 path="settings/:section?"
@@ -94,7 +94,7 @@ it.each([
     ).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "Settings" }).getAttribute("href"),
-    ).toBe("/workspace/design/settings");
+    ).toBe("/workspace/ws_design/settings");
     await user.hover(
       screen.getByRole("button", { name: new RegExp(`${trigger}$`) }),
     );
@@ -128,9 +128,9 @@ it("keeps resource categories in sidebar links and restores the selected categor
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/workspace/design/models"]}>
+      <MemoryRouter initialEntries={["/workspace/ws_design/models"]}>
         <Routes>
-          <Route path="/workspace/:workspaceKey" element={<Shell />}>
+          <Route path="/workspace/:workspaceId" element={<Shell />}>
             <Route path="models" element={<p>Model directory</p>} />
             <Route path="memories" element={<p>Memory directory</p>} />
             <Route path="environments" element={<p>Template directory</p>} />
@@ -163,9 +163,9 @@ it("lists workspaces in the switcher and marks the current one", async () => {
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <MemoryRouter initialEntries={["/workspace/design/agents"]}>
+      <MemoryRouter initialEntries={["/workspace/ws_design/agents"]}>
         <Routes>
-          <Route path="/workspace/:workspaceKey/*" element={<Shell />} />
+          <Route path="/workspace/:workspaceId/*" element={<Shell />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -188,10 +188,10 @@ it("searches the settings navigation without changing the selected page", async 
   access.organizationAdmin = true;
   const user = userEvent.setup();
   render(
-    <MemoryRouter initialEntries={["/workspace/design/settings/general"]}>
+    <MemoryRouter initialEntries={["/workspace/ws_design/settings/general"]}>
       <Routes>
         <Route
-          path="/workspace/:workspaceKey/settings/:section?"
+          path="/workspace/:workspaceId/settings/:section?"
           element={
             <SettingsLayout
               scope="workspace"
@@ -205,7 +205,7 @@ it("searches the settings navigation without changing the selected page", async 
   const navigation = within(
     screen.getByRole("navigation", { name: "Settings navigation" }),
   );
-  expect(navigation.getByRole("link", { name: "Models" })).toBeTruthy();
+  expect(navigation.getByRole("link", { name: "Providers" })).toBeTruthy();
   await user.type(
     screen.getByRole("searchbox", { name: "Search settings" }),
     "password",

@@ -65,7 +65,12 @@ type Options = Pick<
 };
 
 /** Overrides with their own controls; advanced JSON must not restate them. */
-const dedicatedOverrides = ["model", "instructions", "media_understanding"];
+const dedicatedOverrides = [
+  "model",
+  "model_settings",
+  "instructions",
+  "media_understanding",
+];
 
 /** The next run's overrides, held beside the message they will be sent with. */
 export function useRunOptions() {
@@ -126,14 +131,8 @@ export function useRunOptions() {
           );
       const override = runOverride({
         ...extra,
-        ...(model || settings.trim()
-          ? {
-              model: {
-                ...(model ? { model_id: model } : {}),
-                ...(settings.trim() ? { settings: jsonObject(settings) } : {}),
-              },
-            }
-          : {}),
+        ...(model ? { model } : {}),
+        ...(settings.trim() ? { model_settings: jsonObject(settings) } : {}),
         ...(mediaSelected(mediaUnderstanding).length
           ? { media_understanding: mediaUnderstanding }
           : {}),
@@ -180,21 +179,18 @@ export function RunOptionsDialog({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    { workspace, organization } = useWorkspace();
+    { workspace } = useWorkspace();
   const choices = useQuery({
     queryKey: ["run-options", workspace.id],
     enabled: open,
     queryFn: async ({ signal }) => {
-      const api = modelApi(client, organization.id, {
-        kind: "workspace",
-        id: workspace.id,
-      });
-      const path = { workspace_id: workspace.id };
+      const api = modelApi(client, workspace.id);
       const [agents, models, templates, environments] = await Promise.all([
         allPages((cursor) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/agents", {
-              params: { path, query: { cursor, archived: false } },
+          client
+            .workspace(workspace.id)
+            .GET("/api/v1/agents", {
+              params: { query: { cursor, archived: false } },
               signal,
             })
             .then(data),
@@ -206,9 +202,10 @@ export function RunOptionsDialog({
           environmentTemplates(client, workspace.id, signal, cursor),
         ),
         allPages((cursor) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/environments", {
-              params: { path, query: { cursor } },
+          client
+            .workspace(workspace.id)
+            .GET("/api/v1/environments", {
+              params: { query: { cursor } },
               signal,
             })
             .then(data),
@@ -424,7 +421,7 @@ function ModelOptions({
             options.setModel(value === "inherit" ? "" : value);
             options.setLabels((previous) => ({
               ...previous,
-              model: models?.find((item) => item.id === value)?.name,
+              model: models?.find((item) => item.key === value)?.name,
             }));
           }}
         />

@@ -8,7 +8,7 @@ export {
   ProviderCatalog,
   type ProviderDefinition,
 } from "./add-provider-dialog";
-export { providerApi, type ProviderKind, type ProviderScope } from "./api";
+export { providerApi, type ProviderKind } from "./api";
 export {
   providerCategories,
   providerCategory,

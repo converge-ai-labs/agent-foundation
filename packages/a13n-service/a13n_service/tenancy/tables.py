@@ -32,7 +32,6 @@ END $$
 class OrganizationRow(Stamped, Base):
     __tablename__ = "organizations"
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
-    key: Mapped[str] = mapped_column(unique=True)
     name: Mapped[str]
     settings: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     # The icon's object reference (`infra/images.py`).
@@ -41,14 +40,9 @@ class OrganizationRow(Stamped, Base):
 
 class WorkspaceRow(Stamped, Base):
     __tablename__ = "workspaces"
-    __table_args__ = (
-        UniqueConstraint("organization_id", "key"),
-        UniqueConstraint("organization_id", "id"),
-        Index("ix_workspaces_key", "key"),
-    )
+    __table_args__ = (UniqueConstraint("organization_id", "id"),)
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
-    key: Mapped[str]
     name: Mapped[str]
     settings: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
     # The icon's object reference (`infra/images.py`).

@@ -21,7 +21,6 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(), nullable=False),
-        sa.Column("key", sa.String(), nullable=False),
         sa.Column("name", sa.String(), nullable=False),
         sa.Column("description", sa.String(), nullable=True),
         sa.Column("kind", sa.String(), nullable=False),
@@ -52,7 +51,6 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_memories")),
         sa.UniqueConstraint("workspace_id", "id", name=op.f("uq_memories_workspace_id_id")),
-        sa.UniqueConstraint("workspace_id", "key", name=op.f("uq_memories_workspace_id_key")),
     )
     op.create_table(
         "memory_file_stores",

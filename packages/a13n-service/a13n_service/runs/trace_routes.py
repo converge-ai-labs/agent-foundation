@@ -10,9 +10,9 @@ from a13n_service.infra.ids import ObjectId
 from a13n_service.providers.traces import Span, SpanPage
 from a13n_service.runs import traces
 from a13n_service.runs.requests import CurrentRuntime
-from a13n_service.tenancy.requests import Actor
+from a13n_service.tenancy.requests import Actor, WorkspaceId
 
-router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}", tags=["runs"])
+router = APIRouter(prefix="/api/v1", tags=["runs"])
 
 TraceId = Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]
 IdFilter = Annotated[ObjectId | None, Query()]
@@ -21,7 +21,7 @@ IdFilter = Annotated[ObjectId | None, Query()]
 @router.get("/runs/{run_id}/attempts/{attempt_id}/trace", response_model=SpanPage)
 async def list_attempt_spans(
     runtime: CurrentRuntime,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     run_id: str,
     attempt_id: str,
     actor: Actor,
@@ -37,7 +37,7 @@ async def list_attempt_spans(
 @router.get("/traces", response_model=SpanPage)
 async def list_traces(
     runtime: CurrentRuntime,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     actor: Actor,
     session_id: IdFilter = None,
     thread_id: IdFilter = None,
@@ -66,7 +66,7 @@ async def list_traces(
 
 
 @router.get("/traces/{trace_id}", response_model=Span)
-async def get_trace(runtime: CurrentRuntime, workspace_id: str, trace_id: TraceId, actor: Actor) -> Span:
+async def get_trace(runtime: CurrentRuntime, workspace_id: WorkspaceId, trace_id: TraceId, actor: Actor) -> Span:
     """The trace's root span."""
     return await traces.get_trace(runtime.storage, runtime.traces, actor, workspace_id, trace_id)
 
@@ -74,7 +74,7 @@ async def get_trace(runtime: CurrentRuntime, workspace_id: str, trace_id: TraceI
 @router.get("/traces/{trace_id}/spans", response_model=SpanPage)
 async def list_trace_spans(
     runtime: CurrentRuntime,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     trace_id: TraceId,
     actor: Actor,
     limit: PageLimit = 50,
@@ -87,6 +87,6 @@ async def list_trace_spans(
 
 
 @router.get("/trace-backend", response_model=traces.TraceBackend)
-async def get_trace_backend(runtime: CurrentRuntime, workspace_id: str, actor: Actor) -> traces.TraceBackend:
+async def get_trace_backend(runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor) -> traces.TraceBackend:
     """The backend trace queries read, and how far back they find a trace."""
     return await traces.describe_backend(runtime.storage, runtime.traces, actor, workspace_id)

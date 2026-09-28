@@ -119,6 +119,53 @@ async def test_work_observes_unsaved_notes_and_restores_all_tasks_on_idle_reply(
         assert work.tasks.total == 1 and work.notes.total == 0
 
 
+@pytest.mark.parametrize("completed_run", [False, True])
+async def test_saved_work_decodes_capability_state_off_loop_and_reuses_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, completed_run: bool
+) -> None:
+    from threading import get_ident
+
+    from a13n_harness.state import AgentContextStateSnapshot
+
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield {0: DeltaToolCall(name="note_write", json_args='{"key":"saved","value":"work"}')}
+        else:
+            yield "Saved work"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    path = configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=path, instrumentation=None) as app:
+        root = await app.create_thread()
+        if completed_run:
+            receipt = await app.submit_thread(thread_id=root.thread_id, prompt="Save work")
+            assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        loop_thread = get_ident()
+        reads: list[int] = []
+        original = AgentContextStateSnapshot.entries.fget
+
+        def observed_entries(self):
+            reads.append(get_ident())
+            return original(self)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(AgentContextStateSnapshot, "entries", property(observed_entries))
+            work = await app.thread_work(thread_id=root.thread_id)
+            assert reads and loop_thread not in reads
+            reads.clear()
+            assert await app.thread_work(thread_id=root.thread_id) == work
+            assert not reads
+        assert work.source == ("saved" if completed_run else "unavailable")
+        assert work.notes.total == int(completed_run)
+
+
 async def test_work_counts_complete_state_without_expanding_bounded_pages(tmp_path: Path) -> None:
     from a13n_harness.capabilities.working_state import Task, TaskState, WorkingState, WorkingStateObservation
 

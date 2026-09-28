@@ -76,18 +76,16 @@ export function ThreadInbox({
   };
   const reorder = useMutation({
     mutationFn: (ids: string[]) =>
-      client.http
-        .PUT(
-          "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/inbox/order",
-          {
-            params: {
-              path: { workspace_id: workspace.id, thread_id: thread.id },
-            },
-            // The order the reader saw belongs to this version of the Thread.
-            headers: ifMatch(rowTag(thread)),
-            body: { entry_ids: ids },
+      client
+        .workspace(workspace.id)
+        .PUT("/api/v1/threads/{thread_id}/inbox/order", {
+          params: {
+            path: { thread_id: thread.id },
           },
-        )
+          // The order the reader saw belongs to this version of the Thread.
+          headers: ifMatch(rowTag(thread)),
+          body: { entry_ids: ids },
+        })
         .then(data),
     onSuccess: refresh,
   });
@@ -102,27 +100,22 @@ export function ThreadInbox({
       id: string;
       message: NonNullable<ReturnType<typeof entryResubmission>>;
     }) => {
-      const path = {
-        workspace_id: workspace.id,
-        thread_id: thread.id,
-      };
+      const path = { thread_id: thread.id };
       data(
-        await client.http.DELETE(
-          "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/inbox/{entry_id}",
-          {
+        await client
+          .workspace(workspace.id)
+          .DELETE("/api/v1/threads/{thread_id}/inbox/{entry_id}", {
             params: { path: { ...path, entry_id: id } },
             headers: ifMatch(rowTag(thread)),
-          },
-        ),
+          }),
       );
       return data(
-        await client.http.POST(
-          "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/inbox",
-          {
+        await client
+          .workspace(workspace.id)
+          .POST("/api/v1/threads/{thread_id}/inbox", {
             params: { path, header: commandHeaders(`resubmit:${id}`) },
             body: { kind: "message", ...message },
-          },
-        ),
+          }),
       );
     },
     onSuccess: (receipt) => {
@@ -303,19 +296,20 @@ export function ThreadInbox({
                           }
                           danger
                           action={() =>
-                            client.http.DELETE(
-                              "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/inbox/{entry_id}",
-                              {
-                                params: {
-                                  path: {
-                                    workspace_id: workspace.id,
-                                    thread_id: thread.id,
-                                    entry_id: item.id,
+                            client
+                              .workspace(workspace.id)
+                              .DELETE(
+                                "/api/v1/threads/{thread_id}/inbox/{entry_id}",
+                                {
+                                  params: {
+                                    path: {
+                                      thread_id: thread.id,
+                                      entry_id: item.id,
+                                    },
                                   },
+                                  headers: ifMatch(rowTag(thread)),
                                 },
-                                headers: ifMatch(rowTag(thread)),
-                              },
-                            )
+                              )
                           }
                         />
                       </MenuPopup>

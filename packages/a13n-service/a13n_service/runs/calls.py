@@ -60,7 +60,7 @@ class CallCheck:
             self.budget.reserve(call.call_id, continuation=call.continuation_of is not None)
         except UsageLimitExceeded:
             self.refuse(Outcome.failed("usage_limit_exceeded", f"The run used its {self.limit} model requests"))
-        # Every model of the graph is selected by its ID; a call that names none of them cannot be admitted.
+        # Every model of the graph is selected by its key; a call that names none of them cannot be admitted.
         model = self.models.get(call.model_id or "")
         if model is None:
             self.budget.cancel(call.call_id)

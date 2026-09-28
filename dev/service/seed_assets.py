@@ -59,14 +59,14 @@ def examples() -> tuple[Example, ...]:
     )
 
 
-def upload(api: Api, ws: str, name: str, content_type: str, data: bytes) -> str:
+def upload(api: Api, name: str, content_type: str, data: bytes) -> str:
     """Stage bytes; returns the upload ID."""
-    return api.post(f"{ws}/uploads", files={"file": (name, data, content_type)}, idempotent=True)["upload_id"]
+    return api.post("/api/v1/uploads", files={"file": (name, data, content_type)}, idempotent=True)["upload_id"]
 
 
-def store(api: Api, ws: str, example: Example) -> Json:
-    upload_id = upload(api, ws, example.name, example.content_type, example.data)
-    return api.post(f"{ws}/assets", {"upload_id": upload_id, "name": example.name})
+def store(api: Api, example: Example) -> Json:
+    upload_id = upload(api, example.name, example.content_type, example.data)
+    return api.post("/api/v1/assets", {"upload_id": upload_id, "name": example.name})
 
 
 def png() -> bytes:

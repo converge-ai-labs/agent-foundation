@@ -21,7 +21,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
-from a13n_service.resources.providers.tables import provider_in_scope
 
 type MemoryKind = Literal["file", "record"]
 
@@ -30,14 +29,11 @@ class MemoryRow(Stamped, Base):
     __tablename__ = "memories"
     KIND: ClassVar[str] = "memory"
     __table_args__ = (
-        UniqueConstraint("workspace_id", "key"),
         UniqueConstraint("workspace_id", "id"),
         # A backend namespace belongs to one memory.
         UniqueConstraint("provider_id", "namespace"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
-        ForeignKeyConstraint(
-            ["organization_id", "provider_id"], ["memory_providers.organization_id", "memory_providers.id"]
-        ),
+        ForeignKeyConstraint(["workspace_id", "provider_id"], ["memory_providers.workspace_id", "memory_providers.id"]),
         CheckConstraint("kind IN ('file', 'record')", name="kind"),
         # The Service stores file memories in PostgreSQL itself; Memory Providers back record memories.
         CheckConstraint("(type = 'postgres') = (kind = 'file')", name="type"),
@@ -46,12 +42,11 @@ class MemoryRow(Stamped, Base):
             name="provider",
         ),
         CheckConstraint("kind = 'file' OR always_load = '[]'::jsonb", name="always_load"),
-        rules(identity_guarded("memories"), *provider_in_scope("memories", "provider_id", "memory_providers")),
+        rules(identity_guarded("memories")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
-    key: Mapped[str]
     name: Mapped[str]
     description: Mapped[str | None]
     kind: Mapped[MemoryKind] = mapped_column(String)

@@ -16,7 +16,6 @@ import { data, type Schema } from "../../shared/api";
 import { Empty } from "../../shared/collection";
 import { ErrorNotice } from "../../shared/feedback";
 import { JsonView } from "../../shared/forms";
-import { connectionPath } from "../connections/api";
 import styles from "./mcp.module.css";
 
 export function MCPTools({ connection }: { connection: Schema["Connection"] }) {
@@ -26,13 +25,11 @@ export function MCPTools({ connection }: { connection: Schema["Connection"] }) {
     [limit, setLimit] = useState(30);
   const discovery = useMutation({
     mutationFn: () =>
-      client.http
-        .GET(
-          "/api/v1/workspaces/{workspace_id}/connections/{connection_id}/tools",
-          {
-            params: { path: connectionPath(connection) },
-          },
-        )
+      client
+        .workspace(connection.workspace_id)
+        .GET("/api/v1/connections/{connection_id}/tools", {
+          params: { path: { connection_id: connection.id } },
+        })
         .then(data),
   });
   const tools =

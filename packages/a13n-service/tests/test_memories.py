@@ -28,15 +28,15 @@ def etag(resource: dict[str, Any]) -> str:
     return f'"{resource["id"]}:{resource["version"]}"'
 
 
-async def create_memory(service: SimpleNamespace, key: str = "team", **fields: Any) -> dict[str, Any]:
-    created = await service.client.post(f"{service.workspace}/memories", json={"key": key, "name": key, **fields})
+async def create_memory(service: SimpleNamespace, name: str = "team", **fields: Any) -> dict[str, Any]:
+    created = await service.client.post(f"{service.api}/memories", json={"name": name, **fields})
     assert created.status_code == 201, created.text
     return created.json()
 
 
 async def create_file(service: SimpleNamespace, memory: dict[str, Any], path: str, content: str) -> dict[str, Any]:
     created = await service.client.post(
-        f"{service.workspace}/memories/{memory['id']}/files", json={"path": path, "content": content}
+        f"{service.api}/memories/{memory['id']}/files", json={"path": path, "content": content}
     )
     assert created.status_code == 201, created.text
     return created.json()
@@ -68,18 +68,16 @@ async def counters(service: SimpleNamespace, memory: dict[str, Any]) -> MemoryFi
 
 
 async def test_memories_are_configured_with_preconditions_and_guides(service) -> None:  # type: ignore[no-untyped-def]
-    base = f"{service.workspace}/memories"
+    base = f"{service.api}/memories"
     memory = await create_memory(service, always_load=["README.md"], labels={"team": "a"})
     assert (memory["kind"], memory["type"], memory["guide"]) == ("file", "postgres", None)
     assert memory["inherited_guide"] == DEFAULT_FILE_GUIDE
     assert (memory["file_count"], memory["content_bytes"], memory["history_bytes"]) == (0, 0, 0)
     assert memory["always_load"] == ["README.md"]
-    duplicate = await service.client.post(base, json={"key": "team", "name": "Other"})
-    assert duplicate.status_code == 409 and duplicate.json()["error"]["code"] == "already_exists"
     for always_load, field in ((["../x"], "always_load.0"), (["a.md", "a.md"], "always_load")):
-        refused = await service.client.post(base, json={"key": "bad", "name": "Bad", "always_load": always_load})
+        refused = await service.client.post(base, json={"name": "Bad", "always_load": always_load})
         assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == field
-    oversized = await service.client.post(base, json={"key": "big", "name": "Big", "guide": "x" * 4097})
+    oversized = await service.client.post(base, json={"name": "Big", "guide": "x" * 4097})
     assert oversized.status_code == 400 and oversized.json()["error"]["details"]["field"] == "guide"
 
     item = f"{base}/{memory['id']}"
@@ -120,7 +118,7 @@ async def test_the_default_guide_comes_from_startup_configuration(serve, setting
 
 async def test_files_change_under_their_etags_and_each_change_is_one_revision(service) -> None:  # type: ignore[no-untyped-def]
     memory = await create_memory(service)
-    base = f"{service.workspace}/memories/{memory['id']}/files"
+    base = f"{service.api}/memories/{memory['id']}/files"
     created = await create_file(service, memory, "prefs.md", "---\ndescription: Preferences\n---\nlikes tea\n")
     assert created["description"] == "Preferences" and created["size"] == 43
     taken = await service.client.post(base, json={"path": "prefs.md", "content": "x"})
@@ -198,7 +196,7 @@ async def test_revisions_show_diffs_filter_by_run_and_restore_forward(service) -
     memory = await create_memory(service)
     files_store = store(service, memory)
     version = await files_store.write("prefs.md", "likes tea\nreply in English\n", expected=None, origin=RUN)
-    base = f"{service.workspace}/memories/{memory['id']}"
+    base = f"{service.api}/memories/{memory['id']}"
     edited = await create_file(service, memory, "notes.md", "a\n")
     replaced = await service.client.put(
         f"{base}/files/prefs.md",
@@ -357,7 +355,7 @@ async def test_the_change_feed_and_search(service) -> None:  # type: ignore[no-u
     assert directory.value.code == "invalid_path"
 
     purged = await service.client.delete(
-        f"{service.workspace}/memories/{memory['id']}/revisions", params={"path": "notes/a.md"}
+        f"{service.api}/memories/{memory['id']}/revisions", params={"path": "notes/a.md"}
     )
     assert purged.json() == {"purged": 1}
     assert (await counters(service, memory)).pruned_through_seq == 1
@@ -369,9 +367,7 @@ async def test_deleting_a_memory_deletes_its_store(service) -> None:  # type: ig
     memory = await create_memory(service)
     files_store = store(service, memory)
     await files_store.write("a.md", "a\n", expected=None, origin=RUN)
-    deleted = await service.client.delete(
-        f"{service.workspace}/memories/{memory['id']}", headers={"if-match": etag(memory)}
-    )
+    deleted = await service.client.delete(f"{service.api}/memories/{memory['id']}", headers={"if-match": etag(memory)})
     assert deleted.status_code == 204
     for call in (files_store.list(), files_store.read("a.md"), files_store.changes(None)):
         with pytest.raises(MemoryStoreError) as gone:
@@ -395,14 +391,10 @@ async def test_verbs_follow_the_memory_rules(service) -> None:  # type: ignore[n
         )
 
     viewer, runner, builder = member("viewer"), member("runner"), member("builder")
-    memory = await memories.create_memory(
-        storage, builder, workspace_id, MemoryCreate(key="team", name="Team"), settings=settings
-    )
+    memory = await memories.create_memory(storage, builder, workspace_id, MemoryCreate(name="Team"), settings=settings)
     for actor in (viewer, runner):
         with pytest.raises(ServiceError) as create:
-            await memories.create_memory(
-                storage, actor, workspace_id, MemoryCreate(key="x", name="X"), settings=settings
-            )
+            await memories.create_memory(storage, actor, workspace_id, MemoryCreate(name="X"), settings=settings)
         with pytest.raises(ServiceError) as guide:
             await memories.update_memory(
                 storage,

@@ -222,7 +222,7 @@ async def remote(**options: Any) -> AsyncIterator[RemoteServer]:
 
 
 async def post(service, path: str, body: dict | None = None, *, status: int = 200, **headers: str) -> dict:  # type: ignore[no-untyped-def]
-    response = await service.client.post(service.workspace + path, json=body, headers=headers)
+    response = await service.client.post(service.api + path, json=body, headers=headers)
     assert response.status_code == status, response.text
     return response.json()
 
@@ -260,7 +260,7 @@ async def row(service, connection_id: str) -> ConnectionRow:  # type: ignore[no-
 
 
 async def view(service, connection_id: str) -> dict:  # type: ignore[no-untyped-def]
-    response = await service.client.get(f"{service.workspace}/connections/{connection_id}")
+    response = await service.client.get(f"{service.api}/connections/{connection_id}")
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -292,7 +292,7 @@ async def authorized(service, server: "RemoteServer", connection: dict) -> dict:
 
 async def patch(service, connection: dict, body: dict) -> dict:  # type: ignore[no-untyped-def]
     response = await service.client.patch(
-        f"{service.workspace}/connections/{connection['id']}", json=body, headers={"If-Match": etag(connection)}
+        f"{service.api}/connections/{connection['id']}", json=body, headers={"If-Match": etag(connection)}
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -371,7 +371,7 @@ async def test_entered_credentials_are_write_only_and_changes_need_the_current_e
     assert created["status"] == "ready" and created["credential_configured"] and created["enabled"]
     item = f"/connections/{created['id']}"
     for path in (item, "/connections"):
-        response = await service.client.get(service.workspace + path)
+        response = await service.client.get(service.api + path)
         assert response.status_code == 200 and SECRET not in response.text
     stored = await row(service, created["id"])
     assert stored.credential is not None and SECRET not in json.dumps(stored.credential)
@@ -380,27 +380,25 @@ async def test_entered_credentials_are_write_only_and_changes_need_the_current_e
     )
     assert secret.headers == {"x-api-key": SECRET}
 
-    response = await service.client.patch(service.workspace + item, json={"name": "Renamed"})
+    response = await service.client.patch(service.api + item, json={"name": "Renamed"})
     assert response.status_code == 428
-    response = await service.client.patch(
-        service.workspace + item, json={"name": "Renamed"}, headers={"If-Match": '"x"'}
-    )
+    response = await service.client.patch(service.api + item, json={"name": "Renamed"}, headers={"If-Match": '"x"'})
     assert response.status_code == 412
     response = await service.client.patch(
-        service.workspace + item, json={"name": "Renamed"}, headers={"If-Match": etag(created)}
+        service.api + item, json={"name": "Renamed"}, headers={"If-Match": etag(created)}
     )
     assert response.status_code == 200 and response.headers["etag"] == etag(response.json())
     renamed = response.json()
     assert renamed["name"] == "Renamed" and renamed["credential_configured"]
     # A change to nothing keeps the version and records no event.
     response = await service.client.patch(
-        service.workspace + item, json={"name": "Renamed"}, headers={"If-Match": etag(renamed)}
+        service.api + item, json={"name": "Renamed"}, headers={"If-Match": etag(renamed)}
     )
     assert response.status_code == 200 and response.json()["version"] == renamed["version"]
 
     # Another server must not receive this server's credential.
     moved = {"config": {"url": "http://127.0.0.2:9/mcp", "headers": ["x-api-key"]}}
-    response = await service.client.patch(service.workspace + item, json=moved, headers={"If-Match": etag(renamed)})
+    response = await service.client.patch(service.api + item, json=moved, headers={"If-Match": etag(renamed)})
     assert response.status_code == 200, response.text
     moved = response.json()
     assert moved["status"] == "pending" and not moved["credential_configured"]
@@ -410,7 +408,7 @@ async def test_entered_credentials_are_write_only_and_changes_need_the_current_e
     enabled = await patch(service, disabled, {"enabled": True})
     assert enabled["enabled"] is True
     for retired in ("/enable", "/disable"):
-        response = await service.client.post(service.workspace + item + retired, headers={"If-Match": etag(enabled)})
+        response = await service.client.post(service.api + item + retired, headers={"If-Match": etag(enabled)})
         assert response.status_code == 404
     async with short_session(service.runtime.storage) as session:
         events = (
@@ -443,7 +441,7 @@ async def test_configuration_and_credentials_must_agree(service) -> None:  # typ
     ]
     for body in refused:
         response = await service.client.post(
-            service.workspace + "/connections", json={"type": "mcp", "name": "Remote", **body}
+            service.api + "/connections", json={"type": "mcp", "name": "Remote", **body}
         )
         assert response.status_code == 400, body
         assert SECRET not in response.text
@@ -464,7 +462,7 @@ async def test_connections_follow_workspace_grants(service) -> None:  # type: ig
     created = await create(service, {"config": {"url": "http://127.0.0.1:9/mcp"}})
     other = new_object_id("ws")
     async with transaction(storage) as session:
-        session.add(WorkspaceRow(id=other, organization_id=organization_id, key="second", name="Second"))
+        session.add(WorkspaceRow(id=other, organization_id=organization_id, name="Second"))
 
     def member(workspace: str, role: str) -> Principal:
         return Principal(
@@ -537,7 +535,7 @@ async def test_mcp_tools_are_discovered_and_called_with_credential_and_caller_he
         tested = await post(service, item + "/test")
         assert tested["status"] == "succeeded", tested
         assert sorted(tool["name"] for tool in tested["tools"]) == ["echo", "ping"]
-        listed = (await service.client.get(service.workspace + item + "/tools")).json()
+        listed = (await service.client.get(service.api + item + "/tools")).json()
         assert [tool["name"] for tool in listed["items"]] == [tool["name"] for tool in tested["tools"]]
         assert all(request.get("x-api-key") == SECRET for request in server.requests)
 
@@ -571,13 +569,13 @@ async def test_oauth_authorization_code_flow_with_pkce_refresh_and_revocation(se
         refused = await post(service, item + "/test")
         assert refused["status"] == "failed"
         response = await service.client.post(
-            service.workspace + item + "/authorize", json={"return_url": "https://evil.test"}
+            service.api + item + "/authorize", json={"return_url": "https://evil.test"}
         )
         assert response.status_code == 400
         redirect = await post(service, item + "/authorize", {"return_url": RETURN_URL}, **{"If-Match": etag(created)})
         assert parse_qs(urlsplit(redirect["redirect_url"]).query)["scope"] == ["tools"]
         state, code = server.grant(redirect["redirect_url"])
-        assert (await service.client.get(service.workspace + item)).json()["authorization_pending"] is True
+        assert (await service.client.get(service.api + item)).json()["authorization_pending"] is True
 
         response = await service.client.get("/api/v1/connections/callback", params={"state": "x" * 43, "code": code})
         assert response.status_code == 400
@@ -591,7 +589,7 @@ async def test_oauth_authorization_code_flow_with_pkce_refresh_and_revocation(se
         # The state is used once.
         assert (await service.client.get("/api/v1/connections/callback", params=callback)).status_code == 400
 
-        connection = (await service.client.get(service.workspace + item)).json()
+        connection = (await service.client.get(service.api + item)).json()
         assert connection["status"] == "ready" and connection["credential_configured"]
         assert not connection["authorization_pending"]
         stored = await row(service, created["id"])
@@ -609,7 +607,7 @@ async def test_oauth_authorization_code_flow_with_pkce_refresh_and_revocation(se
         assert server.issued == 2 and server.requests[-1]["authorization"] == "Bearer access-2"
         assert (await tokens(service, created["id"])).refresh_token == "refresh-2"
 
-        current = (await service.client.get(service.workspace + item)).json()
+        current = (await service.client.get(service.api + item)).json()
         revoked = await post(service, item + "/revoke", **{"If-Match": etag(current)})
         assert revoked["status"] == "pending" and not revoked["credential_configured"]
         assert revoked["remote_revocation"] == "revoked" and server.revoked == ["refresh-2"]
@@ -622,7 +620,7 @@ async def test_oauth_authorization_code_flow_with_pkce_refresh_and_revocation(se
         )
         assert response.status_code == 303
         assert parse_qs(urlsplit(response.headers["location"]).query)["error"] == ["access_denied"]
-        failed = (await service.client.get(service.workspace + item)).json()
+        failed = (await service.client.get(service.api + item)).json()
         assert failed["status"] == "pending" and not failed["authorization_pending"]
         assert failed["failure"]["reason"] == "rejected" and failed["failure"]["code"] == "access_denied"
 
@@ -695,7 +693,7 @@ async def test_tools_show_their_schemas_and_hints_and_a_test_is_recorded_without
         ping = next(tool for tool in tested["tools"] if tool["name"] == "ping")
         assert ping["annotations"] == {"readOnlyHint": True}
         assert ping["output_schema"]["properties"] == {"result": {"type": "string"}}
-        response = await service.client.get(service.workspace + item)
+        response = await service.client.get(service.api + item)
         connection = response.json()
         assert response.headers["etag"] == etag(created) and connection["updated_at"] == created["updated_at"]
         recorded = {field: tested[field] for field in ("connection_version", "status", "message", "tested_at")}
@@ -704,7 +702,7 @@ async def test_tools_show_their_schemas_and_hints_and_a_test_is_recorded_without
     # The server is gone: the failed test replaces the outcome, with safe text only.
     failed = await post(service, item + "/test")
     assert failed["status"] == "failed" and failed["message"] and failed["tools"] == []
-    assert (await service.client.get(service.workspace + item)).json()["last_test"]["status"] == "failed"
+    assert (await service.client.get(service.api + item)).json()["last_test"]["status"] == "failed"
 
     # An outcome for a later version is never replaced by a test of an earlier one.
     async with transaction(service.runtime.storage) as session:
@@ -712,7 +710,7 @@ async def test_tools_show_their_schemas_and_hints_and_a_test_is_recorded_without
         assert locked is not None and locked.last_test is not None
         locked.last_test = {**locked.last_test, "connection_version": created["version"] + 1}
     await post(service, item + "/test")
-    kept = (await service.client.get(service.workspace + item)).json()["last_test"]
+    kept = (await service.client.get(service.api + item)).json()["last_test"]
     assert kept["connection_version"] == created["version"] + 1
 
 
@@ -738,7 +736,7 @@ async def test_a_connection_selects_from_a_server_larger_than_it_may_expose(serv
         # So does the connection's own selection.
         config = {"url": f"{server.url}/mcp", "tools": ["ping", "tool_000"]}
         response = await service.client.patch(
-            service.workspace + item, json={"config": config}, headers={"If-Match": etag(created)}
+            service.api + item, json={"config": config}, headers={"If-Match": etag(created)}
         )
         assert response.status_code == 200, response.text
         async with opened(service, [everything], {}, dispatches) as capabilities:
@@ -758,7 +756,7 @@ async def test_oauth_client_settings_and_secret_must_agree(service) -> None:  # 
     ]
     for body in refused:
         response = await service.client.post(
-            service.workspace + "/connections", json={"type": "mcp", "name": "Remote", **body}
+            service.api + "/connections", json={"type": "mcp", "name": "Remote", **body}
         )
         assert response.status_code == 400, body
         assert CLIENT_SECRET not in response.text
@@ -766,7 +764,7 @@ async def test_oauth_client_settings_and_secret_must_agree(service) -> None:  # 
     created = await create(service, {"config": {"url": url, "oauth": registered}, "auth": "oauth"})
     assert not created["client_secret_configured"]
     response = await service.client.post(
-        service.workspace + f"/connections/{created['id']}/authorize", json={}, headers={"If-Match": etag(created)}
+        service.api + f"/connections/{created['id']}/authorize", json={}, headers={"If-Match": etag(created)}
     )
     assert response.status_code == 409 and response.json()["error"]["details"]["reason"] == "client_secret_missing"
     # Clients registered in advance allow the deployment's callback.
@@ -789,7 +787,7 @@ async def test_a_confidential_client_authenticates_with_its_write_only_secret(se
         state, code = server.grant(redirect["redirect_url"])
         callback = {"state": state, "code": code, "iss": server.url}
         assert (await service.client.get("/api/v1/connections/callback", params=callback)).status_code == 303
-        assert (await service.client.get(service.workspace + item)).json()["status"] == "ready"
+        assert (await service.client.get(service.api + item)).json()["status"] == "ready"
         async with transaction(service.runtime.storage) as session:
             locked = await session.get(ConnectionRow, created["id"])
             assert locked is not None
@@ -798,16 +796,14 @@ async def test_a_confidential_client_authenticates_with_its_write_only_secret(se
         assert server.grants == [("authorization_code", "basic"), ("refresh_token", "basic")]
 
         # Other scopes keep the client and its secret; another client ID drops the secret.
-        current = (await service.client.get(service.workspace + item)).json()
+        current = (await service.client.get(service.api + item)).json()
         rescoped = {"config": {**config, "oauth": {**oauth, "scopes": ["tools"]}}}
-        response = await service.client.patch(
-            service.workspace + item, json=rescoped, headers={"If-Match": etag(current)}
-        )
+        response = await service.client.patch(service.api + item, json=rescoped, headers={"If-Match": etag(current)})
         assert response.status_code == 200, response.text
         current = response.json()
         assert current["client_secret_configured"] and not current["credential_configured"]
         moved = {"config": {**config, "oauth": {**oauth, "client_id": "client-2"}}}
-        response = await service.client.patch(service.workspace + item, json=moved, headers={"If-Match": etag(current)})
+        response = await service.client.patch(service.api + item, json=moved, headers={"If-Match": etag(current)})
         assert response.status_code == 200 and not response.json()["client_secret_configured"]
         assert (await row(service, created["id"])).client_secret is None
 
@@ -833,7 +829,7 @@ async def test_a_client_credentials_grant_authorizes_a_machine_account_without_a
             service, item + "/authorize", {}, **{"If-Match": etag(created)}, **await api_key(service)
         )
         assert authorized == {"redirect_url": None, "expires_at": None}
-        connection = (await service.client.get(service.workspace + item)).json()
+        connection = (await service.client.get(service.api + item)).json()
         assert connection["status"] == "ready" and connection["credential_configured"]
         assert not connection["authorization_pending"] and connection["failure"] is None
         assert (await post(service, item + "/test"))["status"] == "succeeded"
@@ -849,26 +845,26 @@ async def test_a_client_credentials_grant_authorizes_a_machine_account_without_a
         assert server.grants == [("client_credentials", "post"), ("client_credentials", "post")]
 
         # A new secret drops the tokens obtained with the old one; a rejected one is recorded, never echoed.
-        current = (await service.client.get(service.workspace + item)).json()
+        current = (await service.client.get(service.api + item)).json()
         response = await service.client.patch(
-            service.workspace + item, json={"client_secret": "wrong-secret"}, headers={"If-Match": etag(current)}
+            service.api + item, json={"client_secret": "wrong-secret"}, headers={"If-Match": etag(current)}
         )
         assert response.status_code == 200, response.text
         current = response.json()
         assert current["status"] == "pending" and not current["credential_configured"]
         response = await service.client.post(
-            service.workspace + item + "/authorize", json={}, headers={"If-Match": etag(current)}
+            service.api + item + "/authorize", json={}, headers={"If-Match": etag(current)}
         )
         assert response.status_code == 503 and "wrong-secret" not in response.text
-        failed = (await service.client.get(service.workspace + item)).json()
+        failed = (await service.client.get(service.api + item)).json()
         assert failed["status"] == "pending" and failed["failure"]["code"] == "invalid_client"
 
         # Revoking ends the machine account's token and keeps the client's secret for a later authorization.
         response = await service.client.patch(
-            service.workspace + item, json={"client_secret": CLIENT_SECRET}, headers={"If-Match": etag(failed)}
+            service.api + item, json={"client_secret": CLIENT_SECRET}, headers={"If-Match": etag(failed)}
         )
         await post(service, item + "/authorize", {}, **{"If-Match": etag(response.json())})
-        current = (await service.client.get(service.workspace + item)).json()
+        current = (await service.client.get(service.api + item)).json()
         revoked = await post(service, item + "/revoke", **{"If-Match": etag(current)})
         assert revoked["status"] == "pending" and revoked["client_secret_configured"]
         assert server.revoked == ["access-3"]
@@ -1077,7 +1073,7 @@ async def test_browser_flows_need_a_login_session_and_are_bound_to_its_browser(s
         httpx2.AsyncClient(transport=httpx2.ASGITransport(app=service.app), base_url="https://service.test") as other,
     ):
         created = await create(service, {"config": {"url": f"{server.url}/mcp"}, "auth": "oauth"})
-        item = f"{service.workspace}/connections/{created['id']}"
+        item = f"{service.api}/connections/{created['id']}"
         response = await service.client.post(
             item + "/authorize", json={"return_url": RETURN_URL}, headers={"If-Match": etag(created)}
         )
@@ -1146,7 +1142,7 @@ async def test_a_callback_during_a_refresh_supersedes_the_refresh(service) -> No
 async def test_browser_flows_return_to_the_service_origin_and_expire(service) -> None:  # type: ignore[no-untyped-def]
     async with remote(oauth=True) as server:
         created = await create(service, {"config": {"url": f"{server.url}/mcp"}, "auth": "oauth"})
-        item = f"{service.workspace}/connections/{created['id']}/authorize"
+        item = f"{service.api}/connections/{created['id']}/authorize"
         console = "http://127.0.0.1:8000/connections/callback"
         for refused in ("http://127.0.0.1:8000.evil.test/callback", "http://127.0.0.1:8001/", "http://127.0.0.1:8000"):
             response = await service.client.post(
@@ -1213,7 +1209,7 @@ async def test_revocation_ends_credentials_of_an_archived_workspace(service) -> 
         archived = await service.client.post(f"{service.workspace}/archive", headers={"If-Match": etag(workspace)})
         assert archived.status_code == 200, archived.text
 
-        item = f"{service.workspace}/connections/{created['id']}"
+        item = f"{service.api}/connections/{created['id']}"
         renamed = await service.client.patch(item, json={"name": "Renamed"}, headers={"If-Match": etag(connection)})
         assert renamed.status_code == 422 and renamed.json()["error"]["details"]["kind"] == "workspace"
         revoked = await post(service, f"/connections/{created['id']}/revoke", **{"If-Match": etag(connection)})
@@ -1349,13 +1345,8 @@ async def composio_connection(  # type: ignore[no-untyped-def]
         monkeypatch.setattr(catalog, "COMPOSIO_ENDPOINT", url)
         monkeypatch.setattr(runtime, "COMPOSIO_CONNECT_ENDPOINT", url)
         response = await service.client.post(
-            service.organization + "/connector-providers",
-            json={
-                "workspace_id": None,
-                "type": "composio",
-                "name": "Composio",
-                "credential": {"api_key": COMPOSIO_KEY},
-            },
+            service.api + "/connector-providers",
+            json={"type": "composio", "name": "Composio", "credential": {"api_key": COMPOSIO_KEY}},
         )
         assert response.status_code == 201, response.text
         created = await post(
@@ -1485,35 +1476,30 @@ async def test_composio_account_is_set_up_through_hosted_flow_and_runs_its_pinne
             monkeypatch.setattr(module, name, url)
         monkeypatch.setattr(runtime, "COMPOSIO_CONNECT_ENDPOINT", url)
         response = await service.client.post(
-            service.organization + "/connector-providers",
-            json={
-                "workspace_id": None,
-                "type": "composio",
-                "name": "Composio",
-                "credential": {"api_key": COMPOSIO_KEY},
-            },
+            service.api + "/connector-providers",
+            json={"type": "composio", "name": "Composio", "credential": {"api_key": COMPOSIO_KEY}},
         )
         assert response.status_code == 201, response.text
         provider_id = response.json()["id"]
         provider = f"/connector-providers/{provider_id}"
-        apps = (await service.client.get(service.workspace + provider + "/apps", params={"query": "git"})).json()
+        apps = (await service.client.get(service.api + provider + "/apps", params={"query": "git"})).json()
         assert [app["key"] for app in apps["items"]] == ["github"] and apps["next_cursor"] is None
         assert apps["items"][0]["authentication_methods"] == ["OAUTH2"]
         # The catalogue is cached briefly; `refresh` reads it anew. A cursor stays bound to its query.
-        first = (await service.client.get(service.workspace + provider + "/apps", params={"limit": 1})).json()
+        first = (await service.client.get(service.api + provider + "/apps", params={"limit": 1})).json()
         assert [app["key"] for app in first["items"]] == ["github"] and composio.listed == 1
         rest = {"limit": 1, "cursor": first["next_cursor"]}
         assert [
             app["key"]
-            for app in (await service.client.get(service.workspace + provider + "/apps", params=rest)).json()["items"]
+            for app in (await service.client.get(service.api + provider + "/apps", params=rest)).json()["items"]
         ] == ["slack"]
-        response = await service.client.get(service.workspace + provider + "/apps", params={**rest, "query": "s"})
+        response = await service.client.get(service.api + provider + "/apps", params={**rest, "query": "s"})
         assert response.status_code == 400 and response.json()["error"]["code"] == "invalid_cursor"
-        await service.client.get(service.workspace + provider + "/apps", params={"refresh": True})
+        await service.client.get(service.api + provider + "/apps", params={"refresh": True})
         assert composio.listed == 2
-        app = (await service.client.get(service.workspace + provider + "/apps/github")).json()
+        app = (await service.client.get(service.api + provider + "/apps/github")).json()
         assert app["setup_schema"]["properties"]["toolkit_version"]["const"] == VERSION
-        actions = (await service.client.get(service.workspace + provider + "/apps/github/actions")).json()
+        actions = (await service.client.get(service.api + provider + "/apps/github/actions")).json()
         assert [action["name"] for action in actions["items"]] == ["GITHUB_CREATE"]
 
         setup = {"auth_config_id": "ac_github", "toolkit_version": VERSION}
@@ -1532,7 +1518,7 @@ async def test_composio_account_is_set_up_through_hosted_flow_and_runs_its_pinne
         assert created["status"] == "pending"
         item = f"/connections/{created['id']}"
         # Before an account is bound, the tools are the app's catalogue, and a test fails.
-        listed = (await service.client.get(service.workspace + item + "/tools")).json()
+        listed = (await service.client.get(service.api + item + "/tools")).json()
         assert [tool["name"] for tool in listed["items"]] == ["GITHUB_CREATE"]
         unbound = await post(service, item + "/test")
         assert unbound["status"] == "failed" and "not authorized" in unbound["message"]
@@ -1550,7 +1536,7 @@ async def test_composio_account_is_set_up_through_hosted_flow_and_runs_its_pinne
 
         # The hosted setup is a browser flow: an API key never starts one.
         refused = await service.client.post(
-            service.workspace + item + "/authorize",
+            service.api + item + "/authorize",
             json={},
             headers={"If-Match": etag(created), **await api_key(service)},
         )

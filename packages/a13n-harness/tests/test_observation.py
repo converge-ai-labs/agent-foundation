@@ -310,7 +310,7 @@ def test_pydantic_instrumentation_and_instrumented_models_are_rejected() -> None
     assert definition_conflict.value.code == "instrumentation_owner_conflict"
 
     executable = _build(None)
-    with pytest.raises(DefinitionError, match="Instrumentation") as run_conflict:
+    with pytest.raises(DefinitionError, match="Agent instrumentation") as run_conflict:
         executable.stream(
             "hello",
             bindings=RunBindings.embedded(capabilities=[pydantic_instrumentation]),

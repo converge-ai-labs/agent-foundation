@@ -15,9 +15,10 @@ export function agentQuery(
     queryKey: ["agent-by-id", workspaceId, agentId],
     enabled: !!agentId,
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/agents/{agent_id}", {
-          params: { path: { workspace_id: workspaceId, agent_id: agentId! } },
+      client
+        .workspace(workspaceId)
+        .GET("/api/v1/agents/{agent_id}", {
+          params: { path: { agent_id: agentId! } },
           signal,
         })
         .then(data),
@@ -37,20 +38,17 @@ export function editableAgent(
   return agent.source === "custom" && !agent.archived_at;
 }
 
-/** Revisions name their model by ID; views read its name and key here. */
-export function useModelsById() {
+/** Revisions name their model by key; views read its display name here. */
+export function useModelsByKey() {
   const client = useClient(),
-    { workspace, organization } = useWorkspace();
+    { workspace } = useWorkspace();
   const query = useQuery({
     queryKey: ["agent-list-models", workspace.id],
     staleTime: 60_000,
     queryFn: ({ signal }) =>
       allPages((cursor) =>
-        modelApi(client, organization.id, {
-          kind: "workspace",
-          id: workspace.id,
-        }).models(signal, cursor),
+        modelApi(client, workspace.id).models(signal, cursor),
       ),
   });
-  return new Map((query.data ?? []).map((model) => [model.id, model]));
+  return new Map((query.data ?? []).map((model) => [model.key, model]));
 }

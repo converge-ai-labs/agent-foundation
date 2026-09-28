@@ -241,7 +241,7 @@ async def test_http_original_activation_approval_reconciliation_and_close_use_re
             view_base = f"{base}/{response.json()['view_id']}"
 
             # The outer App check is not admission: root submission can wait on
-            # the coordinator lock while configuration revokes its authority.
+            # the Thread admission fence while configuration revokes its authority.
             entered_submission = asyncio.Event()
             submit_prompt = app._root_runs.submit_prompt
 
@@ -276,7 +276,7 @@ async def test_http_original_activation_approval_reconciliation_and_close_use_re
                 await app.reload_configuration()
 
             if admission_wait == "lock":
-                async with app._root_runs._lock:
+                async with app._root_runs._thread_fence(thread.thread_id):
                     await revoke_after(entered_submission)
             else:
                 try:

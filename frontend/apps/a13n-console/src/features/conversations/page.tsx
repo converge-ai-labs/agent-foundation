@@ -70,8 +70,7 @@ export function NewConversation() {
   }>({});
   async function consoleSession() {
     prepared.current.session ??= data(
-      await client.http.POST("/api/v1/workspaces/{workspace_id}/sessions", {
-        params: { path: { workspace_id: workspace.id } },
+      await client.workspace(workspace.id).POST("/api/v1/sessions", {
         body: { labels: CONSOLE_SESSION_LABELS },
       }),
     );
@@ -94,10 +93,10 @@ export function NewConversation() {
     queryKey: ["agent-picker", workspace.id],
     queryFn: ({ signal }) =>
       allPages((cursor) =>
-        client.http
-          .GET("/api/v1/workspaces/{workspace_id}/agents", {
+        client
+          .workspace(workspace.id)
+          .GET("/api/v1/agents", {
             params: {
-              path: { workspace_id: workspace.id },
               query: { cursor, limit: 100, archived: false },
             },
             signal,
@@ -162,16 +161,12 @@ export function NewConversation() {
                 : [],
             };
             const { thread, run } = data(
-              await client.http.POST(
-                "/api/v1/workspaces/{workspace_id}/threads",
-                {
-                  params: {
-                    path: { workspace_id: workspace.id },
-                    header: commandHeaders(idempotency.forBody(body)),
-                  },
-                  body,
+              await client.workspace(workspace.id).POST("/api/v1/threads", {
+                params: {
+                  header: commandHeaders(idempotency.forBody(body)),
                 },
-              ),
+                body,
+              }),
             );
             void invalidateConversation(cache, workspace.id, {
               sessionId: thread.session_id,

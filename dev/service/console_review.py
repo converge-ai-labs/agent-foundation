@@ -19,7 +19,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.migrations.runner import upgrade
 from a13n_service.settings import Database
 from a13n_service.tenancy.bootstrap import BootstrapInput, bootstrap
-from a13n_service.tenancy.tables import GrantRow, OrganizationRow, PasswordRow, PrincipalRow, WorkspaceRow
+from a13n_service.tenancy.tables import GrantRow, PasswordRow, PrincipalRow
 from argon2 import PasswordHasher
 from pydantic import SecretStr
 from testcontainers.postgres import PostgresContainer
@@ -62,17 +62,6 @@ async def initialize(database: Database):
                     created_by_id=initialized.principal_id,
                 )
             )
-            other_org = new_object_id("org")
-            session.add(OrganizationRow(id=other_org, key="hidden", name="Hidden organization"))
-            await session.flush()
-            session.add(
-                WorkspaceRow(
-                    id=new_object_id("ws"), organization_id=other_org, key="ambiguous", name="Hidden workspace"
-                )
-            )
-            own = await session.get(WorkspaceRow, initialized.workspace_id)
-            assert own is not None
-            own.key = "ambiguous"
         return initialized
     finally:
         await storage.close()

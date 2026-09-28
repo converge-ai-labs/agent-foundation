@@ -185,7 +185,7 @@ it("reaches one run further back each time the reader scrolls to the top", async
   // Nothing but the lineage until the sentinel above the transcript is seen.
   await waitFor(() => expect(StageObserver.created).toHaveLength(1));
   expect(requests.map((url) => url.pathname)).toEqual([
-    "/api/v1/workspaces/workspace/runs/current/lineage",
+    "/api/v1/runs/current/lineage",
   ]);
   expect(
     screen.queryByRole("button", { name: "Load earlier runs" }),

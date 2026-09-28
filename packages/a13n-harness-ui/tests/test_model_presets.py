@@ -87,6 +87,7 @@ def test_all_presets_expand_to_accepted_native_settings(provider, model_id) -> N
             model_cfg={},
         )
         assert normalized.settings == preset.settings
+        assert "pydantic" not in preset.description.lower()
 
 
 @pytest.mark.parametrize("model_id", ["gpt-4.1", "custom-model"])
@@ -129,6 +130,14 @@ def test_reasoning_defaults_and_anthropic_model_profile_selection() -> None:
 def test_base_url_rejects_credentials_and_invalid_endpoints(url) -> None:
     with pytest.raises(CompositionError):
         PydanticAiModelAdapter().validate(route="anthropic:claude", settings={}, model_cfg={"base_url": url})
+
+
+@pytest.mark.parametrize("route", ["unsupported:test", "not-a-route"])
+def test_unsupported_model_route_uses_product_language(route: str) -> None:
+    with pytest.raises(CompositionError) as error:
+        PydanticAiModelAdapter().validate(route=route, settings={}, model_cfg={})
+    assert error.value.code == "model_route_unsupported"
+    assert str(error.value) == "The Model route is not supported by Harness UI."
 
 
 @pytest.mark.parametrize("route", ["openai-responses:gpt-5", "anthropic:claude", "openai-codex:gpt-5.6"])

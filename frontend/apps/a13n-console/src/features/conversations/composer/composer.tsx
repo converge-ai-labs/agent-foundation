@@ -95,8 +95,7 @@ export function Composer({
       );
       // One asset per upload: repeating the call returns the asset it created.
       return data(
-        await client.http.POST("/api/v1/workspaces/{workspace_id}/assets", {
-          params: { path: { workspace_id: workspace.id } },
+        await client.workspace(workspace.id).POST("/api/v1/assets", {
           body: { upload_id: upload.upload_id, name: upload.filename },
         }),
       );

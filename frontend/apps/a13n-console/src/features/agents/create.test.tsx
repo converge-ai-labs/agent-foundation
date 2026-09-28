@@ -4,11 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import { ApiError } from "../../service-client";
 import { CreateAgent } from "./create";
 
 const http = vi.hoisted(() => ({ POST: vi.fn(), PUT: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
@@ -32,9 +33,7 @@ vi.mock("./editor", () => ({
       {identity}
       <button
         disabled={pending}
-        onClick={() =>
-          submit({ model: { model_id: "mdl_0123456789abcdef0123" } })
-        }
+        onClick={() => submit({ model: "model-0123456789abcdef0123" })}
       >
         Create agent
       </button>
@@ -47,11 +46,9 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-it("creates the agent under a key derived from its name, retrying a taken key", async () => {
-  http.POST.mockRejectedValueOnce(
-    new ApiError(409, "already_exists", "Agent key already exists", {}, null),
-  ).mockResolvedValueOnce({
-    data: { id: "ap_new", key: "new-agent-0001", name: "New agent" },
+it("creates an agent and navigates to its ID", async () => {
+  http.POST.mockResolvedValueOnce({
+    data: { id: "ap_new", name: "New agent" },
     response: new Response(null, { headers: { ETag: '"ap_new:1"' } }),
   });
   function Location() {
@@ -73,28 +70,23 @@ it("creates the agent under a key derived from its name, retrying a taken key", 
   await user.click(screen.getByRole("button", { name: "Create agent" }));
   await waitFor(() =>
     expect(screen.getByLabelText("Current path").textContent).toBe(
-      "/workspace/test/agents/new-agent-0001",
+      "/workspace/test/agents/ap_new",
     ),
   );
-  expect(http.POST).toHaveBeenCalledTimes(2);
+  expect(http.POST).toHaveBeenCalledOnce();
   expect(http.POST.mock.calls[0]?.[1]).toEqual({
-    params: { path: { workspace_id: "ws_test" } },
     body: {
-      key: "new-agent",
       name: "New agent",
       description: "",
-      config: { model: { model_id: "mdl_0123456789abcdef0123" } },
+      config: { model: "model-0123456789abcdef0123" },
     },
   });
-  expect(http.POST.mock.calls[1]?.[1].body.key).toMatch(
-    /^new-agent-[0-9a-f]{4}$/,
-  );
 });
 
 it("uploads a selected avatar after creation and retries without creating another agent", async () => {
   vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
   const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-  const value = { id: "ap_new", key: "new-agent", name: "New agent" };
+  const value = { id: "ap_new", name: "New agent" };
   http.POST.mockResolvedValue({
     data: value,
     response: new Response(null, { headers: { ETag: '"ap_new:1"' } }),
@@ -133,15 +125,15 @@ it("uploads a selected avatar after creation and retries without creating anothe
   await user.click(screen.getByRole("button", { name: "Retry upload" }));
   await waitFor(() =>
     expect(screen.getByLabelText("Current path").textContent).toBe(
-      "/workspace/test/agents/new-agent",
+      "/workspace/test/agents/ap_new",
     ),
   );
   expect(http.POST).toHaveBeenCalledOnce();
   expect(http.PUT).toHaveBeenCalledTimes(2);
   expect(http.PUT).toHaveBeenLastCalledWith(
-    "/api/v1/workspaces/{workspace_id}/agents/{agent_id}/avatar",
+    "/api/v1/agents/{agent_id}/avatar",
     {
-      params: { path: { workspace_id: "ws_test", agent_id: "ap_new" } },
+      params: { path: { agent_id: "ap_new" } },
       headers: { "If-Match": '"ap_new:1"', "Content-Type": "image/png" },
       body: file,
     },

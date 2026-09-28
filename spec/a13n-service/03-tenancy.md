@@ -7,7 +7,7 @@ Route paths and request/response shapes belong to [10: API](10-api.md); this cha
 ## Nouns
 
 - An **organization** is the administration boundary. Organizations are created only by [bootstrap](#bootstrap); no API creates or deletes one. A deployment normally has one, and every table allows many.
-- A **workspace** belongs to one organization and is the resource and work boundary. Sessions, threads and runs belong to exactly one workspace; provider resources and models can be shared by every workspace of their organization ([04](04-resources.md)).
+- A **workspace** belongs to one organization and is the resource and work boundary. Sessions, threads, runs and every resource they use belong to exactly one workspace ([04](04-resources.md)).
 - A **principal** is a user or a service account. Users are people identified by an email address and are not owned by any organization. Service accounts are program identities with an immutable home workspace.
 - A **credential** proves that a request comes from a principal. There are three kinds: a password (one per user, verified, never looked up), an API key (long-lived, named, confined to one workspace) and a token (a login session or a one-use password-reset or email-change link: short-lived and looked up by hash).
 - A **grant** gives a principal a role at an organization or at one of its workspaces. A **role** is a named set of verbs.
@@ -17,12 +17,10 @@ Route paths and request/response shapes belong to [10: API](10-api.md); this cha
 
 ```
 organizations
-  id  key  name  settings  image NULL  version  created_at  updated_at
-  UNIQUE (key)
+  id  name  settings  image NULL  version  created_at  updated_at
 
 workspaces
-  id  organization_id  key  name  settings  image NULL  archived_at NULL  version  created_at  updated_at
-  UNIQUE (organization_id, key)
+  id  organization_id  name  settings  image NULL  archived_at NULL  version  created_at  updated_at
 
 principals
   id  kind  name  description NULL  email NULL  home_workspace_id NULL  status  image NULL
@@ -79,7 +77,6 @@ Notes on the shape:
 - `grants.workspace_id IS NULL` is an organization-scope grant; it applies to every workspace of the organization. `role` is validated text, not a database CHECK, because distributions add roles ([Roles and grant sources](#roles-and-grant-sources)). A role change replaces the row.
 - `workspaces.settings` holds workspace-wide defaults that are not resources; today only the media-understanding model defaults under `media`, owned by [04](04-resources.md). `organizations.settings` is reserved; no operation reads or writes it.
 - `image` holds the reference to an organization's or workspace's icon or a user's avatar ([Images](#images)); service accounts have none. `description` is a service account's free text (at most 2048 characters, default empty).
-- Organization and workspace keys match `^[a-z0-9][a-z0-9_-]{0,127}$`.
 - `api_keys`, `grants`, `invitations` and `audit_events` reference their workspace by the pair `(organization_id, workspace_id)` ([Tenant integrity](#tenant-integrity)).
 - `audit_events.organization_id` is NULL only for account-wide events (a user's own account and login sessions), which belong to no tenant.
 - Principals, passwords, API keys and accepted invitations are never deleted; disabling and revocation are status columns, so history keeps every identity it names. Grants are deleted when an administrator removes them, and the [expiry sweep](#expiry) deletes dead tokens and dead unaccepted invitations.
@@ -146,7 +143,7 @@ def authorize(principal: Principal, resource: Scoped, verb: Verb, *, authority: 
     """Raise `forbidden` (details: verb) unless the principal's grants cover the resource with the verb."""
 ```
 
-`Scoped` is anything with `organization_id` and an optional `workspace_id`: a row, a view, or a scope literal for collection reads and creates. A resource with `workspace_id IS NULL` is shared by the organization; the organization itself is such a target.
+`Scoped` is anything with `organization_id` and an optional `workspace_id`: a row, a view, or a scope literal for collection reads and creates. A target without `workspace_id` is the organization itself.
 
 The built-in roles:
 
@@ -160,21 +157,23 @@ The built-in roles:
 The verbs a principal holds on a target are computed as follows:
 
 1. **Confinement.** A confined principal (an API key, or any service account) holds nothing outside its workspace: nothing in another organization and nothing in another workspace of its own organization.
-2. **Grants.** Only grants in the target's organization count, and their verbs are unioned. On a workspace target, organization-scope grants and grants at that workspace contribute their role's verbs. On an organization-shared target, organization-scope grants contribute their role's verbs and workspace grants contribute at most `read` and `run`: sharing lets every workspace use a resource, but changing it changes it for everyone.
-3. **Confined credentials on shared targets.** A confined principal keeps at most `read` and `run` on organization-shared targets, whatever its principal's grants. A workspace API key is therefore never an administrator credential for its organization, even when it belongs to an organization administrator.
+2. **Grants.** Only grants in the target's organization count, and their verbs are unioned. On a workspace target, organization-scope grants and grants at that workspace contribute their role's verbs. On the organization itself, organization-scope grants contribute their role's verbs and a workspace grant contributes only `read`, so a workspace member can see its organization.
+3. **Confined credentials on the organization.** A confined principal keeps at most `read` on its organization, whatever its principal's grants. A workspace API key is therefore never an administrator credential for its organization, even when it belongs to an organization administrator.
 
 What each verb covers, by example (the owning chapters name the verb of each operation):
 
-| Verb  | Covers                                                                                                                                                                                                            |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| read  | listing and reading everything in scope, including other principals' sessions, threads and runs; run items, thread streams, usage and traces; memory files and their history; secret metadata, never a value      |
-| run   | submitting input, steering, interrupting, forking, resuming; creating sessions and threads; thread environments and memory mounts; editing and restoring memory files                                             |
-| write | creating, updating and retiring resources: agents and revisions, skills, templates, providers and models, connections and their authorization, secrets, assets, memories and the purge of a memory file's history |
-| admin | grants, invitations, service accounts and their keys, the workspace's API keys, workspace settings, webhook subscriptions, audit reads; at organization scope also workspaces and the organization                |
+| Verb  | Covers                                                                                                                                                                                                   |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| read  | listing and reading everything in scope, including other principals' sessions, threads and runs; run items, thread streams, usage and traces; memory files and their history                             |
+| run   | submitting input, steering, interrupting, forking, resuming; creating sessions and threads; thread environments and memory mounts; editing and restoring memory files                                    |
+| write | creating, updating and retiring resources: agents and revisions, skills, templates, providers and models, connections and their authorization, assets, memories and the purge of a memory file's history |
+| admin | grants, invitations, service accounts and their keys, the workspace's API keys, workspace settings, webhook subscriptions, audit reads; at organization scope also workspaces and the organization       |
 
-`admin` covers people, keys and delivery configuration. A builder can configure external models and tools; the roles do not promise data-loss prevention against a builder or against an authorized run, and deployment network policy constrains outbound destinations independently of roles ([08](08-providers.md)). Private secrets and private environments add an owner check to the workspace verb ([04](04-resources.md#secrets), [06](06-environments.md)).
+`admin` covers people, keys and delivery configuration. A builder can configure external models and tools; the roles do not promise data-loss prevention against a builder or against an authorized run, and deployment network policy constrains outbound destinations independently of roles ([08](08-providers.md)). Private environments add an owner check to the workspace verb ([06](06-environments.md)).
 
-**Path resolution conceals other tenants.** An organization path resolves only for a principal holding a grant in it. A workspace path resolves by ID to a workspace of one of the principal's organizations, or by key among the workspaces the principal can read (a confined principal: only its own); a key that matches readable workspaces in several organizations is `conflict` with reason `ambiguous_key`. Anything else is `not_found`, so a path never reveals another organization or its workspaces. Inside its own organization a principal can learn by ID that a workspace exists and be refused with `forbidden`. Globally unique IDs are never access control: lists, content reads, events, traces and replay lookups authorize their scope before resolving a supplied ID.
+**Path resolution conceals other tenants.** Organizations and workspaces are named by ID alone. An organization path resolves only for a principal holding a grant in it, and a workspace path only to a workspace of one of the principal's organizations. Anything else is `not_found`, so a path never reveals another organization or its workspaces. Inside its own organization a principal can learn by ID that a workspace exists and be refused with `forbidden`. Globally unique IDs are never access control: lists, content reads, events, traces and replay lookups authorize their scope before resolving a supplied ID.
+
+**The workspace of a business request.** Only administration names its organization or workspace in the path ([10](10-api.md#paths-and-scope)). Account, public and deployment-wide requests act in no workspace. Every other request acts in one workspace, taken from its credential: an API key acts in its own workspace, and a login session names one by ID in `X-Workspace-ID` (`invalid_argument` without it). An API key whose `X-Workspace-ID` names another workspace is `forbidden`. The named workspace then resolves and authorizes as a workspace path does, so a workspace of another organization is `not_found`.
 
 **Archived workspaces** refuse every verb but `read` with `disabled` (details: kind, id). Removing access is offboarding and stays allowed: administrators can still delete grants at an archived workspace, revoke its invitations, disable or retire its service accounts and revoke API keys confined to it, and a writer can revoke its connections' credentials ([04](04-resources.md#connections)). Resource rows of an archived workspace refuse every change the same way ([04](04-resources.md#rules-every-kind-follows)). Organization and workspace views carry `permissions`, the caller's verbs at that scope (only `read` on an archived workspace); clients shape their UI from it, and the server still authorizes every operation.
 
@@ -220,7 +219,7 @@ class ExecutionAuthority:       # conceptual; stored as JSON on inbox entries an
     verbs: frozenset[Verb]      # the ceiling: the caller's verbs in the workspace at acceptance
 ```
 
-Accepting work requires `run` in the workspace and records the caller's verbs there, already narrowed by credential confinement. Successor and child runs inherit their parent's authority unchanged ([05](05-runs.md)). Every later use authorizes against both the ceiling and the principal's current status and grants, confined to the run's workspace: the ceiling must name the verb, the target must lie in its workspace or be shared by its organization (then only `read` and `run`), and the principal must currently hold the verb. Revoking grants or disabling the principal narrows or stops execution; a grant added later never widens it. An archived workspace stops execution: acceptance refuses it with `disabled`, so a queued or new entry fails in place, and attempt planning and every authority renewal treat it as lost authority, so a running run fails with `authority_revoked` within `worker.authority_seconds` ([05](05-runs.md#claim-heartbeat-and-authority)). Service tools and resource resolution during execution use this authority and the run's principal, never an identity of the worker.
+Accepting work requires `run` in the workspace and records the caller's verbs there, already narrowed by credential confinement. Successor and child runs inherit their parent's authority unchanged ([05](05-runs.md)). Every later use authorizes against both the ceiling and the principal's current status and grants, confined to the run's workspace: the ceiling must name the verb, the target must lie in its workspace, and the principal must currently hold the verb. Revoking grants or disabling the principal narrows or stops execution; a grant added later never widens it. An archived workspace stops execution: acceptance refuses it with `disabled`, so a queued or new entry fails in place, and attempt planning and every authority renewal treat it as lost authority, so a running run fails with `authority_revoked` within `worker.authority_seconds` ([05](05-runs.md#claim-heartbeat-and-authority)). Service tools and resource resolution during execution use this authority and the run's principal, never an identity of the worker.
 
 Credential expiry, logout and API-key revocation stop further requests, not accepted work. Accepted work is stopped by interrupt, by disabling the principal, by removing its grants or by archiving the workspace. The worker rechecks authority every `worker.authority_seconds`, and a run whose principal lost it fails with `authority_revoked` ([05](05-runs.md#claim-heartbeat-and-authority)); calls already dispatched still complete.
 
@@ -228,19 +227,19 @@ Credential expiry, logout and API-key revocation stop further requests, not acce
 
 Every row that has both `organization_id` and `workspace_id` references its workspace by the pair `(organization_id, workspace_id)` → `workspaces (organization_id, id)`; a metadata test enforces this for the whole composed schema. A row therefore cannot name a workspace of another organization, even when an application query omits a predicate. References between workspace-owned rows include the workspace in their foreign keys, and references inside one owner also include that owner (a revision includes its head, a run its thread).
 
-References to organization-shared rows (providers and models) use the pair `(organization_id, <referenced>_id)`, so the database guarantees the same organization. That the referenced row is shared or belongs to the referencing row's own workspace is checked by the owning service when the reference is written ([04](04-resources.md)). Scope never changes in place: triggers keep identity, scope and authorship of resource rows immutable. NULL is never a wildcard in generic queries.
+Scope never changes in place: triggers keep identity, scope and authorship of resource rows immutable. NULL is never a wildcard in generic queries.
 
 ## Flows
 
 ### Bootstrap
 
-`a13n-service bootstrap --email EMAIL [--password-stdin]` reads the password from the first line of standard input or prompts for it twice; the password is never a command-line argument. In one transaction under a transaction-level advisory lock, and only if no organization exists, it creates the organization and a workspace (both with key `default`), the first user with that password, and an organization-scope `admin` grant, audited as `organization.bootstrap` in the scope of the new organization and workspace. It prints `{organization_id, workspace_id, principal_id}` as JSON. It exits 3 and changes nothing when an organization already exists, and exits 1 for an invalid address or a password shorter than 12 characters. Like every operator command it requires the database schema at this build's head ([09](09-runtime.md#schema-migrations)).
+`a13n-service bootstrap --email EMAIL [--password-stdin]` reads the password from the first line of standard input or prompts for it twice; the password is never a command-line argument. In one transaction under a transaction-level advisory lock, and only if no organization exists, it creates the organization and a workspace, the first user with that password, and an organization-scope `admin` grant, audited as `organization.bootstrap` in the scope of the new organization and workspace. It prints `{organization_id, workspace_id, principal_id}` as JSON. It exits 3 and changes nothing when an organization already exists, and exits 1 for an invalid address or a password shorter than 12 characters. Like every operator command it requires the database schema at this build's head ([09](09-runtime.md#schema-migrations)).
 
 `POST /auth/bootstrap` with `{email, password}` does the same over HTTP and is public, so that Console can offer it to its first visitor: whoever reaches an uninitialized Service first becomes its administrator, and an operator exposing a new deployment to others runs the command first. It checks `Origin` and its rate limit, refuses with `already_exists` (kind `organization`) before hashing the password once an organization exists, and signs the new administrator in like login. `GET /auth/configuration` reports `initialized`, whether an organization exists.
 
 ### Organizations and workspaces
 
-An organization administrator renames the organization, changes its key, creates workspaces and archives them. A workspace administrator renames the workspace and changes its key. An organization key is unique in the deployment and a workspace key within its organization (`already_exists`). Links that name an old key stop resolving; everything else refers to organizations and workspaces by ID. Archiving is permanent and leaves the workspace listed with `archived_at`; archiving an archived workspace is `conflict` (reason `archived`). Archiving revokes the workspace's unaccepted invitations in the same transaction, under the organization lock that acceptance also takes, and its audit details carry `revoked_invitations`. The organization list contains the organizations in which the caller holds a grant (a confined principal: only its own). The workspace list contains the workspaces the caller can read, archived ones included, across its organizations or within one requested organization.
+An organization administrator renames the organization, creates workspaces and archives them. A workspace administrator renames the workspace. Names need not be unique; everything refers to organizations and workspaces by ID. Archiving is permanent and leaves the workspace listed with `archived_at`; archiving an archived workspace is `conflict` (reason `archived`). Archiving revokes the workspace's unaccepted invitations in the same transaction, under the organization lock that acceptance also takes, and its audit details carry `revoked_invitations`. The organization list contains the organizations in which the caller holds a grant (a confined principal: only its own). The workspace list contains the workspaces the caller can read, archived ones included, across its organizations or within one requested organization.
 
 ### Grants
 
@@ -310,7 +309,7 @@ The `expire_credentials` sweep runs every `auth.expiry_scan_seconds` and deletes
 
 ## Credential encryption
 
-Every encrypted column (provider credentials and extra request headers; external target tokens; connection credentials, OAuth tokens, client secrets and pending authorization flows; secrets; subscription signing secrets; email outbox payloads and webhook outbox targets) uses one key ring, configured by `encryption.keys` (key ID to base64-encoded 32-byte key) and `encryption.active_key_id`, or instead by `encryption.key_file`: a file holding one such key, active under the ID `key_file`, which startup generates when the file is missing. It creates a private draft with mode `600` and links it into place, so concurrent first starts all read the one key that won:
+Every encrypted column (provider credentials and extra request headers; external target tokens; connection credentials, OAuth tokens, client secrets and pending authorization flows; subscription signing secrets; email outbox payloads and webhook outbox targets) uses one key ring, configured by `encryption.keys` (key ID to base64-encoded 32-byte key) and `encryption.active_key_id`, or instead by `encryption.key_file`: a file holding one such key, active under the ID `key_file`, which startup generates when the file is missing. It creates a private draft with mode `600` and links it into place, so concurrent first starts all read the one key that won:
 
 - `protect(plaintext, location)` encrypts with AES-256-GCM under the active key and a fresh random 96-bit nonce, and returns the envelope `{key_id, nonce, ciphertext}`. Plaintext is at most 65536 bytes (`invalid_argument`). Without an active key it is `unavailable`.
 - The location `(organization_id, table, column, row_id)` is authenticated data: an envelope decrypts only at the exact row and column it was written for. `organization_id` is NULL only for account-wide values such as account mail. Copying a value to another row, such as a subscription's signing secret into a webhook outbox row, reveals it and protects it again for the new location.
@@ -346,12 +345,12 @@ Users have avatars, and organizations and workspaces have icons; agents use the 
 
 ## Invariants
 
-- A principal's verbs on a target never exceed the union of its grants in the target's organization; a confined principal holds nothing outside its workspace and only `read`/`run` on organization-shared targets.
+- A principal's verbs on a target never exceed the union of its grants in the target's organization; a confined principal holds nothing outside its workspace and only `read` on its organization.
 - Every API key names exactly one workspace of its organization; every issuance requires a user's login session, never an API key, and checks the target principal's current grants in that workspace. An API key never mints a key, an invitation or a browser authorization.
 - Grant removal and self-disable never leave an organization without an active principal holding an organization-scope admin role.
 - A service account is granted and keyed only in its home workspace; without grants it is disabled and has no live key.
 - Administrative changes check `admin` on the actor's current grants inside the changing transaction, under the organization lock; every such denial leaves a `denied` audit row.
 - An archived workspace has no pending invitation, and a disabled user has no live login session or one-use link.
 - Execution authority never widens after acceptance, and every use of it rechecks the principal's current status and grants and that the workspace is not archived.
-- No row can reference a workspace of another organization; organization-shared references stay within their organization.
+- No row can reference a workspace of another organization or a resource of another workspace.
 - Audit rows, grant rows and principal identities are immutable; a one-use link works at most once.

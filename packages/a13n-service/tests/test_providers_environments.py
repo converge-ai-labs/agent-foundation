@@ -38,18 +38,18 @@ async def test_hosted_accounts_name_no_endpoint(service) -> None:  # type: ignor
         "sprites": {"organization"},
         "runloop": {"organization"},
     }
-    collection = f"{service.organization}/environment-providers"
+    collection = f"{service.api}/environment-providers"
     for config in ({"domain": "sandboxes.example"}, {"api_url": "https://10.0.0.1"}):
-        body = {"workspace_id": None, "type": "e2b", "name": "E2B", "config": config, "credential": {"api_key": "k"}}
+        body = {"type": "e2b", "name": "E2B", "config": config, "credential": {"api_key": "k"}}
         refused = await service.client.post(collection, json=body)
         assert refused.status_code == 400 and refused.json()["error"]["details"]["field"] == "config", refused.text
 
 
 async def test_hosted_accounts_seal_their_credential_and_check_their_recipes(service) -> None:  # type: ignore[no-untyped-def]
-    collection = f"{service.organization}/environment-providers"
-    templates = f"{service.workspace}/environment-templates"
+    collection = f"{service.api}/environment-providers"
+    templates = f"{service.api}/environment-templates"
     for type_, (config, credential, broken) in ACCOUNTS.items():
-        body = {"workspace_id": None, "type": type_, "name": type_, "config": config}
+        body = {"type": type_, "name": type_, "config": config}
         missing = await service.client.post(collection, json=body)
         assert missing.status_code == 400 and missing.json()["error"]["details"]["field"] == "credential", type_
         created = await service.client.post(collection, json={**body, "credential": credential})
@@ -62,10 +62,8 @@ async def test_hosted_accounts_seal_their_credential_and_check_their_recipes(ser
         location = SecretLocation(row.organization_id, "environment_providers", "credential", row.id)
         assert json.loads(service.runtime.keys.reveal(Envelope.model_validate(row.credential), location)) == credential
 
-        template = {"key": f"box-{type_}", "name": "Box", "provider_id": provider["id"]}
+        template = {"name": "Box", "provider_id": provider["id"]}
         accepted = await service.client.post(templates, json={**template, "config": {"recipe": {}}})
         assert accepted.status_code == 201, accepted.text
-        rejected = await service.client.post(
-            templates, json={**template, "key": f"bad-{type_}", "config": {"recipe": broken}}
-        )
+        rejected = await service.client.post(templates, json={**template, "config": {"recipe": broken}})
         assert rejected.status_code == 400 and rejected.json()["error"]["details"]["field"] == "config.recipe", type_

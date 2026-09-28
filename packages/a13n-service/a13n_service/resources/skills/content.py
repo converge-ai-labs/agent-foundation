@@ -42,8 +42,8 @@ async def read_archive(
         scope = await workspace_scope(session, actor, workspace_id, "read")
         head = await resolve_skill(session, scope.workspace_id, skill_id)
         revision = await resolve_revision(session, head, revision_id)
-        _, reference = _archive(revision)
-        filename = f"{head.key}-{revision.number}.zip"
+        manifest, reference = _archive(revision)
+        filename = f"{manifest.name}-{revision.number}.zip"
     return filename, await read(objects, reference)
 
 

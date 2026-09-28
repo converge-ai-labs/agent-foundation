@@ -1,8 +1,8 @@
 """Machine-private resources (real credentials) applied to a seeded checkout through the public API.
 
 `~/.a13n/dev-resources.toml` is shared by every checkout on the machine; see `dev-resources.example.toml`.
-Providers are shared with the whole organization, identified by name; models by key; templates by name in the
-default workspace. Each checkout records a digest per applied provider, so unchanged values are not resent.
+Everything is applied to the default workspace: providers and templates identified by name, models by key. Each
+checkout records a digest per applied provider, so unchanged values are not resent.
 """
 
 from __future__ import annotations
@@ -10,13 +10,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import stat
 import tomllib
 from collections import Counter
 from pathlib import Path
 from typing import Literal
 
+from a13n_service.infra.ids import Key
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
 
 from dev.service.api import Api, Json
@@ -33,7 +33,7 @@ class _Entry(BaseModel):
 
 
 class ModelEntry(_Entry):
-    key: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")
+    key: Key
     name: str
     upstream_model: str
     # The provider type's first model API when omitted.
@@ -148,82 +148,73 @@ def apply_to(checkout: Checkout, path: Path = DEFAULT_FILE) -> str | None:
 
 def apply(api: Api, resources: Resources, applied: Applied) -> Counter[str]:
     """Create or update every entry whose credential is filled; returns how many of each kind are in place."""
-    # By key: the seeded state holds several workspaces, listed in ID order.
-    workspace = api.get("/api/v1/workspaces/default")
-    org, ws = f"/api/v1/organizations/{workspace['organization_id']}", f"/api/v1/workspaces/{workspace['id']}"
+    # The seeded state holds several workspaces; resources go to the one bootstrap created.
+    api.workspace_id = api.first_workspace()["id"]
     counts: Counter[str] = Counter()
     model_apis = {item["type"]: item["model_apis"] for item in api.items("/api/v1/provider-types/model")}
-    models = {model["key"]: model for model in api.items(f"{org}/models")}
+    models = {model["key"]: model for model in api.items("/api/v1/models")}
     for entry in resources.model_providers:
         if filled(entry.credential):
-            provider = _apply_provider(api, org, "model-providers", _provider_body(entry), applied)
+            provider = _apply_provider(api, "model-providers", _provider_body(entry), applied)
             for model in entry.models:
-                _apply_model(api, org, provider, model, model_apis[entry.type][0], models.get(model.key))
+                _apply_model(api, provider, model, model_apis[entry.type][0], models.get(model.key))
             counts.update({"model providers": 1, "models": len(entry.models)})
     for entry in resources.web_providers:
         if filled(entry.credential):
-            _apply_provider(api, org, "web-providers", _provider_body(entry), applied)
+            _apply_provider(api, "web-providers", _provider_body(entry), applied)
             counts["web providers"] += 1
     environment_providers = {
-        entry.name: _apply_provider(api, org, "environment-providers", _provider_body(entry), applied)
+        entry.name: _apply_provider(api, "environment-providers", _provider_body(entry), applied)
         for entry in resources.environment_providers
         if filled(entry.credential)
     }
     counts["environment providers"] += len(environment_providers)
-    templates = {template["name"]: template for template in api.items(f"{ws}/environment-templates")}
+    templates = {template["name"]: template for template in api.items("/api/v1/environment-templates")}
     for entry in resources.environment_templates:
         if provider := environment_providers.get(entry.provider):
-            _apply_template(api, ws, provider, entry, templates.get(entry.name))
+            _apply_template(api, provider, entry, templates.get(entry.name))
             counts["environment templates"] += 1
     for entry in resources.connector_providers:
         if filled(entry.credentials):
-            _apply_provider(api, org, "connector-providers", _provider_body(entry), applied)
+            _apply_provider(api, "connector-providers", _provider_body(entry), applied)
             counts["connector providers"] += 1
     return counts
 
 
-def _apply_model(api: Api, org: str, provider: Json, entry: ModelEntry, default_api: str, current: Json | None) -> None:
+def _apply_model(api: Api, provider: Json, entry: ModelEntry, default_api: str, current: Json | None) -> None:
     config = {"model_name": entry.upstream_model, "model_api": entry.model_api or default_api}
     if current is None:
-        body = {"workspace_id": None, "provider_id": provider["id"], "key": entry.key, "name": entry.name}
-        current = api.post(f"{org}/models", {**body, "config": config})
+        body = {"provider_id": provider["id"], "key": entry.key, "name": entry.name}
+        current = api.post("/api/v1/models", {**body, "config": config})
     elif current["provider_id"] != provider["id"]:
         raise ValueError(f"Model key {entry.key} belongs to another provider")
     applied = (current["name"], current["enabled"], {key: current["config"][key] for key in config})
     if applied != (entry.name, entry.enabled, config):
-        api.patch(
-            f"{org}/models/{current['id']}", current, {"name": entry.name, "config": config, "enabled": entry.enabled}
-        )
+        update = {"name": entry.name, "config": config, "enabled": entry.enabled}
+        api.patch(f"/api/v1/models/{entry.key}", current, update)
 
 
-def _apply_template(api: Api, ws: str, provider: Json, entry: TemplateEntry, current: Json | None) -> None:
+def _apply_template(api: Api, provider: Json, entry: TemplateEntry, current: Json | None) -> None:
     lifetimes = {"stop_after_seconds": entry.stop_after, "delete_after_seconds": entry.delete_after}
     config = {"recipe": entry.configuration, **{key: value for key, value in lifetimes.items() if value is not None}}
     desired = {"name": entry.name, "provider_id": provider["id"], "config": config}
     if current is None:
-        api.post(f"{ws}/environment-templates", {"key": _key(entry.name), **desired})
+        api.post("/api/v1/environment-templates", desired)
     elif current["provider_id"] != provider["id"] or any(current["config"][key] != config[key] for key in config):
-        api.patch(f"{ws}/environment-templates/{current['id']}", current, desired)
+        api.patch(f"/api/v1/environment-templates/{current['id']}", current, desired)
 
 
-def _apply_provider(api: Api, org: str, kind: str, body: Json, applied: Applied) -> Json:
-    """The organization-wide provider named in `body`, created or updated to match it."""
-    current = next(
-        (item for item in api.items(f"{org}/{kind}") if item["workspace_id"] is None and item["name"] == body["name"]),
-        None,
-    )
+def _apply_provider(api: Api, kind: str, body: Json, applied: Applied) -> Json:
+    """The workspace's provider named in `body`, created or updated to match it."""
+    current = next((item for item in api.items(f"/api/v1/{kind}") if item["name"] == body["name"]), None)
     marker, digest = f"{kind}:{body['name']}", Applied.digest(body)
     if current is None:
-        current = api.post(f"{org}/{kind}", {"workspace_id": None, **body})
+        current = api.post(f"/api/v1/{kind}", body)
     elif current["type"] != body["type"]:
         raise ValueError(f"The existing {kind} {body['name']} has type {current['type']}, not {body['type']}")
     elif applied.digests.get(marker) != digest:
         update = {"config": body["config"], "credential": body["credential"], "enabled": True}
-        current = api.patch(f"{org}/{kind}/{current['id']}", current, update)
+        current = api.patch(f"/api/v1/{kind}/{current['id']}", current, update)
     applied.digests[marker] = digest
     applied.save()
     return current
-
-
-def _key(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:128] or "template"

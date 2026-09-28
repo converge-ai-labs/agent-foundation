@@ -109,14 +109,14 @@ export function AgentToolsets({
 }) {
   const { t } = useTranslation();
   const client = useClient();
-  const { workspace, organization } = useWorkspace();
+  const { workspace, basePath } = useWorkspace();
   const [selected, setSelected] = useState<Definition["key"] | null>(null);
   const catalog = useQuery({
     queryKey: ["toolset-catalog", workspace.id],
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/toolsets", {
-          params: { path: { workspace_id: workspace.id } },
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/toolsets", {
           signal,
         })
         .then(data),
@@ -125,10 +125,7 @@ export function AgentToolsets({
     queryKey: ["web-providers", workspace.id, "choices"],
     queryFn: ({ signal }) =>
       allPages((cursor) =>
-        webProviderApi(client, organization.id, {
-          kind: "workspace",
-          id: workspace.id,
-        }).providers(signal, cursor),
+        webProviderApi(client, workspace.id).providers(signal, cursor),
       ),
   });
   const webProviderTypes = useQuery({
@@ -144,9 +141,7 @@ export function AgentToolsets({
   const providers = webProviders.data ?? [];
   const providerTypes = webProviderTypes.data?.items ?? [];
   // The draft rebuilds its configuration on every render; the text identifies it.
-  const configText = config?.model.model_id
-    ? JSON.stringify(config)
-    : undefined;
+  const configText = config?.model ? JSON.stringify(config) : undefined;
   const [candidate, setCandidate] = useState<{
     text: string;
     config: AgentConfig;
@@ -170,14 +165,10 @@ export function AgentToolsets({
     retry: false,
     queryFn: async ({ signal }) => {
       if (candidate)
-        await client.http.POST(
-          "/api/v1/workspaces/{workspace_id}/agents/validate",
-          {
-            params: { path: { workspace_id: workspace.id } },
-            body: { config: candidate.config, agent_id: agentId },
-            signal,
-          },
-        );
+        await client.workspace(workspace.id).POST("/api/v1/agents/validate", {
+          body: { config: candidate.config, agent_id: agentId },
+          signal,
+        });
       return null;
     },
   });
@@ -496,10 +487,7 @@ export function AgentToolsets({
             <>
               {" "}
               ·{" "}
-              <a
-                href={providersPath("web", "workspace", workspace.key)}
-                className="underline"
-              >
+              <a href={providersPath("web", workspace)} className="underline">
                 {t("Manage Web Providers")}
               </a>
             </>
@@ -508,10 +496,7 @@ export function AgentToolsets({
             <>
               {" "}
               ·{" "}
-              <a
-                href={`/workspace/${encodeURIComponent(workspace.key)}/models`}
-                className="underline"
-              >
+              <a href={`${basePath}/models`} className="underline">
                 {t("Manage models")}
               </a>
             </>

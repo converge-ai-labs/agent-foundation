@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../auth/context", () => ({
   useClient: () => ({
     http: { POST: mocks.POST, GET: mocks.GET, PATCH: mocks.PATCH },
+    workspace: () => ({ POST: mocks.POST, GET: mocks.GET, PATCH: mocks.PATCH }),
   }),
 }));
 vi.mock("../connections/authorization-context", () => ({
@@ -77,7 +78,7 @@ const connector: Schema["ConnectorApp"] = {
 const provider: Schema["Provider"] = {
   id: "cprov_test",
   organization_id: "org_test",
-  workspace_id: null,
+  workspace_id: "ws_test",
   type: "composio",
   name: "Composio",
   config: {},
@@ -144,9 +145,9 @@ it("saves fixed setup options with the configuration before the common browser a
     ),
   );
   expect(mocks.PATCH).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace_id}/connections/{connection_id}",
+    "/api/v1/connections/{connection_id}",
     {
-      params: { path: { workspace_id: "ws_test", connection_id: "conn_test" } },
+      params: { path: { connection_id: "conn_test" } },
       headers: { "If-Match": '"conn_test:1"' },
       body: { config: connection.config },
     },
@@ -179,19 +180,15 @@ it("creates the connection with every app action that fits, then retains it when
     screen.getByRole("button", { name: "Authorize connection" }),
   );
   await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
-  expect(mocks.POST).toHaveBeenCalledExactlyOnceWith(
-    "/api/v1/workspaces/{workspace_id}/connections",
-    {
-      params: { path: { workspace_id: "ws_test" } },
-      body: {
-        type: "composio",
-        name: "GitHub",
-        config: connection.config,
-        auth: "account",
-        connector_provider_id: "cprov_test",
-      },
+  expect(mocks.POST).toHaveBeenCalledExactlyOnceWith("/api/v1/connections", {
+    body: {
+      type: "composio",
+      name: "GitHub",
+      config: connection.config,
+      auth: "account",
+      connector_provider_id: "cprov_test",
     },
-  );
+  });
   expect(mocks.start.mock.calls[0][1]).toBe(connection);
   expect(mocks.start.mock.calls[1][1]).toEqual({ ...connection, version: 9 });
 });

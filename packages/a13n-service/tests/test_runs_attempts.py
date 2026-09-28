@@ -243,7 +243,7 @@ async def test_two_workers_claim_a_run_once(service, scripted_model, runs_kit) -
         *(claim(service.runtime, worker_id=f"worker-{n}", worker_build="test", limit=4) for n in range(2))
     )
     assert [lease.run_id for leases in claimed for lease in leases] == [run_id]
-    attempts = (await service.client.get(f"{service.workspace}/runs/{run_id}/attempts")).json()["items"]
+    attempts = (await service.client.get(f"{service.api}/runs/{run_id}/attempts")).json()["items"]
     assert [item["status"] for item in attempts] == ["leased"]
 
 
@@ -366,7 +366,7 @@ async def test_a_stale_attempt_changes_nothing_after_a_takeover(service, scripte
     assert (stops, extended) == ({}, {current.attempt_id})
     run = await runs_kit.get_run(service, run_id)
     assert run["status"] == "running" and run["attempts"] == 2
-    attempts = (await service.client.get(f"{service.workspace}/runs/{run_id}/attempts")).json()["items"]
+    attempts = (await service.client.get(f"{service.api}/runs/{run_id}/attempts")).json()["items"]
     assert [(item["status"], item["start_reason"]) for item in attempts] == [
         ("failed", "initial"),
         ("leased", "recovery"),
@@ -468,7 +468,7 @@ async def test_a_heartbeat_stops_cancelled_and_revoked_runs_and_renews_nothing_w
     bot = account.json()["id"]
     key = await service.client.post(f"{service.workspace}/service-accounts/{bot}/keys", json={"name": "key"})
     started = await service.client.post(
-        f"{service.workspace}/threads",
+        f"{service.api}/threads",
         json=runs_kit.message(agent, "bot"),
         headers={"authorization": "Bearer " + key.json()["secret"], "idempotency-key": "bot-run"},
     )
@@ -598,9 +598,9 @@ async def test_a_usage_record_reported_again_with_other_content_is_skipped(servi
 
 async def _released(service, run_id: str) -> list[dict]:  # type: ignore[no-untyped-def]
     """The run's attempts, after its only attempt ended without sealing it."""
-    run = await service.client.get(f"{service.workspace}/runs/{run_id}")
+    run = await service.client.get(f"{service.api}/runs/{run_id}")
     assert run.json()["status"] == "accepted", run.text
-    return (await service.client.get(f"{service.workspace}/runs/{run_id}/attempts")).json()["items"]
+    return (await service.client.get(f"{service.api}/runs/{run_id}/attempts")).json()["items"]
 
 
 async def test_an_unavailable_dependency_ends_a_tool_calls_attempt(
@@ -630,7 +630,7 @@ async def test_url_input_that_cannot_be_reached_is_fetched_by_a_later_attempt(
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
     offline = {"agent_id": agent["id"], "payload": {"content": [{"type": "url", "url": "http://127.0.0.1:9/page"}]}}
-    response = await service.client.post(f"{service.workspace}/threads", json=offline, headers=runs_kit.fresh_key())
+    response = await service.client.post(f"{service.api}/threads", json=offline, headers=runs_kit.fresh_key())
     assert response.status_code == 201, response.text
     run_id = response.json()["run"]["id"]
     await (await runs_kit.attempt(service))
@@ -685,17 +685,16 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
     from a13n_service.runs.boundaries import Boundaries
 
     await runs_kit.pause_sweeps(service)
-    model_id = await runs_kit.create_model(service, scripted_model)
+    model = await runs_kit.create_model(service, scripted_model)
     agent = await runs_kit.add_agent(
         service,
         "mixed",
-        model_id,
+        model,
         client_tools=[{"name": "lookup", "description": "External fact", "parameters_json_schema": {"type": "object"}}],
         toolsets={"configuration": {"enabled": True}},
     )
-    config = {"model": {"model_id": model_id}}
     calls = [
-        ("create_agent", {"key": "created", "name": "Created", "config": config}, "call_create"),
+        ("create_agent", {"name": "Created", "config": {"model": model}}, "call_create"),
         ("lookup", {}, "call_lookup"),
     ]
     scripted_model._script(
@@ -724,7 +723,7 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
     waiting = await runs_kit.get_run(service, first["run"]["id"])
     assert waiting["status"] == "waiting", waiting
     response = await service.client.post(
-        f"{service.workspace}/runs/{waiting['id']}/resume",
+        f"{service.api}/runs/{waiting['id']}/resume",
         json={
             "answers": [
                 {"tool_call_id": "call_create", "action": "approve"},
@@ -768,7 +767,8 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
     await (await runs_kit.attempt(service))
     result = await runs_kit.get_run(service, run_id)
     assert result["status"] == "completed" and result["attempts"] == 2, result
-    assert (await service.client.get(f"{service.workspace}/agents/created")).status_code == 404
+    agents = (await service.client.get(f"{service.api}/agents", params={"source": "custom"})).json()["items"]
+    assert [item["name"] for item in agents] == ["Mixed"]
     await scripted_model.request()
     resumed = await scripted_model.request()
     returns = [message for message in resumed["messages"] if message["role"] == "tool"]

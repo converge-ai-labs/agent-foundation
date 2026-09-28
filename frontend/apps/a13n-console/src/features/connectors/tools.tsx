@@ -20,19 +20,16 @@ export function ConnectorToolPreview({
     { t } = useTranslation();
   const preview = useMutation({
     mutationFn: () =>
-      client.http
-        .GET(
-          "/api/v1/workspaces/{workspace_id}/connector-providers/{provider_id}/apps/{app}/actions",
-          {
-            params: {
-              path: {
-                workspace_id: workspace.id,
-                provider_id: providerId,
-                app: connector.key,
-              },
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/connector-providers/{provider_id}/apps/{app}/actions", {
+          params: {
+            path: {
+              provider_id: providerId,
+              app: connector.key,
             },
           },
-        )
+        })
         .then(data),
   });
   return (

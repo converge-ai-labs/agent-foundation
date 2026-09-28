@@ -156,20 +156,16 @@ function FileContent({
   // The edit keeps the version it started from, so a change made meanwhile
   // fails the save instead of being overwritten.
   const [draft, setDraft] = useState<FileDraft>();
-  const params = {
-    path: {
-      workspace_id: workspace.id,
-      memory_id: memory.id,
-      path: entry.path,
-    },
-  };
+  const params = { path: { memory_id: memory.id, path: entry.path } };
   const save = useMutation({
     mutationFn: (edit: FileDraft) =>
-      client.http
-        .PUT(
-          "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/{path}",
-          { params, headers: ifMatch(edit.etag), body: { content: edit.text } },
-        )
+      client
+        .workspace(workspace.id)
+        .PUT("/api/v1/memories/{memory_id}/files/{path}", {
+          params,
+          headers: ifMatch(edit.etag),
+          body: { content: edit.text },
+        })
         .then(data),
     onSuccess: () => {
       setDraft(undefined);
@@ -242,10 +238,12 @@ function FileContent({
                       "The file's history stays, so it can be restored from History.",
                     )}
                     action={() =>
-                      client.http.DELETE(
-                        "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/{path}",
-                        { params, headers: ifMatch(loaded.etag) },
-                      )
+                      client
+                        .workspace(workspace.id)
+                        .DELETE("/api/v1/memories/{memory_id}/files/{path}", {
+                          params,
+                          headers: ifMatch(loaded.etag),
+                        })
                     }
                     onSuccess={() => {
                       void invalidateMemories(cache, workspace.id);

@@ -11,6 +11,7 @@ from a13n_harness.model_context import user_prompt_content
 from a13n_harness_ui.display_history import (
     DisplayHistory,
     DisplayHistoryCollector,
+    detach_display_history,
     saved_display_history,
     with_display_history,
 )
@@ -31,6 +32,45 @@ def visible(history: DisplayHistory) -> list[str]:
         for part in _message_entry(index, message).parts
         if part.text and part.metadata.display is not False and part.kind != "system"
     ]
+
+
+def test_removing_runtime_display_preserves_every_other_namespace_and_the_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
+
+    native = HarnessState.new(
+        message_history=[ModelRequest(parts=[UserPromptPart("Native context")])],
+        agent_context_state=AgentContextStateSnapshot(
+            entries={
+                "unknown.capability": CapabilityState(version="future", data={"nested": [1, {"keep": True}]}),
+                "a13n.harness-ui.other": CapabilityState(version="7", data=["retain this UI namespace"]),
+            }
+        ),
+    )
+    display = DisplayHistoryCollector(native.message_history).capture(native.message_history)
+    saved = with_display_history(native, display)
+    original = saved.model_dump_json()
+    reads = 0
+    getter = AgentContextStateSnapshot.entries.fget
+
+    def counted(snapshot):
+        nonlocal reads
+        if snapshot is saved.agent_context_state:
+            reads += 1
+        return getter(snapshot)
+
+    monkeypatch.setattr(AgentContextStateSnapshot, "entries", property(counted))
+    runtime, restored = detach_display_history(saved)
+    assert restored == display
+    assert reads == 1
+    assert runtime == native
+    assert runtime.message_history_json is saved.message_history_json
+    assert runtime.environment_states_json is saved.environment_states_json
+    assert saved.model_dump_json() == original
+    unchanged, absent = detach_display_history(runtime)
+    assert unchanged is runtime and absent is None
+    assert with_display_history(runtime, restored) == saved
 
 
 @pytest.mark.parametrize("kind", ["handoff", "compaction"])
@@ -142,6 +182,84 @@ async def test_repeated_identical_messages_keep_distinct_positions_and_detached_
         agent_context_state=stored.agent_context_state,
     )
     assert saved_display_history(advanced) is None
+
+
+async def test_restore_decodes_saved_messages_once_and_keeps_copies_detached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from a13n_harness_ui import display_history
+
+    history = [ModelRequest(parts=[UserPromptPart("Input")]), ModelResponse(parts=[TextPart("Answer")])]
+    saved = DisplayHistoryCollector([]).capture(history, completed=True)
+    decode = display_history.decode_messages
+    calls = 0
+
+    def counted_decode(value: bytes) -> tuple[ModelMessage, ...]:
+        nonlocal calls
+        calls += 1
+        return decode(value)
+
+    monkeypatch.setattr(display_history, "decode_messages", counted_decode)
+    collector = DisplayHistoryCollector(history, saved)
+    assert calls == 1
+    history[-1].parts = [TextPart("Changed answer")]
+    updated = collector.capture(history)
+    assert visible(updated) == ["Input", "Changed answer"]
+    assert updated.completed_responses == (1,)
+    assert visible(saved) == ["Input", "Answer"]
+    assert saved.completed_responses == (1,)
+    assert history[-1].metadata is None
+
+
+@pytest.mark.parametrize("kind", ["plain", "handoff", "compaction"])
+async def test_collection_hooks_do_not_serialize_unused_snapshots(kind: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    from a13n_harness_ui import display_history
+
+    collector = DisplayHistoryCollector([])
+    encode = display_history.encode_messages
+    encoded = 0
+
+    def counted_encode(messages: object) -> bytes:
+        nonlocal encoded
+        encoded += 1
+        return encode(messages)
+
+    monkeypatch.setattr(display_history, "encode_messages", counted_encode)
+    requests = 0
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal requests
+        requests += 1
+        if kind == "handoff" and requests == 1:
+            yield {0: DeltaToolCall(name="summarize", json_args='{"content":"Keep input"}', tool_call_id="s")}
+        else:
+            yield "Answer"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=[
+            collector,
+            HandoffCapability(),
+            *([CompactionCapability(CompactionPolicy(trigger_tokens=1))] if kind == "compaction" else []),
+        ],
+    )
+    previous = HarnessState.new(
+        message_history=[
+            ModelRequest(parts=[UserPromptPart("Original")]),
+            ModelResponse(parts=[TextPart("Old answer")], usage=RequestUsage(input_tokens=1000)),
+        ]
+    )
+    result = await executable.run("Input", bindings=RunBindings.embedded(), previous_state=previous)
+    result.output_or_raise()
+    assert result.state is not None
+    assert encoded == 0
+    snapshot = collector.capture(result.state.message_history, completed=True)
+    assert encoded == 2  # Display messages and the unchanged native-history digest.
+    assert "Input" in visible(snapshot)
+    assert visible(snapshot)[-1] == "Answer"
+    assert snapshot.completed_responses
 
 
 @pytest.mark.parametrize("checkpoint", [False, True])

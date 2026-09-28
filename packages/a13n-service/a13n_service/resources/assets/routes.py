@@ -6,9 +6,9 @@ from a13n_service.infra.http import IfMatch, PageLimit, download_headers, tagged
 from a13n_service.resources.assets import service
 from a13n_service.resources.assets.schemas import Asset, AssetCreate, AssetPage
 from a13n_service.resources.requests import CurrentRuntime
-from a13n_service.tenancy.requests import Actor
+from a13n_service.tenancy.requests import Actor, WorkspaceId
 
-router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}/assets", tags=["assets"])
+router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
 
 
 @router.post(
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}/assets", tags=["ass
     responses={200: {"model": Asset, "description": "The asset already created from this upload"}},
 )
 async def create_asset(
-    response: Response, workspace_id: str, body: AssetCreate, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, body: AssetCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Asset:
     result, created = await service.create_asset(runtime.storage, runtime.objects, actor, workspace_id, body)
     response.status_code = 201 if created else 200
@@ -27,7 +27,7 @@ async def create_asset(
 
 @router.get("", response_model=AssetPage)
 async def list_assets(
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     actor: Actor,
     runtime: CurrentRuntime,
     limit: PageLimit = 50,
@@ -38,7 +38,7 @@ async def list_assets(
 
 @router.get("/{asset_id}", response_model=Asset)
 async def get_asset(
-    response: Response, workspace_id: str, asset_id: str, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, asset_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Asset:
     return tagged(response, await service.get_asset(runtime.storage, actor, workspace_id, asset_id))
 
@@ -46,7 +46,7 @@ async def get_asset(
 @router.delete("/{asset_id}", response_model=Asset)
 async def retire_asset(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     asset_id: str,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -67,7 +67,9 @@ async def retire_asset(
         }
     },
 )
-async def read_asset_content(workspace_id: str, asset_id: str, actor: Actor, runtime: CurrentRuntime) -> Response:
+async def read_asset_content(
+    workspace_id: WorkspaceId, asset_id: str, actor: Actor, runtime: CurrentRuntime
+) -> Response:
     result, data = await service.read_asset_content(runtime.storage, runtime.objects, actor, workspace_id, asset_id)
     return Response(
         data,

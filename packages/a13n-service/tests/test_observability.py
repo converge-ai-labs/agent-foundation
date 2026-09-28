@@ -114,11 +114,11 @@ def messages(events: list[Event], message: str) -> list[Event]:
 async def test_requests_are_logged_and_measured_by_route_template_never_by_url(
     service: SimpleNamespace, reader: InMemoryMetricReader, logged: list[Event]
 ) -> None:
-    route = "/api/v1/workspaces/{workspace_id}/agents"
+    route = "/api/v1/agents"
     listed = {"http.route": route, "http.response.status_code": 200}
     before = measured(reader, "http.server.request.duration", listed)
 
-    response = await service.client.get(f"{service.workspace}/agents")
+    response = await service.client.get(f"{service.api}/agents")
     missing = await service.client.get("/api/v1/nowhere/secret-path?code=secret-code")
     await service.client.get("/healthz")
 
@@ -153,7 +153,7 @@ async def test_a_run_is_logged_and_counted_from_its_request_to_its_seal(
     before = {name: measured(reader, name, attributes) for name, attributes in counted.items()}
 
     response = await executing.client.post(
-        f"{executing.workspace}/threads", json=runs_kit.message(agent, "hi"), headers=runs_kit.fresh_key()
+        f"{executing.api}/threads", json=runs_kit.message(agent, "hi"), headers=runs_kit.fresh_key()
     )
     run_id = response.json()["run"]["id"]
     await runs_kit.sealed(executing, run_id)
@@ -200,7 +200,7 @@ async def test_a_seal_that_rolls_back_is_never_counted_or_logged(
     assert measured(reader, "a13n.runs.sealed", cancelled) == before
     assert not messages(logged, "Run sealed")
 
-    response = await service.client.post(f"{service.workspace}/runs/{run['id']}/interrupt")
+    response = await service.client.post(f"{service.api}/runs/{run['id']}/interrupt")
     assert response.status_code == 200, response.text
     assert measured(reader, "a13n.runs.sealed", cancelled) == before + 1
     [sealed] = messages(logged, "Run sealed")

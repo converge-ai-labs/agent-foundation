@@ -17,7 +17,9 @@ const mocks = vi.hoisted(() => ({
   thread: {} as Schema["ThreadView"],
   mounts: [] as Schema["MemoryMount"][],
 }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http: mocks }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http: mocks, workspace: () => mocks }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
@@ -55,18 +57,18 @@ beforeEach(() => {
             items: [
               {
                 id: "mem_book",
-                key: "handbook",
+
                 name: "Handbook",
                 kind: "file",
               },
               {
                 id: "mem_prefs",
-                key: "user-prefs",
+
                 name: "Preferences",
                 kind: "file",
               },
-              { id: "mem_facts", key: "facts", name: "Facts", kind: "record" },
-              { id: "mem_team", key: "team", name: "Team", kind: "record" },
+              { id: "mem_facts", name: "Facts", kind: "record" },
+              { id: "mem_team", name: "Team", kind: "record" },
             ],
             next_cursor: null,
           },
@@ -94,10 +96,10 @@ it("adds a memory to the Thread it was read with", async () => {
   await user.click(within(dialog).getByRole("combobox", { name: "Memory" }));
   // A memory the thread already mounts is not offered.
   expect(
-    screen.queryByRole("option", { name: "Handbook (handbook)" }),
+    screen.queryByRole("option", { name: "Handbook (mem_book)" }),
   ).toBeNull();
   await user.click(
-    await screen.findByRole("option", { name: "Preferences (user-prefs)" }),
+    await screen.findByRole("option", { name: "Preferences (mem_prefs)" }),
   );
   // Only record memories recall.
   expect(within(dialog).queryByRole("switch", { name: "Recall" })).toBeNull();
@@ -112,9 +114,9 @@ it("adds a memory to the Thread it was read with", async () => {
   await user.click(within(dialog).getByRole("button", { name: "Add memory" }));
   await waitFor(() => expect(mocks.POST).toHaveBeenCalledOnce());
   expect(mocks.POST.mock.calls[0]).toEqual([
-    "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories",
+    "/api/v1/threads/{thread_id}/memories",
     {
-      params: { path: { workspace_id: "ws_test", thread_id: "thr_1" } },
+      params: { path: { thread_id: "thr_1" } },
       headers: { "If-Match": '"thr_1:4"' },
       body: { name: "prefs", memory_id: "mem_prefs", access: "write" },
     },
@@ -129,7 +131,9 @@ it("adds a record memory without recall", async () => {
   await user.click(await screen.findByRole("button", { name: "Add memory" }));
   const dialog = await screen.findByRole("dialog");
   await user.click(within(dialog).getByRole("combobox", { name: "Memory" }));
-  await user.click(await screen.findByRole("option", { name: "Team (team)" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Team (mem_team)" }),
+  );
   await user.click(within(dialog).getByRole("switch", { name: "Recall" }));
   await user.click(within(dialog).getByRole("button", { name: "Add memory" }));
   await waitFor(() => expect(mocks.POST).toHaveBeenCalledOnce());
@@ -155,10 +159,10 @@ it("changes a mount's recall and access in place under the Thread's ETag", async
   );
   await waitFor(() => expect(mocks.PATCH).toHaveBeenCalledOnce());
   expect(mocks.PATCH.mock.calls[0]).toEqual([
-    "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories/{name}",
+    "/api/v1/threads/{thread_id}/memories/{name}",
     {
       params: {
-        path: { workspace_id: "ws_test", thread_id: "thr_1", name: "facts" },
+        path: { thread_id: "thr_1", name: "facts" },
       },
       headers: { "If-Match": '"thr_1:4"' },
       body: { recall: false },
@@ -181,10 +185,10 @@ it("removes a mount under the Thread's ETag", async () => {
   );
   await waitFor(() => expect(mocks.DELETE).toHaveBeenCalledOnce());
   expect(mocks.DELETE.mock.calls[0]).toEqual([
-    "/api/v1/workspaces/{workspace_id}/threads/{thread_id}/memories/{name}",
+    "/api/v1/threads/{thread_id}/memories/{name}",
     {
       params: {
-        path: { workspace_id: "ws_test", thread_id: "thr_1", name: "handbook" },
+        path: { thread_id: "thr_1", name: "handbook" },
       },
       headers: { "If-Match": '"thr_1:4"' },
     },

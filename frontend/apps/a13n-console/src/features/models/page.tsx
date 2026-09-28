@@ -1,1 +1,1 @@
-export { Models, ModelsPage } from "./list";
+export { ModelsPage } from "./list";

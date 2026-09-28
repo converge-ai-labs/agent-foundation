@@ -113,10 +113,10 @@ async def create_user_key(storage: Storage, access: Access, actor: Principal, bo
 
 
 async def create_service_account_key(
-    storage: Storage, access: Access, actor: Principal, workspace: str, account_id: str, body: KeyCreate
+    storage: Storage, access: Access, actor: Principal, workspace_id: str, account_id: str, body: KeyCreate
 ) -> IssuedKey:
     require_login_session(actor)
-    async with administering_workspace(storage, access, actor, workspace, action="credential.create") as (
+    async with administering_workspace(storage, access, actor, workspace_id, action="credential.create") as (
         session,
         scope,
     ):
@@ -127,7 +127,7 @@ async def create_service_account_key(
 async def list_user_keys(
     storage: Storage, actor: Principal, *, workspace_id: str | None, limit: int, cursor: str | None
 ) -> ApiKeyPage:
-    """The caller's own keys; a workspace key sees only keys of its own workspace."""
+    """The caller's own keys; an API key sees only keys of its own workspace."""
     query = select(ApiKeyRow).where(ApiKeyRow.principal_id == actor.id)
     if actor.confinement is not None:
         query = query.where(ApiKeyRow.workspace_id == actor.confinement.workspace_id)
@@ -141,14 +141,16 @@ async def list_workspace_keys(
     storage: Storage,
     access: Access,
     actor: Principal,
-    workspace: str,
+    workspace_id: str,
     *,
     principal_id: str | None,
     limit: int,
     cursor: str | None,
 ) -> ApiKeyPage:
     """Every key confined to a workspace, for its administrators; optionally one principal's."""
-    async with administering_workspace(storage, access, actor, workspace, action="credential.list", reading=True) as (
+    async with administering_workspace(
+        storage, access, actor, workspace_id, action="credential.list", reading=True
+    ) as (
         session,
         scope,
     ):
@@ -171,11 +173,11 @@ async def revoke_user_key(storage: Storage, actor: Principal, key_id: str, *, if
 
 
 async def revoke_workspace_key(
-    storage: Storage, access: Access, actor: Principal, workspace: str, key_id: str, *, if_match: str | None
+    storage: Storage, access: Access, actor: Principal, workspace_id: str, key_id: str, *, if_match: str | None
 ) -> ApiKey:
     """Administrators revoke any key confined to their workspace, never one confined elsewhere."""
     async with administering_workspace(
-        storage, access, actor, workspace, action="credential.revoke", require_active=False
+        storage, access, actor, workspace_id, action="credential.revoke", require_active=False
     ) as (session, scope):
         row = await lock(session, ApiKeyRow, key_id)
         if row is None or row.workspace_id != scope.workspace_id:

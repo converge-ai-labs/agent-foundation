@@ -10,7 +10,7 @@ import { ProviderIcon } from "../../shared/identity";
 
 /**
  * The shell every provider editor opens in: the service's mark and the
- * provider's name as the title, what it is and who owns it underneath, and one
+ * provider's name as the title, what it is underneath, and one
  * loading and failure treatment. The category supplies the form.
  */
 export function EditProviderDialog({
@@ -20,7 +20,6 @@ export function EditProviderDialog({
   id,
   type,
   definition,
-  scope,
   readOnly = false,
   loading = false,
   error,
@@ -35,7 +34,6 @@ export function EditProviderDialog({
   type?: string;
   /** The definition's display name, which leads the description. */
   definition?: string;
-  scope?: "workspace" | "organization";
   readOnly?: boolean;
   loading?: boolean;
   error?: unknown;
@@ -43,13 +41,6 @@ export function EditProviderDialog({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const owner =
-    scope && t(scope === "organization" ? "Organization" : "Workspace");
-  const composed = definition
-    ? owner
-      ? `${definition} · ${owner}`
-      : definition
-    : owner;
   return (
     <ModalFrame
       {...modalProps}
@@ -67,7 +58,7 @@ export function EditProviderDialog({
           t(readOnly ? "Provider" : "Edit provider")
         )
       }
-      description={composed}
+      description={definition}
     >
       {open &&
         (loading ? (

@@ -26,163 +26,11 @@ from a13n_service.resources.connections.schemas import (
     ToolPage,
 )
 from a13n_service.resources.requests import CurrentRuntime
-from a13n_service.tenancy.requests import Actor, limit_guessing
+from a13n_service.tenancy.requests import Actor, WorkspaceId, limit_guessing
 
 router = APIRouter(prefix="/api/v1", tags=["connections"])
-COLLECTION = "/workspaces/{workspace_id}/connections"
+COLLECTION = "/connections"
 ITEM = COLLECTION + "/{connection_id}"
-
-
-@router.post(COLLECTION, response_model=Connection, status_code=201)
-async def create_connection(
-    response: Response, workspace_id: str, body: ConnectionCreate, actor: Actor, runtime: CurrentRuntime
-) -> Connection:
-    result = await service.create_connection(
-        runtime.storage,
-        actor,
-        workspace_id,
-        body,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-    )
-    return tagged(response, result)
-
-
-@router.get(COLLECTION, response_model=ConnectionPage)
-async def list_connections(
-    workspace_id: str,
-    actor: Actor,
-    runtime: CurrentRuntime,
-    limit: PageLimit = 50,
-    cursor: str | None = None,
-) -> ConnectionPage:
-    return await service.list_connections(runtime.storage, actor, workspace_id, limit=limit, cursor=cursor)
-
-
-@router.get(ITEM, response_model=Connection)
-async def get_connection(
-    response: Response, workspace_id: str, connection_id: str, actor: Actor, runtime: CurrentRuntime
-) -> Connection:
-    return tagged(response, await service.get_connection(runtime.storage, actor, workspace_id, connection_id))
-
-
-@router.patch(ITEM, response_model=Connection)
-async def update_connection(
-    response: Response,
-    workspace_id: str,
-    connection_id: str,
-    body: ConnectionUpdate,
-    actor: Actor,
-    runtime: CurrentRuntime,
-    if_match: IfMatch = None,
-) -> Connection:
-    result = await service.update_connection(
-        runtime.storage,
-        actor,
-        workspace_id,
-        connection_id,
-        body,
-        if_match=if_match,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-    )
-    return tagged(response, result)
-
-
-@router.post(ITEM + "/test", response_model=ConnectionTest)
-async def test_connection(
-    workspace_id: str, connection_id: str, actor: Actor, runtime: CurrentRuntime
-) -> ConnectionTest:
-    return await discovery.test_connection(
-        runtime.storage,
-        actor,
-        workspace_id,
-        connection_id,
-        redis=runtime.redis,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
-    )
-
-
-@router.get(ITEM + "/tools", response_model=ToolPage)
-async def list_tools(workspace_id: str, connection_id: str, actor: Actor, runtime: CurrentRuntime) -> ToolPage:
-    return await discovery.list_tools(
-        runtime.storage,
-        actor,
-        workspace_id,
-        connection_id,
-        redis=runtime.redis,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings.providers,
-    )
-
-
-@router.post(ITEM + "/authorize", response_model=AuthorizationResult)
-async def authorize_connection(
-    response: Response,
-    workspace_id: str,
-    connection_id: str,
-    body: AuthorizationRequest,
-    actor: Actor,
-    runtime: CurrentRuntime,
-    if_match: IfMatch = None,
-) -> AuthorizationResult:
-    """A browser flow needs a login session and is bound to this browser by a cookie the callback checks; an API
-    key authorizes only a client-credentials client, without a browser."""
-    browser = secrets.token_urlsafe(32)
-    result = await authorization.authorize_connection(
-        runtime.storage,
-        actor,
-        workspace_id,
-        connection_id,
-        body,
-        browser=browser,
-        if_match=if_match,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings,
-    )
-    if result.redirect_url is not None:
-        response.set_cookie(
-            flow_cookie(connection_id, runtime.settings),
-            browser,
-            max_age=runtime.settings.providers.flow_seconds,
-            path=CALLBACK_PATH,
-            secure=runtime.settings.server.https,
-            httponly=True,
-            samesite="lax",
-        )
-    return result
-
-
-@router.post(ITEM + "/revoke", response_model=RevokedConnection)
-async def revoke_connection(
-    response: Response,
-    workspace_id: str,
-    connection_id: str,
-    actor: Actor,
-    runtime: CurrentRuntime,
-    if_match: IfMatch = None,
-) -> RevokedConnection:
-    result = await authorization.revoke_connection(
-        runtime.storage,
-        actor,
-        workspace_id,
-        connection_id,
-        if_match=if_match,
-        keys=runtime.keys,
-        registry=runtime.registry,
-        policy=runtime.endpoint_policy,
-        settings=runtime.settings,
-    )
-    return tagged(response, result)
 
 
 @router.get("/connections/redirect-uri", response_model=OAuthRedirect)
@@ -250,3 +98,155 @@ async def complete_authorization(
         samesite="lax",
     )
     return answer
+
+
+@router.post(COLLECTION, response_model=Connection, status_code=201)
+async def create_connection(
+    response: Response, workspace_id: WorkspaceId, body: ConnectionCreate, actor: Actor, runtime: CurrentRuntime
+) -> Connection:
+    result = await service.create_connection(
+        runtime.storage,
+        actor,
+        workspace_id,
+        body,
+        keys=runtime.keys,
+        registry=runtime.registry,
+        policy=runtime.endpoint_policy,
+    )
+    return tagged(response, result)
+
+
+@router.get(COLLECTION, response_model=ConnectionPage)
+async def list_connections(
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    limit: PageLimit = 50,
+    cursor: str | None = None,
+) -> ConnectionPage:
+    return await service.list_connections(runtime.storage, actor, workspace_id, limit=limit, cursor=cursor)
+
+
+@router.get(ITEM, response_model=Connection)
+async def get_connection(
+    response: Response, workspace_id: WorkspaceId, connection_id: str, actor: Actor, runtime: CurrentRuntime
+) -> Connection:
+    return tagged(response, await service.get_connection(runtime.storage, actor, workspace_id, connection_id))
+
+
+@router.patch(ITEM, response_model=Connection)
+async def update_connection(
+    response: Response,
+    workspace_id: WorkspaceId,
+    connection_id: str,
+    body: ConnectionUpdate,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    if_match: IfMatch = None,
+) -> Connection:
+    result = await service.update_connection(
+        runtime.storage,
+        actor,
+        workspace_id,
+        connection_id,
+        body,
+        if_match=if_match,
+        keys=runtime.keys,
+        registry=runtime.registry,
+        policy=runtime.endpoint_policy,
+    )
+    return tagged(response, result)
+
+
+@router.post(ITEM + "/test", response_model=ConnectionTest)
+async def test_connection(
+    workspace_id: WorkspaceId, connection_id: str, actor: Actor, runtime: CurrentRuntime
+) -> ConnectionTest:
+    return await discovery.test_connection(
+        runtime.storage,
+        actor,
+        workspace_id,
+        connection_id,
+        redis=runtime.redis,
+        keys=runtime.keys,
+        registry=runtime.registry,
+        policy=runtime.endpoint_policy,
+        settings=runtime.settings.providers,
+    )
+
+
+@router.get(ITEM + "/tools", response_model=ToolPage)
+async def list_tools(workspace_id: WorkspaceId, connection_id: str, actor: Actor, runtime: CurrentRuntime) -> ToolPage:
+    return await discovery.list_tools(
+        runtime.storage,
+        actor,
+        workspace_id,
+        connection_id,
+        redis=runtime.redis,
+        keys=runtime.keys,
+        registry=runtime.registry,
+        policy=runtime.endpoint_policy,
+        settings=runtime.settings.providers,
+    )
+
+
+@router.post(ITEM + "/authorize", response_model=AuthorizationResult)
+async def authorize_connection(
+    response: Response,
+    workspace_id: WorkspaceId,
+    connection_id: str,
+    body: AuthorizationRequest,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    if_match: IfMatch = None,
+) -> AuthorizationResult:
+    """A browser flow needs a login session and is bound to this browser by a cookie the callback checks; an API
+    key authorizes only a client-credentials client, without a browser."""
+    browser = secrets.token_urlsafe(32)
+    result = await authorization.authorize_connection(
+        runtime.storage,
+        actor,
+        workspace_id,
+        connection_id,
+        body,
+        browser=browser,
+        if_match=if_match,
+        keys=runtime.keys,
+        registry=runtime.registry,
+        policy=runtime.endpoint_policy,
+        settings=runtime.settings,
+    )
+    if result.redirect_url is not None:
+        response.set_cookie(
+            flow_cookie(connection_id, runtime.settings),
+            browser,
+            max_age=runtime.settings.providers.flow_seconds,
+            path=CALLBACK_PATH,
+            secure=runtime.settings.server.https,
+            httponly=True,
+            samesite="lax",
+        )
+    return result
+
+
+@router.post(ITEM + "/revoke", response_model=RevokedConnection)
+async def revoke_connection(
+    response: Response,
+    workspace_id: WorkspaceId,
+    connection_id: str,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    if_match: IfMatch = None,
+) -> RevokedConnection:
+    result = await authorization.revoke_connection(
+        runtime.storage,
+        actor,
+        workspace_id,
+        connection_id,
+        if_match=if_match,
+        keys=runtime.keys,
+        registry=runtime.registry,
+        policy=runtime.endpoint_policy,
+        settings=runtime.settings,
+    )
+    return tagged(response, result)

@@ -11,13 +11,14 @@ vi.mock("../auth/context", () => ({
     isPending: false,
     error: null,
     data: {
-      organizations: [
-        { id: "org_test", key: "acme", name: "Acme", permissions: [] },
-      ],
+      organizations: [{ id: "org_test", name: "Acme", permissions: [] }],
       user: { value: { id: mocks.userId } },
     },
   }),
-  useClient: () => ({ http: { GET: mocks.GET } }),
+  useClient: () => ({
+    http: { GET: mocks.GET },
+    workspace: () => ({ GET: mocks.GET }),
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -46,14 +47,12 @@ function mount(
           items: [
             {
               id: "ws_first",
-              key: "research",
               name: "Research",
               permissions: ["read"],
               archived_at: firstArchived ? "2026-09-24T00:00:00Z" : null,
             },
             {
               id: "ws_second",
-              key: "design",
               name: "Design",
               permissions: ["read"],
             },
@@ -74,7 +73,7 @@ function mount(
         <Routes>
           <Route path="*" element={<h1>Not found</h1>} />
           <Route
-            path="/workspace/:workspaceKey/*"
+            path="/workspace/:workspaceId/*"
             element={
               <WorkspaceProvider>
                 <CurrentWorkspace />
@@ -95,15 +94,15 @@ function mount(
   );
 }
 
-it("selects the exact workspace key and retains its immutable identity", async () => {
-  mount("/workspace/design/agents");
+it("selects the workspace named by its ID", async () => {
+  mount("/workspace/ws_second/agents");
   expect(
     await screen.findByText(
-      "/workspace/design/agents|ws_second|/workspace/design",
+      "/workspace/ws_second/agents|ws_second|/workspace/ws_second",
     ),
   ).toBeTruthy();
 });
-it.each(["/workspace/missing/agents", "/workspace/ws_first/agents"])(
+it.each(["/workspace/ws_missing/agents", "/workspace/design/agents"])(
   "does not fall back to an accessible workspace for %s",
   async (path) => {
     mount(path);
@@ -111,13 +110,18 @@ it.each(["/workspace/missing/agents", "/workspace/ws_first/agents"])(
       await screen.findByRole("heading", { name: "Not found" }),
     ).toBeTruthy();
     expect(screen.queryByText(/\|ws_/)).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Switch workspace: Design" })
+        .getAttribute("href"),
+    ).toBe("/workspace/ws_second/agents");
   },
 );
-it("redirects the entry page using the current workspace key", async () => {
+it("redirects the entry page using the current workspace ID", async () => {
   mount("/");
   expect(
     await screen.findByText(
-      /\/workspace\/(research|design)\/agents\|ws_(first|second)\|\/workspace\//,
+      /^\/workspace\/(ws_first|ws_second)\/agents\|\1\|\/workspace\/\1$/,
     ),
   ).toBeTruthy();
 });
@@ -129,7 +133,7 @@ it("enters a workspace that still runs rather than an archived one", async () =>
     mount("/", { firstArchived: true });
     expect(
       await screen.findByText(
-        "/workspace/design/agents|ws_second|/workspace/design",
+        "/workspace/ws_second/agents|ws_second|/workspace/ws_second",
       ),
     ).toBeTruthy();
   } finally {
@@ -138,16 +142,16 @@ it("enters a workspace that still runs rather than an archived one", async () =>
 });
 
 it("preserves the selected workspace when provider management opens in another tab", async () => {
-  mount("/workspace/design/settings?section=providers");
+  mount("/workspace/ws_second/settings?section=providers");
   expect(
     await screen.findByText(
-      "/workspace/design/settings|ws_second|/workspace/design",
+      "/workspace/ws_second/settings|ws_second|/workspace/ws_second",
     ),
   ).toBeTruthy();
 });
 
 it("offers retry and personal settings when workspaces fail", async () => {
-  mount("/workspace/design/agents", {
+  mount("/workspace/ws_second/agents", {
     workspacesError: new Error("Workspaces unavailable"),
   });
 

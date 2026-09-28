@@ -207,7 +207,7 @@ async def require_readable(
     if not fields:
         return
     config = revision.config if overrides is None else apply_override(revision.config, overrides)
-    model = await resolve_model(session, principal, scope, config.model.model_id, authority=authority)
+    model = await resolve_model(session, principal, scope, config.model, authority=authority)
     recipient = Recipient(model.config.characteristics.capabilities, primary)
     rows = await session.execute(
         select(AssetRow.id, AssetRow.content_type, AssetRow.size).where(

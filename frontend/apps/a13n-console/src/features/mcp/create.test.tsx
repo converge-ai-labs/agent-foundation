@@ -6,7 +6,9 @@ import type { Schema } from "../../shared/api";
 import { CreateMCP } from "./create";
 
 const http = vi.hoisted(() => ({ POST: vi.fn(), GET: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
 }));
@@ -174,9 +176,8 @@ it("names headers in the configuration and sends their values only as the write-
   await user.click(screen.getByRole("button", { name: "Connect" }));
   await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(created));
   expect(http.POST.mock.calls[0]).toEqual([
-    "/api/v1/workspaces/{workspace_id}/connections",
+    "/api/v1/connections",
     {
-      params: { path: { workspace_id: "ws_test" } },
       body: {
         type: "mcp",
         name: "Jentic",
@@ -190,9 +191,9 @@ it("names headers in the configuration and sends their values only as the write-
     },
   ]);
   expect(http.POST.mock.calls[1]).toEqual([
-    "/api/v1/workspaces/{workspace_id}/connections/{connection_id}/test",
+    "/api/v1/connections/{connection_id}/test",
     {
-      params: { path: { workspace_id: "ws_test", connection_id: "conn_test" } },
+      params: { path: { connection_id: "conn_test" } },
     },
   ]);
   cache.clear();

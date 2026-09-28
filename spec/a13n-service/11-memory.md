@@ -29,15 +29,14 @@ A thread mounts memories under names; each run freezes the thread's mount set at
 
 ```
 memories   (mem_)
-  id  organization_id  workspace_id  key  name  description NULL  kind  type  provider_id NULL  namespace NULL
+  id  organization_id  workspace_id  name  description NULL  kind  type  provider_id NULL  namespace NULL
   guide NULL  always_load  labels  version  created_by_id  updated_by_id  created_at  updated_at
   kind IN ('file', 'record')
   CHECK ((type = 'postgres') = (kind = 'file'))
   CHECK ((type = 'postgres') = (provider_id IS NULL) AND (provider_id IS NULL) = (namespace IS NULL))
   CHECK (kind = 'file' OR always_load = '[]')
-  UNIQUE (workspace_id, key)
   UNIQUE (provider_id, namespace)
-  (organization_id, provider_id) -> memory_providers
+  (workspace_id, provider_id) -> memory_providers
 
 memory_file_stores
   memory_id  seq  pruned_through_seq  content_bytes  history_bytes  file_count
@@ -71,7 +70,7 @@ thread_memories
 ```
 
 - `memories.guide` is the memory's own guide; `NULL` inherits the deployment's (below), and `""` gives the memory none. `always_load` is the list of paths whose content leads a file memory's context. A memory's identity, scope, authorship, kind, type, provider and namespace never change.
-- A record memory names its Memory Provider and its `namespace` in that provider's backend; a file memory names neither. A namespace belongs to one memory, and the constraint trigger `memories_provider_id_in_scope` refuses a provider of another organization, or of another workspace unless the provider is shared.
+- A record memory names its Memory Provider and its `namespace` in that provider's backend; a file memory names neither. A namespace belongs to one memory, and the memory references its provider by `(workspace_id, provider_id)`, so the database refuses a provider of another workspace.
 - `memory_file_stores` is the memory's write lock and bookkeeping: `seq` numbers its changes, `pruned_through_seq` is the highest change whose revision was pruned, and the counters give the bytes of current content, the bytes of retained history and the number of files. It exists exactly as long as its memory.
 - A file's `version` is the `seq` of its last change, and its ETag is `"{id}:{version}"`. `description` is derived from the content by the [file format](../a13n-harness/21-file-memory.md#file-format). A file keeps its ID when it moves.
 - A revision holds the content its change replaced: `NULL` for a creation and for the destination of a move. A move is two revisions, `move_out` at the source and `move_in` at the destination, each naming the other path in `moved_path`. `run_id`, `tool_call_id` and `principal_id` attribute the change: a run's tool call sets all three, an API edit only the principal.
@@ -79,7 +78,7 @@ thread_memories
 
 ## Memories
 
-A memory is created (`write`) with `{key, name, description?, labels, type, provider_id?, namespace?, guide?, always_load}`. `key` is unique in the workspace (`already_exists`). A guide is at most `memory.guide_bytes` UTF-8 bytes (`invalid_argument` at `guide`).
+A memory is created (`write`) with `{name, description?, labels, type, provider_id?, namespace?, guide?, always_load}`. A guide is at most `memory.guide_bytes` UTF-8 bytes (`invalid_argument` at `guide`).
 
 - **File memory.** `type` is `postgres`, the default, and `provider_id` and `namespace` are left out (`invalid_argument`). Creation also creates the memory's store row. Each `always_load` path must be a valid [file path](../a13n-harness/21-file-memory.md#file-format) (`invalid_argument` at `always_load.{index}`) and the paths must be unique; at most 64, and a path need not exist.
 - **Record memory.** `provider_id` names a Memory Provider that is enabled and usable in the workspace ([04](04-resources.md#provider-resources)), and `type` must be its type (`invalid_argument` at `provider_id` or `type`). `always_load` must be empty. `namespace` is 1 to 256 printable characters with no whitespace and no `*`, which mem0 filters read as a wildcard; left out, the memory takes `a13n-` followed by the first 32 hex characters of the SHA-256 of its ID. An explicit namespace adopts whatever records the backend already holds under it. A namespace another memory of the provider owns is `already_exists` (kind `memory`, the namespace as `key`); one whose purge is still pending is 409 `conflict` with reason `namespace_purging` (kind `memory_provider`, details `namespace`). Claiming a namespace and staging its purge take a transaction-scoped advisory lock on the provider and namespace, so a claim never passes a purge being staged.
@@ -126,7 +125,7 @@ A store refusal maps to the API as: `not_found` (kind `memory_file`), `already_e
 
 ## Memory Providers
 
-A Memory Provider is the [provider resource](04-resources.md#provider-resources) kind `memory` (`/organizations/{org}/memory-providers`): an account of a record memory backend, whose `type` selects a Harness `MemoryProviderDefinition` ([08](08-providers.md#registry)). Memory Providers back record memories only; the Service stores file memories itself, and `postgres` is no provider type. A provider's test opens a store on the namespace `a13n-probe` and lists one page of it, which reads and changes nothing a memory owns.
+A Memory Provider is the [provider resource](04-resources.md#provider-resources) kind `memory` (`/memory-providers`): an account of a record memory backend, whose `type` selects a Harness `MemoryProviderDefinition` ([08](08-providers.md#registry)). Memory Providers back record memories only; the Service stores file memories itself, and `postgres` is no provider type. A provider's test opens a store on the namespace `a13n-probe` and lists one page of it, which reads and changes nothing a memory owns.
 
 A record store is opened from values read in a short session, after it closes: the provider's configuration and revealed credential, and the memory's namespace. Every backend call runs outside any database session, over the host's outbound client under the [endpoint policy](08-providers.md#outbound-endpoint-policy), bounded by `providers.operation_seconds` and `providers.response_bytes`. A transport failure, a refused endpoint or an answer over the byte bound is the store error `unavailable` for a read or a purge, and `write_unconfirmed` for an add, an update or a delete, which may have happened.
 

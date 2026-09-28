@@ -28,7 +28,7 @@ ADMIN, RUNNER, BUILDER = BUILT_IN_ROLES["admin"], BUILT_IN_ROLES["runner"], BUIL
         ("ws_a", Scope("org_a", "ws_a"), {"read", "run", "write", "admin"}),
         ("ws_b", Scope("org_a", "ws_a"), set()),
         (None, Scope("org_a"), {"read", "run", "write", "admin"}),
-        ("ws_a", Scope("org_a"), {"read", "run"}),
+        ("ws_a", Scope("org_a"), {"read"}),
         (None, Scope("org_b", "ws_b"), set()),
     ],
 )
@@ -44,19 +44,19 @@ def test_roles_union_without_changing_scope(role, expected):
     grants = (Grant("org_a", "ws_a", BUILT_IN_ROLES[role]), Grant("org_b", None, ADMIN))
     principal = Principal("usr_a", "user", grants)
     assert allowed_verbs(principal, Scope("org_a", "ws_a")) == expected
-    assert allowed_verbs(principal, Scope("org_a")) == expected & {"read", "run"}
+    assert allowed_verbs(principal, Scope("org_a")) == {"read"}
 
 
-def test_workspace_key_never_inherits_cross_workspace_or_shared_mutation_authority():
+def test_workspace_key_never_inherits_cross_workspace_or_organization_authority():
     principal = Principal(
         "usr_a", "user", (Grant("org_a", None, ADMIN), Grant("org_b", None, ADMIN)), WorkspaceScope("org_a", "ws_a")
     )
     assert allowed_verbs(principal, Scope("org_a", "ws_a")) == {"read", "run", "write", "admin"}
     assert allowed_verbs(principal, Scope("org_a", "ws_b")) == set()
     assert allowed_verbs(principal, Scope("org_b", "ws_a")) == set()
-    assert allowed_verbs(principal, Scope("org_a")) == {"read", "run"}
+    assert allowed_verbs(principal, Scope("org_a")) == {"read"}
     with pytest.raises(ServiceError, match="cannot perform"):
-        authorize(principal, Scope("org_a"), "admin")
+        authorize(principal, Scope("org_a"), "run")
 
 
 def test_role_vocabulary_is_validated_and_unknown_roles_fail_closed():
@@ -84,8 +84,8 @@ def test_persisted_ceiling_cannot_widen_when_current_grants_increase():
     restored = ExecutionAuthority.model_validate_json(accepted.model_dump_json())
     upgraded = replace(principal, grants=(Grant("org_a", None, ADMIN),))
     authorize(upgraded, scope, "run", authority=restored)
-    authorize(upgraded, Scope("org_a"), "run", authority=restored)
-    for target, verb in [(scope, "write"), (Scope("org_a", "ws_b"), "run"), (Scope("org_a"), "admin")]:
+    # The authority covers only its workspace, never the organization scope.
+    for target, verb in [(scope, "write"), (Scope("org_a", "ws_b"), "run"), (Scope("org_a"), "read")]:
         with pytest.raises(ServiceError, match="delegation"):
             authorize(upgraded, target, verb, authority=restored)
     with pytest.raises(ServiceError, match="delegation"):

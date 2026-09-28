@@ -8,14 +8,14 @@ from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.resources.environment_templates import service
 from a13n_service.resources.environment_templates.schemas import Template, TemplateCreate, TemplatePage, TemplateUpdate
 from a13n_service.resources.requests import CurrentRuntime
-from a13n_service.tenancy.requests import Actor
+from a13n_service.tenancy.requests import Actor, WorkspaceId
 
-router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}/environment-templates", tags=["environments"])
+router = APIRouter(prefix="/api/v1/environment-templates", tags=["environments"])
 
 
 @router.post("", response_model=Template, status_code=201)
 async def create_template(
-    response: Response, workspace_id: str, body: TemplateCreate, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, body: TemplateCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Template:
     result = await service.create_template(runtime.storage, actor, workspace_id, body, registry=runtime.registry)
     return tagged(response, result)
@@ -23,7 +23,7 @@ async def create_template(
 
 @router.get("", response_model=TemplatePage)
 async def list_templates(
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     actor: Actor,
     runtime: CurrentRuntime,
     label: Annotated[list[str] | None, Query()] = None,
@@ -37,7 +37,7 @@ async def list_templates(
 
 @router.get("/{template_id}", response_model=Template)
 async def get_template(
-    response: Response, workspace_id: str, template_id: str, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, template_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Template:
     return tagged(response, await service.get_template(runtime.storage, actor, workspace_id, template_id))
 
@@ -45,7 +45,7 @@ async def get_template(
 @router.patch("/{template_id}", response_model=Template)
 async def update_template(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     template_id: str,
     body: TemplateUpdate,
     actor: Actor,

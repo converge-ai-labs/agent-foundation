@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { useAccess } from "../../layout/workspace";
+import { useWorkspace } from "../../layout/workspace";
 import { type Schema } from "../../shared/api";
 import {
   useSuggestedName,
@@ -11,7 +11,7 @@ import {
 } from "../../shared/forms";
 import { useCredentialSection } from "../../shared/use-credential-section";
 import { credentialDescription, credentialLabel } from "../providers";
-import { modelApi, type ModelScope } from "./api";
+import { modelApi } from "./api";
 import {
   initialHeaders,
   newHeaders,
@@ -28,14 +28,12 @@ export function credentialFieldFor(definition?: Schema["ProviderType"]) {
 
 /** Draft state and save mutation shared by the provider editors. */
 export function useProviderDraft({
-  scope,
   resource,
   definitions,
   initialType,
   close,
   onCreated,
 }: {
-  scope: ModelScope;
   resource?: { value: Schema["Provider"]; etag?: string };
   definitions: Schema["ProviderType"][];
   initialType?: string;
@@ -45,9 +43,9 @@ export function useProviderDraft({
   const [original] = useState(resource),
     { t } = useTranslation(),
     client = useClient(),
-    { organization } = useAccess(),
+    { workspace } = useWorkspace(),
     cache = useQueryClient(),
-    api = modelApi(client, organization.id, scope);
+    api = modelApi(client, workspace.id);
   const [type, setType] = useState(
       original?.value.type ??
         initialType ??

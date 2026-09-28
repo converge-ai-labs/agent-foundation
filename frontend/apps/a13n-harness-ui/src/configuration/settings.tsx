@@ -379,7 +379,8 @@ export function InstalledCatalog({
             <div>
               <strong>{item.key}</strong>
               <small>
-                {item.distribution_name ?? item.source}
+                {item.distribution_name ??
+                  (item.source === "pydantic" ? "Built-in" : item.source)}
                 {item.distribution_version
                   ? ` · ${item.distribution_version}`
                   : ""}

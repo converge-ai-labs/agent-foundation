@@ -1,8 +1,4 @@
-"""A connector provider's app catalogue, read with the provider's credential and cached briefly.
-
-The catalogue is read in a workspace because it lists what the workspace's connections can use: its own
-providers and the organization's shared ones.
-"""
+"""A connector provider's app catalogue, read with the provider's credential and cached briefly."""
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager

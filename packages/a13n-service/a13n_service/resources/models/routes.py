@@ -1,8 +1,8 @@
-"""One organization collection for shared and workspace models, and the model catalog they start from."""
+"""Workspace models by key, the model catalog they start from and the workspace's media-understanding defaults."""
 
 from fastapi import APIRouter, Request, Response
 
-from a13n_service.infra.http import IfMatch, PageLimit, tagged
+from a13n_service.infra.http import IfMatch, PageLimit, key_tagged, tagged
 from a13n_service.resources.models import media, service
 from a13n_service.resources.models.catalog import ModelsDevCatalog
 from a13n_service.resources.models.schemas import (
@@ -15,50 +15,39 @@ from a13n_service.resources.models.schemas import (
     ModelUpdate,
 )
 from a13n_service.resources.requests import CurrentRuntime
-from a13n_service.tenancy.requests import Actor
+from a13n_service.tenancy.requests import Actor, WorkspaceId
 
 router = APIRouter(prefix="/api/v1", tags=["models"])
-_MODELS = "/organizations/{organization_id}/models"
-_MODEL = _MODELS + "/{model_id}"
-# The workspace's media-understanding defaults, which only its models may serve.
-workspace_router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}", tags=["models"])
 
 
-@router.post(_MODELS, response_model=Model, status_code=201)
+@router.post("/models", response_model=Model, status_code=201)
 async def create_model(
-    response: Response, organization_id: str, body: ModelCreate, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, body: ModelCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Model:
-    """Needs `write` on the model's scope and on its provider, whose credential the model spends."""
-    result = await service.create_model(runtime.storage, actor, organization_id, body, registry=runtime.registry)
-    return tagged(response, result)
+    """Needs `write` on the workspace and on the model's provider, whose credential the model spends."""
+    result = await service.create_model(runtime.storage, actor, workspace_id, body, registry=runtime.registry)
+    return key_tagged(response, result)
 
 
-@router.get(_MODELS, response_model=ModelPage)
+@router.get("/models", response_model=ModelPage)
 async def list_models(
-    organization_id: str,
-    actor: Actor,
-    runtime: CurrentRuntime,
-    workspace_id: str | None = None,
-    limit: PageLimit = 50,
-    cursor: str | None = None,
+    workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime, limit: PageLimit = 50, cursor: str | None = None
 ) -> ModelPage:
-    return await service.list_models(
-        runtime.storage, actor, organization_id, workspace_id=workspace_id, limit=limit, cursor=cursor
-    )
+    return await service.list_models(runtime.storage, actor, workspace_id, limit=limit, cursor=cursor)
 
 
-@router.get(_MODEL, response_model=Model)
+@router.get("/models/{key}", response_model=Model)
 async def get_model(
-    response: Response, organization_id: str, model_id: str, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, key: str, actor: Actor, runtime: CurrentRuntime
 ) -> Model:
-    return tagged(response, await service.get_model(runtime.storage, actor, organization_id, model_id))
+    return key_tagged(response, await service.get_model(runtime.storage, actor, workspace_id, key))
 
 
-@router.patch(_MODEL, response_model=Model)
+@router.patch("/models/{key}", response_model=Model)
 async def update_model(
     response: Response,
-    organization_id: str,
-    model_id: str,
+    workspace_id: WorkspaceId,
+    key: str,
     body: ModelUpdate,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -66,9 +55,9 @@ async def update_model(
 ) -> Model:
     """A configuration change also needs `write` on the model's provider."""
     result = await service.update_model(
-        runtime.storage, actor, organization_id, model_id, body, if_match=if_match, registry=runtime.registry
+        runtime.storage, actor, workspace_id, key, body, if_match=if_match, registry=runtime.registry
     )
-    return tagged(response, result)
+    return key_tagged(response, result)
 
 
 @router.get("/model-catalog", response_model=ModelCatalog)
@@ -78,17 +67,17 @@ async def get_model_catalog(request: Request, actor: Actor) -> ModelCatalog:
     return await catalog.read()
 
 
-@workspace_router.get("/media-understanding-defaults", response_model=MediaDefaults)
+@router.get("/media-understanding-defaults", response_model=MediaDefaults)
 async def get_media_defaults(
-    response: Response, workspace_id: str, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime
 ) -> MediaDefaults:
     return tagged(response, await media.get_media_defaults(runtime.storage, actor, workspace_id))
 
 
-@workspace_router.put("/media-understanding-defaults", response_model=MediaDefaults)
+@router.put("/media-understanding-defaults", response_model=MediaDefaults)
 async def replace_media_defaults(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: MediaUnderstandingSelection,
     actor: Actor,
     runtime: CurrentRuntime,

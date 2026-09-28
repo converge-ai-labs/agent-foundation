@@ -11,7 +11,7 @@ import { MemoryDetail } from "../page";
 vi.mock("../../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
-    basePath: "/workspace/design",
+    basePath: "/workspace/ws_design",
     organization: { id: "org_1" },
     workspace: { id: "ws_1" },
     can: (verb: string) => permissions.includes(verb),
@@ -43,7 +43,7 @@ afterEach(() => {
 });
 
 const AT = "2026-09-20T10:00:00Z";
-const base = "/api/v1/workspaces/ws_1/memories/mem_1";
+const base = "/api/v1/memories/mem_1";
 
 type Refusal = { status: number; code: string; details: object };
 
@@ -59,7 +59,6 @@ function setup({
     id: "mem_1",
     organization_id: "org_1",
     workspace_id: "ws_1",
-    key: "facts",
     name: "Team facts",
     description: null,
     kind: "record",
@@ -98,7 +97,7 @@ function setup({
     const route = `${request.method} ${path}`;
     if (route === `GET ${base}`)
       return Response.json(memory, { headers: { ETag: '"mem_1:1"' } });
-    if (route === "GET /api/v1/organizations/org_1/memory-providers")
+    if (route === "GET /api/v1/memory-providers")
       return Response.json({
         items: [
           { id: "memprov_1", name: "Team mem0", type: "mem0", enabled: true },
@@ -163,10 +162,12 @@ function setup({
   });
   render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={[`/workspace/design/memories/mem_1${tab}`]}>
+      <MemoryRouter
+        initialEntries={[`/workspace/ws_design/memories/mem_1${tab}`]}
+      >
         <Routes>
           <Route
-            path="/workspace/:workspaceKey/memories/:memoryId"
+            path="/workspace/:workspaceId/memories/:memoryId"
             element={<MemoryDetail />}
           />
         </Routes>

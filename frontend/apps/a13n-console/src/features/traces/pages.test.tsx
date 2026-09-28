@@ -17,7 +17,9 @@ import { TracesPage } from "./page";
 import { UNKNOWN } from "../../shared/unknown";
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http, workspace: () => http }),
+}));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
@@ -182,7 +184,7 @@ it("searches identifiers automatically and preserves empty-page continuation", a
 
 it("applies metadata key=value filters from the popover", async () => {
   const user = typingUser();
-  http.GET.mockImplementation(async (path, options) =>
+  http.GET.mockImplementation(async (path) =>
     isSpans(path)
       ? response({ items: [], next_cursor: null })
       : response(
@@ -273,7 +275,7 @@ it.each([
     screen.getByRole("searchbox", { name: "Search by ID" }),
   ).toHaveProperty("value", id);
   expect(http.GET).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace_id}/traces",
+    "/api/v1/traces",
     expect.objectContaining({
       params: expect.objectContaining({
         query: expect.objectContaining({
@@ -330,7 +332,9 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   expect(screen.getByText("Loaded cost")).toBeTruthy();
   expect(
     screen.getByRole("link", { name: "View run" }).getAttribute("href"),
-  ).toContain("/sessions/session/threads/thread/runs/run?view=debug");
+  ).toContain(
+    "/workspaces/test/sessions/session/threads/thread/runs/run?view=debug",
+  );
   await user.click(
     screen.getByRole("button", { name: "Load more observations" }),
   );
@@ -419,7 +423,7 @@ it.each([null, "javascript:alert(1)", "https://user:password@trace.example"])(
     await screen.findByRole("link", { name: "View run" });
     await waitFor(() =>
       expect(http.GET).toHaveBeenCalledWith(
-        "/api/v1/workspaces/{workspace_id}/trace-backend",
+        "/api/v1/trace-backend",
         expect.anything(),
       ),
     );
@@ -570,12 +574,12 @@ it("shows seconds, normalized levels and paginated aggregate cost in the list", 
   ).toEqual(["Trace", "Run", "Level", "Duration", "Cost", "Started"]);
   expect(
     screen.getByRole("link", { name: "run" }).getAttribute("href"),
-  ).toContain("/sessions/session/threads/thread/runs/run");
+  ).toContain("/workspaces/test/sessions/session/threads/thread/runs/run");
   expect(screen.queryByText("Root status")).toBeNull();
   expect(screen.queryByText("Severity")).toBeNull();
   expect(screen.queryByText(/USD|Unavailable/)).toBeNull();
   expect(http.GET).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace_id}/traces",
+    "/api/v1/traces",
     expect.objectContaining({
       params: expect.objectContaining({
         query: expect.objectContaining({ limit: 25 }),

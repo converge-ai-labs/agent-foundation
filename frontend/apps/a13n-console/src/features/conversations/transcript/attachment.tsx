@@ -49,9 +49,10 @@ export function AssetAttachment({ assetId }: { assetId: string }) {
     staleTime: 60_000,
     retry: false,
     queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/workspaces/{workspace_id}/assets/{asset_id}", {
-          params: { path: { workspace_id: workspace.id, asset_id: assetId } },
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/assets/{asset_id}", {
+          params: { path: { asset_id: assetId } },
           signal,
         })
         .then(data),
@@ -60,15 +61,14 @@ export function AssetAttachment({ assetId }: { assetId: string }) {
   const download = useMutation({
     mutationFn: async () => {
       const blob = data(
-        await client.http.GET(
-          "/api/v1/workspaces/{workspace_id}/assets/{asset_id}/content",
-          {
+        await client
+          .workspace(workspace.id)
+          .GET("/api/v1/assets/{asset_id}/content", {
             params: {
-              path: { workspace_id: workspace.id, asset_id: assetId },
+              path: { asset_id: assetId },
             },
             parseAs: "blob",
-          },
-        ),
+          }),
       );
       downloadBlob(blob, name);
     },

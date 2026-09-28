@@ -15,20 +15,21 @@ from a13n_service.resources.agents.schemas import (
     AgentRevision,
     AgentRevisionCreate,
     AgentRevisionPage,
+    AgentSource,
     AgentUpdate,
     AgentValidate,
 )
 from a13n_service.resources.agents.toolsets import ToolsetCatalog
 from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.resources.revisions import Search
-from a13n_service.tenancy.requests import Actor, ImageBody
+from a13n_service.tenancy.requests import Actor, ImageBody, WorkspaceId
 
-router = APIRouter(prefix="/api/v1/workspaces/{workspace_id}", tags=["agents"])
+router = APIRouter(prefix="/api/v1", tags=["agents"])
 
 
 @router.post("/agents", response_model=Agent, status_code=201)
 async def create_agent(
-    response: Response, workspace_id: str, body: AgentCreate, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, body: AgentCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Agent:
     created = await service.create_agent(
         runtime.storage, actor, workspace_id, body, registry=runtime.registry, plugins=runtime.plugins
@@ -37,7 +38,9 @@ async def create_agent(
 
 
 @router.post("/agents/validate", status_code=204)
-async def validate_revision(workspace_id: str, body: AgentValidate, actor: Actor, runtime: CurrentRuntime) -> None:
+async def validate_revision(
+    workspace_id: WorkspaceId, body: AgentValidate, actor: Actor, runtime: CurrentRuntime
+) -> None:
     """No content when creating a revision of the configuration would accept it, else the same `invalid_argument`
     error with the field's path relative to `config`; nothing is stored."""
     await service.validate_revision(
@@ -46,7 +49,9 @@ async def validate_revision(workspace_id: str, body: AgentValidate, actor: Actor
 
 
 @router.post("/agent-composer", response_model=Agent)
-async def prepare_composer(response: Response, workspace_id: str, actor: Actor, runtime: CurrentRuntime) -> Agent:
+async def prepare_composer(
+    response: Response, workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime
+) -> Agent:
     """The workspace's Agent Composer, created or brought up to date with the deployment's definition.
 
     Refused with `model_required` while the workspace has no model the caller can use.
@@ -64,20 +69,21 @@ async def prepare_composer(response: Response, workspace_id: str, actor: Actor, 
 
 @router.get("/agents", response_model=AgentPage)
 async def list_agents(
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     actor: Actor,
     runtime: CurrentRuntime,
     label: Annotated[list[str] | None, Query()] = None,
     q: Annotated[Search | None, Query()] = None,
     archived: bool | None = None,
+    source: AgentSource | None = None,
     skill_id: Annotated[str | None, Query(max_length=72)] = None,
     skill_revision_id: Annotated[str | None, Query(max_length=72)] = None,
     limit: PageLimit = 50,
     cursor: str | None = None,
 ) -> AgentPage:
-    """Agents of the workspace. `q` matches the key, name or description, ignoring case; `archived` keeps only
-    archived agents, or only open ones; the skill filters keep those with a revision pinning that skill or
-    revision."""
+    """Agents of the workspace. `q` matches the name or description, ignoring case; `archived` keeps only
+    archived agents, or only open ones; `source=builtin` finds the Agent Composer; the skill filters keep those
+    with a revision pinning that skill or that skill revision."""
     return await service.list_agents(
         runtime.storage,
         actor,
@@ -85,6 +91,7 @@ async def list_agents(
         labels=label or [],
         q=q,
         archived=archived,
+        source=source,
         skill_id=skill_id,
         skill_revision_id=skill_revision_id,
         limit=limit,
@@ -94,7 +101,7 @@ async def list_agents(
 
 @router.get("/agents/{agent_id}", response_model=Agent)
 async def get_agent(
-    response: Response, workspace_id: str, agent_id: str, actor: Actor, runtime: CurrentRuntime
+    response: Response, workspace_id: WorkspaceId, agent_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Agent:
     return tagged(response, await service.get_agent(runtime.storage, actor, workspace_id, agent_id))
 
@@ -102,7 +109,7 @@ async def get_agent(
 @router.patch("/agents/{agent_id}", response_model=Agent)
 async def update_agent(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     agent_id: str,
     body: AgentUpdate,
     actor: Actor,
@@ -116,7 +123,7 @@ async def update_agent(
 @router.put("/agents/{agent_id}/avatar", response_model=Agent, openapi_extra=images.UPLOAD)
 async def put_avatar(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     agent_id: str,
     data: ImageBody,
     actor: Actor,
@@ -132,7 +139,7 @@ async def put_avatar(
 @router.delete("/agents/{agent_id}/avatar", response_model=Agent)
 async def delete_avatar(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     agent_id: str,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -145,7 +152,7 @@ async def delete_avatar(
 
 
 @router.get("/agents/{agent_id}/avatar", response_class=Response, responses=images.CONTENT)
-async def get_avatar(workspace_id: str, agent_id: str, actor: Actor, runtime: CurrentRuntime) -> Response:
+async def get_avatar(workspace_id: WorkspaceId, agent_id: str, actor: Actor, runtime: CurrentRuntime) -> Response:
     image = await service.get_avatar(runtime.storage, actor, workspace_id, agent_id)
     return await images.serve(runtime.objects, agent_id, image)
 
@@ -153,7 +160,7 @@ async def get_avatar(workspace_id: str, agent_id: str, actor: Actor, runtime: Cu
 @router.post("/agents/{agent_id}/archive", response_model=Agent)
 async def archive_agent(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     agent_id: str,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -168,7 +175,7 @@ async def archive_agent(
 @router.post("/agents/{agent_id}/unarchive", response_model=Agent)
 async def unarchive_agent(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     agent_id: str,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -182,7 +189,12 @@ async def unarchive_agent(
 
 @router.post("/agents/{agent_id}/duplicate", response_model=Agent, status_code=201)
 async def duplicate_agent(
-    response: Response, workspace_id: str, agent_id: str, body: AgentDuplicate, actor: Actor, runtime: CurrentRuntime
+    response: Response,
+    workspace_id: WorkspaceId,
+    agent_id: str,
+    body: AgentDuplicate,
+    actor: Actor,
+    runtime: CurrentRuntime,
 ) -> Agent:
     created = await service.duplicate_agent(
         runtime.storage, actor, workspace_id, agent_id, body, registry=runtime.registry, plugins=runtime.plugins
@@ -192,7 +204,7 @@ async def duplicate_agent(
 
 @router.post("/agents/{agent_id}/revisions", response_model=AgentRevision, status_code=201)
 async def create_revision(
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     agent_id: str,
     body: AgentRevisionCreate,
     actor: Actor,
@@ -214,7 +226,7 @@ async def create_revision(
 
 @router.get("/agents/{agent_id}/revisions", response_model=AgentRevisionPage)
 async def list_revisions(
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     agent_id: str,
     actor: Actor,
     runtime: CurrentRuntime,
@@ -226,7 +238,7 @@ async def list_revisions(
 
 @router.get("/agents/{agent_id}/revisions/{revision_id}", response_model=AgentRevision)
 async def get_revision(
-    workspace_id: str, agent_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
+    workspace_id: WorkspaceId, agent_id: str, revision_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> AgentRevision:
     return await service.get_revision(runtime.storage, actor, workspace_id, agent_id, revision_id)
 
@@ -234,7 +246,7 @@ async def get_revision(
 @router.post("/agents/{agent_id}/revisions/{revision_id}/set-default", response_model=Agent)
 async def set_default(
     response: Response,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     agent_id: str,
     revision_id: str,
     actor: Actor,
@@ -255,5 +267,5 @@ async def set_default(
 
 
 @router.get("/toolsets", response_model=ToolsetCatalog)
-async def list_toolsets(workspace_id: str, actor: Actor, runtime: CurrentRuntime) -> ToolsetCatalog:
+async def list_toolsets(workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> ToolsetCatalog:
     return await service.toolset_catalog(runtime.storage, actor, workspace_id, registry=runtime.registry)

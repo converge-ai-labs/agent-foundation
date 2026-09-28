@@ -14,7 +14,7 @@ import type { AgentConfig } from "./configuration";
 
 export const MAX_AGENT_FILE_BYTES = 1024 * 1024;
 /** The Agent file format version that spec/frontend/console.md owns. */
-export const AGENT_FILE_VERSION = 2;
+export const AGENT_FILE_VERSION = 1;
 
 /** A saved Service configuration, without resource identity or resolved credentials. */
 export interface AgentFile {
@@ -74,7 +74,7 @@ export function parseAgentFile(source: string): AgentFile {
   const fields = value as Record<string, unknown>;
   if (fields.schema_version !== AGENT_FILE_VERSION)
     throw new Error(
-      "Unsupported Agent file version. Expected schema_version: 2.",
+      "Unsupported Agent file version. Expected schema_version: 1.",
     );
   if (
     Object.keys(fields).some(

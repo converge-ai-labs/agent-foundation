@@ -59,9 +59,10 @@ export function useInterruptRun(
     { workspace } = useWorkspace();
   return useMutation({
     mutationFn: () =>
-      client.http
-        .POST("/api/v1/workspaces/{workspace_id}/runs/{run_id}/interrupt", {
-          params: { path: { workspace_id: workspace.id, run_id: run.id } },
+      client
+        .workspace(workspace.id)
+        .POST("/api/v1/runs/{run_id}/interrupt", {
+          params: { path: { run_id: run.id } },
         })
         .then(data),
     onSuccess: () => void refresh(),

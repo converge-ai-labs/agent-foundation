@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import Storage, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.models.service import ResolvedModel
+from a13n_service.resources.models.tables import ModelRow
 from a13n_service.runs.schemas import ModelUsage, UsageFilter, UsageSummary, canonical_json
 from a13n_service.runs.tables import AttemptRow, RunRow, UsageRecordRow
 from a13n_service.tenancy.access import workspace_scope
@@ -301,7 +302,7 @@ async def summarize(storage: Storage, actor: Principal, workspace_id: str, where
     """
     query = (
         select(
-            UsageRecordRow.model_id,
+            ModelRow.key,
             func.count(UsageRecordRow.id),
             _token_sum("input_tokens"),
             _token_sum("output_tokens"),
@@ -310,9 +311,10 @@ async def summarize(storage: Storage, actor: Principal, workspace_id: str, where
             func.sum(UsageRecordRow.record["request_usage"]["cost"].astext.cast(Numeric)),
         )
         .join(RunRow, RunRow.id == UsageRecordRow.run_id)
+        .outerjoin(ModelRow, ModelRow.id == UsageRecordRow.model_id)
         .where(_MODEL_RECORDS)
-        .group_by(UsageRecordRow.model_id)
-        .order_by(UsageRecordRow.model_id)
+        .group_by(ModelRow.key)
+        .order_by(ModelRow.key)
     )
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
@@ -331,7 +333,7 @@ async def summarize(storage: Storage, actor: Principal, workspace_id: str, where
         rows = (await session.execute(query)).all()
     models = [
         ModelUsage(
-            model_id=model_id,
+            model=model,
             requests=requests,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -339,6 +341,6 @@ async def summarize(storage: Storage, actor: Principal, workspace_id: str, where
             cache_write_tokens=cache_write,
             cost=cost,
         )
-        for model_id, requests, input_tokens, output_tokens, cache_read, cache_write, cost in rows
+        for model, requests, input_tokens, output_tokens, cache_read, cache_write, cost in rows
     ]
     return UsageSummary(models=models)

@@ -52,10 +52,9 @@ export function Workspaces() {
                   <ResourceIdentity
                     icon={<StackIcon size={15} aria-hidden="true" />}
                     name={item.name}
-                    description={item.key}
+                    description={item.archived_at ? t("Archived") : undefined}
                     to={`${workspacePath(item)}/settings/general`}
                     resourceId={item.id}
-                    resourceKey={item.key}
                   />
                 ),
               },

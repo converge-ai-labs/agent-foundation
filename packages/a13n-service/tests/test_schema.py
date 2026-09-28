@@ -28,7 +28,7 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
 
 
 def test_workspace_owned_rows_reference_their_workspace_by_tenant_pair() -> None:
-    """A row can never name a workspace of another organization: its workspace key includes the organization."""
+    """A row can never name a workspace of another organization: its workspace reference includes the organization."""
     missing = []
     for name, table in OSS.metadata().tables.items():
         if name == "workspaces" or not {"organization_id", "workspace_id"} <= set(table.c.keys()):

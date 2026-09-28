@@ -27,17 +27,17 @@ async def test_setup_submission_and_continuation(stack) -> None:  # type: ignore
     session = expect(await api.client.get("/api/v1/auth/session"), 200)
     assert session["user"]["id"] == stack.stores.tenant["principal_id"]
 
-    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     await model.say("Hello from the scripted model.", to="[first]")
     body = message(agent, "[first] Say hello")
     key = uuid4().hex
-    created = await api.client.post(f"{api.path}/threads", json=body, headers={"idempotency-key": key})
+    created = await api.client.post("/api/v1/threads", json=body, headers={"idempotency-key": key})
     receipt = expect(created, 201)
     thread_id, run_id = receipt["thread"]["id"], receipt["run"]["id"]
-    replayed = expect(await api.client.post(f"{api.path}/threads", json=body, headers={"idempotency-key": key}), 200)
+    replayed = expect(await api.client.post("/api/v1/threads", json=body, headers={"idempotency-key": key}), 200)
     assert (replayed["entry"]["id"], replayed["run"]["id"]) == (receipt["entry"]["id"], run_id)
     changed = await api.client.post(
-        f"{api.path}/threads", json=message(agent, "[first] Say goodbye"), headers={"idempotency-key": key}
+        "/api/v1/threads", json=message(agent, "[first] Say goodbye"), headers={"idempotency-key": key}
     )
     assert expect(changed, 409)["error"]["code"] == "conflict"
 
@@ -57,9 +57,7 @@ async def test_setup_submission_and_continuation(stack) -> None:  # type: ignore
     follow_key = uuid4().hex
     responses = await asyncio.gather(
         *(
-            api.client.post(
-                f"{api.path}/threads/{thread_id}/inbox", json=follow, headers={"idempotency-key": follow_key}
-            )
+            api.client.post(f"/api/v1/threads/{thread_id}/inbox", json=follow, headers={"idempotency-key": follow_key})
             for _ in range(5)
         )
     )
@@ -81,7 +79,7 @@ async def test_setup_submission_and_continuation(stack) -> None:  # type: ignore
 
 async def test_the_thread_stream_survives_redis_loss(stack) -> None:  # type: ignore[no-untyped-def]
     api, model = stack.api, stack.model
-    agent = await api.create_agent("helper", await api.create_model(model.base_url))
+    agent = await api.create_agent("Helper", await api.create_model(model.base_url))
     first_reply = "Streamed output arrives in order, exactly once."
     await model.say(first_reply, to="[live]", chunks=6, delay=0.2)
     receipt = await api.start(agent, "[live] Stream a reply")

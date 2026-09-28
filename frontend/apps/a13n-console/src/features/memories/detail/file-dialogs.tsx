@@ -90,10 +90,11 @@ function NewFileForm({
     [content, setContent] = useState("");
   const create = useMutation({
     mutationFn: () =>
-      client.http
-        .POST("/api/v1/workspaces/{workspace_id}/memories/{memory_id}/files", {
+      client
+        .workspace(workspace.id)
+        .POST("/api/v1/memories/{memory_id}/files", {
           params: {
-            path: { workspace_id: workspace.id, memory_id: memory.id },
+            path: { memory_id: memory.id },
           },
           body: { path: path.trim(), content },
         })
@@ -200,17 +201,15 @@ function RenameForm({
   const [destination, setDestination] = useState(path);
   const move = useMutation({
     mutationFn: () =>
-      client.http
-        .POST(
-          "/api/v1/workspaces/{workspace_id}/memories/{memory_id}/files/move",
-          {
-            params: {
-              path: { workspace_id: workspace.id, memory_id: memory.id },
-            },
-            headers: ifMatch(etag),
-            body: { source: path, destination: destination.trim() },
+      client
+        .workspace(workspace.id)
+        .POST("/api/v1/memories/{memory_id}/files/move", {
+          params: {
+            path: { memory_id: memory.id },
           },
-        )
+          headers: ifMatch(etag),
+          body: { source: path, destination: destination.trim() },
+        })
         .then(data),
     onSuccess: (file) => {
       void invalidateMemories(cache, workspace.id);

@@ -1,8 +1,6 @@
 import { Tabs, TabsList, TabsPanel, TabsTab } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
-import { useAccess } from "../../layout/workspace";
-import { Empty } from "../../shared/collection";
 import { ConnectorProviders } from "../connectors/providers";
 import { EnvironmentProviders } from "../environments/providers";
 import { MemoryProviders } from "../memories/providers";
@@ -18,16 +16,10 @@ const components = {
   connectors: ConnectorProviders,
   memory: MemoryProviders,
 };
-export function ProvidersPage({
-  scope,
-}: {
-  scope: { kind: "workspace" | "organization"; id: string };
-}) {
+export function ProvidersPage() {
   const { t } = useTranslation();
-  const { organizationCan } = useAccess();
   const [params, setParams] = useSearchParams();
   const category = providerCategory(params.get("category"));
-  const kind = scope.kind;
   function update(key: string, value: string) {
     setParams((current) => {
       const next = new URLSearchParams(current);
@@ -52,16 +44,7 @@ export function ProvidersPage({
         const Component = components[value];
         return (
           <TabsPanel key={value} value={value} className={styles.panel}>
-            {kind === "organization" && !organizationCan("write") ? (
-              <Empty
-                title={t("Access unavailable")}
-                description={t(
-                  "An organization administrator can manage these settings.",
-                )}
-              />
-            ) : (
-              <Component key={`${scope.kind}:${scope.id}`} scope={scope} />
-            )}
+            <Component />
           </TabsPanel>
         );
       })}

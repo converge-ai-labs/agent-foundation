@@ -17,13 +17,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import {
-  FormActions,
-  TextAreaField,
-  useSuggestedName,
-} from "../../shared/forms";
-import { readableKey } from "../../shared/keys";
-import { resourceKeyPattern } from "../../shared/paths";
+import { FormActions, TextAreaField } from "../../shared/forms";
 import shared from "../../shared/shared.module.css";
 import { ManageProvidersLink } from "../providers";
 import { invalidateMemories, memoryProviders } from "./api";
@@ -78,30 +72,28 @@ function CreateForm({
   onCancel: () => void;
 }) {
   const client = useClient(),
-    { workspace, organization } = useWorkspace(),
+    { workspace } = useWorkspace(),
     cache = useQueryClient(),
     { t } = useTranslation();
   const [draft, setDraft] = useState(memoryDraft);
   const [kind, setKind] = useState<Kind>("file");
   const [providerId, setProviderId] = useState("");
   const [namespace, setNamespace] = useState("");
-  const key = useSuggestedName();
   const typeName = useMemoryTypeName();
   const record = kind === "record";
   // Only an enabled provider the workspace may use keeps new records.
   const providers = useQuery({
-    ...memoryProviders(client, organization.id, workspace.id),
+    ...memoryProviders(client, workspace.id),
     enabled: record,
     select: (items) => items.filter((item) => item.enabled),
   });
   const provider = providers.data?.find((item) => item.id === providerId);
   const create = useMutation({
     mutationFn: () =>
-      client.http
-        .POST("/api/v1/workspaces/{workspace_id}/memories", {
-          params: { path: { workspace_id: workspace.id } },
+      client
+        .workspace(workspace.id)
+        .POST("/api/v1/memories", {
           body: memoryCreate(
-            key.name,
             draft,
             record && provider ? { provider, namespace } : undefined,
           ),
@@ -145,22 +137,7 @@ function CreateForm({
           maxLength={128}
           onChange={(event) => {
             setDraft({ ...draft, name: event.target.value });
-            key.suggestName(readableKey(event.target.value));
           }}
-        />
-      </FormField>
-      <FormField
-        label={t("Key")}
-        description={t("Unique in this workspace. It cannot change later.")}
-        disabled={create.isPending}
-      >
-        <Input
-          required
-          value={key.name}
-          pattern={resourceKeyPattern}
-          maxLength={64}
-          autoComplete="off"
-          onChange={(event) => key.setName(event.target.value)}
         />
       </FormField>
       <TextAreaField
@@ -182,7 +159,7 @@ function CreateForm({
                   "No memory provider is enabled for this workspace. Add one in provider settings first.",
                 )}
               </p>
-              <ManageProvidersLink category="memory" scope="workspace" />
+              <ManageProvidersLink category="memory" />
             </div>
           ) : (
             <ChoiceField

@@ -92,13 +92,13 @@ export function Revisions({
                               "Version information is unavailable. Reload this page.",
                             ),
                           );
-                        await client.http
+                        await client
+                          .workspace(skill.workspace_id)
                           .POST(
-                            "/api/v1/workspaces/{workspace_id}/skills/{skill_id}/revisions/{revision_id}/set-default",
+                            "/api/v1/skills/{skill_id}/revisions/{revision_id}/set-default",
                             {
                               params: {
                                 path: {
-                                  workspace_id: skill.workspace_id,
                                   skill_id: skill.id,
                                   revision_id: revision.id,
                                 },
@@ -115,7 +115,7 @@ export function Revisions({
                   )}
                 <DownloadRevision
                   revision={revision}
-                  filename={`${skill.key}-v${revision.number}.zip`}
+                  filename={`${revision.config.name}-v${revision.number}.zip`}
                 />
               </>
             }

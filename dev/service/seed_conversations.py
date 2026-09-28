@@ -23,10 +23,9 @@ PLACED = ("Project notes.zip", "Unknown format.bin", "Long scroll document.txt")
 
 @dataclass(frozen=True, slots=True)
 class Talk:
-    """Submits messages in one workspace and waits for their runs."""
+    """Submits messages in the session's workspace and waits for their runs."""
 
     api: Api
-    ws: str
 
     def start(
         self,
@@ -40,26 +39,26 @@ class Talk:
         """A new thread's first run once sealed; `mount` is the environment it mounts as `workspace`."""
         mounts = [] if mount is None else [{"name": "workspace", "environment_id": mount["id"]}]
         body = {**_message(agent, text, assets), "environments": mounts}
-        return self.sealed(self.api.post(f"{self.ws}/threads", body, idempotent=True), expect)
+        return self.sealed(self.api.post("/api/v1/threads", body, idempotent=True), expect)
 
     def reply(self, run: Json, agent: Json, text: str, *, assets: Sequence[Json] = (), **fields: object) -> Json:
         """The next run of `run`'s thread once sealed."""
         return self.sealed(self.submit(run["thread_id"], {**_message(agent, text, assets), **fields}))
 
     def submit(self, thread_id: str, message: Json) -> Json:
-        return self.api.post(f"{self.ws}/threads/{thread_id}/inbox", message, idempotent=True)
+        return self.api.post(f"/api/v1/threads/{thread_id}/inbox", message, idempotent=True)
 
     def resume(self, run: Json, answer: Json) -> Json:
         """Answer the run's only pending call; the successor run once sealed."""
         answers = [{**answer, "tool_call_id": run["pending"]["items"][0]["tool_call_id"]}]
-        successor = self.api.post(f"{self.ws}/runs/{run['id']}/resume", {"answers": answers}, idempotent=True)
-        return self.expect(self.api.sealed_run(self.ws, successor["id"]), "completed")
+        successor = self.api.post(f"/api/v1/runs/{run['id']}/resume", {"answers": answers}, idempotent=True)
+        return self.expect(self.api.sealed_run(successor["id"]), "completed")
 
     def running(self, submitted: Json) -> Json:
-        return self.api.until(f"{self.ws}/runs/{submitted['run']['id']}", lambda run: run["status"] == "running")
+        return self.api.until(f"/api/v1/runs/{submitted['run']['id']}", lambda run: run["status"] == "running")
 
     def sealed(self, submitted: Json, expect: str = "completed") -> Json:
-        return self.expect(self.api.sealed_run(self.ws, submitted["run"]["id"]), expect)
+        return self.expect(self.api.sealed_run(submitted["run"]["id"]), expect)
 
     @staticmethod
     def expect(run: Json, status: str) -> Json:
@@ -75,7 +74,7 @@ def _message(agent: Json, text: str, assets: Sequence[Json] = ()) -> Json:
 
 def scenarios(talk: Talk, cast: Cast, environment: Json, assets: dict[str, Json]) -> tuple[Scenario, ...]:
     """Each scenario returns the IDs the report names."""
-    api, ws = talk.api, talk.ws
+    api = talk.api
 
     def conversation() -> dict[str, str]:
         first = talk.start(
@@ -86,10 +85,10 @@ def scenarios(talk: Talk, cast: Cast, environment: Json, assets: dict[str, Json]
         )
         second = talk.reply(first, cast.writer, "[long] Expand the notes with a table of changes.")
         third = talk.reply(second, cast.writer, "Shorter, please; keep only the highlights.")
-        session = api.get(f"{ws}/sessions/{first['session_id']}")
-        api.patch(f"{ws}/sessions/{session['id']}", session, {"labels": {"release": "2.4"}})
+        session = api.get(f"/api/v1/sessions/{first['session_id']}")
+        api.patch(f"/api/v1/sessions/{session['id']}", session, {"labels": {"release": "2.4"}})
         fork = api.post(
-            f"{ws}/runs/{second['id']}/fork",
+            f"/api/v1/runs/{second['id']}/fork",
             _message(cast.writer, "Alternative: keep the long table and drop the summary."),
             idempotent=True,
         )
@@ -116,7 +115,7 @@ def scenarios(talk: Talk, cast: Cast, environment: Json, assets: dict[str, Json]
 
     def steered() -> dict[str, str]:
         submitted = api.post(
-            f"{ws}/threads",
+            "/api/v1/threads",
             _message(cast.assistant, "[interruptible] [steer-proof] Which colour is the release banner?"),
             idempotent=True,
         )
@@ -129,13 +128,13 @@ def scenarios(talk: Talk, cast: Cast, environment: Json, assets: dict[str, Json]
 
     def interrupted() -> dict[str, str]:
         submitted = api.post(
-            f"{ws}/threads", _message(cast.assistant, "[interruptible] Draft the long launch plan."), idempotent=True
+            "/api/v1/threads", _message(cast.assistant, "[interruptible] Draft the long launch plan."), idempotent=True
         )
         run = talk.running(submitted)
         queued = _message(cast.assistant, "Next: turn the plan into a checklist.")
         talk.submit(run["thread_id"], {**queued, "delivery": "next_run"})
-        api.post(f"{ws}/runs/{run['id']}/interrupt")
-        talk.expect(api.sealed_run(ws, run["id"]), "cancelled")
+        api.post(f"/api/v1/runs/{run['id']}/interrupt")
+        talk.expect(api.sealed_run(run["id"]), "cancelled")
         return {"interrupted": run["id"]}
 
     def waits() -> dict[str, str]:
@@ -172,7 +171,8 @@ def scenarios(talk: Talk, cast: Cast, environment: Json, assets: dict[str, Json]
     def member() -> dict[str, str]:
         with Api(api.base_url) as runner:
             runner.login(MEMBERS["runner"][0], ADMIN_PASSWORD)
-            run = Talk(runner, ws).start(cast.assistant, "Where do I find last week's release notes?")
+            runner.workspace_id = api.workspace_id
+            run = Talk(runner).start(cast.assistant, "Where do I find last week's release notes?")
         return {"member_conversation": run["id"]}
 
     return (conversation, workspace, attachments, steered, interrupted, waits, outcomes, member)

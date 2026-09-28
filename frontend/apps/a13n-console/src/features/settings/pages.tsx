@@ -6,7 +6,6 @@ import { Empty } from "../../shared/collection";
 import { Page } from "../../shared/page";
 import { ProvidersPage } from "../providers/page";
 import { MediaUnderstandingDefaults } from "../models/media-understanding";
-import { Models } from "../models/page";
 import { ServiceAccountDetail, ServiceAccounts } from "./accounts";
 import { Audit } from "./audit";
 import { Invitations } from "./invitations";
@@ -59,7 +58,7 @@ export function WorkspaceSettings() {
           <ServiceAccounts key={basePath} />
         ),
         audit: <Audit scope={scope} />,
-        providers: <ProvidersPage scope={scope} />,
+        providers: <ProvidersPage />,
       }}
     />
   );
@@ -86,10 +85,8 @@ export function OrganizationSettings() {
         general: <Profile target={scope} />,
         members: <Members scope={scope} />,
         invitations: <Invitations scope={scope} />,
-        models: <Models scope={scope} />,
         workspaces: <Workspaces />,
         audit: <Audit scope={scope} />,
-        providers: <ProvidersPage scope={scope} />,
       }}
     />
   );

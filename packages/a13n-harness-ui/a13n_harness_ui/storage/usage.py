@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -143,9 +144,13 @@ class _Totals:
         if isinstance(record, ModelUsageRecord):
             self.requests += 1
             usage = record.request_usage
-            counters = usage.model_dump(exclude={"details", "cost"})
-            for name in _COUNTERS:
-                self.tokens[name] += counters[name]
+            self.tokens["input_tokens"] += usage.input_tokens
+            self.tokens["output_tokens"] += usage.output_tokens
+            self.tokens["cache_read_tokens"] += usage.cache_read_tokens
+            self.tokens["cache_write_tokens"] += usage.cache_write_tokens
+            self.tokens["input_audio_tokens"] += usage.input_audio_tokens
+            self.tokens["output_audio_tokens"] += usage.output_audio_tokens
+            self.tokens["cache_audio_read_tokens"] += usage.cache_audio_read_tokens
             if usage.cost is None:
                 self.unknown += 1
             else:
@@ -177,7 +182,7 @@ class _Totals:
 class _Aggregation:
     """Bounded display groups derived from one coherent database read."""
 
-    recent_ids: tuple[str, ...]
+    recent_sequences: dict[str, int] = field(default_factory=dict)
     cursor: int = 0
     first: datetime | None = None
     last: datetime | None = None
@@ -186,15 +191,21 @@ class _Aggregation:
     combined: _Totals = field(default_factory=_Totals)
     other: _Totals = field(default_factory=_Totals)
     other_runs: _Totals = field(default_factory=_Totals)
-    models: dict[str, _Totals] = field(default_factory=dict)
-    runs: dict[str, _Totals] = field(default_factory=dict)
+    models: dict[str, _Totals] = field(default_factory=lambda: defaultdict(_Totals))
+    runs: dict[str, _Totals] = field(default_factory=lambda: defaultdict(_Totals))
     run_agents: dict[str, tuple[str, bool]] = field(default_factory=dict)
-    model_owners: dict[tuple[str, bool], _Totals] = field(default_factory=dict)
-    groups: dict[tuple[str, str, bool, str], _Totals] = field(default_factory=dict)
+    model_owners: dict[tuple[str, bool], _Totals] = field(default_factory=lambda: defaultdict(_Totals))
+    groups: dict[tuple[str, str, bool, str], _Totals] = field(default_factory=lambda: defaultdict(_Totals))
     other_groups: _Totals = field(default_factory=_Totals)
 
     def add(
-        self, sequence: int, descendant: bool, payload: str, observed: datetime, observed_through: datetime
+        self,
+        sequence: int,
+        descendant: bool,
+        payload: str,
+        observed: datetime,
+        observed_through: datetime,
+        recent_sequence: int | None,
     ) -> None:
         record = _RECORD.validate_json(payload)
         observed = observed.replace(tzinfo=UTC)
@@ -202,8 +213,9 @@ class _Aggregation:
         self.first = observed if self.first is None else min(self.first, observed)
         self.last = observed_through if self.last is None else max(self.last, observed_through)
         self.combined.add(record)
-        if record.run_id in self.recent_ids:
-            self.runs.setdefault(record.run_id, _Totals()).add(record)
+        if recent_sequence is not None:
+            self.recent_sequences[record.run_id] = recent_sequence
+            self.runs[record.run_id].add(record)
             self.run_agents[record.run_id] = (record.agent_instance_id, descendant)
         else:
             self.other_runs.add(record)
@@ -211,14 +223,14 @@ class _Aggregation:
         if isinstance(record, ModelUsageRecord):
             name = f"{record.provider_name or 'unknown'}/{record.model_name or 'unknown'}"
             if name in self.models or len(self.models) < _GROUPS:
-                self.models.setdefault(name, _Totals()).add(record)
+                self.models[name].add(record)
             else:
                 self.other.add(record)
                 name = "Other models"
-            self.model_owners.setdefault((name, descendant), _Totals()).add(record)
+            self.model_owners[name, descendant].add(record)
             key = (name, record.agent_instance_id, descendant, record.source)
             if key in self.groups or len(self.groups) < _GROUPS * 4:
-                self.groups.setdefault(key, _Totals()).add(record)
+                self.groups[key].add(record)
             else:
                 self.other_groups.add(record)
         self.cursor = sequence
@@ -240,8 +252,7 @@ class _Aggregation:
                     descendant=self.run_agents[run_id][1],
                     totals=self.runs[run_id].view(),
                 )
-                for run_id in self.recent_ids
-                if run_id in self.run_agents
+                for run_id in sorted(self.recent_sequences, key=lambda key: (-self.recent_sequences[key], key))
             ),
             other_runs=self.other_runs.view(),
             model_scopes=tuple(
@@ -541,16 +552,19 @@ class ThreadUsageRepository:
             root_id = await self._root_id(session, thread_id)
             if root_id != thread_id:
                 raise ValueError("Thread usage is available for root Threads.")
-            facts = _contributions(root_id)
+            # Both recent-Run selection and totals consume the same de-duplicated
+            # facts. Materialize once within this statement rather than flattening
+            # and sorting the complete family again in a second query.
+            facts = select(_contributions(root_id)).cte("selected_usage").prefix_with("MATERIALIZED")
             run_id = func.json_extract(facts.c.payload, "$.run_id")
-            recent_ids = tuple(
-                (
-                    await session.scalars(
-                        select(run_id).group_by(run_id).order_by(func.max(facts.c.sequence).desc()).limit(_GROUPS)
-                    )
-                ).all()
+            recent = (
+                select(run_id.label("run_id"), func.max(facts.c.sequence).label("last_sequence"))
+                .group_by(run_id)
+                .order_by(func.max(facts.c.sequence).desc(), run_id)
+                .limit(_GROUPS)
+                .cte("recent_usage_runs")
             )
-            aggregate = _Aggregation(recent_ids=recent_ids)
+            aggregate = _Aggregation()
             rows = await session.stream(
                 select(
                     facts.c.sequence,
@@ -558,11 +572,14 @@ class ThreadUsageRepository:
                     facts.c.payload,
                     facts.c.observed_at,
                     facts.c.observed_through,
-                ).order_by(facts.c.sequence, facts.c.ordinal)
+                    recent.c.last_sequence,
+                )
+                .outerjoin(recent, run_id == recent.c.run_id)
+                .order_by(facts.c.sequence, facts.c.ordinal)
             )
             async for batch in rows.partitions(_BATCH):
-                for sequence, descendant, payload, observed, observed_through in batch:
-                    aggregate.add(sequence, descendant, payload, observed, observed_through)
+                for sequence, descendant, payload, observed, observed_through, recent_sequence in batch:
+                    aggregate.add(sequence, descendant, payload, observed, observed_through, recent_sequence)
             return aggregate.view(thread_id)
 
     @staticmethod

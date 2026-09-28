@@ -5,13 +5,13 @@ An agent's tools come from four places, all selected in its [revision](agents-an
 - **Built-in toolsets**, which the Service runs itself: files, terminal, web, memory, asset publication and agent configuration.
 - **Connections**: remote MCP servers and app accounts of a connector provider such as Composio.
 - **Client tools**, which your application executes and answers through [resume](agents-and-runs.md#waits-approvals-and-questions).
-- **Skills**, which add instructions and files; see [Skills and secrets](skills.md).
+- **Skills**, which add instructions and files; see [Skills](skills.md).
 
 Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revision: allow, ask for approval, have a reviewer model decide, or deny.
 
 ## Built-in toolsets
 
-`GET /api/v1/workspaces/{workspace_id}/toolsets` returns the catalog with each tool's key, the name the model sees, its default state and permission, and its configuration schema.
+`GET /api/v1/toolsets` returns the catalog with each tool's key, the name the model sees, its default state and permission, and its configuration schema.
 
 | Toolset            | Tools (model names)                                                                                                                           | Default                                           |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -68,7 +68,7 @@ Connections have no delete operation. `PATCH {"enabled": false}` stops all use a
 ### Remote MCP servers
 
 ```sh
-curl -X POST "$A13N_URL/api/v1/workspaces/$WORKSPACE/connections" \
+curl -X POST "$A13N_URL/api/v1/connections" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"type": "mcp", "name": "Docs search", "auth": "bearer",
        "config": {"url": "https://mcp.example.com/mcp", "tools": ["search_docs", "read_doc"]},
@@ -96,8 +96,8 @@ With `auth: "oauth"`, the connection obtains its token from the MCP server's aut
 
 [Composio](https://composio.dev) hosts app integrations and the external accounts' credentials. Configure it once, then connect accounts per app:
 
-1. Add a connector provider of type `composio` with your Composio project API key: **Workspace settings → Providers → Connector** (or the organization's providers to share it), or `POST /api/v1/organizations/{organization_id}/connector-providers` with `{"workspace_id": ..., "type": "composio", "name": ..., "credential": {"api_key": "..."}}`.
-2. Browse apps and their actions: `GET /api/v1/workspaces/{workspace_id}/connector-providers/{provider_id}/apps` (`query`, `refresh=true`), `…/apps/{app}` and `…/apps/{app}/actions`.
+1. Add a connector provider of type `composio` with your Composio project API key: **Workspace settings → Providers → Connector**, or `POST /api/v1/connector-providers` with `{"type": "composio", "name": ..., "credential": {"api_key": "..."}}`.
+2. Browse apps and their actions: `GET /api/v1/connector-providers/{provider_id}/apps` (`query`, `refresh=true`), `…/apps/{app}` and `…/apps/{app}/actions`.
 3. Create a connection with `type: "composio"`, `auth: "account"`, the `connector_provider_id`, and `config` naming the `app`, the pinned `actions` (1–128) and `setup`: `auth_config_id` (an existing Composio auth config, or `create:<SCHEME>` such as `create:OAUTH2`) and the pinned `toolkit_version` (`YYYYMMDD_NN`).
 4. Authorize it (a login session, like any [browser authorization](#oauth)): the user completes Composio's hosted account setup in the browser and returns through the Service's callback. The connection then binds that one external account; Composio keeps and refreshes its tokens.
 
