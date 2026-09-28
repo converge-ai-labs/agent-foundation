@@ -157,7 +157,9 @@ Eligibility is not inferred from arbitrary metadata, model visibility, or a tool
 
 Restricted code receives generated typed host functions. A nested call validates and executes through the active final Pydantic AI `ToolManager`, not through a second dispatcher. Therefore ordinary Capability hooks, Harness managed-tool policy, provider enforcement, events, usage, and deferred behavior still apply. A root inline deferred handler can supply the nested result. A child denial or unresolved root request fails only the current CodeAct runner invocation; CodeAct never persists or resumes an interpreter frame.
 
-A nested call that may have reached an external side effect is never reported as safely retryable merely because the Python program failed later.
+Source validation, unavailable functions, sandbox execution errors, and resource-limit failures return failed tool results so the Agent can correct its code or choose another tool. They do not consume the runner's model-retry budget, even when no nested tool has started. Outer tool-call schema validation and runner-isolation rules still use their normal retry policy.
+
+A nested call that may have reached an external side effect is never reported as safely retryable merely because the Python program failed later. Failure metadata marks side effects as uncertain only after a nested call has started; completed work is not rolled back or automatically replayed.
 
 ### Large Tool Collections with ToolProxy
 
