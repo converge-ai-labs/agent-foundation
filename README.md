@@ -6,18 +6,13 @@
 
 [![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://agent-foundation-docs.converge.ai/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-**One agent foundation. An interactive playground. A managed runtime.**
+**Build agent systems, not agent infrastructure.**
 
-Agent Foundation is an open-source toolkit for building and running agents. **Harness** is the execution foundation. **Harness UI** is its playground and workbench for individuals and trusted small teams. **Service** runs managed agents with durable execution and access control.
+Agent Foundation is an open-source platform for building and running your own agent systems. Managed agents, memory, sandboxes, computer use, and durable execution come together in a self-hosted service, ready to integrate into your applications.
 
-```mermaid
-flowchart TB
-    Harness["Harness · build and run agents"]
-    Harness --> UI["Harness UI · experiment and work interactively"]
-    Harness --> Service["Service · operate managed agents"]
-```
-
-Harness UI and Service both embed Harness. They are two ways to use the same foundation, not successive deployment tiers or separate agent engines.
+- **Build with Service.** Configure agents and connect them to your product through APIs, with resource management, permissions, and execution recovery already in place.
+- **Extend with Harness.** Embed the runtime directly and shape its behavior through plugins, custom tools, and providers.
+- **Explore with Harness UI.** Try models, tools, and agent configurations in a terminal and web playground—without building an application first.
 
 > Agent Foundation is in active `0.x` development. APIs and configuration may change between minor releases. This README and the documentation site track `main`; check release notes and package metadata when using a published version.
 
