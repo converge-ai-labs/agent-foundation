@@ -2,7 +2,7 @@
 
 Native tools execute through the selected Model provider. Host tools execute through Harness UI and its Environment. They are independent: native search is not a local crawler, provider code execution is not your workspace shell, and provider file search does not index your Thread files.
 
-Harness reuses [Pydantic AI native tools](https://pydantic.dev/docs/ai/tools-toolsets/native-tools/) and their public `NativeTool` capability. The one additional wrapper is **`native_image_generation`**: it registers `ImageGenerationTool`, saves completed images through a Host saver, and returns readable paths. There is no separate image-generation API or automatic alternate-model fallback.
+Configure provider-native tools through Agent capabilities. **`native_image_generation`** additionally saves completed images through a Host saver and returns readable paths. It does not create a separate image-generation service or automatically fall back to another model. Available tools depend on the selected provider, model, and account.
 
 ## Guided setup
 
@@ -268,4 +268,4 @@ For embedding code constructing `WebCapability()` with no explicit configuration
 - MCP cannot connect: determine whether the Host or the provider is making the connection before debugging URLs or credentials.
 - Saved image disappears later: Thread `tmp/` is scratch storage. Retain important output elsewhere.
 
-The implementation is checked against the pinned Pydantic AI dependency and simulated provider responses. Setup itself makes no native provider request. Consult the linked upstream/provider docs for current limits and account entitlements rather than treating recommendations as a live capability check.
+The implementation is checked against the locked model adapters and simulated provider responses. Setup itself makes no native provider request. Consult the linked upstream/provider docs for current limits and account entitlements rather than treating recommendations as a live capability check.

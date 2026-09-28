@@ -1,6 +1,23 @@
 # Contributing
 
-Contributions to Agent Foundation are welcome. The project uses GitHub Issues for discussion and progress tracking, and pull requests for every reviewed change to specifications, documentation, code, tests, and automation. Repository-wide code quality principles and component engineering requirements are defined in [DEVELOPMENT.md](DEVELOPMENT.md).
+Contributions to Agent Foundation are welcome: documentation fixes, reproducible bug reports, examples, tests, and focused features all help. Harness is the agent execution foundation; Harness UI is its interactive playground for individuals and trusted small teams; Service is the managed-agent runtime. Start with the component your change affects.
+
+The project uses GitHub Issues for discussion and progress tracking, and pull requests for reviewed changes. Repository-wide engineering standards live in [DEVELOPMENT.md](DEVELOPMENT.md); this guide owns setup, validation, and contribution workflow.
+
+## Find your path
+
+| Contribution                             | Start here                                                                                                         | Validation                                                              |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| Report a bug                             | Search existing issues; include the component, version or commit, reproduction, expected result, and actual result | Remove credentials and private content from logs and diagnostic reports |
+| Improve user documentation               | Edit `docs/`; update `mkdocs.yml` only when navigation changes                                                     | `make docs-build` and formatting for changed Markdown                   |
+| Improve Harness                          | [Harness quickstart](docs/a13n-harness/getting-started.md) and [local scenarios](dev/harness/README.md)            | Focused package tests and affected consumers                            |
+| Improve Harness UI                       | [Local UI development](dev/harness-ui/README.md); `make cli` or `make webui`                                       | Checks for the affected App, terminal, or browser behavior              |
+| Improve Service or Console               | [Local Service development](dev/service/README.md); `make dev`                                                     | Relevant Service/Console checks; migration checks when applicable       |
+| Propose a product or architecture change | An issue describing the problem and unresolved decisions                                                           | Accepted contracts and implementation stay aligned in the PR            |
+
+For a first change: fork the repository, create a focused branch, make the smallest useful change, run the relevant checks, and open a pull request explaining the outcome. A typo or clear documentation correction does not need a design proposal. You do not need the full Service stack for a documentation-only change.
+
+Read [Local setup](#local-setup) and [Local validation](#local-validation) for the toolchain and exact check-selection policy. [Documentation changes](#documentation-changes), [Writing issues and pull requests](#writing-issues-and-pull-requests), and [Releases](#releases) cover those specific workflows.
 
 ## Repository Language
 
@@ -18,7 +35,9 @@ Before changing a surface, read the relevant sections of this guide, [DEVELOPMEN
 
 ## Local Setup
 
-Requirements:
+Install the tools needed for the surface you are changing. Documentation and Python work use Git, Python 3.13, uv, and Make. Frontend work adds Node.js and pnpm; Rust work adds the Rust toolchain; Service development and container-backed checks add Docker. `make install` prepares the full development checkout, including frontends and Git hooks.
+
+Full-checkout requirements:
 
 - Git
 - Python 3.13
@@ -250,6 +269,9 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 
 - Keep each continuous Markdown paragraph on one source line; preserve semantic line breaks, separate list items, tables, and code blocks. The shared `.mdformat.toml` rule applies through the existing formatting hooks and `make lint`.
 - Keep user-facing documentation in `docs/`.
+- Lead with Agent Foundation's own product boundaries: Harness is the foundation; Harness UI is the playground and interactive workbench; Service operates managed agents. Describe user outcomes before implementation details.
+- Keep third-party framework branding out of product introductions and feature pitches. Retain exact imports, configuration keys, protocol names, integration names, and attribution where needed for accurate technical instructions and licensing; do not invent replacement APIs to hide a dependency.
+- Keep README, component entry pages, and package descriptions consistent with implemented capabilities. Distinguish Harness UI's trusted shared instance from Service's managed identities, permissions, and durable execution.
 - Every source file under `docs/` must be Markdown.
 - Update `mkdocs.yml` when adding, removing, or moving a page.
 - Run `make docs-build` after documentation or site configuration changes.

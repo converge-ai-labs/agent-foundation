@@ -1,6 +1,8 @@
-# Browser server
+# Use the browser
 
-Harness UI's HTTP server shares the local `HarnessUiApp` with the terminal product. Its English-only browser workbench provides collaborative conversations, execution controls, setup, provider accounts, configuration resources and Project readiness, **not** Service Console business models. Browser capabilities and backend API availability remain distinct.
+The browser is Harness UI's collaborative playground for individuals and trusted small teams. It shares the same `HarnessUiApp` as the terminal, with conversations, execution controls, setup, provider accounts, configuration, and Project readiness. It is not Service Console and does not provide separate participant permissions or tenant isolation.
+
+Start the server, open its printed login link, connect a model, and send a first prompt. Keep the server process running while you work. Review [authentication](#authentication-and-key-retention) before sharing the instance.
 
 ## Start the server
 

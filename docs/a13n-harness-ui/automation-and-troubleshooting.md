@@ -14,7 +14,7 @@ a13n-harness-ui login --help
 
 One-shot mode prints the final text or a structured operation object, then exits. It shares workspace, model, continuation, and permission semantics with interactive mode. Failed or suspended operations exit nonzero. It does not open an interactive approval prompt. Use interactive resume to answer pending decisions.
 
-Help and version do not load provider or database modules. A lightweight startup view appears before execution dependencies load. Unused model-provider SDKs are not imported merely to start the terminal. Startup shows runtime loading, local storage/configuration, and session preparation separately; phase timings are written to the data root’s `logs/terminal.log`. App initialization precedes chat, and startup, setup, and conversation keep the same alternate screen without a terminal reset; model construction, Environment acquisition, and selected MCP connections happen only when needed. The CLI and HTTP adapter share the reusable `HarnessUiApp` application boundary; the browser foundation uses authenticated status queries, and the CLI does not own a parallel execution engine.
+Help and version do not load provider or database modules. A lightweight startup view appears before execution dependencies load. Unused model-provider SDKs are not imported merely to start the terminal. Startup shows runtime loading, local storage/configuration, and session preparation separately; phase timings are written to the data root’s `logs/terminal.log`. App initialization precedes chat, and startup, setup, and conversation keep the same alternate screen without a terminal reset; model construction, Environment acquisition, and selected MCP connections happen only when needed. The terminal and browser share the reusable `HarnessUiApp` application boundary rather than owning separate execution engines.
 
 If interactive startup or `--resume` fails, the terminal prints the nested exception chain and traceback locations after cleanup, including application error codes, rather than only a TaskGroup error count. A private diagnostic report retains the full exception details. Local variables, source lines, and raw provider messages are not printed; review the report for sensitive content before sharing it. Nothing is uploaded automatically.
 
@@ -34,11 +34,11 @@ Recovery does not restart completed work or directly replay tool calls. Cancella
 
 ## Browser UI
 
-See [Browser server](webui.md) for the current browser limitations, listener/authentication options, API-key retention, container delivery, and foreground lifecycle.
+See [Use the browser](webui.md) for collaboration, listener/authentication options, API-key retention, container delivery, and foreground lifecycle.
 
 ## Source Environment Troubleshooting
 
-After switching branches, run `make sync` (or launch with `make a13n-harness-ui`) to synchronize the locked workspace. This branch requires Pydantic AI 2.40 or newer; an older environment can fail with `cannot import name 'prices' from 'pydantic_ai'`. Do not work around this by importing upstream private modules. Installed users should upgrade `a13n-harness-ui` using the package manager that owns their environment.
+After switching branches, run `make sync` (or launch with `make a13n-harness-ui`) to synchronize the locked workspace. An environment from another branch can contain incompatible dependencies and fail during import. Use the committed lockfile rather than patching private dependency imports or upgrading individual libraries independently. Installed users should upgrade `a13n-harness-ui` using the package manager that owns their environment.
 
 ## Logs, Updates, and Exit
 

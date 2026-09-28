@@ -1,6 +1,6 @@
 # Repository Guide
 
-Agent Foundation is a Python-first open-source cloud foundation for building agents and multi-agent systems, with an embeddable Agent Harness, hosted agent services, and built-in observability.
+Agent Foundation is built on Harness, an embeddable agent execution foundation. Harness UI is its interactive playground for individuals and trusted small teams; Service is the managed-agent runtime. Both embed Harness and own distinct access, persistence, and execution lifecycles.
 
 ## Sources of Truth
 
