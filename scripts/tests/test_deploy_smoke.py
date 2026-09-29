@@ -29,7 +29,12 @@ def test_compose_smoke_checks_both_starts_and_always_removes_the_stack(monkeypat
             "id": "envt_recreated" if failing == "defaults_changed" and not first_run else "envt_linux",
             "provider_id": provider["id"],
             "created_by_id": None,
-            "config": {"recipe": {"image": "a13n-docker-environment:local", "pull_policy": "never"}},
+            "config": {
+                "recipe": {
+                    "image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev",
+                    "pull_policy": "if_missing",
+                }
+            },
         }
         browser = Mock(spec=deploy_smoke.Browser)
         browser.expect.side_effect = [{"items": [provider]}, {"items": [template]}]

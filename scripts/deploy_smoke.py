@@ -93,8 +93,10 @@ def environment_defaults(browser: Browser) -> tuple[dict, dict]:
     assert provider["type"] == "docker" and provider["config"] == {} and provider["created_by_id"] is None
     assert template["provider_id"] == provider["id"] and template["created_by_id"] is None
     assert template["config"]["recipe"] == {
-        "image": os.environ.get("A13N_DOCKER_ENVIRONMENT_IMAGE", "a13n-docker-environment:local"),
-        "pull_policy": "never",
+        "image": os.environ.get(
+            "A13N_DOCKER_ENVIRONMENT_IMAGE", "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"
+        ),
+        "pull_policy": "if_missing",
     }
     return provider, template
 

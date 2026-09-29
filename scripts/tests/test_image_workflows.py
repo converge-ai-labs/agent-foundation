@@ -232,7 +232,7 @@ def test_service_release_publishes_both_architectures_and_pins_its_compose_image
     source = (compose / "a13n-service.yaml").read_text()
     pinned = (tmp_path / "dist/a13n-service.yaml").read_text()
     assert pinned == source.replace(
-        "${A13N_SERVICE_IMAGE:-a13n-service:local}",
+        "${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:latest}",
         "${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:1.2.3-rc.1}",
     )
     assert pinned != source
