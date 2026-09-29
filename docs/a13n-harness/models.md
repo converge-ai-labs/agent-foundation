@@ -81,6 +81,21 @@ Entries contain only a provider-qualified official model ID, objective `HarnessM
 
 For run-specific routing, credentials, or tenant policy, pass an async function or async callable object through `RunBindings.model_resolver`. It receives the Pydantic `ModelResolutionContext` and string selection and returns a native Model. No Harness base class is required. A resolver can call Harness `infer_model()` with current Host-owned factories and patches, or return a self-constructed Model.
 
+## Outbound HTTP proxies
+
+Model routes using `create_model_http_client()`, including Harness UI's shared API-key routes, honor the standard `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NO_PROXY` environment variables and their lowercase forms. Set them in the process that launches the Host; no Model or UI configuration field is needed:
+
+```bash
+export http_proxy=http://127.0.0.1:8888
+export https_proxy=http://127.0.0.1:8888
+export no_proxy=localhost,127.0.0.1,::1
+a13n-harness-ui
+```
+
+An HTTP proxy URL is also valid for HTTPS destinations: the client uses a CONNECT tunnel. Proxy selection and bypass matching follow `httpx2`; the same bounded HTTP retry policy applies to direct and proxied requests. An explicitly supplied `transport` keeps its own routing rather than adopting environment proxies, and `retry=None` disables retries without disabling proxy discovery.
+
+Provider endpoint validation still applies, including local DNS checks where required. SDK-owned transports that do not use this helper retain their SDK's proxy behavior.
+
 ## Model authoring aliases
 
 Use the two parallel resolvers when an authoring surface wants short, explicit names while keeping concrete values everywhere else. Context budgets resolve to Harness `HarnessModelCharacteristics`; provider request choices resolve independently to native `ModelSettings`:
