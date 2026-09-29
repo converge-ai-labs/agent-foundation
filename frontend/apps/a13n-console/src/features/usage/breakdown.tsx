@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ChartBarIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -52,6 +53,7 @@ export function Breakdown({
   if (!query.data.items.length)
     return (
       <Empty
+        icon={<ChartBarIcon aria-hidden="true" />}
         title={t("No usage in this period")}
         description={t(
           "Recorded model usage will appear here after agents run.",

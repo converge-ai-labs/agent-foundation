@@ -9,9 +9,11 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import { useRef } from "react";
 import { createClient, type Client } from "../../../service-client";
 import { fixtureRun, fixtureThread } from "./fixture";
 import { HistoryTranscript } from "./history";
+import { useTranscriptScroll } from "./use-transcript-scroll";
 
 let client: Client;
 const thread = fixtureThread({ id: "thread", session_id: "session" });
@@ -69,7 +71,10 @@ vi.mock("./assistant-message", () => ({
 class StageObserver {
   static created: StageObserver[] = [];
   targets: Element[] = [];
-  constructor(private callback: IntersectionObserverCallback) {
+  constructor(
+    private callback: IntersectionObserverCallback,
+    readonly options: IntersectionObserverInit,
+  ) {
     StageObserver.created.push(this);
   }
   observe(target: Element) {
@@ -81,6 +86,12 @@ class StageObserver {
   }
   /** The sentinel has scrolled into view. */
   reach() {
+    const stage = this.targets[0]?.closest<HTMLElement>("[data-session-stage]");
+    if (stage) {
+      fireEvent.wheel(stage, { deltaY: -200 });
+      stage.scrollTop = 0;
+      fireEvent.scroll(stage);
+    }
     this.callback(
       this.targets.map(
         (target) =>
@@ -94,24 +105,78 @@ class StageObserver {
 beforeEach(() => {
   StageObserver.created = [];
   vi.stubGlobal("IntersectionObserver", StageObserver);
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (!this.hasAttribute("data-run")) return original.call(this);
+      const stage = this.closest<HTMLElement>("[data-session-stage]")!;
+      const index = [...stage.querySelectorAll("[data-run]")].indexOf(this);
+      return new DOMRect(
+        0,
+        index * 400 - stage.scrollTop,
+        700,
+        this.dataset.run === "current" ? 2000 : 400,
+      );
+    },
+  );
 });
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   client?.close();
 });
 
-function stage(level: "chat" | "debug") {
+function stage(
+  level: "chat" | "debug",
+  prepare?: (cache: QueryClient) => void,
+) {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  prepare?.(cache);
+  function Transcript() {
+    const content = useRef<HTMLDivElement>(null);
+    const scroll = useTranscriptScroll(content);
+    return (
+      <div
+        data-session-stage
+        ref={(node) => {
+          if (!node) return;
+          Object.defineProperties(node, {
+            scrollHeight: {
+              configurable: true,
+              get: () =>
+                2000 + (node.querySelectorAll("[data-run]").length - 1) * 400,
+            },
+            clientHeight: { configurable: true, value: 500 },
+          });
+          node.scrollTo = (options) => {
+            if (typeof options === "object")
+              node.scrollTop = Math.min(
+                options.top ?? 0,
+                node.scrollHeight - node.clientHeight,
+              );
+          };
+        }}
+      >
+        <div ref={content}>
+          <HistoryTranscript
+            runId="current"
+            thread={thread}
+            level={level}
+            preservePosition={scroll.preservePosition}
+            jumpToDock={scroll.jumpToLatest}
+          />
+          <div data-run="current">Current run</div>
+        </div>
+      </div>
+    );
+  }
   const view = render(
     <QueryClientProvider client={cache}>
       <MemoryRouter>
-        <div data-session-stage>
-          <HistoryTranscript runId="current" thread={thread} level={level} />
-          <div data-run="current">Current run</div>
-        </div>
+        <Transcript />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -137,6 +202,7 @@ const ancestor = (id: string) =>
 function ancestorService(
   requests: URL[],
   pages: string[][] = [["current", "parent", "grandparent"]],
+  beforeRead?: (url: URL) => Promise<void>,
 ) {
   return createClient({
     baseUrl: "https://test.invalid",
@@ -144,6 +210,7 @@ function ancestorService(
     fetch: async (input) => {
       const url = new URL((input as Request).url);
       requests.push(url);
+      await beforeRead?.(url);
       if (url.pathname.endsWith("/lineage")) {
         const index = Number(url.searchParams.get("cursor") ?? 0);
         return Response.json({
@@ -178,52 +245,159 @@ function ancestorService(
   });
 }
 
-it("reaches one run further back each time the reader scrolls to the top", async () => {
+const recent = ["recent-1", "recent-2", "recent-3", "recent-4", "recent-5"];
+
+it("opens Chat with bounded recent history without requiring any scroll", async () => {
   const requests: URL[] = [];
-  client = ancestorService(requests);
+  client = ancestorService(requests, [["current", ...recent, "parent"]]);
   const { cache, viewport } = stage("chat");
-  // Nothing but the lineage until the sentinel above the transcript is seen.
-  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
-  expect(requests.map((url) => url.pathname)).toEqual([
-    "/api/v1/runs/current/lineage",
-  ]);
+  await screen.findByText("Latest recent-5 message");
   expect(
-    screen.queryByRole("button", { name: "Load earlier runs" }),
-  ).toBeNull();
-  StageObserver.created[0]!.reach();
-  // While the run loads the stage is marked, so the transcript holds still.
-  expect(viewport.dataset.loadingEarlier).toBe("true");
-  // One run at a time: the next one waits for this one to render.
-  expect(StageObserver.created).toHaveLength(1);
-  expect(requests.some((url) => url.pathname.includes("grandparent"))).toBe(
-    false,
+    [...viewport.querySelectorAll("[data-run]")].map((run) =>
+      run.getAttribute("data-run"),
+    ),
+  ).toEqual([...recent].reverse().concat("current"));
+  expect(viewport.scrollTop).toBe(
+    viewport.scrollHeight - viewport.clientHeight,
   );
-  await screen.findByText("Latest parent message");
-  await waitFor(() => expect(StageObserver.created).toHaveLength(2));
-  expect(viewport.dataset.loadingEarlier).toBeUndefined();
-  StageObserver.created[1]!.reach();
-  await screen.findByText("Latest grandparent message");
+  expect(requests.some((url) => url.pathname.includes("/parent"))).toBe(false);
+  expect(
+    screen.getByRole("button", { name: "Load earlier messages" }),
+  ).not.toHaveProperty("disabled", true);
+  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
+  expect(StageObserver.created[0]!.options.rootMargin).toBe("500px 0px 0px");
   cache.clear();
 });
 
-it("reads the next lineage page only once the reader reaches past the loaded one", async () => {
+it("prepares another batch near the top and preserves the visible message", async () => {
   const requests: URL[] = [];
-  client = ancestorService(requests, [["current", "parent"], ["grandparent"]]);
+  client = ancestorService(requests, [
+    ["current", ...recent, "parent", "grandparent"],
+  ]);
+  const { cache, viewport } = stage("chat");
+  await screen.findByText("Latest recent-5 message");
+  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
+  StageObserver.created[0]!.reach();
+  const anchor = viewport.querySelector('[data-run="recent-5"]')!;
+  const top = anchor.getBoundingClientRect().top;
+  expect(viewport.querySelector('[data-slot="skeleton"]')).toBeNull();
+  await screen.findByText("Latest grandparent message");
+  expect(anchor.getBoundingClientRect().top).toBe(top);
+  expect(viewport.scrollTop).toBe(800);
+  expect(
+    screen.queryByRole("button", { name: "Load earlier messages" }),
+  ).toBeNull();
+  cache.clear();
+});
+
+it("reads the next lineage page only when more than the initial batch is requested", async () => {
+  const requests: URL[] = [];
+  client = ancestorService(requests, [["current", ...recent], ["parent"]]);
   const { cache } = stage("chat");
   const lineage = () =>
     requests.filter((url) => url.pathname.endsWith("/lineage"));
-  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
-  StageObserver.created[0]!.reach();
-  await screen.findByText("Latest parent message");
-  // The loaded page still had the parent: no further page was read for it.
+  await screen.findByText("Latest recent-5 message");
   expect(lineage()).toHaveLength(1);
-  await waitFor(() => expect(StageObserver.created).toHaveLength(2));
-  StageObserver.created[1]!.reach();
-  await screen.findByText("Latest grandparent message");
+  // The visible control also works without an intersection callback.
+  fireEvent.click(
+    screen.getByRole("button", { name: "Load earlier messages" }),
+  );
+  await screen.findByText("Latest parent message");
   expect(lineage().map((url) => url.searchParams.get("cursor"))).toEqual([
     null,
     "1",
   ]);
+  cache.clear();
+});
+
+it("waits for delayed lineage before mounting prepared history", async () => {
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const requests: URL[] = [];
+  client = ancestorService(requests, undefined, async (url) => {
+    if (url.pathname.endsWith("/lineage")) await waiting;
+  });
+  const { viewport, cache } = stage("chat");
+  expect(
+    screen.getByRole("button", { name: "Load earlier messages" }),
+  ).toHaveProperty("disabled", true);
+  expect(viewport.querySelectorAll("[data-run]")).toHaveLength(1);
+  release();
+  await screen.findByText("Latest grandparent message");
+  expect(viewport.querySelector('[data-slot="skeleton"]')).toBeNull();
+  expect(viewport.scrollTop).toBe(
+    viewport.scrollHeight - viewport.clientHeight,
+  );
+  cache.clear();
+});
+
+it("restores the reader's current position after a slow history read, without intermediate skeletons", async () => {
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const requests: URL[] = [];
+  client = ancestorService(
+    requests,
+    [["current", ...recent, "parent"]],
+    async (url) => {
+      if (url.pathname.endsWith("/parent/items")) await waiting;
+    },
+  );
+  const { viewport, cache } = stage("chat");
+  await screen.findByText("Latest recent-5 message");
+  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
+  StageObserver.created[0]!.reach();
+  await waitFor(() =>
+    expect(requests.some((url) => url.pathname.endsWith("/parent/items"))).toBe(
+      true,
+    ),
+  );
+  viewport.scrollTop = 150;
+  fireEvent.scroll(viewport);
+  const anchor = viewport.querySelector('[data-run="recent-5"]')!;
+  const top = anchor.getBoundingClientRect().top;
+  expect(viewport.querySelector('[data-slot="skeleton"]')).toBeNull();
+  release();
+  await screen.findByText("Latest parent message");
+  expect(anchor.getBoundingClientRect().top).toBe(top);
+  expect(viewport.scrollTop).toBe(550);
+  expect(
+    requests.some((url) => url.pathname.endsWith("/threads/thread/runs")),
+  ).toBe(false);
+  cache.clear();
+});
+
+it("preserves the same anchor when older history is already cached", async () => {
+  const requests: URL[] = [];
+  client = ancestorService(requests, [["current", ...recent, "parent"]]);
+  const { viewport, cache } = stage("chat", (cache) => {
+    cache.setQueryData(
+      ["conversations", "workspace", "run", "parent"],
+      ancestor("parent"),
+    );
+    cache.setQueryData(["conversations", "workspace", "items", "parent"], {
+      run: ancestor("parent"),
+      items: [],
+      complete: true,
+      position: "1-0",
+      dropped: 0,
+    });
+  });
+  await screen.findByText("Latest recent-5 message");
+  await waitFor(() => expect(StageObserver.created).toHaveLength(1));
+  StageObserver.created[0]!.reach();
+  await waitFor(() =>
+    expect(viewport.querySelector('[data-run="parent"]')).not.toBeNull(),
+  );
+  expect(
+    viewport.querySelector('[data-run="recent-5"]')!.getBoundingClientRect()
+      .top,
+  ).toBe(0);
+  expect(viewport.scrollTop).toBe(400);
+  expect(requests.some((url) => url.pathname.includes("/parent"))).toBe(false);
   cache.clear();
 });
 

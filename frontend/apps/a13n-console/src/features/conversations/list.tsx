@@ -1,6 +1,7 @@
 import { Button } from "a13n-ui";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { PlusIcon } from "@phosphor-icons/react";
+import { ChatsIcon, PlusIcon } from "@phosphor-icons/react";
+import type { ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -34,26 +35,31 @@ export function SessionList() {
   const { can, basePath } = useWorkspace();
   const [search, setSearch] = useSearchParams();
   const filters = readSessionFilters(search);
+  const create = can("run") && (
+    <Button render={<Link to={`${basePath}/sessions/new`} />}>
+      <PlusIcon aria-hidden="true" />
+      {t("New session")}
+    </Button>
+  );
   return (
     <Page
       title={t("Sessions")}
       description={t("Every conversation your workspace has run, and why.")}
-      actions={
-        can("run") && (
-          <Button render={<Link to={`${basePath}/sessions/new`} />}>
-            <PlusIcon size={14} aria-hidden="true" />
-            {t("New session")}
-          </Button>
-        )
-      }
+      actions={create}
       toolbar={<SessionFilterBar search={search} setSearch={setSearch} />}
     >
-      <SessionResults filters={filters} />
+      <SessionResults filters={filters} create={create} />
     </Page>
   );
 }
 
-function SessionResults({ filters }: { filters: SessionFilters }) {
+function SessionResults({
+  filters,
+  create,
+}: {
+  filters: SessionFilters;
+  create: ReactNode;
+}) {
   const { t } = useTranslation(),
     { workspace, basePath } = useWorkspace(),
     navigate = useNavigate(),
@@ -73,6 +79,9 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
       />
     );
   const items = sessions.data.items;
+  const filtered = Object.values(filters).some((value) =>
+    Array.isArray(value) ? value.length > 0 : !!value,
+  );
   return (
     <>
       <ErrorNotice error={sessions.error} />
@@ -144,12 +153,22 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
         />
       ) : (
         <Empty
-          title={t("No matching sessions")}
-          description={t("Change or clear the search and filters.")}
+          icon={<ChatsIcon aria-hidden="true" />}
+          title={t(filtered ? "No matching sessions" : "No sessions yet")}
+          description={t(
+            filtered
+              ? "Change or clear the search and filters."
+              : "Start a session to talk with an agent in this workspace.",
+          )}
+          action={!filtered && create}
         />
       )}
       <CollectionFooter
-        count={t("{{count}} sessions on this page", { count: items.length })}
+        count={
+          items.length
+            ? t("{{count}} sessions on this page", { count: items.length })
+            : undefined
+        }
       >
         <Pagination page={page} next={sessions.data.next_cursor} />
       </CollectionFooter>

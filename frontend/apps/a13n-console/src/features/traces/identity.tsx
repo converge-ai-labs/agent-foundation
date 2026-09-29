@@ -1,9 +1,9 @@
 import {
-  ChatCircleTextIcon,
+  CubeIcon,
   DatabaseIcon,
   GearSixIcon,
   LightningIcon,
-  RobotIcon,
+  HeartIcon,
   StackIcon,
   WrenchIcon,
 } from "@phosphor-icons/react";
@@ -28,9 +28,9 @@ export function observationKind(
 }
 
 const icons = {
-  chat: ChatCircleTextIcon,
+  chat: CubeIcon,
   tool: WrenchIcon,
-  agent: RobotIcon,
+  agent: HeartIcon,
   data: DatabaseIcon,
   event: LightningIcon,
   phase: GearSixIcon,

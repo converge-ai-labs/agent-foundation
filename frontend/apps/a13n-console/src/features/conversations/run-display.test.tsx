@@ -241,6 +241,21 @@ afterEach(() => {
   client.close();
 });
 
+it("detaches a sealed run without fetching its display again when a successor is followed", async () => {
+  display = { ...display, complete: true, run: run({ status: "completed" }) };
+  const view = render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  const reads = pathRequests("/items").length;
+  const attemptReads = pathRequests("/attempts").length;
+  view.rerender(<View live={false} />);
+  await waitFor(() =>
+    expect(screen.getByTestId("live").textContent).toBe("closed"),
+  );
+  expect(text()).toBe("Hello");
+  expect(pathRequests("/items")).toHaveLength(reads);
+  expect(pathRequests("/attempts")).toHaveLength(attemptReads);
+});
+
 it("continues the committed display with the Thread's later deltas", async () => {
   display.resume_after = "1720000000000-0";
   render(<View />);

@@ -1,6 +1,6 @@
 import { Button, ChoiceField, StatusPill } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
-import { CpuIcon } from "@phosphor-icons/react";
+import { CubeIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
@@ -105,19 +105,20 @@ function Models() {
   const providerById = new Map(providers.data?.map((item) => [item.id, item]));
   const manage = can("write");
   const items = query.data?.items ?? [];
+  const create = manage && (
+    <ModelEditor
+      onSaved={(model) => {
+        setSearch(model.key);
+        updateFilters({ q: model.key });
+      }}
+    />
+  );
   return (
     <div className={styles.list}>
-      <PageActions>
+      <PageActions secondary>
         <ManageProvidersLink category="models" />
-        {manage && (
-          <ModelEditor
-            onSaved={(model) => {
-              setSearch(model.key);
-              updateFilters({ q: model.key });
-            }}
-          />
-        )}
       </PageActions>
+      <PageActions>{create}</PageActions>
       {selected && (
         <ModelEditor
           key={selected.key}
@@ -300,13 +301,14 @@ function Models() {
         </>
       ) : (
         <Empty
-          icon={<CpuIcon aria-hidden="true" />}
+          icon={<CubeIcon aria-hidden="true" />}
           title={t(hasFilters ? "No matching models" : "No models yet")}
           description={t(
             hasFilters
               ? "Change or clear the search and filters."
               : "Add a provider, then save a model alias for your agents.",
           )}
+          action={!hasFilters && create}
         />
       )}
     </div>

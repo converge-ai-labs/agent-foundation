@@ -72,9 +72,9 @@ export function useRunDisplay(
     }
     const buffer = retained.current;
     let read = buffer.read;
-    let known: Schema["AttemptView"][] = [];
+    let known = cache.getQueryData(queries.attempts(runId).queryKey) ?? [];
     const asked = new Set<number>();
-    let omitted = false;
+    let omitted = read?.items.some((item) => isOmitted(item.content)) ?? false;
     let frame: number | undefined;
     function publish() {
       if (frame !== undefined) return;
@@ -197,6 +197,13 @@ export function useRunDisplay(
       }
     }
     async function attach() {
+      // A sealed Run becomes history when its successor starts. Detach its
+      // stream without re-reading or rebuilding the same immutable display.
+      if (!live && read?.complete) {
+        setState("closed");
+        publish();
+        return;
+      }
       setState("connecting");
       setError(undefined);
       const first = await reconcile();

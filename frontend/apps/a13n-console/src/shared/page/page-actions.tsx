@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import styles from "./page.module.css";
 
 export const PageActionsTarget = createContext<HTMLDivElement | null>(null);
+export const PageActionClaimed = createContext(false);
 
 /** Set by `Page` so an empty state can claim the page's primary action. */
 export const PageEmptyAction = createContext<
@@ -23,11 +24,20 @@ export function useOffersPageAction(offered: boolean) {
 }
 
 // Resource editors retain their state while presenting actions in the page header.
-export function PageActions({ children }: { children: ReactNode }) {
+export function PageActions({
+  children,
+  secondary = false,
+}: {
+  children: ReactNode;
+  /** Secondary navigation stays available when the empty state offers creation. */
+  secondary?: boolean;
+}) {
   const target = useContext(PageActionsTarget);
-  return target ? (
-    createPortal(children, target)
-  ) : (
-    <div className={styles.actions}>{children}</div>
+  const claimed = useContext(PageActionClaimed);
+  const actions = (
+    <div className={styles.actions} hidden={!secondary && claimed}>
+      {children}
+    </div>
   );
+  return target ? createPortal(actions, target) : actions;
 }

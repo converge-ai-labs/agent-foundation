@@ -6,7 +6,12 @@ import {
   PopoverPopup,
   PopoverTrigger,
 } from "a13n-ui";
-import { CaretDownIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
+import {
+  CaretDownIcon,
+  PlusIcon,
+  PulseIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import {
   formatLocalDateTime,
   parseLocalDateTime,
@@ -70,6 +75,7 @@ export function TracesPage() {
     return (
       <Page title={t("Traces")}>
         <Empty
+          icon={<PulseIcon aria-hidden="true" />}
           title={t("Trace query disabled")}
           description={t(
             "Configure a trace query provider to inspect telemetry. Run execution is independent of trace query.",
@@ -533,6 +539,7 @@ export function TraceList({ filters, page }: TraceListProps) {
   if (query.error instanceof ApiError && query.error.status === 503)
     return (
       <Empty
+        icon={<PulseIcon aria-hidden="true" />}
         title={t("Trace query unavailable")}
         description={t(
           "The trace backend is not configured or is temporarily unavailable. Run execution is independent of trace query.",
@@ -571,6 +578,7 @@ export function TraceList({ filters, page }: TraceListProps) {
         />
       ) : (
         <Empty
+          icon={<PulseIcon aria-hidden="true" />}
           title={t("No traces in this range")}
           description={t(
             "Try a different range or fewer filters. Traces may be absent due to sampling, export, or retention.",

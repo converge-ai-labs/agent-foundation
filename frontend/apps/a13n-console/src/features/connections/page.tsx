@@ -18,7 +18,7 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { Page } from "../../shared/page";
+import { Page, PageActions } from "../../shared/page";
 import { ConnectionDetails } from "./editor";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { connectorApi } from "../connectors/api";
@@ -83,13 +83,11 @@ export function ConnectionsPage() {
     <Page
       title={t("Connections")}
       description={t("Connect accounts and remote tools for your agents.")}
-      actions={
-        <>
-          <ManageProvidersLink category="connectors" />
-          {create}
-        </>
-      }
     >
+      <PageActions secondary>
+        <ManageProvidersLink category="connectors" />
+      </PageActions>
+      <PageActions>{create}</PageActions>
       {cleanup && (
         <div className={styles.cleanup} role="status">
           <div>

@@ -142,10 +142,6 @@ export function Composer({
       setAttachments([]);
       setStructured("");
       changed();
-      // Sending always returns the reader to the live end of the transcript.
-      const stage = form.current?.closest("[data-session-stage]");
-      if (stage instanceof HTMLElement)
-        stage.scrollTo({ top: stage.scrollHeight, behavior: "smooth" });
     },
   });
   function attach(attachment: Attachment) {

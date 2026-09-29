@@ -9,7 +9,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router";
-import { ChatIcon } from "@phosphor-icons/react";
+import { ChatsIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -111,7 +111,7 @@ export function NewConversation() {
       <div className={styles.startColumn}>
         <header className={styles.startHeader}>
           <IconTile size={44}>
-            <ChatIcon size={20} aria-hidden="true" />
+            <ChatsIcon size={20} aria-hidden="true" />
           </IconTile>
           <h1>{t("Start a session")}</h1>
           <p>{t("Send an agent a message and watch every step it takes.")}</p>
@@ -220,6 +220,7 @@ export function SessionLayout() {
             <Loading variant="list" rows={3} />
           ) : (
             <Empty
+              icon={<ChatsIcon aria-hidden="true" />}
               title={t("No threads yet")}
               description={t(
                 "Threads created by the host application appear here.",
@@ -269,6 +270,7 @@ export function ThreadLayout() {
         thread.data && (
           <div className={styles.emptyThread}>
             <Empty
+              icon={<ChatsIcon aria-hidden="true" />}
               title={t("No runs yet")}
               description={t("This thread has not started a run.")}
             />
