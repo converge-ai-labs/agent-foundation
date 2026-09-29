@@ -491,7 +491,7 @@ class ThreadContextClear(SurfaceModel):
 
 class ThreadDeferredResponse(SurfaceModel):
     expected_continuation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
-    responses: tuple[DeferredResponseItem, ...] = Field(min_length=1, max_length=256)
+    responses: tuple[DeferredResponseItem, ...] = Field(max_length=256)
 
     @model_validator(mode="after")
     def _unique_requests(self) -> Self:
@@ -918,10 +918,7 @@ class QuestionResponse(SurfaceModel):
 
 class DecisionResponseBatch(SurfaceModel):
     expected_continuation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
-    responses: tuple[ApprovalDecision | ExternalToolResult | QuestionResponse, ...] = Field(
-        min_length=1,
-        max_length=256,
-    )
+    responses: tuple[ApprovalDecision | ExternalToolResult | QuestionResponse, ...] = Field(max_length=256)
 
     @model_validator(mode="after")
     def _unique_requests(self) -> Self:

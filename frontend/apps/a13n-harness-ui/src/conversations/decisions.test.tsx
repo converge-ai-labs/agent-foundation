@@ -217,10 +217,10 @@ it("submits question, generic approval and explicit external null together, not 
     await screen.findByRole("option", { name: "Provide a result" }),
   );
   const submit = screen.getByRole("button", { name: "Submit responses" });
-  expect(submit.matches(":disabled")).toBe(true);
+  expect(submit.matches(":disabled")).toBe(false);
   const editor = screen.getByRole("textbox", { name: "Result (JSON)" });
   fireEvent.change(editor, { target: { value: "invalid" } });
-  expect(submit.matches(":disabled")).toBe(true);
+  expect(submit.matches(":disabled")).toBe(false);
   fireEvent.change(editor, { target: { value: "null" } });
   fireEvent.click(submit);
   await waitFor(() => expect(POST).toHaveBeenCalledOnce());
@@ -284,5 +284,34 @@ it.each(["broken json", [1, 2], false, 0])(
     expect(
       screen.getByRole("button", { name: "Approve once" }).matches(":disabled"),
     ).toBe(false);
+  },
+);
+
+it.each([false, true])(
+  "submits only supplied responses and leaves omissions to default denial (%s)",
+  async (answer) => {
+    const { POST } = setup([
+      shell,
+      {
+        kind: "external",
+        request_id: "external-one",
+        tool_name: "lookup",
+        arguments: {},
+      },
+    ]);
+    if (answer) {
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("combobox", { name: "Approval" }));
+      await user.click(
+        await screen.findByRole("option", { name: "Approve once" }),
+      );
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
+    await waitFor(() => expect(POST).toHaveBeenCalledOnce());
+    expect(POST.mock.calls[0][1].body.responses).toEqual(
+      answer
+        ? [{ kind: "approval", request_id: "shell-one", approved: true }]
+        : [],
+    );
   },
 );

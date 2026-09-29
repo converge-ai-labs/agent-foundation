@@ -196,7 +196,7 @@ it("sends a complete decision set keyed by question text and does not retry an u
         name: "Submit responses",
       }) as HTMLButtonElement
     ).disabled,
-  ).toBe(true);
+  ).toBe(false);
   fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
   fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
   await screen.findByText(/Acknowledgement unavailable/);

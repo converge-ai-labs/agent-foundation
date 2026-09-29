@@ -350,7 +350,8 @@ async def test_stop_drains_human_capture_before_disarming_its_pending_wait(captu
         await coordinator.close(timeout_seconds=1)
 
 
-async def test_human_deadline_is_checked_after_waiting_for_its_thread_fence(monkeypatch):
+@pytest.mark.parametrize("submission", ["response", "prompt"])
+async def test_human_deadline_is_checked_after_waiting_for_its_thread_fence(monkeypatch, submission):
     from anyio import wait_all_tasks_blocked
 
     responses = []
@@ -368,7 +369,10 @@ async def test_human_deadline_is_checked_after_waiting_for_its_thread_fence(monk
 
     async def respond():
         try:
-            await coordinator.submit_response(thread_id=THREAD, response=answer())
+            if submission == "prompt":
+                await coordinator.submit_prompt(thread_id=THREAD, prompt="continue")
+            else:
+                await coordinator.submit_response(thread_id=THREAD, response=answer())
         except RunCoordinationError as error:
             errors.append(error.code)
 

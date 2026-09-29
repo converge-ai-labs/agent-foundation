@@ -2,11 +2,32 @@ import type {
   CompletionContext,
   CompletionResult,
 } from "@codemirror/autocomplete";
-import type { Schema } from "../transport/client";
+import { result, type Schema, type Transport } from "../transport/client";
 import type { OrderedInputPart } from "./inline-attachments";
 
 export type SkillCatalog = Schema<"SkillCatalogView">;
 export type LoadSkills = () => Promise<SkillCatalog>;
+export function loadThreadSkills(
+  transport: Transport,
+  threadId: string,
+  localRoots?: string[] | null,
+  signal?: AbortSignal,
+): Promise<SkillCatalog> {
+  return localRoots !== undefined
+    ? result(
+        transport.client.POST("/api/threads/{thread_id}/skills", {
+          params: { path: { thread_id: threadId } },
+          body: { local_roots: localRoots },
+          signal,
+        }),
+      )
+    : result(
+        transport.client.GET("/api/threads/{thread_id}/skills", {
+          params: { path: { thread_id: threadId } },
+          signal,
+        }),
+      );
+}
 export function skillReferences(
   parts: OrderedInputPart[],
   catalog?: SkillCatalog,

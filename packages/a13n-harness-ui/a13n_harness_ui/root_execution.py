@@ -228,14 +228,15 @@ class RootRunExecutor:
         if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
             raise RunCoordinationError("The saved restart continuation changed.", code="restart_conflict")
         previous_state, deferred, previous_composition, accepted, positions = await self._load_run_state(thread)
+        if prompt is not None and deferred is not None:
+            assert thread.continuation is not None
+            response = ThreadDeferredResponse(
+                expected_continuation_id=thread.continuation.logical_digest,
+                responses=(),
+            )
         deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
         if deferred_resume is None and accepted is not None:
             deferred_resume = accepted.recover()
-        if prompt is not None and deferred is not None:
-            raise RunCoordinationError(
-                "The selected Thread continuation has unresolved deferred tool requests.",
-                code="thread_deferred_pending",
-            )
         owner = (await self._store.threads.worker_owners((thread_id,))).get(thread_id)
         selection = replace(
             _selection(thread),
@@ -353,6 +354,7 @@ class RootRunExecutor:
 
             async def save_checkpoint(state: HarnessState) -> str:
                 nonlocal thread
+                assert stream is not None
                 excerpt = await to_thread.run_sync(lambda: checkpoint_excerpt(thread.excerpt, state.message_history))
                 # RootCheckpointCapability joins this operation and its marker
                 # before propagating either native or AnyIO cancellation.
@@ -360,7 +362,7 @@ class RootRunExecutor:
                     thread=thread,
                     composition=published.reference,
                     memory_positions=reconstructed.memory_cursors.snapshot(),
-                    accepted=deferred_resume,
+                    accepted=stream.pending_deferred_input,
                     state=state,
                     display=display,
                     excerpt=excerpt,
@@ -559,7 +561,7 @@ class RootRunExecutor:
                         thread=thread,
                         composition=published.reference,
                         memory_positions=reconstructed.memory_cursors.snapshot(),
-                        accepted=deferred_resume,
+                        accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=paused_state,
                         display=display,
                         excerpt=checkpoint_excerpt(thread.excerpt, paused_state.message_history),
@@ -604,7 +606,7 @@ class RootRunExecutor:
                         thread=thread,
                         composition=published.reference,
                         memory_positions=reconstructed.memory_cursors.snapshot(),
-                        accepted=deferred_resume,
+                        accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=result.state,
                         display=display,
                         deferred=result.deferred,
@@ -630,7 +632,7 @@ class RootRunExecutor:
                             thread=thread,
                             composition=published.reference,
                             memory_positions=reconstructed.memory_cursors.snapshot(),
-                            accepted=deferred_resume,
+                            accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                             state=state,
                             display=display,
                             excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
@@ -872,14 +874,17 @@ def _deferred_resume(
     external_ids = {request.tool_call_id for request in requests.calls}
     expected_ids = approval_ids | external_ids
     supplied_ids = {item.request_id for item in response.responses}
-    if supplied_ids != expected_ids:
+    if not supplied_ids <= expected_ids:
         raise RunCoordinationError(
-            "The deferred response must answer the complete selected request set.",
+            "The deferred response contains an unknown request.",
             code="thread_deferred_response_incomplete",
         )
 
-    approvals: dict[str, bool | DeferredToolApprovalResult] = {}
-    calls: dict[str, object] = {}
+    no_response = "The user continued without responding. No approval or result was supplied."
+    approvals: dict[str, bool | DeferredToolApprovalResult] = {
+        request_id: ToolDenied(no_response) for request_id in approval_ids
+    }
+    calls: dict[str, object] = {request_id: ToolFailed(no_response) for request_id in external_ids}
     for item in response.responses:
         if isinstance(item, ApprovalDecision):
             if item.request_id not in approval_ids:

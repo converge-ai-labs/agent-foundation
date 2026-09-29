@@ -125,19 +125,19 @@ export function DecisionForm({
       send.isError
     )
       return;
-    const complete = batch.requests.map(
-      (request) => values[request.request_id],
-    );
-    if (complete.some((response) => !response)) return;
+    const supplied = batch.requests
+      .map((request) => values[request.request_id])
+      .filter((response): response is Response => response !== undefined);
     submitting.current = true;
-    send.mutate(complete as Response[]);
+    send.mutate(supplied);
   }
   return (
     <section className={styles.decision} aria-label="Pending decisions">
       <h2>Your response is needed</h2>
       <p>
-        Respond to this request set together. Another participant may resolve it
-        first.
+        Submit the responses you want to provide, or send a message to continue.
+        Unanswered requests are denied, not approved. Another participant may
+        resolve this request set first.
       </p>
       {remaining !== null && (
         <p role="status" aria-live="off">
@@ -203,13 +203,7 @@ export function DecisionForm({
           {!singleApproval && (
             <Button
               type="submit"
-              disabled={
-                unknown ||
-                expired ||
-                send.isSuccess ||
-                send.isError ||
-                batch.requests.some((request) => !responses[request.request_id])
-              }
+              disabled={unknown || expired || send.isSuccess || send.isError}
               loading={send.isPending}
             >
               Submit responses

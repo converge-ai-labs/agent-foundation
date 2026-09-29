@@ -18,7 +18,10 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, submitContinuation, useDraft } from "./composer";
-import { AppContextProvider } from "../mcp-apps/context-selection";
+import {
+  AppContextProvider,
+  useAppContextSelection,
+} from "../mcp-apps/context-selection";
 import { ComposerStatus } from "./composer-status";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
@@ -76,6 +79,7 @@ function ConversationContent({
   unauthorized: () => void;
 }) {
   const transport = useTransport();
+  const appContexts = useAppContextSelection();
   const queries = useQueryClient();
   const detail = useThread(threadId);
   const selectors = useSelectors();
@@ -747,6 +751,7 @@ function ConversationContent({
                           tracker
                             ? () => tracker.beforeRun(threadId)
                             : undefined,
+                          () => appContexts?.capture(threadId) ?? [],
                         ).finally(reconcile);
                       }
                 }

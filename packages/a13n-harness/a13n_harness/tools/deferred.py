@@ -86,6 +86,17 @@ class DeferredToolResume:
         )
 
 
+@dataclass(slots=True)
+class DeferredInputState:
+    """Run-owned, monotonically shrinking accepted facts; never a replay grant."""
+
+    pending: DeferredToolResume | None
+
+    def reconcile(self, messages: Sequence[ModelMessage]) -> None:
+        if self.pending is not None:
+            self.pending = self.pending.remaining(messages)
+
+
 def preflight_deferred_resume(
     resume: DeferredToolResume,
     *,

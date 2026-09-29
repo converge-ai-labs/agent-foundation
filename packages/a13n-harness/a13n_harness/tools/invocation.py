@@ -161,8 +161,9 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     ) -> AgentNode[AgentContext]:
         if ctx.run_id != ctx.deps._model_recovery.attempt_id:
             return node
-        resume = ctx.deps.deferred_resume
-        if isinstance(node, CallToolsNode) and resume is not None:
+        accepted = ctx.deps._deferred_input
+        resume = accepted.pending if accepted is not None else None
+        if isinstance(node, CallToolsNode) and resume is not None and not resume.recovery:
             await record_approval_denials(resume.requests, resume.results, context=ctx.deps)
         recovery = ctx.deps._tool_recovery
         if recovery is not None and recovery.pending and isinstance(node, CallToolsNode):
@@ -176,6 +177,12 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
+        if ctx.run_id != ctx.deps._model_recovery.attempt_id:
+            return request_context
+        # Native results are now in canonical history. Retire accepted facts
+        # before any context Capability can replace that history.
+        if ctx.deps._deferred_input is not None:
+            ctx.deps._deferred_input.reconcile(ctx.messages)
         ctx.deps._tool_permission_checks.clear()
         ctx.deps._tool_pending_approvals.clear()
         # Recovery applies only before the model makes its next decision.

@@ -85,3 +85,15 @@ def test_checkpoint_roundtrip_preserves_native_accepted_input(tmp_path, child, v
         ],
     )
     assert StoredDeferredInput.capture(retained.recover(), completed) is None
+
+
+def test_async_child_missing_responses_are_failures_not_successful_answers():
+    from a13n_harness_ui.subagent_operator import _deny_deferred
+
+    requests = DeferredToolRequests(
+        calls=[ToolCallPart("ask_user_question", {}, "question"), ToolCallPart("external", {}, "external")],
+        approvals=[ToolCallPart("change", {}, "approval")],
+    )
+    denied = _deny_deferred(requests)
+    assert all(isinstance(result, ToolFailed) for result in denied.results.calls.values())
+    assert isinstance(denied.results.approvals["approval"], ToolDenied)

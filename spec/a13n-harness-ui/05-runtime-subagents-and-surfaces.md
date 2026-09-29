@@ -195,11 +195,11 @@ No database transaction spans file I/O, catalog import, native construction, mod
 
 ### Root Deferred Response
 
-A suspended root continuation exposes a bounded detached request list. Each item has its tool-call ID, request kind, tool name, JSON arguments, presentation-safe metadata, and a discriminated safe presentation when Harness UI recognizes the public request contract. The standard presentations distinguish structured `ask_user_question`, function-tool approval, and generic external result or denial. An unrecognized request retains the generic bounded representation; a surface never infers a specialized decision contract from display text. An ordinary prompt cannot skip a selected deferred request set.
+A suspended root continuation exposes a bounded detached request list. Each item has its tool-call ID, request kind, tool name, JSON arguments, presentation-safe metadata, and a discriminated safe presentation when Harness UI recognizes the public request contract. The standard presentations distinguish structured `ask_user_question`, function-tool approval, and generic external result or denial. An unrecognized request retains the generic bounded representation; a surface never infers a specialized decision contract from display text. An ordinary prompt continues a selected deferred request set by denying unanswered approvals and failing unanswered external calls before appending that prompt in the same native Run.
 
 Decision projections disclose omitted arguments and metadata independently. `override_allowed` is false when arguments are omitted. Historical approval metadata does not prohibit native argument overrides; capability is not inferred from the model-visible tool name. Surfaces do not offer approval for omitted arguments. Missing review assessments alone do not prohibit a decision on otherwise inspectable arguments. These presentation capabilities do not replace Harness authorization checks.
 
-A response command names the exact selected continuation and supplies exactly one response for every pending item. Approval responses approve, optionally with replacement JSON arguments, or deny with a bounded message. External-call responses supply a JSON result or a bounded denial. The App rejects stale continuation IDs, missing or additional IDs, duplicate IDs, kind mismatches, and values that cannot be represented by the corresponding native deferred result.
+A response command names the exact selected continuation and supplies at most one response for each pending item; an empty batch is valid. Omitted approvals become native `ToolDenied` values and omitted external calls, including structured questions, become native `ToolFailed` values stating that no response was supplied. Missing input never fabricates an answer, successful result, or approval. Approval responses approve, optionally with replacement JSON arguments, or deny with a bounded message. External-call responses supply a JSON result or a bounded denial. The App rejects stale continuation IDs, additional IDs, duplicate IDs, kind mismatches, and values that cannot be represented by the corresponding native deferred result.
 
 Only the App reconstructs the native deferred request and result batch. A response is a new root operation with fresh Run composition and collaborators; it does not reuse the suspended operation's runtime objects. The selected suspended continuation remains current unless the response operation publishes and compare-and-selects another acceptable continuation.
 
@@ -209,7 +209,7 @@ A WebUI-mode App arms one process-local deadline for the complete deferred reque
 
 On expiry, the App submits one complete response against the exact continuation through ordinary root admission. Every approval is denied; every external result is explicitly failed. Structured questions report that no answer or approval was received and instruct the Agent not to repeat the question, continuing with reasonable assumptions where possible. Unsubmitted browser drafts are not responses and are discarded as input to this continuation. Timeout never fabricates answers, execution, or permission.
 
-Human response and expiry share the root admission boundary. A matching response admitted before expiry disarms the timer; one arriving after expiry is rejected with `thread_interaction_expired`, even if the timer has not run yet. An admitted timeout response is never automatically retried after preparation, execution, or save failure. A stale continuation cannot resume newer work. Archiving or stopping the App disarms outstanding waits without submitting a timeout. Deadlines are not persisted or rearmed from old checkpoints after restart; retained unanswered requests remain available for explicit response.
+Human response and expiry share the root admission boundary. A matching response or ordinary prompt resolving the pending batch admitted before expiry disarms the timer; one arriving after expiry is rejected with `thread_interaction_expired`, even if the timer has not run yet. An admitted timeout response is never automatically retried after preparation, execution, or save failure. A stale continuation cannot resume newer work. Archiving or stopping the App disarms outstanding waits without submitting a timeout. Deadlines are not persisted or rearmed from old checkpoints after restart; retained unanswered requests remain available for explicit response.
 
 `DecisionBatchView` exposes nullable `expires_at` and `server_time` timestamps. A null expiry means no automatic timeout is armed in this process. Browser countdowns are advisory and use server time to avoid participant clock skew; reaching zero refetches state and disables the expiring form, without submitting anything. Existing root-operation and Thread invalidations deliver the authoritative outcome. A countdown or admission receipt never establishes successful continuation saving.
 
@@ -254,7 +254,7 @@ Harness UI performs no automatic parent wake Run after child completion. A conne
 
 ### Deferred Requests
 
-A child suspension is not forwarded to the user or parent Thread. The operator supplies the complete denial/no-response values required by the exact request set and continues through normal Harness continuation. The continuation uses a fresh child `run_id` and observer inside the same segment. Failure to continue safely produces explicit child failure.
+A child suspension is not forwarded to the user or parent Thread. The operator supplies native `ToolDenied` for approvals and `ToolFailed` for external calls (including questions), never synthetic successful no-response values, for the exact request set and continues through normal Harness continuation. The continuation uses a fresh child `run_id` and observer inside the same segment. Failure to continue safely produces explicit child failure.
 
 ### Queries and Control
 
@@ -579,7 +579,7 @@ Thread attachment transport uses authenticated `POST /api/threads/{thread_id}/at
 03. Surface values are detached and never expose native runtime or storage authority.
 04. Thread metadata and Thread configuration use independent compare-and-select heads; active Run compositions are immutable.
 05. Root receipts and controls are exact and process-local; they are not durable work acceptance.
-06. A selected deferred request set can be continued only by an exact complete response batch.
+06. A selected deferred request set is closed with a complete native response batch. The App fills omitted surface responses with denial/failure and permits an ordinary prompt in the same continuation.
 07. Root and child Runs use fresh native collaborators.
 08. A child can resume with a different current composition while retaining the same Harness Thread history.
 09. Saved nonterminal status never proves liveness or authorizes takeover.

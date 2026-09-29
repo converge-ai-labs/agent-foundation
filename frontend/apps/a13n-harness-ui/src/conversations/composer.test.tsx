@@ -812,12 +812,17 @@ it("does not submit after navigation cancels a pending skill catalog read", asyn
   expect(values(draft.doc).prompt).toBe("$review");
 });
 
-it("retries with an ordinary continuation without consuming the shared draft or attachments", async () => {
+it("continues with the shared draft and attachments and clears only accepted input", async () => {
   const draft = new ThreadDraft();
   draft.controls.thinking = "low";
   draft.doc.getText("text").insert(0, "Keep my next question");
   draft.addAttachment("attachment-kept");
-  const before = values(draft.doc);
+  draft.receive({
+    draft_id: "draft-one",
+    participant_id: "participant-one",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
   let resolve!: (value: unknown) => void;
   const post = vi.fn().mockReturnValue(
     new Promise((done) => {
@@ -831,15 +836,23 @@ it("retries with an ordinary continuation without consuming the shared draft or 
   expect(post).toHaveBeenCalledWith("/api/threads/{thread_id}/submit", {
     params: { path: { thread_id: "thread-one" } },
     body: {
-      parts: ["Continue completing the previous task."],
+      parts: [
+        "Continue completing the previous task.\n\n",
+        "Keep my next question",
+        { attachment_id: "attachment-kept" },
+      ],
       mode: "normal",
       source_id: expect.any(String),
       thinking: "low",
     },
   });
+  draft.doc
+    .getText("text")
+    .insert(draft.doc.getText("text").length, "Later edit");
   resolve({ data: { receipt_id: "receipt-new", thread_id: "thread-one" } });
   await pending;
-  expect(values(draft.doc)).toEqual(before);
+  expect(values(draft.doc).prompt).toBe("Later edit");
+  expect(values(draft.doc).attachment_ids).toEqual([]);
   expect(draft.submission).toEqual({
     kind: "accepted",
     action: "send",
@@ -893,6 +906,12 @@ it("excludes Retry while skills load and retains uncertain acknowledgement owner
 it("owns continuation preparation and does not repeat an uncertain acknowledgement", async () => {
   const draft = new ThreadDraft();
   draft.doc.getText("text").insert(0, "Untouched");
+  draft.receive({
+    draft_id: "draft-one",
+    participant_id: "participant-one",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
   const post = vi.fn().mockRejectedValue(new Error("Response lost"));
   const transport = { client: { POST: post } } as unknown as Transport;
   let prepared!: () => void;
@@ -1374,3 +1393,55 @@ it.each([
     draft.doc.destroy();
   },
 );
+
+it("continues with selected App context and skill references from the captured draft", async () => {
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "$review the selected App data");
+  draft.receive({
+    draft_id: "draft-one",
+    participant_id: "participant-one",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
+  const reference = { view_id: "view-one", context_id: "context-one" };
+  const capture = vi.fn(() => [{ ...reference }]);
+  const GET = vi.fn().mockResolvedValue({
+    data: {
+      catalog_id: "a".repeat(64),
+      context_kind: "idle",
+      items: [
+        {
+          item_id: "b".repeat(64),
+          name: "review",
+          description: "Review",
+          source_id: "project",
+          logical_path: ".agents/skills/review",
+        },
+      ],
+    },
+  });
+  const POST = vi.fn().mockResolvedValue({
+    data: { receipt_id: "receipt-new", thread_id: "thread-one" },
+  });
+  await submitContinuation(
+    draft,
+    { client: { GET, POST } } as unknown as Transport,
+    "thread-one",
+    async () => {
+      expect(capture).toHaveBeenCalledOnce();
+      reference.context_id = "later-selection";
+    },
+    capture,
+  );
+  expect(POST.mock.calls[0][1].body).toMatchObject({
+    parts: [
+      "Continue completing the previous task.\n\n",
+      "$review the selected App data",
+    ],
+    app_context: [{ view_id: "view-one", context_id: "context-one" }],
+    skill_references: [
+      { catalog_id: "a".repeat(64), item_id: "b".repeat(64), name: "review" },
+    ],
+  });
+  expect(values(draft.doc).prompt).toBe("");
+});

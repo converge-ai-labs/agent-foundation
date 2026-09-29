@@ -18257,7 +18257,6 @@
               ]
             },
             "maxItems": 256,
-            "minItems": 1,
             "title": "Responses",
             "type": "array"
           }

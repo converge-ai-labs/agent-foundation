@@ -309,7 +309,9 @@ class ThreadProjectionService:
         if summary.root_activity.state is RootActivityState.inactive:
             if not thread.archived:
                 if thread.continuation is None or thread.read_model is not None:
-                    actions.append("respond" if requests else "run")
+                    actions.append("run")
+                    if requests:
+                        actions.append("respond")
                 actions.append("archive")
                 if thread.parent_thread_id is None and thread.continuation is not None:
                     actions.append("clear_context")

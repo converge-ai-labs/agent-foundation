@@ -2056,9 +2056,9 @@ class HarnessUiApp:
             raise AppStateError("The selected Thread has no pending decisions.", code="thread_deferred_not_pending")
         kinds = {item.request_id: item.kind for item in projected.requests}
         supplied = {item.request_id for item in response.responses}
-        if supplied != set(kinds):
+        if not supplied <= set(kinds):
             raise AppStateError(
-                "The decision response must answer the complete selected request set.",
+                "The decision response contains an unknown request.",
                 code="thread_deferred_response_incomplete",
             )
         converted = []

@@ -317,6 +317,9 @@ class HarnessRunStream[OutputT](
     def outcome(self) -> HarnessRunResult[OutputT] | None: ...
 
     @property
+    def pending_deferred_input(self) -> DeferredToolResume | None: ...
+
+    @property
     def diagnostic_error(self) -> BaseException | None: ...
 
     @property
