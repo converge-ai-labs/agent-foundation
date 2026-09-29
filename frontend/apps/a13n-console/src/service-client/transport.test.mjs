@@ -38,6 +38,23 @@ test("session mutations require CSRF and preserve null, omission and concurrency
   });
 });
 
+test("first-administrator setup signs in without a CSRF token", async () => {
+  const requests = [];
+  const client = createClient({
+    baseUrl,
+    auth: { type: "session" },
+    fetch: async (request) => {
+      requests.push(request);
+      return json({ principal_id: "usr_admin", csrf_token: "csrf-proof" });
+    },
+  });
+  await client.http.POST("/api/v1/auth/bootstrap", {
+    body: { email: "admin@example.com", password: "password" },
+  });
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].headers.get("X-CSRF-Token"), null);
+});
+
 test("credentials cannot escape through a per-call base URL", async () => {
   let calls = 0;
   const client = createClient({
