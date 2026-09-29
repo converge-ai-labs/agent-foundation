@@ -33,7 +33,7 @@ async def _close(close: Callable[[], Awaitable[None]]) -> None:
 
 
 def provider_client() -> httpx2.AsyncClient:
-    return httpx2.AsyncClient(timeout=30, follow_redirects=False, trust_env=False)
+    return httpx2.AsyncClient(timeout=30, follow_redirects=False)
 
 
 class WebProviderTransport:

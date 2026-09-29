@@ -298,3 +298,19 @@ Changing it opens separate state; it does not migrate old sessions. Relative boo
 There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `envd_runtime`, and application shutdown timeouts are embedding/runtime settings, **not** root YAML sections. Web listener and authentication options are [process-local CLI arguments](webui.md), not resource configuration.
 
 The legacy `tools.ask_user_question_timeout_seconds` input key remains accepted. Saved configuration uses `tools.interaction_timeout_seconds`. Editing a response does not restart the Host timer; expiry denies rather than approving or inventing a result.
+
+## Outbound HTTP proxies
+
+Set standard environment variables before starting Harness UI; no YAML proxy setting is needed:
+
+```bash
+export http_proxy=http://127.0.0.1:8888
+export https_proxy=http://127.0.0.1:8888
+export no_proxy=localhost,127.0.0.1,::1
+```
+
+Uppercase forms and `ALL_PROXY` are supported. Selection and bypass matching follow `httpx2`. Host-owned Web search/scrape/fetch/download requests, remote HTTPS MCP connections and update checks honor these variables, alongside the [Model HTTP client](../a13n-harness/models.md#outbound-http-proxies). Restart the process after changing its environment. When running in a container, the proxy address must be reachable from that container.
+
+The proxy you configure is trusted outbound infrastructure. URL validation, local DNS prechecks, TLS verification, redirect checks and response limits remain in effect, but the proxy owns final DNS resolution and destination network restrictions. Web requests that connect directly, including `NO_PROXY` bypasses, retain their existing IP checks and pinning. There is no custom IP-based CONNECT protocol or fallback to direct when the proxy fails.
+
+Plaintext loopback MCP and plaintext local/provider-private Envd attachments stay direct. HTTPS Envd attachments honor proxy variables. Third-party SDK-owned transports retain their SDK's proxy behavior; daemon-initiated Envd pairing and reverse WebSocket connections are separate from the Python HTTP attachment client.

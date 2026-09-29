@@ -108,7 +108,23 @@ Every request the Service makes to a provider, a remote MCP server, an OAuth ser
 - URLs use `http` or `https` and carry no user information, fragment or credential-like query parameter.
 - With `providers.require_https = true` (the default), plain HTTP is refused except for the exact origins listed in `providers.http_origins`.
 - Private, loopback and link-local destinations are refused unless the host matches `providers.private_domains` (subdomains included) or the resolved address is in `providers.private_cidrs`. Cloud metadata addresses are always refused.
-- Addresses are checked after DNS resolution on every new connection, redirects are not followed, compressed responses are refused, and response bodies are bounded by `providers.response_bytes`.
+- On direct host-owned HTTP connections, addresses are checked after DNS resolution and only checked addresses are dialed. Redirects are not followed, compressed responses are refused, and response bodies are bounded by `providers.response_bytes`.
+
+### Outbound proxies
+
+Set standard proxy environment variables on each Service process or container that needs outbound access; no `A13N_` prefix or TOML proxy setting is needed:
+
+```bash
+export http_proxy=http://proxy.example.com:8080
+export https_proxy=http://proxy.example.com:8080
+export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
+```
+
+Uppercase forms and `ALL_PROXY` are supported; selection and bypass matching follow `httpx2`. An HTTP proxy URL can carry HTTPS traffic through CONNECT. Models, Remote MCP/OAuth, connectors, record memory, web requests, model catalogs, webhooks and other callers of the host HTTP client use these routes.
+
+**The deployment operator's proxy is trusted outbound infrastructure.** Request URL validation and TLS verification remain enabled, but the proxy owns final DNS and destination network restrictions. Application-level DNS/IP pinning and final-address blocking apply to direct connections, including `NO_PROXY`, not to the proxy's outgoing connection. Configure restrictions on the proxy when needed. Existing endpoint prechecks can still require local DNS. A failed proxy request does not silently fall back to direct.
+
+HTTPS Envd attachments also use environment proxies; plaintext local/provider-private Envd links remain direct. Other SDK-owned environment and storage transports retain their own proxy behavior. This does not change the Envd controlled-egress broker or its execution isolation policy.
 
 API-serving processes also read the public model catalog from `https://models.dev/catalog.json`, at most every 60 seconds by default, for the Console's model picker. Without access to it, the catalog is unavailable and models are added by ID.
 

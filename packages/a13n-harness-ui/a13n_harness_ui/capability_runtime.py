@@ -37,6 +37,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID
 from a13n_harness.context import AgentContext, RunBindings
+from a13n_harness.providers.http_transport import EnvironmentProxyClient
 from anyio import getaddrinfo, to_thread
 from pydantic_ai import RunContext
 from pydantic_ai.messages import FilePart
@@ -177,11 +178,11 @@ class HttpxWebClient:
         if not isinstance(policy, PublicWebPolicy):
             raise WebProviderError("web_policy_unsupported")
         backend = _PinnedNetworkBackend()
-        client = httpx2.AsyncClient(
+        client = EnvironmentProxyClient(
+            _PinnedTransport(backend),
+            verify=ssl.create_default_context(),
             follow_redirects=False,
             timeout=httpx2.Timeout(request.deadline_seconds),
-            transport=_PinnedTransport(backend),
-            trust_env=False,
             headers={"User-Agent": _USER_AGENT},
         )
         response: httpx2.Response | None = None

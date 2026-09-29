@@ -59,7 +59,7 @@ async def check_update(root: Path, *, current: str | None = None) -> AvailableUp
     except (OSError, ValueError, KeyError, TypeError):
         pass
     try:
-        async with asyncio.timeout(3), httpx2.AsyncClient(timeout=2, trust_env=False) as client:
+        async with asyncio.timeout(3), httpx2.AsyncClient(timeout=2) as client:
             async with client.stream("GET", "https://pypi.org/pypi/a13n-harness-ui/json") as response:
                 response.raise_for_status()
                 body = bytearray()

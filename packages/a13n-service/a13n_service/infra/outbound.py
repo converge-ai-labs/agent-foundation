@@ -1,8 +1,8 @@
 """Host-owned async HTTP clients with endpoint and response bounds.
 
 The endpoint policy checks each request URL before it is sent, and each new connection resolves its host once
-and connects only when the policy allows every answer. A DNS answer that changes after validation therefore
-never reaches a refused address; the Host header and TLS server name remain the URL's host.
+and connects only when the policy allows every answer on direct routes. Operator-configured environment
+proxies own final DNS and destination policy on proxy routes. The URL and TLS identity are never rewritten.
 """
 
 import ipaddress
@@ -15,6 +15,7 @@ import anyio
 import httpcore2
 import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.http_transport import EnvironmentProxyClient
 
 from a13n_service.infra.errors import ServiceError
 
@@ -127,11 +128,12 @@ async def open_http(
 
     # Native MCP owns entry/exit; model clients start lazily on first send.
     # The outer owner also closes clients that never reached native setup.
-    client = httpx2.AsyncClient(
-        transport=_PolicyTransport(policy),
+    client = EnvironmentProxyClient(
+        _PolicyTransport(policy),
+        verify=httpx2.create_ssl_context(trust_env=False),
+        limits=_LIMITS,
         timeout=timeout,
         follow_redirects=False,
-        trust_env=False,
         headers={"accept-encoding": "identity"},
         event_hooks={"request": [check_request], "response": [bound_response]},
     )

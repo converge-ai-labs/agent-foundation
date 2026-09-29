@@ -44,7 +44,7 @@ class ConnectorProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition
             async with self.open_provider(parsed, secret, http) as provider:
                 yield provider
             return
-        client = httpx2.AsyncClient(timeout=30, follow_redirects=False, trust_env=False)
+        client = httpx2.AsyncClient(timeout=30, follow_redirects=False)
         try:
             transport = ConnectorHttpClient(
                 client, EndpointPolicy(require_https=True), response_max_bytes=8 * 1024 * 1024

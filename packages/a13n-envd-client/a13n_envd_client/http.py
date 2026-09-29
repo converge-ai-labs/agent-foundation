@@ -71,10 +71,12 @@ class HttpTransport:
         self._credential = credential
         self._request_timeout = request_timeout
         self._client = httpx2.AsyncClient(
-            verify=verify,
+            verify=httpx2.create_ssl_context(verify=verify, trust_env=False),
             timeout=request_timeout,
             follow_redirects=False,
-            trust_env=False,
+            # Plaintext attachment relies on a local/provider-private link.
+            # A process proxy must not move its bearer credential off that link.
+            trust_env=urlsplit(self._endpoint).scheme == "https",
         )
         self._max_request_bytes = max_request_bytes
         self._max_response_bytes = max_response_bytes

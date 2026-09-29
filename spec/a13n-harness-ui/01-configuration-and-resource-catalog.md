@@ -98,6 +98,12 @@ The data root is a bootstrap locator resolved before parsing this tree: explicit
 
 Relative process paths resolve from the root file's directory. Resource paths that represent Project roots must be explicit absolute paths after user expansion; their stored meaning never depends on the App's current working directory.
 
+## Outbound HTTP Proxies
+
+Standard `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` variables and lowercase forms are process inputs, not YAML resource fields or captured credentials. Host-owned Web requests, remote HTTPS MCP connections and update checks use the HTTP library's native proxy routing. [Model transport](../a13n-harness/16-input-model-and-output.md#model-construction-and-resolution) owns Model routing.
+
+Operator-configured proxies are trusted outbound infrastructure. Existing URL and local DNS prechecks remain in effect, but proxy routes delegate final DNS resolution and destination network restrictions to the proxy. Direct Web connections, including `NO_PROXY` bypasses, retain authorization of every DNS answer and connection to the authorized IP. TLS verification, redirect checks and response bounds remain in force. Plaintext loopback MCP and plaintext local/provider-private Envd attachments stay direct rather than moving their local-link traffic to a proxy.
+
 ## Common Resource Envelope
 
 YAML resources use a small common envelope followed by a kind-owned body:
