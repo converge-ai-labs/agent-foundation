@@ -29,11 +29,13 @@ export function AgentEnvironment({
   });
   return (
     <Section
-      title={t("Default environment")}
-      description={t("Used for new sessions.")}
+      title={t("Default environment template")}
+      description={t(
+        "Automatically creates a managed environment when the session has no workspace mount. Select external targets in session options.",
+      )}
     >
       <ChoiceField
-        label={t("Default environment")}
+        label={t("Default environment template")}
         hideLabel
         disabled={disabled}
         value={value ?? "none"}
@@ -41,7 +43,7 @@ export function AgentEnvironment({
           onChange(selected === "none" ? null : selected)
         }
         options={[
-          { value: "none", label: t("No default environment") },
+          { value: "none", label: t("No default environment template") },
           ...(templates.data ?? []).map((item) => ({
             value: item.id,
             label: item.name,
