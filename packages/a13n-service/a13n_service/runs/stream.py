@@ -137,22 +137,12 @@ class ThreadStream:
     async def __aexit__(self, *_: object) -> None:
         assert self.writer is not None
         try:
-            await self.drain()
+            async with asyncio.timeout(self.settings.redis.timeout):
+                await self.buffer.join()
+        except TimeoutError:
+            pass
         finally:
             self.writer.cancel()
-
-    async def drain(self) -> WrittenPosition | None:
-        """Bounded checkpoint/close wait; failure keeps the previous confirmed position.
-
-        The caller pauses delta production while draining. Closing retains the final position for sealing.
-        """
-        if self.writer is not None and not self.writer.done() and not self.writer.cancelling():
-            try:
-                async with asyncio.timeout(self.settings.redis.timeout):
-                    await self.buffer.join()
-            except TimeoutError:
-                pass
-        return self.last_written
 
     def delta(self, observed: Observed) -> None:
         event = json.dumps(observed.event, separators=(",", ":"))

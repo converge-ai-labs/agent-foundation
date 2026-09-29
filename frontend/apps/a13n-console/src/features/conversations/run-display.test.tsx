@@ -238,7 +238,7 @@ afterEach(() => {
 });
 
 it("continues the committed display with the Thread's later deltas", async () => {
-  display.last_event_id = "1720000000000-0";
+  display.resume_after = "1720000000000-0";
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
   // The stream repeats what the display already covers before what it does not.
@@ -523,7 +523,7 @@ it("re-reads the display on reconnect even when cached reads remain fresh", asyn
     run: run({ status: "completed" }),
     items: [message("Hello again", "1-0", "1-3", "completed")],
     position: "1-3",
-    last_event_id: "1720000000001-0",
+    resume_after: "1720000000001-0",
     complete: true,
     dropped: 0,
   };

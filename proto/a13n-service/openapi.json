@@ -9105,17 +9105,6 @@
             "title": "Items",
             "type": "array"
           },
-          "last_event_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Event Id"
-          },
           "position": {
             "anyOf": [
               {
@@ -9126,6 +9115,17 @@
               }
             ],
             "title": "Position"
+          },
+          "resume_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume After"
           },
           "run": {
             "$ref": "#/components/schemas/RunView"

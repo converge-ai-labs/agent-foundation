@@ -5890,10 +5890,10 @@ export interface components {
       dropped: number;
       /** Items */
       items: components["schemas"]["Item"][];
-      /** Last Event Id */
-      last_event_id?: string | null;
       /** Position */
       position: string | null;
+      /** Resume After */
+      resume_after?: string | null;
       run: components["schemas"]["RunView"];
     };
     /** RunLabels */

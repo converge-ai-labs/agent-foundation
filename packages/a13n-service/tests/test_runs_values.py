@@ -13,10 +13,10 @@ FAILURE = {"code": "test_failure", "message": "Failed"}
 
 def test_old_displays_have_no_resume_hint_and_new_attempts_do_not_inherit_it() -> None:
     old = Display.model_validate({"items": [], "position": {"attempt": 1, "sequence": 3}, "dropped": 0})
-    assert old.last_event_id is None
-    old.last_event_id = "123-0"
-    assert Display.model_validate_json(old.model_dump_json()).last_event_id == "123-0"
-    assert DisplayFold("run_test", old, attempt=2, max_bytes=65536).snapshot().last_event_id is None
+    assert old.resume_after is None
+    old.resume_after = "123-0"
+    assert Display.model_validate_json(old.model_dump_json()).resume_after == "123-0"
+    assert DisplayFold("run_test", old, attempt=2, max_bytes=65536).snapshot().resume_after is None
 
 
 @pytest.mark.parametrize(

@@ -226,7 +226,7 @@ export function useRunDisplay(
       const first = await reconcile(true);
       setState(first.complete ? "closed" : "connecting");
       if (!live) return;
-      await follow(first.run.thread_id, first.last_event_id ?? undefined);
+      await follow(first.run.thread_id, first.resume_after ?? undefined);
       if (!signal.aborted) setState("disconnected");
     }
     void attach().catch((error) => {

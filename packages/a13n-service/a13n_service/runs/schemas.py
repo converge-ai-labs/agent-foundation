@@ -483,7 +483,7 @@ class RunItems(BaseModel):
     # The "{attempt}-{sequence}" stream position the items cover; None until the first checkpoint.
     position: str | None
     # A confirmed Redis delta ID covered by this display, usable as SSE Last-Event-ID while retained.
-    last_event_id: str | None = None
+    resume_after: str | None = None
     # Earlier items the display dropped over its item limit.
     dropped: int
     # Execution sealed: the items are final and live output no longer applies.

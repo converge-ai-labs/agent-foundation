@@ -502,7 +502,7 @@ class _Attempt:
     ) -> list[Offered]:
         """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
         the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned."""
-        display = await self._display()
+        display = self._display()
         if self._near_deadline():
             raise LeaseLost()
         consumed = self.offers.incorporated(state)
@@ -648,25 +648,22 @@ class _Attempt:
         self.fold.interrupt()
         display = None
         if not self._near_deadline():
-            snapshot = await self._display()
-            if not self._near_deadline():
-                display = await checkpoints.publish_display(self.runtime, self.lease, snapshot)
+            display = await checkpoints.publish_display(self.runtime, self.lease, self._display())
         await seal_attempt(self.runtime, self.lease, outcome, display=display)
 
-    async def _display(self) -> Display:
-        """Capture the display before waiting, with a confirmed cursor no later than its position.
+    def _display(self) -> Display:
+        """Capture a safe resume hint without waiting for queued Redis writes.
 
-        Boundary callers flush coalesced output and pause observation; terminal callers have closed the stream.
-        No database session is open while Redis drains, and a timeout can still use an earlier confirmed delta.
+        The writer replaces one immutable value on the same event loop. Terminal callers read it after close.
         """
         display = self.fold.snapshot()
-        written = await self.live.drain() if self.live is not None else None
+        written = self.live.last_written if self.live is not None else None
         if (
             written is not None
             and written.attempt == display.position.attempt
             and written.sequence <= display.position.sequence
         ):
-            display.last_event_id = written.redis_id
+            display.resume_after = written.redis_id
         return display
 
     def _near_deadline(self) -> bool:
