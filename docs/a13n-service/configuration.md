@@ -63,6 +63,8 @@ Redis holds rate-limit counters, worker wakeups and provisional thread-stream ev
 
 Use `objects.addressing_style` to select `auto` (SDK selection), `path` (`endpoint/bucket/key`) or `virtual` (`bucket.endpoint/key`). Virtual addressing requires compatible bucket names, DNS and TLS certificates; use it for providers such as Alibaba Cloud OSS that require bucket subdomains. When omitted, the existing `path_style` behavior remains: `true` forces `path`, and `false` uses `auto`. An explicit addressing style takes precedence over `path_style=false`; `path_style=true` together with `auto` or `virtual` fails configuration validation. For Helm, set `objects.addressingStyle`; environment overrides use `A13N_OBJECTS__ADDRESSING_STYLE`.
 
+For Alibaba Cloud OSS, also set `objects.write_mode = "oss"` (environment: `A13N_OBJECTS__WRITE_MODE=oss`; Helm: `objects.writeMode: oss`). This uses the native `x-oss-forbid-overwrite: true` header and disables optional streaming checksum trailers. The default `s3` mode keeps `If-None-Match: *`. Both modes accept identical retries and reject different bytes at an existing key. OSS mode requires `backend = "s3"`, permission to read bucket versioning (`oss:GetBucketVersioning`), and a bucket whose versioning has never been enabled: startup checks and rejects enabled or suspended versioning. Keep versioning disabled for the lifetime of this store. No new SDK or credentials are required.
+
 ### Encryption keys
 
 Provider and connection credentials, OAuth tokens and queued mail links are encrypted with AES-GCM under the active key of the key ring. Each key is 32 random bytes, base64-encoded, under an ID you choose:

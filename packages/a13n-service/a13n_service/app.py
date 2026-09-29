@@ -130,6 +130,7 @@ async def open_objects(stack: AsyncExitStack, config: Objects) -> ObjectStore:
             region=config.region,
             endpoint_url=config.endpoint_url,
             addressing_style=config.effective_addressing_style,
+            write_mode=config.write_mode,
             access_key_id=config.access_key_id.get_secret_value() if config.access_key_id else None,
             secret_access_key=config.secret_access_key.get_secret_value() if config.secret_access_key else None,
             max_bytes=config.max_bytes,

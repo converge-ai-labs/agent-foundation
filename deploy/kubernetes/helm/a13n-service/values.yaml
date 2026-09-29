@@ -43,6 +43,8 @@ objects:
   endpointUrl: ""
   # Empty preserves Service defaults; otherwise auto, path or virtual.
   addressingStyle: ""
+  # oss enables native create-only writes; requires bucket versioning never enabled.
+  writeMode: s3
 # Local objects only. The chart's claim is retained on uninstall.
 persistence:
   existingClaim: ""

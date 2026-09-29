@@ -199,6 +199,13 @@
             "path",
             "virtual"
           ]
+        },
+        "writeMode": {
+          "type": "string",
+          "enum": [
+            "s3",
+            "oss"
+          ]
         }
       }
     },

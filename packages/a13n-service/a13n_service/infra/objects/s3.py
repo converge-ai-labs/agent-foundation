@@ -1,4 +1,4 @@
-"""S3-compatible object store; conditional `If-None-Match: *` makes every write create-only."""
+"""S3-compatible object store with atomic create-only writes, including OSS compatibility."""
 
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -14,6 +14,7 @@ from a13n_service.infra.objects.interface import ObjectRef, reference, refuse_di
 
 if TYPE_CHECKING:
     from types_aiobotocore_s3.client import S3Client
+    from types_aiobotocore_s3.type_defs import PutObjectRequestTypeDef
 
 
 def _unavailable(error: Exception) -> ServiceError:
@@ -27,9 +28,19 @@ def _code(error: ClientError) -> str:
 
 
 class S3Objects:
-    def __init__(self, client: "S3Client", bucket: str, *, prefix: str, max_bytes: int, timeout: float):
+    def __init__(
+        self,
+        client: "S3Client",
+        bucket: str,
+        *,
+        prefix: str,
+        max_bytes: int,
+        timeout: float,
+        write_mode: Literal["s3", "oss"] = "s3",
+    ):
         self.client, self.bucket, self.prefix = client, bucket, prefix
         self.max_bytes, self.timeout = max_bytes, timeout
+        self.write_mode = write_mode
 
     def _key(self, key: str) -> str:
         return self.prefix + validate_key(key)
@@ -39,11 +50,22 @@ class S3Objects:
             raise ServiceError("payload_too_large", "Object exceeds its byte limit", {"limit": self.max_bytes})
         try:
             with fail_after(self.timeout):
-                await self.client.put_object(
-                    Bucket=self.bucket, Key=self._key(key), Body=data, ContentType=content_type, IfNoneMatch="*"
-                )
+                request: PutObjectRequestTypeDef = {
+                    "Bucket": self.bucket,
+                    "Key": self._key(key),
+                    "Body": data,
+                    "ContentType": content_type,
+                }
+                if self.write_mode == "s3":
+                    request["IfNoneMatch"] = "*"
+                await self.client.put_object(**request)
         except ClientError as error:
-            if _code(error) not in {"PreconditionFailed", "ConditionalRequestConflict"}:
+            exists = (
+                {"FileAlreadyExists"}
+                if self.write_mode == "oss"
+                else {"PreconditionFailed", "ConditionalRequestConflict"}
+            )
+            if _code(error) not in exists:
                 raise _unavailable(error) from None
             # The key exists: an identical earlier write (possibly our own lost acknowledgement) is success.
             if await self.get(key) != data:
@@ -100,6 +122,11 @@ class S3Objects:
             raise _unavailable(error) from None
 
 
+def _oss_create_only(params: dict[str, Any], **kwargs: Any) -> None:
+    # before-call runs before signing; this native OSS header must be signed too.
+    params["headers"]["x-oss-forbid-overwrite"] = "true"
+
+
 @asynccontextmanager
 async def open_s3(
     *,
@@ -112,6 +139,7 @@ async def open_s3(
     secret_access_key: str | None,
     max_bytes: int,
     timeout: float,
+    write_mode: Literal["s3", "oss"] = "s3",
 ) -> AsyncIterator[S3Objects]:
     """Credentials default to the standard AWS provider chain when no static keys are configured."""
     async with AsyncExitStack() as stack:
@@ -127,7 +155,21 @@ async def open_s3(
                     read_timeout=timeout,
                     retries={"max_attempts": 2},
                     s3={"addressing_style": addressing_style},
+                    # OSS rejects the SDK's optional streaming checksum trailers.
+                    **({"request_checksum_calculation": "when_required"} if write_mode == "oss" else {}),
                 ),
             )
         )
-        yield S3Objects(cast("S3Client", client), bucket, prefix=prefix, max_bytes=max_bytes, timeout=timeout)
+        typed_client = cast("S3Client", client)
+        if write_mode == "oss":
+            try:
+                with fail_after(timeout):
+                    versioning = await typed_client.get_bucket_versioning(Bucket=bucket)
+            except (BotoCoreError, ClientError) as error:
+                raise _unavailable(error) from None
+            if versioning.get("Status") is not None:
+                raise ValueError("objects.write_mode=oss requires a bucket with versioning never enabled")
+            client.meta.events.register("before-call.s3.PutObject", _oss_create_only)
+        yield S3Objects(
+            cast("S3Client", client), bucket, prefix=prefix, max_bytes=max_bytes, timeout=timeout, write_mode=write_mode
+        )

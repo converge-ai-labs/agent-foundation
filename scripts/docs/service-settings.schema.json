@@ -782,6 +782,15 @@
           "default": null,
           "title": "Addressing Style"
         },
+        "write_mode": {
+          "default": "s3",
+          "enum": [
+            "s3",
+            "oss"
+          ],
+          "title": "Write Mode",
+          "type": "string"
+        },
         "region": {
           "anyOf": [
             {
