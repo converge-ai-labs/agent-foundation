@@ -2,6 +2,7 @@
 
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
+from a13n_service.providers.environments.docker import default_image
 from a13n_service.providers.registry import Registry
 from a13n_service.provisioning.defaults import Defaults
 from a13n_service.resources.environment_templates.schemas import TemplateConfig
@@ -27,5 +28,5 @@ async def prepare(config: DockerProvisioning, registry: Registry, policy: Endpoi
     return Defaults(
         ProviderCreate(type="docker", name="Docker", config={}),
         "Linux Sandbox",
-        TemplateConfig(recipe={"image": config.image, "pull_policy": config.pull_policy}),
+        TemplateConfig(recipe={"image": config.image or default_image(), "pull_policy": config.pull_policy}),
     )

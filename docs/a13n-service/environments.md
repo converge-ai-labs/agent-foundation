@@ -14,13 +14,9 @@ In Console, **Environments → Templates** manages templates and **Environments 
 
 ## Automatic local setup
 
-The single-host Compose stack with a mounted Docker socket automatically adds a **Docker** provider and **Linux Sandbox** template to each workspace when the Engine is reachable. Build the image locally before using the template:
+The single-host Compose stack with a mounted Docker socket automatically adds a **Docker** provider and **Linux Sandbox** template to each workspace when the Engine is reachable. The template pins the [companion image matching the installed Service release](#docker-image-versions) and uses `pull_policy: if_missing`. The Engine pulls the image when the first instance is created if it is not already present; workspace initialization does not pull it. The Linux image includes Python 3.13, pip, venv, uv, Node.js 24, npm, pnpm, Git, Bash, curl, ripgrep, jq, archive utilities and C/C++ build tools. Commands run as `sandbox`, with writable `/workspace` and `/tmp/a13n`. Project dependencies can be installed in a virtual environment or the project directory.
 
-```sh
-make image-docker-environment
-```
-
-The template selects `a13n-docker-environment:local` with `pull_policy: never`. Missing images produce build/load guidance; they are not downloaded. The Linux image includes Python 3.13, pip, venv, uv, Node.js 24, npm, pnpm, Git, Bash, curl, ripgrep, jq, archive utilities and C/C++ build tools. Commands run as `sandbox`, with writable `/workspace` and `/tmp/a13n`. Project dependencies can be installed in a virtual environment or the project directory.
+To use a locally built image for a new workspace, run `make image-docker-environment` and start Compose with `A13N_DOCKER_ENVIRONMENT_IMAGE=a13n-docker-environment:local`. Change an existing template in Console or through the API; provisioning does not replace it after initialization.
 
 The socket-free quickstart does not enable Docker provisioning. For source development, `make dev` explicitly enables **Local** and creates a **Local Workspace** template rooted at that checkout's `var/dev/environments`. Each environment later gets its own subdirectory. Local runs directly under the Service account and provides no isolation.
 
@@ -76,7 +72,7 @@ Leave `recipe.image` unset to use `ghcr.io/converge-ai-labs/a13n-docker-environm
 | RC, such as Python version `0.1.0rc1`                 | `0.1.0-rc.1` |
 | Source (`0.0.0`, including local suffixes) or `.devN` | `dev`        |
 
-Release images support `linux/amd64` and `linux/arm64`. Set `recipe.image` explicitly to keep a particular tag across Service upgrades, or use a digest to pin exact content. A manually created Docker recipe defaults to `pull_policy: if_missing`: the Engine uses local images and pulls missing ones. Set `never` to require a local image. The automatically provisioned template explicitly selects the local image and `never`, overriding the release default.
+Release images support `linux/amd64` and `linux/arm64`. Set `recipe.image` explicitly to keep a particular tag across Service upgrades, or use a digest to pin exact content. A Docker recipe defaults to `pull_policy: if_missing`: the Engine uses local images and pulls missing ones. Set `never` to require a local image. The automatically provisioned template stores the release-matched image explicitly, so later Service upgrades do not silently change it.
 
 Each instance saves its resolved image before its first create; upgrades and interrupted creates keep that image. Legacy instances without a saved image keep `:dev`. Create a new environment to use a changed image or template.
 

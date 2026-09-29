@@ -198,14 +198,12 @@ root = "/srv/a13n/environments"
 
 [provisioning.docker]
 enabled = true
-image = "a13n-docker-environment:local"
-pull_policy = "never"
 ```
 
 Local requires an explicit absolute root on the machine running the Service; there is no generic default. It also enables the Local provider type. `make dev` supplies its own checkout path. Replace the retired `environments.allow_local` setting with this Local section. Disabling Local preserves directories and resources, but future execution requires it to be enabled again.
 
 Docker uses the existing operator Engine setting, `environments.docker_host`, or the process Docker environment. Running inside Compose requires access to the Engine, normally the socket mount in the supplied single-host stack. Installing a Docker CLI alone is insufficient. Docker provisioning does not affect manual Docker providers.
 
-Environment overrides use a JSON object for each component, for example `A13N_PROVISIONING__DOCKER='{"enabled":true,"image":"a13n-docker-environment:local","pull_policy":"never"}'`. The supplied socket-enabled Compose stack enables Docker and leaves Local off; `A13N_DOCKER_ENVIRONMENT_IMAGE` selects the initial template's image there.
+Environment overrides use a JSON object for each component, for example `A13N_PROVISIONING__DOCKER='{"enabled":true}'`. The default Docker template pins the GHCR companion image matching the installed Service version and pulls it when an instance is first created if needed. The supplied socket-enabled Compose stack enables Docker and leaves Local off; `A13N_DOCKER_ENVIRONMENT_IMAGE` overrides the initial template's image there.
 
-Build the local image with `make image-docker-environment`. When an image is available from your registry, select its full reference and `pull_policy = "if_missing"`. Settings initialize resources once; change an existing template through Console or the API to change future instances. Existing instances keep their original image. See [automatic local setup](environments.md#automatic-local-setup) for retry and ownership behavior.
+To use a locally built image, run `make image-docker-environment`, set `image = "a13n-docker-environment:local"` and `pull_policy = "never"`. Settings initialize resources once; change an existing template through Console or the API to change future instances. Existing instances keep their original image. See [automatic local setup](environments.md#automatic-local-setup) for retry and ownership behavior.

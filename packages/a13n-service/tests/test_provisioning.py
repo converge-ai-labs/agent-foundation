@@ -1,6 +1,7 @@
 """Automatic defaults are atomic, opt-in and relinquished to the user after initialization."""
 
 import asyncio
+from importlib import import_module
 from unittest.mock import AsyncMock
 
 import httpx2
@@ -91,7 +92,10 @@ async def test_concurrent_initialization_creates_one_atomic_pair_per_component(r
             assert template.created_by_id is None and template.updated_by_id is None
             assert provider.config == {} and template.provider_id == provider.id
             if receipt.component == "docker":
-                assert template.config["recipe"] == {"image": "a13n-docker-environment:local", "pull_policy": "never"}
+                assert template.config["recipe"] == {
+                    "image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev",
+                    "pull_policy": "if_missing",
+                }
             else:
                 assert template.config["recipe"] == {
                     "root": {"path": str(runtime.settings.provisioning.local.root)},
@@ -100,6 +104,20 @@ async def test_concurrent_initialization_creates_one_atomic_pair_per_component(r
         audit = list(await session.scalars(select(AuditEventRow).where(AuditEventRow.actor_id.is_(None))))
         assert len(audit) == 4
     assert not runtime.settings.provisioning.local.root.exists()
+
+
+async def test_docker_template_uses_the_service_release_image(service, initializer, monkeypatch):
+    monkeypatch.setattr(import_module("a13n_service.providers.environments.docker"), "version", lambda _: "0.1.2")
+    await initializer(service.tenant.workspace_id)
+    receipt = next(
+        item for item in await receipts(service.runtime, service.tenant.workspace_id) if item.component == "docker"
+    )
+    async with short_session(service.runtime.storage) as session:
+        template = await session.get_one(EnvironmentTemplateRow, receipt.template_id)
+        assert template.config["recipe"] == {
+            "image": "ghcr.io/converge-ai-labs/a13n-docker-environment:0.1.2",
+            "pull_policy": "if_missing",
+        }
 
 
 async def test_user_edits_disabling_and_deletion_survive_startup(service, initializer, ping):

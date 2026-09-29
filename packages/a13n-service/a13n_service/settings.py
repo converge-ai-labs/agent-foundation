@@ -316,8 +316,8 @@ class LocalProvisioning(Section):
 
 class DockerProvisioning(Section):
     enabled: bool = False
-    image: str = Field(default="a13n-docker-environment:local", min_length=1, max_length=1024)
-    pull_policy: Literal["never", "if_missing"] = "never"
+    image: str | None = Field(default=None, min_length=1, max_length=1024)
+    pull_policy: Literal["never", "if_missing"] = "if_missing"
 
 
 class Provisioning(Section):

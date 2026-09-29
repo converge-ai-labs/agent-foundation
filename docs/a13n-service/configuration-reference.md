@@ -159,13 +159,13 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `provisioning`
 
-| Setting                           | Environment variable                                   | Type / choices        | Constraints and default                                              |
-| --------------------------------- | ------------------------------------------------------ | --------------------- | -------------------------------------------------------------------- |
-| `provisioning.local.enabled`      | `A13N_PROVISIONING__LOCAL` (JSON field `enabled`)      | boolean               | default=false                                                        |
-| `provisioning.local.root`         | `A13N_PROVISIONING__LOCAL` (JSON field `root`)         | string or null        | format="path"; default=null                                          |
-| `provisioning.docker.enabled`     | `A13N_PROVISIONING__DOCKER` (JSON field `enabled`)     | boolean               | default=false                                                        |
-| `provisioning.docker.image`       | `A13N_PROVISIONING__DOCKER` (JSON field `image`)       | string                | minLength=1; maxLength=1024; default="a13n-docker-environment:local" |
-| `provisioning.docker.pull_policy` | `A13N_PROVISIONING__DOCKER` (JSON field `pull_policy`) | "never", "if_missing" | default="never"                                                      |
+| Setting                           | Environment variable                                   | Type / choices        | Constraints and default                   |
+| --------------------------------- | ------------------------------------------------------ | --------------------- | ----------------------------------------- |
+| `provisioning.local.enabled`      | `A13N_PROVISIONING__LOCAL` (JSON field `enabled`)      | boolean               | default=false                             |
+| `provisioning.local.root`         | `A13N_PROVISIONING__LOCAL` (JSON field `root`)         | string or null        | format="path"; default=null               |
+| `provisioning.docker.enabled`     | `A13N_PROVISIONING__DOCKER` (JSON field `enabled`)     | boolean               | default=false                             |
+| `provisioning.docker.image`       | `A13N_PROVISIONING__DOCKER` (JSON field `image`)       | string or null        | minLength=1; maxLength=1024; default=null |
+| `provisioning.docker.pull_policy` | `A13N_PROVISIONING__DOCKER` (JSON field `pull_policy`) | "never", "if_missing" | default="if_missing"                      |
 
 ## `memory`
 

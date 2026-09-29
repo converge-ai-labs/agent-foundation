@@ -245,14 +245,21 @@
           "type": "boolean"
         },
         "image": {
-          "default": "a13n-docker-environment:local",
-          "maxLength": 1024,
-          "minLength": 1,
-          "title": "Image",
-          "type": "string"
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image"
         },
         "pull_policy": {
-          "default": "never",
+          "default": "if_missing",
           "enum": [
             "never",
             "if_missing"
