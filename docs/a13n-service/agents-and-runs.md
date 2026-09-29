@@ -148,9 +148,24 @@ To continue a conversation produced outside the Service, add `message_history` t
 }
 ```
 
-These are native conversation messages, not text pasted into the current prompt. Request parts accept `user-prompt` text and `tool-return`; response parts accept `text` and `tool-call`. Historical tool calls use `tool_name`, `tool_call_id` and JSON-object `args`; their returns use the same name and ID plus JSON `content` and optional `outcome` (`success` by default, or `failed`, `denied`, `interrupted`). Every call must have a matching return before another response, a new user prompt or the end of the import. Historical tools do not need to be installed and will not execute.
+These are Pydantic AI conversation messages, not text pasted into the current prompt. Request parts accept `user-prompt` text (also lists of strings or native `TextContent` objects) and `tool-return`; response parts accept `text` and `tool-call`. Historical tool calls use `tool_name`, `tool_call_id` and `args` (a JSON object, a JSON string encoding an object, or null); their returns use the same name and ID plus JSON `content` and optional `outcome` (`success` by default, or `failed`, `denied`, `interrupted`). Every call must have a matching return before another response, a new user prompt or the end of the import. Historical tools do not need to be installed and will not execute.
 
-Import is limited to 256 messages and 256 KiB of normalized JSON. System instructions, media, provider metadata, usage and serialized execution state are not accepted. Use the Agent configuration for instructions and the current payload for attachments. The Thread keeps the immutable import for readback, but it does not manufacture historical Runs, display Items, tool executions or usage. Follow-up messages continue the committed checkpoint without reimporting; forks inherit that checkpoint. You cannot replace history on an existing Thread.
+Import is limited to 256 messages and 256 KiB of normalized JSON. System instructions, media and suspended execution are not accepted. Use the Agent configuration for instructions and the current payload for attachments. Native timestamps, provider fields and usage are accepted, but do not become Service accounting. Application metadata and Run/conversation IDs are retained for readback and cleared before initializing execution; they cannot claim Service input consumption or authority.
+
+OpenAPI and generated clients represent this field as JSON objects rather than duplicating Pydantic AI's type hierarchy. Python users who already use Pydantic AI can serialize a completed text/tool history directly; the Service SDK does not need to depend on Pydantic AI:
+
+```python
+import json
+from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
+
+
+def history_json(messages: list[ModelMessage]) -> list[dict]:
+    return json.loads(ModelMessagesTypeAdapter.dump_json(messages))
+```
+
+Pass the resulting array as `message_history`. It must satisfy the import restrictions above; not every possible Pydantic AI history is importable. Thread readback retains your submitted JSON values, without inserting omitted timestamps or other native defaults. Repeating the same submitted request with the same idempotency key replays it.
+
+The Thread keeps the immutable import for readback, but it does not manufacture historical Runs, display Items, tool executions or usage. Follow-up messages continue the committed checkpoint without reimporting; forks inherit that checkpoint. You cannot replace history on an existing Thread.
 
 ## Submit a message
 

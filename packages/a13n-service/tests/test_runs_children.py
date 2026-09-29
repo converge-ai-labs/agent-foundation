@@ -86,12 +86,13 @@ async def test_a_question_response_keeps_queued_child_results(service, scripted_
     run = reply.json()
     assert (run["trigger"], run["parent_run_id"]) == ("resume", waiting["id"])
     scripted_model.say("Answer received", to="Role: coordinator")
+    # The child steer can join this successor after its first request or start another Run.
+    # Script both replies before execution: waiting until it seals deadlocks the first case.
+    scripted_model.say("Child result received", to="Role: coordinator")
     await (await runs_kit.attempt(service))
-    # A one-turn successor may finish before taking the steer; it then starts the queued child result.
     child_result = (await runs_kit.inbox(service, thread_id))[1]
     assert child_result["status"] in {"assigned", "consumed"}
     if child_result["status"] == "assigned":
-        scripted_model.say("Child result received", to="Role: coordinator")
         await (await runs_kit.attempt(service))
     assert [entry["status"] for entry in await runs_kit.inbox(service, thread_id)] == ["consumed", "consumed"]
 

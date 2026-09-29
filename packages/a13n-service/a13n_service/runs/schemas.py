@@ -160,7 +160,7 @@ class Message(_Frozen):
 
 
 class NewThread(Message):
-    message_history: MessageHistory = ()
+    message_history: MessageHistory = Field(default_factory=list)
     session_id: ObjectId | None = None
     mcp_headers: McpHeaders = Field(default_factory=dict)
     environments: InitialMounts = ()

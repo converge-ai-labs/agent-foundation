@@ -1,98 +1,90 @@
-"""Portable model context, not execution state.
-
-The wire fields are a subset of public ModelMessages. Only content is imported: no provider state,
-execution IDs, instructions, usage or Harness metadata. The native adapter owns message construction.
-"""
+"""Service admission rules for native Pydantic AI messages; no parallel message schema."""
 
 import json
-from typing import Annotated, Literal
+from dataclasses import replace
+from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
-from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
+from pydantic import AfterValidator, Field, JsonValue, TypeAdapter
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+    ModelResponse,
+    TextContent,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 
-MAX_HISTORY_BYTES = 262144
-
-
-class _Content(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-type CallId = Annotated[str, Field(min_length=1, max_length=1024, pattern=r"\S")]
-type ToolName = Annotated[str, Field(min_length=1, max_length=128, pattern=r"\S")]
-
-
-class HistoryUserPrompt(_Content):
-    part_kind: Literal["user-prompt"]
-    content: str = Field(min_length=1, max_length=65536)
+_JSON = TypeAdapter(JsonValue)
 
 
-class HistoryText(_Content):
-    part_kind: Literal["text"]
-    content: str = Field(min_length=1, max_length=65536)
-
-
-class HistoryToolCall(_Content):
-    part_kind: Literal["tool-call"]
-    tool_name: ToolName
-    tool_call_id: CallId
-    args: dict[str, JsonValue]
-
-
-class HistoryToolReturn(_Content):
-    part_kind: Literal["tool-return"]
-    tool_name: ToolName
-    tool_call_id: CallId
-    content: JsonValue
-    outcome: Literal["success", "failed", "denied", "interrupted"] = "success"
-
-
-class HistoryRequest(_Content):
-    kind: Literal["request"]
-    parts: tuple[Annotated[HistoryUserPrompt | HistoryToolReturn, Field(discriminator="part_kind")], ...] = Field(
-        min_length=1, max_length=128
-    )
-
-
-class HistoryResponse(_Content):
-    kind: Literal["response"]
-    parts: tuple[Annotated[HistoryText | HistoryToolCall, Field(discriminator="part_kind")], ...] = Field(
-        min_length=1, max_length=128
-    )
-
-
-type HistoryMessage = Annotated[HistoryRequest | HistoryResponse, Field(discriminator="kind")]
-_MESSAGES = TypeAdapter(tuple[HistoryMessage, ...])
-
-
-def _validate(messages: tuple[HistoryMessage, ...]) -> tuple[HistoryMessage, ...]:
-    data = _MESSAGES.dump_python(messages, mode="json")
-    if len(json.dumps(data, ensure_ascii=False, allow_nan=False).encode()) > MAX_HISTORY_BYTES:
+def _validate(value: list[dict[str, JsonValue]]) -> list[dict[str, JsonValue]]:
+    if len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode()) > 262144:
         raise ValueError("Model history exceeds its byte limit")
+    messages = ModelMessagesTypeAdapter.validate_python(value)
     pending: dict[str, str] = {}
     seen: set[str] = set()
     for message in messages:
-        if isinstance(message, HistoryResponse) and pending:
+        if message.state != "complete" or (isinstance(message, ModelRequest) and message.instructions):
+            raise ValueError("History imports completed conversation content, not instructions or suspended execution")
+        if isinstance(message, ModelResponse) and pending:
             raise ValueError("Tool calls must be answered before the next response")
         for part in message.parts:
-            if isinstance(part, HistoryToolCall):
-                if part.tool_call_id in seen:
-                    raise ValueError("History tool call IDs must be unique")
+            if isinstance(part, ToolCallPart):
+                if not part.tool_call_id.strip() or not part.tool_name.strip() or part.tool_call_id in seen:
+                    raise ValueError("History tool calls require unique nonblank IDs and names")
+                part.args_as_dict()
                 seen.add(part.tool_call_id)
                 pending[part.tool_call_id] = part.tool_name
-            elif isinstance(part, HistoryToolReturn):
+            elif isinstance(part, ToolReturnPart):
+                _JSON.validate_python(part.content)
                 if pending.pop(part.tool_call_id, None) != part.tool_name:
                     raise ValueError("Tool returns must match an unanswered call by ID and name")
-            elif isinstance(part, HistoryUserPrompt) and pending:
-                raise ValueError("Tool calls must be answered before new user content")
+            elif isinstance(part, UserPromptPart):
+                if pending:
+                    raise ValueError("Tool calls must be answered before new user content")
+                if not isinstance(part.content, str) and any(
+                    not isinstance(item, str | TextContent) for item in part.content
+                ):
+                    raise ValueError("Import text history; submit media through the current payload")
+            elif not isinstance(part, TextPart):
+                raise ValueError("History accepts user text, model text, tool calls and JSON tool returns")
     if pending:
         raise ValueError("Model history cannot contain unanswered tool calls")
-    return messages
+    # Retain submitted JSON for immutable readback and idempotency, not time-dependent native defaults.
+    return value
 
 
-type MessageHistory = Annotated[tuple[HistoryMessage, ...], Field(max_length=256), AfterValidator(_validate)]
+# The wire format belongs to Pydantic AI, not a second family of generated Service models.
+# Other-language clients carry JSON; Python callers can use ModelMessagesTypeAdapter directly.
+type MessageHistory = Annotated[
+    list[dict[str, JsonValue]],
+    Field(
+        max_length=256,
+        description=(
+            "Pydantic AI ModelMessage JSON objects, validated by the Service. Imports completed user text, "
+            "model text and closed tool-call/JSON-result exchanges; no instructions, media or suspended execution. "
+            "At most 256 messages and 256 KiB of normalized JSON."
+        ),
+    ),
+    AfterValidator(_validate),
+]
 HISTORY = TypeAdapter(MessageHistory)
 
 
-def native(messages: MessageHistory) -> list[ModelMessage]:
-    """Construct detached public messages using their owning adapter, never a prompt transcript."""
-    return ModelMessagesTypeAdapter.validate_python(HISTORY.dump_python(messages, mode="json"))
+def initial(messages: MessageHistory) -> list[ModelMessage]:
+    """Detach the seed and clear foreign application provenance before Harness can interpret it."""
+    result = ModelMessagesTypeAdapter.validate_python(messages)
+    for message in result:
+        message.run_id = message.conversation_id = None
+        message.metadata = None
+        for part in message.parts:
+            if isinstance(part, ToolReturnPart):
+                part.metadata = None
+            elif isinstance(part, UserPromptPart) and not isinstance(part.content, str):
+                part.content = [
+                    replace(item, metadata=None) if isinstance(item, TextContent) else item for item in part.content
+                ]
+    return result

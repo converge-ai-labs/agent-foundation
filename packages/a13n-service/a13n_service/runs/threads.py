@@ -49,7 +49,7 @@ def new_thread(
     session_row: SessionRow,
     *,
     mcp_headers: McpHeaders,
-    message_history: MessageHistory = (),
+    message_history: MessageHistory | None = None,
     origin: str = "new",
     origin_thread_id: str | None = None,
     origin_run_id: str | None = None,
@@ -66,7 +66,7 @@ def new_thread(
         origin_run_id=origin_run_id,
         origin_tool_call_id=origin_tool_call_id,
         subagent=subagent,
-        message_history=HISTORY.dump_python(message_history, mode="json"),
+        message_history=HISTORY.dump_python(message_history or [], mode="json"),
         mcp_headers=dict(mcp_headers),
         labels={},
     )

@@ -407,7 +407,6 @@ def _checkpoint(
         ),
     ]
     state = RunState(
-        format=1,
         seq=1,
         attempt=1,
         harness=HarnessState.new(

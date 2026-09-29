@@ -3579,7 +3579,6 @@ export interface components {
        */
       password: string;
     };
-    CallId: string;
     CallResult:
       components["schemas"]["Returned"] | components["schemas"]["Failed"];
     /** CallbackOutcome */
@@ -4341,90 +4340,10 @@ export interface components {
         [key: string]: string;
       };
     };
-    HistoryMessage:
-      | components["schemas"]["HistoryRequest"]
-      | components["schemas"]["HistoryResponse"];
     /** HistoryPurge */
     HistoryPurge: {
       /** Purged */
       purged: number;
-    };
-    /** HistoryRequest */
-    HistoryRequest: {
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      kind: "request";
-      /** Parts */
-      parts: (
-        | components["schemas"]["HistoryUserPrompt"]
-        | components["schemas"]["HistoryToolReturn"]
-      )[];
-    };
-    /** HistoryResponse */
-    HistoryResponse: {
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      kind: "response";
-      /** Parts */
-      parts: (
-        | components["schemas"]["HistoryText"]
-        | components["schemas"]["HistoryToolCall"]
-      )[];
-    };
-    /** HistoryText */
-    HistoryText: {
-      /** Content */
-      content: string;
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      part_kind: "text";
-    };
-    /** HistoryToolCall */
-    HistoryToolCall: {
-      /** Args */
-      args: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      part_kind: "tool-call";
-      tool_call_id: components["schemas"]["CallId"];
-      tool_name: components["schemas"]["ToolName"];
-    };
-    /** HistoryToolReturn */
-    HistoryToolReturn: {
-      content: components["schemas"]["JsonValue"];
-      /**
-       * Outcome
-       * @default success
-       * @enum {string}
-       */
-      outcome?: "success" | "failed" | "denied" | "interrupted";
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      part_kind: "tool-return";
-      tool_call_id: components["schemas"]["CallId"];
-      tool_name: components["schemas"]["ToolName"];
-    };
-    /** HistoryUserPrompt */
-    HistoryUserPrompt: {
-      /** Content */
-      content: string;
-      /**
-       * @description discriminator enum property added by openapi-typescript
-       * @enum {string}
-       */
-      part_kind: "user-prompt";
     };
     /** InboxOrder */
     InboxOrder: {
@@ -5086,7 +5005,10 @@ export interface components {
       options?: components["schemas"]["RunOptions-Input"];
       payload: components["schemas"]["MessagePayload"];
     };
-    MessageHistory: components["schemas"]["HistoryMessage"][];
+    /** @description Pydantic AI ModelMessage JSON objects, validated by the Service. Imports completed user text, model text and closed tool-call/JSON-result exchanges; no instructions, media or suspended execution. At most 256 messages and 256 KiB of normalized JSON. */
+    MessageHistory: {
+      [key: string]: components["schemas"]["JsonValue"];
+    }[];
     /** MessagePayload */
     MessagePayload: {
       /** Content */
@@ -5402,7 +5324,6 @@ export interface components {
        * @default []
        */
       memories?: components["schemas"]["MemoryMount"][];
-      /** @default [] */
       message_history?: components["schemas"]["MessageHistory"];
       options?: components["schemas"]["RunOptions-Input"];
       payload: components["schemas"]["MessagePayload"];
@@ -6901,7 +6822,6 @@ export interface components {
       /** Provider Version */
       provider_version?: string | null;
     };
-    ToolName: string;
     /** ToolPage */
     ToolPage: {
       /** Items */

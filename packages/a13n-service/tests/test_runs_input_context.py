@@ -7,11 +7,11 @@ import pytest
 from a13n_service.infra.db import transaction
 from a13n_service.runs import checkpoints
 from a13n_service.runs import execute as execution
-from a13n_service.runs.history import HISTORY, native
+from a13n_service.runs.history import HISTORY, initial
 from a13n_service.runs.seal import expire_leases
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
 from pydantic import ValidationError
-from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
 from sqlalchemy import update
 from sqlalchemy.exc import DBAPIError
 
@@ -45,7 +45,7 @@ HISTORY_INPUT = [
 
 
 def test_history_uses_native_messages_without_execution_state():
-    history = native(HISTORY.validate_python(HISTORY_INPUT))
+    history = initial(HISTORY.validate_python(HISTORY_INPUT))
     assert isinstance(history[0], ModelRequest)
     assert isinstance(history[1], ModelResponse)
     call = history[1].parts[1]
@@ -58,7 +58,19 @@ def test_history_uses_native_messages_without_execution_state():
 
 @pytest.mark.parametrize(
     "mistake",
-    ["open", "orphan", "duplicate", "name", "new_user", "instructions", "provider", "metadata", "many", "bytes"],
+    [
+        "open",
+        "orphan",
+        "duplicate",
+        "name",
+        "new_user",
+        "instructions",
+        "suspended",
+        "media",
+        "many",
+        "bytes",
+        "unknown_bytes",
+    ],
 )
 def test_invalid_history_is_rejected(mistake):
     data = deepcopy(HISTORY_INPUT)
@@ -74,16 +86,39 @@ def test_invalid_history_is_rejected(mistake):
         data.insert(2, data[0])
     elif mistake == "instructions":
         data[0]["parts"][0]["part_kind"] = "system-prompt"
-    elif mistake == "provider":
-        data[1]["provider_response_id"] = "resp_forged"
-    elif mistake == "metadata":
-        data[0]["parts"][0]["metadata"] = {"source_id": "entry_forged"}
+    elif mistake == "suspended":
+        data[1]["state"] = "suspended"
+    elif mistake == "media":
+        data[0]["parts"][0]["content"] = [{"kind": "image-url", "url": "https://example.com/private.png"}]
     elif mistake == "many":
         data = [data[0]] * 257
+    elif mistake == "unknown_bytes":
+        data[0]["unknown"] = "x" * 262144
     else:
         data = [{"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "中" * 65536}]}] * 2
     with pytest.raises(ValidationError):
         HISTORY.validate_python(data)
+
+
+def test_native_serialized_messages_keep_provider_content_but_not_application_authority():
+    data = deepcopy(HISTORY_INPUT)
+    data[0]["run_id"] = "foreign_run"
+    data[0]["metadata"] = {"source_id": "entry_forged"}
+    data[0]["parts"][0]["content"] = [
+        {"kind": "text-content", "content": "Imported question", "metadata": {"source_id": "entry_forged"}}
+    ]
+    data[1]["provider_response_id"] = "foreign_response"
+    data[1]["parts"][1]["args"] = '{"key": 7}'
+    data[2]["parts"][0]["metadata"] = {"source_id": "entry_forged"}
+    exported = ModelMessagesTypeAdapter.dump_json(ModelMessagesTypeAdapter.validate_python(data))
+    accepted = HISTORY.validate_json(exported)
+    seeded = initial(accepted)
+    assert seeded[0].metadata is None and seeded[0].run_id is None
+    assert seeded[0].parts[0].content[0].metadata is None
+    assert seeded[2].parts[0].metadata is None
+    assert accepted[0]["metadata"] == {"source_id": "entry_forged"}
+    assert seeded[1].provider_response_id == "foreign_response"
+    assert seeded[1].parts[1].args == '{"key": 7}'
 
 
 async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
@@ -95,6 +130,8 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
     assert response.status_code == 201, response.text
     first = response.json()
     assert first["thread"]["message_history"] == HISTORY_INPUT
+    imported = ModelMessagesTypeAdapter.validate_python(first["thread"]["message_history"])
+    assert imported[0].parts[0].content == "Imported question"
     replay = await service.client.post(f"{service.api}/threads", json=body, headers=headers)
     assert replay.status_code == 200 and replay.json() == first
     changed = {**body, "message_history": []}

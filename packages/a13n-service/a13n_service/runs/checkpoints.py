@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
 
 # Bumped only with an explicit migration or rejection plan for outstanding checkpoints.
-FORMAT = 2
+FORMAT = 1
 
 type ObjectKind = Literal["state", "display"]
 
@@ -65,7 +65,7 @@ class DisplayPointer(Pointer):
 
 
 class RunState(_Frozen):
-    format: Literal[2] = FORMAT
+    format: Literal[1] = FORMAT
     harness: HarnessState
     seq: int = Field(ge=1)
     attempt: int = Field(ge=1)

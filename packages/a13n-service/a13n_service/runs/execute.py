@@ -66,7 +66,7 @@ from a13n_service.runs.coalesce import Coalescer
 from a13n_service.runs.display import Display, DisplayFold
 from a13n_service.runs.environments.execution import PreparedMount, open_mounts, prepare_mounts
 from a13n_service.runs.environments.mounts import PRIMARY
-from a13n_service.runs.history import HISTORY, MessageHistory, native
+from a13n_service.runs.history import HISTORY, MessageHistory, initial
 from a13n_service.runs.host import HostPlan, open_host, resolve_host
 from a13n_service.runs.inputs import Offered
 from a13n_service.runs.runtime import Runtime
@@ -273,11 +273,11 @@ def _initial(
     fork: bool,
     pending: Pending | None,
     answers: Resume | None,
-    history: MessageHistory = (),
+    history: MessageHistory | None = None,
 ) -> tuple[HarnessState, DeferredToolResume | None]:
     """Continue or fork the parent's history, resolving its wait before the successor consumes input."""
     if base is None:
-        return HarnessState.new(thread_id=thread_id, message_history=native(history)), None
+        return HarnessState.new(thread_id=thread_id, message_history=initial(history or [])), None
     state = base.harness.fork(thread_id=thread_id) if fork else base.harness
     if pending is None:
         return state, None
