@@ -24,7 +24,6 @@ on:
       - "packages/a13n-harness-ui/*"
       - "packages/a13n-harness-ui/a13n_harness_ui/**"
       - "docs/a13n-harness-ui/**"
-      - "mkdocs.yml"
       - "frontend/apps/a13n-harness-ui/**"
       - "frontend/apps/a13n-console/**"
       - "proto/a13n-service/openapi.json"
@@ -117,7 +116,6 @@ jobs:
               - 'packages/a13n-harness-ui/*'
               - 'packages/a13n-harness-ui/a13n_harness_ui/**'
               - 'docs/a13n-harness-ui/**'
-              - 'mkdocs.yml'
               - 'packages/a13n-logging/*'
               - 'packages/a13n-logging/a13n_logging/**'
               - 'frontend/apps/a13n-harness-ui/**'

@@ -1,4 +1,7 @@
-# MCP servers
+---
+title: MCP servers
+description: Configure command and Streamable HTTP MCP servers and enable them on an Agent.
+---
 
 Configure a command or Streamable HTTP server, then select its resource ID on an Agent. Creating a server file registers it; selecting its ID on an Agent or in defaults enables it. Use [Command reference](command-reference.md) for Harness UI shell commands. MCP command transports launch external programs.
 
@@ -54,7 +57,7 @@ After editing, run `a13n-harness-ui config validate` and start a new session if 
 
 Create `mcp/github.yaml`:
 
-```yaml
+```yaml title="mcp/github.yaml"
 schema_version: "1"
 kind: mcp_server
 id: mcp-github
@@ -73,7 +76,7 @@ This illustrative server requires its executable/package and access token to be 
 
 Create `mcp/docs.yaml` using your actual MCP endpoint:
 
-```yaml
+```yaml title="mcp/docs.yaml"
 schema_version: "1"
 kind: mcp_server
 id: mcp-docs

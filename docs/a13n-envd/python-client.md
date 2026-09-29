@@ -1,6 +1,9 @@
-# Python EIP client
+---
+title: Python EIP client
+description: The low-level Python client for implementing Environment Providers and other trusted EIP clients.
+---
 
-`a13n-envd-client` is the low-level Python client for Envd's Environment Interaction Protocol. Use it to implement an Environment Provider or another trusted EIP client. Most agent applications should use [Environment Providers](../environments/index.md), which already handle target lifecycle and adaptation.
+The client ships as `a13n-envd-client`. Most agent applications should use [Environment Providers](../environments/index.md) instead; they already handle target lifecycle and adaptation.
 
 The package does not discover, install, download, or launch Envd. It does not create a reverse-WebSocket listener, issue credentials, retain target state, or run an Agent.
 
@@ -119,7 +122,8 @@ These fragments require the appropriate advertised methods and operating-system 
 
 `open_writer(path, mode=..., executable=None, transfer_timeout_ms=None)` returns a single-entry staged `EIPFileWriter`. `mode` accepts the generated `FileWriteMode` or its string value. `write()` accepts bytes, bytearray, or memoryview, enforces transfer limits, and splits chunks to the negotiated frame size.
 
-**Context exit does not commit.** Call `await writer.commit()` explicitly; otherwise exit aborts the staged writer. Commit seals the stream, verifies its SHA-256/byte-count evidence, and publishes through the daemon's commit operation. `opened`, `transferred_bytes`, `open_context`, `commit_context`, and the post-commit `result` expose its evidence.
+> [!IMPORTANT]
+> **Context exit does not commit.** Call `await writer.commit()` explicitly; otherwise exit aborts the staged writer. Commit seals the stream, verifies its SHA-256/byte-count evidence, and publishes through the daemon's commit operation. `opened`, `transferred_bytes`, `open_context`, `commit_context`, and the post-commit `result` expose its evidence.
 
 Keep the commit operation ID when recovery may be needed. A timeout after dispatch is not proof of rollback; even abort can report that commit is in progress or already completed.
 

@@ -1,4 +1,7 @@
-# Delegation and CodeAct
+---
+title: Delegation and CodeAct
+description: Run declared subagents inline or asynchronously, and let CodeAct execute restricted Python over eligible tools.
+---
 
 Agent Harness provides two advanced orchestration features without adding a workflow engine:
 

@@ -1,4 +1,7 @@
-# Files and webhooks
+---
+title: Files and webhooks
+description: Upload files, publish assets, and subscribe to events with webhooks.
+---
 
 ## Uploads
 

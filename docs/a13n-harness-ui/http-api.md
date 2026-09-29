@@ -1,4 +1,8 @@
-# Harness UI HTTP API
+---
+title: Harness UI HTTP API
+sidebarTitle: HTTP API
+description: The browser server's HTTP API for setup, conversations, live output, and Host panels.
+---
 
 The browser server exposes the same process-local App used by the terminal. Its API powers setup, configuration, conversations, live output, and optional native Host Files, Git, and terminal panels. This is not the managed Service `/api/v1` API: callers share one instance access key, operation receipts belong to the running process, and live events are best-effort. Start with [Use the browser](webui.md); use [Python embedding](embedding.md) when no HTTP listener is needed.
 
@@ -14,7 +18,7 @@ curl --fail-with-body "$HUI_URL/api/openapi.json" \
   -H "Authorization: Bearer $HUI_API_KEY"
 ```
 
-The status contract has `api_version: "1"`, package/build information, App status, access mode, and feature flags. The live OpenAPI JSON describes exact request/response models and constraints. Swagger and ReDoc pages are disabled. The [checked schema](../assets/reference/harness-ui-openapi.json) is generated from the source version, not proof of another running version.
+The status contract has `api_version: "1"`, package/build information, App status, access mode, and feature flags. The live OpenAPI JSON describes exact request/response models and constraints. Swagger and ReDoc pages are disabled. The [checked schema](/reference/harness-ui-openapi.json) is generated from the source version, not proof of another running version.
 
 Authentication and Host/Origin validation apply at the listener boundary. Use a header-capable HTTP/fetch client. Do not put access keys in API query strings or logs, or confuse model-provider credentials managed under `/api/auth/*` with the listener key. The deliberate dangerous-bypass mode is not a production authentication mechanism.
 

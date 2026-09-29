@@ -1,6 +1,10 @@
-# Stream Protocol
+---
+title: Stream Protocol
+sidebarTitle: Overview
+description: Convert public Harness observations into typed AG-UI events for terminals, browsers, and transports.
+---
 
-Stream Protocol (`a13n-stream-protocol`) converts public Harness observations into typed **AG-UI events** for terminals, browsers, event consumers, and transports. It does not run an Agent or provide an SSE server.
+Stream Protocol (`a13n-stream-protocol`) only converts events: it does not run an Agent or provide an SSE server.
 
 ## Start here
 
@@ -13,7 +17,7 @@ Stream Protocol (`a13n-stream-protocol`) converts public Harness observations in
 | Continue Agent execution from saved state                       | [Harness State and Resume](../a13n-harness/state-and-resume.md) |
 
 ```mermaid
-flowchart LR
+flowchart TB
     Run["Harness source stream"] --> Router["Route by Thread and Run"]
     Router --> Observer["HarnessAguiObserver"]
     Observer --> Events["Typed AG-UI events"]

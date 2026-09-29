@@ -246,18 +246,13 @@ lint: sync deps-check ## Run non-mutating repository lint checks
 typecheck: sync service-boundaries ## Type-check Python package sources
 	@uv run --locked pyright
 
-.PHONY: docs-check
-docs-check: ## Verify that docs contains only Markdown source files
-	@files="$$(find docs -type f ! -name '*.md' -print)"; \
-		test -z "$$files" || { echo "Only Markdown files are allowed under docs/:"; echo "$$files"; exit 1; }
-
 .PHONY: docs-serve
-docs-serve: sync ## Serve the documentation site locally
-	@uv run --locked mkdocs serve
+docs-serve: frontend-sync ## Serve the documentation site locally with live reload
+	@pnpm --dir frontend --filter a13n-docs run dev
 
 .PHONY: docs-build
-docs-build: sync docs-check ## Build the documentation site in strict mode
-	@uv run --locked mkdocs build --strict
+docs-build: frontend-sync ## Build the static documentation site and check its links
+	@pnpm --dir frontend --filter a13n-docs run build
 
 .PHONY: verify
 verify: ## Run only the checks and tests that local changes can affect (VERIFY_ARGS=--full for every gate)
@@ -411,7 +406,7 @@ frontend-test: frontend-sync ## Run frontend unit and interaction tests
 	@pnpm --dir frontend run test
 
 .PHONY: frontend-build
-frontend-build: a13n-ui-build a13n-console-build a13n-harness-ui-webui-build ## Build frontend applications and the UI showcase
+frontend-build: a13n-ui-build a13n-console-build a13n-harness-ui-webui-build docs-build ## Build frontend applications, the UI showcase, and the documentation site
 
 .PHONY: frontend-check-all
 frontend-check-all: frontend-check frontend-test frontend-build ## Run the complete frontend gate
@@ -509,7 +504,7 @@ image-check: images ## Build and smoke-check all container images
 python-check: lint typecheck ## Run Python workspace lint and type checks
 
 .PHONY: python-check-all
-python-check-all: python-check test python-build docs-build ## Run the complete Python and documentation gate
+python-check-all: python-check test python-build ## Run the complete Python gate
 
 .PHONY: check
 check: ## Format, then run fast checks in parallel (override with CHECK_JOBS=N)

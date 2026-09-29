@@ -1,4 +1,7 @@
-# Identity and access
+---
+title: Identity and access
+description: Organizations, workspaces, roles, grants, login sessions, API keys, and service accounts.
+---
 
 Every request acts as a **principal**: a user, who signs in with an email address and password, or a service account, which exists for applications. Principals receive **roles** through **grants** in an organization or a workspace, and authenticate with a login session or an API key.
 

@@ -1,6 +1,9 @@
-# Connect your application
+---
+title: Connect your application
+description: Call an agent on a running Service from your application with a workspace API key.
+---
 
-Call an agent on a running Service. You need its URL, a workspace API key, and an agent with a working model. Start with the [Service quickstart](get-started.md) for deployment or [Console guide](use-platform.md) to configure an agent.
+You need the Service URL, a workspace API key, and an agent with a working model. Start with the [Service quickstart](get-started.md) for deployment or [Console guide](use-platform.md) to configure an agent.
 
 Use a [Service SDK or the remote CLI](sdks.md) for application integration. This guide shows the equivalent HTTP flow with curl; client-specific setup and streaming helpers live in the SDK repositories.
 
@@ -62,4 +65,4 @@ Continue until the run is `completed`, `waiting`, `failed`, or `cancelled`. A co
 
 Instead of polling, follow the thread stream or subscribe to [webhooks](files-and-webhooks.md#webhooks). Disconnecting the client leaves remote work running. Send follow-ups to `POST …/threads/{thread_id}/inbox` to continue the conversation.
 
-See [HTTP conventions](http.md) for authentication, pagination, conditional writes, and errors; the [API reference](api-reference.md) lists request and response schemas. Match your [SDK's supported contract](sdks.md#keep-version-ownership-clear) to your deployed Service version.
+See [HTTP conventions](http.md) for authentication, pagination, conditional writes, and errors; the [API reference](api-reference/index.md) lists request and response schemas. Match your [SDK's supported contract](sdks.md#keep-version-ownership-clear) to your deployed Service version.

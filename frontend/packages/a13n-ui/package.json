@@ -6,7 +6,12 @@
   "exports": {
     ".": "./src/index.ts",
     "./vite": "./vite.ts",
-    "./styles.css": "./src/styles/index.css"
+    "./styles.css": "./src/styles/index.css",
+    "./theme.css": "./src/styles/theme.css",
+    "./tokens.css": "./src/styles/tokens.css",
+    "./fonts.css": "./src/styles/fonts.css",
+    "./brand/logo.svg": "./src/brand/a13n-logo.svg",
+    "./brand/wordmark": "./src/brand/wordmark.tsx"
   },
   "sideEffects": [
     "**/*.css"

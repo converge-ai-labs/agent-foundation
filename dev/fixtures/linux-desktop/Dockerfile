@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv==0.11.32
 WORKDIR /app
-COPY pyproject.toml uv.lock README.md LICENSE mkdocs.yml ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY docs ./docs
 COPY packages ./packages
 COPY scripts ./scripts

@@ -1,4 +1,7 @@
-# Client-side tools
+---
+title: Client-side tools
+description: Declare tools that your application executes outside the agent process, then resume with their results.
+---
 
 Use client tools when the model can request an action but a separate application must execute it: a browser action, an external application integration, or another authenticated client. The declaration supplies model guidance and JSON argument schemas, not a Python executor or credential.
 

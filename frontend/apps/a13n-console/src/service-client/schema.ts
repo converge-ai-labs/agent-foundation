@@ -561,10 +561,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Providers */
+    /** List connector providers */
     get: operations["list_providers_api_v1_connector_providers_get"];
     put?: never;
-    /** Create Provider */
+    /** Create connector provider */
     post: operations["create_provider_api_v1_connector_providers_post"];
     delete?: never;
     options?: never;
@@ -579,7 +579,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Provider */
+    /** Get connector provider */
     get: operations["get_provider_api_v1_connector_providers__provider_id__get"];
     put?: never;
     post?: never;
@@ -587,7 +587,7 @@ export interface paths {
     options?: never;
     head?: never;
     /**
-     * Update Provider
+     * Update connector provider
      * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
      */
     patch: operations["update_provider_api_v1_connector_providers__provider_id__patch"];
@@ -653,7 +653,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Test Provider */
+    /** Test connector provider */
     post: operations["test_provider_api_v1_connector_providers__provider_id__test_post"];
     delete?: never;
     options?: never;
@@ -668,10 +668,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Providers */
+    /** List environment providers */
     get: operations["list_providers_api_v1_environment_providers_get"];
     put?: never;
-    /** Create Provider */
+    /** Create environment provider */
     post: operations["create_provider_api_v1_environment_providers_post"];
     delete?: never;
     options?: never;
@@ -686,7 +686,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Provider */
+    /** Get environment provider */
     get: operations["get_provider_api_v1_environment_providers__provider_id__get"];
     put?: never;
     post?: never;
@@ -694,7 +694,7 @@ export interface paths {
     options?: never;
     head?: never;
     /**
-     * Update Provider
+     * Update environment provider
      * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
      */
     patch: operations["update_provider_api_v1_environment_providers__provider_id__patch"];
@@ -709,7 +709,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Test Provider */
+    /** Test environment provider */
     post: operations["test_provider_api_v1_environment_providers__provider_id__test_post"];
     delete?: never;
     options?: never;
@@ -1089,10 +1089,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Providers */
+    /** List memory providers */
     get: operations["list_providers_api_v1_memory_providers_get"];
     put?: never;
-    /** Create Provider */
+    /** Create memory provider */
     post: operations["create_provider_api_v1_memory_providers_post"];
     delete?: never;
     options?: never;
@@ -1107,7 +1107,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Provider */
+    /** Get memory provider */
     get: operations["get_provider_api_v1_memory_providers__provider_id__get"];
     put?: never;
     post?: never;
@@ -1115,7 +1115,7 @@ export interface paths {
     options?: never;
     head?: never;
     /**
-     * Update Provider
+     * Update memory provider
      * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
      */
     patch: operations["update_provider_api_v1_memory_providers__provider_id__patch"];
@@ -1130,7 +1130,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Test Provider */
+    /** Test memory provider */
     post: operations["test_provider_api_v1_memory_providers__provider_id__test_post"];
     delete?: never;
     options?: never;
@@ -1165,10 +1165,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Providers */
+    /** List model providers */
     get: operations["list_providers_api_v1_model_providers_get"];
     put?: never;
-    /** Create Provider */
+    /** Create model provider */
     post: operations["create_provider_api_v1_model_providers_post"];
     delete?: never;
     options?: never;
@@ -1183,7 +1183,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Provider */
+    /** Get model provider */
     get: operations["get_provider_api_v1_model_providers__provider_id__get"];
     put?: never;
     post?: never;
@@ -1191,7 +1191,7 @@ export interface paths {
     options?: never;
     head?: never;
     /**
-     * Update Provider
+     * Update model provider
      * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
      */
     patch: operations["update_provider_api_v1_model_providers__provider_id__patch"];
@@ -1206,7 +1206,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Test Provider */
+    /** Test model provider */
     post: operations["test_provider_api_v1_model_providers__provider_id__test_post"];
     delete?: never;
     options?: never;
@@ -2535,10 +2535,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** List Providers */
+    /** List web providers */
     get: operations["list_providers_api_v1_web_providers_get"];
     put?: never;
-    /** Create Provider */
+    /** Create web provider */
     post: operations["create_provider_api_v1_web_providers_post"];
     delete?: never;
     options?: never;
@@ -2553,7 +2553,7 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Get Provider */
+    /** Get web provider */
     get: operations["get_provider_api_v1_web_providers__provider_id__get"];
     put?: never;
     post?: never;
@@ -2561,7 +2561,7 @@ export interface paths {
     options?: never;
     head?: never;
     /**
-     * Update Provider
+     * Update web provider
      * @description A `config` change must also replace or remove a stored credential: it never follows a new endpoint.
      */
     patch: operations["update_provider_api_v1_web_providers__provider_id__patch"];
@@ -2576,7 +2576,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Test Provider */
+    /** Test web provider */
     post: operations["test_provider_api_v1_web_providers__provider_id__test_post"];
     delete?: never;
     options?: never;

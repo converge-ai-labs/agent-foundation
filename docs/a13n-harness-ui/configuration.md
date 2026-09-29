@@ -1,4 +1,7 @@
-# Configuration reference
+---
+title: Configuration reference
+description: The root configuration file, loading precedence, and when edits take effect.
+---
 
 Harness UI uses YAML and Markdown files. **The root file controls application defaults; Model and Agent files control agent behavior.** Start with `a13n-harness-ui setup`, then edit those files as needed.
 

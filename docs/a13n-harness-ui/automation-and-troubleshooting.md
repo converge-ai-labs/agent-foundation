@@ -1,4 +1,7 @@
-# Automation and troubleshooting
+---
+title: Automation and troubleshooting
+description: Script Harness UI runs, trace execution, and diagnose connection, browser, and Environment problems.
+---
 
 ## Automation and diagnostics
 
@@ -50,7 +53,7 @@ Startup order is **update confirmation → setup if needed → conversation**. T
 
 Update detection is enabled by default. To disable it in `a13n-harness-ui.yaml`:
 
-```yaml
+```yaml title="a13n-harness-ui.yaml"
 process:
   terminal_update_check: false
 ```

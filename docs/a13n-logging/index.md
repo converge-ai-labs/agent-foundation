@@ -1,4 +1,7 @@
-# Logging
+---
+title: Logging
+description: Structured terminal and JSON logging for a13n applications, configured once at the executable boundary.
+---
 
 `a13n-logging` configures standard Python logging for an application namespace. It writes Rich terminal output or JSON to stdout, optionally rotates a JSON file, and binds fields to a unit of work.
 

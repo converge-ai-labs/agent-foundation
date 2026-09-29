@@ -1,4 +1,7 @@
-# State and Resume
+---
+title: State and resume
+description: Save HarnessState to continue, fork, or recover a Thread across processes.
+---
 
 `HarnessState` is the portable continuation value for one independently advancing Thread. It preserves model history, versioned Capability namespaces, and optional portable Environment data. It deliberately does not preserve authority or Host lifecycle state.
 

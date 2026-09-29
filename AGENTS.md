@@ -8,7 +8,7 @@ Agent Foundation is built on Harness, an embeddable agent execution foundation. 
 - [DEVELOPMENT.md](DEVELOPMENT.md) owns code quality principles and component engineering standards. Apply [Code Quality and Design](DEVELOPMENT.md#code-quality-and-design) to features, bug fixes, refactoring, and reviews; read the component rules and owning specifications relevant to the change.
 - [spec/repository-model.md](spec/repository-model.md) owns repository structure and workflow boundaries. Read it before changing either.
 - [spec/README.md](spec/README.md) leads to the accepted product and architecture contracts. Keep proposals, discussion, and progress in GitHub Issues; changes are reviewed through pull requests.
-- `docs/` contains Markdown user documentation published with MkDocs Material; `mkdocs.yml` owns site configuration and navigation.
+- `docs/` contains Markdown user documentation and its `meta.json` navigation; the Fumadocs site in `frontend/apps/a13n-docs` publishes it. [Documentation Changes](CONTRIBUTING.md#documentation-changes) owns authoring conventions.
 - [MAINTAINERS.md](MAINTAINERS.md) owns semantic reviewer routing.
 
 Read the relevant contribution and engineering sections before changing that surface. Reuse sections already read unless they changed. This guide and skills summarize operational rules; they do not replace the owning contracts. Do not turn personal preferences or tool-specific defaults into repository requirements without an explicit project decision.

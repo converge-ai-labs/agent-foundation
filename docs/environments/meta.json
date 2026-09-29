@@ -1,0 +1,23 @@
+{
+  "title": "Environments",
+  "description": "Files, commands, and processes anywhere",
+  "root": true,
+  "icon": "environments",
+  "pages": [
+    "index",
+    "---Get started---",
+    "getting-started",
+    "examples",
+    "---Work with Environments---",
+    "operations",
+    "commands",
+    "lifecycle",
+    "---Configure---",
+    "configuration",
+    "providers",
+    "remote-envd",
+    "configuration-reference",
+    "---Envd---",
+    "...../a13n-envd"
+  ]
+}

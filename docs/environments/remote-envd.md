@@ -1,4 +1,8 @@
-# Connect to Remote Envd
+---
+title: Connect to Remote Envd
+sidebarTitle: Remote Envd
+description: Connect to an existing Envd daemon over HTTP, or let it dial back to your Host over WebSocket.
+---
 
 Use `http_envd` when your Host can reach an existing daemon over HTTP(S). Use `websocket_envd` when the daemon must connect back to your Host, for example from a machine behind NAT.
 

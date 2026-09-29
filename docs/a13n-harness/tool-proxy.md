@@ -1,4 +1,7 @@
-# Grouped ToolProxy
+---
+title: Grouped ToolProxy
+description: Expose large tool collections through search and call entries so the model sees a compact list.
+---
 
 ToolProxy exposes large collections of local tools through two model-facing entries: `search_proxy_tools` and `call_proxy_tool`. The model sees a compact list of domains, discovers exact argument schemas when needed, and invokes the selected tool with an arguments object.
 

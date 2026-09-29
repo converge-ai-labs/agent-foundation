@@ -1,4 +1,4 @@
-"""Render Environment configuration, Service settings, and Service API references."""
+"""Render the Environment configuration and Service settings references."""
 
 from __future__ import annotations
 
@@ -51,7 +51,6 @@ from a13n_harness.providers.environment.vercel.provider import (
 from a13n_service.settings import Settings
 
 ROOT = Path(__file__).resolve().parents[2]
-OPENAPI = ROOT / "proto/a13n-service/openapi.json"
 
 
 def cell(value: object) -> str:
@@ -125,80 +124,23 @@ def render_configuration() -> str:
             continue  # `extensions`: sections a distribution declares, documented by that distribution
         section_schema = definitions[definition["$ref"].rsplit("/", 1)[-1]]
         add(section, section, f"A13N_{section.upper()}", section_schema["properties"])
-    text = """# Service configuration reference
+    text = """---
+title: Service settings reference
+sidebarTitle: Settings reference
+description: Every Service setting with its environment variable, type, bounds, and default.
+---
 
-This field reference is generated from the same `Settings` definitions used by the Service loader. Run `uv run --locked python scripts/docs/references.py` after changing those definitions. Do not independently edit generated rows.
+> [!NOTE]
+> Generated from the `Settings` definitions used by the Service loader. Run `uv run --locked python scripts/docs/references.py` after changing them instead of editing rows.
 
 Use [Configure Service](configuration.md) for precedence, examples, role/storage requirements, and cross-field validation. Types and field constraints below do not replace those combined checks. Secret defaults are masked by the schema; this reference never reads deployment environment values. Defaults apply to the source version, not every historical release.
 
-The complete machine-readable validation schema, including named enum/union definitions, is available as [Service settings JSON](../assets/reference/service-settings.json).
+The complete machine-readable validation schema, including named enum/union definitions, is available as [Service settings JSON](/reference/service-settings.json).
 
 """
     for section, rows in groups.items():
         text += f"## `{section}`\n\n| Setting | Environment variable | Type / choices | Constraints and default |\n| --- | --- | --- | --- |\n"
         text += "\n".join(rows) + "\n\n"
-    return text.rstrip() + "\n"
-
-
-def render_service_api() -> str:
-    schema = json.loads(OPENAPI.read_text(encoding="utf-8"))
-    groups: dict[str, list[tuple[str, str, dict[str, Any], list[dict[str, Any]]]]] = defaultdict(list)
-    for path, methods in schema["paths"].items():
-        for method, operation in methods.items():
-            if method not in {"get", "post", "put", "patch", "delete", "head", "options"}:
-                continue
-            tag = operation.get("tags", ["other"])[0]
-            groups[tag].append((path, method, operation, methods.get("parameters", [])))
-    text = """# Service HTTP reference
-
-This reference is generated from the Service OpenAPI export. [HTTP conventions](http.md) explain authentication, preconditions, request keys, paging and errors, which apply to every operation below.
-
-Download [the complete OpenAPI JSON](../assets/reference/service-openapi.json).
-
-"""
-    for tag, operations in sorted(groups.items()):
-        text += f"## {tag}\n\n"
-        for path, method, operation, common in operations:
-            text += f"### `{method.upper()} {path}`\n\n"
-            text += operation.get("summary", "Service operation") + ".\n\n"
-            if description := operation.get("description"):
-                text += description + "\n\n"
-            parameters = [*common, *operation.get("parameters", [])]
-            if parameters:
-                text += "| Parameter | Location | Required | Type / schema | Constraints and default |\n| --- | --- | --- | --- | --- |\n"
-                for parameter in parameters:
-                    shape = parameter.get("schema", {})
-                    text += (
-                        "| "
-                        + " | ".join(
-                            cell(value)
-                            for value in (
-                                f"`{parameter['name']}`",
-                                parameter["in"],
-                                str(parameter.get("required", False)).lower(),
-                                schema_label(shape),
-                                constraints(shape),
-                            )
-                        )
-                        + " |\n"
-                    )
-                text += "\n"
-            if body := operation.get("requestBody"):
-                text += "Request body: " + ("required" if body.get("required") else "optional") + ".\n\n"
-                for media, content in body.get("content", {}).items():
-                    text += f"- `{media}`: `{schema_label(content.get('schema', {}))}`.\n"
-                text += "\n"
-            text += "Responses:\n\n"
-            for status, response in operation["responses"].items():
-                models = "; ".join(
-                    f"{media}: {schema_label(value.get('schema', {}))}"
-                    for media, value in response.get("content", {}).items()
-                )
-                text += f"- **{status}** — {response.get('description', '')}"
-                if models:
-                    text += f" (`{models}`)"
-                text += ".\n"
-            text += "\n"
     return text.rstrip() + "\n"
 
 
@@ -232,9 +174,15 @@ ENVIRONMENT_CONFIGURATION_MODELS = (
 
 
 def render_environment_configuration() -> str:
-    text = """# Provider configuration reference
+    text = """---
+title: Provider configuration reference
+description: Every built-in Environment Provider configuration field, generated from the Provider models.
+---
 
-Generated from the current built-in Provider Pydantic models by `scripts/docs/references.py`. Do not independently edit the rows. Use [Configure Providers](configuration.md) for authoring, configuration/runtime/state boundaries, and cross-field restrictions. These are Provider settings, not standalone daemon JSON defaults.
+> [!NOTE]
+> Generated from the built-in Provider Pydantic models by `scripts/docs/references.py`. Regenerate instead of editing rows.
+
+Use [Configure Providers](configuration.md) for authoring, configuration/runtime/state boundaries, and cross-field restrictions. These are Provider settings, not standalone daemon JSON defaults.
 
 Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these template configuration objects.
 
@@ -298,7 +246,6 @@ def main() -> None:
     outputs = {
         "docs/environments/configuration-reference.md": render_environment_configuration(),
         "docs/a13n-service/configuration-reference.md": render_configuration(),
-        "docs/a13n-service/api-reference.md": render_service_api(),
         "scripts/docs/service-settings.schema.json": json.dumps(Settings.model_json_schema(), indent=2) + "\n",
     }
     for name, content in outputs.items():

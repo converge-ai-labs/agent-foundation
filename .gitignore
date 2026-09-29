@@ -48,9 +48,6 @@ coverage.xml
 htmlcov/
 test-results/
 
-# Documentation output
-site/
-
 # Cloudflare Wrangler local state
 .wrangler/
 

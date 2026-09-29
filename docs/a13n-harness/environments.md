@@ -1,4 +1,7 @@
-# Environments
+---
+title: Environments
+description: Mount Environments into a Run so the agent can work with files, commands, and processes.
+---
 
 An Environment is one fresh process-local adapter for a single provider target. The [Environment Provider domain](../environments/index.md) owns target creation, re-entry, provider operations, cached state, and explicit destruction. Harness owns only one Run's mount names, access ceilings, routing, state aggregation, and non-destructive cleanup.
 

@@ -1,8 +1,13 @@
-# Service quickstart
-
-Run Service on your machine, connect a model, and get your first agent response in Console. Already have a running Service? [Use your team's platform](use-platform.md) or [connect your application](connect-application.md).
+---
+title: Service quickstart
+sidebarTitle: Quickstart
+description: Run Service locally with Docker Compose, connect a model, and get a first agent response.
+---
 
 You need Docker with Docker Compose and a model provider API key. No Python, Node.js, or source build is required. Model calls use your provider account and may incur charges.
+
+> [!TIP]
+> Already have a running Service? [Use your team's platform](use-platform.md) or [connect your application](connect-application.md).
 
 ## Try locally with Docker Compose
 
@@ -14,7 +19,8 @@ docker compose -f a13n-service-quickstart.yaml up -d --wait
 
 Open <http://127.0.0.1:8080> and sign in with **`admin@example.com` / `local-public-password-123`**. The administrator, organization, and workspace are already created. Continue at [Add a model](#add-a-model); bring your own model provider credentials for real responses.
 
-**Keep this trial on your own machine:** its administrator password is public. It binds only to loopback, does not mount the host Docker socket, and preserves data and credentials across restarts. The [Compose guide](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#local-quickstart) covers the stack in detail.
+> [!WARNING]
+> **Keep this trial on your own machine.** Its administrator password is public. It binds only to loopback, does not mount the host Docker socket, and preserves data and credentials across restarts. The [Compose guide](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#local-quickstart) covers the stack in detail.
 
 ## Add a model
 

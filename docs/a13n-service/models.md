@@ -1,4 +1,7 @@
-# Models
+---
+title: Models
+description: Add model providers and models, configure media understanding, and track usage and prices.
+---
 
 An agent calls a **model**: an upstream model of a **model provider** account, with the model API to call it through, its capabilities and optional pricing. Providers and models belong to one [workspace](resources.md#workspaces), and agents select a model by its key.
 

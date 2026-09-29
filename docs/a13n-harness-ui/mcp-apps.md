@@ -1,6 +1,9 @@
-# Interactive MCP Apps
+---
+title: Interactive MCP Apps
+description: Show interactive MCP App results inside browser conversations.
+---
 
-MCP Apps display interactive tool results inside a Harness UI conversation. An App can keep working after the assistant finishes, using its MCP server's existing connection. This feature belongs to WebUI; it does not install a browser-control service or give the Agent access to your browser.
+An MCP App can keep working after the assistant finishes, using its MCP server's existing connection. This feature belongs to WebUI; it does not install a browser-control service or give the Agent access to your browser.
 
 ## Enable Apps for selected servers
 

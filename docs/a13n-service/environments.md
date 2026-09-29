@@ -1,4 +1,7 @@
-# Environments
+---
+title: Environments
+description: Give agents managed containers or your own machines to work in.
+---
 
 An environment is the computer an agent works on: its files and terminal tools act there. The Service offers two kinds:
 

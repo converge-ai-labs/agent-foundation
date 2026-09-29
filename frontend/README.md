@@ -4,6 +4,7 @@ Private pnpm workspace for a13n browser applications. Use Node.js 24 and the pnp
 
 - `apps/a13n-console`: Service management and conversation application with English and Simplified Chinese resources.
 - `apps/a13n-harness-ui`: Harness UI browser application, compiled into its Python distribution.
+- `apps/a13n-docs`: the Fumadocs documentation site built from the repository `docs/` Markdown; see [Documentation Changes](../CONTRIBUTING.md#documentation-changes).
 - `packages/a13n-ui`: shared design tokens, React primitives, and an independent development showcase.
 
 From the repository root:
@@ -20,11 +21,12 @@ For individual frontend checks and development servers:
 make frontend-sync
 make frontend-check       # Formatting, types, and generated contracts
 make frontend-test        # Unit and interaction tests
-make frontend-build       # Application assets and UI showcase
+make frontend-build       # Application assets, UI showcase, and docs site
 make frontend-check-all   # All three, without repeated type checking
 pnpm --dir frontend --filter a13n-ui dev
 pnpm --dir frontend --filter a13n-console dev
 pnpm --dir frontend --filter a13n-harness-ui-webui dev
+make docs-serve
 ```
 
 `make install`, `make format`, `make check`, `make build`, and `make check-all` include this workspace. `make a13n-harness-ui-assets` prepares only the browser assets needed by the Python distribution. Harness UI contract checks also require the repository's uv/Python environment.

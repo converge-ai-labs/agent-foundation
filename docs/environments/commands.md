@@ -1,4 +1,8 @@
-# Run commands and observe processes
+---
+title: Run commands and observe processes
+sidebarTitle: Commands and processes
+description: Run bounded commands or long-lived processes in an Environment and read their output.
+---
 
 Use `environment.operations.shell` for a bounded foreground execution, or `environment.operations.processes` for a command whose observation continues across calls. These are typed Provider APIs, not the model-facing `shell_exec` / `shell_wait` tool signatures.
 

@@ -55,7 +55,7 @@ First-use setup connects a model and selects execution permissions. Full Control
 
 Harness gives your application reusable agents, typed tools and outputs, streaming observations, portable execution environments, and state you can save and resume. Your application owns persistence, credentials, and recovery policy.
 
-Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). The [package catalog](docs/packages.md) covers supporting components such as Envd, Stream Protocol, and logging.
+Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). The [package catalog](docs/overview/packages.md) covers supporting components such as Envd, Stream Protocol, and logging.
 
 ## Work from source
 

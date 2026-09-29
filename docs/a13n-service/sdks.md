@@ -1,4 +1,7 @@
-# SDKs and CLI
+---
+title: SDKs and CLI
+description: Integrate through a Service SDK or the remote CLI instead of raw HTTP.
+---
 
 Use a Service SDK to integrate an application with a running Service, or the remote CLI for shell scripts and terminal operations. These clients call the Service HTTP API; they do not run agents inside your process. For embedded execution, use [Harness](../a13n-harness/index.md). For a local agent application, use [Harness UI](../a13n-harness-ui/index.md).
 
@@ -35,4 +38,4 @@ Service owns authorization and durable execution. Closing an Interaction, timing
 
 These repositories version independently of Service and pin a Service contract. Check the client's contract provenance and release documentation against your deployment, and read its docs at the version you consume rather than assuming `main` matches an installed package.
 
-This site documents Service behavior through [HTTP conventions](http.md), the [HTTP reference](api-reference.md), and [Threads and Runs](agents-and-runs.md). It intentionally does not duplicate SDK method signatures or command recipes: those change with their owning repositories.
+This site documents Service behavior through [HTTP conventions](http.md), the [HTTP reference](api-reference/index.md), and [Threads and Runs](agents-and-runs.md). It intentionally does not duplicate SDK method signatures or command recipes: those change with their owning repositories.

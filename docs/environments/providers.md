@@ -1,6 +1,10 @@
-# Providers and runtime configuration
+---
+title: Providers and runtime configuration
+sidebarTitle: Providers and runtime
+description: Choose a Provider for your directory, container, cloud sandbox, or remote machine.
+---
 
-Choose a Provider for your local directory, container, cloud sandbox, or remote machine. The recipe describes the target; the runtime holds its clients and credentials.
+The recipe describes the target; the runtime holds its clients and credentials.
 
 [Choose a backend](index.md#choose-a-backend) for the short comparison. This page covers catalogs, extension registration, and built-in runtime requirements.
 

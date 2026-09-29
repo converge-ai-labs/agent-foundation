@@ -1,13 +1,17 @@
-# Harness
+---
+title: Harness
+sidebarTitle: Overview
+description: An embeddable Python SDK for building agents, connecting tools and Environments, and continuing work from saved state.
+---
 
-Harness (`a13n-harness`) is an embeddable SDK for building agents, connecting tools and Environments, running or streaming work, and continuing a conversation from saved state. Your application supplies current credentials and chooses what to persist. [Harness UI](../a13n-harness-ui/index.md) provides an interactive local Host; [Service](../a13n-service/index.md) operates managed agents.
+Harness (`a13n-harness`) runs or streams agent work inside your own process. Your application supplies current credentials and chooses what to persist. [Harness UI](../a13n-harness-ui/index.md) provides an interactive local Host; [Service](../a13n-service/index.md) operates managed agents.
 
 ## Start with a small Agent
 
 The [offline quickstart](getting-started.md) builds and runs an Agent without credentials or external services:
 
 ```mermaid
-flowchart LR
+flowchart TB
     Spec["AgentSpec and Capabilities"] --> Build["HarnessBuilder"]
     Build --> Agent["Reusable ExecutableAgent"]
     Agent --> Run["Scoped Run"]

@@ -1,4 +1,7 @@
-# Replay and recovery
+---
+title: Replay and recovery
+description: Rebuild a UI projection for the same Run, and know when a new Harness Run is needed instead.
+---
 
 There are two different restart problems: reconstructing a UI projection for the **same** Run, and starting a **new** Harness Run from a checkpoint. `HarnessAguiObserver.resume()` solves only the first.
 

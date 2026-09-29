@@ -1,6 +1,8 @@
-# Getting started
-
-Convert an offline Harness Run into AG-UI events. This example uses the real Harness stream and converter but no provider credentials, browser, server, or network transport.
+---
+title: Stream Protocol quickstart
+sidebarTitle: Quickstart
+description: Convert an offline Harness Run into AG-UI events. This example uses the real Harness stream and converter but no provider credentials, browser, server, or network transport.
+---
 
 ## Prepare the source workspace
 

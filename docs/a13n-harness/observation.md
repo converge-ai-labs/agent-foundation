@@ -1,4 +1,7 @@
-# Observation
+---
+title: Observation
+description: Opt-in OpenTelemetry traces for Runs, models, and tools, with Logfire and Langfuse profiles.
+---
 
 The Harness exposes an opt-in OpenTelemetry observation layer. The Host owns SDK configuration, resources, sampling, processors, exporters, propagation, flush, and shutdown. The Harness never constructs an exporter or collector client.
 

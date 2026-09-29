@@ -1,4 +1,8 @@
-# Integrate Skill Discovery in a Host
+---
+title: Integrate Skill discovery in a Host
+sidebarTitle: Skills
+description: Discover and materialize Skills from files or Environments, and make them available to a Run.
+---
 
 `a13n-harness` keeps Skill discovery reusable outside Agent execution. A Host chooses one of two explicit modes:
 
@@ -12,7 +16,7 @@ Both modes use the same `SkillSource`, `SkillMaterializer`, frontmatter parser, 
 ## Design
 
 ```mermaid
-flowchart LR
+flowchart TB
     Host[Host configuration] --> Sources[FileSkillSource values]
     Host --> Materializers[Trusted SkillMaterializer values]
     Sources --> Manager[SkillManager]

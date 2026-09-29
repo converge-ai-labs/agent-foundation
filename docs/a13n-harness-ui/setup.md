@@ -1,4 +1,7 @@
-# Set up your first Agent
+---
+title: Set up your first Agent
+description: Connect a model, create an Agent, and choose execution permissions.
+---
 
 Setup connects a Model, creates an Agent, and selects execution permissions. It runs automatically when no Model is configured. To run it again, leave chat and use:
 

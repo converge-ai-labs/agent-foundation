@@ -1,4 +1,8 @@
-# Common configuration recipes
+---
+title: Common configuration recipes
+sidebarTitle: Common recipes
+description: Task-focused edits for models, agents, tools, MCP servers, Skills, and review policy.
+---
 
 Start with [setup](setup.md). To edit manually, find the selected directory and validate the result:
 
@@ -11,9 +15,7 @@ Paths below are relative to that directory (normally `~/.a13n-harness-ui/`). Mer
 
 ## Change the default Agent
 
-**File: `a13n-harness-ui.yaml`**
-
-```yaml
+```yaml title="a13n-harness-ui.yaml"
 defaults:
   agent: agent-coder
 ```
@@ -65,9 +67,7 @@ For all fields and native setting behavior, see [Model reference](models-and-aut
 
 ## Connect an OpenAI-compatible endpoint
 
-**File: `models/compatible.yaml`**
-
-```yaml
+```yaml title="models/compatible.yaml"
 schema_version: "1"
 kind: model
 id: model-compatible
@@ -100,9 +100,7 @@ For all Agents in this configuration tree, edit **`AGENTS.md` beside root YAML**
 
 ## Enable selected built-in subagents
 
-**File: `a13n-harness-ui.yaml`**
-
-```yaml
+```yaml title="a13n-harness-ui.yaml"
 subagents:
   include: [explorer, code-reviewer]
 ```
@@ -113,9 +111,7 @@ For a child with an independent model, create an Agent resource and add `- agent
 
 ## Configure tool review
 
-**File: `a13n-harness-ui.yaml`**
-
-```yaml
+```yaml title="a13n-harness-ui.yaml"
 security:
   shell_review:
     enable: true
@@ -139,7 +135,7 @@ Ordinary UI authoring uses this root mapping. Advanced Agent configuration can u
 
 Jev is a normal API-key Model, not a subagent or a separate review service. Create `models/jev-review.yaml`:
 
-```yaml
+```yaml title="models/jev-review.yaml"
 schema_version: "1"
 kind: model
 id: model-jev-review
@@ -165,9 +161,7 @@ Existing risk thresholds, permission checks, timeouts, and error policy still ap
 
 ## Enable an MCP server
 
-**File: `mcp/docs.yaml`**
-
-```yaml
+```yaml title="mcp/docs.yaml"
 schema_version: "1"
 kind: mcp_server
 id: mcp-docs
@@ -204,9 +198,7 @@ Optional `configuration.roots` adds explicit absolute **Environment paths**, not
 
 ## Change display and tool switches
 
-**File: `a13n-harness-ui.yaml`**
-
-```yaml
+```yaml title="a13n-harness-ui.yaml"
 display:
   theme: dark
   mode: detailed

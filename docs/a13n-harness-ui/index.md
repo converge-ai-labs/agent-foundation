@@ -1,6 +1,10 @@
-# Harness UI
+---
+title: Harness UI
+sidebarTitle: Overview
+description: A terminal and browser workbench for working on real projects with agents.
+---
 
-Harness UI is the [Harness](../a13n-harness/index.md) playground: a terminal and browser workbench for individuals and trusted small teams. Use it to work on real projects while experimenting with models, instructions, tools, Skills, and execution environments. Ask an agent to explain a codebase, edit files, run checks, or delegate a focused investigation.
+Harness UI is the [Harness](../a13n-harness/index.md) playground for individuals and trusted small teams. Use it to work on real projects while experimenting with models, instructions, tools, Skills, and execution environments. Ask an agent to explain a codebase, edit files, run checks, or delegate a focused investigation.
 
 The terminal offers a personal coding-agent workflow. The browser adds shared conversations and drafts, live execution, files, Git changes, terminals, and configuration editing. Both use the same application and agent foundation; neither requires SDK code or a Service deployment.
 
@@ -37,7 +41,8 @@ Try a bounded first task:
 Explain this repository's main entry point and tests. Do not modify any files.
 ```
 
-Full Control runs commands with your host account's filesystem and network access; it is not a sandbox. Sandbox requires supported Linux/macOS isolation; built-in Windows execution is Full Control only. See [execution permissions](environments-and-projects.md#execution-permissions).
+> [!WARNING]
+> Full Control runs commands with your host account's filesystem and network access; it is not a sandbox. Sandbox requires supported Linux/macOS isolation; built-in Windows execution is Full Control only. See [execution permissions](environments-and-projects.md#execution-permissions).
 
 [Installation and upgrades](installation.md) covers source development and dependency updates. [Setup](setup.md) covers login, cancellation, and advanced choices.
 

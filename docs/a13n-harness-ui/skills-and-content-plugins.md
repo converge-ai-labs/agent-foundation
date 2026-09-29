@@ -1,4 +1,7 @@
-# Skills and Content Plugins
+---
+title: Skills and Content Plugins
+description: Enable Skills and install Content Plugins that share Skills and subagent roles through Git.
+---
 
 Skills provide procedural instructions and reference files. Content Plugins distribute editable Skills and Markdown subagent roles in a Git repository. Neither mechanism installs an executable Harness Plugin, grants tool permissions, or replaces Model authentication.
 

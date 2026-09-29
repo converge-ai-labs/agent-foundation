@@ -40,7 +40,6 @@ def test_ui_ci_keeps_main_linux_and_separate_windows_backstop() -> None:
             ".github/workflows/ci-a13n-harness-ui*.yml",
             "scripts/tests/test_harness_ui_ci_workflow.py",
             "docs/a13n-harness-ui/**",
-            "mkdocs.yml",
         } <= set(triggers[event]["paths"])
 
 
@@ -111,9 +110,9 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
         )
         assert jobs["changes"]["outputs"][name] == "${{ steps.filter.outputs." + name + " }}"
     frontend = "\n".join(step.get("run", "") for step in jobs["frontend"]["steps"])
-    assert "--filter '!a13n-harness-ui-webui' -r run check" in frontend
-    assert "--filter '!a13n-harness-ui-webui' -r run test" in frontend
-    assert "--filter '!a13n-harness-ui-webui' -r run build" in frontend
+    assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run check" in frontend
+    assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run test" in frontend
+    assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run build" in frontend
     distribution = {step["name"]: step for step in jobs["distribution"]["steps"]}
     webui = "\n".join(step.get("run", "") for step in jobs["distribution"]["steps"])
     for script, name in (("check", "Check WebUI"), ("test", "Test WebUI"), ("build", "Build WebUI assets")):
@@ -191,7 +190,7 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
         (["uv.lock"], {"tests", "distribution"}),
         (["conftest.py"], {"tests", "distribution"}),
         (["docs/a13n-harness-ui/configuration.md"], {"tests", "distribution"}),
-        (["mkdocs.yml"], {"tests", "distribution"}),
+        (["docs/a13n-harness-ui/meta.json"], {"tests", "distribution"}),
         (["scripts/export-a13n-harness-ui-openapi.py"], {"distribution"}),
         (["scripts/tests/test_prepare_release_version.py"], {"distribution"}),
         (["scripts/check_a13n_harness_ui_distribution.py"], {"tests", "distribution"}),
@@ -254,7 +253,7 @@ def test_windows_native_selection_exists_and_full_suite_is_retained() -> None:
 
 def test_bundled_documentation_is_a_ui_image_input() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/images.yml").read_text())
-    inputs = {"docs/a13n-harness-ui/**", "mkdocs.yml"}
+    inputs = {"docs/a13n-harness-ui/**"}
     assert inputs <= set(workflow[True]["push"]["paths"])
     step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
     filters = yaml.safe_load(step["with"]["filters"])

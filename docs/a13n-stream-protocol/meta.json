@@ -1,0 +1,10 @@
+{
+  "title": "Stream Protocol",
+  "pages": [
+    "index",
+    "getting-started",
+    "events",
+    "replay",
+    "api-reference"
+  ]
+}

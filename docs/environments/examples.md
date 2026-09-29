@@ -1,4 +1,8 @@
-# Built-in Provider Examples
+---
+title: Built-in Provider examples
+sidebarTitle: Built-in examples
+description: Runnable examples that use Direct Local, Local Envd, Docker, and remote Envd Providers directly.
+---
 
 The runnable [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) project shows how Host code uses selected built-in Environment Providers directly. For cloud backends, see [Cloud providers](providers.md#cloud-providers). It runs no Agent and needs no model credentials.
 

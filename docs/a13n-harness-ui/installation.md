@@ -1,4 +1,7 @@
-# Installation and upgrades
+---
+title: Installation and upgrades
+description: Install, upgrade, or run Harness UI from source.
+---
 
 ## Install Harness UI
 

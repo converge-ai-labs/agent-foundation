@@ -1,4 +1,7 @@
-# Inputs and outputs
+---
+title: Inputs and outputs
+description: Start or resume a Run with text and media, and handle validated outputs and every terminal outcome.
+---
 
 An input starts or resumes one logical Run. An output is the validated application value from a completed Run. Tool returns, progress events, summaries, and saved state are not interchangeable with that output.
 

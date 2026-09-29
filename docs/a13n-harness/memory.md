@@ -1,4 +1,7 @@
-# Memory
+---
+title: Memory
+description: Give an agent file or record memory that outlives a single conversation.
+---
 
 Memory gives an Agent knowledge that outlives one conversation: preferences, decisions, conventions, and facts. Several conversations can share one memory. A memory comes in one of two kinds:
 

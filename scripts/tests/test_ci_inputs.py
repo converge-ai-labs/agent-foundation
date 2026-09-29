@@ -50,7 +50,7 @@ def test_envd_runtime_inputs_select_native_protocol(path: str, selected: set[str
         ("packages/a13n-harness/tests/test_environment_core.py", True),
         ("conftest.py", True),
         ("packages/a13n-logging/tests/test_logging.py", False),
-        ("docs/index.md", False),
+        ("docs/index.mdx", False),
     ],
 )
 def test_harness_selects_direct_dependency_inputs(path: str, selected: bool) -> None:
@@ -143,7 +143,7 @@ def test_service_gate_requires_every_matrix_member(result: str) -> None:
         ("packages/a13n-service/a13n_service/runs/worker.py", True),
         ("Makefile", True),
         ("dev/service/console_review.py", False),
-        ("docs/index.md", False),
+        ("docs/index.mdx", False),
     ],
 )
 def test_service_e2e_owns_automated_scenarios(path: str, selected: bool) -> None:

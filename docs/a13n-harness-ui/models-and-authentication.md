@@ -1,4 +1,7 @@
-# Models and authentication
+---
+title: Models and authentication
+description: Create Models, sign in with a subscription or API key, and set context budgets.
+---
 
 A Model chooses a provider connection, request settings, and context budget. Store it in **`models/<name>.yaml` beside the selected root configuration**; Agents reference its `id`. Credentials are separate: Model authentication holds a reference, not the key or token.
 
@@ -95,7 +98,8 @@ a13n-harness-ui auth status copilot --format json
 a13n-harness-ui auth logout copilot
 ```
 
-**Logout deletes the selected credentials.** When the selected source is the CLI file, this affects the official CLI and other Hosts using that account file. Other accounts remain intact; the remembered selection remains missing until credentials are restored there or you explicitly select another source. It does not revoke authorization at GitHub. CLI-file logout retains unrelated data but normalizes JSON comments/formatting to JSON.
+> [!WARNING]
+> **Logout deletes the selected credentials.** When the selected source is the CLI file, this affects the official CLI and other Hosts using that account file. Other accounts remain intact; the remembered selection remains missing until credentials are restored there or you explicitly select another source. It does not revoke authorization at GitHub. CLI-file logout retains unrelated data but normalizes JSON comments/formatting to JSON.
 
 Enter a model ID manually or explicitly choose **Fetch account models** after connecting. This calls the authenticated catalog, not inference, and lists only models advertising Chat Completions support. It is separate from the public API-model directory. Setup, login, saving a Model, and opening an empty conversation do not issue inference requests. Catalog presence and successful authorization do not prove access: subscription tier, organization policy, endpoint support, and availability still apply. No live subscription entitlement/inference was used to validate this integration.
 

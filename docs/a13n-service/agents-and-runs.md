@@ -1,4 +1,7 @@
-# Agents, threads and runs
+---
+title: Agents, threads and runs
+description: Configure agents, start conversations, and follow, steer, or answer runs.
+---
 
 An **agent** is a named, versioned configuration: a model, instructions, tools and policies. People and applications talk to agents in **sessions**. A session holds one or more **threads**, each a single line of conversation; messages you send go to the thread's **inbox**, and each turn of the agent is a **run**. A run executes on a worker as one or more **attempts** and ends `completed`, `waiting`, `failed` or `cancelled`.
 

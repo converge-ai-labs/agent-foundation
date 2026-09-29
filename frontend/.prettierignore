@@ -1,5 +1,9 @@
 **/dist
 **/node_modules
+apps/a13n-docs/.next
+apps/a13n-docs/.source
+apps/a13n-docs/out
+apps/a13n-docs/next-env.d.ts
 apps/a13n-harness-ui/src/openapi.json
 apps/a13n-harness-ui/src/api.generated.ts
 pnpm-lock.yaml

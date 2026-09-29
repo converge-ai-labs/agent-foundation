@@ -1,4 +1,7 @@
-# Configure Providers
+---
+title: Configure Providers
+description: Configure a Provider's target, backend connection, and credentials separately.
+---
 
 Configure the target, backend connection, and credentials separately. Keep runtime clients in memory and save `EnvironmentState` to reconnect later.
 

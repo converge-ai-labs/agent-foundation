@@ -1,4 +1,8 @@
-# Managed tools and invocation policy
+---
+title: Managed tools and invocation policy
+sidebarTitle: Managed tools and policy
+description: Give Host-managed tools one boundary for authorization, credentials, approvals, and bounded output.
+---
 
 Ordinary Pydantic AI tools remain ordinary Python: they can use the process's ambient authority. Use Harness-managed tools when a Host needs a common boundary for current authorization, resolved resource identity, short-lived credentials, output bounds, and dispatch certainty.
 

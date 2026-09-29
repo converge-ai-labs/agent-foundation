@@ -1,4 +1,8 @@
-# Execution boundaries and troubleshooting
+---
+title: Execution boundaries and troubleshooting
+sidebarTitle: Host security boundaries
+description: How Envd applies identity, filesystem, process, and egress policy to a Session, and how to diagnose failures.
+---
 
 Envd applies a trusted Device policy to the complete Session worker: native execution identity, filesystem/process Sandbox, and egress mode. Commands, file RPCs and transfers use the same boundary; directory discovery uses the same grants and identity. The Host selects the policy and owns any outer container or VM. Envd owns worker preparation, readiness and cleanup.
 

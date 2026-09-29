@@ -1,4 +1,7 @@
-# Resource basics
+---
+title: Resource basics
+description: 'What workspace resources have in common: lifecycles, revisions, identifiers, and providers.'
+---
 
 Resources are what a tenant configures for its agents: providers and models, agents and skills, connections, environment templates, memories, subscriptions and assets. This page covers what they have in common. The following pages cover each kind: [Models](models.md), [Tools and connections](tools.md), [Skills](skills.md), [Environments](environments.md), [Memory](memory.md) and [Files and webhooks](files-and-webhooks.md).
 

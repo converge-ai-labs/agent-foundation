@@ -1,4 +1,7 @@
-# Lifecycle and state
+---
+title: Lifecycle and state
+description: Save Environment state between Runs, re-enter targets, and destroy them explicitly.
+---
 
 To retain work between Runs, save the Environment's state and supply it to a fresh adapter on the next Run. A Provider constructs adapters; each adapter connects to one target.
 
@@ -7,7 +10,7 @@ For a first file operation without an Agent, start with [Getting started](gettin
 ## Lifecycle at a glance
 
 ```mermaid
-flowchart LR
+flowchart TB
     Host[Host policy and persistence] --> Definition[EnvironmentProviderDefinition]
     Definition --> Adapter[Fresh Environment]
     State[EnvironmentState or none] --> Adapter

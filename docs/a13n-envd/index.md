@@ -1,6 +1,10 @@
-# Envd
+---
+title: Envd
+sidebarTitle: Overview
+description: The native daemon that exposes files, commands, processes, and ports over the Environment Interaction Protocol.
+---
 
-Envd (`a13n-envd`) is the native daemon for the **Environment Interaction Protocol (EIP)**. It exposes Device files, commands, process observations, output, and ports over stdio, HTTP(S), or an outbound reverse WebSocket connection.
+Envd (`a13n-envd`) serves the **Environment Interaction Protocol (EIP)** over stdio, HTTP(S), or an outbound reverse WebSocket connection.
 
 Connect agents through [Harness Environment Providers](../environments/index.md), or use the [Python EIP client](python-client.md) directly.
 

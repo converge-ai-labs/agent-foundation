@@ -1,4 +1,8 @@
-# Testing Agent Harness Applications
+---
+title: Testing Harness applications
+sidebarTitle: Testing
+description: Test agents at their own boundaries with deterministic models, streams, state, and Environments.
+---
 
 Test a Harness application at the same boundaries it owns: deterministic model behavior, terminal results, continuation state, public stream events, Environment lifecycle, and selected extensions. Keep provider-network tests separate from the fast application suite.
 

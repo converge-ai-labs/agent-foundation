@@ -1,4 +1,7 @@
-# Use an existing platform
+---
+title: Use an existing platform
+description: Sign in to Console, try your team's agents, and create your own.
+---
 
 Use your team's agents through Service Console. You need the Console URL, an account, and permission to run an agent. To set up Service instead, start with the [quickstart](get-started.md). Console is separate from the Harness UI workbench.
 
@@ -36,4 +39,4 @@ Each save creates a revision. Add [tools and connections](tools.md), [skills](sk
 - **Files and commands:** select an environment under **Run options**, or configure an [environment template](environments.md#templates) as the agent's default.
 - **Shared knowledge:** attach [memory](memory.md) to the thread or set it as an agent default. Memory can supply context automatically; enabled memory tools let the agent search and update it.
 
-Read [Core concepts](../core-concepts.md) for the conversation model, try [Agent Composer](agent-composer.md) for configuration help, or [connect your application](connect-application.md) to the same Service.
+Read [Core concepts](../overview/core-concepts.md) for the conversation model, try [Agent Composer](agent-composer.md) for configuration help, or [connect your application](connect-application.md) to the same Service.

@@ -1,6 +1,10 @@
-# Service
+---
+title: Service
+sidebarTitle: Overview
+description: A self-hosted platform that runs agents for people and applications through Console and an HTTP API.
+---
 
-Service runs agents for users and applications through a browser Console or HTTP API. It manages workspaces, access, agent configurations and conversations; workers keep running after clients disconnect. [Get started](get-started.md) with a local deployment and your first agent.
+Service manages workspaces, access, agent configurations and conversations; workers keep running after clients disconnect. [Get started](get-started.md) with a local deployment and your first agent.
 
 ## Start here
 
@@ -17,12 +21,12 @@ Service runs agents for users and applications through a browser Console or HTTP
 - **Session, thread and run:** a session groups conversations; a thread holds messages; each run advances that thread.
 - **Provider and environment:** providers connect models, tools and sandboxes; a thread can mount an environment for file and terminal work.
 
-[Core concepts](../core-concepts.md) follows one conversation through these pieces.
+[Core concepts](../overview/core-concepts.md) follows one conversation through these pieces.
 
 ## How the pieces fit
 
 ```mermaid
-flowchart LR
+flowchart TB
     Client["Console or API client"] -->|"Submit input"| Control["Control: authorize and accept"]
     Control -->|"Store inbox and run"| Postgres[(PostgreSQL)]
     Postgres -->|"Claim"| Worker["Worker: run Harness"]
@@ -45,7 +49,7 @@ Control and worker are roles of one executable; a single process can run both. S
 - [Identity and access](identity.md): workspaces, members, API keys and service accounts.
 - [Agents, threads and runs](agents-and-runs.md): configure agents and integrate conversations; [Agent Composer](agent-composer.md) can help build them.
 - [Resources](resources.md): discover [models](models.md), [tools and connections](tools.md), [skills](skills.md), [environments](environments.md), [memory](memory.md), and [files and webhooks](files-and-webhooks.md).
-- [HTTP conventions](http.md), [API reference](api-reference.md) and [SDKs and CLI](sdks.md): build an integration.
+- [HTTP conventions](http.md), [API reference](api-reference/index.md) and [SDKs and CLI](sdks.md): build an integration.
 - [Configuration](configuration.md), [operations](operations.md), [monitoring](monitoring.md) and [settings reference](configuration-reference.md): run a deployment.
 
 ## Interfaces

@@ -1,10 +1,15 @@
-# Service configuration reference
+---
+title: Service settings reference
+sidebarTitle: Settings reference
+description: Every Service setting with its environment variable, type, bounds, and default.
+---
 
-This field reference is generated from the same `Settings` definitions used by the Service loader. Run `uv run --locked python scripts/docs/references.py` after changing those definitions. Do not independently edit generated rows.
+> [!NOTE]
+> Generated from the `Settings` definitions used by the Service loader. Run `uv run --locked python scripts/docs/references.py` after changing them instead of editing rows.
 
 Use [Configure Service](configuration.md) for precedence, examples, role/storage requirements, and cross-field validation. Types and field constraints below do not replace those combined checks. Secret defaults are masked by the schema; this reference never reads deployment environment values. Defaults apply to the source version, not every historical release.
 
-The complete machine-readable validation schema, including named enum/union definitions, is available as [Service settings JSON](../assets/reference/service-settings.json).
+The complete machine-readable validation schema, including named enum/union definitions, is available as [Service settings JSON](/reference/service-settings.json).
 
 ## `server`
 
