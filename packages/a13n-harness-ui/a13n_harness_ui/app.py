@@ -2373,12 +2373,10 @@ class HarnessUiApp:
             await self._reload_configuration_from_path()
             return result
 
-    async def pair_device(self, request: PairingRequest, credential: str, *, origin: str) -> PairingResponse:
+    async def pair_device(self, request: PairingRequest, credential: str) -> PairingResponse:
         async with self._operation(), self._configuration_lock:
             source = await self._configurations.current()
-            return self._device_pairings.poll(
-                request, credential, {} if source is None else source.devices, origin=origin
-            )
+            return self._device_pairings.poll(request, credential, {} if source is None else source.devices)
 
     async def pending_device_pairings(self) -> tuple[PairingChallenge, ...]:
         async with self._operation(), self._configuration_lock:

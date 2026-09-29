@@ -36,7 +36,7 @@ class DevicePairings:
         return tuple(value.challenge for key, value in self._pending.items() if key not in self._rejected)
 
     def poll(
-        self, request: PairingRequest, credential: str, resources: Mapping[str, DeviceResource], *, origin: str
+        self, request: PairingRequest, credential: str, resources: Mapping[str, DeviceResource]
     ) -> PairingResponse:
         try:
             digest = credential_digest(credential)
@@ -52,8 +52,7 @@ class DevicePairings:
                 raise HarnessUiError("Device registration is revoked.", code="device_revoked")
             return PairingApproved(
                 resource_id=resource.id,
-                websocket_url=origin.replace("http://", "ws://", 1).replace("https://", "wss://", 1)
-                + f"/api/devices/{resource.id}/connect",
+                websocket_url=f"/api/devices/{resource.id}/connect",
             )
         self._prune()
         key = pairing_id(digest)
@@ -67,7 +66,7 @@ class DevicePairings:
             self._pending[key] = pending
         elif pending.challenge.device_id != request.device_id or pending.challenge.name != request.name:
             raise HarnessUiError("Pairing details cannot change during approval.", code="device_pairing_conflict")
-        return PairingPending(challenge=pending.challenge, approval_url=origin + "/settings/environments")
+        return PairingPending(challenge=pending.challenge, approval_url="/settings/environments")
 
     def approve(self, key: str, resources: Mapping[str, DeviceResource]) -> DeviceResource:
         self._prune()

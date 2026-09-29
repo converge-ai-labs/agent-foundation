@@ -65,6 +65,7 @@ subagents:
   include: [code-reviewer, executor, explorer]
 
 webui:
+  allowed_origins: []
   sidekick: {}
 
 defaults:
@@ -75,6 +76,8 @@ defaults:
   environment_run_extensions: []
   mcp_servers: []
 ```
+
+`webui.allowed_origins` is a list of exact HTTP(S) origins or the literal `"*"`, defaulting to `[]`. Exact values normalize hostname spelling, default ports and an optional trailing `/`; credentials, non-root paths, queries, fragments and partial wildcards are invalid. Non-default ports remain significant. It is a restart-bound listener setting, not a Run input or a CORS allowlist. The [HTTP access boundary](05-runtime-subagents-and-surfaces.md#http-startup-and-access) owns additive admission, wildcard behavior and lifetime capture.
 
 `webui.sidekick` defaults to an empty mapping, enabling Sidekick when `webui` or `sidekick` is omitted, including in existing user configuration. Explicit null disables it and remains authoritative across upgrades and setup. Loading configuration does not rewrite source files. Setup materializes `webui.sidekick: {}` when absent, preserving existing null or authored selections. A mapping enables it: optional `agent` selects an existing Agent resource or inherits the calling Agent when omitted/null; optional `model` selects the durable default Model resource for newly created Sidekick Threads. An explicitly selected Agent without a Model requires this default. Empty `{}` enables inherited selections. Invalid references reject the candidate generation. WebUI General settings edits enabled state, Agent inheritance and default Model through the existing root-document draft and save flow, separately from `defaults.agent`. Selecting Disabled writes null. Saving neither creates a Thread nor starts execution. The preferences are captured per Run; [Sidekick instructions](05-runtime-subagents-and-surfaces.md#sidekick-instructions) owns the conditional behavior and terminal/child boundary.
 

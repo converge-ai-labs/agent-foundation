@@ -228,8 +228,14 @@ class McpAppsConfiguration(ConfigurationModel):
 
 
 class WebUiConfiguration(ConfigurationModel):
+    allowed_origins: tuple[str, ...] = ()
     sidekick: SidekickConfiguration | None = Field(default_factory=SidekickConfiguration)
     mcp_apps: McpAppsConfiguration = Field(default_factory=McpAppsConfiguration)
+
+    @field_validator("allowed_origins")
+    @classmethod
+    def _allowed_origins(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        return tuple(value if value == "*" else origin(value) for value in values)
 
 
 class MediaUnderstandingConfiguration(ConfigurationModel):

@@ -111,6 +111,7 @@ security:
 subagents:
   include: []
 webui:
+  allowed_origins: []
   sidekick: {}
 ```
 
@@ -142,6 +143,20 @@ To keep memory without automatic requests, set `auto_organize.enabled: false`. S
 ### Media understanding
 
 `media_understanding.image`, `.video`, and `.audio` select saved Model IDs for file `view` fallback when the active Model cannot accept that media natively. Each defaults to `null`, preserving the corresponding Harness environment fallback. Configure these in **Settings → Models** or `/model defaults`. See [media understanding defaults](models-and-authentication.md#media-understanding-defaults) for precedence, capability requirements, and Run capture behavior.
+
+### WebUI allowed origins
+
+`webui.allowed_origins` adds public request addresses to the listener's existing bind-address and loopback admission rules. It defaults to `[]`. Each entry is an exact HTTP(S) origin, including any non-default port, or the literal `"*"` to allow any request address. A trailing `/` is accepted and normalized away; default ports (`80` for HTTP, `443` for HTTPS) are normalized. Paths, credentials, queries, fragments, and partial wildcards such as `https://*.example.com` are not supported.
+
+```yaml
+webui:
+  allowed_origins:
+    - "https://anui.wh1isper.top:8090/"
+```
+
+To explicitly disable address restrictions, use `allowed_origins: ["*"]`. This does not disable API-key authentication or the browser's same-origin check, and it is not a CORS allowlist. Even two configured origins cannot make cross-origin API requests to each other. Prefer exact entries when public addresses are known; `"*"` removes the Host restriction, including its protection against DNS rebinding. Existing bind-address and loopback access remains allowed independently of these entries.
+
+The listener captures this setting at startup. Restart WebUI after editing it; accepting a configuration reload does not change an active listener's access boundary. See [reverse proxies](webui.md#reverse-proxies-and-public-addresses) for HTTPS forwarding and proxy trust.
 
 ### WebUI MCP Apps
 
