@@ -61,6 +61,19 @@ def test_rendered_configuration_and_generated_secret_are_valid_settings(
     assert settings.database.auto_migrate is False
     assert settings.objects.backend == backend
     assert settings.server.public_url == public_url
+    assert settings.objects.addressing_style is None
+
+
+@helm
+@pytest.mark.parametrize("style", ["auto", "path", "virtual"])
+def test_s3_addressing_style_reaches_service_configuration(style):
+    import tomllib
+
+    settings_module = pytest.importorskip("a13n_service.settings")
+    documents = render(*EXTERNAL, "--set", f"objects.addressingStyle={style}")
+    config = next(d for d in documents if d["kind"] == "ConfigMap")["data"]["service.toml"]
+    settings = settings_module.Settings.model_validate(tomllib.loads(config))
+    assert settings.objects.effective_addressing_style == style
 
 
 @helm

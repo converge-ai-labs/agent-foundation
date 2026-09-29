@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from aiobotocore.config import AioConfig
 from aiobotocore.session import get_session
@@ -107,7 +107,7 @@ async def open_s3(
     prefix: str,
     region: str | None,
     endpoint_url: str | None,
-    path_style: bool,
+    addressing_style: Literal["auto", "path", "virtual"],
     access_key_id: str | None,
     secret_access_key: str | None,
     max_bytes: int,
@@ -126,7 +126,7 @@ async def open_s3(
                     connect_timeout=timeout,
                     read_timeout=timeout,
                     retries={"max_attempts": 2},
-                    s3={"addressing_style": "path" if path_style else "auto"},
+                    s3={"addressing_style": addressing_style},
                 ),
             )
         )

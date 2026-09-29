@@ -191,6 +191,14 @@
         },
         "endpointUrl": {
           "type": "string"
+        },
+        "addressingStyle": {
+          "enum": [
+            "",
+            "auto",
+            "path",
+            "virtual"
+          ]
         }
       }
     },

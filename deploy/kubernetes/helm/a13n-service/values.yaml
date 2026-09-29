@@ -41,6 +41,8 @@ objects:
   prefix: ""
   region: ""
   endpointUrl: ""
+  # Empty preserves Service defaults; otherwise auto, path or virtual.
+  addressingStyle: ""
 # Local objects only. The chart's claim is retained on uninstall.
 persistence:
   existingClaim: ""

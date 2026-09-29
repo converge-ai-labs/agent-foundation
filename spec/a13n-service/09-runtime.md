@@ -105,6 +105,7 @@ The generated [configuration reference](../../docs/a13n-service/configuration-re
 
 - a `database.url` that does not use `postgresql+psycopg`;
 - the `s3` object backend without `objects.bucket`;
+- an unsupported `objects.addressing_style`, or `objects.path_style=true` together with an explicit addressing style other than `path`; omitting the style preserves the existing `path_style` selection (`true` means `path`, `false` means `auto`);
 - incomplete SMTP settings (a sender is required with `auth.mail.smtp_host`; username and password come together; neither without a host), or SMTP without `encryption.active_key_id` or `encryption.key_file`, because queued mail carries encrypted links;
 - `encryption.key_file` together with `encryption.active_key_id` or `encryption.keys`;
 - a trace backend without its URL and keys;

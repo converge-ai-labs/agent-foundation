@@ -765,6 +765,23 @@
           "title": "Path Style",
           "type": "boolean"
         },
+        "addressing_style": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "path",
+                "virtual"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Addressing Style"
+        },
         "region": {
           "anyOf": [
             {
