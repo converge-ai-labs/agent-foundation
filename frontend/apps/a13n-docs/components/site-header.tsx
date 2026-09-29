@@ -22,6 +22,7 @@ export const iconButton =
 /**
  * One header row for every page: brand, section tabs, search, theme, and GitHub.
  * Its backdrop and hairline extend to the viewport edges; the page shell clips them.
+ * The row spans the docs layout width everywhere, so the brand and actions stay in place across pages.
  */
 export function SiteHeader({
   tabs,
@@ -34,7 +35,7 @@ export function SiteHeader({
       {...props}
       className={`z-10 h-14 before:absolute before:inset-y-0 before:-inset-x-[50vw] before:-z-10 before:border-b before:bg-fd-background/85 before:backdrop-blur-md ${className}`}
     >
-      <div className="flex h-full items-center gap-8 px-4 md:px-6">
+      <div className="mx-auto flex h-full max-w-(--fd-layout-width,97rem) items-center gap-8 px-4 md:px-6">
         <Link href="/" aria-label="a13n docs home" className="shrink-0">
           <NavTitle />
         </Link>
