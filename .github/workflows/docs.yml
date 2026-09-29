@@ -90,7 +90,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: docs
-      url: https://agent-foundation-docs.converge.ai/
+      url: https://a13n-docs.converge.ai/
     steps:
       - name: Download docs artifact
         uses: actions/download-artifact@v4

@@ -281,7 +281,7 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 - Use `.mdx` only for composed pages such as the site home page. Pages under `docs/a13n-harness-ui/` stay `.md` because the Skill bundles them verbatim.
 - `frontend/apps/a13n-docs` owns the site: layout, theme, and Service API reference pages generated from `proto/a13n-service/openapi.json`. It also publishes `llms.txt`, `llms-full.txt`, and every page as Markdown under `/md/`.
 - Run `make docs-build` after documentation or site changes.
-- The canonical public site is [agent-foundation-docs.converge.ai](https://agent-foundation-docs.converge.ai/).
+- The canonical public site is [a13n-docs.converge.ai](https://a13n-docs.converge.ai/).
 - The `Docs` GitHub Actions workflow publishes build artifacts for pull requests and deploys `main` to the `agent-foundation-docs` Cloudflare Pages project.
 
 ## Specification Changes

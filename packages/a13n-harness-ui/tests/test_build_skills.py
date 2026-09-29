@@ -55,7 +55,7 @@ def test_builds_navigation_from_site_metadata_and_real_headings(tmp_path: Path) 
     assert "Models — lines 6-15" in index
     assert "Credentials — lines 8-15" in index
     assert "Tools — lines 16-18" in index
-    assert "https://agent-foundation-docs.converge.ai/a13n-harness/#agents" in index
+    assert "https://a13n-docs.converge.ai/a13n-harness/#agents" in index
     assert (output / "docs/settings.md").read_bytes() == (repository / "docs/a13n-harness-ui/settings.md").read_bytes()
     assert not (repository / ".agents").exists()
 

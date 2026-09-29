@@ -2,7 +2,7 @@ export const site = {
   name: "Agent Foundation",
   description:
     "The open-source, self-hosted foundation for AI agents: the Harness library, the managed Service, and the Harness UI workbench.",
-  url: "https://agent-foundation-docs.converge.ai",
+  url: "https://a13n-docs.converge.ai",
   repository: "https://github.com/converge-ai-labs/agent-foundation",
   branch: "main",
 };

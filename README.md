@@ -4,7 +4,7 @@
 
 <h1 align="center">Agent Foundation (a13n)</h1>
 
-[![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://agent-foundation-docs.converge.ai/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+[![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://a13n-docs.converge.ai/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 **The open-source, self-hosted foundation for enterprise AI agents.**
 
@@ -78,7 +78,7 @@ Source development uses Python 3.13, uv, and Make. Browser builds also need Node
 
 Bug reports, documentation fixes, examples, and focused improvements are welcome. Search [GitHub Issues](https://github.com/converge-ai-labs/agent-foundation/issues) and read the [contribution guide](CONTRIBUTING.md) before starting. Discuss unresolved product or architecture decisions before implementing them.
 
-- [User documentation](https://agent-foundation-docs.converge.ai/)
+- [User documentation](https://a13n-docs.converge.ai/)
 - [Development standards](DEVELOPMENT.md)
 - [Accepted specifications](spec/README.md)
 - [Maintainers](MAINTAINERS.md)

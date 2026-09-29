@@ -16,7 +16,7 @@ SKILL_NAME = "harness-ui-configuration"
 DOC_PREFIX = "a13n-harness-ui/"
 BUNDLE_PATH = Path("a13n_harness_ui/assets/builtin_skills")
 # Links outside the bundled pages point at the published documentation site.
-SITE_URL = "https://agent-foundation-docs.converge.ai/"
+SITE_URL = "https://a13n-docs.converge.ai/"
 
 
 def _front_matter(content: str) -> tuple[dict[str, object], str]:
