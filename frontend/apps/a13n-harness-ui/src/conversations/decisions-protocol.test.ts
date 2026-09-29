@@ -99,7 +99,7 @@ it("denies a reviewed shell without executing, then approves another exact reque
   }
 }, 30000);
 
-it("requires the complete mixed batch and resumes a generic edited approval with real external and question responses", async () => {
+it("rejects unknown requests and resumes a generic edited approval with real external and question responses", async () => {
   const { path, batch } = await pending("mixed decisions");
   expect(batch.requests.map((request) => request.kind).sort()).toEqual([
     "approval",
@@ -139,7 +139,9 @@ it("requires the complete mixed batch and resumes a generic edited approval with
       params: { path },
       body: {
         expected_continuation_id: batch.continuation_id,
-        responses: responses.slice(0, 1),
+        responses: [
+          { kind: "external", request_id: "unknown-request", result: null },
+        ],
       },
     }),
   ).rejects.toMatchObject({ status: 400 });
@@ -168,3 +170,66 @@ it("requires the complete mixed batch and resumes a generic edited approval with
   expect(text).toContain("found");
   expect(text).toContain("Left");
 }, 30000);
+
+it.each(["partial", "empty", "prompt"] as const)(
+  "closes omitted mixed requests without approval when continuing with %s input",
+  async (submission) => {
+    const { path, batch } = await pending("mixed decisions");
+    const external = batch.requests.find(
+      (request) => request.kind === "external",
+    );
+    expect(external).toBeDefined();
+    const responses: Schema<"DecisionResponseBatch">["responses"] =
+      submission === "partial"
+        ? [
+            {
+              kind: "external",
+              request_id: external!.request_id,
+              result: { found: "provided-result" },
+            },
+          ]
+        : [];
+    const accepted = await result(
+      submission === "prompt"
+        ? transport.client.POST("/api/threads/{thread_id}/submit", {
+            params: { path },
+            body: { parts: ["Continue with my additional instruction"] },
+          })
+        : transport.client.POST("/api/threads/{thread_id}/decisions", {
+            params: { path },
+            body: {
+              expected_continuation_id: batch.continuation_id,
+              responses,
+            },
+          }),
+    );
+    await wait(accepted.receipt_id, "completed");
+    expect(
+      await result(
+        transport.client.GET("/api/threads/{thread_id}/decisions", {
+          params: { path },
+        }),
+      ),
+    ).toBeNull();
+    const history = await result(
+      transport.client.GET("/api/threads/{thread_id}/transcript", {
+        params: { path },
+      }),
+    );
+    const text = history.entries
+      .flatMap((entry) => entry.parts.map((part) => part.text ?? ""))
+      .join("\n");
+    expect(text).toContain("The user continued without responding");
+    expect(text).not.toContain("Published:");
+    if (submission === "partial") expect(text).toContain("provided-result");
+    if (submission === "prompt")
+      expect(text).toContain("Continue with my additional instruction");
+    await expect(
+      transport.client.POST("/api/threads/{thread_id}/decisions", {
+        params: { path },
+        body: { expected_continuation_id: batch.continuation_id, responses },
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+  },
+  30000,
+);
