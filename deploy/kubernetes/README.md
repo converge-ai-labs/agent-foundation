@@ -59,10 +59,10 @@ The Chart renders `service.toml` from values: `[server]` (including `publicUrl` 
 Run commands from the repository root. Helm and kubectl must point to the intended cluster. The examples use release `a13n` in namespace `a13n-service`; the bundled PostgreSQL host is `a13n-a13n-postgres`.
 
 1. Copy `examples/service.env.example` and, for bundled PostgreSQL, `examples/postgres.env.example` to protected files outside the checkout. Set permissions to `600`.
-1. Replace all placeholders. Generate the encryption key using `openssl rand -base64 32`. Preserve the key ring across restarts and upgrades; losing it makes stored provider and connection credentials unreadable.
-1. Match the PostgreSQL password in both files. URL-encode it in the Service URL. Changing the PostgreSQL Secret does not change the password of an already initialized database.
-1. For external stores, replace the database URL, add `A13N_REDIS__URL`, and add object-store credentials unless the Pods' identity provides them. Use the TLS settings the database and Redis require.
-1. Create the namespace and Secrets. These commands change the selected cluster:
+2. Replace all placeholders. Generate the encryption key using `openssl rand -base64 32`. Preserve the key ring across restarts and upgrades; losing it makes stored provider and connection credentials unreadable.
+3. Match the PostgreSQL password in both files. URL-encode it in the Service URL. Changing the PostgreSQL Secret does not change the password of an already initialized database.
+4. For external stores, replace the database URL, add `A13N_REDIS__URL`, and add object-store credentials unless the Pods' identity provides them. Use the TLS settings the database and Redis require.
+5. Create the namespace and Secrets. These commands change the selected cluster:
 
 ```sh
 kubectl config current-context
