@@ -18,6 +18,7 @@ export function workspaceHeaders(workspaceId: string) {
 }
 
 const publicMutations = new Set([
+  "/api/v1/auth/bootstrap",
   "/api/v1/auth/login",
   "/api/v1/auth/password-reset",
   "/api/v1/auth/password-reset/confirm",
