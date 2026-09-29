@@ -20,6 +20,7 @@ from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.objects.local import LocalObjects
 from a13n_service.resources.models.tables import ModelRow
+from a13n_service.runs.attempts import Lease
 from a13n_service.runs.checkpoints import DisplayPointer, RunState, StatePointer, publish
 from a13n_service.runs.display import Display, Item, StreamPosition
 from a13n_service.runs.schemas import canonical_json
@@ -176,8 +177,9 @@ async def _run(
     harness_run_id = snapshot.run_id
     records = snapshot.records
     state, display = _checkpoint(snapshot, profile.key, prompt, answer, started, ended)
-    state_ref = await publish(objects, organization_id, run_id, "state", state.model_dump_json().encode())
-    display_ref = await publish(objects, organization_id, run_id, "display", display.model_dump_json().encode())
+    lease = Lease(run_id, attempt_id, thread_id, organization_id, workspace_id, 1, "seed", "seed")
+    state_ref = await publish(objects, lease, "state", state.model_dump_json().encode())
+    display_ref = await publish(objects, lease, "display", display.model_dump_json().encode())
     scope = {"organization_id": organization_id, "workspace_id": workspace_id}
     payload = {"content": [{"type": "text", "text": prompt}]}
     async with transaction(storage) as session:
@@ -231,10 +233,14 @@ async def _run(
                 created_at=started,
                 updated_at=ended,
                 checkpoint=StatePointer(
-                    digest=state_ref.digest, size=state_ref.size, format=1, seq=1, attempt=1
+                    key=state_ref.key, digest=state_ref.digest, size=state_ref.size, format=1, seq=1, attempt=1
                 ).model_dump(),
                 display=DisplayPointer(
-                    digest=display_ref.digest, size=display_ref.size, format=1, position=display.position
+                    key=display_ref.key,
+                    digest=display_ref.digest,
+                    size=display_ref.size,
+                    format=1,
+                    position=display.position,
                 ).model_dump(),
                 output=answer,
                 usage_at_seal={
