@@ -67,14 +67,21 @@ export class RunDisplayState {
   }
 
   gap(position?: string | null) {
-    if (this.read?.complete || (position && atLeast(this.position, position)))
+    if (
+      this.read?.complete ||
+      (position && comparePositions(position, `${this.attempt}-0`) < 0)
+    )
       return false;
     const wasIncomplete = this.incomplete;
+    const clarified = this.uncertain && Boolean(position);
     if (position) {
+      // A known range replaces uncertainty, even when the local display already covers it.
+      this.uncertain = false;
+      if (atLeast(this.position, position)) return false;
       if (!atLeast(this.missingThrough, position))
         this.missingThrough = position;
     } else this.uncertain = true;
-    return !wasIncomplete;
+    return !wasIncomplete || clarified;
   }
 
   receive(delta: ThreadDelta, cursor: string) {

@@ -588,6 +588,71 @@ it("heals a known gap immediately when the refreshed snapshot covers it", async 
   expect(screen.getByTestId("coverage").textContent).toBe("complete");
 });
 
+it.each([true, false])(
+  "resolves an unknown gap once its range is covered (already covered: %s)",
+  async (alreadyCovered) => {
+    render(<View />);
+    await waitFor(() => expect(text()).toBe("Hello"));
+    const repaired = {
+      ...display,
+      items: [message("Repaired", "1-0", "1-5")],
+      position: "1-5",
+    };
+    if (alreadyCovered) display = repaired;
+    await act(async () => frames.push({ type: "gap", run_id: "run_one" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("gap").textContent).toBe("true"),
+    );
+    expect(pathRequests("/items")).toHaveLength(2);
+
+    display = repaired;
+    await act(async () =>
+      frames.push({ type: "gap", run_id: "run_one", position: "1-4" }),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("gap").textContent).toBe("false");
+      expect(text()).toBe("Repaired");
+      expect(screen.getByTestId("coverage").textContent).toBe("complete");
+    });
+    expect(resumeOptions()?.position).toBe("1-5");
+    expect(pathRequests("/items")).toHaveLength(alreadyCovered ? 2 : 3);
+  },
+);
+
+it("keeps an unknown gap incomplete when its clarified range is not yet covered", async () => {
+  render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  await act(async () => frames.push({ type: "gap", run_id: "run_one" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("gap").textContent).toBe("true"),
+  );
+  display = {
+    ...display,
+    items: [message("Still incomplete", "1-0", "1-2")],
+    position: "1-2",
+  };
+  await act(async () =>
+    frames.push({ type: "gap", run_id: "run_one", position: "1-4" }),
+  );
+  await waitFor(() => expect(text()).toBe("Still incomplete"));
+  expect(screen.getByTestId("gap").textContent).toBe("true");
+  expect(resumeOptions()?.position).toBe("1-2");
+  await act(async () =>
+    frames.push({ type: "gap", run_id: "run_one", position: "1-4" }),
+  );
+  expect(pathRequests("/items")).toHaveLength(3);
+
+  display = {
+    ...display,
+    items: [message("Repaired", "1-0", "1-5")],
+    position: "1-5",
+  };
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  await waitFor(() => expect(text()).toBe("Repaired"));
+  expect(screen.getByTestId("gap").textContent).toBe("false");
+  expect(screen.getByTestId("coverage").textContent).toBe("complete");
+});
+
 it("does not advance coverage across a hole and waits for a covering checkpoint", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
