@@ -8,7 +8,7 @@ frames, so a client can always fall back to the durable view:
 
 - `changed {version}`: the thread snapshot is stale; re-read the thread.
 - `reset {run_id}`: the run changed attempt; discard its provisional output and re-read its items.
-- `gap {run_id}`: deltas were skipped; re-read its items. The next boundary's durable view covers the gap.
+- `gap {run_id, position?}`: output is missing through a known position, or transport continuity is unknown.
 """
 
 import asyncio
@@ -18,19 +18,19 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from a13n_logging import exception_details, get_logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic.json_schema import JsonSchemaMode, models_json_schema
 from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import short_session
-from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.redis import StreamEntry, append, last_id, read, read_entry, read_range, trim
-from a13n_service.runs.display import ItemRef, Observed
+from a13n_service.runs.display import ItemRef, Observed, StreamPosition
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import AttemptRow, ThreadRow
-from a13n_service.runs.threads import get_thread
+from a13n_service.runs.threads import get_run, get_thread
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Access, Authenticated, reauthenticate, workspace_scope
 
@@ -50,6 +50,7 @@ KEEPALIVE_SECONDS = 15
 STREAM_PREFIX = "a13n:thread:"
 # A stream entry ID as Redis assigns it: the only cursor `Last-Event-ID` may name.
 EVENT_ID = r"^\d{1,20}-\d{1,20}$"
+POSITION = r"^(0|[1-9][0-9]{0,19})-(0|[1-9][0-9]{0,19})$"
 
 
 def stream_key(thread_id: str) -> str:
@@ -84,6 +85,18 @@ class RunSignal(BaseModel):
     run_id: str
 
 
+class Gap(RunSignal):
+    """Missing output through this position, or unknown after transport loss."""
+
+    position: str | None = Field(default=None, pattern=POSITION)
+
+
+@dataclass(frozen=True)
+class Resume:
+    run_id: str
+    position: StreamPosition
+
+
 type FrameName = Literal["delta", "boundary", "changed", "reset", "gap"]
 # The SSE `event` name of each frame and the model of its `data`.
 FRAMES: dict[FrameName, type[BaseModel]] = {
@@ -91,7 +104,7 @@ FRAMES: dict[FrameName, type[BaseModel]] = {
     "boundary": Boundary,
     "changed": Changed,
     "reset": RunSignal,
-    "gap": RunSignal,
+    "gap": Gap,
 }
 
 
@@ -339,11 +352,20 @@ class ThreadHub:
                 reader.send(snapshot if readable[key] and snapshot is not None else Revoked())
 
 
-async def open_stream(runtime: Runtime, credential: Authenticated, workspace_id: str, thread_id: str) -> Reader:
+async def open_stream(
+    runtime: Runtime, credential: Authenticated, workspace_id: str, thread_id: str, resume: Resume | None = None
+) -> Reader:
     """Authorize before the response starts, so refusals are ordinary HTTP errors."""
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, credential.principal, workspace_id, "read")
         thread = await get_thread(session, scope.workspace_id, thread_id)
+        if resume is not None:
+            run = await get_run(session, scope.workspace_id, resume.run_id)
+            if run.thread_id != thread.id:
+                raise invalid("run", "The resume run does not belong to this thread")
+            latest = await session.scalar(select(func.max(AttemptRow.number)).where(AttemptRow.run_id == run.id))
+            if resume.position.attempt > (latest or 0):
+                raise invalid("position", "The resume position names a future attempt")
     return Reader(credential, scope.workspace_id, thread.id)
 
 
@@ -373,7 +395,7 @@ class _View:
 
     def gap(self) -> list[str]:
         run_id = self.snapshot.run_id
-        return [_frame("gap", RunSignal(run_id=run_id))] if run_id is not None else []
+        return [_frame("gap", Gap(run_id=run_id))] if run_id is not None else []
 
     def _replaced(self, run_id: str, attempt: int) -> bool:
         """A later attempt of the active run supersedes output of an earlier one; the first attempt replaces none."""
@@ -409,12 +431,14 @@ class _View:
             # A boundary past this connection's last sequence of the attempt covers deltas it never received: dropped
             # by the writer or removed before it read them. After the gap's re-read, deltas continue from the boundary.
             if self.sequences.get((run_id, attempt), 0) < sequence:
-                frames.append(_frame("gap", RunSignal(run_id=run_id)))
-            self.sequences[(run_id, attempt)] = sequence
+                frames.append(_frame("gap", Gap(run_id=run_id, position=f"{attempt}-{sequence}")))
+            self.sequences[(run_id, attempt)] = max(self.sequences.get((run_id, attempt), 0), sequence)
             return [*frames, _frame("boundary", Boundary(run_id=run_id, attempt=attempt, sequence=sequence), entry.id)]
         expected = self.sequences.get((run_id, attempt), 0) + 1
-        if sequence != expected:
-            frames.append(_frame("gap", RunSignal(run_id=run_id)))
+        if sequence < expected:
+            return frames
+        if sequence > expected:
+            frames.append(_frame("gap", Gap(run_id=run_id, position=f"{attempt}-{sequence - 1}")))
         self.sequences[(run_id, attempt)] = sequence
         delta = Delta(
             run_id=run_id,
@@ -426,23 +450,44 @@ class _View:
         return [*frames, _frame("delta", delta, entry.id)]
 
 
-async def frames(hub: ThreadHub, reader: Reader, last_event_id: str | None) -> AsyncIterator[str]:
+async def frames(
+    hub: ThreadHub, reader: Reader, last_event_id: str | None, resume: Resume | None = None
+) -> AsyncIterator[str]:
     """SSE for one connection: retained entries after its cursor, then live entries and control frames."""
     redis, key = hub.runtime.redis, stream_key(reader.thread_id)
     snapshot = await hub.snapshot(reader.thread_id)
     if snapshot is None:
         return
     view = _View(hub, reader.thread_id, snapshot)
+    if resume is not None:
+        view.sequences[(resume.run_id, resume.position.attempt)] = resume.position.sequence
     try:
         live_after = await hub.join(reader)
-        after = last_event_id or "0-0"
+        after = "0-0"
         if last_event_id is not None:
-            # Resuming continues the sequence of the client's last entry; a trimmed cursor lost what followed it.
-            if (seen := await read_entry(redis, key, last_event_id)) is not None:
-                view.seed(seen)
-            else:
-                for frame in view.gap():
-                    yield frame
+            seen = await read_entry(redis, key, last_event_id)
+            if resume is None:
+                after = last_event_id
+                if seen is not None:
+                    view.seed(seen)
+                else:
+                    for frame in view.gap():
+                        yield frame
+            elif seen is not None:
+                fields = seen.fields
+                # A hint cannot skip output beyond the client's coverage or from another attempt/run.
+                if (
+                    snapshot.run_id == resume.run_id
+                    and snapshot.attempt == resume.position.attempt
+                    and fields["run_id"] == resume.run_id
+                    and int(fields["attempt"]) == resume.position.attempt
+                    and int(fields["sequence"]) <= resume.position.sequence
+                ):
+                    after = last_event_id
+            # An absent or incompatible hint replays retained entries against the business position.
+            # Its absence alone says nothing about whether the required suffix is missing.
+        if resume is not None and snapshot.run_id == resume.run_id and snapshot.attempt > resume.position.attempt > 0:
+            yield _frame("reset", RunSignal(run_id=resume.run_id))
         while _order(after) < _order(live_after):
             batch = await read_range(redis, key, after=after, until=live_after, count=READ_BATCH)
             if not batch:

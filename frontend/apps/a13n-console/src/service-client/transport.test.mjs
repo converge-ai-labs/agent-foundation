@@ -218,3 +218,58 @@ test("Thread stream resumes after its last cursor and reports control frames", a
   assert.equal(requests[0].headers.get("X-Workspace-ID"), "ws_one");
   assert.equal(requests[0].headers.get("Last-Event-ID"), "4-0");
 });
+
+test("reconnects with the consumer's current complete position and matching hint", async () => {
+  const requests = [];
+  let resume = { run: "run_one", position: "1-100", after: "4-0" };
+  const encoder = new TextEncoder();
+  const client = createClient({
+    baseUrl,
+    auth: { type: "session" },
+    fetch: async (request) => {
+      requests.push(request);
+      if (requests.length === 1) {
+        let sent = false;
+        return new Response(
+          new ReadableStream({
+            pull(controller) {
+              if (sent) controller.error(new Error("Disconnected"));
+              else {
+                sent = true;
+                controller.enqueue(
+                  encoder.encode(
+                    'event: gap\ndata: {"run_id":"run_one","position":"1-150"}\n\n',
+                  ),
+                );
+              }
+            },
+          }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      }
+      return new Response(chunks('event: changed\ndata: {"version":5}\n\n'), {
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    },
+  });
+  const stream = client.streamThread("ws_one", "th_one", {
+    resume: () => resume,
+  });
+  assert.deepEqual((await stream.next()).value, {
+    type: "gap",
+    run_id: "run_one",
+    position: "1-150",
+  });
+  // A snapshot read healed the missing range before the transport reconnects.
+  resume = { run: "run_one", position: "1-160", after: "8-0" };
+  assert.deepEqual((await stream.next()).value, {
+    type: "changed",
+    version: 5,
+  });
+  await stream.return();
+  assert.equal(requests.length, 2);
+  assert.equal(new URL(requests[0].url).searchParams.get("position"), "1-100");
+  assert.equal(new URL(requests[1].url).searchParams.get("run"), "run_one");
+  assert.equal(new URL(requests[1].url).searchParams.get("position"), "1-160");
+  assert.equal(requests[1].headers.get("Last-Event-ID"), "8-0");
+});

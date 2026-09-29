@@ -5,6 +5,7 @@ export { ApiError, ProtocolError, data, isRecord } from "./errors.js";
 export type {
   ThreadDelta,
   ThreadFrame,
+  ThreadResume,
   ThreadStreamOptions,
 } from "./streams/thread-stream.js";
 export type { paths, components, operations, Binary } from "./schema.js";

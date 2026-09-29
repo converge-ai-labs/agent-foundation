@@ -557,3 +557,153 @@ async def test_cancelling_stream_close_still_signals_its_writer(runtime: Runtime
         assert stream.writer is not None
         stream.writer.cancel()
         await asyncio.gather(stream.writer, return_exceptions=True)
+
+
+@pytest.mark.parametrize("hint", ["valid", "absent", "expired", "ahead", "other_run", "old_attempt"])
+async def test_snapshot_position_filters_replay_and_ignores_unsafe_hints(
+    service, scripted_model, listen, runs_kit, hint
+) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.runs.claim import claim
+
+    run = await _queued_run(service, scripted_model, runs_kit)
+    await claim(service.runtime, worker_id="resume-test", worker_build="test", limit=1)
+    redis, key = service.runtime.redis, stream_key(run["thread_id"])
+
+    async def put(sequence: int, **extra: str) -> str:
+        return await redis.xadd(
+            key,
+            {
+                "run_id": run["id"],
+                "attempt": "1",
+                "sequence": str(sequence),
+                "event": json.dumps(_delta(sequence).event),
+                **extra,
+            },
+        )
+
+    cursor = await put(80)
+    await put(90)
+    await put(100)
+    await put(100, boundary="1")
+    ahead = await put(101)
+    if hint == "expired":
+        await redis.xtrim(key, minid=ahead, approximate=False)
+    elif hint == "ahead":
+        cursor = ahead
+    elif hint == "other_run":
+        cursor = await put(100, run_id="run_other")
+    elif hint == "old_attempt":
+        cursor = await put(100, attempt="0")
+    headers = await runs_kit.bearer(service)
+    if hint != "absent":
+        headers["Last-Event-ID"] = cursor
+    async with listen(service.app) as base:
+        url = f"{base}{service.api}/threads/{run['thread_id']}/stream?run={run['id']}&position=1-100"
+        async with runs_kit.frames(url, headers) as frames:
+            expected = [("delta", 101)] if hint == "expired" else [("boundary", 100), ("delta", 101)]
+            assert await _frames(frames, len(expected)) == expected
+
+
+async def test_snapshot_position_reports_only_the_missing_suffix(service, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.runs.claim import claim
+
+    run = await _queued_run(service, scripted_model, runs_kit)
+    await claim(service.runtime, worker_id="resume-test", worker_build="test", limit=1)
+    await service.runtime.redis.xadd(
+        stream_key(run["thread_id"]),
+        {
+            "run_id": run["id"],
+            "attempt": "1",
+            "sequence": "151",
+            "event": json.dumps(_delta(151).event),
+        },
+    )
+    async with listen(service.app) as base:
+        url = f"{base}{service.api}/threads/{run['thread_id']}/stream?run={run['id']}&position=1-100"
+        async with runs_kit.frames(url, await runs_kit.bearer(service)) as frames:
+            async with asyncio.timeout(10):
+                event, _, data = await anext(frames)
+            assert event == "gap" and data == {"run_id": run["id"], "position": "1-150"}
+            assert await _frames(frames, 1) == [("delta", 151)]
+
+
+@pytest.mark.parametrize("query", ["run_only", "position_only", "malformed", "future", "wrong_thread"])
+async def test_resume_claim_is_validated_before_streaming(service, scripted_model, runs_kit, query) -> None:  # type: ignore[no-untyped-def]
+    run = await _queued_run(service, scripted_model, runs_kit)
+    params = {"run": run["id"], "position": "0-0"}
+    if query == "run_only":
+        params.pop("position")
+    elif query == "position_only":
+        params.pop("run")
+    elif query == "malformed":
+        params["position"] = "01-2"
+    elif query == "future":
+        params["position"] = "2-0"
+    else:
+        other = await runs_kit.start_thread(service, {"id": run["agent_id"]}, "other")
+        params["run"] = other["run"]["id"]
+    response = await service.client.get(f"{service.api}/threads/{run['thread_id']}/stream", params=params)
+    assert response.status_code == 400, response.text
+
+
+async def test_final_display_does_not_need_redis(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    agent = await runs_kit.create_agent(executing, scripted_model)
+    scripted_model.say("Saved")
+    run = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "hi"))["run"]["id"])
+    before = await runs_kit.items(executing, run["id"])
+    await executing.runtime.redis.delete(stream_key(run["thread_id"]))
+    assert await runs_kit.items(executing, run["id"]) == before
+
+
+async def test_resuming_an_older_attempt_resets_before_the_new_attempt_tail(
+    service, scripted_model, listen, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.seal import release_attempt
+
+    run = await _queued_run(service, scripted_model, runs_kit)
+    first = (await claim(service.runtime, worker_id="resume-test", worker_build="test", limit=1))[0]
+    await release_attempt(service.runtime, first, status="yielded", yield_reason="handoff")
+    second = (await claim(service.runtime, worker_id="resume-test-2", worker_build="test", limit=1))[0]
+    assert second.number == 2
+    redis, key = service.runtime.redis, stream_key(run["thread_id"])
+    await redis.xadd(
+        key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "event": json.dumps(_delta(100).event)}
+    )
+    await redis.xadd(key, {"run_id": run["id"], "attempt": "2", "sequence": "1", "event": json.dumps(_delta(1).event)})
+    # A fenced-out worker can finish an old Redis write after the new attempt starts.
+    cursor = await redis.xadd(
+        key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "event": json.dumps(_delta(100).event)}
+    )
+    headers = {**await runs_kit.bearer(service), "Last-Event-ID": cursor}
+    async with listen(service.app) as base:
+        url = f"{base}{service.api}/threads/{run['thread_id']}/stream?run={run['id']}&position=1-100"
+        async with runs_kit.frames(url, headers) as frames:
+            assert await _frames(frames, 2) == [("reset", None), ("delta", 1)]
+
+
+async def test_failed_checkpoint_publication_never_enqueues_a_boundary_or_trims(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs import checkpoints
+
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.say("Unused")
+    submitted = await runs_kit.start_thread(service, agent, "hi")
+    trimmed = []
+
+    async def fail(*args: Any, **kwargs: Any) -> Any:
+        raise ServiceError("payload_too_large", "Checkpoint publication failed")
+
+    async def trim(*args: Any, **kwargs: Any) -> None:
+        trimmed.append(kwargs)
+
+    monkeypatch.setattr(checkpoints, "publish_checkpoint", fail)
+    monkeypatch.setattr(stream_module, "trim", trim)
+    await (await runs_kit.attempt(service))
+    listing = await runs_kit.items(service, submitted["run"]["id"])
+    assert listing["run"]["status"] == "failed"
+    entries = await _entries(service.runtime.redis, submitted["thread"]["id"])
+    assert all("boundary" not in fields for _, fields in entries)
+    assert not trimmed

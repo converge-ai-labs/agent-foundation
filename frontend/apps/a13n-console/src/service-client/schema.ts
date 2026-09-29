@@ -12195,7 +12195,10 @@ export interface operations {
   };
   thread_stream_api_v1_threads__thread_id__stream_get: {
     parameters: {
-      query?: never;
+      query?: {
+        run?: string | null;
+        position?: string | null;
+      };
       header?: {
         "Last-Event-ID"?: string | null;
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
