@@ -1,4 +1,7 @@
-# Events and processors
+---
+title: Events and processors
+description: Convert a Harness Run into AG-UI events, read snapshots, and apply Host processors.
+---
 
 Use one `HarnessAguiObserver` per `(thread_id, run_id)` and feed it each public source item in order. It converts observations, not private state. Start with the [offline example](getting-started.md), then add your Host's transport and persistence.
 

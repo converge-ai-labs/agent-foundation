@@ -1,4 +1,7 @@
-# Models and authentication
+---
+title: Models
+description: Choose a model source, route per Run, and declare context characteristics and request affinity.
+---
 
 Use a native Pydantic AI Model or a model string. Harness adds per-run routing, explicit context characteristics, and Thread-based request affinity; provider adapters still own their wire protocols and supported settings.
 

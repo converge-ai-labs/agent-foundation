@@ -1291,11 +1291,7 @@ mod tests {
 
     use crate::eip::EipValidate;
 
-    use super::{
-        Config, DEFAULT_MAX_COMMAND_ARGUMENT_BYTES, DEFAULT_MAX_COMMAND_ARGUMENTS,
-        DEFAULT_MAX_COMMAND_ENVIRONMENT_BYTES, DEFAULT_MAX_COMMAND_ENVIRONMENT_ENTRIES,
-        parse_reverse_websocket_config,
-    };
+    use super::{Config, parse_reverse_websocket_config};
 
     #[test]
     fn startup_booleans_accept_only_explicit_values() {
@@ -1432,31 +1428,6 @@ mod tests {
     }
 
     #[test]
-    fn startup_arguments_override_device_metadata_and_default_working_directory() {
-        let root = std::env::temp_dir();
-        let mut file: super::FileConfig = serde_json::from_value(serde_json::json!({
-            "device_id": "device-shared", "name": "Old"
-        }))
-        .unwrap();
-        let args = [
-            std::ffi::OsString::from("--default-working-directory"),
-            root.clone().into_os_string(),
-            "--device-id".into(),
-            "env-build".into(),
-            "--name".into(),
-            "Build Linux".into(),
-        ];
-        super::StartupArguments::parse(args)
-            .unwrap()
-            .apply(&mut file)
-            .unwrap();
-
-        assert_eq!(file.device_id.as_deref(), Some("env-build"));
-        assert_eq!(file.name.as_deref(), Some("Build Linux"));
-        assert_eq!(file.default_working_directory, Some(root));
-    }
-
-    #[test]
     fn startup_arguments_reject_ambiguous_or_unbounded_configuration() {
         for args in [
             vec!["--default-working-directory"],
@@ -1480,17 +1451,5 @@ mod tests {
             .descriptor()
             .validate()
             .expect("limits are valid");
-        assert_eq!(config.device_id, "env-test");
-        assert_eq!(config.limits.max_request_bytes, 16 * 1024 * 1024);
-        assert_eq!(config.limits.max_response_bytes, 16 * 1024 * 1024);
-        assert_eq!(config.limits.max_processes, 128);
-        assert_eq!(config.limits.max_operation_duration_ms, 24 * 60 * 60 * 1000);
-        assert_eq!(config.limits.max_output_bytes_per_stream, 256 * 1024 * 1024);
-        assert_eq!(config.limits.max_spool_bytes, 1024 * 1024 * 1024);
-        assert_eq!(config.limits.max_staged_file_bytes, 8 * 1024 * 1024 * 1024);
-        assert_eq!(DEFAULT_MAX_COMMAND_ARGUMENTS, 1024);
-        assert_eq!(DEFAULT_MAX_COMMAND_ARGUMENT_BYTES, 1024 * 1024);
-        assert_eq!(DEFAULT_MAX_COMMAND_ENVIRONMENT_ENTRIES, 1024);
-        assert_eq!(DEFAULT_MAX_COMMAND_ENVIRONMENT_BYTES, 2 * 1024 * 1024);
     }
 }

@@ -4,7 +4,7 @@
 
 <h1 align="center">Agent Foundation (a13n)</h1>
 
-[![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://agent-foundation-docs.converge.ai/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+[![CI](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/converge-ai-labs/agent-foundation/actions/workflows/ci.yml) [![Documentation](https://img.shields.io/badge/docs-agent--foundation-blue)](https://a13n-docs.converge.ai/) [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/) [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 **The open-source, self-hosted foundation for enterprise AI agents.**
 
@@ -55,7 +55,7 @@ First-use setup connects a model and selects execution permissions. Full Control
 
 Harness gives your application reusable agents, typed tools and outputs, streaming observations, portable execution environments, and state you can save and resume. Your application owns persistence, credentials, and recovery policy.
 
-Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). The [package catalog](docs/packages.md) covers supporting components such as Envd, Stream Protocol, and logging.
+Start with the [Harness quickstart](docs/a13n-harness/getting-started.md), then explore [runnable examples](examples/README.md). The [package catalog](docs/overview/packages.md) covers supporting components such as Envd, Stream Protocol, and logging.
 
 ## Work from source
 
@@ -78,7 +78,7 @@ Source development uses Python 3.13, uv, and Make. Browser builds also need Node
 
 Bug reports, documentation fixes, examples, and focused improvements are welcome. Search [GitHub Issues](https://github.com/converge-ai-labs/agent-foundation/issues) and read the [contribution guide](CONTRIBUTING.md) before starting. Discuss unresolved product or architecture decisions before implementing them.
 
-- [User documentation](https://agent-foundation-docs.converge.ai/)
+- [User documentation](https://a13n-docs.converge.ai/)
 - [Development standards](DEVELOPMENT.md)
 - [Accepted specifications](spec/README.md)
 - [Maintainers](MAINTAINERS.md)

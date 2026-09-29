@@ -1,4 +1,7 @@
-# Session egress
+---
+title: Session egress
+description: Restrict which destinations an Envd Session can reach, and update the policy without restarting.
+---
 
 Select controlled egress with `A13N_ENVD_EGRESS_MODE=controlled`, `--egress-mode controlled`, or daemon JSON stored outside the workspace:
 

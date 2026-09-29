@@ -5,8 +5,10 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
+from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
 from a13n_service.runs import archive, entries, resume, runs, sessions, stream, submit, threads
+from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
     Attempts,
@@ -188,11 +190,19 @@ async def thread_stream(
     thread_id: str,
     credential: Credential,
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID", pattern=stream.EVENT_ID)] = None,
+    run: str | None = None,
+    position: Annotated[str | None, Query(pattern=stream.POSITION)] = None,
 ) -> StreamingResponse:
     """Live output of the thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`."""
-    reader = await stream.open_stream(runtime, credential, workspace_id, thread_id)
+    if (run is None) != (position is None):
+        raise invalid("position", "run and position must be provided together")
+    resume = None
+    if run is not None and position is not None:
+        attempt, sequence = map(int, position.split("-"))
+        resume = stream.Resume(run, StreamPosition(attempt=attempt, sequence=sequence))
+    reader = await stream.open_stream(runtime, credential, workspace_id, thread_id, resume)
     return StreamingResponse(
-        stream.frames(request.app.state.thread_hub, reader, last_event_id),
+        stream.frames(request.app.state.thread_hub, reader, last_event_id, resume),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

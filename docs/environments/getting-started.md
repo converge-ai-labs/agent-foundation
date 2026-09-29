@@ -1,6 +1,8 @@
-# Getting started
-
-Read and write one file through an Environment, without Harness, a model, Docker, or a cloud account. This shows the Provider boundary before introducing Agent tools.
+---
+title: Environments quickstart
+sidebarTitle: Quickstart
+description: Read and write one file through an Environment, without Harness, a model, Docker, or a cloud account. This shows the Provider boundary before introducing Agent tools.
+---
 
 ## Install from this checkout
 

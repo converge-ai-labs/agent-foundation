@@ -1,4 +1,7 @@
-# Usage, limits, and pricing
+---
+title: Usage, limits, and pricing
+description: Bound a Run with usage limits, read its usage records, and estimate cost with pricing policies.
+---
 
 Use usage limits to bound a logical Run, usage records to understand its work, and pricing policies to estimate cost. These are different concerns: a request budget is enforcement, an observed cost is not an invoice, and a terminal result is not a durable billing record.
 

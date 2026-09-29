@@ -78,6 +78,33 @@
       "title": "Delta",
       "type": "object"
     },
+    "Gap": {
+      "description": "Missing output through this position, or unknown after transport loss.",
+      "properties": {
+        "position": {
+          "anyOf": [
+            {
+              "pattern": "^(0|[1-9][0-9]{0,19})-(0|[1-9][0-9]{0,19})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Position"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "title": "Gap",
+      "type": "object"
+    },
     "ItemKind": {
       "enum": [
         "text_message",
@@ -144,7 +171,7 @@
       "$ref": "#/$defs/Delta"
     },
     "gap": {
-      "$ref": "#/$defs/RunSignal"
+      "$ref": "#/$defs/Gap"
     },
     "reset": {
       "$ref": "#/$defs/RunSignal"

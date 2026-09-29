@@ -1,4 +1,7 @@
-# Use the browser
+---
+title: Use the browser
+description: Run the browser workbench for shared conversations, files, Git changes, terminals, and configuration.
+---
 
 The browser is Harness UI's collaborative playground for individuals and trusted small teams. It shares the same `HarnessUiApp` as the terminal, with conversations, execution controls, setup, provider accounts, configuration, and Project readiness. It is not Service Console and does not provide separate participant permissions or tenant isolation.
 
@@ -17,7 +20,7 @@ a13n-harness-ui webui --no-share-computer   # Opt out of native computer sharing
 Native [Files](http-api.md#native-host-files), [Git Changes](http-api.md#native-git-changes), and [Terminal](http-api.md#native-terminal) access is enabled by default. These panels use the server account or container mounts, **not** the Agent's selected Environment. Use `--no-share-computer` to disable them without changing shared chat, [drafts](http-api.md#shared-composer), or [page presence](http-api.md#page-presence). Git changes in the workbench are read-only; use a deliberate shell action for Git mutations. Presence and shared drafts are live state, not saved continuation.
 
 ```mermaid
-flowchart LR
+flowchart TB
     Browser -->|Files, Git, Terminal| Host[WebUI server account]
     Browser -->|Send prompt| App[HarnessUiApp]
     App --> Agent[Agent Run]

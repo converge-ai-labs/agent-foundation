@@ -176,7 +176,7 @@ def test_package_tests_do_not_trigger_images(package: str, suffix: str, workflow
         ("frontend/pnpm-lock.yaml", {"service", "harness_ui"}),
         ("frontend/tsconfig.base.json", {"service", "harness_ui"}),
         ("docs/a13n-harness-ui/configuration.md", {"harness_ui"}),
-        ("mkdocs.yml", {"harness_ui"}),
+        ("docs/a13n-harness-ui/meta.json", {"harness_ui"}),
         ("deploy/docker/images/a13n-service/service.toml", {"service"}),
         ("deploy/docker/images/a13n-service/entrypoint.sh", {"service"}),
         ("deploy/docker/images/sandbox/Dockerfile", {"sandbox"}),

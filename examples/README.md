@@ -25,4 +25,4 @@ uv run pytest
 
 ## How to Use These Examples
 
-Run the example, then read its source and tests for the integration boundary. Copy the smallest part that matches your application and replace demo policy and persistence with your own. Accepted contracts live in [`spec/`](../spec/README.md); task-oriented guides live in [`docs/`](../docs/index.md).
+Run the example, then read its source and tests for the integration boundary. Copy the smallest part that matches your application and replace demo policy and persistence with your own. Accepted contracts live in [`spec/`](../spec/README.md); task-oriented guides live in [`docs/`](../docs/).

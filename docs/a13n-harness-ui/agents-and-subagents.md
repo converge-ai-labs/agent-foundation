@@ -1,4 +1,7 @@
-# Agents and subagents
+---
+title: Agents and subagents
+description: Define reusable Agents in YAML and lightweight Markdown subagents for delegated roles.
+---
 
 An **Agent** is a reusable YAML configuration: it chooses a Model, instructions, tools, extensions, and a child roster. A **Markdown subagent** is a lightweight child role that inherits the parent's model. An existing Agent can also be referenced as a child when it needs an independent configuration.
 
@@ -30,7 +33,7 @@ Create a Model and an Agent in sibling directories beside your selected `a13n-ha
 
 Create `models/primary.yaml`:
 
-```yaml
+```yaml title="models/primary.yaml"
 schema_version: "1"
 kind: model
 id: model-primary
@@ -47,7 +50,7 @@ The environment variable must be set in the process launching Harness UI. Altern
 
 Create `agents/coder.yaml`:
 
-```yaml
+```yaml title="agents/coder.yaml"
 schema_version: "1"
 kind: agent
 id: agent-coder
@@ -107,7 +110,7 @@ Use an Agent reference when the child needs its own model, reasoning, capabiliti
 
 Create `models/review.yaml`:
 
-```yaml
+```yaml title="models/review.yaml"
 schema_version: "1"
 kind: model
 id: model-review
@@ -126,7 +129,7 @@ This can use the same provider route with different settings, or a different sup
 
 Create `agents/reviewer.yaml`:
 
-```yaml
+```yaml title="agents/reviewer.yaml"
 schema_version: "1"
 kind: agent
 id: agent-reviewer
@@ -152,7 +155,7 @@ The tool filter makes this example a read-only file explorer. Instructions alone
 
 Replace `subagents: []` in `agents/coder.yaml` with:
 
-```yaml
+```yaml title="agents/coder.yaml"
 subagents:
   - agent: agent-reviewer
 ```
@@ -278,7 +281,7 @@ Built-in bodies are captured with each Run. Package upgrades and inclusion edits
 
 For a role that only needs different instructions, create `subagents/investigator.md`:
 
-```markdown
+```markdown title="subagents/investigator.md"
 ---
 name: investigator
 description: Trace a bounded repository question and report evidence.
@@ -307,7 +310,8 @@ subagents:
 
 The body is the child's additional instructions. With no `tools` field it inherits the parent's visible-tool filter. Markdown always inherits the parent model and has no nested roster.
 
-**Do not add `model: inherit` or any other `model` field.** Inheritance is implicit. Remove that field from older local Markdown definitions. For independent model settings, use the [Agent reference recipe](#reference-an-existing-agent-as-a-subagent), not an expanded Markdown format. Previously captured Run model recipes are not rewritten.
+> [!IMPORTANT]
+> **Do not add `model: inherit` or any other `model` field.** Inheritance is implicit. Remove that field from older local Markdown definitions. For independent model settings, use the [Agent reference recipe](#reference-an-existing-agent-as-a-subagent), not an expanded Markdown format. Previously captured Run model recipes are not rewritten.
 
 ## Agent file reference
 

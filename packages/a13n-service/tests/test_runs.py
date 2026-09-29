@@ -138,6 +138,11 @@ async def test_an_interrupt_cancels_the_model_call_in_flight(executing, scripted
     assert run["status"] == "cancelled" and run["failure"]["code"] == "cancelled"
     listing = await runs_kit.items(executing, run["id"])
     assert listing["complete"] and runs_kit.texts(listing) == [("user", "write a long poem")]
+    assert listing["resume_after"] is not None
+    saved = await executing.runtime.redis.xrange(
+        f"a13n:thread:{run['thread_id']}", min=listing["resume_after"], max=listing["resume_after"]
+    )
+    assert saved and "event" in saved[0][1]
     entry = await executing.client.get(f"{executing.api}/threads/{run['thread_id']}/inbox")
     # The request carried the input and its checkpoint committed before the call: it was consumed.
     assert [item["status"] for item in entry.json()["items"]] == ["consumed"]
@@ -358,6 +363,12 @@ async def test_an_admission_refusal_prevents_the_call_and_fails_the_run(service,
     assert scripted_model.requests.empty()
     assert [(call.run_id, call.source) for call in policy.calls] == [(run_id, "agent")]
     assert policy.calls[0].call_id and policy.calls[0].model_id is not None
+    listing = await runs_kit.items(service, run_id)
+    assert listing["complete"] and listing["resume_after"] is not None
+    saved = await service.runtime.redis.xrange(
+        f"a13n:thread:{run['thread_id']}", min=listing["resume_after"], max=listing["resume_after"]
+    )
+    assert saved and "event" in saved[0][1]
 
 
 async def test_an_inline_subagent_runs_inside_its_parents_run(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

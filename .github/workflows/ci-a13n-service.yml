@@ -62,7 +62,7 @@ jobs:
           - name: checks
             runner: ubuntu-latest
           - name: tests
-            runner: ubuntu-24.04-8core
+            runner: ubuntu-24.04
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     steps:
@@ -117,7 +117,7 @@ jobs:
         timeout-minutes: 10
         run: >-
           /usr/bin/time -p uv run --locked python -m pytest
-          -n 7 --dist loadgroup --max-worker-restart=0
+          -n 3 --dist loadgroup --max-worker-restart=0
           -vv --tb=short --durations=30 -r a
           --junitxml=test-results/service.xml
           -o faulthandler_timeout=120

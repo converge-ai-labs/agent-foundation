@@ -51,7 +51,7 @@ class EnvironmentReadiness(StrictModel):
     code: str
     message: str
     instructions: tuple[str, ...] = ()
-    documentation_url: str = "https://agent-foundation-docs.converge.ai/a13n-envd/"
+    documentation_url: str = "https://a13n-docs.converge.ai/a13n-envd/"
 
 
 async def preflight_environment(

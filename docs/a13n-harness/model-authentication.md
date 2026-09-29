@@ -1,4 +1,8 @@
-# Model authentication and HTTP clients
+---
+title: Model authentication and HTTP clients
+sidebarTitle: Authentication and HTTP clients
+description: Use API keys or subscription logins for models, and own the HTTP clients they use.
+---
 
 Use native Provider credentials for API-key Models. Use `a13n_harness.providers.model.oauth` when your application needs the implemented subscription login and credential-source integration. Harness supplies protocol/model building blocks, not an account database, browser UI, or permission to replace a user's account.
 

@@ -1,4 +1,7 @@
-# Multimedia Understanding
+---
+title: Multimedia understanding
+description: Understand image, video, and audio files through native model input or a dedicated analysis agent.
+---
 
 Agent Harness provides a first-party path for understanding image, video, and audio files in an Environment. The model-facing `view` tool selects one of two paths automatically:
 

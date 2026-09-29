@@ -74,15 +74,14 @@ Trivial corrections may start as a pull request when no material discussion or t
 
 ## Documentation System
 
-Documentation sources live in `docs/` and use Markdown. The canonical public site is `https://agent-foundation-docs.converge.ai/`. It is built with MkDocs Material through the Python development environment declared in `pyproject.toml` and locked by `uv.lock`.
+Documentation sources live in `docs/` as Markdown pages with front matter; each folder's `meta.json` owns its navigation order. Markdown is the single content source: the same pages read correctly on GitHub and in the bundled Harness UI configuration Skill, and the site renders a few portable forms (GitHub alerts, fence titles and tabs, Mermaid) as richer components. `.mdx` is reserved for composed pages such as `docs/index.mdx`, the site home page. The canonical public site is `https://a13n-docs.converge.ai/`.
 
-- `docs/index.md` is the initial documentation entry point.
-- `mkdocs.yml` owns site metadata, navigation, Markdown extensions, and the build directory.
+- `frontend/apps/a13n-docs` is the private Fumadocs (Next.js) application in the frontend workspace that owns site layout, theme, and search, and generates the Service API reference from `proto/a13n-service/openapi.json`. It has no release identity.
 - `make docs-serve` runs the local documentation server.
-- `make docs-build` performs the strict production build into `site/`.
+- `make docs-build` performs the static export into `frontend/apps/a13n-docs/out/` and fails on any broken internal link or anchor.
 - `.github/workflows/docs.yml` builds pull-request artifacts and deploys `main` to Cloudflare Pages through Wrangler.
 
-Configuration and generated output do not live in `docs/`. Every source file under `docs/` is Markdown.
+Site configuration and generated output do not live in `docs/`, which holds only pages and `meta.json` navigation.
 
 The main site owns Service guides and the Service HTTP API reference. The Service overview points readers to the independent SDK and CLI repositories; the site does not generate or vendor language-specific SDK API references.
 

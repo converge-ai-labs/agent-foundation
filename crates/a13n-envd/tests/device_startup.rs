@@ -139,12 +139,13 @@ fn startup_arguments_override_file_metadata_without_materializing_mounts() {
     assert_eq!(descriptor["device_id"], "device-cli");
     assert_eq!(descriptor["display_name"], "CLI name");
     assert_eq!(descriptor["directory_discovery"], false);
-    assert!(
-        descriptor["default_working_directory"]
-            .as_str()
-            .unwrap()
-            .ends_with("/work")
+    let expected = cwd.to_str().unwrap();
+    #[cfg(windows)]
+    let expected = format!(
+        "/{}",
+        expected.trim_start_matches(r"\\?\").replace('\\', "/")
     );
+    assert_eq!(descriptor["default_working_directory"], expected);
 }
 
 #[test]

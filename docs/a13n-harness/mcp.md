@@ -1,4 +1,7 @@
-# MCP tools
+---
+title: MCP tools
+description: Connect tools from MCP servers, including headers derived from the current identity or Run.
+---
 
 Use MCP to connect tools supplied by another process or service. Harness composes Pydantic AI's MCP Capability instead of adding another transport client.
 

@@ -1,4 +1,8 @@
-# Operate sessions and retained output
+---
+title: Operate sessions and retained output
+sidebarTitle: Sessions and output
+description: Manage daemon readiness, Session lifetime, retained output capacity, and transfers.
+---
 
 Envd owns one Device generation with multiple independent Sessions. Operators manage daemon/process/bootstrap lifetime; each EIP Session owns its operations, processes, transfers, and retained output. Neither a live socket nor a retained output preview is a durable Agent checkpoint.
 

@@ -1,4 +1,7 @@
-# Context and working state
+---
+title: Context and working state
+description: Separate what the model sees now from history compaction and structured working state.
+---
 
 An agent needs relevant input now and enough state to continue later. Harness keeps those jobs separate: context projections prepare the current model request; compaction changes history; working state holds structured task facts.
 

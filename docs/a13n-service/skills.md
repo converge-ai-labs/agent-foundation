@@ -1,4 +1,7 @@
-# Skills
+---
+title: Skills
+description: Package instructions and files as revisioned skills that agents load on demand.
+---
 
 A skill is a package of instructions and supporting files that an agent can load when a task calls for it. Skills are [revisioned](resources.md#lifecycles): each change adds an immutable revision, and agent revisions pin the exact skill revision they use. See [Harness skills](../a13n-harness/skills.md) for how agents use them at run time.
 

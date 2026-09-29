@@ -229,17 +229,16 @@ async def test_note_count_refreshes_and_discards_cross_thread_snapshot(shell: Cl
 
 
 @pytest.mark.parametrize("width", [24, 40, 59, 60, 80, 100, 160])
-@pytest.mark.parametrize("tier", [None, "default", "priority", "flex"])
+@pytest.mark.parametrize("fast", ["default", "off", "on"])
 @pytest.mark.parametrize("tokens", [None, 0, 12345, 1234567])
 @pytest.mark.anyio
 async def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(
-    shell: CliShell, monkeypatch, width, tier, tokens
+    shell: CliShell, monkeypatch, width, fast, tokens
 ) -> None:
     from a13n_harness.usage import BoundedRequestUsage
 
     shell.status.state = "ready"
-    shell.status.service_tier = tier
-    shell.status.fast = "on" if tier == "priority" else "off" if tier in {"default", "flex"} else "default"
+    shell.status.fast = fast
     shell.status.context_tokens = 1200
     shell.status.context_window = 350000
     if tokens is not None:
@@ -247,7 +246,7 @@ async def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(
     monkeypatch.setattr(shell.app.output, "get_size", lambda: Size(rows=24, columns=width))
     line = shell.status.line(width)
     assert get_cwidth(line) <= width
-    assert ("Fast" in line) == (tier == "priority")
+    assert ("Fast" in line) == (fast == "on")
     assert ("tok " if width < 60 else "tokens ") in line
     if tokens is None:
         assert "--" in line

@@ -1,4 +1,7 @@
-# Native tools and Web providers
+---
+title: Native tools and Web providers
+description: Configure provider-native search, code execution, and image generation, plus Host web providers.
+---
 
 Native tools execute through the selected Model provider. Host tools execute through Harness UI and its Environment. They are independent: native search is not a local crawler, provider code execution is not your workspace shell, and provider file search does not index your Thread files.
 

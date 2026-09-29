@@ -1,4 +1,7 @@
-# Capabilities
+---
+title: Capabilities
+description: First-party Pydantic AI Capabilities for context, tools, working state, and lifecycle hooks.
+---
 
 Pydantic AI Capabilities are the primary feature-composition mechanism inside the Agent loop. Agent Harness provides first-party Capabilities that compose model context, Toolsets, portable state, run collaborators, and lifecycle hooks without introducing another registry or tool dispatcher.
 

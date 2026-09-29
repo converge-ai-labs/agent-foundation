@@ -1,4 +1,8 @@
-# Install Envd
+---
+title: Install Envd
+sidebarTitle: Installation
+description: Build or download an Envd binary that matches your EIP client, or run the sandbox image.
+---
 
 Choose a native daemon version that matches your EIP client. If you only use Harness UI, its Local EIP runtime already manages matching-binary acquisition; you do not need a second standalone installation.
 

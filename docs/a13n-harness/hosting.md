@@ -1,4 +1,7 @@
-# Embedding in a Host
+---
+title: Embedding in a Host
+description: Add definition selection, policy, checkpoints, and delivery around the process-local Harness API.
+---
 
 An embedded application calls Harness directly. A durable Host adds definition selection, current policy, checkpoint storage, and delivery around the same process-local API. Start with the [offline application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) before adding a worker or database.
 

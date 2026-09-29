@@ -40,6 +40,9 @@ export function RunEnvironments({
       ? configuration?.default_environment
       : value.default_environment;
   const count = roots.length + bindings.length;
+  const summary = count
+    ? `${count} environment${count === 1 ? "" : "s"}`
+    : "Thread files";
   const invalid = editing ? invalidEnvironments(editing) : false;
   const beginEditing = () =>
     setEditing({
@@ -94,12 +97,12 @@ export function RunEnvironments({
         size="sm"
         disabled={disabled || !configuration}
         aria-label="Environments"
+        title={summary}
+        className={panelStyles.environmentButton}
         onClick={beginEditing}
       >
         <FoldersIcon aria-hidden="true" />
-        {count
-          ? `${count} environment${count === 1 ? "" : "s"}`
-          : "Thread files"}
+        <span className={panelStyles.environmentLabel}>{summary}</span>
       </Button>
       <ModalFrame
         open={editing !== undefined}

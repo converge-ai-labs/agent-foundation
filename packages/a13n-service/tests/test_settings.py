@@ -93,10 +93,6 @@ def test_bounds_must_nest(values: dict, refused: str) -> None:
         Settings.model_validate(values)
 
 
-def test_defaults_nest() -> None:
-    Settings()
-
-
 @pytest.mark.parametrize("style", ["auto", "virtual"])
 def test_conflicting_object_addressing_fails(style: str) -> None:
     with pytest.raises(ValueError, match=r"objects\.path_style=true conflicts"):

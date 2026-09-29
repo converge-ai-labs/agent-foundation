@@ -1,4 +1,7 @@
-# Environments and Projects
+---
+title: Environments and Projects
+description: Choose execution permissions, work in Projects, and connect local, Docker, or remote Environments.
+---
 
 ## Execution permissions
 
@@ -48,7 +51,7 @@ a13n-harness-ui --environment-profile environment-team
 
 For a stable multi-directory workspace, create `projects/work.yaml` beside root YAML. Replace both paths with existing directories:
 
-```yaml
+```yaml title="projects/work.yaml"
 schema_version: "1"
 kind: project
 id: project-work

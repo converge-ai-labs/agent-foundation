@@ -1,12 +1,6 @@
-import {
-  memo,
-  useContext,
-  useMemo,
-  type ComponentPropsWithoutRef,
-} from "react";
+import { memo, useContext, type ComponentPropsWithoutRef } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { sourceAnchors, type CommentHighlight } from "./comment-selection";
 import { MarkdownPre, MarkdownSource, MarkdownTable } from "./markdown-block";
 import styles from "./markdown.module.css";
 import { linkedHostFile } from "../shell/page-links";
@@ -56,23 +50,15 @@ const components: Components = {
 
 export const MessageText = memo(function MessageText({
   text,
-  selectable = false,
-  highlights,
 }: {
   text: string;
-  selectable?: boolean;
-  highlights?: CommentHighlight[];
 }) {
-  const anchors = useMemo(
-    () => (selectable ? [sourceAnchors(text, highlights)] : []),
-    [text, selectable, highlights],
-  );
   return (
     <MarkdownSource value={text}>
       <div className={styles.markdown}>
         <Markdown
           remarkPlugins={[remarkGfm]}
-          rehypePlugins={[syntaxHighlight, ...anchors]}
+          rehypePlugins={[syntaxHighlight]}
           skipHtml
           components={components}
         >

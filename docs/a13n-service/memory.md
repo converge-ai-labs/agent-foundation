@@ -1,4 +1,7 @@
-# Memory
+---
+title: Memory
+description: Workspace memories that agents keep across conversations, as versioned files or recalled records.
+---
 
 A memory is what agents keep across conversations: preferences, decisions, conventions and reference facts. It belongs to a workspace, and several conversations can use it at once. There are two kinds:
 

@@ -37,7 +37,6 @@ from a13n_harness.capabilities import (
 from a13n_harness.capabilities.context import (
     _COMPACTION_PROMPT,
     _previous_assistant_reference,
-    _requires_exact_history,
 )
 from a13n_harness.environment import (
     EnvironmentAction,
@@ -58,6 +57,7 @@ from a13n_harness.model_context import (
     ModelContextRequestKind,
     ModelInputEvent,
     _commit_projection,
+    _requires_exact_history,
     user_prompt_content,
 )
 from a13n_harness.providers.environment.direct_local.configuration import (
@@ -1136,25 +1136,6 @@ async def _consume_run(run: Any, events: list[HarnessEvent] | None = None) -> An
             result = item.result
     assert result is not None
     return result
-
-
-async def test_context_mutation_waits_for_exact_provider_and_deferred_boundaries() -> None:
-    suspended = [
-        ModelRequest(parts=[UserPromptPart("start")]),
-        ModelResponse(parts=[TextPart("partial")], state="suspended"),
-    ]
-    pending = [
-        ModelRequest(parts=[UserPromptPart("start")]),
-        ModelResponse(parts=[ToolCallPart(tool_name="external", args={}, tool_call_id="call-1")]),
-    ]
-    integrated = [
-        *pending,
-        ModelRequest(parts=[ToolReturnPart(tool_name="external", content="done", tool_call_id="call-1")]),
-    ]
-
-    assert _requires_exact_history(suspended)
-    assert _requires_exact_history(pending)
-    assert not _requires_exact_history(integrated)
 
 
 # A suspended response requires exact history whatever its parts, so one suspended case suffices.

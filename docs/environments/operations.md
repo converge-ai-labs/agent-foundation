@@ -1,4 +1,8 @@
-# Files, commands, and operation limits
+---
+title: Files, commands, and operation limits
+sidebarTitle: Files, paths, and limits
+description: The typed file and command operations, path rules, and limits available on an Environment.
+---
 
 Environment operations are typed Python interfaces usable without an Agent. The available facets depend on the selected Provider and configuration; check readiness and the actual descriptor rather than inferring support from a backend name.
 

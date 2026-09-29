@@ -1,4 +1,8 @@
-# Daemon configuration and transports
+---
+title: Daemon configuration and transports
+sidebarTitle: Configuration and transports
+description: Configure a standalone Envd daemon and how it connects to a Host.
+---
 
 This is standalone Envd configuration, not Harness UI YAML or an `EnvironmentProviderSpec`. The Host owns deployment, account selection, any outer sandbox, credentials and the daemon lifetime. An adapter configuration selects a working directory, required methods and optional reference-only Session egress policy; the Device launch configuration separately fixes execution, Sandbox and network mode. The [sandbox image](sandbox.md) supplies ready-to-use account, shell and sudo defaults without changing the standalone daemon defaults.
 
@@ -116,7 +120,8 @@ Child environments are built from the daemon's supported inherited values plus e
 
 ## Native identity and sudo
 
-**Native sudo is allowed by default.** Envd preserves the original writable sandbox system tree. Installing packages or changing system files through authorized sudo changes that tree and persists across Sessions; no disposable copy of the payload root filesystem is introduced.
+> [!IMPORTANT]
+> **Native sudo is allowed by default.** Envd preserves the original writable sandbox system tree. Installing packages or changing system files through authorized sudo changes that tree and persists across Sessions; no disposable copy of the payload root filesystem is introduced.
 
 On Linux, **omitting execution UID/GID preserves the launching process's identity, including root**. Envd does not assume `1000:1000`, scan for a likely user, create an account, or require identity configuration merely because the launcher is root. To select a different provisioned account, set the paired `execution.uid`/`execution.gid`, `A13N_ENVD_EXECUTION_UID`/`A13N_ENVD_EXECUTION_GID`, or `--execution-uid`/`--execution-gid`. Root (`0:0`) is also a valid explicit identity. The provider or deployment owns account provisioning, home and workspace permissions. For example, a root launcher can select its provisioned sandbox account:
 

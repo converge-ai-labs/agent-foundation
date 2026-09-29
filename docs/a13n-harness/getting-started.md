@@ -1,6 +1,8 @@
-# Getting Started
-
-Build and run an offline agent, then connect a model provider.
+---
+title: Harness quickstart
+sidebarTitle: Quickstart
+description: Build and run an offline agent, then connect a model provider.
+---
 
 ## Requirements
 
@@ -21,7 +23,7 @@ The offline example uses a `FunctionModel` from the installed runtime dependency
 
 Create `app.py`:
 
-```python
+```python title="app.py"
 import asyncio
 from collections.abc import AsyncIterator
 

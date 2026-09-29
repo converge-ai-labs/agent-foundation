@@ -1,6 +1,9 @@
-# Sandbox image
+---
+title: Sandbox image
+description: A ready-to-use Linux development container for agents, with Envd and a sudo-capable sandbox account.
+---
 
-The `a13n-sandbox` image is a ready-to-use Linux development environment for Agents using Envd. The daemon starts as root; Session commands and file operations run as the provisioned `sandbox` account (`1000:1000`). That account has passwordless sudo for installing packages and administering the disposable container. The outer container or VM supplies isolation; the default UID is not a barrier against intentional root access.
+In the `a13n-sandbox` image, Envd starts as root; Session commands and file operations run as the provisioned `sandbox` account (`1000:1000`). That account has passwordless sudo for installing packages and administering the disposable container. The outer container or VM supplies isolation; the default UID is not a barrier against intentional root access.
 
 **Controlled egress is off by default.** Ordinary use requires no `--privileged`, extra capabilities, or disabled Docker security profiles. Envd still requires a Linux runtime supporting its native process operations; a custom runtime or reduced capability set can reject them.
 

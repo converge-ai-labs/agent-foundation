@@ -1,4 +1,7 @@
-# Desktop Computer Use
+---
+title: Desktop computer use
+description: Let an agent see and operate a shared macOS, Linux, or Windows desktop through Envd.
+---
 
 Use a macOS, Linux X11 or Windows shared desktop from a Harness UI conversation: envd sends screenshots directly to the model, executes bounded input actions, and WebUI shows captured images with the tool results. The daemon connects outward over reverse WebSocket; the desktop machine needs no inbound listener.
 

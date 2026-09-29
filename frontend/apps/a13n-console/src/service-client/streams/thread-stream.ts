@@ -31,11 +31,19 @@ export type ThreadFrame =
     }
   | { type: "changed"; version: number }
   | { type: "reset"; run_id: string }
-  | { type: "gap"; run_id: string };
+  | { type: "gap"; run_id: string; position?: string | null };
+
+export interface ThreadResume {
+  run: string;
+  position: string;
+  after?: string;
+}
 
 export interface ThreadStreamOptions {
   signal?: AbortSignal;
   after?: string;
+  /** Read again for every connection attempt, after the consumer has applied frames. */
+  resume?: ThreadResume | (() => ThreadResume | undefined);
 }
 
 function json(text: string): Record<string, unknown> {
@@ -57,8 +65,22 @@ function parseFrame(event: string, id: string, text: string): ThreadFrame {
   const runId = typeof data.run_id === "string" ? data.run_id : undefined;
   if (event === "changed" && isCount(data.version))
     return { type: "changed", version: data.version };
-  if ((event === "reset" || event === "gap") && runId)
-    return { type: event, run_id: runId };
+  if (event === "reset" && runId) return { type: event, run_id: runId };
+  if (event === "gap" && runId) {
+    if (
+      data.position != null &&
+      (typeof data.position !== "string" ||
+        !/^(0|[1-9]\d*)-(0|[1-9]\d*)$/.test(data.position))
+    )
+      throw new ProtocolError("Invalid gap position.");
+    return {
+      type: event,
+      run_id: runId,
+      ...(data.position === undefined
+        ? {}
+        : { position: data.position as string | null }),
+    };
+  }
   if (
     (event === "delta" || event === "boundary") &&
     id &&
@@ -89,7 +111,7 @@ function parseFrame(event: string, id: string, text: string): ThreadFrame {
   throw new ProtocolError(`Invalid thread stream ${event} frame.`);
 }
 
-/** Follow one thread's live output, resuming after the last delta or boundary it yielded. */
+/** Follow live output using consumer coverage when supplied, or the last yielded cursor otherwise. */
 export async function* threadStream(
   transport: Transport,
   workspaceId: string,
@@ -106,13 +128,20 @@ export async function* threadStream(
       Accept: "text/event-stream",
       ...workspaceHeaders(workspaceId),
     });
-    if (cursor) headers.set("Last-Event-ID", cursor);
+    const resume =
+      typeof options.resume === "function" ? options.resume() : options.resume;
+    const after = options.resume ? resume?.after : cursor;
+    if (after) headers.set("Last-Event-ID", after);
+    const url = new URL(
+      `${transport.baseUrl}/api/v1/threads/${encodeURIComponent(threadId)}/stream`,
+    );
+    if (resume) {
+      url.searchParams.set("run", resume.run);
+      url.searchParams.set("position", resume.position);
+    }
     try {
       const response = await transport.fetch(
-        new Request(
-          `${transport.baseUrl}/api/v1/threads/${encodeURIComponent(threadId)}/stream`,
-          { headers, signal },
-        ),
+        new Request(url, { headers, signal }),
       );
       if (
         !response.headers

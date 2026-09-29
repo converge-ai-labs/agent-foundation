@@ -1,4 +1,7 @@
-# Monitor and troubleshoot
+---
+title: Monitor and troubleshoot
+description: Use logs, metrics, traces, and usage facts to answer operational questions.
+---
 
 The Service records three signals, and each answers one kind of question:
 

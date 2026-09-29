@@ -1,4 +1,7 @@
-# Agents, threads and runs
+---
+title: Agents, threads and runs
+description: Configure agents, start conversations, and follow, steer, or answer runs.
+---
 
 An **agent** is a named, versioned configuration: a model, instructions, tools and policies. People and applications talk to agents in **sessions**. A session holds one or more **threads**, each a single line of conversation; messages you send go to the thread's **inbox**, and each turn of the agent is a **run**. A run executes on a worker as one or more **attempts** and ends `completed`, `waiting`, `failed` or `cancelled`.
 
@@ -122,6 +125,7 @@ curl -X POST "$A13N_URL/api/v1/threads" \
 
 The response (`201`, or `200` for a replay) is `{thread, entry, run}`: the new thread, the inbox entry holding the message, and the run it started, or `null` when it could not start yet. The new thread also accepts:
 
+- `message_history`: optional [imported conversation context](#import-conversation-context), used only to initialize this thread;
 - `mcp_headers`: [caller headers](#caller-headers) for its MCP connections;
 - `environments`: initial [mounts](environments.md#mount-environments-on-a-thread), `[{name, environment_id, working_directory?}]`;
 - `memories`: initial [memory mounts](memory.md#mount-a-memory-on-a-thread), `[{name, memory_id, access}]`.
@@ -131,6 +135,40 @@ The response (`201`, or `200` for a replay) is `{thread, entry, run}`: the new t
 Sessions list most recently updated first: a new run or a label edit moves a session to the top. A run's acceptance does not change a session's `ETag`, so a label edit's `If-Match` read before a later run still applies.
 
 In Console, **New conversation** starts a session; **Try agent** starts one from the agent's page.
+
+### Import conversation context
+
+To continue a conversation produced outside the Service, add `message_history` to the new-thread request alongside the current `payload`:
+
+```json
+{
+  "agent_id": "ap_...",
+  "message_history": [
+    {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "We are planning a trip to Kyoto."}]},
+    {"kind": "response", "parts": [{"part_kind": "text", "content": "How many days will you stay?"}]}
+  ],
+  "payload": {"content": [{"type": "text", "text": "Three days. Suggest an itinerary."}]}
+}
+```
+
+These are Pydantic AI conversation messages, not text pasted into the current prompt. Request parts accept `user-prompt` text (also lists of strings or native `TextContent` objects) and `tool-return`; response parts accept `text` and `tool-call`. Historical tool calls use `tool_name`, `tool_call_id` and `args` (a JSON object, a JSON string encoding an object, or null); their returns use the same name and ID plus JSON `content` and optional `outcome` (`success` by default, or `failed`, `denied`, `interrupted`). Every call must have a matching return before another response, a new user prompt or the end of the import. Historical tools do not need to be installed and will not execute.
+
+Import is limited to 256 messages and 256 KiB of normalized JSON. System instructions, media and suspended execution are not accepted. Use the Agent configuration for instructions and the current payload for attachments. Native timestamps, provider fields and usage are accepted, but do not become Service accounting. Application metadata and Run/conversation IDs are retained for readback and cleared before initializing execution; they cannot claim Service input consumption or authority.
+
+OpenAPI and generated clients represent this field as JSON objects rather than duplicating Pydantic AI's type hierarchy. Python users who already use Pydantic AI can serialize a completed text/tool history directly; the Service SDK does not need to depend on Pydantic AI:
+
+```python
+import json
+from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
+
+
+def history_json(messages: list[ModelMessage]) -> list[dict]:
+    return json.loads(ModelMessagesTypeAdapter.dump_json(messages))
+```
+
+Pass the resulting array as `message_history`. It must satisfy the import restrictions above; not every possible Pydantic AI history is importable. Thread readback retains your submitted JSON values, without inserting omitted timestamps or other native defaults. Repeating the same submitted request with the same idempotency key replays it.
+
+The Thread keeps the immutable import for readback, but it does not manufacture historical Runs, display Items, tool executions or usage. Follow-up messages continue the committed checkpoint without reimporting; forks inherit that checkpoint. You cannot replace history on an existing Thread.
 
 ## Submit a message
 
@@ -157,7 +195,7 @@ When the thread is idle, either delivery starts a run at once (trigger `input`).
 A thread accepts no new run while:
 
 - a run is active;
-- its latest run is `waiting` on an approval or client tool; resume it first. If the run waits only on questions, a message starts the next run and the questions get no response;
+- its history head is `waiting` on any pending item, including questions; resume that exact Run first;
 - its latest run `failed` or was `cancelled`: queued messages wait, and only a message you submit now starts a run. After that run the queue continues.
 
 A message that cannot run, for example because its agent was archived or an override is no longer valid, fails in place with a `failure` and does not block the messages behind it.
@@ -258,7 +296,19 @@ Both result maps are required, and each must cover its pending group exactly. Mi
 
 The response is the successor run (`201`, or `200` for an idempotent replay). Results are stored in its existing `resume` field, without another inbox message. Only the thread's waiting history head can be resumed while nothing else runs; stale requests receive `409 conflict` with reason `not_idle_waiting_head`. After a failed successor, explicitly resume the still-waiting head again.
 
-Ordinary messages remain separate and cannot close a wait. Queued messages retain their order; after resume, compatible steers can join the successor while `next_run` messages wait for a later run. Resume does not accept an accompanying ordinary message.
+To accompany those results with a clarification or attachment, include optional `input` in the same resume request:
+
+```json
+{
+  "approvals": {},
+  "calls": {"call_lookup": {"status": "returned", "value": {"available": true}}},
+  "input": {"content": [{"type": "text", "text": "Use the updated delivery address."}]}
+}
+```
+
+`input` accepts the same parts as `payload`. The whole resume is accepted or rejected together and stored on the successor; no extra inbox entry is created. The model receives tool results before the accompanying user content. Recovery preserves that content without duplicating it, even if the worker stopped at an approved tool's pre-effect checkpoint. An asset must be usable in the workspace and readable by the inherited configuration. A URL or file that cannot be materialized fails the successor rather than silently dropping the clarification. The complete resume body is limited to 256 KiB.
+
+The accompanying input does not replace any required result. Ordinary inbox messages remain separate and cannot close a wait. Queued messages retain their order; after resume, compatible steers can join the successor while `next_run` messages wait for a later run.
 
 ## Interrupt, fork and archive
 
@@ -273,7 +323,7 @@ A failed or cancelled run never becomes history: continuation uses the last comp
 `GET …/runs/{run_id}` returns the run: `status`, `trigger`, `lineage` (`root`, `continue` or `fork`), `parent_run_id`, the `input` or `resume` that started it, `options`, `environment_mounts`, `memory_mounts`, `pending`, `output`, `failure {code, message}`, `usage_at_seal`, `labels` and timestamps. `output` is the agent's final text, or JSON matching its `output_spec`.
 
 - `GET …/threads/{thread_id}/runs` lists a thread's runs, newest first. A thread's `head_run_id` is its latest completed or waiting run, `current_run_id` its active run.
-- `GET …/runs/{run_id}/items` returns the run's display items (text and reasoning messages, tool calls and observations) with `position` and `complete`. Items of a run that ended while they were in progress read `interrupted`. A display keeps at most 4096 items; `dropped` counts the oldest items it removed beyond that limit.
+- `GET …/runs/{run_id}/items` returns the run's display items (text and reasoning messages, tool calls and observations) with `position`, optional `resume_after`, and `complete`. Items of a run that ended while they were in progress read `interrupted`. A display keeps at most 4096 items; `dropped` counts the oldest items it removed beyond that limit.
 - `GET …/runs/{run_id}/lineage` returns the run and its ancestors, nearest first, across forks.
 - `GET …/runs/{run_id}/attempts` lists attempts with their `start_reason` (`initial`, `recovery` after a lost worker, `handoff` when a worker shuts down) and outcome. A run fails after `max_attempts` attempts that were not handoffs.
 
@@ -297,13 +347,14 @@ curl -N "$A13N_URL/api/v1/threads/$THREAD/stream" -H "Authorization: Bearer $A13
 
 The stream is provisional; the run's items are the durable record. To render a thread:
 
-1. Open the stream, then read `GET …/runs/{run_id}/items` for the active run.
+1. Read `GET …/runs/{run_id}/items` for the active run. When `position` is non-null, open the stream with `?run=<run_id>&position=<position>`. Pass its non-null `resume_after` as the `Last-Event-ID` header. Without a saved position, start retained replay without a cursor.
 2. Apply `delta` frames whose `attempt` and `sequence` come after the items' `position` (`"{attempt}-{sequence}"`).
-3. On `reset` or `gap`, read the items again; on `changed`, read the thread.
+3. On `reset`, discard superseded provisional output and read items again. On `gap`, read items and compare their position with the gap's optional `position`: clear the gap only when the missing range is covered, otherwise await a newer checkpoint or terminal state. On `changed`, read the thread.
+4. Recheck the Run on connection and periodically while it remains active: a Run that ended before subscription may not produce another stream notification. Read its final items once sealed.
 
-The stream carries only live output the items do not cover yet. Consecutive text, reasoning or tool-argument deltas of one message or tool call that arrive within `worker.stream_coalesce_seconds` come as one `delta` whose event carries their text together. After each checkpoint the Service removes the entries its items now cover, once they are `worker.stream_trim_seconds` old; it also caps a stream at about `worker.stream_length` entries and drops it `worker.stream_ttl` seconds after the last output.
+The snapshot's `resume_after` can lag because checkpoints do not wait for Redis writes. With the Run and position supplied, the server filters covered deltas and uses retained hints to seek directly. Missing, expired or incompatible hints fall back to filtered retained replay; they do not by themselves indicate lost output. Keep client deduplication for overlapping delivery. On a network reconnect, retain the display and send its continuously applied position with a matching hint; after a page refresh, load a snapshot first. Never advance that position across a gap. Consecutive text, reasoning or tool-argument deltas of one message or tool call that arrive within `worker.stream_coalesce_seconds` come as one `delta` whose event carries their text together. After each checkpoint the Service removes the entries its items now cover, once they are `worker.stream_trim_seconds` old; it also caps a stream at about `worker.stream_length` entries and drops it `worker.stream_ttl` seconds after the last output.
 
-`delta` and `boundary` frames carry an SSE `id`. Reconnect with the last one in `Last-Event-ID` to continue after it. A connection that starts or resumes after removed entries receives a `gap` first, so reading the items again is always enough to recover. The Service sends a keep-alive comment every 15 seconds and ends the stream when your access to the workspace ends. The frames' JSON Schema is `proto/a13n-service/thread-stream.schema.json`.
+`delta` and `boundary` frames carry an SSE `id`. Readers without a Run/position can reconnect with the last one in `Last-Event-ID`; a missing cursor then reports `gap`. Readers supplying a Run/position instead receive a gap only for a missing required sequence or a transport failure. Reload items and reassess coverage at later boundaries or when the Run seals. The Service sends a keep-alive comment every 15 seconds and ends the stream when your access to the workspace ends. The frames' JSON Schema is `proto/a13n-service/thread-stream.schema.json`.
 
 ## Usage
 

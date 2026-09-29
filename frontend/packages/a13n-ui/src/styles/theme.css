@@ -168,7 +168,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-heading: var(--font-sans);
-  --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

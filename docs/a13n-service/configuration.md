@@ -1,4 +1,7 @@
-# Configure Service
+---
+title: Configure Service
+description: 'Configure Service from TOML and environment variables: infrastructure, identity, execution, and telemetry.'
+---
 
 The Service reads its settings once, at startup, from an optional TOML file and from environment variables. Restart every process after a change. The [settings reference](configuration-reference.md) lists every field with its type, bounds and default.
 

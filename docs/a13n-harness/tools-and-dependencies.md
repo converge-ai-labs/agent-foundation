@@ -1,4 +1,7 @@
-# Tools and dependencies
+---
+title: Tools and dependencies
+description: Give models typed Python tools and supply each Run only the dependencies it should use.
+---
 
 Tools let a model request application actions. Use ordinary typed Python functions, group them with Pydantic AI Capabilities or Toolsets, and give each Run only the dependencies it should use.
 

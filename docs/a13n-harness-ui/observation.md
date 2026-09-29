@@ -1,4 +1,8 @@
-# Tracing Harness UI
+---
+title: Tracing Harness UI
+sidebarTitle: Tracing
+description: Export OpenTelemetry traces from Harness UI to Langfuse, Logfire, or any OTLP collector.
+---
 
 Harness UI uses the same OpenTelemetry hierarchy as the [Harness SDK](../a13n-harness/observation.md). It adds a bounded application operation around each admitted root submission and accepted async child segment, rather than duplicating model or tool spans. Tracing is optional and off by default.
 

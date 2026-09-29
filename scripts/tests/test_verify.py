@@ -395,10 +395,7 @@ def test_real_license_and_vite_changes_select_build_fixture_without_application_
     assert not result.frontend_full
     assert not result.frontend_build
     assert result.frontend_tests == {"packages/a13n-ui": {"frontend/packages/a13n-ui/tests/license-build.test.ts"}}
-    assert result.python_tests == {
-        "scripts/tests/test_docs.py",
-        "scripts/tests/test_check_a13n_harness_ui_distribution.py",
-    }
+    assert result.python_tests == {"scripts/tests/test_check_a13n_harness_ui_distribution.py"}
 
 
 def test_vite_config_without_a_build_fixture_selects_build_and_preserves_inherited_test_config(workspace: Path) -> None:

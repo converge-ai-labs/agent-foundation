@@ -1,4 +1,7 @@
-# Agents and Runs
+---
+title: Agents and Runs
+description: Build a reusable executable once, then run or stream each logical Run with fresh bindings.
+---
 
 Agent Harness keeps Agent construction code-first and process-local. It adds one reusable build boundary and one canonical logical-run boundary around Pydantic AI; it does not create a second Agent loop or a serialized Agent-definition language.
 

@@ -1,4 +1,7 @@
-# Command reference
+---
+title: Command reference
+description: Every shell command, option, and in-chat slash command.
+---
 
 Use shell commands to start or manage Harness UI; use slash commands inside an interactive conversation. For a workflow rather than a syntax lookup, start with [setup](setup.md) or [terminal use](everyday-use.md).
 

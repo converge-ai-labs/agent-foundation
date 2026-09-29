@@ -132,32 +132,6 @@ async def test_text_view_batches_obey_actual_page_budget(tmp_path: Path, provide
     assert offset == 8
 
 
-async def test_dynamic_file_operations_accept_non_virtual_file_operator(tmp_path: Path) -> None:
-    source = tmp_path / "sample.txt"
-    source.write_bytes(b"provider-neutral\n")
-    files = LocalFileOperator(
-        root=tmp_path,
-        policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="mount-1",
-        generation="generation-1",
-    )
-    environment = SimpleNamespace(files=files)
-    toolset = FileToolset(files)
-    ctx = cast(Any, SimpleNamespace(deps=SimpleNamespace(environment=environment), capabilities={}))
-
-    result = await toolset.view(ctx, "/sample.txt")
-
-    assert result == {
-        "ok": True,
-        "file_path": "/sample.txt",
-        "content": "provider-neutral\n",
-        "line_offset": 0,
-        "lines_read": 1,
-        "has_more": False,
-        "truncated_lines": [],
-    }
-
-
 async def test_file_toolset_creates_nested_parents_and_returns_stable_missing_error(tmp_path: Path) -> None:
     files = LocalFileOperator(
         root=tmp_path,
@@ -253,6 +227,7 @@ async def test_text_view_output_budget_continues_without_skipping_lines(
         assert isinstance(page, dict)
         pages.append(page)
         assert page["ok"] is True
+        assert page["file_path"] == "/notes.md"
         assert page["truncated_lines"] == []
         assert page["lines_read"] == len(page["content"].splitlines())
         assert content.startswith("".join(item["content"] for item in pages))

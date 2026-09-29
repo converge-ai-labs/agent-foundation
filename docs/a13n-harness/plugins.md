@@ -1,4 +1,7 @@
-# Plugins and Extensions
+---
+title: Plugins and extensions
+description: 'Choose the narrowest extension point: middleware, Provider plugins, extras, or Environment Run extensions.'
+---
 
 Agent Harness exposes focused extension points rather than one universal plugin interface. Choose the narrowest boundary that owns the behavior and lifetime you need.
 

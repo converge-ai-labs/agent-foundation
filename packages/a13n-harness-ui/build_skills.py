@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import posixpath
 import shutil
 from collections.abc import Iterator
@@ -14,26 +15,52 @@ from markdown_it import MarkdownIt
 SKILL_NAME = "harness-ui-configuration"
 DOC_PREFIX = "a13n-harness-ui/"
 BUNDLE_PATH = Path("a13n_harness_ui/assets/builtin_skills")
+# Links outside the bundled pages point at the published documentation site.
+SITE_URL = "https://a13n-docs.converge.ai/"
 
 
-def _navigation(value: object, groups: tuple[str, ...] = ()) -> Iterator[tuple[tuple[str, ...], str, str]]:
-    if isinstance(value, list):
-        for child in value:
-            yield from _navigation(child, groups)
-    elif isinstance(value, dict):
-        for label, child in value.items():
-            if not isinstance(label, str):
-                raise ValueError("Documentation navigation labels must be strings")
-            if isinstance(child, str):
-                if child.startswith(DOC_PREFIX):
-                    yield groups, label, child
-            else:
-                yield from _navigation(child, (*groups, label))
+def _front_matter(content: str) -> tuple[dict[str, object], str]:
+    """Return the YAML front matter and the body with front matter lines blanked, keeping line numbers."""
+    lines = content.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\n") != "---":
+        return {}, content
+    end = next((index for index, line in enumerate(lines[1:], 1) if line.rstrip("\n") == "---"), None)
+    if end is None:
+        raise ValueError("Unterminated front matter")
+    data = yaml.safe_load("".join(lines[1:end])) or {}
+    if not isinstance(data, dict):
+        raise ValueError("Front matter must be a mapping")
+    return data, "\n" * (end + 1) + "".join(lines[end + 1 :])
+
+
+def _label(source: Path) -> str:
+    data, _ = _front_matter(source.read_text(encoding="utf-8"))
+    label = data.get("sidebarTitle") or data.get("title")
+    if not isinstance(label, str):
+        raise ValueError(f"{source} front matter must declare a title")
+    return label
+
+
+def _navigation(source_root: Path) -> Iterator[tuple[tuple[str, ...], str, str]]:
+    """Yield group, navigation label, and docs-relative path in site navigation order."""
+    meta = json.loads((source_root / "meta.json").read_text(encoding="utf-8"))
+    section = meta.get("title")
+    if not isinstance(section, str):
+        raise ValueError("Harness UI meta.json must declare a title")
+    groups: tuple[str, ...] = (section,)
+    for entry in meta.get("pages", []):
+        if not isinstance(entry, str):
+            raise ValueError("Documentation navigation entries must be strings")
+        if entry.startswith("---") and entry.endswith("---"):
+            groups = (section, entry.strip("-"))
+            continue
+        source = source_root / f"{entry}.md"
+        yield groups, _label(source), f"{DOC_PREFIX}{entry}.md"
 
 
 def _headings(content: str) -> list[tuple[int, str, int, int]]:
     """Return heading level, label, and one-based inclusive section boundaries."""
-    tokens = MarkdownIt().parse(content)
+    tokens = MarkdownIt().parse(_front_matter(content)[1])
     headings: list[tuple[int, str, int]] = []
     for index, token in enumerate(tokens):
         if token.type == "heading_open" and token.map is not None:
@@ -49,7 +76,7 @@ def _headings(content: str) -> list[tuple[int, str, int, int]]:
 
 
 def _references(content: str) -> Iterator[str]:
-    for token in MarkdownIt().parse(content):
+    for token in MarkdownIt().parse(_front_matter(content)[1]):
         for child in token.children or ():
             if child.type in {"link_open", "image"}:
                 value = child.attrGet("href" if child.type == "link_open" else "src")
@@ -57,33 +84,27 @@ def _references(content: str) -> Iterator[str]:
                     yield value
 
 
-def _online_url(site_url: str, path: str, fragment: str) -> str:
-    page = path.removesuffix(".md")
+def _online_url(path: str, fragment: str) -> str:
+    page = path.removesuffix(".md").removesuffix(".mdx")
     if page.endswith("/index"):
         page = page.removesuffix("index")
     elif page == "index":
         page = ""
-    elif path.endswith(".md"):
+    elif page != path:
         page += "/"
-    return urljoin(site_url.rstrip("/") + "/", page) + (f"#{fragment}" if fragment else "")
+    return urljoin(SITE_URL, page) + (f"#{fragment}" if fragment else "")
 
 
 def build_skills(package_root: Path, repository_root: Path) -> Path:
     """Generate one complete bundle; repository docs remain the only content source."""
-    config = yaml.safe_load((repository_root / "mkdocs.yml").read_text(encoding="utf-8"))
-    if not isinstance(config, dict):
-        raise ValueError("mkdocs.yml must contain a mapping")
-    site_url = config.get("site_url")
-    if not isinstance(site_url, str):
-        raise ValueError("mkdocs.yml must declare site_url for unbundled references")
     docs_root = repository_root / "docs"
     source_root = docs_root / DOC_PREFIX
-    pages = list(_navigation(config.get("nav")))
+    pages = list(_navigation(source_root))
     if not pages:
-        raise ValueError("MkDocs navigation contains no Harness UI documentation")
+        raise ValueError("The documentation navigation lists no Harness UI pages")
     listed = {path for _, _, path in pages}
     pages.extend(
-        (("Additional documentation",), path.stem, path.relative_to(docs_root).as_posix())
+        (("Additional documentation",), _label(path), path.relative_to(docs_root).as_posix())
         for path in sorted(source_root.rglob("*.md"))
         if path.relative_to(docs_root).as_posix() not in listed
     )
@@ -131,7 +152,7 @@ def build_skills(package_root: Path, repository_root: Path) -> Path:
                 if not (docs_root / resolved).is_file():
                     raise ValueError(f"Missing bundled reference in {source_path}: {reference}")
             else:
-                external.add((target, reference, _online_url(site_url, resolved, parsed.fragment)))
+                external.add((target, reference, _online_url(resolved, parsed.fragment)))
     if external:
         detail.extend(
             [
@@ -151,7 +172,7 @@ def build_skills(package_root: Path, repository_root: Path) -> Path:
     if output.exists():
         shutil.rmtree(output)
     output.mkdir(parents=True)
-    shutil.copytree(source_root, output / "docs")
+    shutil.copytree(source_root, output / "docs", ignore=shutil.ignore_patterns("meta.json"))
     (output / "references").mkdir()
     (output / "SKILL.md").write_text("\n".join(overview).rstrip() + "\n", encoding="utf-8")
     (output / "references/navigation.md").write_text("\n".join(detail), encoding="utf-8")
@@ -161,7 +182,7 @@ def build_skills(package_root: Path, repository_root: Path) -> Path:
 def prepare_skills(package_root: Path) -> Path:
     """Build from a source checkout, or use the self-contained sdist contents."""
     repository_root = package_root.parent.parent
-    if (repository_root / "mkdocs.yml").is_file():
+    if (repository_root / "docs" / DOC_PREFIX / "meta.json").is_file():
         return build_skills(package_root, repository_root)
     output = package_root / BUNDLE_PATH / SKILL_NAME
     if not all((output / path).is_file() for path in ("SKILL.md", "references/navigation.md")):

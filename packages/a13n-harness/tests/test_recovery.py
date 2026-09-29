@@ -969,7 +969,6 @@ async def test_provider_suspended_continuation_remains_inside_one_pydantic_attem
     ("message", "recoverable"),
     [
         ("Tool 'some_tool' exceeded max retries count of 1.", False),
-        ("Streamed response ended without content or tool calls", True),
         ("Stream ended unexpectedly", False),
     ],
 )

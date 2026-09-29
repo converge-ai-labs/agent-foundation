@@ -60,7 +60,6 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
     ModelContextRequestKind,
     _requires_exact_boundary,
-    _requires_exact_history,
 )
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
 from a13n_harness.providers.environment.files import FileOperator
@@ -1197,5 +1196,4 @@ __all__ = [
     "RuntimeContextCapability",
     "RuntimeContextConfiguration",
     "_requires_exact_boundary",
-    "_requires_exact_history",
 ]

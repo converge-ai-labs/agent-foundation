@@ -278,6 +278,7 @@
   align-items: center;
   gap: 8px;
   flex: none;
+  margin-left: auto;
 }
 
 /* The rail folds on the content width, not the viewport, so a narrow window

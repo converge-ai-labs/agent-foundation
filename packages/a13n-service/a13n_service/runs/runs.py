@@ -113,6 +113,7 @@ async def items(runtime: Runtime, actor: Principal, workspace_id: str, run_id: s
             for item in display.items
         ],
         position=str(display.position) if pointer is not None else None,
+        resume_after=display.resume_after,
         dropped=display.dropped,
         complete=sealed,
     )

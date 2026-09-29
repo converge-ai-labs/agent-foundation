@@ -5,7 +5,6 @@
 !uv.lock
 !README.md
 !LICENSE
-!mkdocs.yml
 !crates/
 !crates/**
 !packages/

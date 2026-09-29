@@ -1,4 +1,8 @@
-# Public API and payload reference
+---
+title: Public API and payload reference
+sidebarTitle: API and payload reference
+description: The package's public names, custom events, input metadata, and terminal events.
+---
 
 Stream Protocol exposes seven package-root names. It converts public Harness observations into typed AG-UI events; transport, persistence, delivery acknowledgement, UI rendering, and Agent continuation remain outside this package.
 

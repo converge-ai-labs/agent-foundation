@@ -28,10 +28,12 @@ router = APIRouter(prefix="/api/v1", tags=["providers"])
 
 
 def _add_routes(row_type: type[ProviderRow]) -> None:
-    collection = f"/{row_type.PROVIDER_KIND}-providers"
+    kind = row_type.PROVIDER_KIND
+    collection = f"/{kind}-providers"
     item = collection + "/{provider_id}"
 
-    @router.post(collection, response_model=Provider, status_code=201)
+    # Every kind shares these handlers; name the kind so each operation stays distinguishable.
+    @router.post(collection, response_model=Provider, status_code=201, summary=f"Create {kind} provider")
     async def create_provider(
         response: Response, workspace_id: WorkspaceId, body: ProviderCreate, actor: Actor, runtime: CurrentRuntime
     ) -> Provider:
@@ -40,7 +42,7 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         )
         return tagged(response, result)
 
-    @router.get(collection, response_model=ProviderPage)
+    @router.get(collection, response_model=ProviderPage, summary=f"List {kind} providers")
     async def list_providers(
         workspace_id: WorkspaceId,
         actor: Actor,
@@ -50,14 +52,14 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
     ) -> ProviderPage:
         return await service.list_providers(runtime.storage, actor, row_type, workspace_id, limit=limit, cursor=cursor)
 
-    @router.get(item, response_model=Provider)
+    @router.get(item, response_model=Provider, summary=f"Get {kind} provider")
     async def get_provider(
         response: Response, workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
     ) -> Provider:
         result = await service.get_provider(runtime.storage, actor, row_type, workspace_id, provider_id)
         return tagged(response, result)
 
-    @router.patch(item, response_model=Provider)
+    @router.patch(item, response_model=Provider, summary=f"Update {kind} provider")
     async def update_provider(
         response: Response,
         workspace_id: WorkspaceId,
@@ -81,7 +83,7 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         )
         return tagged(response, result)
 
-    @router.post(item + "/test", response_model=ProviderTest)
+    @router.post(item + "/test", response_model=ProviderTest, summary=f"Test {kind} provider")
     async def test_provider(
         workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
     ) -> ProviderTest:

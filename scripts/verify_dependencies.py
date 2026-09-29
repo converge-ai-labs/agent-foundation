@@ -68,15 +68,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
     ),
     "test_service_contract.py": ("scripts/export-a13n-service-openapi.py",),
     "test_install_envd.py": ("scripts/install-a13n-envd.sh",),
-    "test_docs.py": (
-        "scripts/docs/*.py",
-        "scripts/docs/*.css",
-        "scripts/docs/*.json",
-        "scripts/docs/theme/*",
-        "frontend/packages/a13n-ui/LICENSE.coss",
-        "mkdocs.yml",
-        "docs/*.md",
-    ),
+    "test_docs.py": ("scripts/docs/*.py", "scripts/docs/*.json", "docs/*"),
     "provider_smoke/test_composio.py": ("scripts/provider-smoke/composio.py", "scripts/provider-smoke/common.py"),
     "provider_smoke/test_openrouter.py": ("scripts/provider-smoke/openrouter.py", "scripts/provider-smoke/common.py"),
 }

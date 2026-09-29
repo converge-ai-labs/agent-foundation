@@ -18,10 +18,10 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.model_settings import check_settings, settings_schema
 from a13n_service.providers.registry import Registry
-from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, apply_override
+from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.resources.models.schemas import ModelConfig
 from a13n_service.resources.models.service import ResolvedModel, model_settings
-from a13n_service.runs.agent import ResolvedAgent, _settings, build, media_understanding, model_resolver
+from a13n_service.runs.agent import ResolvedAgent, build, media_understanding, model_resolver
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ModelHTTPError
@@ -141,29 +141,6 @@ def test_provider_owned_headers_remain_reserved_and_defaults_replace_whole() -> 
             )
         assert refused.value.details["field"] == "settings.extra_headers"
         assert "secret-value" not in str(refused.value)
-
-
-def test_run_settings_still_replace_agent_settings_before_model_defaults() -> None:
-    model = selected(
-        ModelConfig(model_name="future", model_api="openai.responses", extra_body={"reasoning": {"effort": "future"}})
-    )
-    config = AgentConfig.model_validate(
-        {
-            "model": model.key,
-            "model_settings": {"temperature": 0.2, "extra_body": {"reasoning": {"effort": "agent"}}},
-        }
-    )
-    for override, expected in [
-        ({}, "agent"),
-        ({"model_settings": None}, "agent"),
-        ({"model_settings": {}}, "future"),
-        ({"model_settings": {"extra_body": {}}}, None),
-    ]:
-        changed = apply_override(config, AgentOverride.model_validate(override))
-        effective = _settings(model, changed.model_settings)
-        assert effective.get("extra_body", {}).get("reasoning", {}).get("effort") == expected
-        if override.get("model_settings") is not None:
-            assert "temperature" not in effective
 
 
 async def no_endpoint_check(*args: Any, **kwargs: Any) -> None:
@@ -452,15 +429,20 @@ async def test_persisted_overrides_reach_wire_and_clear_defaults(
         executing,
         scripted_model,
         runs_kit,
-        settings={"extra_body": {"reasoning_effort": "agent"}, "extra_headers": {"x-agent": "yes"}},
+        settings={"temperature": 0.2, "extra_body": {"reasoning_effort": "agent"}, "extra_headers": {"x-agent": "yes"}},
     )
-    for settings, effort, expected_headers in [
-        (None, "agent", {"x-agent": "yes"}),
-        ({}, "model-default", {"x-model": "default"}),
-        ({"extra_body": {}, "extra_headers": {}}, None, {}),
-        ({"extra_body": {"reasoning_effort": "future"}, "extra_headers": {"X-Run": "yes"}}, "future", {"x-run": "yes"}),
+    for overrides, effort, expected_headers in [
+        ({}, "agent", {"x-agent": "yes"}),
+        ({"model_settings": None}, "agent", {"x-agent": "yes"}),
+        ({"model_settings": {}}, "model-default", {"x-model": "default"}),
+        ({"model_settings": {"extra_body": {}, "extra_headers": {}}}, None, {}),
+        (
+            {"model_settings": {"extra_body": {"reasoning_effort": "future"}, "extra_headers": {"X-Run": "yes"}}},
+            "future",
+            {"x-run": "yes"},
+        ),
     ]:
-        options = {} if settings is None else {"options": {"overrides": {"model_settings": settings}}}
+        options = {} if not overrides else {"options": {"overrides": overrides}}
         scripted_model.say("Done")
         started = await runs_kit.start_thread(executing, agent, "hi", **options)
         run = await runs_kit.sealed(executing, started["run"]["id"])
@@ -471,9 +453,12 @@ async def test_persisted_overrides_reach_wire_and_clear_defaults(
         assert wire["x-thread"] == derive_model_affinity_id(run["thread_id"])
         assert wire["x-gateway-key"] == "private"
         assert {key: wire[key] for key in ("x-model", "x-agent", "x-run") if key in wire} == expected_headers
-        if settings is not None:
-            assert run["options"]["overrides"]["model_settings"] == settings
-    assert len({entry["x-thread"] for entry in headers}) == 4
+        if overrides.get("model_settings") is None:
+            assert body["temperature"] == 0.2
+        else:
+            assert "temperature" not in body
+            assert run["options"]["overrides"]["model_settings"] == overrides["model_settings"]
+    assert len({entry["x-thread"] for entry in headers}) == 5
 
 
 async def test_live_provider_change_rechecks_old_agent_before_request(

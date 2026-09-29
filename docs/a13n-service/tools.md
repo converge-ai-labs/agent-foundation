@@ -1,4 +1,7 @@
-# Tools and connections
+---
+title: Tools and connections
+description: Give agents built-in toolsets, MCP and app connections, client tools, and skills.
+---
 
 An agent's tools come from four places, all selected in its [revision](agents-and-runs.md#agent-configuration):
 

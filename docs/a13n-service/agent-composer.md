@@ -1,6 +1,9 @@
-# Agent Composer
+---
+title: Agent Composer
+description: A built-in agent that creates and edits agents with you, saving each change after your approval.
+---
 
-Agent Composer is a built-in agent that creates and changes agents with you in a conversation. It reads the workspace's models, skills, connections, environment templates and agents, proposes a configuration, and saves it after you approve each write.
+Agent Composer works in an ordinary conversation. It reads the workspace's models, skills, connections, environment templates and agents, proposes a configuration, and saves it after you approve each write.
 
 ## Start Agent Composer
 

@@ -6354,6 +6354,17 @@
         "title": "Message",
         "type": "object"
       },
+      "MessageHistory": {
+        "description": "Pydantic AI ModelMessage JSON objects, validated by the Service. Imports completed user text, model text and closed tool-call/JSON-result exchanges; no instructions, media or suspended execution. At most 256 messages and 256 KiB of normalized JSON.",
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "type": "object"
+        },
+        "maxItems": 256,
+        "type": "array"
+      },
       "MessagePayload": {
         "additionalProperties": false,
         "properties": {
@@ -7423,6 +7434,9 @@
             "maxItems": 32,
             "title": "Memories",
             "type": "array"
+          },
+          "message_history": {
+            "$ref": "#/components/schemas/MessageHistory"
           },
           "options": {
             "$ref": "#/components/schemas/RunOptions-Input"
@@ -8844,6 +8858,16 @@
             },
             "title": "Calls",
             "type": "object"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessagePayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -9091,6 +9115,17 @@
               }
             ],
             "title": "Position"
+          },
+          "resume_after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume After"
           },
           "run": {
             "$ref": "#/components/schemas/RunView"
@@ -11872,6 +11907,9 @@
             "title": "Mcp Headers",
             "type": "object"
           },
+          "message_history": {
+            "$ref": "#/components/schemas/MessageHistory"
+          },
           "origin": {
             "enum": [
               "new",
@@ -11944,6 +11982,7 @@
           }
         },
         "required": [
+          "message_history",
           "id",
           "workspace_id",
           "session_id",
@@ -15930,7 +15969,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Providers",
+        "summary": "List connector providers",
         "tags": [
           "providers"
         ]
@@ -15996,7 +16035,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Create Provider",
+        "summary": "Create connector provider",
         "tags": [
           "providers"
         ]
@@ -16062,7 +16101,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Provider",
+        "summary": "Get connector provider",
         "tags": [
           "providers"
         ]
@@ -16157,7 +16196,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Update Provider",
+        "summary": "Update connector provider",
         "tags": [
           "providers"
         ]
@@ -16495,7 +16534,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Test Provider",
+        "summary": "Test connector provider",
         "tags": [
           "providers"
         ]
@@ -16580,7 +16619,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Providers",
+        "summary": "List environment providers",
         "tags": [
           "providers"
         ]
@@ -16646,7 +16685,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Create Provider",
+        "summary": "Create environment provider",
         "tags": [
           "providers"
         ]
@@ -16712,7 +16751,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Provider",
+        "summary": "Get environment provider",
         "tags": [
           "providers"
         ]
@@ -16807,7 +16846,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Update Provider",
+        "summary": "Update environment provider",
         "tags": [
           "providers"
         ]
@@ -16874,7 +16913,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Test Provider",
+        "summary": "Test environment provider",
         "tags": [
           "providers"
         ]
@@ -19836,7 +19875,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Providers",
+        "summary": "List memory providers",
         "tags": [
           "providers"
         ]
@@ -19902,7 +19941,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Create Provider",
+        "summary": "Create memory provider",
         "tags": [
           "providers"
         ]
@@ -19968,7 +20007,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Provider",
+        "summary": "Get memory provider",
         "tags": [
           "providers"
         ]
@@ -20063,7 +20102,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Update Provider",
+        "summary": "Update memory provider",
         "tags": [
           "providers"
         ]
@@ -20130,7 +20169,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Test Provider",
+        "summary": "Test memory provider",
         "tags": [
           "providers"
         ]
@@ -20248,7 +20287,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Providers",
+        "summary": "List model providers",
         "tags": [
           "providers"
         ]
@@ -20314,7 +20353,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Create Provider",
+        "summary": "Create model provider",
         "tags": [
           "providers"
         ]
@@ -20380,7 +20419,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Provider",
+        "summary": "Get model provider",
         "tags": [
           "providers"
         ]
@@ -20475,7 +20514,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Update Provider",
+        "summary": "Update model provider",
         "tags": [
           "providers"
         ]
@@ -20542,7 +20581,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Test Provider",
+        "summary": "Test model provider",
         "tags": [
           "providers"
         ]
@@ -26752,6 +26791,39 @@
             }
           },
           {
+            "in": "query",
+            "name": "run",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Run"
+            }
+          },
+          {
+            "in": "query",
+            "name": "position",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(0|[1-9][0-9]{0,19})-(0|[1-9][0-9]{0,19})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Position"
+            }
+          },
+          {
             "in": "header",
             "name": "Last-Event-ID",
             "required": false,
@@ -28642,7 +28714,7 @@
             "loginSession": []
           }
         ],
-        "summary": "List Providers",
+        "summary": "List web providers",
         "tags": [
           "providers"
         ]
@@ -28708,7 +28780,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Create Provider",
+        "summary": "Create web provider",
         "tags": [
           "providers"
         ]
@@ -28774,7 +28846,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Get Provider",
+        "summary": "Get web provider",
         "tags": [
           "providers"
         ]
@@ -28869,7 +28941,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Update Provider",
+        "summary": "Update web provider",
         "tags": [
           "providers"
         ]
@@ -28936,7 +29008,7 @@
             "loginSession": []
           }
         ],
-        "summary": "Test Provider",
+        "summary": "Test web provider",
         "tags": [
           "providers"
         ]

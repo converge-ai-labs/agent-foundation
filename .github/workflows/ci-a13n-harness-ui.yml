@@ -18,7 +18,6 @@ on:
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-harness-ui/**"
       - "docs/a13n-harness-ui/**"
-      - "mkdocs.yml"
       - "pyproject.toml"
       - "conftest.py"
       - "scripts/run_python_tests.py"
@@ -50,7 +49,6 @@ on:
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-harness-ui/**"
       - "docs/a13n-harness-ui/**"
-      - "mkdocs.yml"
       - "pyproject.toml"
       - "conftest.py"
       - "scripts/run_python_tests.py"
@@ -116,7 +114,6 @@ jobs:
               - 'packages/a13n-stream-protocol/**'
               - 'packages/a13n-harness-ui/**'
               - 'docs/a13n-harness-ui/**'
-              - 'mkdocs.yml'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'conftest.py'
@@ -160,7 +157,6 @@ jobs:
               - 'packages/a13n-harness-ui/*'
               - 'packages/a13n-harness-ui/a13n_harness_ui/**'
               - 'docs/a13n-harness-ui/**'
-              - 'mkdocs.yml'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'conftest.py'
@@ -180,8 +176,8 @@ jobs:
     name: UI Python tests
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
-    runs-on: ubuntu-24.04-8core
-    timeout-minutes: 8
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -217,14 +213,13 @@ jobs:
           scripts/prepare_a13n_harness_ui_assets.py
           scripts/release_version.py
 
-      # Successful full-suite steps take about two minutes; do not spend the
-      # whole job budget waiting for one stuck test or fixture teardown.
+      # Bound individual tests separately from the full-suite budget on standard runners.
       - name: Test UI
-        timeout-minutes: 5
+        timeout-minutes: 8
         env:
           PYTEST_ADDOPTS: -v --durations=20 -o faulthandler_timeout=45 --timeout=60 --timeout-method=thread --max-worker-restart=0 --junitxml=test-results/ui.xml -r a
         run: >-
-          /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 7
+          /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 3
           packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
@@ -273,11 +268,11 @@ jobs:
         run: |
           pnpm --dir frontend run format:check
           pnpm --dir frontend --filter a13n-console run generate:check
-          pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run check
+          pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run check
 
       - name: Test Console and shared frontend
         run: >-
-          pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run test
+          pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run test
           --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
 
       - name: Retain frontend test reports
@@ -289,14 +284,14 @@ jobs:
           retention-days: 7
 
       - name: Build frontend workspace
-        run: pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run build
+        run: pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run build
 
   distribution:
     name: UI distribution
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true'
-    runs-on: ubuntu-24.04-8core
-    timeout-minutes: 8
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -342,9 +337,9 @@ jobs:
           pnpm --dir frontend --filter a13n-harness-ui-webui run check
 
       - name: Test WebUI
-        timeout-minutes: 4
+        timeout-minutes: 6
         run: >-
-          /usr/bin/time -p pnpm --dir frontend --filter a13n-harness-ui-webui run test
+          /usr/bin/time -p pnpm --dir frontend --filter a13n-harness-ui-webui run test --maxWorkers=2
           --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
 
       - name: Retain WebUI test reports

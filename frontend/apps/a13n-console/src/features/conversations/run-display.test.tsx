@@ -194,6 +194,10 @@ function pathRequests(suffix: string) {
   );
 }
 const text = () => screen.getByTestId("items").textContent;
+function resumeOptions() {
+  const resume = vi.mocked(client.streamThread).mock.calls.at(-1)?.[2]?.resume;
+  return typeof resume === "function" ? resume() : resume;
+}
 
 beforeEach(() => {
   requests = [];
@@ -238,8 +242,14 @@ afterEach(() => {
 });
 
 it("continues the committed display with the Thread's later deltas", async () => {
+  display.resume_after = "1720000000000-0";
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
+  expect(resumeOptions()).toEqual({
+    run: "run_one",
+    position: "1-1",
+    after: "1720000000000-0",
+  });
   // The stream repeats what the display already covers before what it does not.
   await act(async () => {
     frames.push(delta(1, 1, "Hello"), delta(1, 2, " world"));
@@ -252,7 +262,10 @@ it("continues the committed display with the Thread's later deltas", async () =>
   expect(client.streamThread).toHaveBeenCalledWith(
     "workspace",
     "thread_one",
-    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      resume: expect.any(Function),
+    }),
   );
 });
 
@@ -519,6 +532,7 @@ it("re-reads the display on reconnect even when cached reads remain fresh", asyn
     run: run({ status: "completed" }),
     items: [message("Hello again", "1-0", "1-3", "completed")],
     position: "1-3",
+    resume_after: "1720000000001-0",
     complete: true,
     dropped: 0,
   };
@@ -526,4 +540,190 @@ it("re-reads the display on reconnect even when cached reads remain fresh", asyn
   await waitFor(() => expect(text()).toBe("Hello again"));
   expect(pathRequests("/items")).toHaveLength(2);
   expect(screen.getByTestId("status").textContent).toBe("completed");
+  expect(resumeOptions()).toEqual({
+    run: "run_one",
+    position: "1-3",
+    after: "1720000000001-0",
+  });
+  expect(client.streamThread).toHaveBeenLastCalledWith(
+    "workspace",
+    "thread_one",
+    expect.objectContaining({ resume: expect.any(Function) }),
+  );
+});
+
+it("keeps the contiguous local suffix when reconnecting to an older checkpoint", async () => {
+  render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  await act(async () => frames.push(delta(1, 2, " world")));
+  await waitFor(() => expect(text()).toBe("Hello world"));
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  await waitFor(() => expect(client.streamThread).toHaveBeenCalledTimes(2));
+  expect(text()).toBe("Hello world");
+  expect(resumeOptions()).toEqual({
+    run: "run_one",
+    position: "1-2",
+    after: "c1-2",
+  });
+  await act(async () => frames.push(delta(1, 2, " world"), delta(1, 3, "!")));
+  await waitFor(() => expect(text()).toBe("Hello world!"));
+});
+
+it("heals a known gap immediately when the refreshed snapshot covers it", async () => {
+  render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  display = {
+    ...display,
+    items: [message("Repaired", "1-0", "1-5")],
+    position: "1-5",
+  };
+  await act(async () =>
+    frames.push(
+      { type: "gap", run_id: "run_one", position: "1-4" },
+      delta(1, 6, "!"),
+    ),
+  );
+  await waitFor(() => expect(text()).toBe("Repaired!"));
+  expect(screen.getByTestId("gap").textContent).toBe("false");
+  expect(screen.getByTestId("coverage").textContent).toBe("complete");
+});
+
+it.each([true, false])(
+  "resolves an unknown gap once its range is covered (already covered: %s)",
+  async (alreadyCovered) => {
+    render(<View />);
+    await waitFor(() => expect(text()).toBe("Hello"));
+    const repaired = {
+      ...display,
+      items: [message("Repaired", "1-0", "1-5")],
+      position: "1-5",
+    };
+    if (alreadyCovered) display = repaired;
+    await act(async () => frames.push({ type: "gap", run_id: "run_one" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("gap").textContent).toBe("true"),
+    );
+    expect(pathRequests("/items")).toHaveLength(2);
+
+    display = repaired;
+    await act(async () =>
+      frames.push({ type: "gap", run_id: "run_one", position: "1-4" }),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("gap").textContent).toBe("false");
+      expect(text()).toBe("Repaired");
+      expect(screen.getByTestId("coverage").textContent).toBe("complete");
+    });
+    expect(resumeOptions()?.position).toBe("1-5");
+    expect(pathRequests("/items")).toHaveLength(alreadyCovered ? 2 : 3);
+  },
+);
+
+it("keeps an unknown gap incomplete when its clarified range is not yet covered", async () => {
+  render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  await act(async () => frames.push({ type: "gap", run_id: "run_one" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("gap").textContent).toBe("true"),
+  );
+  display = {
+    ...display,
+    items: [message("Still incomplete", "1-0", "1-2")],
+    position: "1-2",
+  };
+  await act(async () =>
+    frames.push({ type: "gap", run_id: "run_one", position: "1-4" }),
+  );
+  await waitFor(() => expect(text()).toBe("Still incomplete"));
+  expect(screen.getByTestId("gap").textContent).toBe("true");
+  expect(resumeOptions()?.position).toBe("1-2");
+  await act(async () =>
+    frames.push({ type: "gap", run_id: "run_one", position: "1-4" }),
+  );
+  expect(pathRequests("/items")).toHaveLength(3);
+
+  display = {
+    ...display,
+    items: [message("Repaired", "1-0", "1-5")],
+    position: "1-5",
+  };
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  await waitFor(() => expect(text()).toBe("Repaired"));
+  expect(screen.getByTestId("gap").textContent).toBe("false");
+  expect(screen.getByTestId("coverage").textContent).toBe("complete");
+});
+
+it("does not advance coverage across a hole and waits for a covering checkpoint", async () => {
+  render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  await act(async () =>
+    frames.push(
+      { type: "gap", run_id: "run_one", position: "1-3" },
+      delta(1, 4, "!"),
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("gap").textContent).toBe("true"),
+  );
+  expect(text()).toBe("Hello");
+  expect(resumeOptions()?.position).toBe("1-1");
+  expect(pathRequests("/items")).toHaveLength(2);
+  await act(async () => frames.push(boundary(1, 2), boundary(1, 2)));
+  await waitFor(() => expect(pathRequests("/items")).toHaveLength(3));
+  expect(screen.getByTestId("gap").textContent).toBe("true");
+  display = {
+    ...display,
+    items: [message("Hello world", "1-0", "1-3")],
+    position: "1-3",
+  };
+  await act(async () => frames.push(boundary(1, 3)));
+  await waitFor(() => expect(text()).toBe("Hello world!"));
+  expect(screen.getByTestId("gap").textContent).toBe("false");
+  expect(resumeOptions()?.position).toBe("1-4");
+});
+
+it("drops superseded provisional output before a new attempt's first checkpoint", async () => {
+  render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  await act(async () => frames.push(delta(1, 2, " discarded")));
+  await waitFor(() => expect(text()).toBe("Hello discarded"));
+  attempts = [1, 2];
+  await act(async () => frames.push({ type: "reset", run_id: "run_one" }));
+  await waitFor(() => expect(text()).toBe("Hello"));
+  expect(resumeOptions()).toEqual({
+    run: "run_one",
+    position: "2-0",
+    after: undefined,
+  });
+  await act(async () =>
+    frames.push(delta(1, 3, " late"), delta(2, 1, "Retry", "item_2-1")),
+  );
+  await waitFor(() => expect(text()).toBe("Hello|Retry"));
+  expect(resumeOptions()?.position).toBe("2-1");
+});
+
+it("uses the final display to resolve a gap and discard an uncovered provisional suffix", async () => {
+  render(<View />);
+  await waitFor(() => expect(text()).toBe("Hello"));
+  await act(async () =>
+    frames.push(
+      { type: "gap", run_id: "run_one", position: "1-3" },
+      delta(1, 4, "lost"),
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("gap").textContent).toBe("true"),
+  );
+  display = {
+    ...display,
+    run: run({ status: "cancelled", sealed_at: "2026-09-20T10:00:09Z" }),
+    items: [message("Saved", "1-0", "1-2", "interrupted")],
+    position: "1-2",
+    complete: true,
+  };
+  thread = { ...thread, current_run_id: null, version: 5 };
+  await act(async () => frames.push({ type: "changed", version: 5 }));
+  await waitFor(() => expect(text()).toBe("Saved"));
+  expect(screen.getByTestId("gap").textContent).toBe("false");
+  expect(screen.getByTestId("live").textContent).toBe("closed");
 });

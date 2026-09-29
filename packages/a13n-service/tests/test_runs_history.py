@@ -207,33 +207,30 @@ async def test_run_items_keep_the_newest_over_their_limit(service, scripted_mode
     assert [item["kind"] for item in listing["items"]] == [item["kind"] for item in complete["items"]][-2:]
 
 
-@pytest.mark.parametrize(
-    "result",
-    [
+async def test_invalid_question_results_leave_the_wait_unchanged(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
+    waiting = await _waiting(service, scripted_model, runs_kit, user_questions=True)
+    for result in [
         {},
         {"response": "  "},
         {"answers": {"Another question?": "blue"}},
         {"answers": {"Which color?": ["red", "blue"]}},
         {"response": "blue", "extra": "not allowed"},
-    ],
-)
-async def test_invalid_question_results_leave_the_wait_unchanged(service, scripted_model, runs_kit, result) -> None:  # type: ignore[no-untyped-def]
-    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
-    waiting = await _waiting(service, scripted_model, runs_kit, user_questions=True)
-    refused = await service.client.post(
-        f"{service.api}/runs/{waiting['id']}/resume",
-        json={"approvals": {}, "calls": {"call_ask": {"status": "returned", "value": result}}},
-        headers=runs_kit.fresh_key(),
-    )
-    assert refused.status_code == 400, refused.text
-    assert refused.json()["error"]["details"] == {
-        "field": "calls",
-        "reason": "invalid_question_response",
-        "id": "call_ask",
-    }
-    thread = await runs_kit.get_thread(service, waiting["thread_id"])
-    assert thread["head_run_id"] == waiting["id"] and thread["current_run_id"] is None
-    assert len(await runs_kit.inbox(service, waiting["thread_id"])) == 1
+    ]:
+        refused = await service.client.post(
+            f"{service.api}/runs/{waiting['id']}/resume",
+            json={"approvals": {}, "calls": {"call_ask": {"status": "returned", "value": result}}},
+            headers=runs_kit.fresh_key(),
+        )
+        assert refused.status_code == 400, (result, refused.text)
+        assert refused.json()["error"]["details"] == {
+            "field": "calls",
+            "reason": "invalid_question_response",
+            "id": "call_ask",
+        }, result
+        thread = await runs_kit.get_thread(service, waiting["thread_id"])
+        assert thread["head_run_id"] == waiting["id"] and thread["current_run_id"] is None, result
+        assert len(await runs_kit.inbox(service, waiting["thread_id"])) == 1, result
 
 
 @pytest.mark.parametrize("same_key", [False, True])

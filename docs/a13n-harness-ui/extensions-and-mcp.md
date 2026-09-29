@@ -1,4 +1,7 @@
-# Tools and extension types
+---
+title: Tools and extension types
+description: Choose between Capabilities, Harness Plugins, MCP servers, Skills, and Content Plugins.
+---
 
 Choose an integration by what it provides, then select its installed key or resource ID in configuration. YAML selects executable integrations but does not install their Python code.
 

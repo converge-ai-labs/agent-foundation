@@ -1,4 +1,7 @@
-# Use the terminal
+---
+title: Use the terminal
+description: Send tasks, guide running work, and answer questions and approvals from the terminal.
+---
 
 ## Everyday interaction
 

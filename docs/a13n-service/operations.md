@@ -1,4 +1,7 @@
-# Run and maintain
+---
+title: Run and maintain
+description: Process roles, migrations, health checks, background work, operator commands, and backups.
+---
 
 One `a13n-service` executable runs every part of the Service. All processes of a deployment share one PostgreSQL database, one Redis endpoint, one object store and one encryption key ring, [configured](configuration.md) identically.
 

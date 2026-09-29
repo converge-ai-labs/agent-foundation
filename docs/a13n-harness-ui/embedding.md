@@ -1,4 +1,8 @@
-# Embed the Harness UI App
+---
+title: Embed the Harness UI App
+sidebarTitle: Embed the Python App
+description: Use the Harness UI application boundary inside another local interface.
+---
 
 Use the Python App boundary when you need Harness UI's accepted configuration, saved Threads, attachments, root-operation receipts, and child coordination inside another local interface. Use [Harness directly](../a13n-harness/hosting.md) when your application should own those product decisions instead.
 

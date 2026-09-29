@@ -1,4 +1,8 @@
-# Environments
+---
+title: Environments
+sidebarTitle: Overview
+description: Portable access to files, commands, processes, and ports in local, container, cloud, and remote targets.
+---
 
 An Environment gives portable access to files, commands, processes, retained output, and ports. Use it directly in automation, or supply a fresh adapter to Harness so an Agent can work in a selected workspace, sandbox, container, VM, or remote execution target. It requires no Agent, model credential, or hosted service.
 
@@ -51,7 +55,7 @@ Use no Environment when the Agent needs only ordinary tools or remote APIs. Othe
 ## How the layers fit
 
 ```mermaid
-flowchart LR
+flowchart TB
     Host[Host policy, configuration, state, and credentials] --> Definition[EnvironmentProviderDefinition]
     Definition --> Environment[Fresh Environment adapter]
     Environment --> Harness[Agent Harness Run]

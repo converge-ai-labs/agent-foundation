@@ -11,7 +11,6 @@ import {
 import { MessageText } from "./message-text";
 import { renderDiagram } from "./mermaid-render";
 import { closedFence } from "./markdown-block";
-import { selectedSource } from "./comment-selection";
 import { OpenHostFile } from "./tool-call";
 vi.mock("./mermaid-render", () => ({ renderDiagram: vi.fn() }));
 afterEach(() => {
@@ -39,32 +38,23 @@ it("opens same-instance Host file links in the workbench and leaves external lin
   expect(website.getAttribute("target")).toBe("_blank");
 });
 
-it("keeps GFM alignment, wraps wide tables in a keyboard-scrollable region and preserves selection anchors", () => {
+it("keeps GFM alignment and wraps wide tables in a keyboard-scrollable region", () => {
   const source = "| Name | Count |\n| :--- | ---: |\n| Ready | 123 |";
-  const view = render(<MessageText text={source} selectable />);
+  render(<MessageText text={source} />);
   const region = screen.getByRole("region", { name: "Table" });
   expect(region.tabIndex).toBe(0);
   expect(screen.getByRole("cell", { name: "123" }).style.textAlign).toBe(
     "right",
   );
-  const text = screen.getByText("Ready").firstChild!;
-  const range = document.createRange();
-  range.selectNodeContents(text);
-  const selection = window.getSelection()!;
-  selection.removeAllRanges();
-  selection.addRange(range);
-  expect(selectedSource(view.container, source, selection)?.quote).toBe(
-    "Ready",
-  );
 });
 
-it("copies original code including newlines while keeping source-identical code selections", async () => {
+it("copies original code including newlines", async () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { writeText },
   });
-  render(<MessageText text={'```ts\nconst value = "test";\n```'} selectable />);
+  render(<MessageText text={'```ts\nconst value = "test";\n```'} />);
   fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
   await screen.findByText("Copied");
   expect(writeText).toHaveBeenCalledWith('const value = "test";\n');
@@ -126,7 +116,7 @@ it("matches fence type and length instead of mistaking partial or nested backtic
 it("highlights declared code without changing its source bytes and leaves unknown languages as text", () => {
   const source = 'const label = "<script>alert(1)</script>";\n';
   const view = render(
-    <MessageText text={`\`\`\`typescript\n${source}\`\`\``} selectable />,
+    <MessageText text={`\`\`\`typescript\n${source}\`\`\``} />,
   );
   const code = view.container.querySelector("pre code")!;
   expect(code.textContent).toBe(source);

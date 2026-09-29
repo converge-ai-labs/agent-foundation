@@ -7,7 +7,6 @@ __pycache__
 .pytest_cache
 .ruff_cache
 .pyright
-site
 dist
 build
 target
