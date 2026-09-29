@@ -2,6 +2,10 @@
 {{- printf "%s-a13n" .Release.Name | trunc 50 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "a13n.serviceAccountName" -}}
+{{- default (include "a13n.name" .) .Values.serviceAccount.name -}}
+{{- end -}}
+
 {{- define "a13n.selector" -}}
 app.kubernetes.io/name: a13n-service
 app.kubernetes.io/instance: {{ .Release.Name }}
@@ -15,7 +19,9 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/* Pod fields shared by both Service roles and the migration Job. */}}
 {{- define "a13n.podSpec" -}}
-serviceAccountName: {{ include "a13n.name" . }}
+serviceAccountName: {{ include "a13n.serviceAccountName" . | quote }}
+# The Pod keeps the same token policy even when its ServiceAccount is provisioned separately.
+automountServiceAccountToken: false
 # Service link variables such as A13N_A13N_CONTROL_PORT would be rejected as unknown Service settings.
 enableServiceLinks: false
 securityContext:
@@ -46,7 +52,11 @@ affinity:
 
 {{/* Container fields shared by every Service process: image, hardening, credentials and configuration. */}}
 {{- define "a13n.container" -}}
+{{- if .Values.image.digest }}
+image: {{ printf "%s@%s" .Values.image.repository .Values.image.digest | quote }}
+{{- else }}
 image: {{ printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) | quote }}
+{{- end }}
 imagePullPolicy: {{ .Values.image.pullPolicy }}
 securityContext:
   allowPrivilegeEscalation: false

@@ -3,6 +3,8 @@ image:
   repository: ghcr.io/converge-ai-labs/a13n-service
   # Empty selects the chart's appVersion.
   tag: ""
+  # When set, repository@digest takes precedence over tag and appVersion.
+  digest: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 # Credential settings as A13N_<SECTION>__<FIELD> keys, such as the database URL and encryption key ring.
@@ -11,6 +13,9 @@ existingSecret: a13n-service-secrets
 publicUrl: http://127.0.0.1:8000
 # Addresses or CIDRs of the front proxies whose forwarded client addresses are trusted.
 trustedProxies: []
+# Must cover HTTP shutdown, background-task cleanup and client/telemetry shutdown together.
+# Increase this when raising server.shutdown_timeout or worker.drain_seconds in Service settings.
+terminationGracePeriodSeconds: 60
 # Each role runs replicaCount Pods, or with autoscaling enabled, keeps its CPU near the target share of its request.
 roles:
   control:
@@ -44,9 +49,14 @@ persistence:
 # The control Service, which serves the API and Console.
 service:
   type: ClusterIP
+  # Extra metadata labels on the control Service only; never copied to selectors or Pods.
+  labels: {}
   annotations: {}
   nodePort: 30080
 serviceAccount:
+  create: true
+  # Empty uses the release-derived name when create is true; required when create is false.
+  name: ""
   annotations: {}
 podAnnotations: {}
 nodeSelector: {}

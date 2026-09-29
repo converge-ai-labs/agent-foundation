@@ -4,6 +4,8 @@
 
 Each Service release publishes a Helm chart at `oci://ghcr.io/converge-ai-labs/charts/a13n-service` that selects the matching image. The checkout chart selects `ghcr.io/converge-ai-labs/a13n-service:dev` unless you override it. `make dev` uses a separate local stack.
 
+For an Alibaba Cloud ACS cluster, start with the [values example](examples/values-acs.example.yaml) and [Service settings example](examples/service-acs.env.example). The workload Chart is shared with other clusters; the kind values and launcher are local-only.
+
 ## Topology
 
 | Input              | Local kind cluster                     | Other clusters                                      |
@@ -19,6 +21,22 @@ Each Service release publishes a Helm chart at `oci://ghcr.io/converge-ai-labs/c
 `roles.control` and `roles.worker` each configure `replicaCount` and optional `resources` (otherwise inherited from top-level `resources`). These are starting values, not a measured capacity recommendation. With `autoscaling.enabled`, a role's HorizontalPodAutoscaler replaces `replicaCount`: it keeps the role between `minReplicas` and `maxReplicas` near `targetCPUUtilizationPercentage` of its CPU request, which needs the cluster's metrics server and a CPU request on the role. Worker CPU follows run processing but not runs waiting on model responses, and each worker runs at most `worker.slots` runs at once, so set the worker `minReplicas` from the expected concurrent runs. Each role's PodDisruptionBudget lets voluntary disruptions, such as node drains, evict one of its Pods at a time. The shared Deployments, Services, configuration and probes are portable; cluster provisioning, IAM, image access, CSI drivers, storage classes and ingress controllers remain platform-specific. Use an image built for the node architecture.
 
 For release `a13n`, the Deployments are `a13n-a13n-control` and `a13n-a13n-worker`. The Service `a13n-a13n-control` serves the API and the Console from one origin; workers accept no traffic. Ingress sends the configured paths to it; `service.type` and `service.nodePort` expose it without Ingress, as on kind. All Service Pods share the database, Redis and object storage. Service containers run as UID 10001 with a read-only root filesystem, no capabilities and no privilege escalation; they write only to a per-Pod `/tmp` emptyDir and, with local objects, the objects claim.
+
+### Shutdown time
+
+`terminationGracePeriodSeconds` sets the Pod termination grace period for both roles and defaults to `60`. Service first stops accepting HTTP connections and waits up to `server.shutdown_timeout` for existing requests. It then gives background tasks another `server.shutdown_timeout` budget, including the worker's `worker.drain_seconds` handoff, before closing clients and flushing telemetry. Size the Pod grace period for the entire sequence, not just the worker handoff. The [runtime contract](../../spec/a13n-service/09-runtime.md#startup-readiness-and-shutdown) owns these stages.
+
+The default Service settings use a 15-second shutdown budget and a 10-second worker handoff. If an environment raises them, raise the Helm value as well; for example, use a 300-second Pod grace period as a starting point for a 120-second shutdown budget and a 90-second handoff, then verify the actual shutdown under load. Helm cannot inspect settings supplied by `existingSecret` and does not validate their timing against the Pod grace period. A process that finishes early exits immediately; increasing the limit only extends how long Kubernetes waits before forcing termination. Changing the Helm value rolls the Deployments.
+
+### Runtime ServiceAccount
+
+By default the Chart creates a ServiceAccount named after the release. `serviceAccount.name` can choose a different name. To use an administrator-provisioned account, set `serviceAccount.create: false` and supply its name; the control and worker Pods, their init containers and the migration Job all use it. Configure annotations on an external account through its owner, leaving `serviceAccount.annotations` empty. Service Pods disable automatic API-token mounting even when the external account enables it; workload-identity admission must provide its own required credential projection.
+
+The runtime ServiceAccount is separate from the identity running Helm. When moving an existing release to an external account, provision a new account name first and switch references deliberately. Simply setting `create: false` removes the previously Chart-owned account from the release; it does not transfer ownership or preserve that account.
+
+### Service metadata
+
+`service.labels` and `service.annotations` customize only the control Service's metadata. Labels do not change Deployment selectors, Pod labels, resource names or Secret selection. Configure platform-specific integrations in an environment-owned values file according to that platform's contract.
 
 ### Schema migration
 
@@ -41,10 +59,10 @@ The Chart renders `service.toml` from values: `[server]` (including `publicUrl` 
 Run commands from the repository root. Helm and kubectl must point to the intended cluster. The examples use release `a13n` in namespace `a13n-service`; the bundled PostgreSQL host is `a13n-a13n-postgres`.
 
 1. Copy `examples/service.env.example` and, for bundled PostgreSQL, `examples/postgres.env.example` to protected files outside the checkout. Set permissions to `600`.
-2. Replace all placeholders. Generate the encryption key using `openssl rand -base64 32`. Preserve the key ring across restarts and upgrades; losing it makes stored provider and connection credentials unreadable.
-3. Match the PostgreSQL password in both files. URL-encode it in the Service URL. Changing the PostgreSQL Secret does not change the password of an already initialized database.
-4. For external stores, replace the database URL, add `A13N_REDIS__URL`, and add object-store credentials unless the Pods' identity provides them. Use the TLS settings the database and Redis require.
-5. Create the namespace and Secrets. These commands change the selected cluster:
+1. Replace all placeholders. Generate the encryption key using `openssl rand -base64 32`. Preserve the key ring across restarts and upgrades; losing it makes stored provider and connection credentials unreadable.
+1. Match the PostgreSQL password in both files. URL-encode it in the Service URL. Changing the PostgreSQL Secret does not change the password of an already initialized database.
+1. For external stores, replace the database URL, add `A13N_REDIS__URL`, and add object-store credentials unless the Pods' identity provides them. Use the TLS settings the database and Redis require.
+1. Create the namespace and Secrets. These commands change the selected cluster:
 
 ```sh
 kubectl config current-context
@@ -132,7 +150,7 @@ helm upgrade --install a13n oci://ghcr.io/converge-ai-labs/charts/a13n-service -
   -f /absolute/private/path/values.yaml --wait --timeout 20m
 ```
 
-To install the Chart of this checkout instead, build and push the image, set `image.repository` and `image.tag`, and pass `deploy/kubernetes/helm/a13n-service` in place of the OCI reference.
+To install the Chart of this checkout instead, build and push the image, set `image.repository` and either `image.tag` or `image.digest`, and pass `deploy/kubernetes/helm/a13n-service` in place of the OCI reference. When set, `image.digest` takes precedence over the tag and pins every Service role and migration container to the same artifact.
 
 ## Agent execution environments
 

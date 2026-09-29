@@ -28,9 +28,9 @@ EXTERNAL = (
 )
 
 
-def render(*arguments: str) -> list[dict]:
+def render(*arguments: str, release: str = "a13n") -> list[dict]:
     output = subprocess.run(
-        ["helm", "template", "a13n", str(CHART), *arguments],
+        ["helm", "template", release, str(CHART), *arguments],
         capture_output=True,
         text=True,
         check=True,
@@ -82,6 +82,25 @@ def test_roles_share_one_image_and_start_after_the_migration_job():
     assert set(deployments) == {"a13n-a13n-control", "a13n-a13n-worker"}
     control = next(d for d in documents if d["kind"] == "Service" and d["metadata"]["name"] == "a13n-a13n-control")
     assert control["spec"]["type"] == "NodePort" and control["spec"]["ports"][0]["nodePort"] == 30080
+
+
+@helm
+def test_digest_overrides_tag_for_all_service_containers():
+    digest = "sha256:" + "a" * 64
+    documents = render(*EXTERNAL, "--set", f"image.digest={digest}", "--set", "image.tag=ignored")
+    images = []
+    for document in documents:
+        if document["kind"] in {"Deployment", "Job"}:
+            pod = document["spec"]["template"]["spec"]
+            images.extend(c["image"] for c in pod["containers"] + pod.get("initContainers", []))
+    assert len(images) == 5
+    assert set(images) == {f"ghcr.io/converge-ai-labs/a13n-service@{digest}"}
+
+
+@helm
+def test_invalid_digest_is_rejected():
+    with pytest.raises(subprocess.CalledProcessError):
+        render("--set", "image.digest=sha256:invalid")
 
 
 @helm
@@ -140,6 +159,83 @@ def test_s3_objects_require_a_bucket():
         ["helm", "template", "a13n", str(CHART), "--set", "objects.backend=s3"], capture_output=True, text=True
     )
     assert result.returncode != 0 and "objects.bucket is required" in result.stderr
+
+
+@helm
+@pytest.mark.parametrize("seconds", [None, 300])
+def test_shutdown_grace_applies_to_both_roles(seconds):
+    arguments = () if seconds is None else ("--set", f"terminationGracePeriodSeconds={seconds}")
+    deployments = [d for d in render(*arguments) if d["kind"] == "Deployment"]
+    assert len(deployments) == 2
+    for deployment in deployments:
+        assert deployment["spec"]["template"]["spec"]["terminationGracePeriodSeconds"] == (seconds or 60)
+
+
+@helm
+@pytest.mark.parametrize(
+    "arguments,account_name,created",
+    [
+        ((), "a13n-a13n", True),
+        (("--set", "serviceAccount.name=custom-runtime"), "custom-runtime", True),
+        (("--set-string", "serviceAccount.name=true"), "true", True),
+        (
+            ("--set", "serviceAccount.create=false", "--set", "serviceAccount.name=existing-runtime"),
+            "existing-runtime",
+            False,
+        ),
+    ],
+)
+def test_runtime_identity_is_consistent_across_roles_and_migrations(arguments, account_name, created):
+    documents = render(*EXTERNAL, *arguments)
+    accounts = [d for d in documents if d["kind"] == "ServiceAccount"]
+    assert [d["metadata"]["name"] for d in accounts] == ([account_name] if created else [])
+    workloads = [d for d in documents if d["kind"] in {"Deployment", "Job"}]
+    assert len(workloads) == 3
+    for workload in workloads:
+        pod = workload["spec"]["template"]["spec"]
+        assert pod["serviceAccountName"] == account_name
+        assert pod["automountServiceAccountToken"] is False
+    if not created:
+        # This combination leaves identities, secrets and persistent storage outside the workload release.
+        assert not {d["kind"] for d in documents} & {"Secret", "PersistentVolumeClaim", "Role", "RoleBinding"}
+
+
+@helm
+def test_extra_service_labels_do_not_change_workloads_or_selectors():
+    plain = render(*LOCAL)
+    labeled = render(*LOCAL, "--set-string", "service.labels.owner=platform")
+    service = next(d for d in labeled if d["kind"] == "Service" and d["metadata"]["name"] == "a13n-a13n-control")
+    assert service["metadata"].pop("labels") == {"owner": "platform"}
+    assert labeled == plain
+
+
+@helm
+@pytest.mark.parametrize(
+    "values,field",
+    [
+        ({"terminationGracePeriodSeconds": 0}, "terminationGracePeriodSeconds"),
+        ({"terminationGracePeriodSeconds": 1.5}, "terminationGracePeriodSeconds"),
+        ({"serviceAccount": {"create": False}}, "name"),
+        ({"serviceAccount": {"name": "invalid/account"}}, "name"),
+        (
+            {
+                "serviceAccount": {
+                    "create": False,
+                    "name": "existing",
+                    "annotations": {"example.com/identity": "ignored"},
+                }
+            },
+            "annotations",
+        ),
+        ({"service": {"labels": {"owner": "bad/value"}}}, "labels"),
+        ({"service": {"labels": {"owner": 123}}}, "labels"),
+    ],
+)
+def test_invalid_delivery_settings_fail_before_installation(values, field, tmp_path):
+    path = tmp_path / "values.yaml"
+    path.write_text(yaml.safe_dump(values))
+    result = subprocess.run(["helm", "template", "a13n", str(CHART), "-f", str(path)], capture_output=True, text=True)
+    assert result.returncode != 0 and field in result.stderr
 
 
 def test_first_start_generates_random_credentials():

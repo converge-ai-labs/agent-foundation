@@ -24,6 +24,10 @@
         "tag": {
           "type": "string"
         },
+        "digest": {
+          "type": "string",
+          "pattern": "^$|^sha256:[0-9a-f]{64}$"
+        },
         "pullPolicy": {
           "enum": [
             "Always",
@@ -96,6 +100,52 @@
       "items": {
         "type": "string",
         "minLength": 1
+      }
+    },
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "serviceAccount": {
+      "type": "object",
+      "required": [
+        "create",
+        "name",
+        "annotations"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "create": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "create": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "name": {
+            "minLength": 1
+          },
+          "annotations": {
+            "maxProperties": 0
+          }
+        }
       }
     },
     "extraConfig": {
@@ -201,6 +251,14 @@
         },
         "annotations": {
           "type": "object"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^$|^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$"
+          }
         }
       }
     }

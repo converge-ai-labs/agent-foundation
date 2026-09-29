@@ -76,3 +76,6 @@ node_modules/
 .anycap/
 
 /frontend/packages/*/dist/
+
+# Checkout-local deployment workflows and private environment configuration
+/.internal/
