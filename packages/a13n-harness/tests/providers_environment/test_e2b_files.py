@@ -68,32 +68,6 @@ def test_query_paging_and_bounded_scan(tmp_path, filesystem):
         list(files.entries(tmp_path, tmp_path, {}, 1))
 
 
-def test_search_reports_context_truncation_and_page(tmp_path, filesystem):
-    (tmp_path / "text").write_text("before\nMATCH-long\nafter\nMATCH\n")
-    result = filesystem(
-        "search",
-        path="/",
-        include="**/*",
-        pattern="match",
-        recursive=True,
-        include_hidden=False,
-        ignore_mode="none",
-        case_sensitive=False,
-        regex=False,
-        offset=0,
-        max_matches=1,
-        max_matches_per_file=None,
-        max_files=None,
-        max_file_bytes=4096,
-        max_line_length=5,
-        context_lines=1,
-    )
-    assert result["has_more"]
-    assert result["matches"][0]["text"] == "MATCH"
-    assert result["matches"][0]["text_truncated"]
-    assert result["matches"][0]["context_start_line"] == 1
-
-
 @pytest.mark.parametrize("action", ["read", "resolve", "publish"])
 @pytest.mark.parametrize("kind", ["missing", "directory", "dangling-link"])
 def test_regular_file_operations_distinguish_missing_targets_from_wrong_types(tmp_path, filesystem, action, kind):

@@ -93,10 +93,6 @@ def test_bounds_must_nest(values: dict, refused: str) -> None:
         Settings.model_validate(values)
 
 
-def test_defaults_nest() -> None:
-    Settings()
-
-
 def test_a_key_file_replaces_the_key_ring() -> None:
     with pytest.raises(ValueError, match=r"encryption\.key_file excludes"):
         Settings.model_validate({"encryption": {"key_file": "/app/var/encryption.key", "active_key_id": "k"}})

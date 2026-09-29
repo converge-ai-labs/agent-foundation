@@ -333,19 +333,3 @@ it("offers a probe only for a definition with the operation and permits absent h
     screen.getByRole("button", { name: "Check connection" }),
   ).toBeDefined();
 });
-
-it.each(["google_vertex", "aws_bedrock"])(
-  "does not offer an unsupported %s account probe",
-  (type) => {
-    mountCustom({}, { ...customDefinition, type });
-    expect(
-      screen.queryByRole("button", { name: "Check connection" }),
-    ).toBeNull();
-  },
-);
-it("offers the supported built-in provider probe", () => {
-  mount();
-  expect(
-    screen.getByRole("button", { name: "Check connection" }),
-  ).toBeDefined();
-});

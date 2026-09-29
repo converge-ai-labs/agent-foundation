@@ -72,29 +72,29 @@ def results():
     }
 
 
-@pytest.mark.parametrize("mistake", ["missing_approval", "missing_call", "unknown", "category", "old_envelope"])
-async def test_incomplete_or_misclassified_batches_leave_no_successor(service, scripted_model, runs_kit, mistake):  # type: ignore[no-untyped-def]
+async def test_incomplete_or_misclassified_batches_leave_no_successor(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)
-    body = results()
-    if mistake == "missing_approval":
-        body["approvals"] = {}
-    elif mistake == "missing_call":
-        del body["calls"]["review"]
-    elif mistake == "unknown":
-        body["calls"]["unknown"] = {"status": "returned", "value": None}
-    elif mistake == "category":
-        del body["calls"]["review"]
-        body["approvals"]["review"] = {"action": "approve"}
-    else:
-        body = {"answers": []}
-    response = await service.client.post(
-        f"{service.api}/runs/{waiting['id']}/resume", json=body, headers=runs_kit.fresh_key()
-    )
-    assert response.status_code == 400, response.text
-    thread = await runs_kit.get_thread(service, waiting["thread_id"])
-    assert thread["head_run_id"] == waiting["id"] and thread["current_run_id"] is None
-    runs = (await service.client.get(f"{service.api}/threads/{waiting['thread_id']}/runs")).json()["items"]
-    assert len(runs) == 1
+    for mistake in ["missing_approval", "missing_call", "unknown", "category", "old_envelope"]:
+        body = results()
+        if mistake == "missing_approval":
+            body["approvals"] = {}
+        elif mistake == "missing_call":
+            del body["calls"]["review"]
+        elif mistake == "unknown":
+            body["calls"]["unknown"] = {"status": "returned", "value": None}
+        elif mistake == "category":
+            del body["calls"]["review"]
+            body["approvals"]["review"] = {"action": "approve"}
+        else:
+            body = {"answers": []}
+        response = await service.client.post(
+            f"{service.api}/runs/{waiting['id']}/resume", json=body, headers=runs_kit.fresh_key()
+        )
+        assert response.status_code == 400, (mistake, response.text)
+        thread = await runs_kit.get_thread(service, waiting["thread_id"])
+        assert thread["head_run_id"] == waiting["id"] and thread["current_run_id"] is None, mistake
+        runs = (await service.client.get(f"{service.api}/threads/{waiting['thread_id']}/runs")).json()["items"]
+        assert len(runs) == 1, mistake
 
 
 @pytest.mark.parametrize("failed", [False, True])

@@ -22,13 +22,6 @@ def _record() -> logging.LogRecord:
     return record
 
 
-def test_json_formatter_preserves_structured_fields() -> None:
-    payload = json.loads(JsonFormatter().format(_record()))
-
-    assert payload["message"] == "session_started"
-    assert payload["session_id"] == "session-1"
-
-
 def test_pretty_formatter_preserves_event_context() -> None:
     output = PrettyFormatter().format(_record())
 

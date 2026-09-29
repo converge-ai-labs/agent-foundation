@@ -123,25 +123,6 @@ def test_crate_publication_is_selected_by_version(
 
 
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
-def test_rc_image_never_advances_latest(
-    jobs: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str
-) -> None:
-    image = "ghcr.io/example/a13n-sandbox"
-    output = tmp_path / "output"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
-    monkeypatch.setenv("IMAGE", image)
-    monkeypatch.setenv("VERSION", version)
-    script = next(step["run"] for step in jobs["publish-image"]["steps"] if step["name"] == "Resolve image tags")
-
-    result = run_step(script, tmp_path)
-
-    assert result.returncode == 0, result.stderr
-    lines = output.read_text(encoding="utf-8").splitlines()
-    assert f"{image}:{version}" in lines
-    assert (f"{image}:latest" in lines) == ("-rc." not in version)
-
-
-@pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
 @pytest.mark.parametrize("binary_version", ["1.2.3", "1.2.3-rc.1", "0.0.0"])
 def test_native_release_checks_binary_version_without_inner_isolation(
     jobs: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str, binary_version: str

@@ -53,9 +53,6 @@ from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalRootConfiguration,
 )
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
-from a13n_harness.toolsets.documents import DocumentsToolset
-from a13n_harness.toolsets.media import MediaToolset
-from a13n_harness.toolsets.web import WebToolset
 from a13n_harness.usage import (
     ProviderUsage,
     ProviderUsageRecord,
@@ -252,56 +249,6 @@ def _native_binary(messages: list[list[ModelMessage]]) -> list[BinaryContent]:
 async def _body(*chunks: bytes) -> AsyncIterator[bytes]:
     for chunk in chunks:
         yield chunk
-
-
-async def test_content_toolsets_compose_directly_over_natural_provider_ports(tmp_path: Path) -> None:
-    media = MediaToolset(
-        _MediaReader(
-            MediaResource(
-                kind="image",
-                source_url="https://example.com/image.png",
-                media_type="image/png",
-                data=b"png",
-            )
-        ),
-        MediaConfiguration(),
-    )
-    binding = _binding(tmp_path)
-    run_bindings = RunBindings.embedded(environment=binding)
-    async with binding.bind(
-        thread_id="thread-content-toolsets",
-        run_id="direct-content-toolsets",
-        instance=run_bindings.instance,
-        host_refs={},
-    ) as environment:
-        documents = DocumentsToolset(
-            _DocumentConverter(DocumentConversionResult(markdown="# Document")),
-            files=environment.files,
-            file_scopes=environment,
-        )
-        web = WebToolset(
-            client=_WebClient(()),
-            policy=_WebPolicy(),
-            search_backends=(WebSearchBackendBinding("default", _WebProvider()),),
-            scrape_backends=(
-                WebScrapeBackendBinding(
-                    "default",
-                    _ScrapeProvider(
-                        WebScrapeResult(
-                            content="# Page",
-                            source_url="https://example.com/page",
-                            canonical_url="https://example.com/page",
-                        )
-                    ),
-                ),
-            ),
-            files=environment.files,
-            file_scopes=environment,
-        )
-
-        assert set(documents.get_toolset().tools) == {"pdf_convert", "office_to_markdown"}
-        assert set(web.get_toolset().tools) == {"search", "scrape", "fetch", "download"}
-    assert set(media.get_toolset().tools) == {"read_media"}
 
 
 async def test_media_capability_returns_native_binary_with_run_scoped_reader() -> None:

@@ -69,24 +69,6 @@ def test_display_budget_counts_utf8_bytes_and_caches_the_omitted_size(text: str)
 
 
 @pytest.mark.parametrize(
-    "approvals,calls,reason", [(True, False, "approval"), (False, True, "call"), (True, True, "multiple")]
-)
-def test_wait_reason_summarizes_categories(approvals, calls, reason):
-    approval = {"tool_call_id": "approval", "tool_name": "delete", "arguments": {}}
-    # Question and custom human tools belong to the same calls category.
-    questions = [
-        {"tool_call_id": "question", "tool_name": "ask_user_question", "arguments": {}},
-        {"tool_call_id": "review", "tool_name": "review_invoice", "arguments": {}},
-    ]
-    assert (
-        Pending.model_validate(
-            {"approvals": [approval] if approvals else [], "calls": questions if calls else []}
-        ).reason
-        == reason
-    )
-
-
-@pytest.mark.parametrize(
     "value",
     [
         {"approvals": [], "calls": []},

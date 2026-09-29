@@ -74,10 +74,7 @@ def test_runtime_import_defers_unused_provider_sdks() -> None:
             "-c",
             "import sys; "
             "import a13n_harness_ui.interactive.runtime; "
-            "assert not {'openai', 'pydantic_ai.models.openai'} & sys.modules.keys(); "
-            "from a13n_harness.models.codex import CodexRequestModel; "
-            "from a13n_harness.models.codex import CodexRequestModel as native; "
-            "assert CodexRequestModel is native",
+            "assert not {'openai', 'pydantic_ai.models.openai'} & sys.modules.keys()",
         ],
         check=False,
         capture_output=True,

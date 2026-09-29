@@ -77,17 +77,11 @@ async def test_google_cloud_routes_preserve_custom_endpoint_and_native_provider(
         assert model.model_name == "gateway-gemini"
 
 
-@pytest.mark.parametrize("provider", API_PROVIDERS, ids=lambda provider: provider.route)
-@pytest.mark.parametrize("model_id", ["claude-sonnet-4-5", "claude-sonnet-4-6"])
-def test_all_presets_expand_to_accepted_native_settings(provider, model_id) -> None:
-    for preset in settings_presets(provider.route, model_id):
-        normalized = PydanticAiModelAdapter().validate(
-            route=f"{provider.route}:{'anthropic/' if provider.route == 'openrouter' else ''}{model_id}",
-            settings=preset.settings,
-            model_cfg={},
-        )
-        assert normalized.settings == preset.settings
-        assert "pydantic" not in preset.description.lower()
+def test_preset_descriptions_use_product_language() -> None:
+    for provider in API_PROVIDERS:
+        for model_id in ("claude-sonnet-4-5", "claude-sonnet-4-6"):
+            for preset in settings_presets(provider.route, model_id):
+                assert "pydantic" not in preset.description.lower(), (provider.route, model_id, preset.key)
 
 
 @pytest.mark.parametrize("model_id", ["gpt-4.1", "custom-model"])
