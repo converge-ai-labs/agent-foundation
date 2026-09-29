@@ -5005,6 +5005,10 @@ export interface components {
       options?: components["schemas"]["RunOptions-Input"];
       payload: components["schemas"]["MessagePayload"];
     };
+    /** @description Pydantic AI ModelMessage JSON objects, validated by the Service. Imports completed user text, model text and closed tool-call/JSON-result exchanges; no instructions, media or suspended execution. At most 256 messages and 256 KiB of normalized JSON. */
+    MessageHistory: {
+      [key: string]: components["schemas"]["JsonValue"];
+    }[];
     /** MessagePayload */
     MessagePayload: {
       /** Content */
@@ -5320,6 +5324,7 @@ export interface components {
        * @default []
        */
       memories?: components["schemas"]["MemoryMount"][];
+      message_history?: components["schemas"]["MessageHistory"];
       options?: components["schemas"]["RunOptions-Input"];
       payload: components["schemas"]["MessagePayload"];
       /** Session Id */
@@ -5791,6 +5796,7 @@ export interface components {
       calls: {
         [key: string]: components["schemas"]["CallResult"];
       };
+      input?: components["schemas"]["MessagePayload"] | null;
     };
     /** RetryConfig */
     RetryConfig: {
@@ -6745,6 +6751,7 @@ export interface components {
           [key: string]: string;
         };
       };
+      message_history: components["schemas"]["MessageHistory"];
       /**
        * Origin
        * @enum {string}

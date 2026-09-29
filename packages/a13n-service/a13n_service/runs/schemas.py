@@ -26,6 +26,7 @@ from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts
 from a13n_service.runs.display import Item
 from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate
+from a13n_service.runs.history import MessageHistory
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
 type Trigger = Literal["input", "queued", "resume", "child_result", "spawned"]
@@ -159,6 +160,7 @@ class Message(_Frozen):
 
 
 class NewThread(Message):
+    message_history: MessageHistory = Field(default_factory=list)
     session_id: ObjectId | None = None
     mcp_headers: McpHeaders = Field(default_factory=dict)
     environments: InitialMounts = ()
@@ -233,6 +235,7 @@ class Resume(_Frozen):
 
     approvals: dict[ToolCallId, ApprovalDecision]
     calls: dict[ToolCallId, CallResult]
+    input: MessagePayload | None = None
 
     @model_validator(mode="after")
     def bounded(self) -> "Resume":
@@ -368,6 +371,7 @@ class SessionPage(BaseModel):
 
 class ThreadView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    message_history: MessageHistory
     id: str
     workspace_id: str
     session_id: str

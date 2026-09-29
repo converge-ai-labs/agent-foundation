@@ -93,11 +93,8 @@ async def test_reporter_retains_failed_delivery_for_retry(service, scripted_mode
         assert (await totals(session, run_id))["requests"] == 1
 
 
-async def test_upgrade_preserves_legacy_facts_and_accepts_current_scopes(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
-    from a13n_service.distribution import OSS
-    from a13n_service.migrations.runner import migration_connection, upgrade
+async def test_individual_facts_remain_immutable_alongside_current_scopes(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     from a13n_service.runs.usage import UsageReport, ingest_late
-    from alembic import command
     from sqlalchemy import update
     from sqlalchemy.exc import DBAPIError
 
@@ -106,16 +103,10 @@ async def test_upgrade_preserves_legacy_facts_and_accepts_current_scopes(service
     run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
     [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
 
-    def previous_schema() -> None:
-        with migration_connection(service.runtime.settings.database, OSS) as config:
-            command.downgrade(config, "295f267e708c")
-
-    await asyncio.to_thread(previous_schema)
     legacy = snapshot("legacy", 5, 1).records[0]
     await ingest_late(service.runtime.storage, run_id, lease.attempt_id, [UsageReport(legacy)])
     async with transaction(service.runtime.storage) as session:
         before = await session.get_one(UsageRecordRow, legacy.record_id)
-    await asyncio.to_thread(upgrade, service.runtime.settings.database, OSS)
     await ingest_snapshot(service.runtime.storage, run_id, lease.attempt_id, snapshot("new", 3, 1), {})
     async with transaction(service.runtime.storage) as session:
         after = await session.get_one(UsageRecordRow, legacy.record_id)

@@ -1,6 +1,6 @@
 """initial schema
 
-Revision ID: 5142caed7e01
+Revision ID: 98a4fd1ba8f7
 Revises:
 """
 
@@ -8,7 +8,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "5142caed7e01"
+revision = "98a4fd1ba8f7"
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -67,8 +67,13 @@ def upgrade() -> None:
         sa.Column("last_error", sa.String(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("delivered_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("settled_at", sa.DateTime(timezone=True), nullable=True),
+        sa.CheckConstraint("(status <> 'pending') = (settled_at IS NOT NULL)", name=op.f("ck_outbox_settled")),
         sa.CheckConstraint("(status = 'delivered') = (delivered_at IS NOT NULL)", name=op.f("ck_outbox_delivered")),
-        sa.CheckConstraint("kind IN ('webhook', 'child_result', 'email')", name=op.f("ck_outbox_kind")),
+        sa.CheckConstraint(
+            "kind IN ('webhook', 'child_result', 'email', 'memory_purge', 'checkpoint_cleanup')",
+            name=op.f("ck_outbox_kind"),
+        ),
         sa.CheckConstraint("organization_id IS NOT NULL OR kind = 'email'", name=op.f("ck_outbox_tenant")),
         sa.CheckConstraint("status IN ('pending', 'delivered', 'dead')", name=op.f("ck_outbox_status")),
         sa.ForeignKeyConstraint(
@@ -90,7 +95,11 @@ def upgrade() -> None:
         postgresql_where=sa.text("status = 'pending'"),
     )
     op.create_index(
-        "ix_outbox_settled", "outbox", ["created_at"], unique=False, postgresql_where=sa.text("status <> 'pending'")
+        "ix_outbox_settled",
+        "outbox",
+        ["kind", "status", "settled_at", "id"],
+        unique=False,
+        postgresql_where=sa.text("status <> 'pending'"),
     )
     op.create_table(
         "principals",
@@ -121,6 +130,22 @@ def upgrade() -> None:
         sa.UniqueConstraint("email", name=op.f("uq_principals_email")),
     )
     op.create_index("ix_principals_home_workspace_id", "principals", ["home_workspace_id"], unique=False)
+    op.create_table(
+        "workspace_provisioning",
+        sa.Column("organization_id", sa.String(), nullable=False),
+        sa.Column("workspace_id", sa.String(length=72), nullable=False),
+        sa.Column("component", sa.String(), nullable=False),
+        sa.Column("provider_id", sa.String(length=72), nullable=False),
+        sa.Column("template_id", sa.String(length=72), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.CheckConstraint("component IN ('local', 'docker')", name=op.f("ck_workspace_provisioning_component")),
+        sa.ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            name=op.f("fk_workspace_provisioning_organization_id_workspaces"),
+        ),
+        sa.PrimaryKeyConstraint("workspace_id", "component", name=op.f("pk_workspace_provisioning")),
+    )
     op.create_table(
         "agents",
         sa.Column("id", sa.String(length=72), nullable=False),
@@ -266,8 +291,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("created_by_id", sa.String(length=72), nullable=False),
-        sa.Column("updated_by_id", sa.String(length=72), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=True),
+        sa.Column("updated_by_id", sa.String(length=72), nullable=True),
         sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -304,8 +329,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("created_by_id", sa.String(length=72), nullable=False),
-        sa.Column("updated_by_id", sa.String(length=72), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=True),
+        sa.Column("updated_by_id", sa.String(length=72), nullable=True),
         sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -400,6 +425,44 @@ def upgrade() -> None:
         postgresql_where=sa.text("accepted_at IS NULL"),
     )
     op.create_table(
+        "memory_providers",
+        sa.Column("id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(), nullable=False),
+        sa.Column("type", sa.String(), nullable=False),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("config", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("credential", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "extra_headers",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'{}'::jsonb"),
+            nullable=False,
+        ),
+        sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=True),
+        sa.Column("updated_by_id", sa.String(length=72), nullable=True),
+        sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["created_by_id"], ["principals.id"], name=op.f("fk_memory_providers_created_by_id_principals")
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            name=op.f("fk_memory_providers_organization_id_workspaces"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["organizations.id"], name=op.f("fk_memory_providers_organization_id_organizations")
+        ),
+        sa.ForeignKeyConstraint(
+            ["updated_by_id"], ["principals.id"], name=op.f("fk_memory_providers_updated_by_id_principals")
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_memory_providers")),
+        sa.UniqueConstraint("workspace_id", "id", name=op.f("uq_memory_providers_workspace_id_id")),
+    )
+    op.create_table(
         "model_providers",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
@@ -415,8 +478,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("created_by_id", sa.String(length=72), nullable=False),
-        sa.Column("updated_by_id", sa.String(length=72), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=True),
+        sa.Column("updated_by_id", sa.String(length=72), nullable=True),
         sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -569,8 +632,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("enabled", sa.Boolean(), nullable=False),
-        sa.Column("created_by_id", sa.String(length=72), nullable=False),
-        sa.Column("updated_by_id", sa.String(length=72), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=True),
+        sa.Column("updated_by_id", sa.String(length=72), nullable=True),
         sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -688,11 +751,6 @@ def upgrade() -> None:
             ["created_by_id"], ["principals.id"], name=op.f("fk_connections_created_by_id_principals")
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "connector_provider_id"],
-            ["connector_providers.workspace_id", "connector_providers.id"],
-            name=op.f("fk_connections_workspace_id_connector_providers"),
-        ),
-        sa.ForeignKeyConstraint(
             ["organization_id", "workspace_id"],
             ["workspaces.organization_id", "workspaces.id"],
             name=op.f("fk_connections_organization_id_workspaces"),
@@ -702,6 +760,11 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["updated_by_id"], ["principals.id"], name=op.f("fk_connections_updated_by_id_principals")
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "connector_provider_id"],
+            ["connector_providers.workspace_id", "connector_providers.id"],
+            name=op.f("fk_connections_workspace_id_connector_providers"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_connections")),
         sa.UniqueConstraint(
@@ -741,18 +804,13 @@ def upgrade() -> None:
         sa.Column("config", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("labels", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column("created_by_id", sa.String(length=72), nullable=False),
-        sa.Column("updated_by_id", sa.String(length=72), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=True),
+        sa.Column("updated_by_id", sa.String(length=72), nullable=True),
         sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(
             ["created_by_id"], ["principals.id"], name=op.f("fk_environment_templates_created_by_id_principals")
-        ),
-        sa.ForeignKeyConstraint(
-            ["workspace_id", "provider_id"],
-            ["environment_providers.workspace_id", "environment_providers.id"],
-            name=op.f("fk_environment_templates_workspace_id_environment_providers"),
         ),
         sa.ForeignKeyConstraint(
             ["organization_id", "workspace_id"],
@@ -767,8 +825,62 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["updated_by_id"], ["principals.id"], name=op.f("fk_environment_templates_updated_by_id_principals")
         ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "provider_id"],
+            ["environment_providers.workspace_id", "environment_providers.id"],
+            name=op.f("fk_environment_templates_workspace_id_environment_providers"),
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_environment_templates")),
         sa.UniqueConstraint("workspace_id", "id", name=op.f("uq_environment_templates_workspace_id_id")),
+    )
+    op.create_table(
+        "memories",
+        sa.Column("id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(), nullable=False),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("description", sa.String(), nullable=True),
+        sa.Column("kind", sa.String(), nullable=False),
+        sa.Column("type", sa.String(), nullable=False),
+        sa.Column("provider_id", sa.String(length=72), nullable=True),
+        sa.Column("namespace", sa.String(), nullable=True),
+        sa.Column("guide", sa.String(), nullable=True),
+        sa.Column("always_load", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("labels", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column("created_by_id", sa.String(length=72), nullable=False),
+        sa.Column("updated_by_id", sa.String(length=72), nullable=False),
+        sa.Column("version", sa.BigInteger(), server_default=sa.text("1"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.CheckConstraint("(type = 'postgres') = (kind = 'file')", name=op.f("ck_memories_type")),
+        sa.CheckConstraint(
+            "(type = 'postgres') = (provider_id IS NULL) AND (provider_id IS NULL) = (namespace IS NULL)",
+            name=op.f("ck_memories_provider"),
+        ),
+        sa.CheckConstraint("kind = 'file' OR always_load = '[]'::jsonb", name=op.f("ck_memories_always_load")),
+        sa.CheckConstraint("kind IN ('file', 'record')", name=op.f("ck_memories_kind")),
+        sa.ForeignKeyConstraint(
+            ["created_by_id"], ["principals.id"], name=op.f("fk_memories_created_by_id_principals")
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            name=op.f("fk_memories_organization_id_workspaces"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["organizations.id"], name=op.f("fk_memories_organization_id_organizations")
+        ),
+        sa.ForeignKeyConstraint(
+            ["updated_by_id"], ["principals.id"], name=op.f("fk_memories_updated_by_id_principals")
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "provider_id"],
+            ["memory_providers.workspace_id", "memory_providers.id"],
+            name=op.f("fk_memories_workspace_id_memory_providers"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_memories")),
+        sa.UniqueConstraint("provider_id", "namespace", name=op.f("uq_memories_provider_id_namespace")),
+        sa.UniqueConstraint("workspace_id", "id", name=op.f("uq_memories_workspace_id_id")),
     )
     op.create_table(
         "models",
@@ -790,11 +902,6 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["created_by_id"], ["principals.id"], name=op.f("fk_models_created_by_id_principals")),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "provider_id"],
-            ["model_providers.workspace_id", "model_providers.id"],
-            name=op.f("fk_models_workspace_id_model_providers"),
-        ),
-        sa.ForeignKeyConstraint(
             ["organization_id", "workspace_id"],
             ["workspaces.organization_id", "workspaces.id"],
             name=op.f("fk_models_organization_id_workspaces"),
@@ -803,6 +910,11 @@ def upgrade() -> None:
             ["organization_id"], ["organizations.id"], name=op.f("fk_models_organization_id_organizations")
         ),
         sa.ForeignKeyConstraint(["updated_by_id"], ["principals.id"], name=op.f("fk_models_updated_by_id_principals")),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "provider_id"],
+            ["model_providers.workspace_id", "model_providers.id"],
+            name=op.f("fk_models_workspace_id_model_providers"),
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_models")),
         sa.UniqueConstraint("workspace_id", "key", name=op.f("uq_models_workspace_id_key")),
     )
@@ -851,6 +963,12 @@ def upgrade() -> None:
         sa.Column("origin_thread_id", sa.String(), nullable=True),
         sa.Column("origin_run_id", sa.String(length=72), nullable=True),
         sa.Column("origin_tool_call_id", sa.String(), nullable=True),
+        sa.Column(
+            "message_history",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'[]'::jsonb"),
+            nullable=False,
+        ),
         sa.Column("subagent", sa.String(), nullable=True),
         sa.Column("current_run_id", sa.String(length=72), nullable=True),
         sa.Column("head_run_id", sa.String(length=72), nullable=True),
@@ -866,6 +984,7 @@ def upgrade() -> None:
             "(origin = 'new' AND origin_thread_id IS NULL AND origin_run_id IS NULL AND origin_tool_call_id IS NULL) OR (origin = 'fork' AND origin_thread_id IS NOT NULL AND origin_run_id IS NOT NULL AND origin_tool_call_id IS NULL) OR (origin = 'child' AND origin_thread_id IS NOT NULL AND origin_run_id IS NOT NULL AND origin_tool_call_id IS NOT NULL)",
             name=op.f("ck_threads_origin_links"),
         ),
+        sa.CheckConstraint("origin = 'new' OR message_history = '[]'::jsonb", name=op.f("ck_threads_imported_history")),
         sa.CheckConstraint("origin IN ('new', 'fork', 'child')", name=op.f("ck_threads_origin")),
         sa.ForeignKeyConstraint(
             ["organization_id", "workspace_id"],
@@ -986,11 +1105,6 @@ def upgrade() -> None:
             ["created_by_id"], ["principals.id"], name=op.f("fk_environments_created_by_id_principals")
         ),
         sa.ForeignKeyConstraint(
-            ["workspace_id", "provider_id"],
-            ["environment_providers.workspace_id", "environment_providers.id"],
-            name=op.f("fk_environments_workspace_id_environment_providers"),
-        ),
-        sa.ForeignKeyConstraint(
             ["organization_id", "workspace_id"],
             ["workspaces.organization_id", "workspaces.id"],
             name=op.f("fk_environments_organization_id_workspaces"),
@@ -1000,6 +1114,11 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ["owner_principal_id"], ["principals.id"], name=op.f("fk_environments_owner_principal_id_principals")
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "provider_id"],
+            ["environment_providers.workspace_id", "environment_providers.id"],
+            name=op.f("fk_environments_workspace_id_environment_providers"),
         ),
         sa.ForeignKeyConstraint(
             ["workspace_id", "template_id"],
@@ -1159,6 +1278,128 @@ def upgrade() -> None:
         postgresql_where=sa.text("request_key IS NOT NULL"),
     )
     op.create_table(
+        "memory_file_stores",
+        sa.Column("memory_id", sa.String(length=72), nullable=False),
+        sa.Column("seq", sa.BigInteger(), server_default=sa.text("0"), nullable=False),
+        sa.Column("pruned_through_seq", sa.BigInteger(), server_default=sa.text("0"), nullable=False),
+        sa.Column("content_bytes", sa.BigInteger(), server_default=sa.text("0"), nullable=False),
+        sa.Column("history_bytes", sa.BigInteger(), server_default=sa.text("0"), nullable=False),
+        sa.Column("file_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.CheckConstraint(
+            "content_bytes >= 0 AND history_bytes >= 0 AND file_count >= 0", name=op.f("ck_memory_file_stores_counters")
+        ),
+        sa.CheckConstraint("pruned_through_seq <= seq", name=op.f("ck_memory_file_stores_pruned")),
+        sa.ForeignKeyConstraint(
+            ["memory_id"], ["memories.id"], name=op.f("fk_memory_file_stores_memory_id_memories"), ondelete="CASCADE"
+        ),
+        sa.PrimaryKeyConstraint("memory_id", name=op.f("pk_memory_file_stores")),
+    )
+    op.create_table(
+        "thread_memories",
+        sa.Column("thread_id", sa.String(length=72), nullable=False),
+        sa.Column("memory_id", sa.String(length=72), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
+        sa.Column("workspace_id", sa.String(), nullable=False),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("access", sa.String(), nullable=False),
+        sa.Column("recall", sa.Boolean(), server_default=sa.text("true"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.CheckConstraint("access IN ('read', 'write')", name=op.f("ck_thread_memories_access")),
+        sa.ForeignKeyConstraint(
+            ["organization_id", "workspace_id"],
+            ["workspaces.organization_id", "workspaces.id"],
+            name=op.f("fk_thread_memories_organization_id_workspaces"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["organizations.id"], name=op.f("fk_thread_memories_organization_id_organizations")
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "memory_id"],
+            ["memories.workspace_id", "memories.id"],
+            name=op.f("fk_thread_memories_workspace_id_memories"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["workspace_id", "thread_id"],
+            ["threads.workspace_id", "threads.id"],
+            name=op.f("fk_thread_memories_workspace_id_threads"),
+        ),
+        sa.PrimaryKeyConstraint("thread_id", "name", name=op.f("pk_thread_memories")),
+        sa.UniqueConstraint("thread_id", "memory_id", name=op.f("uq_thread_memories_thread_id_memory_id")),
+    )
+    op.create_index("ix_thread_memories_memory", "thread_memories", ["memory_id"], unique=False)
+    op.create_table(
+        "memory_file_revisions",
+        sa.Column("memory_id", sa.String(length=72), nullable=False),
+        sa.Column("seq", sa.BigInteger(), nullable=False),
+        sa.Column("path", sa.String(), nullable=False),
+        sa.Column("op", sa.String(), nullable=False),
+        sa.Column("moved_path", sa.String(), nullable=True),
+        sa.Column("previous_content", sa.String(), nullable=True),
+        sa.Column("run_id", sa.String(length=72), nullable=True),
+        sa.Column("tool_call_id", sa.String(length=256), nullable=True),
+        sa.Column("principal_id", sa.String(length=72), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.CheckConstraint(
+            "(op IN ('create', 'move_in')) = (previous_content IS NULL)",
+            name=op.f("ck_memory_file_revisions_previous_content"),
+        ),
+        sa.CheckConstraint(
+            "(op IN ('move_out', 'move_in')) = (moved_path IS NOT NULL)",
+            name=op.f("ck_memory_file_revisions_moved_path"),
+        ),
+        sa.CheckConstraint(
+            "op IN ('create', 'update', 'delete', 'move_out', 'move_in')", name=op.f("ck_memory_file_revisions_op")
+        ),
+        sa.ForeignKeyConstraint(
+            ["memory_id"],
+            ["memory_file_stores.memory_id"],
+            name=op.f("fk_memory_file_revisions_memory_id_memory_file_stores"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["principal_id"], ["principals.id"], name=op.f("fk_memory_file_revisions_principal_id_principals")
+        ),
+        sa.PrimaryKeyConstraint("memory_id", "seq", name=op.f("pk_memory_file_revisions")),
+    )
+    op.create_index(
+        "ix_memory_file_revisions_path", "memory_file_revisions", ["memory_id", "path", "seq"], unique=False
+    )
+    op.create_index(
+        "ix_memory_file_revisions_run",
+        "memory_file_revisions",
+        ["run_id"],
+        unique=False,
+        postgresql_where=sa.text("run_id IS NOT NULL"),
+    )
+    op.create_table(
+        "memory_files",
+        sa.Column("id", sa.String(length=72), nullable=False),
+        sa.Column("memory_id", sa.String(length=72), nullable=False),
+        sa.Column("path", sa.String(), nullable=False),
+        sa.Column("content", sa.String(), nullable=False),
+        sa.Column("size", sa.Integer(), nullable=False),
+        sa.Column("version", sa.BigInteger(), nullable=False),
+        sa.Column("description", sa.String(), nullable=True),
+        sa.Column("updated_by_run_id", sa.String(length=72), nullable=True),
+        sa.Column("updated_by_principal_id", sa.String(length=72), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["memory_id"],
+            ["memory_file_stores.memory_id"],
+            name=op.f("fk_memory_files_memory_id_memory_file_stores"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["updated_by_principal_id"],
+            ["principals.id"],
+            name=op.f("fk_memory_files_updated_by_principal_id_principals"),
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_memory_files")),
+        sa.UniqueConstraint("memory_id", "path", name=op.f("uq_memory_files_memory_id_path")),
+    )
+    op.create_table(
         "runs",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
@@ -1174,6 +1415,12 @@ def upgrade() -> None:
         sa.Column("options_digest", sa.String(length=64), nullable=False),
         sa.Column("mcp_headers", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("environment_mounts", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
+        sa.Column(
+            "memory_mounts",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'[]'::jsonb"),
+            nullable=False,
+        ),
         sa.Column("source_entry_id", sa.String(length=72), nullable=True),
         sa.Column("resume", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
         sa.Column("resumed_by_id", sa.String(length=72), nullable=True),
@@ -1192,6 +1439,12 @@ def upgrade() -> None:
         sa.Column("max_attempts", sa.Integer(), nullable=False),
         sa.Column("checkpoint", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
         sa.Column("display", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "memory_cursors",
+            postgresql.JSONB(astext_type=sa.Text()),
+            server_default=sa.text("'{}'::jsonb"),
+            nullable=False,
+        ),
         sa.Column("output", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
         sa.Column("failure", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
         sa.Column("usage_at_seal", postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), nullable=True),
@@ -1227,9 +1480,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "trigger IN ('input', 'queued', 'resume', 'child_result', 'spawned')", name=op.f("ck_runs_trigger")
         ),
-        sa.CheckConstraint(
-            "wait_reason IN ('approval', 'client_tool', 'user_input', 'multiple')", name=op.f("ck_runs_wait_reason")
-        ),
+        sa.CheckConstraint("wait_reason IN ('approval', 'call', 'multiple')", name=op.f("ck_runs_wait_reason")),
         sa.CheckConstraint("(request_key IS NULL) = (request_digest IS NULL)", name=op.f("ck_runs_request")),
         sa.CheckConstraint("(resume IS NULL) = (resumed_by_id IS NULL)", name=op.f("ck_runs_resumed_by")),
         sa.CheckConstraint("(source_entry_id IS NULL) <> (resume IS NULL)", name=op.f("ck_runs_source")),
@@ -1609,6 +1860,11 @@ def upgrade() -> None:
     )
     op.execute(
         """
+    CREATE TRIGGER refuse_mutation BEFORE UPDATE OR DELETE ON workspace_provisioning FOR EACH ROW EXECUTE FUNCTION refuse_mutation()
+    """
+    )
+    op.execute(
+        """
     CREATE TRIGGER stamp_resource BEFORE UPDATE ON agents FOR EACH ROW EXECUTE FUNCTION stamp_resource()
     """
     )
@@ -1670,6 +1926,16 @@ def upgrade() -> None:
     op.execute(
         """
     CREATE TRIGGER stamp_resource BEFORE UPDATE ON invitations FOR EACH ROW EXECUTE FUNCTION stamp_resource()
+    """
+    )
+    op.execute(
+        """
+    CREATE TRIGGER stamp_resource BEFORE UPDATE ON memory_providers FOR EACH ROW EXECUTE FUNCTION stamp_resource()
+    """
+    )
+    op.execute(
+        """
+    CREATE TRIGGER guard_identity BEFORE UPDATE ON memory_providers FOR EACH ROW EXECUTE FUNCTION guard_identity()
     """
     )
     op.execute(
@@ -1744,6 +2010,16 @@ def upgrade() -> None:
     )
     op.execute(
         """
+    CREATE TRIGGER stamp_resource BEFORE UPDATE ON memories FOR EACH ROW EXECUTE FUNCTION stamp_resource()
+    """
+    )
+    op.execute(
+        """
+    CREATE TRIGGER guard_identity BEFORE UPDATE ON memories FOR EACH ROW EXECUTE FUNCTION guard_identity()
+    """
+    )
+    op.execute(
+        """
     CREATE TRIGGER stamp_resource BEFORE UPDATE ON models FOR EACH ROW EXECUTE FUNCTION stamp_resource()
     """
     )
@@ -1793,6 +2069,21 @@ def upgrade() -> None:
         UPDATE threads SET updated_at = clock_timestamp() WHERE id IN (SELECT DISTINCT thread_id FROM changed);
         RETURN NULL;
     END $$
+    """
+    )
+    op.execute(
+        """
+    CREATE FUNCTION guard_thread_history() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF NEW.message_history IS DISTINCT FROM OLD.message_history
+                    THEN RAISE EXCEPTION 'thread initial history is immutable'; END IF;
+                    RETURN NEW;
+                END $$
+    """
+    )
+    op.execute(
+        """
+    CREATE TRIGGER guard_thread_history BEFORE UPDATE ON threads FOR EACH ROW EXECUTE FUNCTION guard_thread_history()
     """
     )
     op.execute(
@@ -1851,6 +2142,21 @@ def upgrade() -> None:
     )
     op.execute(
         """
+    CREATE TRIGGER touch_threads_on_memory_insert AFTER INSERT ON thread_memories REFERENCING NEW TABLE AS changed FOR EACH STATEMENT EXECUTE FUNCTION touch_threads()
+    """
+    )
+    op.execute(
+        """
+    CREATE TRIGGER touch_threads_on_memory_update AFTER UPDATE ON thread_memories REFERENCING NEW TABLE AS changed FOR EACH STATEMENT EXECUTE FUNCTION touch_threads()
+    """
+    )
+    op.execute(
+        """
+    CREATE TRIGGER touch_threads_on_memory_delete AFTER DELETE ON thread_memories REFERENCING OLD TABLE AS changed FOR EACH STATEMENT EXECUTE FUNCTION touch_threads()
+    """
+    )
+    op.execute(
+        """
     CREATE TRIGGER stamp_resource BEFORE UPDATE ON runs FOR EACH ROW EXECUTE FUNCTION stamp_resource()
     """
     )
@@ -1865,7 +2171,7 @@ def upgrade() -> None:
                         THEN RAISE EXCEPTION 'sealed run facts are immutable'; END IF;
                         RETURN NEW;
                     END IF;
-                    IF (to_jsonb(NEW) - ARRAY['status', 'wait_reason', 'pending', 'cancel_requested_at', 'current_attempt_id', 'available_at', 'attempts', 'checkpoint', 'display', 'output', 'failure', 'usage_at_seal', 'labels', 'started_at', 'sealed_at', 'version', 'updated_at']) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['status', 'wait_reason', 'pending', 'cancel_requested_at', 'current_attempt_id', 'available_at', 'attempts', 'checkpoint', 'display', 'output', 'failure', 'usage_at_seal', 'labels', 'started_at', 'sealed_at', 'version', 'updated_at'])
+                    IF (to_jsonb(NEW) - ARRAY['status', 'wait_reason', 'pending', 'cancel_requested_at', 'current_attempt_id', 'available_at', 'attempts', 'checkpoint', 'display', 'memory_cursors', 'output', 'failure', 'usage_at_seal', 'labels', 'started_at', 'sealed_at', 'version', 'updated_at']) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['status', 'wait_reason', 'pending', 'cancel_requested_at', 'current_attempt_id', 'available_at', 'attempts', 'checkpoint', 'display', 'memory_cursors', 'output', 'failure', 'usage_at_seal', 'labels', 'started_at', 'sealed_at', 'version', 'updated_at'])
                     THEN RAISE EXCEPTION 'accepted run selection is immutable'; END IF;
                     IF NEW.status <> OLD.status AND NOT (
                         (OLD.status = 'accepted' AND NEW.status IN ('running', 'failed', 'cancelled'))
@@ -1952,7 +2258,30 @@ def upgrade() -> None:
     )
     op.execute(
         """
-    CREATE TRIGGER refuse_mutation BEFORE UPDATE OR DELETE ON usage_records FOR EACH ROW EXECUTE FUNCTION refuse_mutation()
+    CREATE FUNCTION guard_usage() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+        IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'usage cannot be deleted'; END IF;
+        IF (to_jsonb(NEW) - '{record,digest}'::text[])
+            IS DISTINCT FROM (to_jsonb(OLD) - '{record,digest}'::text[])
+        THEN RAISE EXCEPTION 'usage attribution is immutable'; END IF;
+        IF NEW.record->>'kind' IS DISTINCT FROM OLD.record->>'kind'
+        THEN RAISE EXCEPTION 'usage kind is immutable'; END IF;
+        IF OLD.record->>'kind' = 'snapshot' THEN
+            IF (NEW.record->>'sequence')::bigint <= (OLD.record->>'sequence')::bigint
+            THEN RAISE EXCEPTION 'usage snapshot sequence must advance'; END IF;
+        ELSIF OLD.record->>'kind' != 'model' OR NOT EXISTS (
+            SELECT 1 FROM usage_records scope
+            WHERE scope.record->>'kind' = 'snapshot'
+              AND scope.run_attempt_id = OLD.run_attempt_id
+              AND scope.harness_run_id = OLD.harness_run_id
+        ) THEN RAISE EXCEPTION 'legacy facts and provider receipts are immutable'; END IF;
+        RETURN NEW;
+    END $$
+    """
+    )
+    op.execute(
+        """
+    CREATE TRIGGER guard_usage BEFORE UPDATE OR DELETE ON usage_records FOR EACH ROW EXECUTE FUNCTION guard_usage()
     """
     )
     # ### end Alembic commands ###
@@ -1997,6 +2326,17 @@ def downgrade() -> None:
         postgresql_where=sa.text("status IN ('accepted', 'running')"),
     )
     op.drop_table("runs")
+    op.drop_table("memory_files")
+    op.drop_index(
+        "ix_memory_file_revisions_run",
+        table_name="memory_file_revisions",
+        postgresql_where=sa.text("run_id IS NOT NULL"),
+    )
+    op.drop_index("ix_memory_file_revisions_path", table_name="memory_file_revisions")
+    op.drop_table("memory_file_revisions")
+    op.drop_index("ix_thread_memories_memory", table_name="thread_memories")
+    op.drop_table("thread_memories")
+    op.drop_table("memory_file_stores")
     op.drop_index(
         "uq_inbox_entries_request", table_name="inbox_entries", postgresql_where=sa.text("request_key IS NOT NULL")
     )
@@ -2040,6 +2380,7 @@ def downgrade() -> None:
     op.drop_table("threads")
     op.drop_table("skill_revisions")
     op.drop_table("models")
+    op.drop_table("memories")
     op.drop_table("environment_templates")
     op.drop_index(
         "uq_connections_operation", table_name="connections", postgresql_where=sa.text("operation_id IS NOT NULL")
@@ -2066,6 +2407,7 @@ def downgrade() -> None:
     op.drop_table("sessions")
     op.drop_table("passwords")
     op.drop_table("model_providers")
+    op.drop_table("memory_providers")
     op.drop_index(
         "ix_invitations_unaccepted", table_name="invitations", postgresql_where=sa.text("accepted_at IS NULL")
     )
@@ -2087,6 +2429,7 @@ def downgrade() -> None:
     op.drop_table("api_keys")
     op.drop_index("uq_agents_builtin", table_name="agents", postgresql_where=sa.text("source = 'builtin'"))
     op.drop_table("agents")
+    op.drop_table("workspace_provisioning")
     op.drop_index("ix_principals_home_workspace_id", table_name="principals")
     op.drop_table("principals")
     op.drop_index("ix_outbox_settled", table_name="outbox", postgresql_where=sa.text("status <> 'pending'"))
@@ -2094,6 +2437,11 @@ def downgrade() -> None:
     op.drop_table("outbox")
     op.drop_table("workspaces")
     op.drop_table("organizations")
+    op.execute(
+        """
+    DROP FUNCTION guard_usage() CASCADE
+    """
+    )
     op.execute(
         """
     DROP FUNCTION check_attempt_pointer() CASCADE
@@ -2112,6 +2460,11 @@ def downgrade() -> None:
     op.execute(
         """
     DROP FUNCTION guard_entry() CASCADE
+    """
+    )
+    op.execute(
+        """
+    DROP FUNCTION guard_thread_history() CASCADE
     """
     )
     op.execute(

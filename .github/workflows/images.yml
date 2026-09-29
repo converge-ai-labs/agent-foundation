@@ -170,7 +170,7 @@ jobs:
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["SANDBOX_CHANGED"] == "true":
               images.append({
                   "name": "a13n-sandbox",
-                  "runner": "ubuntu-24.04-8core",
+                  "runner": "ubuntu-24.04",
                   "file": "deploy/docker/images/sandbox/Dockerfile",
                   "image": "ghcr.io/converge-ai-labs/a13n-sandbox",
                   "context": ".",

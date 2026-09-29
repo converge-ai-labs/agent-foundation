@@ -48,7 +48,10 @@ def _complete_revision(migration: Any, revision: Any, directives: list[Any]) -> 
     for op in tables:
         op.info = {}  # The rules carried in table info render below as SQL; the info itself is dead weight.
     created = [op.table_name for op in tables]
-    script.upgrade_ops.ops.extend(_deferred_foreign_keys(script.upgrade_ops))
+    deferred = _deferred_foreign_keys(script.upgrade_ops)
+    script.upgrade_ops.ops.extend(deferred)
+    # Break the same cycles before dropping tables on downgrade.
+    script.downgrade_ops.ops[:0] = [op.reverse() for op in reversed(deferred)]
     rules: dict[str, list[str]] = context.config.attributes["rules"]
     statements = list(FUNCTIONS) if migration.get_current_revision() is None else []
     statements += [statement for table in created for statement in rules.get(table, ())]

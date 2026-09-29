@@ -1,7 +1,7 @@
-"""Turning inbox entries into the content the model reads.
+"""Turning accepted message input into the content the model reads.
 
-Each text the Service writes carries its entry ID in `TextContent` metadata, so display items of the user's input
-name the entry they came from. Assets and URL content reach the model as `attachments` decides, once the run's
+Each text the Service writes carries its source ID in `TextContent` metadata: an inbox entry ID for queued
+messages, or the successor Run ID for a resume's accompanying input. Assets and URL content reach the model as `attachments` decides, once the run's
 environments are ready to take the files it places. URL input is fetched here under the endpoint policy rather
 than by the model provider, so no provider ever fetches an address the operator did not allow.
 """
@@ -31,7 +31,7 @@ from a13n_service.tenancy.authorize import Principal
 
 @dataclass(frozen=True, slots=True)
 class Offered:
-    """An assigned entry as the worker offers it, detached from its row."""
+    """An input detached from storage. Its source ID is an inbox entry or the resuming Run itself."""
 
     id: str
     kind: str

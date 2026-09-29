@@ -92,8 +92,13 @@ def test_service_ci_runs_service_tests_and_checks() -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     jobs = workflow["jobs"]
     assert {entry["name"] for entry in jobs["validation"]["strategy"]["matrix"]["include"]} == {"checks", "tests"}
+    assert {entry["runner"] for entry in jobs["validation"]["strategy"]["matrix"]["include"]} <= {
+        "ubuntu-latest",
+        "ubuntu-24.04",
+    }
     steps = jobs["validation"]["steps"]
     test = next(step for step in steps if step["name"] == "Test a13n Service")
+    assert "-n 3 --dist loadgroup" in test["run"]
     assert "packages/a13n-service/tests" in test["run"]
     assert any(step.get("run") == "make service-boundaries" for step in steps)
     assert any(step.get("run") == "make dev-state-check" for step in steps)

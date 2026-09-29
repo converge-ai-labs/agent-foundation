@@ -6354,6 +6354,17 @@
         "title": "Message",
         "type": "object"
       },
+      "MessageHistory": {
+        "description": "Pydantic AI ModelMessage JSON objects, validated by the Service. Imports completed user text, model text and closed tool-call/JSON-result exchanges; no instructions, media or suspended execution. At most 256 messages and 256 KiB of normalized JSON.",
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "type": "object"
+        },
+        "maxItems": 256,
+        "type": "array"
+      },
       "MessagePayload": {
         "additionalProperties": false,
         "properties": {
@@ -7423,6 +7434,9 @@
             "maxItems": 32,
             "title": "Memories",
             "type": "array"
+          },
+          "message_history": {
+            "$ref": "#/components/schemas/MessageHistory"
           },
           "options": {
             "$ref": "#/components/schemas/RunOptions-Input"
@@ -8844,6 +8858,16 @@
             },
             "title": "Calls",
             "type": "object"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessagePayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -11883,6 +11907,9 @@
             "title": "Mcp Headers",
             "type": "object"
           },
+          "message_history": {
+            "$ref": "#/components/schemas/MessageHistory"
+          },
           "origin": {
             "enum": [
               "new",
@@ -11955,6 +11982,7 @@
           }
         },
         "required": [
+          "message_history",
           "id",
           "workspace_id",
           "session_id",

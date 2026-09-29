@@ -90,7 +90,9 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     tests = by_name["Test UI"]
     arguments = shlex.split(tests["run"])
     assert "scripts.run_python_tests" in arguments
-    assert int(arguments[arguments.index("--workers") + 1]) > 0
+    assert jobs["tests"]["runs-on"] == "ubuntu-24.04"
+    assert jobs["distribution"]["runs-on"] == "ubuntu-24.04"
+    assert int(arguments[arguments.index("--workers") + 1]) == 3
     assert "packages/a13n-harness-ui/tests" in arguments
     assert not any(arg.startswith("scripts/tests/") for arg in arguments)
     options = shlex.split(tests["env"]["PYTEST_ADDOPTS"])
@@ -120,6 +122,7 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
         assert command in distribution[name]["run"]
         assert "if" not in distribution[name]
     assert "/usr/bin/time -p" in distribution["Test WebUI"]["run"]
+    assert "--maxWorkers=2" in distribution["Test WebUI"]["run"]
     assert webui.index("run check") < webui.index("run test") < webui.index("run build")
     assert not any("playwright" in step.get("run", "").lower() for step in jobs["distribution"]["steps"])
     assert "scripts/tests/test_harness_ui_ci_workflow.py" in distribution["Test distribution tooling"]["run"]
