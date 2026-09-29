@@ -27,7 +27,7 @@ services:
       timeout: 3s
       retries: 30
   service:
-    image: ${A13N_SERVICE_IMAGE:-a13n-service:local}
+    image: ${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:latest}
     user: root
     # Settings as A13N_<SECTION>__<FIELD> variables over the image's defaults; add others the same way.
     environment:

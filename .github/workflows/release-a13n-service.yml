@@ -277,7 +277,7 @@ jobs:
         env:
           VERSION: ${{ needs.build-python.outputs.version }}
         run: |
-          sed "s|\${A13N_SERVICE_IMAGE:-a13n-service:local}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
+          sed "s|\${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:latest}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \
             deploy/docker/compose/a13n-service.yaml > dist/a13n-service.yaml
           grep -qF "$A13N_SERVICE_IMAGE:$VERSION}" dist/a13n-service.yaml
           sed "s|\${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:dev}|\${A13N_SERVICE_IMAGE:-$A13N_SERVICE_IMAGE:$VERSION}|" \

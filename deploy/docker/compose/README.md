@@ -27,14 +27,15 @@ The quickstart has its own Compose project and volumes, separate from the deploy
 
 `a13n-service.yaml` runs the Service with every role in one process (`run --role all`), PostgreSQL and Redis. Only the Service is published, on `127.0.0.1:8080`. It serves the Console and the API from one origin, which browsers, API clients and SDKs share. The Service migrates its schema when it starts. It uses the host Docker Engine through `/var/run/docker.sock`: the container starts as root only to join the group that owns the socket, then runs as the image's non-root `app` user. Access to this socket grants host Docker authority, so deploy only where the Service is trusted with that authority.
 
-Build the images and start the stack from the repository root:
+From the repository root, start the stack and print its Console URL after the Service becomes healthy:
 
 ```sh
-make image-a13n-service image-docker-environment
-docker compose -f deploy/docker/compose/a13n-service.yaml up -d --wait
+make compose-up
 ```
 
-Without a checkout, download `a13n-service.yaml` from a Service release and run `docker compose -f a13n-service.yaml up -d --wait` in its directory. The release's copy runs that release's published image, for `linux/amd64` or `linux/arm64`.
+The source Compose file defaults to the published `ghcr.io/converge-ai-labs/a13n-service:latest` image, so no source build is needed. The equivalent direct command is `docker compose -f deploy/docker/compose/a13n-service.yaml up -d --wait`; Compose does not print the Console URL after a detached start. To use a local build instead, run `make image-a13n-service` and then `A13N_SERVICE_IMAGE=a13n-service:local make compose-up`.
+
+Without a checkout, download `a13n-service.yaml` from a Service release and run `docker compose -f a13n-service.yaml up -d --wait` in its directory. The release's copy pins that release's image, for `linux/amd64` or `linux/arm64`.
 
 Open <http://127.0.0.1:8080> and create the first administrator with an email and a password of at least 12 characters; this signs you in. Only the first visitor can do this, and only the host itself reaches the published port. To create the administrator without a browser, run the `bootstrap` command instead, which prompts for the password:
 
@@ -45,7 +46,7 @@ docker compose -f deploy/docker/compose/a13n-service.yaml exec service \
 
 CLI bootstrap is completed by the next Service startup; if you run it inside an already running stack, restart `service` to prepare workspace defaults. The browser bootstrap prepares them before returning.
 
-`A13N_PORT` publishes another port and moves the public URL with it, and `A13N_SERVICE_IMAGE` selects another image tag; the default is the local build above. <http://127.0.0.1:8080/readyz> reports Service readiness.
+`A13N_PORT` publishes another port and moves the public URL with it; `make compose-up` prints the mapped address. `A13N_SERVICE_IMAGE` selects another image tag. Pull the Service image before starting when you want to refresh a cached `latest` tag. <http://127.0.0.1:8080/readyz> reports Service readiness at the default port.
 
 `make compose-smoke` exercises both Compose stacks on disposable projects, including initialization, sign-in and credential persistence across restarts.
 
@@ -64,7 +65,7 @@ A13N_PROVIDERS__HTTP_ORIGINS: '["http://host.docker.internal:11434"]'
 
 The stack explicitly enables Docker provisioning. When the mounted Engine answers, each new workspace automatically receives a **Docker** provider and **Linux Sandbox** template. Existing workspaces are initialized once at Service startup. Failures get two bounded retries and are logged; restart after fixing Engine access to try again. User edits, disabling and deletion of successfully initialized defaults survive restarts.
 
-The default template selects `a13n-docker-environment:local` with `pull_policy: never`. Build it with `make image-docker-environment` on the same Engine before creating an instance. It includes Python 3.13, uv, Node.js 24, pnpm and common command-line and C/C++ build tools. A missing image is reported with build/load instructions and never pulled. `A13N_DOCKER_ENVIRONMENT_IMAGE` changes the image for newly initialized workspaces. Edit existing templates through Console or the API.
+The default template selects `a13n-docker-environment:local` with `pull_policy: never`. Build it with `make image-docker-environment` on the same Engine before creating an instance, or pull the published companion at the Service's exact release version and set `A13N_DOCKER_ENVIRONMENT_IMAGE` to that image before the workspace is initialized. It includes Python 3.13, uv, Node.js 24, pnpm and common command-line and C/C++ build tools. A missing image is reported with build/load instructions and never pulled. `A13N_DOCKER_ENVIRONMENT_IMAGE` changes the image for newly initialized workspaces. Edit existing templates through Console or the API.
 
 For a registry image, set `provisioning.docker.image` to its reference and `pull_policy` to `if_missing`, using the JSON `A13N_PROVISIONING__DOCKER` override. Manually created Docker templates retain the [release-matched image defaults](../../../docs/a13n-service/environments.md#docker-image-versions) and `if_missing` policy. Existing instances keep their resolved image. Local provisioning stays off in this stack.
 
