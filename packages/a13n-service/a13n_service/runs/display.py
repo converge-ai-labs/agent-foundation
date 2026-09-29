@@ -92,6 +92,8 @@ class Display(BaseModel):
     model_config = ConfigDict(extra="forbid")
     items: list[Item] = Field(default_factory=list)
     position: StreamPosition = StreamPosition(attempt=0, sequence=0)
+    # Optional Redis resume hint; older displays and attempts without confirmed writes have none.
+    last_event_id: str | None = None
     # Items dropped from the front over the item limit.
     dropped: int = Field(default=0, ge=0)
 

@@ -9081,6 +9081,17 @@
             "title": "Items",
             "type": "array"
           },
+          "last_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event Id"
+          },
           "position": {
             "anyOf": [
               {

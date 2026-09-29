@@ -172,7 +172,7 @@ export function useRunDisplay(
       applyDelta(display, delta);
       publish();
     }
-    async function follow(threadId: string) {
+    async function follow(threadId: string, after?: string) {
       // The Thread may have moved on between the display read and the stream
       // attachment; its Run reports a seal the stream would never announce.
       const check = setInterval(() => {
@@ -186,6 +186,7 @@ export function useRunDisplay(
       try {
         for await (const next of client.streamThread(workspace.id, threadId, {
           signal,
+          after,
         })) {
           if (signal.aborted) return;
           if (next.type === "changed") {
@@ -225,7 +226,7 @@ export function useRunDisplay(
       const first = await reconcile(true);
       setState(first.complete ? "closed" : "connecting");
       if (!live) return;
-      await follow(first.run.thread_id);
+      await follow(first.run.thread_id, first.last_event_id ?? undefined);
       if (!signal.aborted) setState("disconnected");
     }
     void attach().catch((error) => {

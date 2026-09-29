@@ -111,15 +111,24 @@ def frames_schema() -> dict[str, Any]:
 # Writing
 
 
+@dataclass(frozen=True)
+class WrittenPosition:
+    """The last delta this attempt confirmed in Redis, replaced as one event-loop-local value."""
+
+    attempt: int
+    sequence: int
+    redis_id: str
+
+
 class ThreadStream:
-    """One attempt's appends and the trims its boundaries allow. A bounded buffer and a background writer keep Redis
-    latency off execution."""
+    """One attempt's buffered appends, confirmed position, and boundary-driven trims."""
 
     def __init__(self, redis: Redis, settings: Settings, *, thread_id: str, run_id: str, attempt: int):
         self.redis, self.settings = redis, settings
         self.key, self.run_id, self.attempt = stream_key(thread_id), run_id, attempt
         self.buffer: asyncio.Queue[dict[str, str]] = asyncio.Queue(WRITE_BUFFER)
         self.writer: asyncio.Task[None] | None = None
+        self.last_written: WrittenPosition | None = None
 
     async def __aenter__(self) -> "ThreadStream":
         self.writer = asyncio.create_task(self._write(), name=f"stream-{self.run_id}")
@@ -128,12 +137,22 @@ class ThreadStream:
     async def __aexit__(self, *_: object) -> None:
         assert self.writer is not None
         try:
-            async with asyncio.timeout(self.settings.redis.timeout):
-                await self.buffer.join()
-        except TimeoutError:
-            pass
+            await self.drain()
         finally:
             self.writer.cancel()
+
+    async def drain(self) -> WrittenPosition | None:
+        """Bounded checkpoint/close wait; failure keeps the previous confirmed position.
+
+        The caller pauses delta production while draining. Closing retains the final position for sealing.
+        """
+        if self.writer is not None and not self.writer.done() and not self.writer.cancelling():
+            try:
+                async with asyncio.timeout(self.settings.redis.timeout):
+                    await self.buffer.join()
+            except TimeoutError:
+                pass
+        return self.last_written
 
     def delta(self, observed: Observed) -> None:
         event = json.dumps(observed.event, separators=(",", ":"))
@@ -162,6 +181,9 @@ class ThreadStream:
             ids = await append(
                 self.redis, self.key, entries, max_length=worker.stream_length, ttl=worker.stream_ttl, timeout=timeout
             )
+            for entry_id, fields in zip(ids, entries, strict=bool(ids)):
+                if "boundary" not in fields:
+                    self.last_written = WrittenPosition(self.attempt, int(fields["sequence"]), entry_id)
             # Redis returns no IDs for entries it dropped; their boundary trims nothing.
             boundaries = [entry_id for entry_id, fields in zip(ids, entries, strict=bool(ids)) if "boundary" in fields]
             if boundaries:

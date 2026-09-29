@@ -8,10 +8,11 @@ from uuid import uuid4
 
 import pytest
 from a13n_harness import HarnessEvent
+from a13n_service.runs import stream as stream_module
 from a13n_service.runs.coalesce import MAX_MERGED_CHARS, Coalescer
 from a13n_service.runs.display import Display, DisplayFold, Observed
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.stream import ThreadStream, stream_key
+from a13n_service.runs.stream import ThreadStream, WrittenPosition, stream_key
 from a13n_service.settings import Settings
 from pydantic_ai.messages import (
     FunctionToolResultEvent,
@@ -254,6 +255,9 @@ async def test_a_streamed_reply_reaches_the_stream_coalesced(executing, scripted
     assert len(replies) <= len(pieces) // 10, replies
     listing = await runs_kit.items(executing, run["id"])
     assert runs_kit.texts(listing) == [("user", "fast"), ("assistant", "".join(pieces))]
+    last_id, last_fields = [(entry_id, fields) for entry_id, fields in entries if "boundary" not in fields][-1]
+    assert listing["last_event_id"] == last_id
+    assert listing["position"] == f"{last_fields['attempt']}-{last_fields['sequence']}"
     deltas = [int(fields["sequence"]) for _, fields in entries if "boundary" not in fields]
     assert deltas == list(range(1, len(deltas) + 1))
 
@@ -270,6 +274,104 @@ def _delta(sequence: int) -> Observed:
     return Observed(
         sequence=sequence, event={"type": "TEXT_MESSAGE_CONTENT", "messageId": "msg", "delta": str(sequence)}, item=None
     )
+
+
+@pytest.mark.parametrize("failure", ["dropped", "timeout"])
+@pytest.mark.parametrize("previous", [False, True])
+async def test_drain_keeps_only_confirmed_positions(
+    runtime: Runtime, monkeypatch: pytest.MonkeyPatch, failure: str, previous: bool
+) -> None:
+    settings = runtime.settings.model_copy(update={"redis": runtime.settings.redis.model_copy(update={"timeout": 0.1})})
+    live = ThreadStream(runtime.redis, settings, thread_id=f"thr_{uuid4().hex}", run_id=RUN, attempt=2)
+    append = stream_module.append
+    release = asyncio.Event()
+
+    async def interrupted(*args: Any, **kwargs: Any) -> list[str]:
+        if failure == "dropped":
+            return []
+        await release.wait()
+        return await append(*args, **kwargs)
+
+    async with live:
+        expected = None
+        if previous:
+            live.delta(_delta(1))
+            expected = await live.drain()
+            entries = await _entries(runtime.redis, live.key.removeprefix(stream_module.STREAM_PREFIX))
+            assert expected == WrittenPosition(2, 1, entries[0][0])
+        monkeypatch.setattr(stream_module, "append", interrupted)
+        live.delta(_delta(2))
+        try:
+            assert await live.drain() == expected
+            assert live.writer is not None and not live.writer.cancelling()
+        finally:
+            release.set()
+        await live.buffer.join()
+        monkeypatch.setattr(stream_module, "append", append)
+        live.delta(_delta(3))
+        recovered = await live.drain()
+        assert recovered is not None and recovered.sequence == 3
+        live.boundary(3)
+        assert await live.drain() == recovered  # The later boundary never replaces the delta's cursor.
+    assert await live.drain() == recovered  # Terminal persistence reads the position after close.
+
+
+async def test_running_snapshot_resumes_after_its_confirmed_delta(service, scripted_model, runs_kit, listen) -> None:  # type: ignore[no-untyped-def]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    gate = asyncio.Event()
+    scripted_model.say("Done", gate=gate)
+    submitted = await runs_kit.start_thread(service, agent, "hi")
+    run_id, thread_id = submitted["run"]["id"], submitted["thread"]["id"]
+    task = await runs_kit.attempt(service)
+    try:
+        await scripted_model.request()
+        await runs_kit.checkpointed(service, run_id)
+        listing = await runs_kit.items(service, run_id)
+        assert listing["last_event_id"] is not None and not listing["complete"]
+        position = tuple(map(int, listing["position"].split("-")))
+        headers = {**await runs_kit.bearer(service), "Last-Event-ID": listing["last_event_id"]}
+        async with (
+            listen(service.app) as base,
+            runs_kit.frames(f"{base}{service.api}/threads/{thread_id}/stream", headers) as frames,
+        ):
+            # The checkpoint notification remains useful, but its already-saved deltas are not replayed.
+            async with asyncio.timeout(10):
+                event, _, data = await anext(frames)
+            assert event == "boundary"
+            assert (data["attempt"], data["sequence"]) == position
+    finally:
+        gate.set()
+        await task
+
+
+async def test_final_snapshot_keeps_an_earlier_cursor_when_redis_writes_fail(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    agent = await runs_kit.create_agent(service, scripted_model)
+    gate = asyncio.Event()
+    scripted_model.say("Still saved", gate=gate)
+    submitted = await runs_kit.start_thread(service, agent, "hi")
+    run_id, thread_id = submitted["run"]["id"], submitted["thread"]["id"]
+    task = await runs_kit.attempt(service)
+    try:
+        await scripted_model.request()
+        await runs_kit.checkpointed(service, run_id)
+        assert (await runs_kit.items(service, run_id))["last_event_id"] is not None
+
+        async def dropped(*args: Any, **kwargs: Any) -> list[str]:
+            return []
+
+        monkeypatch.setattr(stream_module, "append", dropped)
+    finally:
+        gate.set()
+        await task
+    listing = await runs_kit.items(service, run_id)
+    assert listing["complete"] and listing["run"]["status"] == "completed"
+    assert runs_kit.texts(listing) == [("user", "hi"), ("assistant", "Still saved")]
+    entries = await _entries(service.runtime.redis, thread_id)
+    last_id, fields = [(entry_id, fields) for entry_id, fields in entries if "boundary" not in fields][-1]
+    assert listing["last_event_id"] == last_id
+    assert int(fields["sequence"]) < int(listing["position"].split("-")[1])
 
 
 async def test_a_boundary_trims_what_its_display_covers(runtime: Runtime) -> None:

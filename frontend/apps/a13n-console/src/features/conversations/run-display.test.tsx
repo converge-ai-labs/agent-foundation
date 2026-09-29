@@ -238,6 +238,7 @@ afterEach(() => {
 });
 
 it("continues the committed display with the Thread's later deltas", async () => {
+  display.last_event_id = "1720000000000-0";
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
   // The stream repeats what the display already covers before what it does not.
@@ -252,7 +253,10 @@ it("continues the committed display with the Thread's later deltas", async () =>
   expect(client.streamThread).toHaveBeenCalledWith(
     "workspace",
     "thread_one",
-    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    expect.objectContaining({
+      signal: expect.any(AbortSignal),
+      after: "1720000000000-0",
+    }),
   );
 });
 
@@ -519,6 +523,7 @@ it("re-reads the display on reconnect even when cached reads remain fresh", asyn
     run: run({ status: "completed" }),
     items: [message("Hello again", "1-0", "1-3", "completed")],
     position: "1-3",
+    last_event_id: "1720000000001-0",
     complete: true,
     dropped: 0,
   };
@@ -526,4 +531,9 @@ it("re-reads the display on reconnect even when cached reads remain fresh", asyn
   await waitFor(() => expect(text()).toBe("Hello again"));
   expect(pathRequests("/items")).toHaveLength(2);
   expect(screen.getByTestId("status").textContent).toBe("completed");
+  expect(client.streamThread).toHaveBeenLastCalledWith(
+    "workspace",
+    "thread_one",
+    expect.objectContaining({ after: "1720000000001-0" }),
+  );
 });

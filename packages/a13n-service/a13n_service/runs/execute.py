@@ -318,6 +318,7 @@ class _Attempt:
         self.usage = UsageBuffer(self.check.calls)
         self.usage_reporter = SnapshotReporter(runtime.storage, lease.run_id, lease.attempt_id, self.usage)
         self.yielding = False
+        self.live: ThreadStream | None = None
 
     async def run(self) -> None:
         try:
@@ -385,6 +386,7 @@ class _Attempt:
                     attempt=lease.number,
                 )
             )
+            self.live = live
             output = await stack.enter_async_context(
                 Coalescer(self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds)
             )
@@ -485,6 +487,7 @@ class _Attempt:
     ) -> list[Offered]:
         """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
         the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned."""
+        display = await self._display()
         if self._near_deadline():
             raise LeaseLost()
         consumed = self.offers.incorporated(state)
@@ -493,7 +496,7 @@ class _Attempt:
             self.runtime,
             self.lease,
             RunState(harness=state, seq=self.seq + 1, attempt=self.lease.number, deferred=deferred),
-            self.fold.snapshot(),
+            display,
         )
         worker = self.runtime.settings.worker
         steers: list[Offered] = []
@@ -617,8 +620,26 @@ class _Attempt:
         self.fold.interrupt()
         display = None
         if not self._near_deadline():
-            display = await checkpoints.publish_display(self.runtime, self.lease, self.fold.snapshot())
+            snapshot = await self._display()
+            if not self._near_deadline():
+                display = await checkpoints.publish_display(self.runtime, self.lease, snapshot)
         await seal_attempt(self.runtime, self.lease, outcome, display=display)
+
+    async def _display(self) -> Display:
+        """Capture the display before waiting, with a confirmed cursor no later than its position.
+
+        Boundary callers flush coalesced output and pause observation; terminal callers have closed the stream.
+        No database session is open while Redis drains, and a timeout can still use an earlier confirmed delta.
+        """
+        display = self.fold.snapshot()
+        written = await self.live.drain() if self.live is not None else None
+        if (
+            written is not None
+            and written.attempt == display.position.attempt
+            and written.sequence <= display.position.sequence
+        ):
+            display.last_event_id = written.redis_id
+        return display
 
     def _near_deadline(self) -> bool:
         """An object write must land before a takeover could clean the run's prefix, so none starts near it."""
