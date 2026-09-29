@@ -7,7 +7,7 @@ import {
   CircleNotchIcon,
   CodeIcon,
   CpuIcon,
-  DiamondIcon,
+  CubeIcon,
   DotsThreeIcon,
   FileTextIcon,
   GitBranchIcon,
@@ -153,7 +153,7 @@ const TOOL_GLYPHS: [RegExp, Icon][] = [
 export function entryGlyph(entry: TimelineEntry): Icon {
   switch (entry.kind) {
     case "model":
-      return DiamondIcon;
+      return CubeIcon;
     case "reasoning":
       return SparkleIcon;
     case "reply":

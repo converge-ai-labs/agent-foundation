@@ -26,7 +26,7 @@ import {
 } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions, JsonView } from "../../shared/forms";
-import { IconTile } from "../../shared/identity";
+import { IconTile, ResourceEditorButton } from "../../shared/identity";
 import shared from "../../shared/shared.module.css";
 import { revisionsQuery } from "./revisions";
 import { SourceIcon } from "./source";
@@ -46,9 +46,9 @@ export function ImportSkill({
     <ModalFrame
       onOpenChange={setOpen}
       trigger={
-        <Button variant="default" type="button">
-          {t(skill ? "New version" : "Import skill")}
-        </Button>
+        <ResourceEditorButton
+          createLabel={skill ? "New version" : "Import skill"}
+        />
       }
       size="lg"
       title={

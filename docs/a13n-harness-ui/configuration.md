@@ -111,6 +111,7 @@ security:
 subagents:
   include: []
 webui:
+  allowed_origins: []
   sidekick: {}
 ```
 
@@ -142,6 +143,20 @@ To keep memory without automatic requests, set `auto_organize.enabled: false`. S
 ### Media understanding
 
 `media_understanding.image`, `.video`, and `.audio` select saved Model IDs for file `view` fallback when the active Model cannot accept that media natively. Each defaults to `null`, preserving the corresponding Harness environment fallback. Configure these in **Settings → Models** or `/model defaults`. See [media understanding defaults](models-and-authentication.md#media-understanding-defaults) for precedence, capability requirements, and Run capture behavior.
+
+### WebUI allowed origins
+
+`webui.allowed_origins` adds public request addresses to the listener's existing bind-address and loopback admission rules. It defaults to `[]`. Each entry is an exact HTTP(S) origin, including any non-default port, or the literal `"*"` to allow any request address. A trailing `/` is accepted and normalized away; default ports (`80` for HTTP, `443` for HTTPS) are normalized. Paths, credentials, queries, fragments, and partial wildcards such as `https://*.example.com` are not supported.
+
+```yaml
+webui:
+  allowed_origins:
+    - "https://anui.wh1isper.top:8090/"
+```
+
+To explicitly disable address restrictions, use `allowed_origins: ["*"]`. This does not disable API-key authentication or the browser's same-origin check, and it is not a CORS allowlist. Even two configured origins cannot make cross-origin API requests to each other. Prefer exact entries when public addresses are known; `"*"` removes the Host restriction, including its protection against DNS rebinding. Existing bind-address and loopback access remains allowed independently of these entries.
+
+The listener captures this setting at startup. Restart WebUI after editing it; accepting a configuration reload does not change an active listener's access boundary. See [reverse proxies](webui.md#reverse-proxies-and-public-addresses) for HTTPS forwarding and proxy trust.
 
 ### WebUI MCP Apps
 
@@ -301,3 +316,19 @@ Changing it opens separate state; it does not migrate old sessions. Relative boo
 There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `envd_runtime`, and application shutdown timeouts are embedding/runtime settings, **not** root YAML sections. Web listener and authentication options are [process-local CLI arguments](webui.md), not resource configuration.
 
 The legacy `tools.ask_user_question_timeout_seconds` input key remains accepted. Saved configuration uses `tools.interaction_timeout_seconds`. Editing a response does not restart the Host timer; expiry denies rather than approving or inventing a result.
+
+## Outbound HTTP proxies
+
+Set standard environment variables before starting Harness UI; no YAML proxy setting is needed:
+
+```bash
+export http_proxy=http://127.0.0.1:8888
+export https_proxy=http://127.0.0.1:8888
+export no_proxy=localhost,127.0.0.1,::1
+```
+
+Uppercase forms and `ALL_PROXY` are supported. Selection and bypass matching follow `httpx2`. Host-owned Web search/scrape/fetch/download requests, remote HTTPS MCP connections and update checks honor these variables, alongside the [Model HTTP client](../a13n-harness/models.md#outbound-http-proxies). Restart the process after changing its environment. When running in a container, the proxy address must be reachable from that container.
+
+The proxy you configure is trusted outbound infrastructure. URL validation, local DNS prechecks, TLS verification, redirect checks and response limits remain in effect, but the proxy owns final DNS resolution and destination network restrictions. Web requests that connect directly, including `NO_PROXY` bypasses, retain their existing IP checks and pinning. There is no custom IP-based CONNECT protocol or fallback to direct when the proxy fails.
+
+Plaintext loopback MCP and plaintext local/provider-private Envd attachments stay direct. HTTPS Envd attachments honor proxy variables. Third-party SDK-owned transports retain their SDK's proxy behavior; daemon-initiated Envd pairing and reverse WebSocket connections are separate from the Python HTTP attachment client.

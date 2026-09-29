@@ -8,27 +8,14 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import { DeviceDirectory, useDeviceInfo } from "./device-directory";
 import { ConnectDevice } from "./connect-device";
 
-export type EnvironmentBinding = Schema<"EnvironmentBindingSelection">;
-const readOnly: Schema<"EnvironmentAction">[] = [
-  "environment.file.stat",
-  "environment.file.read_text",
-  "environment.file.read_bytes",
-  "environment.file.list",
-  "environment.file.query",
-  "environment.file.search_text",
-  "environment.file.copy_source",
-];
+import {
+  fullControl,
+  readOnly,
+  permissionLabel,
+  permissionPreset,
+} from "./environment-permissions";
 
-const computerActions: Schema<"EnvironmentAction">[] = [
-  "environment.computer.describe",
-  "environment.computer.observe",
-  "environment.computer.click",
-  "environment.computer.move",
-  "environment.computer.drag",
-  "environment.computer.scroll",
-  "environment.computer.type_text",
-  "environment.computer.press_keys",
-];
+export type EnvironmentBinding = Schema<"EnvironmentBindingSelection">;
 
 export function BindingSummary({
   bindings,
@@ -54,6 +41,7 @@ export function BindingSummary({
               ?.name ?? binding.device_id}
           </span>
           <span className="break-all">{binding.working_directory}</span>
+          <span>{permissionLabel(binding.permission_ceiling)}</span>
           {binding.permission_ceiling && (
             <details>
               <summary className="cursor-pointer text-muted-foreground">
@@ -145,9 +133,7 @@ export function EnvironmentBindings({
             </p>
             <p className="break-all text-sm">{binding.working_directory}</p>
             <p className="text-xs text-muted-foreground">
-              {binding.permission_ceiling
-                ? `${binding.permission_ceiling.operations?.length ?? 0} allowed actions`
-                : "Files and execution"}
+              {permissionLabel(binding.permission_ceiling)}
             </p>
           </div>
           <div className="flex gap-2">
@@ -324,8 +310,8 @@ function BindingEditor({
   const [deviceId, setDeviceId] = useState(initial?.device_id ?? "");
   const [alias, setAlias] = useState(initial?.alias ?? "");
   const [path, setPath] = useState(initial?.working_directory ?? "");
-  const [permission, setPermission] = useState(
-    initial?.permission_ceiling ? "existing" : "full",
+  const [permission, setPermission] = useState<string | undefined>(
+    initial ? permissionPreset(initial.permission_ceiling) : "full",
   );
   const [error, setError] = useState<Error>();
   const [connected, setConnected] = useState<Schema<"DeviceSummary">>();
@@ -382,25 +368,19 @@ function BindingEditor({
         label="Allowed actions"
         value={permission}
         onValueChange={setPermission}
+        placeholder="Keep existing permissions"
         options={[
-          ...(initial?.permission_ceiling
-            ? [{ value: "existing", label: "Keep existing action ceiling" }]
-            : []),
-          { value: "full", label: "Files and execution" },
-          { value: "read_only", label: "Read-only files" },
-          { value: "computer", label: "Desktop observation and control" },
+          { value: "read_only", label: "Read only" },
+          { value: "full", label: "Full control" },
         ]}
+        description={
+          permission === "full"
+            ? "Allows files, commands and computer use where enabled on the Device. Desktop access is not limited to this directory; screenshots may be sent to the model and saved in history."
+            : permission === "read_only"
+              ? "Read and browse files without changes, commands or desktop access."
+              : "Existing permissions stay unchanged unless you choose an option."
+        }
       />
-      {permission === "computer" && (
-        <p className="text-sm text-muted-foreground">
-          Allows screenshots and input on this Device’s shared desktop, not just
-          this directory. It does not reserve the desktop. Screenshots can be
-          sent to the configured model and retained in conversation history.
-          Requires explicit computer-use enablement in envd and
-          platform-specific desktop access. Pairing and this action ceiling do
-          not grant operating-system access.
-        </p>
-      )}
       <TextField
         label="Environment alias"
         value={alias}
@@ -437,17 +417,15 @@ function BindingEditor({
             }
             save({
               ...initial,
-              permission_ceiling: undefined,
               device_id: deviceId,
               alias,
               working_directory: path,
-              ...(permission === "read_only"
-                ? { permission_ceiling: { operations: readOnly } }
-                : permission === "computer"
-                  ? { permission_ceiling: { operations: computerActions } }
-                  : permission === "existing"
-                    ? { permission_ceiling: initial?.permission_ceiling }
-                    : {}),
+              permission_ceiling:
+                permission === "read_only"
+                  ? { operations: readOnly }
+                  : permission === "full"
+                    ? { operations: fullControl }
+                    : initial?.permission_ceiling,
             });
           }}
         >

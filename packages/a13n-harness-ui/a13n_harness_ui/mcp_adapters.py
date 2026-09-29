@@ -168,7 +168,9 @@ def _no_redirect_client(
         timeout=timeout,
         auth=auth,
         follow_redirects=False,
-        trust_env=False,
+        # Configuration allows plaintext only to literal loopback. Keep that
+        # request local even when the process has an HTTP/ALL proxy configured.
+        mounts={"http://": httpx2.AsyncHTTPTransport(trust_env=False)},
     )
 
 

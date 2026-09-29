@@ -33,6 +33,7 @@ export function DebugRunSection({
   timeline,
   index,
   resubmit,
+  jumpToDock = () => {},
 }: {
   run: Schema["RunView"];
   thread: Schema["ThreadView"];
@@ -42,6 +43,7 @@ export function DebugRunSection({
   index: number | null;
   /** Prefills the dock with this stopped Run's message, when it may be sent again. */
   resubmit?: () => void;
+  jumpToDock?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const { can, basePath } = useWorkspace();
@@ -64,11 +66,7 @@ export function DebugRunSection({
       runs: child.runs.length,
     },
     answerable: isInteractive(thread) && can("run"),
-    jumpToDock() {
-      const stage = document.querySelector("[data-session-stage]");
-      if (stage instanceof HTMLElement)
-        stage.scrollTo({ top: stage.scrollHeight, behavior: "smooth" });
-    },
+    jumpToDock,
   };
   const outcome = runOutcome(run);
   const request = runRequest(run, thread);

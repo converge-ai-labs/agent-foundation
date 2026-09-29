@@ -61,8 +61,7 @@ export function sectionName(pathname: string): string | undefined {
 }
 
 /**
- * Every route names itself in the browser: the section, the destination, the
- * workspace it belongs to, then the product.
+ * Use only the most specific page name in the browser tab.
  */
 export function usePageTitle(workspaceName?: string) {
   const { pathname } = useLocation();
@@ -70,13 +69,10 @@ export function usePageTitle(workspaceName?: string) {
   useEffect(() => {
     const section = sectionName(pathname);
     const name = pageName(pathname);
-    document.title = [
-      section && t(section),
-      name && t(name),
-      workspaceName,
-      PRODUCT,
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    document.title = section
+      ? t(section)
+      : name
+        ? t(name)
+        : (workspaceName ?? PRODUCT);
   }, [pathname, workspaceName, t, i18n.resolvedLanguage]);
 }

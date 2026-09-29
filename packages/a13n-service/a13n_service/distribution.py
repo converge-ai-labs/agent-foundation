@@ -61,6 +61,7 @@ from a13n_service.resources.subscriptions.delivery import WebhookSender
 from a13n_service.resources.subscriptions.routes import router as subscriptions_router
 from a13n_service.resources.subscriptions.tables import SubscriptionRow
 from a13n_service.resources.uploads.routes import router as uploads_router
+from a13n_service.resources.uploads.tables import UploadRow
 from a13n_service.runs.accept import ThreadAdvancer
 from a13n_service.runs.admission import AdmissionPolicy
 from a13n_service.runs.backlog import REPORT_SECONDS, BacklogReporter
@@ -276,6 +277,7 @@ OSS = Distribution(
         EnvironmentTemplateRow,
         ConnectionRow,
         SubscriptionRow,
+        UploadRow,
         AssetRow,
         SkillRow,
         SkillRevisionRow,

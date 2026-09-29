@@ -26,6 +26,54 @@ def _write_source_tree(
     return config
 
 
+@pytest.mark.parametrize(
+    "values, expected",
+    [
+        ([], ()),
+        (["*"], ("*",)),
+        (["https://anui.wh1isper.top:8090/"], ("https://anui.wh1isper.top:8090",)),
+        (["https://EXAMPLE.com:443/", "http://example.com:80"], ("https://example.com", "http://example.com")),
+        (["https://[2001:db8::1]:8090/"], ("https://[2001:db8::1]:8090",)),
+    ],
+)
+async def test_webui_allowed_origins_load_and_round_trip(
+    tmp_path: Path, values: list[str], expected: tuple[str, ...]
+) -> None:
+    path = _write_source_tree(tmp_path, root='schema_version: "1"\nwebui:\n  allowed_origins: ' + json.dumps(values))
+    original = path.read_bytes()
+    loaded = await load_harness_ui_configuration(path)
+    assert loaded.document.webui.allowed_origins == expected
+    assert type(loaded).model_validate_json(loaded.model_dump_json()) == loaded
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "example.com",
+        "https://*.example.com",
+        "https://example.com/path",
+        "ws://example.com",
+        "https://user:password@example.com",
+        "https://example.com?query=1",
+        "https://example.com#fragment",
+        "https://example.com:65536",
+        "https://example.com:not-a-port",
+        "https://exam ple.com",
+        " * ",
+    ],
+)
+async def test_webui_allowed_origins_reject_invalid_entries(tmp_path: Path, value: str) -> None:
+    path = _write_source_tree(tmp_path, root='schema_version: "1"\nwebui:\n  allowed_origins: ' + json.dumps([value]))
+    with pytest.raises(ConfigurationError):
+        await load_harness_ui_configuration(path)
+
+
+async def test_webui_allowed_origins_default_is_restricted(tmp_path: Path) -> None:
+    loaded = await load_harness_ui_configuration(_write_source_tree(tmp_path))
+    assert loaded.document.webui.allowed_origins == ()
+
+
 async def test_native_configuration_payloads_preserve_keys_values_and_whitespace(tmp_path: Path) -> None:
     payload = {
         "future_option": {"items": [1, True, None, "  keep  "]},

@@ -281,11 +281,10 @@ async def test_resume_input_survives_pre_effect_checkpoint_without_replaying_app
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(RunRow, run_id)
         pointer = checkpoints.StatePointer.model_validate(row.checkpoint)
-        organization_id = row.organization_id
         await session.execute(
             update(AttemptRow).where(AttemptRow.run_id == run_id).values(lease_expires_at=AttemptRow.created_at)
         )
-    state = await checkpoints.load_state(service.runtime.objects, organization_id, run_id, pointer)
+    state = await checkpoints.load_state(service.runtime.objects, run_id, pointer)
     assert state is not None and not state.resume_input_consumed
     assert "After approved tool" not in str(state.harness.message_history)
     await expire_leases(service.runtime, batch=10)

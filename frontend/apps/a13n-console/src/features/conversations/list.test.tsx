@@ -9,12 +9,13 @@ import { SessionList } from "./list";
 
 let client: Client;
 const requests: URL[] = [];
+let canRun = false;
 vi.mock("../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
     basePath: "/workspace/test",
-    can: () => false,
+    can: (verb: string) => verb === "run" && canRun,
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -28,7 +29,46 @@ afterEach(() => {
   cleanup();
   client.close();
   requests.length = 0;
+  canRun = false;
 });
+
+it.each([
+  ["", true, "No sessions yet", false],
+  ["?q=missing", true, "No matching sessions", true],
+  ["?status=failed", true, "No matching sessions", true],
+  ["", false, "No sessions yet", false],
+] as const)(
+  "offers session creation in the right place for %s (run permission: %s)",
+  async (search, permission, title, inHeader) => {
+    canRun = permission;
+    client = createClient({
+      baseUrl: "https://service.example",
+      auth: { type: "session" },
+      fetch: async () => Response.json({ items: [], next_cursor: null }),
+    });
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
+      >
+        <MemoryRouter initialEntries={[`/workspace/test/sessions${search}`]}>
+          <SessionList />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText(title);
+    if (!permission) {
+      expect(screen.queryByRole("link", { name: "New session" })).toBeNull();
+      return;
+    }
+    const create = screen.getByRole("link", { name: "New session" });
+    expect(!!create.closest("header")).toBe(inHeader);
+    expect(create.getAttribute("href")).toBe("/workspace/test/sessions/new");
+  },
+);
 
 const session = (text: string) => ({
   id: `sess_${text.toLowerCase()}`,

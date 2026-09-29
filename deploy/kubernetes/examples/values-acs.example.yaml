@@ -52,6 +52,7 @@ objects:
 #   backend: local
 # persistence:
 #   existingClaim: REPLACE_SHARED_OBJECTS_PVC
-# Verify S3 conditional writes before choosing an OSS endpoint. An OSS mount is not
-# automatically equivalent to the filesystem backend's hard-link and fsync operations.
+# For OSS, set objects.addressingStyle: virtual and set
+# AWS_REQUEST_CHECKSUM_CALCULATION=when_required in the Service Secret.
+# An OSS mount is not automatically equivalent to a shared filesystem.
 # Set A13N_OBJECTS__PATH_STYLE in the Secret when the S3 provider requires it.

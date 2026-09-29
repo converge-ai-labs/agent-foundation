@@ -17,7 +17,7 @@ PostgreSQL owns lifecycle, execution authority, inbox disposition and the pointe
 
 Database triggers refuse changes to facts:
 
-- `audit_events`, `agent_revisions` and `skill_revisions` refuse every update and delete; `grants` refuse updates ([03](03-tenancy.md)).
+- `audit_events`, `agent_revisions`, `skill_revisions` and `uploads` refuse every update and delete; `grants` refuse updates ([03](03-tenancy.md)).
 - `usage_records` refuse deletion and attribution changes. Legacy facts and provider receipts remain immutable; Context snapshots and their model observations follow the accounting replacement rules below.
 - Sealed runs, finished attempts and settled entries follow the guards in [05](05-runs.md#tables); a sealed run's labels are its only editable property.
 
@@ -60,22 +60,22 @@ Agent rows carry `agent_id`, `name`, `usage` and `runs`; attribution uses the ow
 
 ## Objects
 
-The object store holds immutable bytes under owner-named keys: lowercase slash-separated segments of at most 1024 characters. Its contract, on both the local and S3 backends, is create-only write, read, prefix listing and delete. A write of identical bytes to an existing key succeeds, so an uncertain write is resolved by repeating it; different bytes are refused and never replace what is stored. S3 writes use `If-None-Match: *` by default. The explicit `objects.write_mode=oss` compatibility mode uses `x-oss-forbid-overwrite: true`, handles `FileAlreadyExists` as an existing-key response, and disables optional streaming checksum trailers. It requires a bucket whose versioning has never been enabled. There is no conditional replacement and no object catalog table. A committed reference names a key, digest and size, and a read that finds missing or different bytes is `unavailable` (dependency `objects`).
+The object store holds immutable bytes under owner-named keys: lowercase slash-separated segments of at most 1024 characters. Its contract, on both the local and S3 backends, is write, read, prefix listing and delete. Every write uses a key no other write uses, ending in 128 random bits or the ID of the row that owns the bytes, so a write is a plain put: repeating an uncertain write stores the same bytes again, and two writers never meet at one key. There is no conditional write and no object catalog table; only committed references make bytes reachable. A committed reference names a key, digest and size, and a read that finds missing or different bytes is `unavailable` (dependency `objects`).
 
-| Key                                      | Owner                                                                     |
-| ---------------------------------------- | ------------------------------------------------------------------------- |
-| `orgs/{org}/runs/{run}/state/{digest}`   | A run's checkpoint state                                                  |
-| `orgs/{org}/runs/{run}/display/{digest}` | A run's display                                                           |
-| `orgs/{org}/uploads/{upload}`            | Upload bytes and their receipt ([04](04-resources.md#uploads-and-assets)) |
-| `orgs/{org}/images/{owner}/{digest}`     | Organization, workspace and agent images ([03](03-tenancy.md#images))     |
-| `users/{user}/images/{digest}`           | User avatars                                                              |
+| Key                                                | Owner                                                                 |
+| -------------------------------------------------- | --------------------------------------------------------------------- |
+| `orgs/{org}/runs/{run}/state/{attempt}/{random}`   | A run's checkpoint state, written by that attempt                     |
+| `orgs/{org}/runs/{run}/display/{attempt}/{random}` | A run's display, written by that attempt                              |
+| `orgs/{org}/uploads/{upload}`                      | Upload bytes ([04](04-resources.md#uploads-and-assets))               |
+| `orgs/{org}/images/{owner}/{random}`               | Organization, workspace and agent images ([03](03-tenancy.md#images)) |
+| `users/{user}/images/{random}`                     | User avatars                                                          |
 
 Publication writes the bytes outside any database session, then commits the reference. Paired state/display publication finishes both writes before reporting a failure, so failure sealing cannot race its still-running write. A failure between the two leaves an unused object.
 
 **Run state and display cleanup is owner-driven.** Only a run's own attempts write under its prefix, and only its pointers make an object reachable:
 
-1. A checkpoint transaction stages a `checkpoint_cleanup` outbox delivery for provably replaced objects alongside the pointer change. Rollback publishes neither the references nor the reclamation intent. Boundary acknowledgement and successor acceptance do not wait for deletion. State sequences and display positions advance monotonically; a replaced display at the same position is retained until seal because its digest may recur.
-2. A takeover stages a scan of older attempts' state objects, keeping the captured committed reference and skipping state from the new or later attempts. It does not block execution or consume run attempts on deletion failure. Active display prefixes are not scanned: their unreferenced same-position bytes may still recur. Every seal stages a full prefix scan preserving its final references, including a display without a state checkpoint.
+1. A checkpoint transaction stages a `checkpoint_cleanup` outbox delivery for the objects its pointer change replaced, alongside the pointer change. Rollback publishes neither the references nor the reclamation intent. Boundary acknowledgement and successor acceptance do not wait for deletion. A replaced key is never written again, so its deletion is final.
+2. A takeover stages a scan of the run prefix that deletes the objects of earlier attempts, read from each key's attempt segment, keeping the captured committed references. Objects of the new or later attempts are skipped because no pointer may name them yet. The scan does not block execution or consume run attempts on deletion failure. Every seal stages a full prefix scan preserving its final references, including a display without a state checkpoint.
 3. Each delivery has one total `objects.timeout` I/O budget. A scan lists at most 1000 keys in lexicographic order per claim. It records the last completed key and defers remaining work in a fenced outbox transaction; deferral returns its attempt. Failure retries the same page safely because deletion is idempotent. A deadline with no progress counts as failure. Interruption leaves durable work for another sender; exhausted retries become visible dead deliveries, not a guarantee of unlimited retries.
 4. No attempt starts an object write within `objects.timeout` of its local lease deadline. A stale attempt cannot commit its late bytes. Referenced state is protected during takeover; final scans run only after seal has made the references immutable.
 
@@ -83,11 +83,11 @@ This adds at most one small outbox row per checkpoint that replaces a reclaimabl
 
 A run normally holds one state and one display object, plus replaced objects awaiting reclamation. Objects named by frozen pointers are never deleted: a completed or waiting run keeps its final pair because fork and continuation start from it, and a failed or cancelled run keeps its last pair as inspection evidence.
 
-There is no other object reclamation: no age-based upload expiry, orphan inventory or physical purge of history, assets or images. Unused uploads and replaced images stay stored; upload limits still apply.
+There is no other object reclamation: no age-based upload expiry, orphan inventory or physical purge of history, assets or images. Unused uploads, the bytes of an upload that lost a concurrent request key, and replaced images stay stored; upload limits still apply.
 
 ## Checkpoints and display
 
-A **state object** holds the checkpoint format (currently 1), the Harness state, the checkpoint sequence, the attempt number that wrote it, whether the resume's optional input has been incorporated, and for a waiting run the Harness's deferred requests. `runs.checkpoint` points at it with `{digest, size, format, seq, attempt}`; `runs.display` points at the display with `{digest, size, format, position}`. A checkpoint of a newer format waits for a worker that reads it; an older one fails its run ([05](05-runs.md#claim-heartbeat-and-authority)). [05](05-runs.md#assignment-and-incorporation) owns incorporation and the checkpoint commit, which also stores the run's memory cursors in `runs.memory_cursors`, outside the state object ([11](11-memory.md#execution)).
+A **state object** holds the checkpoint format (currently 1), the Harness state, the checkpoint sequence, the attempt number that wrote it, whether the resume's optional input has been incorporated, and for a waiting run the Harness's deferred requests. `runs.checkpoint` points at it with `{key, digest, size, format, seq, attempt}`; `runs.display` points at the display with `{key, digest, size, format, position}`. A checkpoint of a newer format waits for a worker that reads it; an older one fails its run ([05](05-runs.md#claim-heartbeat-and-authority)). [05](05-runs.md#assignment-and-incorporation) owns incorporation and the checkpoint commit, which also stores the run's memory cursors in `runs.memory_cursors`, outside the state object ([11](11-memory.md#execution)).
 
 A **display** is folded from the AG-UI events the worker streams, never reconstructed from message history. It is the ordered list of the run's items, the number of earliest items `dropped` over its item limit, and the stream position `{attempt}-{sequence}` it covers. Every checkpoint commit writes the whole display as a new object, so the durable view always describes exactly the restored history, and output after recovery continues it. Output streamed after the last checkpoint is provisional; a crash removes it from the durable view and the next attempt regenerates it.
 

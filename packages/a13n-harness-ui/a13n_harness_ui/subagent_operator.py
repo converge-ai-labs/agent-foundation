@@ -73,7 +73,7 @@ from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc
 from anyio.abc import TaskGroup
 from opentelemetry.trace import Span
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from pydantic_ai import ToolDenied, ToolReturn
+from pydantic_ai import ToolDenied
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
@@ -211,7 +211,6 @@ class _PreparedSegment:
     stream: HarnessRunStream[Any]
     agent_instance_id: str
     display: CompactChildDisplay
-    accepted_input: DeferredToolResume | None = None
 
 
 class _SubagentRequestError(RunCoordinationError):
@@ -903,7 +902,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
             stream=stream,
             agent_instance_id=agent_instance_id,
             display=checkpoint.display,
-            accepted_input=accepted,
         )
         try:
             await self._start_segment(prepared)
@@ -1010,7 +1008,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 stream=stream,
                 agent_instance_id=agent_instance_id,
                 display=checkpoint.display,
-                accepted_input=accepted,
             )
             await self._start_segment(prepared)
         except BaseException as exc:
@@ -1153,7 +1150,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         stream=next_stream,
                         agent_instance_id=current.agent_instance_id,
                         display=display,
-                        accepted_input=accepted,
                     )
                     continue
                 record_output(result.output, status=result.status)
@@ -1163,7 +1159,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     display,
                     expected_checkpoint,
                     terminal_events,
-                    accepted=current.accepted_input,
+                    accepted=current.stream.pending_deferred_input,
                     memory_positions=current.reconstructed.memory_cursors.snapshot(),
                 )
                 await self._publish_summary(current.head)
@@ -1197,7 +1193,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         run_id=current.stream.run_id,
                         state=state,
                         deferred_requests=None,
-                        accepted=current.accepted_input,
+                        accepted=current.stream.pending_deferred_input,
                         display=active.display,
                         terminal=True,
                     )
@@ -1249,7 +1245,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             run_id=prepared.stream.run_id,
             state=state,
             deferred_requests=None,
-            accepted=prepared.accepted_input,
+            accepted=prepared.stream.pending_deferred_input,
             display=active.display,
             terminal=True,
         )
@@ -2097,20 +2093,10 @@ def _async_view(
 
 
 def _deny_deferred(requests: DeferredToolRequests) -> DeferredToolResume:
-    calls: dict[str, Any] = {}
-    for request in requests.calls:
-        if request.tool_name == "ask_user_question":
-            calls[request.tool_call_id] = {
-                "answers": {},
-                "response": "No user response is available to an asynchronous child execution.",
-            }
-        else:
-            calls[request.tool_call_id] = ToolReturn(
-                {
-                    "status": "unavailable",
-                    "reason": "Deferred interaction is unavailable to async child runs.",
-                }
-            )
+    calls: dict[str, Any] = {
+        request.tool_call_id: ToolFailed("Deferred interaction is unavailable to an asynchronous child execution.")
+        for request in requests.calls
+    }
     approvals: dict[str, bool | DeferredToolApprovalResult] = {
         request.tool_call_id: ToolDenied("Approval is unavailable to an asynchronous child execution.")
         for request in requests.approvals

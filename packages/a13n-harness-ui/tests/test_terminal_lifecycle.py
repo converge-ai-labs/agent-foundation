@@ -135,7 +135,7 @@ async def test_update_checker_is_bounded_public_and_failure_tolerant(
         return httpx2.Response(200, json={"info": {"version": "2.0"}})
 
     def client(**kwargs):
-        assert kwargs["trust_env"] is False
+        assert kwargs.get("trust_env", True) is True
         assert kwargs["timeout"] == 2
         return original(transport=httpx2.MockTransport(respond), **kwargs)
 

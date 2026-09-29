@@ -60,13 +60,13 @@ Redis holds rate-limit counters, worker wakeups and provisional thread-stream ev
 
 ### Objects
 
-`objects.backend = "local"` stores objects under `objects.root`; a relative path resolves from the working directory. Every Service process must see the same directory, so use it for a single host or a shared volume. `objects.backend = "s3"` uses an S3-compatible bucket: set `bucket`, and as needed `prefix`, `region`, `endpoint_url` and `path_style` (for stores that address buckets by path, such as MinIO). Without `access_key_id` and `secret_access_key`, the default AWS credential chain applies. The store must support conditional create-only writes (`If-None-Match: *`); the Service never overwrites an object.
+`objects.backend = "local"` stores objects under `objects.root`; a relative path resolves from the working directory. Every Service process must see the same directory, so use it for a single host or a shared volume. `objects.backend = "s3"` uses an S3-compatible bucket: set `bucket`, and as needed `prefix`, `region`, `endpoint_url` and `path_style` (for stores that address buckets by path, such as MinIO). Without `access_key_id` and `secret_access_key`, the default AWS credential chain applies. The Service writes every object once under a new key, so the store needs only plain reads, writes, listing and deletes.
 
 `objects.max_bytes` bounds one stored object. `objects.upload_bytes` bounds one upload, and `upload_limit` per `upload_window_seconds` bounds uploads per principal.
 
 Use `objects.addressing_style` to select `auto` (SDK selection), `path` (`endpoint/bucket/key`) or `virtual` (`bucket.endpoint/key`). Virtual addressing requires compatible bucket names, DNS and TLS certificates; use it for providers such as Alibaba Cloud OSS that require bucket subdomains. When omitted, the existing `path_style` behavior remains: `true` forces `path`, and `false` uses `auto`. An explicit addressing style takes precedence over `path_style=false`; `path_style=true` together with `auto` or `virtual` fails configuration validation. For Helm, set `objects.addressingStyle`; environment overrides use `A13N_OBJECTS__ADDRESSING_STYLE`.
 
-For Alibaba Cloud OSS, also set `objects.write_mode = "oss"` (environment: `A13N_OBJECTS__WRITE_MODE=oss`; Helm: `objects.writeMode: oss`). This uses the native `x-oss-forbid-overwrite: true` header and disables optional streaming checksum trailers. The default `s3` mode keeps `If-None-Match: *`. Both modes accept identical retries and reject different bytes at an existing key. OSS mode requires `backend = "s3"`, permission to read bucket versioning (`oss:GetBucketVersioning`), and a bucket whose versioning has never been enabled: startup checks and rejects enabled or suspended versioning. Keep versioning disabled for the lifetime of this store. No new SDK or credentials are required.
+For S3-compatible providers that reject optional streaming checksum trailers, including Alibaba Cloud OSS, set the standard AWS SDK environment variable `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` on every Service process. This works for local, Docker and Kubernetes deployments; with Helm, include it in the environment file used to create `existingSecret`. It leaves checksums required by an operation enabled and does not change Service digest verification. When unset, SDK defaults apply. OSS needs no native write header or bucket-versioning check: the same plain `PutObject` path serves every provider. Remove the earlier experimental `objects.write_mode` / `A13N_OBJECTS__WRITE_MODE` / Helm `objects.writeMode` setting when upgrading from this branch.
 
 ### Encryption keys
 
@@ -115,7 +115,23 @@ Every request the Service makes to a provider, a remote MCP server, an OAuth ser
 - URLs use `http` or `https` and carry no user information, fragment or credential-like query parameter.
 - With `providers.require_https = true` (the default), plain HTTP is refused except for the exact origins listed in `providers.http_origins`.
 - Private, loopback and link-local destinations are refused unless the host matches `providers.private_domains` (subdomains included) or the resolved address is in `providers.private_cidrs`. Cloud metadata addresses are always refused.
-- Addresses are checked after DNS resolution on every new connection, redirects are not followed, compressed responses are refused, and response bodies are bounded by `providers.response_bytes`.
+- On direct host-owned HTTP connections, addresses are checked after DNS resolution and only checked addresses are dialed. Redirects are not followed, compressed responses are refused, and response bodies are bounded by `providers.response_bytes`.
+
+### Outbound proxies
+
+Set standard proxy environment variables on each Service process or container that needs outbound access; no `A13N_` prefix or TOML proxy setting is needed:
+
+```bash
+export http_proxy=http://proxy.example.com:8080
+export https_proxy=http://proxy.example.com:8080
+export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
+```
+
+Uppercase forms and `ALL_PROXY` are supported; selection and bypass matching follow `httpx2`. An HTTP proxy URL can carry HTTPS traffic through CONNECT. Models, Remote MCP/OAuth, connectors, record memory, web requests, model catalogs, webhooks and other callers of the host HTTP client use these routes.
+
+**The deployment operator's proxy is trusted outbound infrastructure.** Request URL validation and TLS verification remain enabled, but the proxy owns final DNS and destination network restrictions. Application-level DNS/IP pinning and final-address blocking apply to direct connections, including `NO_PROXY`, not to the proxy's outgoing connection. Configure restrictions on the proxy when needed. Existing endpoint prechecks can still require local DNS. A failed proxy request does not silently fall back to direct.
+
+HTTPS Envd attachments also use environment proxies; plaintext local/provider-private Envd links remain direct. Other SDK-owned environment and storage transports retain their own proxy behavior. This does not change the Envd controlled-egress broker or its execution isolation policy.
 
 API-serving processes also read the public model catalog from `https://models.dev/catalog.json`, at most every 60 seconds by default, for the Console's model picker. Without access to it, the catalog is unavailable and models are added by ID.
 

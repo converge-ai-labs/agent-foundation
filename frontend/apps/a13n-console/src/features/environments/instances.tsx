@@ -25,6 +25,7 @@ import { FormActions } from "../../shared/forms";
 import { ProviderIcon } from "../../shared/identity";
 import { PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
+import { ManageProvidersLink } from "../providers/manage-link";
 import {
   createManagedEnvironment,
   environmentApi,
@@ -84,6 +85,9 @@ export function EnvironmentInstances() {
   }
   return (
     <div className={styles.stack}>
+      <PageActions secondary>
+        <ManageProvidersLink category="environments" />
+      </PageActions>
       <PageActions>{can("write") && <CreateEnvironment />}</PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
@@ -166,6 +170,7 @@ export function EnvironmentInstances() {
             description={t(
               "Choose an environment template when starting a conversation, or register an external environment.",
             )}
+            action={can("write") && <CreateEnvironment />}
           />
         )
       )}
@@ -188,7 +193,7 @@ function CreateEnvironment() {
     <ModalFrame
       onOpenChange={setOpen}
       trigger={
-        <Button variant="outline" type="button">
+        <Button type="button">
           <PlusIcon aria-hidden="true" />
           {t("Create environment")}
         </Button>

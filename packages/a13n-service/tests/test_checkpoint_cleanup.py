@@ -9,6 +9,7 @@ from a13n_harness import HarnessState
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.outbox import Delivery, OutboxRow, claim
 from a13n_service.runs import checkpoints
+from a13n_service.runs.attempts import Lease
 from a13n_service.runs.checkpoints import CLEANUP, Committed, DisplayPointer, RunState, StatePointer
 from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.tables import RunRow
@@ -16,22 +17,28 @@ from sqlalchemy import func, select, update
 
 pytestmark = pytest.mark.anyio
 
+RUN_ID = "run_cleanup"
 
-def _committed(sequence: int, *, position: int | None = None) -> Committed:
+
+def _committed(tenant, sequence: int) -> Committed:  # type: ignore[no-untyped-def]
+    def key(kind: checkpoints.ObjectKind) -> str:
+        return f"{checkpoints.prefix(tenant.organization_id, RUN_ID, kind)}/1/{sequence:032x}"
+
     return Committed(
-        state=StatePointer(digest=f"{sequence:064x}", size=0, format=1, seq=sequence, attempt=1),
+        state=StatePointer(key=key("state"), digest=f"{sequence:064x}", size=0, format=1, seq=sequence, attempt=1),
         display=DisplayPointer(
+            key=key("display"),
             digest=f"{sequence + 100:064x}",
             size=0,
             format=1,
-            position=StreamPosition(attempt=1, sequence=sequence if position is None else position),
+            position=StreamPosition(attempt=1, sequence=sequence),
         ),
     )
 
 
 def _run(tenant, committed: Committed | None = None) -> RunRow:  # type: ignore[no-untyped-def]
     return RunRow(
-        id="run_cleanup",
+        id=RUN_ID,
         organization_id=tenant.organization_id,
         workspace_id=tenant.workspace_id,
         checkpoint=committed.state.model_dump() if committed else None,
@@ -48,35 +55,22 @@ async def _deliver(runtime) -> None:  # type: ignore[no-untyped-def]
     )()
 
 
-async def test_same_position_display_is_kept_until_durable_seal_cleanup(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
-    previous, committed = _committed(1, position=1), _committed(2, position=1)
+async def test_commit_retires_replaced_objects_and_seal_keeps_the_pointers(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
+    previous, committed = _committed(tenant, 1), _committed(tenant, 2)
     run = _run(tenant, committed)
-    for kind, pointer in (
-        ("state", previous.state),
-        ("display", previous.display),
-        ("state", committed.state),
-        ("display", committed.display),
-    ):
-        await runtime.objects.put(
-            f"{checkpoints.prefix(run.organization_id, run.id, kind)}/{pointer.digest}",
-            b"",
-            content_type="application/json",
-        )
+    for pointer in (previous.state, previous.display, committed.state, committed.display):
+        await runtime.objects.put(pointer.key, b"", content_type="application/json")
     async with transaction(runtime.storage) as session:
         checkpoints.retire(session, run, previous, committed)
     await _deliver(runtime)
-    old_display = f"{checkpoints.prefix(run.organization_id, run.id, 'display')}/{previous.display.digest}"
-    assert await runtime.objects.get(old_display) == b""
+    assert await runtime.objects.get(previous.state.key) is None
+    assert await runtime.objects.get(previous.display.key) is None
     async with transaction(runtime.storage) as session:
         checkpoints.reclaim(session, run)
     # A new sender can deliver the committed intent without any memory from the producer.
     await _deliver(replace(runtime))
-    assert await runtime.objects.get(old_display) is None
-    for kind, pointer in (("state", committed.state), ("display", committed.display)):
-        assert (
-            await runtime.objects.get(f"{checkpoints.prefix(run.organization_id, run.id, kind)}/{pointer.digest}")
-            == b""
-        )
+    for pointer in (committed.state, committed.display):
+        assert await runtime.objects.get(pointer.key) == b""
 
 
 async def test_rollback_does_not_delete_and_expired_claim_is_recovered(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
@@ -105,12 +99,12 @@ async def test_rollback_does_not_delete_and_expired_claim_is_recovered(runtime, 
 
 async def test_scan_continues_past_a_page_and_keeps_display_without_state(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
     run = _run(tenant)
-    run.display = _committed(1).display.model_dump(mode="json")
+    run.display = _committed(tenant, 1).display.model_dump(mode="json")
     prefix = checkpoints.prefix(run.organization_id, run.id, "display")
-    kept = f"{prefix}/{run.display['digest']}"
+    kept = run.display["key"]
     await runtime.objects.put(kept, b"", content_type="application/json")
     for i in range(1005):
-        await runtime.objects.put(f"{prefix}/orphan-{i:04d}", b"", content_type="application/json")
+        await runtime.objects.put(f"{prefix}/1/orphan-{i:04d}", b"", content_type="application/json")
     async with transaction(runtime.storage) as session:
         checkpoints.reclaim(session, run)
     await _deliver(runtime)
@@ -124,23 +118,26 @@ async def test_scan_continues_past_a_page_and_keeps_display_without_state(runtim
         assert row.status == "delivered" and row.attempts == 1
 
 
-async def test_takeover_scan_cannot_delete_the_active_attempts_uncommitted_state(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
+async def test_takeover_scan_deletes_only_earlier_attempts_unreferenced_objects(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
     run = _run(tenant)
 
-    async def publish(attempt: int) -> str:
-        state = RunState(harness=HarnessState.new(thread_id="thr_test"), seq=1, attempt=attempt)
-        return (
-            await checkpoints.publish(
-                runtime.objects, run.organization_id, run.id, "state", state.model_dump_json().encode()
-            )
-        ).key
+    async def publish(attempt: int, kind: checkpoints.ObjectKind) -> str:
+        lease = Lease(run.id, f"rat_{attempt}", "thr_test", run.organization_id, run.workspace_id, attempt, "w", "t")
+        return (await checkpoints.publish(runtime.objects, lease, kind, b"{}")).key
 
-    old = await publish(1)
+    kept, orphan_state, orphan_display = (
+        await publish(1, "state"),
+        await publish(1, "state"),
+        await publish(1, "display"),
+    )
+    run.checkpoint = StatePointer(key=kept, digest="0" * 64, size=2, format=1, seq=1, attempt=1).model_dump()
     async with transaction(runtime.storage) as session:
         checkpoints.reclaim(session, run, before_attempt=2)
-    new = await publish(2)  # Published after the intent, not yet referenced by a row.
+    new = await publish(2, "display")  # Published after the intent, not yet referenced by a row.
     await _deliver(runtime)
-    assert await runtime.objects.get(old) is None
+    assert await runtime.objects.get(orphan_state) is None
+    assert await runtime.objects.get(orphan_display) is None
+    assert await runtime.objects.get(kept) is not None
     assert await runtime.objects.get(new) is not None
 
 
@@ -186,7 +183,6 @@ async def test_scan_budget_persists_progress_and_a_stalled_store_uses_retry_budg
 
 async def test_a_failed_publication_cannot_leave_another_write_behind_seal(runtime, tenant, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from a13n_service.infra.errors import ServiceError
-    from a13n_service.runs.attempts import Lease
     from a13n_service.runs.display import Display
 
     started, release = asyncio.Event(), asyncio.Event()

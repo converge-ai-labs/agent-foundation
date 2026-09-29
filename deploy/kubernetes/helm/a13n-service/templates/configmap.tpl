@@ -37,7 +37,6 @@ data:
     {{- with .Values.objects.addressingStyle }}
     addressing_style = {{ toJson . }}
     {{- end }}
-    write_mode = {{ toJson .Values.objects.writeMode }}
     {{- end }}
     {{- with .Values.extraConfig }}
     {{- . | nindent 4 }}

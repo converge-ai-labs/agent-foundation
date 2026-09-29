@@ -83,6 +83,10 @@ Hosts project this declaration alongside the configuration and credential schema
 
 A definition never stores durable state, chooses retention, or associates a Thread. Acquiring a live resource is a separate explicit call that returns a scoped object owned by the caller.
 
+### Default HTTP Proxy Routing
+
+The default Web, Connector and Memory HTTP clients honor standard `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` environment variables and lowercase forms through the HTTP library. Endpoint validation, redirect restrictions, response bounds and existing retry semantics remain in effect; enabling a proxy adds no mutation retries. The deployment operator's proxy owns final DNS resolution and destination network policy. Local endpoint checks do not imply that the proxy connects to the locally resolved address. Explicitly injected clients retain their owner's routing policy. [Model transport](16-input-model-and-output.md#model-construction-and-resolution) owns the Model-specific retry and custom-transport behavior.
+
 ### Connector Tool Versions
 
 A Connector runtime exposes `tool_catalog(connector_key, *, provider_version=None)`. An explicit version selects that exact upstream tool definition version for every directory page and sparse detail request. Invalid or unavailable versions and mismatched response identities fail without selecting another version. Omitting the argument discovers the current catalogue and holds its selected version across subsequent pages. Runtime implementations, including installed plugins, accept the keyword; this requirement also applies to implementations that support only one version.

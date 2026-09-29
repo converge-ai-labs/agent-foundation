@@ -47,7 +47,7 @@ Create the model in `/api/v1/models` with its `config`:
     "model_name": "llama3.3",
     "model_api": "ollama.chat_completions",
     "characteristics": {"capabilities": ["image_understanding"], "context_window_tokens": 131072},
-    "max_tokens": 4096
+    "settings": {"max_tokens": 4096}
   }
 }
 ```
@@ -55,18 +55,23 @@ Create the model in `/api/v1/models` with its `config`:
 - `provider_id` names a model provider of the workspace, whose credential the model spends.
 - `key` identifies the model in its workspace: in paths such as `/api/v1/models/local-llama`, in agent configurations and in usage. It defaults to the provider's type and the upstream model name joined by `-`, lowercased, with any other character a [key](resources.md#common-conventions) cannot hold replaced by `-` (`ollama-llama3.3` for an `ollama` provider here); set it when that is already taken (`409 already_exists`). It never changes.
 - `config.model_name` is the upstream model name, and `config.model_api` must be one of the provider type's model APIs.
-- `config.characteristics` declares the context window, context-management thresholds and `capabilities`: `image_understanding`, `video_understanding`, `audio_understanding`, and `document_understanding` for PDF documents. Optional `max_tokens`, `temperature` and `top_p` are defaults that an agent's `model_settings` can override.
+- `config.characteristics` declares the context window, context-management thresholds and `capabilities`: `image_understanding`, `video_understanding`, `audio_understanding`, and `document_understanding` for PDF documents.
+- `config.settings` holds native request defaults, such as `thinking`, `max_tokens` or `openai_reasoning_summary`. An Agent's `model_settings` can override them. Existing flat `max_tokens`, `temperature`, `top_p`, `extra_body` and `extra_headers` remain supported; if also present in `settings`, the native entry wins by key, without a recursive merge.
 - `pricing` prices the model's own calls in usage records; catalog items carry one to copy. The provider and model it names only record where the prices came from, so a catalog price copied for another endpoint's upstream model ID still applies.
 - `catalog_ref`, such as `{"provider": "openai", "model": "gpt-5.5"}`, optionally records the catalog item's `ref` the model started from. Console uses it for the model's icon and name; the Service never checks it against the catalog.
 - `enabled: false` creates the model disabled.
 
 A model spends its provider's credential, so creating a model or changing its `config` needs `write` on the provider as well. The provider and model belong to the same workspace.
 
-Change a model with `PATCH /api/v1/models/{key}` (`name`, `description`, `config`, `pricing`, `catalog_ref`, `enabled`) and its `If-Match`, `"{key}:{version}"`. Disable it with `{"enabled": false}`; models have no delete operation. Model-API-specific settings, such as reasoning effort, belong to the agent revision that uses the model (`model_settings`), where they are validated against the provider type's `settings_schemas`. These schemas leave out operator timeouts, upstream model selection and provider-account conversation state (such as `openai_previous_response_id`, `bedrock_inference_profile`, `openrouter_models` or auxiliary `openai_moderation` models), and server-side tools such as `openai_native_tools`, which `max_usage` cannot fully account for.
+Change a model with `PATCH /api/v1/models/{key}` (`name`, `description`, `config`, `pricing`, `catalog_ref`, `enabled`) and its `If-Match`, `"{key}:{version}"`. Disable it with `{"enabled": false}`; models have no delete operation. Model-API-specific settings, such as reasoning effort, can be shared Model defaults (`config.settings`) or Agent revision overrides (`model_settings`). Both are validated against the provider type's `settings_schemas`. These schemas leave out operator timeouts, upstream model selection and provider-account conversation state (such as `openai_previous_response_id`, `bedrock_inference_profile`, `openrouter_models` or auxiliary `openai_moderation` models), and server-side tools such as `openai_native_tools`, which `max_usage` cannot fully account for.
 
 ### Advanced request settings
 
-Use **Advanced → Settings JSON** on a Model, or **Provider-specific settings** on an Agent. Both accept `extra_headers`; `openai.responses` and `openai.chat_completions` also accept `extra_body` for inference options the installed SDK does not yet know:
+A Model's **Advanced** section offers Thinking effort and Max output tokens, plus Reasoning summary and Store response for OpenAI Responses. These fields edit the same draft as **Settings JSON**, where other native parameters remain available. Leaving a field at its default does not force a reasoning effort or output budget; choose values supported by your upstream model. Model defaults apply to agents using that Model, including reviewers and media understanding using their own selected Models.
+
+For `openai.responses`, **Store response defaults to off**, even on existing Models that never set `openai_store`. Set `openai_store: true` to opt in, or `null` to delegate to the provider. This controls upstream response storage, not the Service's own run history or the provider's other retention policies. Agent and Run settings can override the default. Other calling APIs retain their existing storage behavior.
+
+The API equivalent of a Model's Settings JSON is `config.settings`. On an Agent, use **Provider-specific settings** for `model_settings`. Both accept `extra_headers`; `openai.responses` and `openai.chat_completions` also accept `extra_body` for inference options the installed SDK does not yet know:
 
 ```json
 {

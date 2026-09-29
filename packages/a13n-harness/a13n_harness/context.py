@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from a13n_harness.tools._output import _ToolResultSpillStore
     from a13n_harness.tools.approval import ToolApprovalContext
     from a13n_harness.tools.client import ClientToolsetDefinition
-    from a13n_harness.tools.deferred import DeferredToolResume
+    from a13n_harness.tools.deferred import DeferredInputState, DeferredToolResume
     from a13n_harness.tools.permission_gate import PermissionCheck
     from a13n_harness.toolsets.documents import DocumentConverter
     from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
@@ -378,6 +378,7 @@ class AgentContext:
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
     deferred_tools_supported: bool = True
+    _deferred_input: DeferredInputState | None = field(default=None, repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
     _model_recovery: ModelRecoveryState = field(default_factory=ModelRecoveryState, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None

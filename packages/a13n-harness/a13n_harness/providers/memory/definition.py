@@ -64,9 +64,7 @@ class MemoryProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition[C,
         async def check_request(request: httpx2.Request) -> None:
             await policy.validate(str(request.url))
 
-        client = httpx2.AsyncClient(
-            timeout=30, follow_redirects=False, trust_env=False, event_hooks={"request": [check_request]}
-        )
+        client = httpx2.AsyncClient(timeout=30, follow_redirects=False, event_hooks={"request": [check_request]})
         try:
             async with self.open_store(parsed, secret, namespace, client) as store:
                 yield store

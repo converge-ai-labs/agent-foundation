@@ -24,7 +24,7 @@ from a13n_service.infra.db import Storage, assign, short_session, transaction, u
 from a13n_service.infra.errors import disabled, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import KEY_MAX_LENGTH, new_object_id
-from a13n_service.providers.model_settings import check_request_headers
+from a13n_service.providers.model_settings import check_request_headers, effective_settings
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.models.schemas import Model, ModelConfig, ModelCreate, ModelPage, ModelUpdate
 from a13n_service.resources.models.tables import ModelRow
@@ -227,7 +227,9 @@ def model_settings(
     """Compose and check the settings of one live Model/Provider, without revealing any secrets."""
     definition = registry.get("model", provider.type)
     _check_api(definition, config)
-    effective = registry.check_model_settings(config.model_api, {**config.defaults(), **settings}, field=field)
+    effective = registry.check_model_settings(
+        config.model_api, effective_settings(config.model_api, config.defaults(), settings), field=field
+    )
     if "extra_headers" in effective:
         check_request_headers(
             definition,

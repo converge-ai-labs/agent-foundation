@@ -118,8 +118,8 @@ async def test_child_question_competing_response_history_and_restart(
                     }
                 ],
             }
-            incomplete = await api.post(prefix + "/decisions", json={**body, "responses": []})
-            assert incomplete.status_code == 400 and incomplete.json()["error"]["code"] == "request_invalid"
+            duplicate = await api.post(prefix + "/decisions", json={**body, "responses": body["responses"] * 2})
+            assert duplicate.status_code == 400 and duplicate.json()["error"]["code"] == "request_invalid"
             resumed = await api.post(prefix + "/decisions", json=body)
             assert resumed.status_code == 200, resumed.text
             second = resumed.json()["receipt_id"]

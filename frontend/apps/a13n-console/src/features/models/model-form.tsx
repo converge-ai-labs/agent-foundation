@@ -16,7 +16,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { allPages, type Schema } from "../../shared/api";
 import { CatalogStep } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions, TextAreaField, jsonObject } from "../../shared/forms";
+import { FormActions, jsonObject, validateSettings } from "../../shared/forms";
 import { IconTile } from "../../shared/identity";
 import sharedStyles from "../../shared/shared.module.css";
 import { ManageProvidersLink } from "../providers";
@@ -25,6 +25,7 @@ import { CatalogPicker, catalogRefKey } from "./catalog-picker";
 import { ModelIcon } from "./model-icon";
 import { ModelInformation, characteristicsInput } from "./model-information";
 import { defaultModelKey, keyPattern } from "./model-options";
+import { ModelSettingsFields, requestDefaults } from "./model-settings";
 import {
   ModelPricing,
   priceEntry,
@@ -45,27 +46,6 @@ type Draft = {
   pricing: PriceTable | null;
   enabled: boolean;
 };
-
-/** The request defaults a model's configuration carries, as Settings JSON. */
-function requestDefaults(config?: Schema["ModelConfig-Output"]) {
-  return Object.fromEntries(
-    (
-      [
-        "max_tokens",
-        "temperature",
-        "top_p",
-        "extra_body",
-        "extra_headers",
-      ] as const
-    ).flatMap((name) =>
-      config?.[name] == null ||
-      (typeof config[name] === "object" &&
-        Object.keys(config[name]).length === 0)
-        ? []
-        : [[name, config[name]]],
-    ),
-  );
-}
 
 export type ModelDraft = ReturnType<typeof useModelDraft>;
 
@@ -136,6 +116,7 @@ export function useModelDraft({
     (item) => item.type === selectedProvider?.type,
   );
   const callingApi = draft.model_api || definition?.default_model_api || "";
+  const settingsSchema = definition?.settings_schemas?.[callingApi];
   const customEndpoint = Object.entries(selectedProvider?.config ?? {}).some(
     ([key, value]) => key.endsWith("base_url") && !!value,
   );
@@ -204,8 +185,9 @@ export function useModelDraft({
       if (!selectedProvider || !callingApi)
         throw new Error(t("Choose a provider and API."));
       const settings = jsonObject(settingsJson);
+      if (settingsSchema) validateSettings(settingsSchema, settings);
       const config = {
-        ...settings,
+        settings,
         model_name: draft.model_name.trim(),
         model_api: callingApi,
         characteristics: draft.characteristics,
@@ -264,6 +246,7 @@ export function useModelDraft({
     chooseProvider,
     acceptProvider,
     settingsJson,
+    settingsSchema,
     setSettingsJson,
     settingsExpanded,
     setSettingsExpanded,
@@ -433,15 +416,11 @@ export function ModelFields({ model }: { model: ModelDraft }) {
         open={model.settingsExpanded}
         onOpenChange={model.setSettingsExpanded}
       >
-        <TextAreaField
-          label={t("Settings JSON")}
-          hint={t(
-            "Request defaults, including extra_body and extra_headers. Store secrets on the provider.",
-          )}
+        <ModelSettingsFields
           value={model.settingsJson}
           onChange={model.setSettingsJson}
-          code
-          rows={6}
+          schema={model.settingsSchema}
+          modelApi={model.callingApi}
         />
       </DisclosureSection>
     </>

@@ -137,12 +137,20 @@ def check_request_headers(
         raise invalid(field, "contains a header managed by the Provider or HTTP transport") from None
 
 
+def effective_settings(
+    model_api: str, defaults: Mapping[str, JsonValue], overrides: Mapping[str, JsonValue]
+) -> dict[str, JsonValue]:
+    """One shallow composition for validation and every primary or auxiliary model call."""
+    baseline: dict[str, JsonValue] = {"openai_store": False} if model_api == "openai.responses" else {}
+    return {**baseline, **defaults, **overrides}
+
+
 class _PortableSchema(GenerateJsonSchema):
     def handle_invalid_for_json_schema(self, schema: object, error_info: str) -> JsonSchemaValue:
         raise PydanticOmit
 
     def default_schema(self, schema: core_schema.WithDefaultSchema) -> JsonSchemaValue:
-        # Every setting is optional and an absent one keeps the provider's behaviour, so none states a default.
+        # Settings inherit at composition time; schema inspection must not materialize defaults.
         return self.generate_inner(schema["schema"])
 
 

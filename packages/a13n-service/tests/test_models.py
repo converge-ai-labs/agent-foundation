@@ -508,3 +508,45 @@ async def test_agents_reference_models_through_model_resolution(service) -> None
     await service.client.patch(f"{service.api}/models/gpt", json={"enabled": False}, headers={"if-match": etag(model)})
     refused = await service.client.post(agents, json={"name": "Late", "config": {"model": "gpt"}})
     assert refused.status_code == 400 and refused.json()["error"]["details"]["kind"] == "model"
+
+
+async def test_native_model_settings_roundtrip_and_api_validation(service) -> None:  # type: ignore[no-untyped-def]
+    account = await provider(service)
+    settings = {"thinking": "medium", "openai_store": False, "openai_reasoning_summary": "detailed", "max_tokens": 8192}
+    created = await post(
+        service, "/models", manual(account["id"], "reasoning", model_api="openai.responses", settings=settings)
+    )
+    path = f"{service.api}/models/{created['key']}"
+    read = await service.client.get(path)
+    assert read.json()["config"]["settings"] == settings
+    renamed = await service.client.patch(path, json={"name": "Renamed"}, headers={"if-match": read.headers["etag"]})
+    assert renamed.status_code == 200
+    assert renamed.json()["config"]["settings"] == settings
+    changed = await service.client.patch(
+        path,
+        json={"config": {**created["config"], "settings": {**settings, "openai_store": True}}},
+        headers={"if-match": renamed.headers["etag"]},
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["config"]["settings"]["openai_store"] is True
+    for rejected in (
+        {"openai_store": "false"},
+        {"typo": True},
+        {"timeout": 10},
+        {"openai_previous_response_id": "resp_other"},
+        {"extra_body": {"store": True}},
+        {"extra_headers": {"Authorization": "secret"}},
+        {"extra_headers": {"X-Duplicate": "a", "x-duplicate": "b"}},
+    ):
+        await post(
+            service,
+            "/models",
+            manual(account["id"], "invalid", model_api="openai.responses", settings=rejected),
+            status=400,
+        )
+    switched = await service.client.patch(
+        path,
+        json={"config": {**changed.json()["config"], "model_api": "openai.chat_completions"}},
+        headers={"if-match": changed.headers["etag"]},
+    )
+    assert switched.status_code == 400  # Responses summary does not silently survive an API change.

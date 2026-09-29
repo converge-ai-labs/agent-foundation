@@ -41,7 +41,11 @@ import { CoordinatorIcon } from "./coordinator-icon";
 import { useCoordinatorMutation } from "./coordinator-settings";
 import { ClearContext } from "./clear-context";
 import { useStopOperation } from "./stop-operation";
-import { skillReferences, type LoadSkills } from "./skill-references";
+import {
+  loadThreadSkills,
+  skillReferences,
+  type LoadSkills,
+} from "./skill-references";
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { useTrackUnsent } from "./unsent";
@@ -176,12 +180,13 @@ export async function submitDraft(
     if (action === "send") appContext = captureAppContext?.() ?? [];
     if (prepare) await prepare();
     signal?.throwIfAborted();
-    if (preset === undefined) {
-      captured = draft.capture();
-      parts = captured.parts;
-      if (loadSkills && /(?:^|\s)\$\S+/.test(captured.input.prompt))
-        references = skillReferences(parts, await loadSkills());
-    } else parts = [preset];
+    captured = draft.capture();
+    parts =
+      preset === undefined
+        ? captured.parts
+        : [captured.parts.length ? `${preset}\n\n` : preset, ...captured.parts];
+    if (loadSkills && /(?:^|\s)\$\S+/.test(captured.input.prompt))
+      references = skillReferences(parts, await loadSkills());
     signal?.throwIfAborted();
   } catch (error) {
     input.state = "rejected";
@@ -284,6 +289,7 @@ export function submitContinuation(
   transport: Transport,
   threadId: string,
   prepare?: () => Promise<void>,
+  captureAppContext?: () => Schema<"AppContextReference">[],
 ) {
   return submitDraft(
     draft,
@@ -294,10 +300,15 @@ export function submitContinuation(
     draft.modelId,
     undefined,
     undefined,
-    undefined,
+    () => loadThreadSkills(transport, threadId, draft.environment?.local_roots),
     undefined,
     "Continue completing the previous task.",
-    prepare,
+    async () => {
+      if (prepare) await prepare();
+      if (!draft.synchronized)
+        await waitForSynchronization(draft, new AbortController().signal);
+    },
+    captureAppContext,
   );
 }
 
@@ -441,20 +452,12 @@ export function Composer({
                 signal,
               }),
             )
-          : draft.environment?.local_roots !== undefined
-            ? result(
-                transport.client.POST("/api/threads/{thread_id}/skills", {
-                  params: { path: { thread_id: threadId } },
-                  body: { local_roots: draft.environment.local_roots },
-                  signal,
-                }),
-              )
-            : result(
-                transport.client.GET("/api/threads/{thread_id}/skills", {
-                  params: { path: { thread_id: threadId } },
-                  signal,
-                }),
-              ),
+          : loadThreadSkills(
+              transport,
+              threadId,
+              draft.environment?.local_roots,
+              signal,
+            ),
       staleTime: 10000,
     });
   const [syncDelayed, setSyncDelayed] = useState(false);

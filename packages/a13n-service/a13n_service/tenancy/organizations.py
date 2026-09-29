@@ -103,8 +103,8 @@ async def store_icon(
         owner = WorkspaceRow if scope.workspace_id is not None else OrganizationRow
         row = await session.get_one(owner, scope.workspace_id or scope.organization_id)
         require_match(if_match, row.id, row.version)
-        prefix = images.prefix_for(row.id, organization_id=scope.organization_id)
-    return await images.store(objects, prefix, data)
+        prefix, current = images.prefix_for(row.id, organization_id=scope.organization_id), row.image
+    return await images.store(objects, prefix, data, current=current)
 
 
 async def _change(

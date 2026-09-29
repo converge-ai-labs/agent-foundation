@@ -475,19 +475,3 @@ def test_a_packaged_chart_deploys_its_service_release(tmp_path):
         check=True,
     )
     assert images(str(tmp_path / f"a13n-service-{version}.tgz")) == {f"ghcr.io/converge-ai-labs/a13n-service:{version}"}
-
-
-@helm
-@pytest.mark.parametrize("mode", ["s3", "oss"])
-def test_object_write_mode_reaches_service_config(mode: str):
-    import tomllib
-
-    documents = render(*EXTERNAL, "--set", f"objects.writeMode={mode}")
-    config = next(d for d in documents if d["kind"] == "ConfigMap" and "service.toml" in d.get("data", {}))
-    assert tomllib.loads(config["data"]["service.toml"])["objects"]["write_mode"] == mode
-
-
-@helm
-def test_unknown_object_write_mode_is_rejected():
-    with pytest.raises(subprocess.CalledProcessError):
-        render(*EXTERNAL, "--set", "objects.writeMode=invalid")

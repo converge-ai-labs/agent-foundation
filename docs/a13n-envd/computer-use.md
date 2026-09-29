@@ -59,7 +59,7 @@ If the desktop becomes locked or disconnected, reconnect/unlock it manually and 
 
 1. Open **Working environments** in the composer, or **Conversation details → Configuration** for saved next-Run settings.
 2. Add an environment for the connected desktop, choose an existing working directory, and name the alias `desktop`.
-3. Select **Desktop observation and control** under **Allowed actions**. The default **Files and execution** excludes desktop actions. The desktop preset grants only desktop actions; add a separate binding if the agent also needs file/shell tools.
+3. Keep **Full control**, the default under **Allowed actions**. It includes file access, command execution and desktop observation/control where enabled on the Device. **Read only** allows file reading and browsing without changes, commands or desktop access. For an older binding, explicitly select **Full control** to replace its existing action ceiling.
 4. Select the default environment deliberately, or ask the agent to use alias `desktop` explicitly.
 5. Save the enclosing selection and start a new Run.
 

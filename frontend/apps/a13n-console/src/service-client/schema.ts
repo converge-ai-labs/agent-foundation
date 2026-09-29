@@ -5090,6 +5090,10 @@ export interface components {
       model_api: string;
       /** Model Name */
       model_name: string;
+      /** Settings */
+      settings?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
       /** Temperature */
       temperature?: number | null;
       /** Top P */
@@ -5112,6 +5116,10 @@ export interface components {
       model_api: string;
       /** Model Name */
       model_name: string;
+      /** Settings */
+      settings?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
       /** Temperature */
       temperature?: number | null;
       /** Top P */

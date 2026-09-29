@@ -378,10 +378,12 @@ class RootRunCoordinator:
             pending = self._interaction_waits.get(thread_id)
             if timeout is not None and pending is not timeout:
                 raise RunCoordinationError("The interaction is no longer pending.", code="thread_deferred_not_pending")
-            matching = (
-                pending is not None
-                and response is not None
-                and pending.response.expected_continuation_id == response.expected_continuation_id
+            matching = pending is not None and (
+                prompt is not None
+                or (
+                    response is not None
+                    and pending.response.expected_continuation_id == response.expected_continuation_id
+                )
             )
             if pending is not None and matching and timeout is None and monotonic() >= pending.deadline:
                 raise RunCoordinationError("The interaction deadline has elapsed.", code="thread_interaction_expired")
@@ -413,7 +415,11 @@ class RootRunCoordinator:
                 if authorize is not None:
                     await authorize()
                 operation.composition = admission.published.reference
-                if matching and pending is not None:
+                if (
+                    pending is not None
+                    and admission.response is not None
+                    and admission.response.expected_continuation_id == pending.response.expected_continuation_id
+                ):
                     self._interaction_waits.pop(thread_id)
                     pending.cancelled.set()
                 if self._restart is not None and organization is None:

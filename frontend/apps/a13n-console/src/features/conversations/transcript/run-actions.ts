@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { data, type Schema } from "../../../shared/api";
-import { invalidateConversation, runPath } from "../api";
+import { conversationKeys, invalidateConversation, runPath } from "../api";
 
 /**
  * A child Thread is driven by the parent Run that delegated to it; every other
@@ -20,6 +20,7 @@ export function useRunAcceptance(
 ) {
   const cache = useQueryClient(),
     navigate = useNavigate(),
+    { search } = useLocation(),
     { workspace, basePath } = useWorkspace();
   const refresh = () =>
     invalidateConversation(cache, workspace.id, {
@@ -29,15 +30,32 @@ export function useRunAcceptance(
     });
   return {
     refresh,
-    accepted(next: Schema["RunView"] | null) {
-      void refresh();
+    accepted(
+      next: Schema["RunView"] | null,
+      updatedThread?: Schema["ThreadView"],
+    ) {
+      // The receipt already contains this Run; show it before background reads.
+      if (next)
+        cache.setQueryData(conversationKeys(workspace.id).run(next.id), next);
+      if (updatedThread)
+        cache.setQueryData(
+          conversationKeys(workspace.id).thread(updatedThread.id),
+          updatedThread,
+        );
+      // A successor cannot change its ancestors' lineage or sealed output.
+      void invalidateConversation(cache, workspace.id, {
+        sessionId: run.session_id,
+        threadId: thread.id,
+        runId: next?.id ?? run.id,
+      });
       if (next)
         navigate(
           runPath(basePath, {
             session_id: next.session_id,
             thread_id: next.thread_id,
             run_id: next.id,
-          }),
+          }) + search,
+          { state: { continuedFrom: run.id } },
         );
     },
   };

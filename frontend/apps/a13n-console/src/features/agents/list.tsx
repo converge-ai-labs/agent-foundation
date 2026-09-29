@@ -6,7 +6,7 @@ import {
   ArchiveIcon,
   DownloadSimpleIcon,
   PlayIcon,
-  RobotIcon,
+  HeartIcon,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -79,7 +79,6 @@ export function Agents() {
   };
   return (
     <Page
-      className={styles.listPage}
       title={t("Agents")}
       description={t("The agents your workspace runs on.")}
       actions={create}
@@ -107,7 +106,7 @@ export function Agents() {
         <ErrorNotice error={list.error} retry={() => void list.refetch()} />
       ) : !items.length ? (
         <Empty
-          icon={<RobotIcon aria-hidden="true" />}
+          icon={<HeartIcon aria-hidden="true" />}
           title={
             filtered
               ? t("No matching agents")

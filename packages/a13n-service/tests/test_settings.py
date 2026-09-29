@@ -145,18 +145,3 @@ def test_outbox_defaults_and_partial_kind_overrides(tmp_path: Path, monkeypatch,
 def test_outbox_invalid_policy_fails_at_startup(outbox: dict) -> None:
     with pytest.raises(ValueError):
         Settings.model_validate({"outbox": outbox})
-
-
-def test_object_write_mode_file_and_environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_environment: None
-) -> None:
-    config = tmp_path / "service.toml"
-    config.write_text('[objects]\nbackend = "s3"\nbucket = "agents"\nwrite_mode = "oss"\n')
-    assert load_settings(config).objects.write_mode == "oss"
-    monkeypatch.setenv("A13N_OBJECTS__WRITE_MODE", "s3")
-    assert load_settings(config).objects.write_mode == "s3"
-    monkeypatch.setenv("A13N_OBJECTS__WRITE_MODE", "invalid")
-    with pytest.raises(ValueError, match="write_mode"):
-        load_settings(config)
-    with pytest.raises(ValueError, match="requires the s3 backend"):
-        Settings.model_validate({"objects": {"write_mode": "oss"}})

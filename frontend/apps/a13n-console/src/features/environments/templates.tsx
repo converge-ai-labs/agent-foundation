@@ -65,10 +65,10 @@ export function EnvironmentTemplates() {
   }
   return (
     <div className={styles.stack}>
-      <PageActions>
+      <PageActions secondary>
         <ManageProvidersLink category="environments" />
-        {manage && <TemplateEditor />}
       </PageActions>
+      <PageActions>{manage && <TemplateEditor />}</PageActions>
       {rows.selected && (
         <TemplateEditor
           key={rows.selected.id}

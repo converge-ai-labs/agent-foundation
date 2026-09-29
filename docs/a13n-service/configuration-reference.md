@@ -51,7 +51,6 @@ The complete machine-readable validation schema, including named enum/union defi
 | `objects.endpoint_url`          | `A13N_OBJECTS__ENDPOINT_URL`          | string or null                    | default=null                                      |
 | `objects.path_style`            | `A13N_OBJECTS__PATH_STYLE`            | boolean                           | default=false                                     |
 | `objects.addressing_style`      | `A13N_OBJECTS__ADDRESSING_STYLE`      | "auto", "path", "virtual" or null | default=null                                      |
-| `objects.write_mode`            | `A13N_OBJECTS__WRITE_MODE`            | "s3", "oss"                       | default="s3"                                      |
 | `objects.region`                | `A13N_OBJECTS__REGION`                | string or null                    | default=null                                      |
 | `objects.access_key_id`         | `A13N_OBJECTS__ACCESS_KEY_ID`         | string or null                    | format="password"; default=null                   |
 | `objects.secret_access_key`     | `A13N_OBJECTS__SECRET_ACCESS_KEY`     | string or null                    | format="password"; default=null                   |

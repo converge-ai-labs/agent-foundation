@@ -232,3 +232,50 @@ def test_failed_http_transfer_preserves_control_and_other_transfers(direction, f
             await device.close()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("secure", [False, True])
+def test_http_transport_proxy_routing_preserves_plaintext_private_link(monkeypatch, secure):
+    import os
+
+    for key in tuple(os.environ):
+        if key.lower() in {"http_proxy", "https_proxy", "all_proxy", "no_proxy", "request_method"}:
+            monkeypatch.delenv(key)
+    # Proxy discovery must not also import environment TLS trust settings.
+    monkeypatch.setenv("SSL_CERT_FILE", "/nonexistent/envd-test-ca.pem")
+
+    async def scenario():
+        seen = []
+        finished = asyncio.Event()
+
+        async def reject(reader, writer):
+            try:
+                seen.append(await reader.readuntil(b"\r\n\r\n"))
+                writer.write(b"HTTP/1.1 502 Rejected\r\nContent-Length: 0\r\n\r\n")
+                await writer.drain()
+            finally:
+                writer.close()
+                finished.set()
+
+        proxy = await asyncio.start_server(reject, "127.0.0.1", 0)
+        async with proxy, control_server() as (origin, received):
+            monkeypatch.setenv("ALL_PROXY", f"http://127.0.0.1:{proxy.sockets[0].getsockname()[1]}")
+            transport = HttpTransport("https://envd.test" if secure else origin, "origin-token", request_timeout=2)
+            try:
+                frame = ControlFrame(json.dumps({"jsonrpc": "2.0", "id": "1", "method": "test", "params": {}}).encode())
+                if secure:
+                    with pytest.raises(EIPTransportError):
+                        await transport.send(frame)
+                    await asyncio.wait_for(finished.wait(), 2)
+                    assert len(seen) == 1
+                    assert seen[0].startswith(b"CONNECT envd.test:443 HTTP/1.1")
+                    assert b"origin-token" not in seen[0]
+                    assert not received
+                else:
+                    await transport.send(frame)
+                    assert len(received) == 1
+                    assert not seen
+            finally:
+                await transport.close()
+
+    asyncio.run(scenario())

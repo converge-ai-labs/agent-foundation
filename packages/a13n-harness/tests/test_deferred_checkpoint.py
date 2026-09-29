@@ -240,3 +240,82 @@ async def test_recovery_omits_results_already_incorporated_in_history():
         if isinstance(part, ToolReturnPart) and part.tool_call_id == "call_client"
     ]
     assert len(returns) == 1 and returns[0].content == "accepted"
+
+
+async def test_accepted_input_is_retired_before_arbitrary_history_replacement():
+    from types import SimpleNamespace
+
+    from a13n_harness.tools.invocation import ToolExecutionBoundaryCapability
+    from pydantic_ai.messages import ModelResponse
+    from pydantic_ai.tools import DeferredToolRequests
+
+    @dataclass
+    class ReplaceHistory(AbstractCapability):
+        id: str = "replace-history"
+        seen: list = field(default_factory=list)
+
+        async def before_model_request(self, ctx, request_context):
+            pending = ctx.deps._deferred_input
+            assert pending is not None
+            self.seen.append(pending.pending)
+            if ctx.run_step > 0 and any(
+                isinstance(part, ToolReturnPart) for message in ctx.messages for part in message.parts
+            ):
+                assert pending.pending is None
+                return replace(request_context, messages=[ModelRequest(parts=[UserPromptPart("Replacement")])])
+            return request_context
+
+    first = await executable(Capture(), []).run("go")
+    assert first.deferred is not None and first.state is not None
+    accepted = DeferredToolResume(
+        first.deferred,
+        DeferredToolResults(
+            calls={"call_client": "accepted"},
+            approvals={"call_change": False},
+        ),
+    )
+    agent = executable(Capture(), [])
+    async with agent.stream(previous_state=first.state, deferred_resume=accepted) as stream:
+        detached = stream.pending_deferred_input
+        assert detached is not None
+        detached.results.calls.clear()
+        assert stream.pending_deferred_input.results.calls == {"call_client": "accepted"}
+        # A helper uses the same dependencies but owns neither accepted input nor
+        # the primary tool recovery boundary. Its unrelated history cannot consume it.
+        ctx = SimpleNamespace(deps=stream.context, run_id="helper", messages=[])
+        sentinel = object()
+        assert await ToolExecutionBoundaryCapability().before_model_request(ctx, sentinel) is sentinel
+        assert stream.pending_deferred_input is not None
+        async for _ in stream:
+            pass
+    assert stream.pending_deferred_input is None
+    assert stream.result is not None and stream.result.status == "completed"
+
+    # Exercise a non-handoff history processor so retirement does not depend on
+    # summary markers, a synthetic assistant response, or a Host checkpoint.
+    replacement = ReplaceHistory()
+
+    async def finish(messages, info):
+        assert all(isinstance(message, ModelRequest) for message in messages)
+        yield "done"
+
+    resumed = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=finish),
+        capabilities=(replacement,),
+    )
+    # The approved tool must still exist; use only the absent external failure for
+    # this independent processor test, with an exact authoritative tail.
+    external = first.deferred.calls[0]
+    state = HarnessState.new(message_history=[ModelResponse(parts=[external])])
+    failed = DeferredToolResume(
+        DeferredToolRequests(calls=[external]),
+        DeferredToolResults(calls={external.tool_call_id: ToolFailed("unavailable")}),
+    )
+    async with resumed.stream(previous_state=state, deferred_resume=failed) as stream:
+        async for _ in stream:
+            pass
+    assert replacement.seen == [None]
+    assert stream.pending_deferred_input is None
+    assert stream.result is not None and stream.result.output_or_raise() == "done"

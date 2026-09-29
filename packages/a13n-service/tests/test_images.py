@@ -54,19 +54,19 @@ async def test_profile_images(service, settings: Settings) -> None:  # type: ign
     digest = hashlib.sha256(PNG).hexdigest()
     assert stored.json()["image_url"] == f"/api/v1/users/{profile['id']}/avatar?v={digest}"
     assert stored.headers["etag"] == etag(profile["id"], profile["version"] + 1)
-    assert (settings.objects.root / f"users/{profile['id']}/images/{digest}").read_bytes() == PNG
+    avatars = settings.objects.root / f"users/{profile['id']}/images"
+    assert [path.read_bytes() for path in avatars.iterdir()] == [PNG]
     served = await client.get(stored.json()["image_url"])
     assert served.status_code == 200 and served.content == PNG
     assert served.headers["content-type"] == "image/png"
     assert served.headers["x-content-type-options"] == "nosniff"
     assert served.headers["content-security-policy"] == "default-src 'none'; sandbox"
     assert served.headers["cache-control"] == "private, no-store"
-    # The same image again changes nothing.
+    # The same image again changes nothing, and a stale ETag is refused before any bytes are stored.
     again = await client.put(AVATAR, content=PNG, headers=changing(stored.json()))
     assert again.json()["version"] == stored.json()["version"]
-    # A stale ETag is refused before any bytes are stored.
     assert (await client.put(AVATAR, content=JPEG, headers=changing(profile))).status_code == 412
-    assert not (settings.objects.root / f"users/{profile['id']}/images/{hashlib.sha256(JPEG).hexdigest()}").exists()
+    assert [path.read_bytes() for path in avatars.iterdir()] == [PNG]
 
     async with AsyncExitStack() as stack:
         member = await join(service, stack, "member@example.com", "viewer")
@@ -114,15 +114,15 @@ async def test_organization_and_workspace_icons(service, settings: Settings) -> 
         # A stale ETag is refused before any bytes are stored.
         stale = await client.put(f"{service.organization}/icon", content=PNG, headers=changing(organization))
         assert stale.status_code == 412
-        assert hashlib.sha256(PNG).hexdigest() not in {path.name for path in objects.rglob("*")}
+        assert PNG not in {path.read_bytes() for path in objects.rglob("*") if path.is_file()}
         assert icon.json()["image_url"].startswith(f"/api/v1/organizations/{organization['id']}/icon?v=")
         served = await viewer.get(icon.json()["image_url"])
         assert (served.headers["content-type"], served.content) == ("image/jpeg", JPEG)
 
         workspace_icon = await client.put(f"{service.workspace}/icon", content=WEBP, headers=changing(workspace))
         assert workspace_icon.status_code == 200
-        digest = hashlib.sha256(WEBP).hexdigest()
-        assert (objects / f"orgs/{organization['id']}/images/{workspace['id']}/{digest}").read_bytes() == WEBP
+        icons = objects / f"orgs/{organization['id']}/images/{workspace['id']}"
+        assert [path.read_bytes() for path in icons.iterdir()] == [WEBP]
         [listed] = (await viewer.get("/api/v1/workspaces")).json()["items"]
         assert listed["image_url"] == workspace_icon.json()["image_url"]
         assert (await viewer.get(listed["image_url"])).headers["content-type"] == "image/webp"
@@ -139,8 +139,7 @@ async def test_organization_and_workspace_icons(service, settings: Settings) -> 
     archived = await client.post(f"{service.workspace}/archive", headers=changing(removed.json()))
     refused = await client.put(f"{service.workspace}/icon", content=PNG, headers=changing(archived.json()))
     assert refused.status_code == 422 and refused.json()["error"]["code"] == "disabled"
-    digest = hashlib.sha256(PNG).hexdigest()
-    assert not (objects / f"orgs/{organization['id']}/images/{workspace['id']}/{digest}").exists()
+    assert [path.read_bytes() for path in icons.iterdir()] == [WEBP]
 
 
 async def test_images_are_bounded_like_uploads(serve, settings: Settings) -> None:  # type: ignore[no-untyped-def]

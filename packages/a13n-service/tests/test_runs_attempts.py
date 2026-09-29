@@ -251,7 +251,7 @@ async def test_claim_leaves_newer_checkpoints_and_fails_older_ones(service, scri
     agent = await runs_kit.create_agent(service, scripted_model)
     newer = (await runs_kit.start_thread(service, agent, "newer"))["run"]["id"]
     older = (await runs_kit.start_thread(service, agent, "older"))["run"]["id"]
-    pointer = {"digest": "0" * 64, "size": 1}
+    pointer = {"key": "orgs/o/runs/r/state/1/0", "digest": "0" * 64, "size": 1}
     async with transaction(service.runtime.storage) as session:
         for run_id, format in ((newer, FORMAT + 1), (older, FORMAT - 1)):
             await session.execute(
@@ -664,10 +664,7 @@ async def test_an_outcome_commits_only_with_its_seal(service, scripted_model, ru
     async with transaction(service.runtime.storage) as session:
         run = await session.get_one(RunRow, run_id)
         state = await checkpoints.load_state(
-            service.runtime.objects,
-            run.organization_id,
-            run.id,
-            checkpoints.StatePointer.model_validate(run.checkpoint),
+            service.runtime.objects, run.id, checkpoints.StatePointer.model_validate(run.checkpoint)
         )
         assert state is not None and state.seq == 1
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))

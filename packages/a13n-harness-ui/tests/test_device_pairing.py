@@ -44,6 +44,7 @@ async def test_pair_approve_restart_and_revoke(tmp_path):
     async with api(tmp_path) as client:
         pending = await pair(client)
         assert pending.status_code == 200, pending.text
+        assert pending.json()["approval_url"] == "/settings/environments"
         challenge = pending.json()["challenge"]
         key = challenge["pairing_id"]
         assert (await pair(client)).json() == pending.json()
@@ -62,7 +63,7 @@ async def test_pair_approve_restart_and_revoke(tmp_path):
         assert connected.json() == {
             "status": "approved",
             "resource_id": resource["id"],
-            "websocket_url": f"ws://localhost/api/devices/{resource['id']}/connect",
+            "websocket_url": f"/api/devices/{resource['id']}/connect",
         }
         for response in (pending, approved, connected):
             assert TOKEN not in response.text
@@ -117,16 +118,16 @@ def test_pending_pairings_are_bounded_and_expire():
     pairings = DevicePairings()
     request = PairingRequest(**REQUEST)
     for number in range(MAX_PENDING_PAIRINGS):
-        pairings.poll(request, f"{number:064x}", {}, origin="http://localhost")
+        pairings.poll(request, f"{number:064x}", {})
     with pytest.raises(HarnessUiError, match="Too many"):
-        pairings.poll(request, TOKEN, {}, origin="http://localhost")
+        pairings.poll(request, TOKEN, {})
     key, pending = next(iter(pairings._pending.items()))
     pairings._pending[key] = pending.model_copy(
         update={
             "challenge": pending.challenge.model_copy(update={"expires_at": datetime.now(UTC) - timedelta(seconds=1)})
         }
     )
-    pairings.poll(request, TOKEN, {}, origin="http://localhost")
+    pairings.poll(request, TOKEN, {})
     assert len(pairings.list_pending()) == MAX_PENDING_PAIRINGS
 
 

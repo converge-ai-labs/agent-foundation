@@ -242,7 +242,9 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
     from a13n_harness.capabilities.memory import MemoryCursors
 
     prepared = SimpleNamespace(
-        head=head, accepted_input=None, reconstructed=SimpleNamespace(memory_cursors=MemoryCursors())
+        head=head,
+        stream=SimpleNamespace(pending_deferred_input=None),
+        reconstructed=SimpleNamespace(memory_cursors=MemoryCursors()),
     )
     active = SimpleNamespace(done=Event())
     events = (RunErrorEvent(message="not exported", code=event_code),)

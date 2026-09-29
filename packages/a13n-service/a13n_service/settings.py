@@ -122,7 +122,6 @@ class Objects(Section):
     # S3-compatible stores that address buckets by path rather than by host name, such as MinIO.
     path_style: bool = False
     addressing_style: Literal["auto", "path", "virtual"] | None = None
-    write_mode: Literal["s3", "oss"] = "s3"
     region: str | None = None
     access_key_id: SecretStr | None = None
     secret_access_key: SecretStr | None = None
@@ -136,8 +135,6 @@ class Objects(Section):
     def s3_bucket(self) -> "Objects":
         if self.backend == "s3" and not self.bucket:
             raise ValueError("objects.bucket is required for the s3 backend")
-        if self.write_mode == "oss" and self.backend != "s3":
-            raise ValueError("objects.write_mode=oss requires the s3 backend")
         if self.path_style and self.addressing_style not in (None, "path"):
             raise ValueError("objects.path_style=true conflicts with objects.addressing_style other than path")
         return self

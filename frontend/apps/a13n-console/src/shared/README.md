@@ -8,8 +8,8 @@ Import from a folder barrel (`shared/page`, `shared/collection`, …), never fro
 
 The frame of a screen.
 
-- `Page` — list page: optional back link, 22px title with an optional count, one primary action aligned with the title, a one-line description, an optional `toolbar` slot, then the collection. Also hosts the `PageActions` portal. When an `Empty` inside it offers an action, the header actions step aside so the screen offers the primary action once.
-- `PageActions` — lets a nested editor present its trigger in the page header without moving its state out of the component that owns it.
+- `Page` — list page: optional back link, 22px title with an optional count, one primary action aligned with the title, a one-line description, an optional `toolbar` slot, then the collection. Also hosts the `PageActions` portal. When an `Empty` inside it offers an action, the primary header actions step aside so the screen offers creation once; secondary navigation stays available.
+- `PageActions` — lets a nested editor present its trigger in the page header without moving its state out of the component that owns it. Use `secondary` for navigation such as Manage providers that remains available in an empty collection.
 - `DetailPage` — detail page: back link, identity `header`, underline `tabs`, and the content column. Pass `rail` to get the two-column layout.
 - `DetailHeader` — identity header: avatar or brand tile, name, status pill, an inline edit affordance, the key chip with copy, the one-line description, and the primary actions at the right.
 - `DetailLayout` — the content column with an optional 256px sticky rail. Use it directly when an editor owns the `<form>` element that must wrap both the content and the rail.

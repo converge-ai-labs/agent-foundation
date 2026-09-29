@@ -82,7 +82,7 @@ it("saves the environment choice together with other configuration edits", async
     " Keep the draft.",
   );
   await user.click(
-    screen.getByRole("combobox", { name: "Default environment" }),
+    screen.getByRole("combobox", { name: "Default environment template" }),
   );
   await user.click(await screen.findByRole("option", { name: "Sandbox" }));
   expect(submit).not.toHaveBeenCalled();

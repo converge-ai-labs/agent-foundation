@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, expect, it, vi } from "vitest";
 import { EnvironmentInstances } from "./instances";
+import { EnvironmentsPage } from "./page";
+import { Page } from "../../shared/page";
 
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
 vi.mock("../../auth/context", () => ({
@@ -18,9 +20,6 @@ vi.mock("../../layout/workspace", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
-}));
-vi.mock("../../shared/page", () => ({
-  PageActions: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 const collections: Record<string, unknown[]> = {
@@ -59,14 +58,49 @@ async function openCreate() {
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter>
-        <EnvironmentInstances />
+        <Page title="Environment instances">
+          <EnvironmentInstances />
+        </Page>
       </MemoryRouter>
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
+  await screen.findByText("No environments yet");
+  expect(
+    screen.getByRole("link", { name: "Manage providers" }).getAttribute("href"),
+  ).toContain("environments");
   await user.click(screen.getByRole("button", { name: "Create environment" }));
   return { cache, user };
 }
+
+it.each([
+  ["templates", "Create template", "No environment templates"],
+  ["instances", "Create environment", "No environments yet"],
+] as const)(
+  "keeps provider navigation beside an empty %s collection",
+  async (section, action, empty) => {
+    http.GET.mockResolvedValue({ data: { items: [], next_cursor: null } });
+    const cache = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={cache}>
+        <MemoryRouter>
+          <EnvironmentsPage section={section} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText(empty);
+    const create = screen.getByRole("button", { name: action });
+    expect(create.closest("header")).toBeNull();
+    const manage = screen.getByRole("link", { name: "Manage providers" });
+    expect(manage.closest("header")).not.toBeNull();
+    expect(manage.getAttribute("href")).toBe(
+      "/workspace/ws_test/settings/providers?category=environments",
+    );
+    cache.clear();
+  },
+);
 
 it("allocates a managed environment from an enabled template", async () => {
   const { cache, user } = await openCreate();

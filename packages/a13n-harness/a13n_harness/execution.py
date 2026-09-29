@@ -106,6 +106,7 @@ from a13n_harness.spec import AgentSpec as HarnessAgentSpec
 from a13n_harness.spec import _default_usage_limits
 from a13n_harness.state import AgentContextState, HarnessState
 from a13n_harness.tools.deferred import (
+    DeferredInputState,
     DeferredToolResume,
     preflight_deferred_resume,
 )
@@ -587,7 +588,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             if deferred_resume is None or deferred_resume.recovery
             else None
         )
-        self._accepted_deferred = deferred_resume
+        self._deferred_input = DeferredInputState(deferred_resume)
         self._deferred_resume = (
             deferred_resume if deferred_resume is not None and not deferred_resume.recovery else None
         )
@@ -645,6 +646,21 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if self._context is None:
             raise RunError("The stream is not entered.", code="run_not_active")
         return self._context
+
+    @property
+    def pending_deferred_input(self) -> DeferredToolResume | None:
+        """Detached accepted facts not yet incorporated by this Run.
+
+        Read alongside the current canonical checkpoint, never an older snapshot.
+        Consumption is reconciled before history transformations and stays retired.
+        The value remains available after stream shutdown for terminal publication.
+        """
+        pending = self._deferred_input.pending
+        return (
+            None
+            if pending is None
+            else DeferredToolResume(pending.requests, pending.results, recovery=pending.recovery)
+        )
 
     @property
     def result(self) -> HarnessRunResult[OutputT] | None:
@@ -817,6 +833,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             events=self._emitter,
             usage_attribution=usage_attribution,
             deferred_resume=self._deferred_resume,
+            _deferred_input=self._deferred_input,
             deferred_tools_supported=bindings.deferred_tools_supported,
             _tool_recovery=self._tool_recovery,
             metadata=bindings.metadata,
@@ -1557,7 +1574,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     async def _normalize_interrupted_history(
         self, messages: Sequence[ModelMessage], *, response_tracker: InterruptedResponseTracker
     ) -> tuple[tuple[ModelMessage, ...], int]:
-        remaining = self._accepted_deferred.remaining(messages) if self._accepted_deferred is not None else None
+        self._deferred_input.reconcile(messages)
+        remaining = self._deferred_input.pending
         return normalize_interrupted_history(
             messages,
             response_tracker=response_tracker,
@@ -1831,6 +1849,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     ) -> HarnessRunResult[OutputT]:
         """Capture native completion while its attempt and live context are still open."""
         messages = tuple(result.all_messages())
+        self._deferred_input.reconcile(messages)
         new_message_index = len(messages) - len(result.new_messages())
         self._latest_messages = messages
         state = await self.context.export_state(messages)

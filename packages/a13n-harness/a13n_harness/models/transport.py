@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Any
 
 import httpx2
 from pydantic_ai.retries import AsyncHTTPX2TenacityTransport, RetryConfig, wait_retry_after
@@ -56,6 +57,10 @@ def create_model_http_client(
     ``Retry-After``, and fall back to bounded exponential backoff. Pass
     ``retry=None`` to disable automatic retries.
 
+    Without an explicit transport, proxy routing follows httpx2's standard
+    environment variables, including ``NO_PROXY``. Retries apply to both direct
+    and proxied requests. An explicit transport retains control of routing.
+
     Request headers remain native ``ModelSettings.extra_headers``. The caller
     passes this client to a compatible provider and owns its lifecycle.
     """
@@ -64,9 +69,41 @@ def create_model_http_client(
         if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
             raise ValueError(f"{name} must be a positive integer")
 
-    resolved_transport = transport
-    if retry is not None:
-        resolved_transport = AsyncHTTPX2TenacityTransport(
+    return _ModelHttpClient(
+        timeout=httpx2.Timeout(timeout=timeout, connect=connect),
+        transport=transport,
+        retry=retry,
+    )
+
+
+class _ModelHttpClient(httpx2.AsyncClient):
+    """Let httpx2 own proxy selection, then wrap every selected transport."""
+
+    def __init__(
+        self,
+        *,
+        timeout: httpx2.Timeout,
+        transport: httpx2.AsyncBaseTransport | None,
+        retry: ModelHttpRetryConfig | None,
+    ) -> None:
+        self._model_retry = retry
+        # Passing a retry wrapper here would disable httpx2's environment proxies.
+        super().__init__(timeout=timeout, transport=transport)
+
+    # Keep the dependency's private construction hooks localized here. Delegating
+    # all arguments preserves its TLS, proxy and pool defaults without copying
+    # its environment parsing, NO_PROXY matching or transport lifecycle.
+    def _init_transport(self, *args: Any, **kwargs: Any) -> httpx2.AsyncBaseTransport:
+        return self._with_retry(super()._init_transport(*args, **kwargs))
+
+    def _init_proxy_transport(self, *args: Any, **kwargs: Any) -> httpx2.AsyncBaseTransport:
+        return self._with_retry(super()._init_proxy_transport(*args, **kwargs))
+
+    def _with_retry(self, transport: httpx2.AsyncBaseTransport) -> httpx2.AsyncBaseTransport:
+        retry = self._model_retry
+        if retry is None:
+            return transport
+        return AsyncHTTPX2TenacityTransport(
             config=RetryConfig(
                 retry=retry_if_exception(lambda error: _is_retryable_http_error(error, retry)),
                 wait=wait_retry_after(
@@ -82,11 +119,6 @@ def create_model_http_client(
             wrapped=transport,
             validate_response=lambda response: _validate_retry_response(response, retry),
         )
-
-    return httpx2.AsyncClient(
-        timeout=httpx2.Timeout(timeout=timeout, connect=connect),
-        transport=resolved_transport,
-    )
 
 
 def _is_retryable_http_error(error: BaseException, config: ModelHttpRetryConfig) -> bool:

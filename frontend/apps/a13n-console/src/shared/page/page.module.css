@@ -62,7 +62,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
-.actions[data-quiet] {
+.actions[hidden] {
   display: none;
 }
 .toolbar {

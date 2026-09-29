@@ -65,6 +65,7 @@ subagents:
   include: [code-reviewer, executor, explorer]
 
 webui:
+  allowed_origins: []
   sidekick: {}
 
 defaults:
@@ -75,6 +76,8 @@ defaults:
   environment_run_extensions: []
   mcp_servers: []
 ```
+
+`webui.allowed_origins` is a list of exact HTTP(S) origins or the literal `"*"`, defaulting to `[]`. Exact values normalize hostname spelling, default ports and an optional trailing `/`; credentials, non-root paths, queries, fragments and partial wildcards are invalid. Non-default ports remain significant. It is a restart-bound listener setting, not a Run input or a CORS allowlist. The [HTTP access boundary](05-runtime-subagents-and-surfaces.md#http-startup-and-access) owns additive admission, wildcard behavior and lifetime capture.
 
 `webui.sidekick` defaults to an empty mapping, enabling Sidekick when `webui` or `sidekick` is omitted, including in existing user configuration. Explicit null disables it and remains authoritative across upgrades and setup. Loading configuration does not rewrite source files. Setup materializes `webui.sidekick: {}` when absent, preserving existing null or authored selections. A mapping enables it: optional `agent` selects an existing Agent resource or inherits the calling Agent when omitted/null; optional `model` selects the durable default Model resource for newly created Sidekick Threads. An explicitly selected Agent without a Model requires this default. Empty `{}` enables inherited selections. Invalid references reject the candidate generation. WebUI General settings edits enabled state, Agent inheritance and default Model through the existing root-document draft and save flow, separately from `defaults.agent`. Selecting Disabled writes null. Saving neither creates a Thread nor starts execution. The preferences are captured per Run; [Sidekick instructions](05-runtime-subagents-and-surfaces.md#sidekick-instructions) owns the conditional behavior and terminal/child boundary.
 
@@ -97,6 +100,12 @@ The root also accepts `display.theme` (`auto` by default, or `dark`/`light`), `d
 The data root is a bootstrap locator resolved before parsing this tree: explicit `--data-root`, then `A13N_HARNESS_UI_DATA_ROOT`, then `<config-directory>/data`. It owns both local persistence and the installed Content Plugin catalog. It is deliberately absent from `a13n-harness-ui.yaml`, so an invalid root edit cannot hide the SQLite database that retains the prior accepted generation. Selecting another data root opens a distinct local workstation dataset and never implies migration.
 
 Relative process paths resolve from the root file's directory. Resource paths that represent Project roots must be explicit absolute paths after user expansion; their stored meaning never depends on the App's current working directory.
+
+## Outbound HTTP Proxies
+
+Standard `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` variables and lowercase forms are process inputs, not YAML resource fields or captured credentials. Host-owned Web requests, remote HTTPS MCP connections and update checks use the HTTP library's native proxy routing. [Model transport](../a13n-harness/16-input-model-and-output.md#model-construction-and-resolution) owns Model routing.
+
+Operator-configured proxies are trusted outbound infrastructure. Existing URL and local DNS prechecks remain in effect, but proxy routes delegate final DNS resolution and destination network restrictions to the proxy. Direct Web connections, including `NO_PROXY` bypasses, retain authorization of every DNS answer and connection to the authorized IP. TLS verification, redirect checks and response bounds remain in force. Plaintext loopback MCP and plaintext local/provider-private Envd attachments stay direct rather than moving their local-link traffic to a proxy.
 
 ## Common Resource Envelope
 

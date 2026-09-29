@@ -21,3 +21,15 @@ it("copies the complete highlighted code without the toolbar or Markdown fences"
   expect(write).toHaveBeenCalledExactlyOnceWith(code);
   expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
 });
+
+it("keeps code-block controls mounted as later streamed prose arrives", async () => {
+  const user = userEvent.setup();
+  const source = "```js\nconst value = 1;\n```";
+  const view = render(<MarkdownContent text={source} />);
+  const copy = screen.getByRole("button", { name: "Copy code" });
+  await user.click(copy);
+  await screen.findByRole("button", { name: "Copied" });
+  view.rerender(<MarkdownContent text={`${source}\n\nMore explanation.`} />);
+  expect(screen.getByRole("button", { name: "Copied" })).toBe(copy);
+  expect(screen.getByText("More explanation.")).toBeTruthy();
+});

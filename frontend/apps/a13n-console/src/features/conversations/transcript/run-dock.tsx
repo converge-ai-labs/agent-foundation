@@ -26,6 +26,12 @@ import {
 } from "./run-actions";
 import styles from "./transcript.module.css";
 
+export interface PendingMessage {
+  payload: Schema["MessagePayload"];
+  /** Keep the optimistic message until navigation displays this accepted Run. */
+  runId?: string;
+}
+
 /**
  * The end of the transcript: what the run is waiting for, what is queued behind
  * it, and the one place a person can answer or continue.
@@ -37,6 +43,8 @@ export function RunDock({
   above,
   resubmit,
   onResubmitted,
+  onSubmissionChange,
+  pendingRunId,
 }: {
   run: Schema["RunView"];
   thread: Schema["ThreadView"];
@@ -46,6 +54,9 @@ export function RunDock({
   /** A stopped Run's message, prefilled to be sent again. */
   resubmit?: Resubmission | null;
   onResubmitted?: () => void;
+  onSubmissionChange?: (message: PendingMessage | null) => void;
+  /** A receipt can update the Thread before the route transition commits. */
+  pendingRunId?: string;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -54,7 +65,8 @@ export function RunDock({
   const latest = thread.current_run_id ?? thread.last_run_id;
   const latestRun = useRun(latest);
   const headRun = useRun(thread.head_run_id);
-  const current = latest === run.id;
+  const current =
+    latest === run.id || (!!pendingRunId && latest === pendingRunId);
   const active = isActiveRun(run.status);
   const head = thread.head_run_id === run.id ? run : headRun.data;
   // A failed successor leaves the waiting head resumable. Show its exact
@@ -75,7 +87,11 @@ export function RunDock({
       (!!headRun.data && headRun.data.status !== "waiting"));
   // Guidance is an inbox entry; its own status says whether the run took it,
   // and it is read again whenever the Thread reports a change.
-  const [steer, setSteer] = useState<Schema["EntryView"]>();
+  const [guidance, setGuidance] = useState<{
+    runId: string;
+    entry: Schema["EntryView"];
+  }>();
+  const steer = guidance?.runId === run.id ? guidance.entry : undefined;
   const steerStatus = useQuery({
     ...conversationQueries(client, workspace.id).entry(
       thread.id,
@@ -161,6 +177,7 @@ export function RunDock({
                 stop={canStop ? () => interrupt.mutate() : undefined}
                 stopping={interrupt.isPending}
                 submit={async (payload, key) => {
+                  if (!active) onSubmissionChange?.({ payload });
                   try {
                     // Guidance joins the active run; a next step never joins
                     // a run another caller started meanwhile.
@@ -187,10 +204,23 @@ export function RunDock({
                         }),
                     );
                     if (resubmit) onResubmitted?.();
-                    if (receipt.run) accepted(receipt.run);
-                    else if (active) setSteer(receipt.entry);
-                  } finally {
+                    if (receipt.run) {
+                      if (!active)
+                        onSubmissionChange?.({
+                          payload,
+                          runId: receipt.run.id,
+                        });
+                      accepted(receipt.run, receipt.thread);
+                    } else {
+                      if (active)
+                        setGuidance({ runId: run.id, entry: receipt.entry });
+                      else onSubmissionChange?.(null);
+                      void refresh();
+                    }
+                  } catch (error) {
+                    if (!active) onSubmissionChange?.(null);
                     void refresh();
+                    throw error;
                   }
                 }}
               />

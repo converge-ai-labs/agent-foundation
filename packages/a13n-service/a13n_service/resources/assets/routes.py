@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/v1/assets", tags=["assets"])
 async def create_asset(
     response: Response, workspace_id: WorkspaceId, body: AssetCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Asset:
-    result, created = await service.create_asset(runtime.storage, runtime.objects, actor, workspace_id, body)
+    result, created = await service.create_asset(runtime.storage, actor, workspace_id, body)
     response.status_code = 201 if created else 200
     return tagged(response, result)
 
