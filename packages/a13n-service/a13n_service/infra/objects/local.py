@@ -10,7 +10,7 @@ from anyio import fail_after
 from anyio.to_thread import run_sync
 
 from a13n_service.infra.errors import ServiceError
-from a13n_service.infra.objects.interface import ObjectRef, reference, refuse_different, validate_key
+from a13n_service.infra.objects.interface import ObjectRef, reference, validate_key
 
 
 class LocalObjects:
@@ -33,18 +33,13 @@ class LocalObjects:
                 file.write(data)
                 file.flush()
                 os.fsync(file.fileno())
+            # The rename publishes complete bytes atomically; only a repeat of this write can meet the key.
+            temporary.replace(path)
+            directory = os.open(path.parent, os.O_RDONLY)
             try:
-                # link() fails when the key exists, which makes creation atomic and never replaces bytes.
-                os.link(temporary, path)
-            except FileExistsError:
-                if path.read_bytes() != data:
-                    raise refuse_different(key) from None
-            else:
-                directory = os.open(path.parent, os.O_RDONLY)
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
+                os.fsync(directory)
+            finally:
+                os.close(directory)
         finally:
             temporary.unlink(missing_ok=True)
 

@@ -72,7 +72,8 @@ class AssetsCapability(AbstractCapability[AgentContext]):
         with tool_failures():
             authorize(self.principal, scope, "write", authority=self.authority)
             content = await _read(ctx.deps.environment, path, runtime.settings.objects.max_bytes)
-            receipt = await uploads.store(
+            upload = await uploads.store(
+                runtime.storage,
                 runtime.objects,
                 scope,
                 self.principal.id,
@@ -83,10 +84,9 @@ class AssetsCapability(AbstractCapability[AgentContext]):
             )
             asset, _ = await create_asset(
                 runtime.storage,
-                runtime.objects,
                 self.principal,
                 scope.workspace_id,
-                AssetCreate(upload_id=receipt.id, name=receipt.filename),
+                AssetCreate(upload_id=upload.upload_id, name=upload.filename),
                 source={"run_id": lease.run_id, "run_attempt_id": lease.attempt_id, "tool_call_id": call_id},
             )
         return {

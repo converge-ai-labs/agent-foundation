@@ -421,7 +421,7 @@ async def test_package_validation_reads_the_manifest_and_stores_nothing(service,
     invalid = {"kind": "upload", "upload_id": await stage(service, archive({"README.md": b"x"}), "invalid")}
     rejected = await service.client.post(validate, json={"source": invalid})
     assert rejected.status_code == 400 and "SKILL.md must be at the archive root" in rejected.text
-    unknown = await service.client.post(validate, json={"source": {**source, "upload_id": "upl_" + "0" * 64}})
+    unknown = await service.client.post(validate, json={"source": {**source, "upload_id": "upl_" + "0" * 32}})
     assert unknown.status_code == 404, unknown.text
 
     runtime, workspace_id = service.runtime, service.tenant.workspace_id

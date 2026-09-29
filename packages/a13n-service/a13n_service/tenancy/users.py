@@ -106,8 +106,8 @@ async def change_avatar(
     image = None
     if data is not None:
         async with short_session(storage) as session:
-            await _current_profile(session, actor.id, if_match, locked=False)
-        image = await images.store(objects, images.prefix_for(actor.id, organization_id=None), data)
+            current = (await _current_profile(session, actor.id, if_match, locked=False)).image
+        image = await images.store(objects, images.prefix_for(actor.id, organization_id=None), data, current=current)
     async with transaction(storage) as session:
         row = await _current_profile(session, actor.id, if_match)
         await _record_update(session, row, assign(row, {"image": image}))

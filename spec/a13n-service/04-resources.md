@@ -327,8 +327,16 @@ There is no per-connection allow list and no check against an agent revision, be
 
 Stored bytes are never reclaimed, so each principal has one **upload budget** of `objects.upload_limit` requests per `objects.upload_window_seconds`, spent by every upload, every stored image ([03](03-tenancy.md#images)) and every [GitHub read](#skills); an exhausted budget is `rate_limited`.
 
-- The upload ID (`upl_` and 64 hex characters) is derived from the organization, workspace, principal and request key. The same key with the same bytes, filename and content type returns the same upload; anything else is 409 `idempotency_key_reused` ([10](10-api.md#idempotency)).
-- Bytes land under `orgs/{org}/uploads/{upload}` ([07](07-facts-and-delivery.md#objects)), and a receipt written last binds them to the workspace. An upload resolves only through its receipt and only in its own workspace, so a handle never names an arbitrary object key. Staged uploads are not reclaimed.
+```
+uploads   (upl_)
+  id  organization_id  workspace_id  created_by_id  request_key
+  filename  content_type  size  digest  created_at
+  UNIQUE (workspace_id, created_by_id, request_key)
+  CHECK (size >= 0)
+```
+
+- A new request key gets a new random upload ID. Its bytes land under `orgs/{org}/uploads/{upload}` ([07](07-facts-and-delivery.md#objects)) and the row is written after them, so an upload ID always names finished bytes. An upload resolves only through its row and only in its own workspace, so a handle never names an arbitrary object key. Rows are immutable and staged uploads are not reclaimed.
+- The row is the request key's evidence. The same key with the same bytes, filename and content type returns the same upload; anything else is 409 `idempotency_key_reused` ([10](10-api.md#idempotency)). Concurrent requests with one key can each store bytes; the unique constraint admits one row, and the others answer from it as a replay.
 
 ```
 assets   (ast_)

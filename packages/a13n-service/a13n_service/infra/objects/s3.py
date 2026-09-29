@@ -1,4 +1,4 @@
-"""S3-compatible object store; conditional `If-None-Match: *` makes every write create-only."""
+"""S3-compatible object store; keys are written once, so every write is a plain `PutObject`."""
 
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -10,7 +10,7 @@ from anyio import fail_after
 from botocore.exceptions import BotoCoreError, ClientError
 
 from a13n_service.infra.errors import ServiceError
-from a13n_service.infra.objects.interface import ObjectRef, reference, refuse_different, validate_key
+from a13n_service.infra.objects.interface import ObjectRef, reference, validate_key
 
 if TYPE_CHECKING:
     from types_aiobotocore_s3.client import S3Client
@@ -40,15 +40,9 @@ class S3Objects:
         try:
             with fail_after(self.timeout):
                 await self.client.put_object(
-                    Bucket=self.bucket, Key=self._key(key), Body=data, ContentType=content_type, IfNoneMatch="*"
+                    Bucket=self.bucket, Key=self._key(key), Body=data, ContentType=content_type
                 )
-        except ClientError as error:
-            if _code(error) not in {"PreconditionFailed", "ConditionalRequestConflict"}:
-                raise _unavailable(error) from None
-            # The key exists: an identical earlier write (possibly our own lost acknowledgement) is success.
-            if await self.get(key) != data:
-                raise refuse_different(key) from None
-        except BotoCoreError as error:
+        except (ClientError, BotoCoreError) as error:
             raise _unavailable(error) from None
         return reference(key, data, content_type)
 

@@ -677,7 +677,7 @@ async def test_agent_avatars(service, settings: Settings) -> None:  # type: igno
     assert stored.json()["image_url"] == f"{avatar}?v={digest}"
     assert stored.headers["etag"] == etag(stored.json()) and stored.json()["version"] > agent["version"]
     objects = settings.objects.root / f"orgs/{service.tenant.organization_id}/images/{agent['id']}"
-    assert (objects / digest).read_bytes() == PNG
+    assert [path.read_bytes() for path in objects.iterdir()] == [PNG]
     served = await service.client.get(stored.json()["image_url"])
     assert (served.status_code, served.content, served.headers["content-type"]) == (200, PNG, "image/png")
     assert served.headers["x-content-type-options"] == "nosniff"
@@ -703,7 +703,7 @@ async def test_agent_avatars(service, settings: Settings) -> None:  # type: igno
     archived = (await service.client.post(f"{item}/archive", headers={"if-match": etag(stored.json())})).json()
     closed = await service.client.put(avatar, content=jpeg, headers=changing(archived))
     assert closed.status_code == 409 and closed.json()["error"]["details"]["reason"] == "archived"
-    assert [path.name for path in objects.iterdir()] == [digest]
+    assert [path.read_bytes() for path in objects.iterdir()] == [PNG]
     restored = (await service.client.post(f"{item}/unarchive", headers={"if-match": etag(archived)})).json()
     removed = await service.client.delete(avatar, headers={"if-match": etag(restored)})
     assert removed.status_code == 200 and removed.json()["image_url"] is None

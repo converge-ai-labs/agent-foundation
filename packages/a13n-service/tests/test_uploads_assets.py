@@ -1,5 +1,7 @@
 """Upload staging and assets: tenant-bound handles, idempotent staging, retirement and preconditions."""
 
+import asyncio
+
 import pytest
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session, transaction
@@ -7,7 +9,8 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.assets.service import require_usable
 from a13n_service.resources.uploads import service as uploads
-from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
+from a13n_service.resources.uploads.schemas import Upload
+from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal, WorkspaceScope
 from a13n_service.tenancy.tables import WorkspaceRow
 from sqlalchemy import select
 
@@ -123,3 +126,41 @@ async def test_upload_bounds_and_workspace_binding(service) -> None:  # type: ig
         f"{service.api}/assets", json={"upload_id": elsewhere.json()["upload_id"], "name": "a.txt"}
     )
     assert borrowed.status_code == 404
+
+
+@pytest.mark.parametrize("other", [b"a", b"b"])
+async def test_concurrent_staging_under_one_request_key(service, monkeypatch, other: bytes) -> None:  # type: ignore[no-untyped-def]
+    """Both requests miss the lookup and store their bytes; the unique index keeps one upload, which the other
+    returns for the same bytes and refuses for different ones."""
+    storage, objects = service.runtime.storage, service.runtime.objects
+    scope = WorkspaceScope(service.tenant.organization_id, service.tenant.workspace_id)
+    original, both, writes = objects.put, asyncio.Event(), []
+
+    async def put(key: str, data: bytes, *, content_type: str):  # type: ignore[no-untyped-def]
+        writes.append(key)
+        if len(writes) == 2:
+            both.set()
+        await both.wait()
+        return await original(key, data, content_type=content_type)
+
+    monkeypatch.setattr(objects, "put", put)
+
+    async def stage(content: bytes) -> Upload:
+        return await uploads.store(
+            storage,
+            objects,
+            scope,
+            service.tenant.principal_id,
+            request_key="race",
+            filename="a.txt",
+            content_type="text/plain",
+            content=content,
+        )
+
+    results = await asyncio.gather(stage(b"a"), stage(other), return_exceptions=True)
+    staged = [result for result in results if not isinstance(result, BaseException)]
+    if other == b"a":
+        assert len(staged) == 2 and staged[0] == staged[1]
+    else:
+        (refused,) = [result for result in results if isinstance(result, ServiceError)]
+        assert len(staged) == 1 and refused.details["reason"] == "idempotency_key_reused"

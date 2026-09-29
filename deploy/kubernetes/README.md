@@ -121,7 +121,7 @@ Write a values file outside the repository, starting from `helm/a13n-service/val
 
 - A cluster with sufficient capacity, network access to its dependencies and image-pull access. Validate the cluster's admission and resource policies.
 - PostgreSQL and a reachable Redis endpoint. The bundled ones (`postgresql.enabled`, `redis.enabled`) are for development only.
-- Objects: an S3-compatible bucket with permissions for reading, listing and conditional create-only writes, or a ReadWriteMany claim through `persistence.existingClaim`. `serviceAccount.annotations` can attach a workload identity to the generated ServiceAccount (`a13n-a13n` for release `a13n`); default service-account token automount is disabled.
+- Objects: an S3-compatible bucket with permissions for reading, writing, listing and deleting objects, or a ReadWriteMany claim through `persistence.existingClaim`. `serviceAccount.annotations` can attach a workload identity to the generated ServiceAccount (`a13n-a13n` for release `a13n`); default service-account token automount is disabled.
 - An ingress controller, DNS and TLS matching `publicUrl`, and `trustedProxies` covering the proxy addresses. Health-check `/readyz`, and allow long-lived server-sent event streams through the proxy's idle timeout.
 
 Install a Service release with its published Chart, which deploys that release's image:

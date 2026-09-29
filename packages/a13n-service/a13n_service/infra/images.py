@@ -1,11 +1,11 @@
 """Owner images, such as avatars and icons: untrusted raster bytes, stored and served so they stay images.
 
 Only PNG, JPEG and WebP are accepted, recognized by their signature bytes whatever the request declares; SVG and
-every other format are refused. An image is stored create-only at its SHA-256 digest under its owner's prefix,
-and the owner's row keeps the resulting `ObjectRef` in its `image` column. Replacing or removing an image changes
-only that reference; superseded bytes stay stored, since v1 reclaims no objects. Reads verify the bytes against
-the reference and serve them with the recognized type, `nosniff` and a CSP that allows nothing, so crafted
-content never runs as a document.
+every other format are refused. An image is stored under a new key below its owner's prefix, and the owner's row
+keeps the resulting `ObjectRef` in its `image` column. Replacing or removing an image changes only that reference;
+superseded bytes stay stored, since v1 reclaims no objects. Reads verify the bytes against the reference and serve
+them with the recognized type, `nosniff` and a CSP that allows nothing, so crafted content never runs as a
+document.
 """
 
 import hashlib
@@ -15,7 +15,7 @@ from pydantic import JsonValue, TypeAdapter
 
 from a13n_service.infra.errors import invalid, not_found
 from a13n_service.infra.http import STORED_CONTENT_HEADERS
-from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, read
+from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, new_key, read
 
 TYPES = ("image/png", "image/jpeg", "image/webp")
 _BINARY = {"schema": {"type": "string", "format": "binary"}}
@@ -45,10 +45,18 @@ def _image_type(data: bytes) -> str:
     raise invalid("image", "unsupported_type")
 
 
-async def store(objects: ObjectStore, prefix: str, data: bytes) -> dict[str, JsonValue]:
-    """Store a PNG, JPEG or WebP image under `prefix`; the result is what its owner's `image` column holds."""
+async def store(
+    objects: ObjectStore, prefix: str, data: bytes, *, current: dict[str, JsonValue] | None
+) -> dict[str, JsonValue]:
+    """Store a PNG, JPEG or WebP image under `prefix`; the result is what its owner's `image` column holds.
+
+    The owner's `current` image is kept when it already holds these bytes, so setting the same image again
+    changes nothing.
+    """
     content_type = _image_type(data)
-    reference = await objects.put(f"{prefix}/{hashlib.sha256(data).hexdigest()}", data, content_type=content_type)
+    if current is not None and _REFERENCE.validate_python(current).digest == hashlib.sha256(data).hexdigest():
+        return current
+    reference = await objects.put(new_key(prefix), data, content_type=content_type)
     return _REFERENCE.dump_python(reference, mode="json")
 
 

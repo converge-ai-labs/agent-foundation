@@ -231,9 +231,9 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         mounts = tuple(EnvironmentMount.model_validate(mount) for mount in run.environment_mounts)
         memory_cursors = dict(run.memory_cursors)
     own, base, display = await asyncio.gather(
-        checkpoints.load_state(runtime.objects, lease.organization_id, lease.run_id, checkpoint),
-        checkpoints.load_state(runtime.objects, lease.organization_id, parent_id or lease.run_id, parent_checkpoint),
-        checkpoints.load_display(runtime.objects, lease.organization_id, lease.run_id, display_pointer),
+        checkpoints.load_state(runtime.objects, lease.run_id, checkpoint),
+        checkpoints.load_state(runtime.objects, parent_id or lease.run_id, parent_checkpoint),
+        checkpoints.load_display(runtime.objects, display_pointer),
     )
     state, resume = _initial(lease.thread_id, base, fork=fork, pending=pending, answers=answers, history=history)
     resume_input = (

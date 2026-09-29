@@ -1,15 +1,17 @@
-"""The object-store contract: owner-named keys, create-only writes, verified reads, listing and deletion.
+"""The object-store contract: write-once keys, verified reads, listing and deletion.
 
-Every object is immutable. There is no conditional replacement: an owner makes new bytes reachable by
-committing a reference to a new key in PostgreSQL, and only the owner deletes what it no longer references.
+Every object is immutable. Each write names a key that no other write uses, so a store write never replaces
+other bytes and repeating an uncertain write is harmless. An owner makes bytes reachable by committing a
+reference to their key in PostgreSQL, and only the owner deletes what it no longer references.
 """
 
 import hashlib
 import re
+import secrets
 from dataclasses import dataclass
 from typing import Protocol
 
-from a13n_service.infra.errors import ServiceError, conflict
+from a13n_service.infra.errors import ServiceError
 
 MAX_KEY_LENGTH = 1024
 _KEY = re.compile(r"^[a-z0-9][a-z0-9_.-]*(/[a-z0-9][a-z0-9_.-]*)*$")
@@ -25,8 +27,7 @@ class ObjectRef:
 
 class ObjectStore(Protocol):
     async def put(self, key: str, data: bytes, *, content_type: str) -> ObjectRef:
-        """Create `key` once. Identical bytes at an existing key succeed, so an uncertain write is resolved by
-        repeating it; different bytes raise `conflict` and never replace what is stored."""
+        """Store `data` at `key`, which no other write uses; repeating the same write is harmless."""
         ...
 
     async def get(self, key: str) -> bytes | None: ...
@@ -38,6 +39,11 @@ class ObjectStore(Protocol):
     async def delete(self, key: str) -> None:
         """Remove `key`; a missing key is not an error."""
         ...
+
+
+def new_key(prefix: str) -> str:
+    """A key below `prefix` that no other write uses: 128 random bits."""
+    return f"{prefix}/{secrets.token_hex(16)}"
 
 
 def reference(key: str, data: bytes, content_type: str) -> ObjectRef:
@@ -58,7 +64,3 @@ async def read(store: ObjectStore, ref: ObjectRef) -> bytes:
     if len(data) != ref.size or hashlib.sha256(data).hexdigest() != ref.digest:
         raise ServiceError("unavailable", "Referenced object does not match its digest", {"dependency": "objects"})
     return data
-
-
-def refuse_different(key: str) -> ServiceError:
-    return conflict("object", key, "different_bytes")

@@ -29,7 +29,6 @@ def _replay(row: AssetRow, body: AssetCreate) -> Asset:
 
 async def create_asset(
     storage: Storage,
-    objects: ObjectStore,
     actor: Principal,
     workspace_id: str,
     body: AssetCreate,
@@ -42,9 +41,9 @@ async def create_asset(
     """
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-    # A receipt exists only once its bytes are stored; reads verify them against its digest.
-    receipt = await uploads.get_receipt(objects, scope, body.upload_id)
-    reference = uploads.object_key(scope.organization_id, receipt.id)
+        # An upload row exists only once its bytes are stored; reads verify them against its digest.
+        upload = await uploads.find(session, scope.workspace_id, body.upload_id)
+    reference = uploads.object_key(scope.organization_id, upload.id)
     existing = select(AssetRow).where(AssetRow.workspace_id == scope.workspace_id, AssetRow.content_ref == reference)
     try:
         async with transaction(storage) as session:
@@ -56,9 +55,9 @@ async def create_asset(
                 organization_id=scope.organization_id,
                 workspace_id=scope.workspace_id,
                 name=body.name,
-                content_type=receipt.content_type,
-                size=receipt.size,
-                digest=receipt.digest,
+                content_type=upload.content_type,
+                size=upload.size,
+                digest=upload.digest,
                 content_ref=reference,
                 source=source,
                 created_by_id=actor.id,

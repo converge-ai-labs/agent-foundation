@@ -168,7 +168,8 @@ async def change_avatar(
             scope = await workspace_scope(session, actor, workspace_id, "write")
             head = await resolve_agent(session, scope.workspace_id, agent_id)
             revisions.require_open(head, if_match)
-        image = await images.store(objects, images.prefix_for(head.id, organization_id=scope.organization_id), data)
+        prefix = images.prefix_for(head.id, organization_id=scope.organization_id)
+        image = await images.store(objects, prefix, data, current=head.image)
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         head = await revisions.open_head(session, AgentRow, scope.workspace_id, agent_id, if_match)

@@ -94,16 +94,16 @@ async def lineage(storage: Storage, actor: Principal, workspace_id: str, run_id:
 
 async def items(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str) -> RunItems:
     """The committed display. A sealed run's unfinished items can no longer finish, so they read interrupted."""
-    organization_id, pointer, view = await _read(runtime.storage, actor, workspace_id, run_id)
+    pointer, view = await _read(runtime.storage, actor, workspace_id, run_id)
     try:
-        display = await checkpoints.load_display(runtime.objects, organization_id, run_id, pointer)
+        display = await checkpoints.load_display(runtime.objects, pointer)
     except ServiceError as error:
         if error.code != "unavailable":
             raise
         # A checkpoint committed after the pointer was read deletes the object it replaced; the pointer read
         # again names the display that replaced it.
-        organization_id, pointer, view = await _read(runtime.storage, actor, workspace_id, run_id)
-        display = await checkpoints.load_display(runtime.objects, organization_id, run_id, pointer)
+        pointer, view = await _read(runtime.storage, actor, workspace_id, run_id)
+        display = await checkpoints.load_display(runtime.objects, pointer)
     display = display or Display()
     sealed = view.sealed_at is not None
     return RunItems(
@@ -121,12 +121,12 @@ async def items(runtime: Runtime, actor: Principal, workspace_id: str, run_id: s
 
 async def _read(
     storage: Storage, actor: Principal, workspace_id: str, run_id: str
-) -> tuple[str, checkpoints.DisplayPointer | None, RunView]:
+) -> tuple[checkpoints.DisplayPointer | None, RunView]:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         run = await get_run(session, scope.workspace_id, run_id)
         pointer = checkpoints.DisplayPointer.model_validate(run.display) if run.display is not None else None
-        return run.organization_id, pointer, await run_view(session, run)
+        return pointer, await run_view(session, run)
 
 
 async def update_labels(

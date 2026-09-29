@@ -50,11 +50,15 @@ async def resolve_revision(session: AsyncSession, head: SkillRow, revision_id: s
 
 
 async def _read(
-    objects: ObjectStore, github: GitHub, scope: WorkspaceScope, source: UploadSource | GitHubSource
+    storage: Storage,
+    objects: ObjectStore,
+    github: GitHub,
+    scope: WorkspaceScope,
+    source: UploadSource | GitHubSource,
 ) -> tuple[SkillManifest, bytes]:
     """Read and validate a package outside any transaction: the manifest its revision freezes, and its archive."""
     if isinstance(source, UploadSource):
-        _, archive = await uploads.load(objects, scope, source.upload_id)
+        archive = await uploads.load(storage, objects, scope.workspace_id, source.upload_id)
         recorded: UploadSource | GitHubSource = source
     else:
         commit, files = await github.fetch(source)
@@ -75,16 +79,22 @@ async def _read(
 
 
 async def _prepare(
-    objects: ObjectStore, github: GitHub, scope: WorkspaceScope, actor: Principal, source: UploadSource | GitHubSource
+    storage: Storage,
+    objects: ObjectStore,
+    github: GitHub,
+    scope: WorkspaceScope,
+    actor: Principal,
+    source: UploadSource | GitHubSource,
 ) -> tuple[SkillManifest, str]:
     """A package's manifest and the object its revision references: an upload in place, GitHub content staged as
     the actor's upload."""
-    manifest, archive = await _read(objects, github, scope, source)
+    manifest, archive = await _read(storage, objects, github, scope, source)
     if isinstance(source, UploadSource):
         return manifest, uploads.object_key(scope.organization_id, source.upload_id)
     # Derived from what was read, so importing the same content again reuses the staged archive.
     identity = json.dumps(["github", source.repository, manifest.package_digest]).encode()
-    receipt = await uploads.store(
+    upload = await uploads.store(
+        storage,
         objects,
         scope,
         actor.id,
@@ -93,7 +103,7 @@ async def _prepare(
         content_type="application/zip",
         content=archive,
     )
-    return manifest, uploads.object_key(scope.organization_id, receipt.id)
+    return manifest, uploads.object_key(scope.organization_id, upload.upload_id)
 
 
 async def _views(session: AsyncSession, heads: Sequence[SkillRow]) -> list[Skill]:
@@ -135,7 +145,7 @@ async def create_skill(
 ) -> Skill:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-    manifest, package_ref = await _prepare(objects, github, scope, actor, body.source)
+    manifest, package_ref = await _prepare(storage, objects, github, scope, actor, body.source)
     async with transaction(storage) as session:
         await workspace_scope(session, actor, scope.workspace_id, "write")
         head = SkillRow(
@@ -175,7 +185,7 @@ async def validate_package(
     """The manifest a skill read from `source` would freeze, checked as creating one checks it; storing nothing."""
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-    manifest, _ = await _read(objects, github, scope, source)
+    manifest, _ = await _read(storage, objects, github, scope, source)
     return manifest
 
 
@@ -253,7 +263,7 @@ async def create_revision(
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         revisions.require_open(await resolve_skill(session, scope.workspace_id, skill_id), if_match)
-    manifest, package_ref = await _prepare(objects, github, scope, actor, body.source)
+    manifest, package_ref = await _prepare(storage, objects, github, scope, actor, body.source)
     async with transaction(storage) as session:
         await workspace_scope(session, actor, scope.workspace_id, "write")
         head = await revisions.open_head(session, SkillRow, scope.workspace_id, skill_id, if_match)

@@ -1,1 +1,1 @@
-"""Object storage adapters behind the create-only contract in `interface.py`."""
+"""Object storage adapters behind the write-once contract in `interface.py`."""
