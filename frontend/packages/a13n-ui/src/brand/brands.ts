@@ -111,7 +111,7 @@ const curatedBrands: Record<string, Brand> = {
   moonshot: { icon: `${lobeIconsCdn}kimi-color.svg` },
   zhipu: { icon: `${lobeIconsCdn}zhipu-color.svg` },
   docker: {
-    icon: "https://cdn.jsdelivr.net/gh/devicons/devicon@v2.17.0/icons/docker/docker-original.svg",
+    icon: "https://cdn.jsdelivr.net/gh/pheralb/svgl@41d98985b481036562a6406e5c361af8a2781493/static/library/docker.svg",
   },
   e2b: { icon: "https://e2b.dev/brand/e2b-symbol-fire-orange-s.svg" },
   // Marks published by the vendors themselves; the registry links, never copies.

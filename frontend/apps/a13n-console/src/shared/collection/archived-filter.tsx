@@ -15,7 +15,6 @@ export function ArchivedFilter({
   return (
     <Button
       type="button"
-      size="sm"
       variant="outline"
       className={styles.archivedChip}
       data-active={value ? "true" : undefined}
