@@ -12,6 +12,7 @@ import {
   type EnvironmentBinding,
 } from "./environment-bindings";
 import { ForgetEnvironment } from "./forget-environment";
+import { fullControl, readOnly } from "./environment-permissions";
 
 let queries: QueryClient;
 let requests: Request[];
@@ -171,7 +172,13 @@ it("selects an explicit Device directory and preserves it when reopening", async
   );
   await user.click(screen.getByRole("button", { name: "Use environment" }));
   expect(JSON.parse(screen.getByTestId("selection").textContent!)).toEqual({
-    bindings: [{ ...binding, working_directory: "/work/alpha" }],
+    bindings: [
+      {
+        ...binding,
+        working_directory: "/work/alpha",
+        permission_ceiling: { operations: fullControl },
+      },
+    ],
     defaultEnvironment: "workspace",
   });
   await user.click(screen.getByRole("button", { name: "Edit build" }));
@@ -218,31 +225,78 @@ it("retains manual paths offline, retries observations, and respects disabled di
   await user.click(screen.getByRole("button", { name: "Use environment" }));
   expect(
     JSON.parse(screen.getByTestId("selection").textContent!).bindings,
-  ).toEqual([binding]);
+  ).toEqual([{ ...binding, permission_ceiling: { operations: fullControl } }]);
   expect(requests.some((request) => request.url.includes("/directories"))).toBe(
     false,
   );
 });
-it("keeps custom action ceilings when editing only a path", async () => {
-  const initial: EnvironmentBinding = {
-    ...binding,
-    permission_ceiling: { operations: ["environment.file.read_text"] },
-    expected_boundary: { sandbox: { mode: "disabled" }, egress: "inherit" },
-    egress: { destinations: { mode: "allowlist", hosts: ["example.com"] } },
-  };
-  mount(<Fields initial={[initial]} />);
-  const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Edit build" }));
-  await user.clear(screen.getByRole("textbox", { name: "Working directory" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Working directory" }),
-    "/other",
+it("defaults to full control and can save and reopen read-only access", async () => {
+  mount(<Fields />);
+  const user = await chooseDevice();
+  const actions = screen.getByRole("combobox", { name: "Allowed actions" });
+  expect(actions.textContent).toBe("Full control");
+  await user.click(actions);
+  expect(
+    screen.getAllByRole("option").map((option) => option.textContent),
+  ).toEqual(["Read only", "Full control"]);
+  await user.click(screen.getByRole("option", { name: "Read only" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Use Device default" }),
   );
   await user.click(screen.getByRole("button", { name: "Use environment" }));
   expect(
     JSON.parse(screen.getByTestId("selection").textContent!).bindings,
-  ).toEqual([{ ...initial, working_directory: "/other" }]);
+  ).toEqual([{ ...binding, permission_ceiling: { operations: readOnly } }]);
+  await user.click(screen.getByRole("button", { name: "Edit build" }));
+  expect(
+    screen.getByRole("combobox", { name: "Allowed actions" }).textContent,
+  ).toBe("Read only");
+  await user.click(screen.getByRole("combobox", { name: "Allowed actions" }));
+  await user.click(screen.getByRole("option", { name: "Full control" }));
+  await user.click(screen.getByRole("button", { name: "Use environment" }));
+  expect(
+    JSON.parse(screen.getByTestId("selection").textContent!).bindings,
+  ).toEqual([{ ...binding, permission_ceiling: { operations: fullControl } }]);
+  await user.click(screen.getByRole("button", { name: "Edit build" }));
+  expect(
+    screen.getByRole("combobox", { name: "Allowed actions" }).textContent,
+  ).toBe("Full control");
 });
+it.each([
+  undefined,
+  { operations: ["environment.file.read_text"] },
+  {
+    operations: ["environment.computer.observe", "environment.computer.click"],
+  },
+  { operations: [] },
+] satisfies EnvironmentBinding["permission_ceiling"][])(
+  "keeps custom action ceilings when editing only a path: %j",
+  async (ceiling) => {
+    const initial: EnvironmentBinding = {
+      ...binding,
+      permission_ceiling: ceiling,
+      expected_boundary: { sandbox: { mode: "disabled" }, egress: "inherit" },
+      egress: { destinations: { mode: "allowlist", hosts: ["example.com"] } },
+    };
+    mount(<Fields initial={[initial]} />);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit build" }));
+    expect(
+      screen.getByRole("combobox", { name: "Allowed actions" }).textContent,
+    ).toBe("Keep existing permissions");
+    await user.clear(
+      screen.getByRole("textbox", { name: "Working directory" }),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Working directory" }),
+      "/other",
+    );
+    await user.click(screen.getByRole("button", { name: "Use environment" }));
+    expect(
+      JSON.parse(screen.getByTestId("selection").textContent!).bindings,
+    ).toEqual([{ ...initial, working_directory: "/other" }]);
+  },
+);
 it("forgets local configuration through the existing API without any Device connection", async () => {
   mount(
     <ForgetEnvironment

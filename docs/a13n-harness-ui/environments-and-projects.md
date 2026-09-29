@@ -254,6 +254,6 @@ The adapter adds each captured Project root to the grant set with `project_acces
 
 ## Use a Mac desktop from WebUI
 
-Envd can connect outward from a Mac and expose screenshots and bounded mouse/keyboard actions. Run `a13n-envd connect <your-WebUI-origin> --computer-use true`, approve the Device, then explicitly select **Desktop observation and control** in the binding's **Allowed actions**. Ordinary **Files and execution**, Device approval and local Full Control do not enable desktop tools. Use a model with image input and an Agent with Dynamic Environment tools.
+Envd can connect outward from a Mac and expose screenshots and bounded mouse/keyboard actions. Run `a13n-envd connect <your-WebUI-origin> --computer-use true`, approve the Device, then add a binding with **Full control** under **Allowed actions** (the default for new bindings). Full control includes files, command execution and computer use where enabled on the Device. **Read only** appears first and permits only file reading and browsing. Older bindings keep their existing permissions until you explicitly select a replacement. Device approval and the local Full Control profile do not themselves enable desktop tools; daemon computer-use enablement and operating-system permissions still apply. Use a model with image input and an Agent with Dynamic Environment tools.
 
 See [desktop computer use](../a13n-envd/computer-use.md) for native permissions, setup, observation-only configuration, screenshot preview and shared-desktop limitations.
