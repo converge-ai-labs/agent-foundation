@@ -93,7 +93,7 @@ async def test_builtin_skill_discovery_and_read_only_environment(
                 index = await environment.files.read_text(f"{item.logical_path}/references/navigation.md")
                 assert "lines " in index.text
                 assert (
-                    "# Configuration reference"
+                    "title: Configuration reference"
                     in (await environment.files.read_text(f"{item.logical_path}/docs/configuration.md")).text
                 )
                 mount = next(mount for mount in plan._mounts if mount.alias == "builtin-skills")
