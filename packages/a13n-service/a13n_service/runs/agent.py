@@ -64,6 +64,7 @@ from pydantic_ai.settings import ModelSettings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import ServiceError
+from a13n_service.providers.model_settings import effective_settings
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents import definition, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, AgentOverride, SubagentSelection, apply_override
@@ -391,7 +392,7 @@ class _Host:
 
 def _settings(model: ResolvedModel, settings: Mapping[str, JsonValue]) -> ModelSettings:
     """The agent's native settings layered over the model's own defaults."""
-    effective = {**model.config.defaults(), **settings}
+    effective = effective_settings(model.config.model_api, model.config.defaults(), settings)
     if isinstance(headers := effective.get("extra_headers"), dict):
         effective["extra_headers"] = {name.lower(): value for name, value in headers.items()}
     return cast(ModelSettings, effective)

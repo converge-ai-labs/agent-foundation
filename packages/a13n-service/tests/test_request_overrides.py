@@ -21,7 +21,7 @@ from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.resources.models.schemas import ModelConfig
 from a13n_service.resources.models.service import ResolvedModel, model_settings
-from a13n_service.runs.agent import ResolvedAgent, build, media_understanding, model_resolver
+from a13n_service.runs.agent import ResolvedAgent, _settings, build, media_understanding, model_resolver
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ModelHTTPError
@@ -127,7 +127,7 @@ def test_provider_owned_headers_remain_reserved_and_defaults_replace_whole() -> 
     cleared = model_settings(
         model.config, model.provider, {"extra_body": {}, "extra_headers": {}}, registry=registry, field="settings"
     )
-    assert cleared == {"extra_body": {}, "extra_headers": {}}
+    assert cleared == {"openai_store": False, "extra_body": {}, "extra_headers": {}}
     provider = SimpleNamespace(
         type="openai",
         config={"auth_mode": "api_key", "api_key_header_name": "x-custom-key", "session_affinity_header": "x-thread"},
@@ -162,14 +162,17 @@ async def test_native_sdk_wire_preserves_raw_precedence(api: str, stream: bool) 
         if api == "openai.responses"
         else {"reasoning_effort": "future-effort"}
     )
-    settings = check_settings(
-        settings_schema(api),
+    model = selected(ModelConfig(model_name="gpt-5", model_api=api))
+    settings = model_settings(
+        model.config,
+        model.provider,
         {
             "thinking": False,
             "temperature": 0.1,
             "extra_body": {**raw, "temperature": 0.8, "vendor_extension": {"enabled": True}},
             "extra_headers": {"X-Test": "on"},
         },
+        registry=Registry.of([DEFINITION]),
         field="settings",
     )
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(request)) as client:
@@ -195,6 +198,10 @@ async def test_native_sdk_wire_preserves_raw_precedence(api: str, stream: bool) 
     assert len(captured) == 1
     body = captured[0]
     assert body["model"] == "gpt-5" and body["stream"] is stream
+    if api == "openai.responses":
+        assert body["store"] is False
+    else:
+        assert "store" not in body
     assert body["temperature"] == 0.8 and body["vendor_extension"] == {"enabled": True}
     assert all(body[key] == value for key, value in raw.items())
 
@@ -549,3 +556,81 @@ async def test_child_and_continuation_requests_keep_thread_affinity(
     assert continued.status_code == 201, continued.text
     await (await runs_kit.attempt(service))
     assert captured[-1][1] == parent_id
+
+
+@pytest.mark.parametrize("api", list(MODEL_APIS))
+def test_service_defaults_are_scoped_to_responses(api: str) -> None:
+    model = selected(ModelConfig(model_name="custom", model_api=api))
+    expected = {"openai_store": False} if api == "openai.responses" else {}
+    assert _settings(model, {}) == expected
+    assert model.config.defaults() == {}  # The baseline is not an authored value.
+
+
+@pytest.mark.parametrize("store", [True, False, None])
+def test_native_model_defaults_and_call_overrides_share_composition(store: bool | None) -> None:
+    model = selected(
+        ModelConfig(
+            model_name="gpt-5",
+            model_api="openai.responses",
+            max_tokens=1024,
+            extra_headers={"x-legacy": "old"},
+            settings={
+                "max_tokens": 8192,
+                "thinking": "medium",
+                "openai_store": store,
+                "openai_reasoning_summary": "detailed",
+                "extra_headers": {},
+            },
+        )
+    )
+    registry = Registry.of([DEFINITION])
+    assert _settings(model, {}) == model_settings(model.config, model.provider, {}, registry=registry, field="config")
+    assert _settings(model, {})["openai_store"] is store
+    assert _settings(model, {})["max_tokens"] == 8192
+    assert _settings(model, {})["extra_headers"] == {}
+    overrides = {"openai_store": False, "thinking": False, "extra_headers": {"X-Request": "yes"}}
+    assert _settings(model, overrides) == model_settings(
+        model.config, model.provider, overrides, registry=registry, field="settings"
+    )
+    assert _settings(model, overrides)["thinking"] is False
+    assert model.config.settings["openai_store"] is store
+    assert overrides["extra_headers"] == {"X-Request": "yes"}
+
+
+@pytest.mark.parametrize("store", [True, False])
+async def test_explicit_model_store_and_reasoning_defaults_reach_native_wire(store: bool) -> None:
+    captured: list[dict] = []
+
+    def request(request: httpx2.Request) -> httpx2.Response:
+        captured.append(json.loads(request.content))
+        return httpx2.Response(400, json={"error": {"message": "offline capture", "type": "invalid_request_error"}})
+
+    model = selected(
+        ModelConfig(
+            model_name="gpt-5",
+            model_api="openai.responses",
+            settings={
+                "openai_store": store,
+                "thinking": "medium",
+                "openai_reasoning_summary": "detailed",
+                "max_tokens": 8192,
+            },
+        )
+    )
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(request)) as client:
+        native = await DEFINITION.build(
+            model.config.model_name,
+            configuration={"base_url": "https://offline.invalid/v1", "auth_mode": "none"},
+            model_api=model.config.model_api,
+            http_client=client,
+            endpoint_policy=SimpleNamespace(validate=no_endpoint_check),
+        )
+        async with native:
+            with pytest.raises(ModelHTTPError):
+                await native.request(
+                    [ModelRequest(parts=[UserPromptPart("hello")])], _settings(model, {}), ModelRequestParameters()
+                )
+    assert captured[0]["store"] is store
+    assert captured[0]["reasoning"] == {"effort": "medium", "summary": "detailed"}
+    assert captured[0]["max_output_tokens"] == 8192
+    assert "reasoning.encrypted_content" in captured[0]["include"]

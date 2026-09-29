@@ -21,6 +21,9 @@ class ModelConfig(BaseModel):
     model_api: str = Field(pattern=r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$", max_length=96)
     # Context window and modalities.
     characteristics: HarnessModelCharacteristics = Field(default_factory=HarnessModelCharacteristics)
+    # Native request defaults, validated against the selected calling API.
+    settings: JsonSettings = Field(default_factory=dict)
+    # Existing flat defaults remain readable/writable; native settings take precedence.
     max_tokens: int | None = Field(default=None, ge=1, le=1000000)
     temperature: float | None = Field(default=None, ge=0, le=2)
     top_p: float | None = Field(default=None, gt=0, le=1)
@@ -42,7 +45,7 @@ class ModelConfig(BaseModel):
             values["extra_body"] = dict(self.extra_body)
         if self.extra_headers:
             values["extra_headers"] = dict(self.extra_headers)
-        return values
+        return {**values, **self.settings}
 
 
 class CatalogRef(BaseModel):

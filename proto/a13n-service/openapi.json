@@ -6568,6 +6568,13 @@
             "title": "Model Name",
             "type": "string"
           },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Settings",
+            "type": "object"
+          },
           "temperature": {
             "anyOf": [
               {
@@ -6651,6 +6658,13 @@
             "minLength": 1,
             "title": "Model Name",
             "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Settings",
+            "type": "object"
           },
           "temperature": {
             "anyOf": [

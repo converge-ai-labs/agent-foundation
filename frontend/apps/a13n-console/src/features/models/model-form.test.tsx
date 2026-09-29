@@ -53,6 +53,24 @@ const definition = {
     "openai.responses": "Responses",
   },
   catalog_providers: ["openai"],
+  settings_schemas: {
+    "openai.responses": {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        thinking: {
+          anyOf: [{ type: "boolean" }, { enum: ["low", "medium", "high"] }],
+        },
+        max_tokens: { type: "integer", minimum: 1 },
+        temperature: { type: "number" },
+        openai_store: { anyOf: [{ type: "boolean" }, { type: "null" }] },
+        openai_reasoning_summary: { enum: ["auto", "concise", "detailed"] },
+        openai_text_verbosity: { enum: ["low", "medium", "high"] },
+        extra_body: { type: "object" },
+        extra_headers: { type: "object" },
+      },
+    },
+  },
   supports_test: true,
   setup_url: null,
   setup_label: null,
@@ -224,8 +242,7 @@ it("creates a manual model with JSON request defaults in its configuration", asy
         description: "Company gateway",
         enabled: false,
         config: {
-          max_tokens: 4096,
-          temperature: 0.2,
+          settings: { max_tokens: 4096, temperature: 0.2 },
           model_name: "company-smart",
           model_api: "openai.chat_completions",
           characteristics: {},
@@ -309,6 +326,7 @@ it("applies a newly selected model immediately, including its catalog values", a
           model_name: "gpt-5.6",
           model_api: "openai.chat_completions",
           characteristics: secondEntry.characteristics,
+          settings: {},
         },
         pricing: secondEntry.pricing,
         catalog_ref: secondEntry.ref,
@@ -466,9 +484,11 @@ it("saves an edited model under its ETag without offering a billable test", asyn
         description: "Company gateway model",
         enabled: false,
         config: {
-          max_tokens: 4096,
-          extra_body: model.config.extra_body,
-          extra_headers: model.config.extra_headers,
+          settings: {
+            max_tokens: 4096,
+            extra_body: model.config.extra_body,
+            extra_headers: model.config.extra_headers,
+          },
           model_name: "company-smart",
           model_api: "openai.responses",
           characteristics: { capabilities: ["image_understanding"] },
@@ -478,4 +498,122 @@ it("saves an edited model under its ETag without offering a billable test", asyn
       },
     }),
   );
+});
+
+it("edits native defaults through fields and JSON without losing other settings", async () => {
+  mount({ modelKey: "smart" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /^Advanced/ }));
+  expect(
+    screen.getByRole("combobox", { name: "Store response" }).textContent,
+  ).toBe("Default (off)");
+  expect(screen.queryByLabelText("Temperature")).toBeNull();
+  expect(screen.queryByLabelText("Top P")).toBeNull();
+  const native = {
+    openai_store: true,
+    thinking: "low",
+    openai_text_verbosity: "low",
+    extra_headers: { "x-existing": "keep" },
+  };
+  fireEvent.change(screen.getByLabelText("Settings JSON"), {
+    target: { value: JSON.stringify(native) },
+  });
+  expect(
+    screen.getByRole("combobox", { name: "Store response" }).textContent,
+  ).toBe("On");
+  expect(
+    screen.getByRole("combobox", { name: "Thinking effort" }).textContent,
+  ).toBe("Low");
+  await user.click(screen.getByRole("combobox", { name: "Thinking effort" }));
+  await user.click(await screen.findByRole("option", { name: "Medium" }));
+  await user.click(screen.getByRole("combobox", { name: "Reasoning summary" }));
+  await user.click(await screen.findByRole("option", { name: "Detailed" }));
+  fireEvent.change(screen.getByLabelText("Max output tokens"), {
+    target: { value: "8192" },
+  });
+  await user.click(screen.getByRole("combobox", { name: "Store response" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Default (off)" }),
+  );
+  const { openai_store: _store, ...preserved } = native;
+  const expected = {
+    ...preserved,
+    thinking: "medium",
+    openai_reasoning_summary: "detailed",
+    max_tokens: 8192,
+  };
+  expect(
+    JSON.parse(
+      (screen.getByLabelText("Settings JSON") as HTMLTextAreaElement).value,
+    ),
+  ).toEqual(expected);
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(state.PATCH).toHaveBeenCalledWith(
+      `${modelsPath}/{key}`,
+      expect.objectContaining({
+        body: expect.objectContaining({
+          config: expect.objectContaining({ settings: expected }),
+        }),
+      }),
+    ),
+  );
+});
+
+it("preserves stored native settings when only the name is edited", async () => {
+  const settings = {
+    openai_store: false,
+    thinking: "high",
+    openai_text_verbosity: "low",
+    extra_headers: {},
+  };
+  const originalGet = state.GET.getMockImplementation()!;
+  state.GET.mockImplementation(async (path: string, args: unknown) =>
+    path.endsWith("{key}")
+      ? {
+          data: { ...model, config: { ...model.config, settings } },
+          response: response(),
+        }
+      : originalGet(path, args),
+  );
+  mount({ modelKey: "smart" });
+  const user = userEvent.setup();
+  await user.type(await screen.findByLabelText("Name"), " updated");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(state.PATCH).toHaveBeenCalledWith(
+      `${modelsPath}/{key}`,
+      expect.objectContaining({
+        body: expect.objectContaining({
+          config: expect.objectContaining({
+            settings: {
+              max_tokens: 4096,
+              extra_body: model.config.extra_body,
+              ...settings,
+            },
+          }),
+        }),
+      }),
+    ),
+  );
+});
+
+it("keeps invalid JSON editable and rejects settings for a different API", async () => {
+  mount({ modelKey: "smart" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /^Advanced/ }));
+  const json = screen.getByLabelText("Settings JSON");
+  fireEvent.change(json, { target: { value: "{" } });
+  expect(
+    (screen.getByLabelText("Max output tokens") as HTMLInputElement).disabled,
+  ).toBe(true);
+  expect(
+    screen.getByText("Fix the settings JSON to use the fields above."),
+  ).toBeTruthy();
+  fireEvent.change(json, { target: { value: '{"anthropic_effort":"high"}' } });
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(
+    await screen.findByText(/must NOT have additional properties/),
+  ).toBeTruthy();
+  expect(state.PATCH).not.toHaveBeenCalled();
 });
