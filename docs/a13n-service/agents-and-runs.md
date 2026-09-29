@@ -122,6 +122,7 @@ curl -X POST "$A13N_URL/api/v1/threads" \
 
 The response (`201`, or `200` for a replay) is `{thread, entry, run}`: the new thread, the inbox entry holding the message, and the run it started, or `null` when it could not start yet. The new thread also accepts:
 
+- `message_history`: optional [imported conversation context](#import-conversation-context), used only to initialize this thread;
 - `mcp_headers`: [caller headers](#caller-headers) for its MCP connections;
 - `environments`: initial [mounts](environments.md#mount-environments-on-a-thread), `[{name, environment_id, working_directory?}]`;
 - `memories`: initial [memory mounts](memory.md#mount-a-memory-on-a-thread), `[{name, memory_id, access}]`.
@@ -131,6 +132,25 @@ The response (`201`, or `200` for a replay) is `{thread, entry, run}`: the new t
 Sessions list most recently updated first: a new run or a label edit moves a session to the top. A run's acceptance does not change a session's `ETag`, so a label edit's `If-Match` read before a later run still applies.
 
 In Console, **New conversation** starts a session; **Try agent** starts one from the agent's page.
+
+### Import conversation context
+
+To continue a conversation produced outside the Service, add `message_history` to the new-thread request alongside the current `payload`:
+
+```json
+{
+  "agent_id": "ap_...",
+  "message_history": [
+    {"kind": "request", "parts": [{"part_kind": "user-prompt", "content": "We are planning a trip to Kyoto."}]},
+    {"kind": "response", "parts": [{"part_kind": "text", "content": "How many days will you stay?"}]}
+  ],
+  "payload": {"content": [{"type": "text", "text": "Three days. Suggest an itinerary."}]}
+}
+```
+
+These are native conversation messages, not text pasted into the current prompt. Request parts accept `user-prompt` text and `tool-return`; response parts accept `text` and `tool-call`. Historical tool calls use `tool_name`, `tool_call_id` and JSON-object `args`; their returns use the same name and ID plus JSON `content` and optional `outcome` (`success` by default, or `failed`, `denied`, `interrupted`). Every call must have a matching return before another response, a new user prompt or the end of the import. Historical tools do not need to be installed and will not execute.
+
+Import is limited to 256 messages and 256 KiB of normalized JSON. System instructions, media, provider metadata, usage and serialized execution state are not accepted. Use the Agent configuration for instructions and the current payload for attachments. The Thread keeps the immutable import for readback, but it does not manufacture historical Runs, display Items, tool executions or usage. Follow-up messages continue the committed checkpoint without reimporting; forks inherit that checkpoint. You cannot replace history on an existing Thread.
 
 ## Submit a message
 
@@ -157,7 +177,7 @@ When the thread is idle, either delivery starts a run at once (trigger `input`).
 A thread accepts no new run while:
 
 - a run is active;
-- its latest run is `waiting` on an approval or client tool; resume it first. If the run waits only on questions, a message starts the next run and the questions get no response;
+- its history head is `waiting` on any pending item, including questions; resume that exact Run first;
 - its latest run `failed` or was `cancelled`: queued messages wait, and only a message you submit now starts a run. After that run the queue continues.
 
 A message that cannot run, for example because its agent was archived or an override is no longer valid, fails in place with a `failure` and does not block the messages behind it.
@@ -258,7 +278,19 @@ Both result maps are required, and each must cover its pending group exactly. Mi
 
 The response is the successor run (`201`, or `200` for an idempotent replay). Results are stored in its existing `resume` field, without another inbox message. Only the thread's waiting history head can be resumed while nothing else runs; stale requests receive `409 conflict` with reason `not_idle_waiting_head`. After a failed successor, explicitly resume the still-waiting head again.
 
-Ordinary messages remain separate and cannot close a wait. Queued messages retain their order; after resume, compatible steers can join the successor while `next_run` messages wait for a later run. Resume does not accept an accompanying ordinary message.
+To accompany those results with a clarification or attachment, include optional `input` in the same resume request:
+
+```json
+{
+  "approvals": {},
+  "calls": {"call_lookup": {"status": "returned", "value": {"available": true}}},
+  "input": {"content": [{"type": "text", "text": "Use the updated delivery address."}]}
+}
+```
+
+`input` accepts the same parts as `payload`. The whole resume is accepted or rejected together and stored on the successor; no extra inbox entry is created. The model receives tool results before the accompanying user content. Recovery preserves that content without duplicating it, even if the worker stopped at an approved tool's pre-effect checkpoint. An asset must be usable in the workspace and readable by the inherited configuration. A URL or file that cannot be materialized fails the successor rather than silently dropping the clarification. The complete resume body is limited to 256 KiB.
+
+The accompanying input does not replace any required result. Ordinary inbox messages remain separate and cannot close a wait. Queued messages retain their order; after resume, compatible steers can join the successor while `next_run` messages wait for a later run.
 
 ## Interrupt, fork and archive
 

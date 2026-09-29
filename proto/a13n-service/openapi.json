@@ -2100,6 +2100,12 @@
         "title": "BootstrapInput",
         "type": "object"
       },
+      "CallId": {
+        "maxLength": 1024,
+        "minLength": 1,
+        "pattern": "\\S",
+        "type": "string"
+      },
       "CallResult": {
         "discriminator": {
           "mapping": {
@@ -4316,6 +4322,23 @@
         "title": "HeadersCredential",
         "type": "object"
       },
+      "HistoryMessage": {
+        "discriminator": {
+          "mapping": {
+            "request": "#/components/schemas/HistoryRequest",
+            "response": "#/components/schemas/HistoryResponse"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/HistoryRequest"
+          },
+          {
+            "$ref": "#/components/schemas/HistoryResponse"
+          }
+        ]
+      },
       "HistoryPurge": {
         "properties": {
           "purged": {
@@ -4327,6 +4350,197 @@
           "purged"
         ],
         "title": "HistoryPurge",
+        "type": "object"
+      },
+      "HistoryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "request",
+            "title": "Kind",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "tool-return": "#/components/schemas/HistoryToolReturn",
+                  "user-prompt": "#/components/schemas/HistoryUserPrompt"
+                },
+                "propertyName": "part_kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/HistoryUserPrompt"
+                },
+                {
+                  "$ref": "#/components/schemas/HistoryToolReturn"
+                }
+              ]
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Parts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "parts"
+        ],
+        "title": "HistoryRequest",
+        "type": "object"
+      },
+      "HistoryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "response",
+            "title": "Kind",
+            "type": "string"
+          },
+          "parts": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "text": "#/components/schemas/HistoryText",
+                  "tool-call": "#/components/schemas/HistoryToolCall"
+                },
+                "propertyName": "part_kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/HistoryText"
+                },
+                {
+                  "$ref": "#/components/schemas/HistoryToolCall"
+                }
+              ]
+            },
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Parts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "parts"
+        ],
+        "title": "HistoryResponse",
+        "type": "object"
+      },
+      "HistoryText": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 65536,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "part_kind": {
+            "const": "text",
+            "title": "Part Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "part_kind",
+          "content"
+        ],
+        "title": "HistoryText",
+        "type": "object"
+      },
+      "HistoryToolCall": {
+        "additionalProperties": false,
+        "properties": {
+          "args": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Args",
+            "type": "object"
+          },
+          "part_kind": {
+            "const": "tool-call",
+            "title": "Part Kind",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "$ref": "#/components/schemas/CallId"
+          },
+          "tool_name": {
+            "$ref": "#/components/schemas/ToolName"
+          }
+        },
+        "required": [
+          "part_kind",
+          "tool_name",
+          "tool_call_id",
+          "args"
+        ],
+        "title": "HistoryToolCall",
+        "type": "object"
+      },
+      "HistoryToolReturn": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "outcome": {
+            "default": "success",
+            "enum": [
+              "success",
+              "failed",
+              "denied",
+              "interrupted"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "part_kind": {
+            "const": "tool-return",
+            "title": "Part Kind",
+            "type": "string"
+          },
+          "tool_call_id": {
+            "$ref": "#/components/schemas/CallId"
+          },
+          "tool_name": {
+            "$ref": "#/components/schemas/ToolName"
+          }
+        },
+        "required": [
+          "part_kind",
+          "tool_name",
+          "tool_call_id",
+          "content"
+        ],
+        "title": "HistoryToolReturn",
+        "type": "object"
+      },
+      "HistoryUserPrompt": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 65536,
+            "minLength": 1,
+            "title": "Content",
+            "type": "string"
+          },
+          "part_kind": {
+            "const": "user-prompt",
+            "title": "Part Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "part_kind",
+          "content"
+        ],
+        "title": "HistoryUserPrompt",
         "type": "object"
       },
       "InboxOrder": {
@@ -6354,6 +6568,13 @@
         "title": "Message",
         "type": "object"
       },
+      "MessageHistory": {
+        "items": {
+          "$ref": "#/components/schemas/HistoryMessage"
+        },
+        "maxItems": 256,
+        "type": "array"
+      },
       "MessagePayload": {
         "additionalProperties": false,
         "properties": {
@@ -7423,6 +7644,10 @@
             "maxItems": 32,
             "title": "Memories",
             "type": "array"
+          },
+          "message_history": {
+            "$ref": "#/components/schemas/MessageHistory",
+            "default": []
           },
           "options": {
             "$ref": "#/components/schemas/RunOptions-Input"
@@ -8844,6 +9069,16 @@
             },
             "title": "Calls",
             "type": "object"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessagePayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -11872,6 +12107,9 @@
             "title": "Mcp Headers",
             "type": "object"
           },
+          "message_history": {
+            "$ref": "#/components/schemas/MessageHistory"
+          },
           "origin": {
             "enum": [
               "new",
@@ -11944,6 +12182,7 @@
           }
         },
         "required": [
+          "message_history",
           "id",
           "workspace_id",
           "session_id",
@@ -12112,6 +12351,12 @@
         ],
         "title": "ToolInfo",
         "type": "object"
+      },
+      "ToolName": {
+        "maxLength": 128,
+        "minLength": 1,
+        "pattern": "\\S",
+        "type": "string"
       },
       "ToolPage": {
         "properties": {

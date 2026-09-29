@@ -242,14 +242,17 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     memories = await freeze_memories(
         session, thread, revision.config.memory_mounts, limit=runtime.settings.memory.mounts_per_thread
     )
+    payload = source.resume.input if source.resume is not None else None
     if source.entry is not None and source.entry.kind == "message":
+        payload = MessagePayload.model_validate(source.entry.payload)
+    if payload is not None:
         await require_readable(
             session,
             principal,
             scope,
             revision,
             options.overrides,
-            MessagePayload.model_validate(source.entry.payload),
+            payload,
             authority=source.authority,
             primary=has_primary(mounts),
         )

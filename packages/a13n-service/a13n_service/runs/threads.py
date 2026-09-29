@@ -13,6 +13,7 @@ from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.resources.connections.service import validate_caller_headers
+from a13n_service.runs.history import HISTORY, MessageHistory
 from a13n_service.runs.schemas import McpHeaders, ThreadPage, ThreadUpdate, ThreadView
 from a13n_service.runs.tables import RunRow, SessionRow, ThreadRow
 from a13n_service.tenancy.access import workspace_scope
@@ -48,6 +49,7 @@ def new_thread(
     session_row: SessionRow,
     *,
     mcp_headers: McpHeaders,
+    message_history: MessageHistory = (),
     origin: str = "new",
     origin_thread_id: str | None = None,
     origin_run_id: str | None = None,
@@ -64,6 +66,7 @@ def new_thread(
         origin_run_id=origin_run_id,
         origin_tool_call_id=origin_tool_call_id,
         subagent=subagent,
+        message_history=HISTORY.dump_python(message_history, mode="json"),
         mcp_headers=dict(mcp_headers),
         labels={},
     )

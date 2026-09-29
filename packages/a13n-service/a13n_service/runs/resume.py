@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import transaction, violated_constraint
 from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conflict
+from a13n_service.resources.assets.service import require_usable
 from a13n_service.runs.accept import Source, start_run
+from a13n_service.runs.attachments import asset_fields
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Pending, Resume, Returned, RunView, canonical_json
@@ -59,7 +61,7 @@ def normalize(pending: Pending, request: Resume) -> Resume:
                     {"field": "calls", "reason": "invalid_question_response", "id": item.tool_call_id},
                 ) from error
             calls[item.tool_call_id] = Returned.model_validate({"status": "returned", "value": value})
-    return Resume(approvals=request.approvals, calls=calls)
+    return Resume(approvals=request.approvals, calls=calls, input=request.input)
 
 
 def request_digest(run_id: str, request: Resume) -> str:
@@ -96,6 +98,8 @@ async def resume(
                     return await run_view(session, found), False
                 raise conflict("run", waiting.id, "not_idle_waiting_head")
             answers = normalize(Pending.model_validate(waiting.pending), request)
+            if answers.input is not None:
+                await require_usable(session, scope.workspace_id, asset_fields(answers.input))
             source = await Source.inherited(
                 session,
                 runtime,

@@ -66,6 +66,7 @@ from a13n_service.runs.coalesce import Coalescer
 from a13n_service.runs.display import Display, DisplayFold
 from a13n_service.runs.environments.execution import PreparedMount, open_mounts, prepare_mounts
 from a13n_service.runs.environments.mounts import PRIMARY
+from a13n_service.runs.history import HISTORY, MessageHistory, native
 from a13n_service.runs.host import HostPlan, open_host, resolve_host
 from a13n_service.runs.inputs import Offered
 from a13n_service.runs.runtime import Runtime
@@ -108,6 +109,7 @@ class _Plan:
     assigned: list[Offered]
     state: HarnessState
     resume: DeferredToolResume | None
+    resume_input: Offered | None
     display: Display
     committed: Committed | None
     seq: int
@@ -223,6 +225,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         parent_checkpoint = checkpoints.require_compatible(parent.id, parent.checkpoint) if parent is not None else None
         pending = Pending.model_validate(parent.pending) if parent is not None and parent.pending is not None else None
         answers = Resume.model_validate(run.resume) if run.resume is not None else None
+        history = HISTORY.validate_python(thread.message_history)
         fork = run.lineage != "continue"
         session_id, source_entry_id = run.session_id, run.source_entry_id
         mounts = tuple(EnvironmentMount.model_validate(mount) for mount in run.environment_mounts)
@@ -232,7 +235,12 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         checkpoints.load_state(runtime.objects, lease.organization_id, parent_id or lease.run_id, parent_checkpoint),
         checkpoints.load_display(runtime.objects, lease.organization_id, lease.run_id, display_pointer),
     )
-    state, resume = _initial(lease.thread_id, base, fork=fork, pending=pending, answers=answers)
+    state, resume = _initial(lease.thread_id, base, fork=fork, pending=pending, answers=answers, history=history)
+    resume_input = (
+        Offered(lease.run_id, "message", lease.workspace_id, answers.input.model_dump(mode="json"))
+        if answers is not None and answers.input is not None and not (own and own.resume_input_consumed)
+        else None
+    )
     if own is not None:
         state = own.harness
         resume = replace(resume, recovery=True).remaining(state.message_history) if resume is not None else None
@@ -251,6 +259,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         assigned=assigned,
         state=state,
         resume=resume,
+        resume_input=resume_input,
         display=display or Display(),
         committed=committed,
         seq=own.seq if own is not None else 0,
@@ -258,11 +267,17 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
 
 
 def _initial(
-    thread_id: str, base: RunState | None, *, fork: bool, pending: Pending | None, answers: Resume | None
+    thread_id: str,
+    base: RunState | None,
+    *,
+    fork: bool,
+    pending: Pending | None,
+    answers: Resume | None,
+    history: MessageHistory = (),
 ) -> tuple[HarnessState, DeferredToolResume | None]:
     """Continue or fork the parent's history, resolving its wait before the successor consumes input."""
     if base is None:
-        return HarnessState.new(thread_id=thread_id), None
+        return HarnessState.new(thread_id=thread_id, message_history=native(history)), None
     state = base.harness.fork(thread_id=thread_id) if fork else base.harness
     if pending is None:
         return state, None
@@ -390,7 +405,7 @@ class _Attempt:
             )
             start = partial(
                 executable.stream,
-                input_factory=self._assigned_input if self.plan.assigned else None,
+                input_factory=self._assigned_input if self.plan.assigned or self.plan.resume_input else None,
                 previous_state=self.plan.state,
                 # Recovery creates a new writer/attempt, not a serialized same-writer accounting resume.
                 resume_usage=False,
@@ -492,7 +507,13 @@ class _Attempt:
         committed = await checkpoints.publish_checkpoint(
             self.runtime,
             self.lease,
-            RunState(harness=state, seq=self.seq + 1, attempt=self.lease.number, deferred=deferred),
+            RunState(
+                harness=state,
+                seq=self.seq + 1,
+                attempt=self.lease.number,
+                deferred=deferred,
+                resume_input_consumed=self.plan.resume_input is None or self.offers.requested,
+            ),
             self.fold.snapshot(),
         )
         worker = self.runtime.settings.worker
@@ -553,6 +574,13 @@ class _Attempt:
         """The Harness input factory: the assigned entries' content, read once the environments are ready, so the
         files it refers to are placed first."""
         parts: list[UserContent] = []
+        if self.plan.resume_input is not None:
+            # Unlike a steer, refusal of this frozen initial input fails the whole run.
+            parts.extend(
+                await inputs.content(
+                    self.runtime, self.plan.principal, self.recipient, context.environment, self.plan.resume_input
+                )
+            )
         for entry in self.plan.assigned:
             parts.extend(await self._read(entry, context.environment) or ())
         if not parts:

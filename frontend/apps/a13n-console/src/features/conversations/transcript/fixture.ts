@@ -69,6 +69,7 @@ export function fixtureThread(
     id: "thr_1",
     labels: {},
     last_run_id: "run_2",
+    message_history: [],
     mcp_headers: {},
     origin: "new",
     origin_run_id: null,

@@ -124,6 +124,7 @@ class ThreadRow(Stamped, Base):
             name="origin_links",
         ),
         CheckConstraint("(origin = 'child') = (subagent IS NOT NULL)", name="subagent"),
+        CheckConstraint("origin = 'new' OR message_history = '[]'::jsonb", name="imported_history"),
         # A spawn is identified by its tool call, so the parent's recovery finds the same child thread.
         Index(
             "uq_threads_child_origin",
@@ -153,6 +154,15 @@ class ThreadRow(Stamped, Base):
             _thread_pointer_check("threads"),
             # Tables whose statements change a thread's inbox or mounts share one version bump.
             _TOUCH_THREADS,
+            """
+            CREATE FUNCTION guard_thread_history() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF NEW.message_history IS DISTINCT FROM OLD.message_history
+                THEN RAISE EXCEPTION 'thread initial history is immutable'; END IF;
+                RETURN NEW;
+            END $$
+            """,
+            trigger("threads", "guard_thread_history"),
         ),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -163,6 +173,8 @@ class ThreadRow(Stamped, Base):
     origin_thread_id: Mapped[str | None]
     origin_run_id: Mapped[str | None] = mapped_column(String(72))
     origin_tool_call_id: Mapped[str | None]
+    # Imported model context is immutable and distinct from checkpoints and executed facts.
+    message_history: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     # The name of the async subagent edge that spawned a child thread, as its parent's graph declared it then.
     subagent: Mapped[str | None]
     # current: accepted or running. head: latest completed or waiting. last: most recently sealed.

@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
 
 # Bumped only with an explicit migration or rejection plan for outstanding checkpoints.
-FORMAT = 1
+FORMAT = 2
 
 type ObjectKind = Literal["state", "display"]
 
@@ -65,12 +65,14 @@ class DisplayPointer(Pointer):
 
 
 class RunState(_Frozen):
-    format: Literal[1] = FORMAT
+    format: Literal[2] = FORMAT
     harness: HarnessState
     seq: int = Field(ge=1)
     attempt: int = Field(ge=1)
     # The Harness deferred requests of a waiting outcome, which the successor's resume answers.
     deferred: JsonValue = None
+    # The resume's optional ordinary input has reached a model request in this checkpoint.
+    resume_input_consumed: bool = False
 
 
 def prefix(organization_id: str, run_id: str, kind: ObjectKind) -> str:

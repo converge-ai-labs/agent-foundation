@@ -169,7 +169,7 @@ async def create_thread(
         else:
             owner = new_session(scope.organization_id, scope.workspace_id, actor.id)
             session.add(owner)
-        thread = new_thread(owner, mcp_headers=body.mcp_headers)
+        thread = new_thread(owner, mcp_headers=body.mcp_headers, message_history=body.message_history)
         session.add(thread)
         await session.flush()
         await mount_environments(session, thread, body.environments, principal_id=actor.id)
