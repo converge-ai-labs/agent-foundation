@@ -20,6 +20,10 @@ Agent Foundation is an open-source library and platform for building and running
 
 You need **Docker with Docker Compose** and a model provider API key. The stack includes Service, Console, PostgreSQL, Redis, and access to your host Docker Engine for agent execution. No repository clone, Make, Python, Node.js, or source build is needed.
 
+![Service Console showing workspace usage, daily spending, and a per-agent breakdown](.github/assets/service-console.png)
+
+*Service Console — Monitor agent usage, token consumption, and cost across your workspace. Shown with fictional demo data.*
+
 Download the [Compose file](deploy/docker/compose/a13n-service.yaml) and start the stack:
 
 ```bash
@@ -46,6 +50,10 @@ Continue with the [Service quickstart](docs/a13n-service/get-started.md) for mod
 ## Use Harness UI
 
 For individual work or trusted collaborators, Harness UI offers a terminal agent and browser workbench over the same Harness. Explore repositories, edit files, run commands, and try models, tools, Skills, and environments interactively.
+
+![Harness UI showing an agent reviewing a project's quickstart alongside its Markdown preview](.github/assets/harness-ui.png)
+
+*Harness UI — Review agent output alongside project files in the browser workbench. Shown with a fictional project and a local demo model.*
 
 ```bash
 uv tool install a13n-harness-ui
