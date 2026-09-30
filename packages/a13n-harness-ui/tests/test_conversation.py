@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from a13n_harness import HarnessEvent
+from a13n_harness import ContentItem, ContentMetadata, HarnessEvent
 from a13n_harness.model_context import ModelInputEvent
 from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector, excerpt_text, input_excerpt
 from pydantic_ai.messages import (
@@ -30,7 +30,9 @@ def test_excerpts_are_bounded_plain_text_and_media_is_payload_free():
         input_excerpt(
             [
                 TextContent("internal attachment path", metadata=attachment),
-                BinaryContent(data=b"private", media_type="image/png", vendor_metadata=attachment),
+                ContentItem(
+                    BinaryContent(data=b"private", media_type="image/png"), ContentMetadata.model_validate(attachment)
+                ),
             ]
         )
         == "diagram.png"

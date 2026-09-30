@@ -2722,10 +2722,7 @@ export interface components {
         };
         /**
          * ContentMetadata
-         * @description Client presentation conventions plus opaque caller-owned metadata.
-         *
-         *     Metadata is not model instruction or authorization. Clients may resolve
-         *     references such as image_object_id through their own application services.
+         * @description Presentation and opaque Host references; never instructions or authority.
          */
         ContentMetadata: {
             /**

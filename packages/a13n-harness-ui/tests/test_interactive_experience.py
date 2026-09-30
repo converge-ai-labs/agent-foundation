@@ -256,13 +256,16 @@ async def test_ctrl_c_feedback_edit_disarms_exit_and_f2_toggles() -> None:
 
 
 def test_terminal_is_one_consumer_of_structured_media_input() -> None:
-    from a13n_harness import HarnessEvent
+    from a13n_harness import ContentItem, ContentMetadata, HarnessEvent
     from a13n_harness.model_context import ModelInputEvent
     from a13n_stream_protocol import HarnessAguiObserver
     from pydantic_ai.messages import BinaryContent, ImageUrl
 
     content = [
-        BinaryContent(data=b"private pixels", media_type="image/png", vendor_metadata={"image_object_id": "image-one"}),
+        ContentItem(
+            BinaryContent(data=b"private pixels", media_type="image/png"),
+            ContentMetadata(image_object_id="image-one"),
+        ),
         ImageUrl("https://example.test/picture.png"),
     ]
     event = HarnessEvent(
