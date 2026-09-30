@@ -10,7 +10,6 @@ dependencies = [
     "a13n-logging",
     "a13n-harness[docker,e2b,modal]",
     "a13n-stream-protocol",
-    "ag-ui-protocol>=0.1.18,<0.2",
     "aiobotocore[httpx2]>=3.9,<4",
     "alembic>=1.17.1,<2",
     "anyio>=4,<5",
@@ -66,7 +65,7 @@ DEP002 = ["psycopg", "python-multipart"]
 
 [tool.deptry]
 known_first_party = ["a13n_service"]
-package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "argon2-cffi" = "argon2", "pyyaml" = "yaml" }
+package_module_name_map = { "a13n-logging" = "a13n_logging", "argon2-cffi" = "argon2", "pyyaml" = "yaml" }
 
 [tool.a13n.release-dependencies]
 a13n-logging = ">=0.2.0,<0.3.0"
