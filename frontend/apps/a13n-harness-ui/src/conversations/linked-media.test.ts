@@ -21,26 +21,26 @@ const paragraph = (...children: Node[]): Node => ({
 const root = (...children: Node[]): Node => ({ type: "root", children });
 const transform = linkedMediaPreviews({ currentHref });
 
-it("recognizes passive media candidates without treating active documents as media", () => {
-  for (const path of [
-    "/tmp/a.PNG",
-    "C:\\media\\a.jpeg",
-    "/tmp/a.webp",
-    "/tmp/a.gif",
+it("selects renderers by MIME family, not a filename or format allowlist", () => {
+  for (const mime of [
+    "image/png",
+    "image/avif",
+    "image/bmp",
+    "image/new-format",
   ])
-    expect(mediaKind(path)).toBe("image");
-  for (const path of ["/tmp/a.mp3", "/tmp/a.wav", "/tmp/a.m4a", "/tmp/a.opus"])
-    expect(mediaKind(path)).toBe("audio");
-  for (const path of ["/tmp/a.mp4", "/tmp/a.webm", "/tmp/a.MOV"])
-    expect(mediaKind(path)).toBe("video");
-  for (const path of [
-    "/tmp/a.svg",
-    "/tmp/a.html",
-    "/tmp/a.pdf",
-    "/tmp/a.png.exe",
-    "/tmp/a.png/child",
+    expect(mediaKind(mime)).toBe("image");
+  for (const mime of ["audio/ogg", "audio/x-wav", "audio/new-format"])
+    expect(mediaKind(mime)).toBe("audio");
+  for (const mime of ["video/mp4", "video/new-format"])
+    expect(mediaKind(mime)).toBe("video");
+  for (const mime of [
+    undefined,
+    "image/svg+xml",
+    "text/html",
+    "application/pdf",
+    "application/octet-stream",
   ])
-    expect(mediaKind(path)).toBeNull();
+    expect(mediaKind(mime)).toBeNull();
 });
 
 it("deduplicates local media, keeps original anchors, and inserts controls outside paragraphs", () => {
@@ -108,10 +108,11 @@ it.each(["https://external.test/full", link("/tmp/notes.txt")])(
       original.children = [inline];
       const tree = root(paragraph(original));
       transform(tree);
-      expect(tree.children?.map((node) => node.tagName)).toEqual([
-        "p",
-        "figure",
-      ]);
+      expect(tree.children?.map((node) => node.tagName)).toEqual(
+        href.startsWith("https://")
+          ? ["p", "figure"]
+          : ["p", "figure", "figure"],
+      );
       expect(tree.children?.[0].children?.[0]).toBe(original);
       expect(original.properties?.href).toBe(href);
       expect(thumbnail).toEqual({
@@ -120,7 +121,7 @@ it.each(["https://external.test/full", link("/tmp/notes.txt")])(
         properties: {},
         children: [{ type: "text", value: "Thumbnail" }],
       });
-      expect(tree.children?.[1].properties?.dataHostMediaPath).toBe(
+      expect(tree.children?.at(-1)?.properties?.dataHostMediaPath).toBe(
         "/tmp/a.png",
       );
     }
@@ -147,7 +148,7 @@ it("retains standalone image navigation with the preview outside its paragraph",
   expect(tree.children?.[1].properties?.dataHostMediaPath).toBe("/tmp/a.png");
 });
 
-it("never requests remote, relative, active-document, or unrelated API links", () => {
+it("never inspects remote, relative, or unrelated API links", () => {
   const tree = root(
     paragraph(
       ...[
@@ -155,7 +156,6 @@ it("never requests remote, relative, active-document, or unrelated API links", (
         "https://external.test" + link("/tmp/a.png"),
         "/api/host/files/content?path=/tmp/a.png",
         link("relative.png"),
-        link("/tmp/a.svg"),
         "javascript:alert(1)",
       ].map(anchor),
     ),

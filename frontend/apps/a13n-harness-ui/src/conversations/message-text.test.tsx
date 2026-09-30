@@ -13,6 +13,9 @@ import { renderDiagram } from "./mermaid-render";
 import { closedFence } from "./markdown-block";
 import { OpenHostFile } from "./tool-call";
 vi.mock("./mermaid-render", () => ({ renderDiagram: vi.fn() }));
+// Preview HTTP and decoding have their own integration tests; these cases own
+// Markdown rendering and workbench navigation independently of native access.
+vi.mock("./linked-media-preview", () => ({ LinkedMediaPreview: () => null }));
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();

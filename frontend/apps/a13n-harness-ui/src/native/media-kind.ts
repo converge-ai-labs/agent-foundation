@@ -1,11 +1,12 @@
 export type MediaKind = "image" | "audio" | "video";
 export const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 
-// Candidate formats, not trusted MIME types. Only passive browser decoders see
-// these bytes; HTML, SVG and other active documents are never embedded.
-export function mediaKind(path: string): MediaKind | null {
-  if (/\.(?:png|jpe?g|webp|gif)$/i.test(path)) return "image";
-  if (/\.(?:mp3|m4a|wav|ogg|opus|flac|aac)$/i.test(path)) return "audio";
-  if (/\.(?:mp4|webm|mov|m4v)$/i.test(path)) return "video";
+// MIME is a server filename hint. Browser decoding decides actual support;
+// active documents stay in the text/download presentation, never an embed.
+export function mediaKind(mediaType: string | undefined): MediaKind | null {
+  if (mediaType?.startsWith("image/") && mediaType !== "image/svg+xml")
+    return "image";
+  if (mediaType?.startsWith("audio/")) return "audio";
+  if (mediaType?.startsWith("video/")) return "video";
   return null;
 }

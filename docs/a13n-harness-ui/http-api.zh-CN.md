@@ -286,10 +286,13 @@ SQLite 提交后才返回确认。相同身份和规范化发布内容重复请�
 | `GET /api/threads/{thread_id}/usage`                                | 持久保存的根运行和后代观测用量                         |
 | `GET /api/threads/{thread_id}/notes`                                | 所选 continuation 的有界笔记                           |
 | `GET /api/host/files`                                               | 有界本机目录页                                         |
+| `GET /api/host/files/info`                                          | 不读取内容，返回解析后的普通文件元数据及 MIME 提示     |
 | `GET /api/host/files/metadata`                                      | 本机条目元数据，不跟随末端符号链接                     |
 | `GET /api/host/files/text`                                          | 完整可编辑 UTF-8，或明确的二进制、超大内容类型         |
 | `PUT /api/host/files/text`                                          | 使用已观测修订创建或保存文本                           |
-| `GET /api/host/files/content`                                       | 有大小限制、仅作附件的本机下载                         |
+| `POST /api/host/files/transfers`                                    | 签发仅限一个已审阅文件修订和用途的短期访问链接         |
+| `GET /api/host/files/transfer`                                      | 支持字节范围的受限浏览器播放或下载                     |
+| `HEAD /api/host/files/transfer`                                     | 受限文件元数据，无内容正文                             |
 | `PUT /api/host/files/content`                                       | 有大小限制的原始上传，带创建或替换前置条件             |
 | `POST /api/host/files/directories`                                  | 创建一个本机目录                                       |
 | `POST /api/host/files/move`                                         | 将一个已观测条目重命名或移动到不存在的目标             |
@@ -375,9 +378,11 @@ Git Changes 只读，使用与 Files 相同的计算机共享开关。路径指�
 
 使用 `a13n-harness-ui webui` 启动。计算机共享默认启用，将服务器操作系统账号的文件权限暴露给获准访问实例的客户端，与 Agent Environment 选择独立。可用 `--no-share-computer` 禁用。Docker 中共享的是容器及其挂载，不是浏览器所在机器。认证绕过不改变共享选择。禁用共享时，原生操作返回 `403 host_files_disabled`；直接 App 调用也会在访问文件系统前拒绝。`/api/projects` 的 Project 根目录是导航起点，不是访问限制目录；Files 也可在 Git 或任何 Project 之外使用。
 
-读取 `GET /api/host/files?path=<absolute-path>` 获取目录，或 `/api/host/files/metadata?path=...` 获取条目元数据。目录默认每页 200 项，最多 500；扫描超过 10000 项会被拒绝，响应包含 `next_offset`。后续页同时传入 `offset` 和上一页 `directory.revision`；冲突时需重新开始列出。元数据描述末端符号链接本身，文本读取和浏览返回解析后的目标及其修订。
+读取 `GET /api/host/files?path=<absolute-path>` 获取目录，或 `/api/host/files/metadata?path=...` 获取条目元数据。目录默认每页 200 项，最多 500；扫描超过 10000 项会被拒绝，响应包含 `next_offset`。后续页同时传入 `offset` 和上一页 `directory.revision`；冲突时需重新开始列出。元数据描述末端符号链接本身。`/api/host/files/info?path=...` 跟随链接，不读取内容，返回 `entry`、`resolved_path` 和 `media_type`；可选的 `expected_revision` 会拒绝过期观测。MIME 由标准库根据解析后的目标文件名推断，不进行内容解码；未知或带内容编码的类型使用 `application/octet-stream`。前端按 MIME 选择展示组件，不识别或不支持的类型保留文本或下载操作。文本读取和浏览也返回解析后的目标及其修订。
 
-编辑前先读取 `/api/host/files/text?path=...`。`presentation: text` 提供 512 KiB 内完整、无 NUL 的 UTF-8 文本；`binary` 和 `too_large` 不提供可编辑文本。保存使用 `PUT /api/host/files/text`，JSON 包含 `path`、`text` 和观测到的 `expected_revision`。省略修订表示**仅创建**，不是最后写入生效。过期保存返回 `409 host_files_conflict`，客户端缓冲区不应丢弃。保存符号链接需显式选择解析后的目标。原子替换硬链接文件只改变选定目录项，其他别名保留原字节。原始上传使用 `PUT /api/host/files/content?path=...&expected_revision=...`，发送 octet-stream 字节，上限 10 MiB；只有新文件可省略修订。下载使用对应 GET，可选固定 `expected_revision`，始终以附件 disposition 和 octet-stream 内容类型返回。较大文件需使用其他原生工作流。
+编辑前先读取 `/api/host/files/text?path=...`。`presentation: text` 提供 512 KiB 内完整、无 NUL 的 UTF-8 文本；`binary` 和 `too_large` 不提供可编辑文本。保存使用 `PUT /api/host/files/text`，JSON 包含 `path`、`text` 和观测到的 `expected_revision`。省略修订表示**仅创建**，不是最后写入生效。过期保存返回 `409 host_files_conflict`，客户端缓冲区不应丢弃。保存符号链接需显式选择解析后的目标。原子替换硬链接文件只改变选定目录项，其他别名保留原字节。原始上传使用 `PUT /api/host/files/content?path=...&expected_revision=...`，发送 octet-stream 字节，上限 10 MiB；只有新文件可省略修订。这个端点只接受上传；所有本机文件下载统一使用下面的受限流式传输。
+
+所有本机文件下载和图片、音视频预览通过带认证的 `POST /api/host/files/transfers` 获取受限链接，请求为 `{"path":"/absolute/clip.mp4","expected_revision":"<reviewed>","disposition":"inline"}`（默认值 `attachment` 表示附件下载）。响应包含 `url` 和 Unix 秒数 `expires_at`。签名链接只在当前监听实例的 30 分钟内，授权 GET/HEAD `/api/host/files/transfer` 访问该文件修订和实际 disposition，不包含实例 API key。Host/Origin 和计算机共享检查仍然生效。下载不区分文件名或整文件大小，始终使用附件 disposition 和 octet-stream 内容类型。inline 请求使用推断的图片（SVG 除外）、音频或视频 MIME，其他类型自动变成附件下载的 octet-stream，不会因为类型不受支持而拒绝传输。能否解码由浏览器决定，失败时仍可下载原文件。直接将该 URL 用作浏览器预览源或附件下载链接，不要先在 JavaScript 中收集整个文件 Blob。传输每次最多读取 256 KiB，不限制整文件大小。单个字节范围返回 206；无法满足的范围返回 416，并带 `Content-Range: bytes */{size}`。HEAD 只返回响应头，不返回正文。不支持的范围单位和多段范围会被忽略；If-Range 不匹配时返回完整表示。发送响应头前会先进行一次有界读取来验证文件。报告大小不可靠的本机普通文件读取到 EOF，不声明 Content-Length 或范围支持。发现修订变化时，若响应头尚未发送则返回 409，否则终止已开始的传输。图片预览的解码上限仍为 10 MiB，独立于下载。修订过期时，应先刷新元数据再重新获取链接。过期或无效的签名不能授权访问，监听实例重启后原链接失效。
 
 创建目录接受 `{"path":"/absolute/new-directory"}`，父目录必须存在。移动接受 `path`、`destination` 和源 `expected_revision`，原子拒绝已有目标（包括并发创建），拒绝跨设备移动，不隐式复制再删除。不支持不可覆盖移动的平台或文件系统返回 `host_files_unsupported`，不会冒险覆盖。删除接受 `path`、`expected_revision` 和可选 `recursive: true`；不递归时目录必须为空。递归预检查限制最多 10000 项和 128 层目录。符号链接作为条目删除，不跟随目标。后续 `host_files_partial_failure` 会报告已完成删除；请刷新，不要盲目重试原目录树删除。
 

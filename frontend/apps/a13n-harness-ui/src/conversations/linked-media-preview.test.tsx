@@ -20,8 +20,12 @@ afterEach(() => {
 });
 const link = (path: string) =>
   `/threads/current?native=files&native_path=${encodeURIComponent(path)}`;
-function fixture(path = "/tmp/photo.png", size = 500_000) {
-  const file: Schema<"FileText"> = {
+function fixture(
+  path = "/tmp/photo.png",
+  size = 500_000,
+  media_type = "image/png",
+) {
+  const file: Schema<"FileInfo"> = {
     entry: {
       path,
       kind: "file",
@@ -31,15 +35,29 @@ function fixture(path = "/tmp/photo.png", size = 500_000) {
       modified_ns: 0,
     },
     resolved_path: path,
-    presentation: "binary",
-    text: null,
+    media_type,
   };
   const get = vi.fn(
-    async (_url: string, _options: { signal: AbortSignal }) => ({ data: file }),
+    async (
+      _url: string,
+      options: { signal: AbortSignal; params: { query: { path: string } } },
+    ) => ({
+      data:
+        options.params.query.path === path
+          ? file
+          : {
+              ...file,
+              entry: { ...file.entry, path: options.params.query.path },
+              resolved_path: options.params.query.path,
+              media_type: "text/plain",
+            },
+    }),
   );
-  const fetch = vi.fn(async (_url: string, _options?: RequestInit) => ({
-    blob: async () =>
-      new Blob(["media bytes"], { type: "application/octet-stream" }),
+  const fetch = vi.fn(
+    async (_url: string, _options?: RequestInit) => new Response(null),
+  );
+  const post = vi.fn(async () => ({
+    data: { url: "/api/host/files/transfer?token=reviewed", expires_at: 1000 },
   }));
   const create = vi.fn().mockReturnValue("blob:preview");
   const revoke = vi.fn();
@@ -50,7 +68,10 @@ function fixture(path = "/tmp/photo.png", size = 500_000) {
       static revokeObjectURL = revoke;
     },
   );
-  const transport = { client: { GET: get }, fetch } as unknown as Transport;
+  const transport = {
+    client: { GET: get, POST: post },
+    fetch,
+  } as unknown as Transport;
   const open = vi.fn();
   const tree = (text = `[Original](${link(path)})`) => (
     <TransportContext value={transport}>
@@ -59,10 +80,10 @@ function fixture(path = "/tmp/photo.png", size = 500_000) {
       </OpenHostFile>
     </TransportContext>
   );
-  return { tree, file, get, fetch, create, revoke, open };
+  return { tree, file, get, post, fetch, create, revoke, open };
 }
 
-it("reads reviewed bytes for inline images, reuses the expanded viewer, and releases resources", async () => {
+it("uses reviewed streaming access for inline images and the expanded viewer without collecting Blobs", async () => {
   const f = fixture();
   const view = render(f.tree());
   const image = await screen.findByAltText("photo.png");
@@ -72,12 +93,22 @@ it("reads reviewed bytes for inline images, reuses the expanded viewer, and rele
   });
   fireEvent.load(image);
   expect(f.get).toHaveBeenCalledWith(
-    "/api/host/files/text",
+    "/api/host/files/info",
     expect.objectContaining({ params: { query: { path: "/tmp/photo.png" } } }),
   );
-  const url = new URL(f.fetch.mock.calls[0][0], "http://localhost");
-  expect(url.searchParams.get("path")).toBe("/tmp/photo.png");
-  expect(url.searchParams.get("expected_revision")).toBe("reviewed");
+  expect(f.post).toHaveBeenCalledWith(
+    "/api/host/files/transfers",
+    expect.objectContaining({
+      body: {
+        path: "/tmp/photo.png",
+        expected_revision: "reviewed",
+        disposition: "inline",
+      },
+    }),
+  );
+  expect(image.getAttribute("src")).toBe(
+    "/api/host/files/transfer?token=reviewed",
+  );
   expect(view.container.querySelector("p figure")).toBeNull();
   fireEvent.click(
     screen.getByRole("button", { name: "Expand image: photo.png" }),
@@ -85,16 +116,19 @@ it("reads reviewed bytes for inline images, reuses the expanded viewer, and rele
   await screen.findByRole("dialog");
   expect(
     screen.getByRole("link", { name: "Download image" }).getAttribute("href"),
-  ).toBe("blob:preview");
+  ).toBe("/api/host/files/transfer?token=reviewed");
   fireEvent.click(screen.getByRole("button", { name: "Close image preview" }));
   fireEvent.click(screen.getByRole("link", { name: "Original" }));
   expect(f.open).toHaveBeenCalledWith("/tmp/photo.png");
   view.rerender(
     f.tree(`[Original](${link("/tmp/photo.png")})\n\nMore streamed text`),
   );
-  expect(f.fetch).toHaveBeenCalledTimes(1);
+  expect(f.post).toHaveBeenCalledTimes(1);
+  expect(f.fetch).not.toHaveBeenCalled();
+  expect(f.create).not.toHaveBeenCalled();
   view.unmount();
-  expect(f.revoke).toHaveBeenCalledWith("blob:preview");
+  expect(image.hasAttribute("src")).toBe(false);
+  expect(f.revoke).not.toHaveBeenCalled();
 });
 
 it.each(["https://external.test/full", link("/tmp/notes.txt")])(
@@ -119,28 +153,76 @@ it.each(["https://external.test/full", link("/tmp/notes.txt")])(
   },
 );
 
+it("previews extensionless file links based on MIME without reading text", async () => {
+  const f = fixture("/tmp/latest", 1234, "image/avif");
+  render(f.tree());
+  await screen.findByAltText("latest");
+  expect(f.get).toHaveBeenCalledTimes(1);
+  expect(f.get).toHaveBeenCalledWith("/api/host/files/info", expect.anything());
+  expect(f.post).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  "application/octet-stream",
+  "image/svg+xml",
+  "text/html",
+  "application/pdf",
+])(
+  "keeps unrecognized %s files as original links without inline content requests",
+  async (media_type) => {
+    const f = fixture("/tmp/unknown", 1234, media_type);
+    const view = render(f.tree());
+    await waitFor(() =>
+      expect(view.container.querySelector("figure")).toBeNull(),
+    );
+    expect(screen.getByRole("link", { name: "Original" })).toBeTruthy();
+    expect(f.post).not.toHaveBeenCalled();
+    expect(f.fetch).not.toHaveBeenCalled();
+  },
+);
+
 it.each(["voice.wav", "clip.mp4"])(
   "renders %s with playback controls and an explicit decode fallback",
   async (name) => {
-    const f = fixture(`/tmp/${name}`);
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    const f = fixture(
+      `/tmp/${name}`,
+      15_047_567,
+      name.endsWith("wav") ? "audio/x-wav" : "video/mp4",
+    );
     const view = render(f.tree());
     const player = await screen.findByLabelText(
       `${name.endsWith("wav") ? "Audio" : "Video"} preview: ${name}`,
     );
-    expect(player.getAttribute("src")).toBe("blob:preview");
+    expect(player.getAttribute("src")).toBe(
+      "/api/host/files/transfer?token=reviewed",
+    );
+    expect(f.post).toHaveBeenCalledWith(
+      "/api/host/files/transfers",
+      expect.objectContaining({
+        body: {
+          path: `/tmp/${name}`,
+          expected_revision: "reviewed",
+          disposition: "inline",
+        },
+      }),
+    );
+    expect(f.fetch).not.toHaveBeenCalled();
+    expect(f.create).not.toHaveBeenCalled();
     expect(player.hasAttribute("controls")).toBe(true);
     expect(player.hasAttribute("autoplay")).toBe(false);
     fireEvent.error(player);
     await screen.findByText(/cannot be previewed/);
     expect(screen.getByRole("link", { name: "Original" })).toBeTruthy();
     view.unmount();
-    expect(f.revoke).toHaveBeenCalledWith("blob:preview");
+    expect(f.revoke).not.toHaveBeenCalled();
   },
 );
 
 it("keeps stale-revision errors visible and retries metadata before fetching again", async () => {
   const f = fixture();
-  f.fetch.mockRejectedValueOnce(
+  f.post.mockRejectedValueOnce(
     new ApiError("File content changed; refresh before selecting it.", 409),
   );
   render(f.tree());
@@ -148,14 +230,46 @@ it("keeps stale-revision errors visible and retries metadata before fetching aga
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await screen.findByAltText("photo.png");
   expect(f.get).toHaveBeenCalledTimes(2);
-  expect(f.fetch).toHaveBeenCalledTimes(2);
+  expect(f.post).toHaveBeenCalledTimes(2);
+});
+
+it("reveals a native player's revision conflict and refreshes metadata before retrying", async () => {
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+  vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+  const f = fixture("/tmp/clip.mp4", 15_047_567, "video/mp4");
+  f.fetch.mockRejectedValueOnce(
+    new ApiError("File content changed; refresh before playing.", 409),
+  );
+  render(f.tree());
+  const player = await screen.findByLabelText("Video preview: clip.mp4");
+  fireEvent.error(player);
+  await screen.findByText(/File content changed/);
+  expect(f.fetch).toHaveBeenCalledWith(
+    "/api/host/files/transfer?token=reviewed",
+    expect.objectContaining({ method: "HEAD" }),
+  );
+  f.file.entry.revision = "new";
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByLabelText("Video preview: clip.mp4");
+  expect(f.get).toHaveBeenCalledTimes(2);
+  expect(f.post).toHaveBeenLastCalledWith(
+    "/api/host/files/transfers",
+    expect.objectContaining({
+      body: {
+        path: "/tmp/clip.mp4",
+        expected_revision: "new",
+        disposition: "inline",
+      },
+    }),
+  );
 });
 
 it("does not fetch oversized files and leaves the original link available", async () => {
-  const f = fixture("/tmp/clip.mp4", MAX_MEDIA_BYTES + 1);
+  const f = fixture("/tmp/photo.png", MAX_MEDIA_BYTES + 1);
   render(f.tree());
   await screen.findByText(/Preview supports files up to 10 MiB/);
   expect(f.fetch).not.toHaveBeenCalled();
+  expect(f.post).not.toHaveBeenCalled();
   expect(screen.getByRole("link", { name: "Original" })).toBeTruthy();
 });
 
@@ -173,7 +287,7 @@ it("defers media reads until near the viewport and aborts an outstanding read on
       disconnect = disconnect;
     },
   );
-  let resolve!: (value: { data: Schema<"FileText"> }) => void;
+  let resolve!: (value: { data: Schema<"FileInfo"> }) => void;
   f.get.mockImplementationOnce(
     () =>
       new Promise((done) => {
@@ -190,5 +304,6 @@ it("defers media reads until near the viewport and aborts an outstanding read on
   resolve({ data: f.file });
   await Promise.resolve();
   expect(f.fetch).not.toHaveBeenCalled();
+  expect(f.post).not.toHaveBeenCalled();
   expect(disconnect).toHaveBeenCalled();
 });

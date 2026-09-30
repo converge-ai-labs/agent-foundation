@@ -14,7 +14,7 @@ export function LinkedMediaPreview({ path }: { path: string }) {
   const [read, setRead] = useState<{
     path: string;
     attempt: number;
-    file?: Schema<"FileText">;
+    file?: Schema<"FileInfo">;
     error?: unknown;
   }>();
   useEffect(() => {
@@ -39,7 +39,7 @@ export function LinkedMediaPreview({ path }: { path: string }) {
     const controller = new AbortController();
     setRead(undefined);
     void result(
-      transport.client.GET("/api/host/files/text", {
+      transport.client.GET("/api/host/files/info", {
         params: { query: { path } },
         signal: controller.signal,
       }),
@@ -56,7 +56,8 @@ export function LinkedMediaPreview({ path }: { path: string }) {
   const current =
     read?.path === path && read.attempt === attempt ? read : undefined;
   const file = current?.file;
-  const kind = mediaKind(path);
+  const kind = mediaKind(file?.media_type);
+  if (file && !kind) return null;
   return (
     <figure
       ref={container}
@@ -69,12 +70,12 @@ export function LinkedMediaPreview({ path }: { path: string }) {
         retry={() => setAttempt((value) => value + 1)}
       />
       {file &&
-        (file.entry.size > MAX_MEDIA_BYTES ? (
+        (kind === "image" && file.entry.size > MAX_MEDIA_BYTES ? (
           <p>
             Preview supports files up to 10 MiB. Open the original file to
             inspect it.
           </p>
-        ) : file.presentation === "text" || !kind ? (
+        ) : !kind ? (
           <p>
             This file cannot be previewed as media. Open the original file to
             inspect it.

@@ -1,5 +1,4 @@
 import { linkedHostFile } from "../shell/page-links";
-import { mediaKind } from "../native/media-kind";
 
 type MediaNode = {
   type: string;
@@ -27,7 +26,9 @@ export function linkedMediaPreviews({ currentHref }: { currentHref: string }) {
       const href = node.properties?.[node.tagName === "img" ? "src" : "href"];
       const path =
         typeof href === "string" ? linkedHostFile(href, currentHref) : null;
-      if (path && mediaKind(path)) {
+      // Resolve MIME lazily near the viewport, including extensionless links.
+      // Unknown files keep their original workbench link, not an inline embed.
+      if (path) {
         if (!seen.has(path) && seen.size < 8) {
           seen.add(path);
           paths.add(path);

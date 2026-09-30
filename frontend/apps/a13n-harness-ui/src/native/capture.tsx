@@ -6,13 +6,18 @@ import { attachmentSelections } from "../conversations/inline-attachments";
 import { result, type Schema, type Transport } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
-import { lineRange, supportsLineRanges, type LineRange } from "./buffer";
+import {
+  lineRange,
+  supportsLineRanges,
+  type FileObservation,
+  type LineRange,
+} from "./buffer";
 import styles from "./native.module.css";
 
 export const ReturnToChat = createContext<() => void>(() => {});
 
 export type CaptureSource =
-  { file: Schema<"FileText"> } | { diff: Schema<"GitDiff"> };
+  { file: FileObservation } | { diff: Schema<"GitDiff"> };
 export function captureSource(
   transport: Transport,
   threadId: string,
