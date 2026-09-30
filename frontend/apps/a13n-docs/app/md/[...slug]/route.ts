@@ -23,7 +23,7 @@ export async function GET(
 
 export function generateStaticParams() {
   return source
-    .getPages()
+    .getPages("en")
     .filter((page) => page.type === "docs")
     .map((page) => ({ slug: markdownSegments(page.slugs) }));
 }

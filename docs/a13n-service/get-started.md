@@ -9,18 +9,28 @@ You need Docker with Docker Compose and a model provider API key. No Python, Nod
 > [!TIP]
 > Already have a running Service? [Use your team's platform](use-platform.md) or [connect your application](connect-application.md).
 
-## Try locally with Docker Compose
+## Start with Docker Compose
 
-Download [`a13n-service-quickstart.yaml`](https://github.com/converge-ai-labs/agent-foundation/blob/main/deploy/docker/compose/a13n-service-quickstart.yaml) using GitHub's **Download raw file** button. Save it in an empty directory, open a terminal there, and start it:
+Download [`a13n-service.yaml`](https://github.com/converge-ai-labs/agent-foundation/blob/main/deploy/docker/compose/a13n-service.yaml) into an empty directory and start the stack. You can copy these commands without cloning the repository or installing Make:
 
 ```sh
-docker compose -f a13n-service-quickstart.yaml up -d --wait
+mkdir a13n-service
+cd a13n-service
+curl -fL https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/main/deploy/docker/compose/a13n-service.yaml -o a13n-service.yaml
+docker compose -f a13n-service.yaml up -d --wait --pull always
 ```
 
-Open <http://127.0.0.1:8080> and sign in with **`admin@example.com` / `local-public-password-123`**. The administrator, organization, and workspace are already created. Continue at [Add a model](#add-a-model); bring your own model provider credentials for real responses.
+Service, Console, PostgreSQL, and Redis start together. The stack mounts the host Docker socket and automatically prepares Docker execution environments for your workspace. It publishes only <http://127.0.0.1:8080>. The source file uses the published `latest` image; release assets pin a release version.
 
-> [!WARNING]
-> **Keep this trial on your own machine.** Its administrator password is public. It binds only to loopback, does not mount the host Docker socket, and preserves data and credentials across restarts. The [Compose guide](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#local-quickstart) covers the stack in detail.
+If you already have a repository checkout, `make compose-up` from its root starts the same stack and prints the Console URL.
+
+## Register your administrator account
+
+Open <http://127.0.0.1:8080>. **On the first launch, register an administrator account instead of signing in:** enter your email and choose a password of at least **8 characters**. There is no default administrator email or password for this stack.
+
+Registration creates the first administrator, organization, and workspace and signs you in automatically. Continue at [Add a model](#add-a-model). On later visits, sign in with the email and password you registered. Restarts preserve the account and data; additional users join through [invitations](identity.md#invitations).
+
+Whoever registers first on an uninitialized Service becomes its administrator. Keep the stack on loopback while setting it up; for a deployment reachable by others before you open it, use [operator bootstrap](#initialize-a-shared-deployment) first. The [Compose guide](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#single-host-deployment-with-native-docker) covers host Docker access and deployment configuration.
 
 ## Add a model
 
@@ -44,43 +54,43 @@ Continue with the [Console guide](use-platform.md) for follow-ups, approvals, qu
 
 Follow [Connect your application](connect-application.md) to create a workspace API key, select an agent, submit a message, and read the result. Choose a [Service SDK or remote CLI](sdks.md) for language-specific integration.
 
-## Stop, resume, or reset the trial
+## Stop, resume, or reset the stack
 
-Run these commands in the directory containing your quickstart file:
+Run these commands in the directory containing `a13n-service.yaml`:
 
 ```sh
 # Stop containers, keeping accounts, conversations, credentials, and files.
-docker compose -f a13n-service-quickstart.yaml down
+docker compose -f a13n-service.yaml down
 
 # Resume with the same data.
-docker compose -f a13n-service-quickstart.yaml up -d --wait
+docker compose -f a13n-service.yaml up -d --wait
 ```
 
-Keep the same Compose project and its volumes. Initialization runs again safely and does not restore the public password if you changed it.
+Keep the same Compose project and its volumes. Resuming preserves your administrator account, password, and data. To refresh the images, add `--pull always` to the startup command; see the [Compose upgrade guide](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades) before upgrading an existing deployment.
 
-To **permanently delete all trial data**, run `docker compose -f a13n-service-quickstart.yaml down --volumes`. The next start creates the public trial account again.
+To **permanently delete all stack data**, run `docker compose -f a13n-service.yaml down --volumes`. On the next start, open Console and register a new administrator account.
 
 ## Troubleshooting
 
-- **Port 8080 is in use:** run `A13N_PORT=8081 docker compose -f a13n-service-quickstart.yaml up -d --wait`, then open <http://127.0.0.1:8081>. Keep using that port when resuming.
-- **Startup does not finish:** inspect `docker compose -f a13n-service-quickstart.yaml ps -a` and `docker compose -f a13n-service-quickstart.yaml logs init service`. The initializer must complete successfully before Service starts.
-- **The trial password no longer works:** existing data is preserved, including password changes. Sign in with the password you set; restarting does not reset it.
+- **Port 8080 is in use:** run `A13N_PORT=8081 docker compose -f a13n-service.yaml up -d --wait`, then open <http://127.0.0.1:8081>. Keep using that port when resuming.
+- **Startup does not finish:** inspect `docker compose -f a13n-service.yaml ps -a` and `docker compose -f a13n-service.yaml logs service`. Service must finish database migration and become ready before you can use Console.
+- **Console shows sign-in instead of registration:** the Service already has an administrator. Sign in with the account you registered; restarting does not reset it.
 - **A model cannot respond:** check its provider credentials, upstream model ID, and API choice. Catalog entries do not guarantee access through your provider account. Private or HTTP endpoints also require the explicit [outbound request settings](configuration.md#outbound-requests).
 
 ## Deploy the Service
 
-For your own deployment, use your own administrator credentials rather than the public trial account. The Service ships as the `a13n-service` Python package, the `ghcr.io/converge-ai-labs/a13n-service` image for `linux/amd64` and `linux/arm64`, and the Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`. Every deployment needs PostgreSQL, Redis and an encryption key; see [Configure Service](configuration.md#required-infrastructure). Two deployment guides are maintained in the repository:
+The local Compose stack can keep your existing account and data as you continue using it. For shared deployments, configure the public URL and access before exposing Service; see the deployment guides below. The Service ships as the `a13n-service` Python package, the `ghcr.io/converge-ai-labs/a13n-service` image for `linux/amd64` and `linux/arm64`, and the Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`. Every deployment needs PostgreSQL, Redis and an encryption key; see [Configure Service](configuration.md#required-infrastructure). Two deployment guides are maintained in the repository:
 
 - [Single host with Docker Compose](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#single-host-deployment-with-native-docker): Service, PostgreSQL, Redis and Console on one machine, with Docker environments on the host's Docker Engine.
 - [Kubernetes with Helm](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes): separate control and worker Deployments and a migration Job, with values for a local kind cluster.
 
 Follow either guide until Service reports ready at `/readyz`.
 
-## Create the first administrator
+## Initialize a shared deployment
 
-This step is for an uninitialized deployment, not the pre-initialized local trial above. Open Console at the Service's public URL. Until Service is initialized, Console asks for the first administrator's email and a password of at least 12 characters instead of a sign-in; creating it signs you in. This creates the first organization, its workspace and the administrator, once: afterwards Console shows the sign-in, and further people join through [invitations](identity.md#invitations).
+The browser [administrator registration](#register-your-administrator-account) works for any uninitialized deployment. When others can reach a new deployment before you open Console, create the administrator with the operator command `bootstrap` first.
 
-Whoever reaches an uninitialized Service first becomes its administrator. When a new deployment is reachable by others before you open it, create the administrator with the operator command `bootstrap` instead, run where the Service's configuration is available (inside the Service container for the deployments above):
+Run this where the Service's configuration is available (inside the Service container for the deployments above):
 
 ```sh
 a13n-service --config /app/service.toml bootstrap --email admin@example.com

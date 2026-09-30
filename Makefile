@@ -3,6 +3,7 @@
 A13N_SERVICE_IMAGE ?= a13n-service:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
 A13N_HARNESS_UI_IMAGE ?= a13n-harness-ui:local
+COMPOSE_PULL ?= always
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins examples/provider-plugin examples/mcp-apps
 PYTHON_TEST_DIRS ?=
 PYTHON_TEST_WORKERS ?=
@@ -103,8 +104,8 @@ k8s-smoke: ## Check the running local kind deployment: Console, administrator si
 	@python3 scripts/deploy_smoke.py kind
 
 .PHONY: compose-up
-compose-up: ## Start the single-host Compose stack and print the Console URL
-	@docker compose -f deploy/docker/compose/a13n-service.yaml up -d --wait
+compose-up: ## Pull images, start the single-host Compose stack and print the Console URL
+	@docker compose -f deploy/docker/compose/a13n-service.yaml up -d --wait --pull "$(COMPOSE_PULL)"
 	@address=$$(docker compose -f deploy/docker/compose/a13n-service.yaml port service 8000) && printf 'Console: http://%s\n' "$$address"
 
 .PHONY: compose-smoke

@@ -6,6 +6,7 @@ import {
   WarningOctagon,
 } from "@phosphor-icons/react/dist/ssr";
 import type { Icon } from "@phosphor-icons/react";
+import type { Locale } from "@/lib/i18n";
 import type { ReactNode } from "react";
 
 /** GitHub alert kinds. Notes and tips stay on the neutral surface; warnings are tinted. */
@@ -47,12 +48,22 @@ const kinds: Record<
 
 export function Callout({
   type = "note",
+  locale = "en",
   children,
 }: {
   type?: string;
+  locale?: Locale;
   children: ReactNode;
 }) {
   const kind = kinds[type] ?? kinds.note;
+  const labels: Record<string, string> = {
+    note: "说明",
+    tip: "提示",
+    important: "重要",
+    warning: "注意",
+    caution: "警告",
+  };
+  const label = locale === "zh-CN" ? (labels[type] ?? labels.note) : kind.label;
   const Icon = kind.icon;
   return (
     <div
@@ -63,7 +74,7 @@ export function Callout({
         className={`mb-1 flex items-center gap-1.5 text-[13px] font-medium ${kind.tone}`}
       >
         <Icon weight="duotone" className="size-4" />
-        {kind.label}
+        {label}
       </div>
       <div className="prose-no-margin">{children}</div>
     </div>

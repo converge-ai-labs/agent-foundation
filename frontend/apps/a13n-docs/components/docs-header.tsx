@@ -1,4 +1,6 @@
 "use client";
+import { useLocale } from "./provider";
+import { messages } from "@/lib/i18n";
 import { List } from "@phosphor-icons/react/dist/ssr";
 import { usePathname } from "fumadocs-core/framework";
 import { useTreePath } from "fumadocs-ui/contexts/tree";
@@ -9,6 +11,7 @@ import { iconButton, SiteHeader } from "./site-header";
 
 /** The notebook layout's header slot, with the current section tab marked. */
 export function DocsHeader(props: ComponentProps<"header">) {
+  const t = messages[useLocale()];
   const {
     slots,
     props: { tabs },
@@ -33,7 +36,7 @@ export function DocsHeader(props: ComponentProps<"header">) {
         }))}
       menu={
         <Trigger
-          aria-label="Open navigation"
+          aria-label={t.navigation}
           className={`${iconButton} -me-1.5 md:hidden`}
         >
           <List />

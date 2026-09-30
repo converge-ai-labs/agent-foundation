@@ -57,7 +57,7 @@ kubectl -n a13n-service create secret generic a13n-postgres-secrets \
 
 Secrets must exist in the release namespace. Do not put secrets in values, `extraConfig`, shell command arguments, or committed manifests. Existing Secrets are not managed or hashed by Helm; restart both Deployments after a Secret update. Configuration changes roll Pods through a configuration checksum.
 
-After the first installation, create the first administrator. Console offers this to its first visitor on an uninitialized Service, so when the Ingress is reachable by others, run the command instead before opening it. The command prompts for a password of at least 12 characters and refuses once the Service is initialized:
+After the first installation, create the first administrator. Console offers this to its first visitor on an uninitialized Service, so when the Ingress is reachable by others, run the command instead before opening it. The command prompts for a password of at least 8 characters and refuses once the Service is initialized:
 
 ```sh
 kubectl -n a13n-service exec -it deployment/a13n-a13n-control -- \

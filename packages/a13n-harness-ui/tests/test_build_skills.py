@@ -122,3 +122,18 @@ def test_headings_ignore_code_and_preserve_parent_section_boundaries() -> None:
 def test_headings_skip_front_matter_without_shifting_lines() -> None:
     content = "---\ntitle: Page\ndescription: Not a heading\n---\n\n## Section\n\ntext\n"
     assert BUILDER["_headings"](content) == [(2, "Section", 6, 8)]
+
+
+def test_localized_pages_are_not_bundled(tmp_path: Path) -> None:
+    package_root, repository = _source(tmp_path)
+    source = repository / "docs/a13n-harness-ui"
+    english = _files(build_skills(package_root, repository))
+    (source / "settings.zh-CN.md").write_text(
+        "---\ntitle: 设置\ndescription: 中文文档\n---\n\n## 配置\n", encoding="utf-8"
+    )
+    (source / "meta.zh-CN.json").write_text('{"title": "Harness UI", "pages": ["settings"]}', encoding="utf-8")
+    output = build_skills(package_root, repository)
+    assert _files(output) == english
+    assert not list(output.rglob("*.zh-CN.*"))
+    assert "设置" not in (output / "SKILL.md").read_text(encoding="utf-8")
+    assert (output / "docs/settings.md").read_bytes() == (source / "settings.md").read_bytes()

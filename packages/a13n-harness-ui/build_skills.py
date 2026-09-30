@@ -106,7 +106,7 @@ def build_skills(package_root: Path, repository_root: Path) -> Path:
     pages.extend(
         (("Additional documentation",), _label(path), path.relative_to(docs_root).as_posix())
         for path in sorted(source_root.rglob("*.md"))
-        if path.relative_to(docs_root).as_posix() not in listed
+        if path.relative_to(docs_root).as_posix() not in listed and ".zh-CN." not in path.name
     )
     template = (package_root / "a13n_harness_ui/assets/configuration_skill.md").read_text(encoding="utf-8")
     overview = [template.rstrip(), "", "## Documentation map", ""]
@@ -172,7 +172,7 @@ def build_skills(package_root: Path, repository_root: Path) -> Path:
     if output.exists():
         shutil.rmtree(output)
     output.mkdir(parents=True)
-    shutil.copytree(source_root, output / "docs", ignore=shutil.ignore_patterns("meta.json"))
+    shutil.copytree(source_root, output / "docs", ignore=shutil.ignore_patterns("meta.json", "*.zh-CN.*"))
     (output / "references").mkdir()
     (output / "SKILL.md").write_text("\n".join(overview).rstrip() + "\n", encoding="utf-8")
     (output / "references/navigation.md").write_text("\n".join(detail), encoding="utf-8")

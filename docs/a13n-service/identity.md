@@ -9,7 +9,7 @@ Every request acts as a **principal**: a user, who signs in with an email addres
 
 An **organization** is the administration boundary. It holds its members and its workspaces. A **workspace** is the boundary for work: agents, sessions, providers, models, connections, environments and every other resource belong to exactly one workspace.
 
-[Bootstrap](get-started.md#create-the-first-administrator), in Console on a new Service or with the `bootstrap` command, creates the first organization, its first workspace and an administrator. There is no API to create further organizations. Organization administrators create workspaces in Console under **Organization settings → Workspaces**, or with `POST /api/v1/organizations/{organization_id}/workspaces` and a `{name}` body.
+[Bootstrap](get-started.md#register-your-administrator-account), in Console on a new Service or with the `bootstrap` command, creates the first organization, its first workspace and an administrator. There is no API to create further organizations. Organization administrators create workspaces in Console under **Organization settings → Workspaces**, or with `POST /api/v1/organizations/{organization_id}/workspaces` and a `{name}` body.
 
 Administrators can rename an organization or workspace and set an icon (PNG, JPEG or WebP). Organizations and workspaces are identified by ID: workspace administration paths name the workspace ID, and every other request acts in the workspace its credential selects (see [HTTP conventions](http.md#workspace)).
 
@@ -68,7 +68,7 @@ Under **Personal settings → Login sessions**, or `GET /api/v1/users/me/login-s
 Account operations require a login session; API keys cannot perform them.
 
 - **Profile**: change your name, and your avatar (PNG, JPEG or WebP).
-- **Password**: changing it (`POST /api/v1/users/me/password` with the current password) ends your other login sessions. Passwords have at least 12 characters.
+- **Password**: changing it (`POST /api/v1/users/me/password` with the current password) ends your other login sessions. Passwords have at least 8 characters.
 - **Password reset**: **Forgot your password?** on the sign-in page mails a one-use link valid for `auth.link_seconds`. Resetting ends every login session. Reset requires SMTP.
 - **Email change**: submit the new address with your current password; the Service mails a confirmation link to the new address, and the change takes effect when it is opened. Confirming ends every login session. Email change requires SMTP.
 - **Disable**: `POST /api/v1/users/me/disable` with your current password disables your account, ends your other login sessions and revokes your outstanding password-reset and email-change links. Your grants and keys are kept but nothing authenticates as you; runs you started stop at their next authority check. Only an operator can re-enable you.

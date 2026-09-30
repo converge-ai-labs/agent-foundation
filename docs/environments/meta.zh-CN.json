@@ -1,0 +1,23 @@
+{
+  "title": "环境",
+  "description": "在各类目标中使用文件、命令与进程",
+  "root": true,
+  "icon": "environments",
+  "pages": [
+    "index",
+    "---开始使用---",
+    "getting-started",
+    "examples",
+    "---Work with 环境---",
+    "operations",
+    "commands",
+    "lifecycle",
+    "---配置---",
+    "configuration",
+    "providers",
+    "remote-envd",
+    "configuration-reference",
+    "---Envd---",
+    "...../a13n-envd"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "pages": [
+    "overview",
+    "a13n-service",
+    "a13n-harness-ui",
+    "a13n-harness",
+    "environments"
+  ]
+}

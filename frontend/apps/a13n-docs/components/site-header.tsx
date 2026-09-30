@@ -1,5 +1,5 @@
 "use client";
-import { Moon, Sun } from "@phosphor-icons/react/dist/ssr";
+import { Moon, Sun, Translate } from "@phosphor-icons/react/dist/ssr";
 import Link from "fumadocs-core/link";
 import {
   FullSearchTrigger,
@@ -7,6 +7,9 @@ import {
 } from "fumadocs-ui/layouts/shared/slots/search-trigger";
 import { useTheme } from "next-themes";
 import type { ComponentProps, ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useLocale } from "./provider";
+import { localeUrl, messages, type Locale } from "@/lib/i18n";
 import { site } from "@/lib/site";
 import { NavTitle } from "./brand";
 
@@ -30,13 +33,19 @@ export function SiteHeader({
   className = "",
   ...props
 }: ComponentProps<"header"> & { tabs: SiteTab[]; menu?: ReactNode }) {
+  const locale = useLocale();
+  const t = messages[locale];
   return (
     <header
       {...props}
       className={`z-10 h-14 before:absolute before:inset-y-0 before:-inset-x-[50vw] before:-z-10 before:border-b before:bg-fd-background/85 before:backdrop-blur-md ${className}`}
     >
       <div className="mx-auto flex h-full max-w-(--fd-layout-width,97rem) items-center gap-8 px-4 md:px-6">
-        <Link href="/" aria-label="a13n docs home" className="shrink-0">
+        <Link
+          href={localeUrl("/", locale)}
+          aria-label={t.home}
+          className="shrink-0"
+        >
           <NavTitle />
         </Link>
         <nav className="flex h-full gap-6 max-lg:hidden">
@@ -57,10 +66,11 @@ export function SiteHeader({
             className="me-2 h-8 w-56 rounded-[10px] border-(--a13n-input-border) bg-transparent py-0 ps-2.5 pe-1.5 text-[13px] hover:bg-fd-accent max-md:hidden"
           />
           <SearchTrigger hideIfDisabled className={`${iconButton} md:hidden`} />
+          <LanguageSwitch />
           <ThemeToggle />
           <a
             href={site.repository}
-            aria-label="GitHub repository"
+            aria-label={t.github}
             className={`${iconButton} max-md:hidden`}
           >
             <GitHubMark />
@@ -82,16 +92,41 @@ export function GitHubMark() {
 }
 
 function ThemeToggle() {
+  const t = messages[useLocale()];
   const { resolvedTheme, setTheme } = useTheme();
   return (
     <button
       type="button"
-      aria-label="Toggle dark theme"
+      aria-label={t.theme}
       className={iconButton}
       onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
     >
       <Moon className="dark:hidden" />
       <Sun className="hidden dark:block" />
     </button>
+  );
+}
+
+function LanguageSwitch() {
+  const locale = useLocale();
+  const pathname = usePathname();
+  const router = useRouter();
+  return (
+    <label className="relative inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground">
+      <Translate className="size-[18px]" aria-hidden="true" />
+      <select
+        aria-label={messages[locale].language}
+        value={locale}
+        className="cursor-pointer appearance-none bg-transparent pe-1 outline-none focus-visible:ring-2 focus-visible:ring-fd-ring"
+        onChange={(event) =>
+          router.push(
+            `${localeUrl(pathname, event.target.value as Locale)}${window.location.search}${window.location.hash}`,
+          )
+        }
+      >
+        <option value="en">English</option>
+        <option value="zh-CN">简体中文</option>
+      </select>
+    </label>
   );
 }

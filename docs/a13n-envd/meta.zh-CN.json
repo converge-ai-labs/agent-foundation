@@ -1,0 +1,14 @@
+{
+  "title": "Envd",
+  "pages": [
+    "index",
+    "installation",
+    "sandbox",
+    "configuration",
+    "egress",
+    "operations",
+    "computer-use",
+    "python-client",
+    "isolation"
+  ]
+}

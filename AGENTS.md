@@ -13,7 +13,7 @@ Agent Foundation is built on Harness, an embeddable agent execution foundation. 
 
 Read the relevant contribution and engineering sections before changing that surface. Reuse sections already read unless they changed. This guide and skills summarize operational rules; they do not replace the owning contracts. Do not turn personal preferences or tool-specific defaults into repository requirements without an explicit project decision.
 
-Write repository content in English, as required by [CONTRIBUTING.md](CONTRIBUTING.md#repository-language).
+Write canonical repository content in English; localized user documentation and UI translation resources use their target language, as required by [CONTRIBUTING.md](CONTRIBUTING.md#repository-language).
 
 For local Service work, use the stable Make targets and discover checkout-specific ports with `make dev-status`; [dev/service/README.md](dev/service/README.md) owns lifecycle and data boundaries.
 

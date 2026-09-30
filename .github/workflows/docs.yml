@@ -69,6 +69,9 @@ jobs:
       - name: Check docs site
         run: pnpm --dir frontend --filter a13n-docs run check
 
+      - name: Test docs localization
+        run: pnpm --dir frontend --filter a13n-docs run test
+
       # The build fails on any broken internal link or anchor.
       - name: Build docs site
         run: pnpm --dir frontend --filter a13n-docs run build

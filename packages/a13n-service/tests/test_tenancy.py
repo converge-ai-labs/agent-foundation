@@ -425,6 +425,7 @@ async def test_account_trail_shows_only_the_callers_events(service) -> None:  # 
 
 
 async def test_invitations_with_manual_links(service) -> None:  # type: ignore[no-untyped-def]
+    invitation_password = "eight-88"
     client = service.client
     created = await client.post(
         f"{service.workspace}/invitations", json={"email": "New@Example.com", "role": "builder"}
@@ -443,14 +444,14 @@ async def test_invitations_with_manual_links(service) -> None:  # type: ignore[n
     )
     assert resent.status_code == 200 and resent.json()["invitation_url"] != receipt["invitation_url"]
     async with new_client(service) as invitee:
-        assert (await accept(invitee, receipt["invitation_url"], MEMBER_PASSWORD)).status_code == 404
-        assert (await accept(invitee, resent.json()["invitation_url"], "short")).status_code == 400
-        accepted = await accept(invitee, resent.json()["invitation_url"], MEMBER_PASSWORD)
+        assert (await accept(invitee, receipt["invitation_url"], invitation_password)).status_code == 404
+        assert (await accept(invitee, resent.json()["invitation_url"], "short-7")).status_code == 400
+        accepted = await accept(invitee, resent.json()["invitation_url"], invitation_password)
         assert accepted.status_code == 200 and "a13n_session=" in accepted.headers["set-cookie"]
         me = (await invitee.get("/api/v1/users/me")).json()
         assert (me["email"], me["name"]) == ("new@example.com", "new")
         assert (await invitee.get(service.workspace)).json()["permissions"] == ["read", "run", "write"]
-        replayed = await accept(invitee, resent.json()["invitation_url"], MEMBER_PASSWORD)
+        replayed = await accept(invitee, resent.json()["invitation_url"], invitation_password)
         assert replayed.status_code == 409 and replayed.json()["error"]["details"]["reason"] == "accepted"
     invitation = (await client.get(f"{service.workspace}/invitations")).json()["items"][0]
     assert invitation["principal_id"] == me["id"] and invitation["accepted_at"] is not None
@@ -465,7 +466,7 @@ async def test_invitations_with_manual_links(service) -> None:  # type: ignore[n
     ).json()
     async with new_client(service) as invitee:
         assert (await accept(invitee, upgrade["invitation_url"], "wrong-password-123")).status_code == 401
-        assert (await accept(invitee, upgrade["invitation_url"], MEMBER_PASSWORD)).status_code == 200
+        assert (await accept(invitee, upgrade["invitation_url"], invitation_password)).status_code == 200
         assert (await invitee.get(service.organization)).json()["permissions"] == ["admin", "read", "run", "write"]
 
     expired = (
@@ -485,8 +486,8 @@ async def test_invitations_with_manual_links(service) -> None:  # type: ignore[n
     )
     assert withdrawn.status_code == 200 and withdrawn.json()["revoked_at"] is not None
     async with new_client(service) as invitee:
-        late = await accept(invitee, expired["invitation_url"], MEMBER_PASSWORD)
-        gone = await accept(invitee, revoked["invitation_url"], MEMBER_PASSWORD)
+        late = await accept(invitee, expired["invitation_url"], invitation_password)
+        gone = await accept(invitee, revoked["invitation_url"], invitation_password)
     assert late.json()["error"]["details"]["reason"] == "expired"
     assert gone.json()["error"]["details"]["reason"] == "revoked"
 
@@ -536,7 +537,9 @@ async def test_identity_mail_is_queued_encrypted(mailing) -> None:  # type: igno
         [_, (_, move), (to, reset)] = await sent_links(mailing)
         assert "/confirm-email#token=" in move
         assert to == "mail@example.com" and "/reset-password#token=" in reset
-        confirm = {"token": reset.split("#token=", 1)[1], "password": "renewed-password-1234"}
+        confirm = {"token": reset.split("#token=", 1)[1], "password": "eight-88"}
+        short = {**confirm, "password": "short-7"}
+        assert (await anonymous.post("/api/v1/auth/password-reset/confirm", json=short)).status_code == 400
         assert (await anonymous.post("/api/v1/auth/password-reset/confirm", json=confirm)).status_code == 204
         assert (await anonymous.post("/api/v1/auth/password-reset/confirm", json=confirm)).status_code == 400
         # The reset ended every login session and outstanding link of the account, including the session
@@ -544,9 +547,7 @@ async def test_identity_mail_is_queued_encrypted(mailing) -> None:  # type: igno
         assert (await invitee.get("/api/v1/users/me")).status_code == 401
         moved = await anonymous.post("/api/v1/auth/email-change/confirm", json={"token": move.split("#token=", 1)[1]})
         assert moved.status_code == 400
-        relogin = await anonymous.post(
-            "/api/v1/auth/login", json={"email": "mail@example.com", "password": "renewed-password-1234"}
-        )
+        relogin = await anonymous.post("/api/v1/auth/login", json={"email": "mail@example.com", "password": "eight-88"})
         assert relogin.status_code == 200
 
     profile = (await client.get("/api/v1/users/me")).json()
@@ -764,7 +765,9 @@ async def test_profile_password_and_login_sessions(service) -> None:  # type: ig
         assert len(sessions) == 2 and sum(item["current"] for item in sessions) == 1
         wrong = {"current_password": "not-my-password", "password": "brand-new-password-1"}
         assert (await client.post("/api/v1/users/me/password", json=wrong)).status_code == 400
-        changed = {"current_password": PASSWORD, "password": "brand-new-password-1"}
+        changed = {"current_password": PASSWORD, "password": "eight-88"}
+        short = {**changed, "password": "short-7"}
+        assert (await client.post("/api/v1/users/me/password", json=short)).status_code == 400
         assert (await client.post("/api/v1/users/me/password", json=changed)).status_code == 204
         # Changing the password ends every other login session and keeps this one.
         assert (await other.get("/api/v1/users/me")).status_code == 401
