@@ -4,19 +4,22 @@ import { cn } from "../lib/utils";
 export type StatusPillVariant =
   "success" | "warning" | "danger" | "info" | "neutral";
 
-/** Tint and dot colour per semantic hue; the label always names the state. */
+/**
+ * Settled states (success, neutral) are a dot and a label with no tint, so the
+ * states that ask for attention are the only tinted pills on a screen.
+ */
 const variantClassNames: Record<StatusPillVariant, string> = {
-  danger: "bg-destructive/10 text-destructive-foreground",
-  info: "bg-info/10 text-info-foreground",
-  neutral: "bg-foreground/8 text-muted-foreground",
-  success: "bg-success/10 text-success-foreground",
-  warning: "bg-warning/10 text-warning-foreground",
+  danger: "bg-destructive/10 px-2 text-destructive-foreground",
+  info: "bg-info/10 px-2 text-info-foreground",
+  neutral: "text-muted-foreground",
+  success: "text-foreground/80",
+  warning: "bg-warning/12 px-2 text-warning-foreground",
 };
 
 const dotClassNames: Record<StatusPillVariant, string> = {
   danger: "bg-destructive",
   info: "bg-info",
-  neutral: "bg-muted-foreground/72",
+  neutral: "bg-muted-foreground/60",
   success: "bg-success",
   warning: "bg-warning",
 };
@@ -29,7 +32,7 @@ export interface StatusPillProps extends Omit<
   children: React.ReactNode;
 }
 
-/** Status is a 6px dot plus a 12px medium label on a 10% tint of the same hue. */
+/** Status is a 6px dot plus a 12px medium label; attention states add a tint of the same hue. */
 export function StatusPill({
   variant = "neutral",
   className,
@@ -39,7 +42,7 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "inline-flex min-w-0 shrink-0 items-center gap-1.5 rounded-full px-2 py-[3px] font-medium text-[12px] leading-4",
+        "inline-flex min-w-0 shrink-0 items-center gap-1.5 rounded-full py-[3px] font-medium text-[12px] leading-4",
         variantClassNames[variant],
         className,
       )}

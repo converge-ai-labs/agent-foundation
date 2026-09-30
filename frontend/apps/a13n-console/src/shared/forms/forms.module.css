@@ -36,14 +36,14 @@
 .codeValue {
   margin: 0;
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .code [data-slot="textarea"] {
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .json {
   margin: 0;
@@ -51,7 +51,7 @@
   border-radius: var(--a13n-radius-tile);
   background: var(--a13n-surface);
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.7;
   max-height: 440px;
   overflow: auto;
@@ -84,6 +84,6 @@
 .schemaGroup > legend {
   margin-bottom: 8px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }

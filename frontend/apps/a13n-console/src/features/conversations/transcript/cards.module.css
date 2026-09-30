@@ -14,12 +14,12 @@
   gap: 1px;
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }
 .cardsNoteTitle {
   color: var(--a13n-text);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 .card {
@@ -52,13 +52,13 @@
 }
 .cardHeader h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 .cardTool {
   color: var(--a13n-secondary);
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   overflow-wrap: anywhere;
 }
 .cardRisk {
@@ -70,7 +70,7 @@
   border-radius: 999px;
   background: color-mix(in srgb, var(--a13n-danger) 12%, transparent);
   color: var(--a13n-danger);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
 .cardCommand {
@@ -86,7 +86,7 @@
   flex: 1;
   min-width: 0;
   font-family: var(--a13n-mono);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -95,7 +95,7 @@
   grid-template-columns: auto minmax(0, 1fr);
   gap: 4px 16px;
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   overflow-wrap: anywhere;
 }
 .cardFacts dt {
@@ -108,7 +108,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .cardFooter {
   display: flex;
@@ -150,7 +150,7 @@
 .inboxNote {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }
 .inboxItem {
@@ -160,14 +160,14 @@
   padding: 10px 12px;
   border-radius: var(--a13n-radius-row);
   background: var(--a13n-surface);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .inboxItem header {
   display: flex;
   align-items: center;
   gap: 10px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .inboxActions {
   display: flex;
@@ -177,6 +177,6 @@
 }
 .inboxLink {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   justify-self: start;
 }

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { formatCost } from "../../shared/cost";
 import styles from "./usage.module.css";
+import { compactNumber, niceScale } from "./values";
 
 export function UsageChart({ days }: { days: Schema["DailyUsage"][] }) {
   const { t, i18n } = useTranslation();
@@ -20,11 +21,16 @@ export function UsageChart({ days }: { days: Schema["DailyUsage"][] }) {
     0,
     ...values.filter((value): value is number => value !== null),
   );
+  const scale = niceScale(maximum);
   const number = (value: number) => value.toLocaleString(i18n.resolvedLanguage);
   const label = (value: number | null) =>
     metric === "cost"
       ? formatCost(value === null ? null : String(value))
       : number(value ?? 0);
+  const tick = (value: number) =>
+    metric === "cost"
+      ? `$${value.toLocaleString("en-US", { maximumFractionDigits: 3 })}`
+      : compactNumber(value, i18n.resolvedLanguage);
   const selected = days.find((day) => day.date === active);
   const date = (value: string) =>
     new Date(`${value}T12:00:00Z`).toLocaleDateString(i18n.resolvedLanguage, {
@@ -67,17 +73,17 @@ export function UsageChart({ days }: { days: Schema["DailyUsage"][] }) {
       </div>
       <div className={styles.chart}>
         <div className={styles.axis} aria-hidden="true">
-          <span>{label(maximum)}</span>
-          <span>{label(maximum / 2)}</span>
-          <span>{label(0)}</span>
+          {scale.ticks.map((value) => (
+            <span key={value}>{tick(value)}</span>
+          ))}
         </div>
         <div className={styles.plot}>
           <div className={styles.grid} aria-hidden="true">
-            <i />
-            <i />
-            <i />
+            {scale.ticks.map((value) => (
+              <i key={value} />
+            ))}
           </div>
-          <div className={styles.bars}>
+          <div className={styles.bars} data-focused={active ? "" : undefined}>
             {days.map((day, index) => (
               <button
                 key={day.date}
@@ -96,7 +102,7 @@ export function UsageChart({ days }: { days: Schema["DailyUsage"][] }) {
                     height:
                       values[index] === null
                         ? "8px"
-                        : `${maximum ? (values[index]! / maximum) * 100 : 0}%`,
+                        : `${(values[index]! / scale.top) * 100}%`,
                   }}
                 />
               </button>

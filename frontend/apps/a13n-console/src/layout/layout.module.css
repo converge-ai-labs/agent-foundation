@@ -19,7 +19,7 @@
 }
 .accountCopy strong {
   overflow: hidden;
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -27,7 +27,7 @@
 .accountCopy small {
   overflow: hidden;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

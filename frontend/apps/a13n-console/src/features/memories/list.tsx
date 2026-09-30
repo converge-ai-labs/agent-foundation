@@ -32,9 +32,11 @@ export function MemoriesPage() {
     navigate = useNavigate();
   const [kind, setKind] = useState<Kind>();
   const [type, setType] = useState<string>();
+  const [search, setSearch] = useState("");
   const typeName = useMemoryTypeName();
   const recordTypes = useProviderTypes("memory").data?.items ?? [];
-  const filters = { kind, type };
+  const term = search.trim().toLocaleLowerCase();
+  const filters = { kind, type, term };
   const page = useCursor(filters);
   const query = useQuery(
     memoryQueries(client, workspace.id).page(filters, page.cursor),
@@ -42,7 +44,7 @@ export function MemoriesPage() {
   const create = can("write") ? (
     <CreateMemory onCreated={(memory) => navigate(memory.id)} />
   ) : undefined;
-  const filtered = !!kind || !!type;
+  const filtered = !!kind || !!type || !!term;
   // A type belongs to one kind, so a kind offers only its own types.
   const types = [
     ...(kind !== "record" ? ["postgres"] : []),
@@ -52,11 +54,14 @@ export function MemoriesPage() {
     <Page
       title={t("Memories")}
       description={t(
-        "What agents keep across conversations: files with the history of every change, or records recalled by meaning.",
+        "Files and records your agents keep across conversations.",
       )}
       actions={create}
       toolbar={
         <Toolbar
+          search={search}
+          onSearchChange={setSearch}
+          searchLabel={t("Search memories")}
           filters={
             <>
               <ChoiceField
@@ -176,7 +181,7 @@ export function MemoriesPage() {
             title={t(filtered ? "No matching memories" : "No memories yet")}
             description={t(
               filtered
-                ? "Try other filters."
+                ? "Change or clear the search and filters."
                 : "Create a memory to give agents what they keep across conversations.",
             )}
             action={!filtered && create}

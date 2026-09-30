@@ -69,7 +69,7 @@
   align-items: center;
   gap: 7px;
   color: var(--a13n-text-supporting);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .toolsetCard {
   min-width: 0;
@@ -115,14 +115,14 @@
 }
 .toolsetGroupName {
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 .toolsetGroupDescription {
   min-width: 0;
   overflow: hidden;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -133,7 +133,7 @@
 .toolsetGroupCount {
   margin-left: auto;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   white-space: nowrap;
 }
 .toolsetCaret,
@@ -166,7 +166,7 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .toolsetToolName span {
   overflow: hidden;
@@ -177,7 +177,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -195,7 +195,7 @@
   padding: 6px 8px;
   border-radius: 6px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   transition:
     background-color 150ms ease,
     color 150ms ease;
@@ -251,7 +251,7 @@
 .toolsetToolHint {
   margin: 0 0 10px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .connectionNameTrigger,
 .connectionSummaryTrigger {
@@ -287,7 +287,7 @@
 .connectionCatalogStatus {
   padding: 12px 18px 12px 46px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .connectionOptions {
   padding: 4px 18px 12px 46px;
@@ -309,12 +309,12 @@
   gap: 2px;
 }
 .connectionOption strong {
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-weight: 500;
 }
 .connectionOption small {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   line-height: 1.4;
 }
 .webConfigGrid {
@@ -336,7 +336,7 @@
   top: 2px;
   right: 0;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -422,7 +422,7 @@
   gap: 8px;
   margin-bottom: 24px;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   text-decoration: none;
 }
 .back:hover {
@@ -435,9 +435,9 @@
   padding-bottom: 12px;
 }
 .identity h1 {
-  font-size: 26px;
+  font-size: var(--a13n-text-2xl);
   font-weight: 500;
-  letter-spacing: -0.7px;
+  letter-spacing: var(--a13n-tracking-title);
   line-height: 1.3;
   overflow-wrap: anywhere;
   margin: 0;
@@ -445,7 +445,7 @@
 .identity > p {
   grid-column: 1;
   color: var(--a13n-secondary);
-  font-size: 14px;
+  font-size: var(--a13n-text-md);
   line-height: 1.6;
   margin: 0;
   overflow-wrap: anywhere;
@@ -459,7 +459,7 @@
   gap: 6px;
 }
 .headerActions small {
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   color: var(--a13n-secondary);
 }
 .metadata {
@@ -482,7 +482,7 @@
   padding: 16px;
   background: var(--a13n-elevated);
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--a13n-text-md);
   line-height: 1.75;
   resize: vertical;
   min-height: 210px;
@@ -492,7 +492,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .identity h1 {
-    font-size: 23px;
+    font-size: var(--a13n-text-2xl);
   }
   .headerActions {
     grid-column: 1;
@@ -517,7 +517,7 @@
   height: 44px;
   flex: none;
   border-radius: 12px;
-  font-size: 18px;
+  font-size: var(--a13n-text-xl);
 }
 .railLink {
   color: var(--a13n-text);
@@ -565,12 +565,12 @@
 .importStatus {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
 }
 .importNote {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .importActions {
@@ -591,13 +591,13 @@
 }
 .dependenciesIntro h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--a13n-text-lg);
   font-weight: 500;
 }
 .dependenciesIntro p {
   margin: 4px 0 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .dependency {
@@ -616,7 +616,7 @@
   gap: 8px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .dependencyHead > span:first-child {
   min-width: 0;
@@ -625,7 +625,7 @@
 .dependencyIssue {
   margin: 0;
   color: var(--destructive);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 
 /* Export dialog ----------------------------------------------------------- */
@@ -657,14 +657,14 @@
 }
 .previewIdentity h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--a13n-text-lg);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 .previewIdentity p {
   margin: 4px 0 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -679,24 +679,24 @@
 }
 .previewFacts dt {
   color: var(--a13n-secondary);
-  font-size: 11.5px;
+  font-size: var(--a13n-text-xs);
 }
 .previewFacts dd {
   margin: 3px 0 0;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   overflow-wrap: anywhere;
 }
 .previewInstructions h4 {
   margin: 0 0 6px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
 .previewInstructions p {
   max-height: 16rem;
   margin: 0;
   overflow: auto;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -704,7 +704,7 @@
 .previewNote {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .rawYaml {
@@ -714,6 +714,6 @@
   padding: 14px 16px;
   border-radius: var(--a13n-radius-group, 12px);
   background: var(--a13n-surface);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }

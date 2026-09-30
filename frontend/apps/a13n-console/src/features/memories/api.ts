@@ -1,6 +1,13 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { ApiError, type Client } from "../../service-client";
-import { allPages, data, representation, type Schema } from "../../shared/api";
+import {
+  allPages,
+  data,
+  matchesSearch,
+  matchingPage,
+  representation,
+  type Schema,
+} from "../../shared/api";
 import { providerApi } from "../providers/api";
 
 /** Everything read about a workspace's memories hangs off one key. */
@@ -51,24 +58,33 @@ export interface RevisionFilters {
 export interface MemoryFilters {
   kind?: Schema["MemoryKind"];
   type?: string;
+  /** A search term, trimmed and lowercased. */
+  term?: string;
 }
 
 export function memoryQueries(client: Client, workspaceId: string) {
   const keys = memoryKeys(workspaceId);
   return {
-    page: ({ kind, type }: MemoryFilters, cursor?: string) =>
+    page: ({ kind, type, term = "" }: MemoryFilters, cursor?: string) =>
       queryOptions({
-        queryKey: [...keys.list(), kind, type, cursor],
+        queryKey: [...keys.list(), kind, type, term, cursor],
         queryFn: ({ signal }) =>
-          client
-            .workspace(workspaceId)
-            .GET("/api/v1/memories", {
-              params: {
-                query: { kind, type, cursor },
-              },
-              signal,
-            })
-            .then(data),
+          matchingPage(
+            (next, limit) =>
+              client
+                .workspace(workspaceId)
+                .GET("/api/v1/memories", {
+                  params: {
+                    query: { kind, type, cursor: next, limit },
+                  },
+                  signal,
+                })
+                .then(data),
+            cursor,
+            term
+              ? (memory) => matchesSearch(term, memory.name, memory.description)
+              : undefined,
+          ),
       }),
     /** Every memory, for pickers and for naming a memory by its ID. */
     choices: () =>

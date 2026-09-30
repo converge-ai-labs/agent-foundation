@@ -28,7 +28,7 @@
 }
 .fact dt {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
   line-height: 15px;
 }
@@ -38,7 +38,7 @@
   gap: 6px;
   margin: 0;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-variant-numeric: tabular-nums;
   line-height: 18px;
 }
@@ -46,14 +46,14 @@
   margin: 8px 2px 0;
   max-width: 78ch;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .providerNote {
   margin: 12px 2px;
   max-width: 78ch;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .chips {
@@ -94,7 +94,7 @@
 .observationCount {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
   line-height: 28px;
 }
@@ -123,7 +123,7 @@
 .timelineHeader {
   min-height: 30px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
 .timelineScale {
@@ -241,7 +241,7 @@
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
   line-height: 18px;
   text-overflow: ellipsis;
@@ -252,7 +252,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-weight: 400;
   line-height: 16px;
   text-overflow: ellipsis;
@@ -264,7 +264,7 @@
   border-radius: 999px;
   color: var(--a13n-secondary);
   background: color-mix(in srgb, var(--a13n-text) 6%, transparent);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-variant-numeric: tabular-nums;
   line-height: 15px;
   white-space: nowrap;
@@ -299,7 +299,7 @@
 }
 .duration {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
   text-align: end;
@@ -334,7 +334,7 @@
 .statusMessage {
   margin-block: 6px 0;
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -345,7 +345,7 @@
   flex-wrap: wrap;
   gap: 2px 14px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   overflow-wrap: anywhere;
 }
 .identifier > span {
@@ -356,7 +356,7 @@
 .properties {
   display: grid;
   gap: 0;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .properties > div {
   display: grid;
@@ -407,7 +407,7 @@
 }
 .panelIdentityCopy strong {
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
   line-height: 17px;
   text-overflow: ellipsis;
@@ -419,7 +419,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-weight: 400;
   line-height: 15px;
   white-space: nowrap;
@@ -445,7 +445,7 @@
 .panelLabel {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
 /* Input above output: the panel is never wide enough for two readable columns. */
@@ -506,7 +506,7 @@
   flex-wrap: wrap;
   margin-bottom: 10px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
 }
 .contentBody {
   max-height: 560px;
@@ -523,7 +523,7 @@
 .contentEmpty {
   margin: 4px 0;
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .message {
   min-width: 0;
@@ -544,7 +544,7 @@
   gap: 8px;
   margin-bottom: 10px;
   color: var(--a13n-text-supporting);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .message header strong,
 .toolContent header strong {
@@ -572,7 +572,7 @@
   max-height: 560px;
   overflow: auto;
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.7;
   white-space: pre;
 }

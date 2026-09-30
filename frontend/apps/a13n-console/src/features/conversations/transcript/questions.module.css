@@ -19,18 +19,18 @@
 }
 .header {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
 .prompt {
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
   line-height: 1.5;
 }
 .hint {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .options {
   display: grid;
@@ -87,12 +87,12 @@
   overflow-wrap: anywhere;
 }
 .label {
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 .description {
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .custom {

@@ -3,7 +3,7 @@ import {
   DatabaseIcon,
   GearSixIcon,
   LightningIcon,
-  HeartIcon,
+  HeadCircuitIcon,
   StackIcon,
   WrenchIcon,
 } from "@phosphor-icons/react";
@@ -30,7 +30,7 @@ export function observationKind(
 const icons = {
   chat: CubeIcon,
   tool: WrenchIcon,
-  agent: HeartIcon,
+  agent: HeadCircuitIcon,
   data: DatabaseIcon,
   event: LightningIcon,
   phase: GearSixIcon,

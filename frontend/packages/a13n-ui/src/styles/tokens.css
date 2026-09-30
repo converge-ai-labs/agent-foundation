@@ -1,33 +1,55 @@
 :root {
   --a13n-font-brand: "Space Grotesk", var(--a13n-font);
-  --a13n-font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --a13n-font:
+    -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --a13n-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --a13n-text-body: 14px;
   --a13n-leading: 1.6;
+
+  /* One type scale: hierarchy comes from these steps, weight, and colour, never half pixels. */
+  --a13n-text-2xs: 11px;
+  --a13n-text-xs: 12px;
+  --a13n-text-sm: 13px;
+  --a13n-text-md: 14px;
+  --a13n-text-lg: 15px;
+  --a13n-text-xl: 17px;
+  --a13n-text-2xl: 24px;
+  --a13n-tracking-title: -0.022em;
+  --a13n-tracking-heading: -0.011em;
+
   --a13n-radius-lg: 12px;
   --a13n-radius-group: 12px;
-  --a13n-radius-row: 10px;
+  --a13n-radius-row: 8px;
   --a13n-radius-tile: 8px;
+  --a13n-radius-chip: 6px;
 }
 :root {
   --a13n-canvas: var(--background);
   --a13n-elevated: var(--card);
   --a13n-surface: var(--muted);
   --a13n-hover: var(--accent);
-  --a13n-selected: var(--accent);
+  --a13n-selected: color-mix(in srgb, var(--foreground) 7%, transparent);
   --a13n-accent-soft: var(--accent);
   --a13n-text: var(--foreground);
   --a13n-text-supporting: color-mix(
     in srgb,
-    var(--foreground) 80%,
+    var(--foreground) 82%,
     var(--background)
   );
   --a13n-secondary: var(--muted-foreground);
   --a13n-muted: var(--muted-foreground);
+  --a13n-tertiary: color-mix(
+    in srgb,
+    var(--muted-foreground) 72%,
+    var(--background)
+  );
   --a13n-border: var(--border);
   --a13n-border-soft: var(--border);
   --a13n-input-border: var(--input);
   --a13n-accent: var(--primary);
+  --a13n-signal: var(--signal);
+  --a13n-signal-soft: color-mix(in srgb, var(--signal) 12%, transparent);
   --a13n-focus: var(--ring);
   --a13n-scrollbar-size: 6px;
   --a13n-scrollbar-thumb: color-mix(
@@ -42,8 +64,10 @@
   );
   --a13n-success: var(--success);
   --a13n-danger: var(--destructive-foreground);
-  --a13n-shadow: 0 8px 28px #0001;
-  --a13n-shadow-subtle: 0 1px 2px #0001;
+  --a13n-shadow: var(--elevation-overlay);
+  --a13n-shadow-floating: var(--elevation-floating);
+  --a13n-shadow-subtle: var(--elevation-raised);
   --a13n-warning: var(--warning);
   --a13n-info: var(--info);
+  --a13n-ease: cubic-bezier(0.2, 0, 0, 1);
 }

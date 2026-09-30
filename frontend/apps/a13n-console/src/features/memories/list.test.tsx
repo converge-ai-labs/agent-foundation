@@ -160,7 +160,9 @@ it("says when no memory matches the filters", async () => {
   await user.click(screen.getByRole("combobox", { name: "Kind" }));
   await user.click(await screen.findByRole("option", { name: "Record" }));
   expect(await screen.findByText("No matching memories")).toBeTruthy();
-  expect(screen.getByText("Try other filters.")).toBeTruthy();
+  expect(
+    screen.getByText("Change or clear the search and filters."),
+  ).toBeTruthy();
 });
 
 it("offers creation from the empty state only to people who may configure memories", async () => {

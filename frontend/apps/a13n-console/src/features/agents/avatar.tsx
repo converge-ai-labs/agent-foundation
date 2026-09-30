@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { avatarColor, nameInitials } from "../../shared/identity";
+import { avatarTint, nameInitials } from "../../shared/identity";
 
 export function AgentAvatar({
   name,
@@ -25,8 +25,8 @@ export function AgentAvatar({
           <WorkspaceAvatarImage url={url} />
         ))}
       <AvatarFallback
-        className="rounded-[inherit] font-semibold text-white"
-        style={{ backgroundColor: avatarColor(id ?? name) }}
+        className="rounded-[inherit] font-semibold"
+        style={avatarTint(id ?? name)}
       >
         {nameInitials(name, 1) || "A"}
       </AvatarFallback>

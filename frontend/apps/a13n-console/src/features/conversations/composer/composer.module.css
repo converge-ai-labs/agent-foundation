@@ -36,7 +36,7 @@
   resize: none;
   background: transparent;
   color: inherit;
-  font-size: 14px;
+  font-size: var(--a13n-text-md);
   line-height: 1.6;
 }
 .messageInput textarea::placeholder {
@@ -67,7 +67,7 @@
 }
 .hint {
   color: var(--a13n-muted);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   white-space: nowrap;
 }
 .sendButton {
@@ -83,12 +83,13 @@
   align-items: center;
   gap: 6px;
   max-width: 220px;
-  padding: 4px 10px;
+  height: 28px;
+  padding: 0 10px;
   border: 0;
   border-radius: 999px;
   background: var(--a13n-surface);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   cursor: pointer;
   transition: background 120ms ease;
 }
@@ -131,7 +132,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 @media (max-width: 720px) {

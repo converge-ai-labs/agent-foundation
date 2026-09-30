@@ -1,5 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "a13n-ui";
-import { avatarColor, nameInitials } from "../shared/identity";
+import { avatarTint, nameInitials } from "../shared/identity";
 
 /**
  * A person, by image when they have one. Otherwise their initials on a hue
@@ -20,8 +20,8 @@ export function UserAvatar({
     <Avatar className={className}>
       {url && <AvatarImage src={url} alt="" />}
       <AvatarFallback
-        className="rounded-[inherit] font-medium text-[11px] text-white"
-        style={{ backgroundColor: avatarColor(id ?? name) }}
+        className="rounded-[inherit] font-semibold text-[11px]"
+        style={avatarTint(id ?? name)}
       >
         {nameInitials(name) || "?"}
       </AvatarFallback>

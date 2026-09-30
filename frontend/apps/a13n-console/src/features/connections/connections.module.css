@@ -18,7 +18,7 @@
   padding: 10px 14px;
   border-radius: var(--a13n-radius-row);
   background: color-mix(in srgb, var(--warning) 12%, transparent);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .inlineEdit {
@@ -39,7 +39,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 
 /* Cleanup notice --------------------------------------------------------- */
@@ -54,13 +54,13 @@
 }
 .cleanup h3 {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 .cleanup p {
   margin: 3px 0 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 
@@ -68,13 +68,13 @@
 .progressNote {
   margin: 0 0 4px;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
 }
 .composioHelp {
   display: grid;
   gap: 12px;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }
 .steps {

@@ -35,7 +35,6 @@
 }
 .steps li[aria-current] {
   color: var(--a13n-text);
-  font-weight: 500;
 }
 .steps li[aria-current] > span {
   background: var(--a13n-text);

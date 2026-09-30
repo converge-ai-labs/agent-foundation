@@ -1,5 +1,11 @@
 import { expect, it } from "vitest";
-import { customWindow, localWindow, percent, presetWindow } from "./values";
+import {
+  customWindow,
+  localWindow,
+  niceScale,
+  percent,
+  presetWindow,
+} from "./values";
 
 it("starts presets at local midnight and ends at the supplied instant", () => {
   const now = new Date(2026, 8, 28, 15, 20);
@@ -22,4 +28,17 @@ it("distinguishes no cache observations from a zero cache rate", () => {
   expect(percent(null)).toBe("—");
   expect(percent(0)).toBe("0.0%");
   expect(percent(0.25)).toBe("25.0%");
+});
+
+it("ends the axis on a round step above the busiest day", () => {
+  expect(niceScale(5.79929)).toEqual({ top: 6, ticks: [6, 4, 2, 0] });
+  expect(niceScale(0.0123)).toEqual({
+    top: 0.015,
+    ticks: [0.015, 0.01, 0.005, 0],
+  });
+  expect(niceScale(1_234_567)).toEqual({
+    top: 1_500_000,
+    ticks: [1_500_000, 1_000_000, 500_000, 0],
+  });
+  expect(niceScale(0)).toEqual({ top: 1, ticks: [1, 0] });
 });

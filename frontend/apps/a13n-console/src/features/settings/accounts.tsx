@@ -19,6 +19,7 @@ import {
   ArrowLeftIcon,
   DotsThreeOutlineVerticalIcon,
   PencilSimpleIcon,
+  PlusIcon,
   RobotIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
@@ -406,6 +407,7 @@ function AccountEditor({
             type="button"
             size={account ? "sm" : undefined}
           >
+            {!account && <PlusIcon size={14} />}
             {account ? t("Edit") : t("Create account")}
           </Button>
         )

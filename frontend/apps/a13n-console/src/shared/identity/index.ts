@@ -4,7 +4,7 @@ export {
   CopyableResourceKey,
   Identifier,
 } from "./copy";
-export { avatarColor, nameInitials } from "./avatar";
+export { avatarTint, nameInitials } from "./avatar";
 export { IconTile } from "./icon-tile";
 export { ProviderIcon } from "./provider-icon";
 export { ResourceEditorButton } from "./resource-editor-button";

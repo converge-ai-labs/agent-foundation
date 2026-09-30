@@ -70,7 +70,6 @@
 .activeNav {
   background: var(--a13n-elevated);
   color: var(--a13n-text);
-  font-weight: 500;
 }
 .profileButton {
   max-width: 180px;

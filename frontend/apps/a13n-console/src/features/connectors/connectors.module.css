@@ -1,6 +1,6 @@
 .checkNote {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .preview {
   max-height: 260px;
@@ -11,7 +11,7 @@
 .previewDescription {
   margin: 0 0 8px;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }
 
@@ -28,7 +28,7 @@
   gap: 12px;
   width: 100%;
   margin-bottom: 4px;
-  font-size: 14px;
+  font-size: var(--a13n-text-md);
   font-weight: 500;
 }
 .toolList {
@@ -53,7 +53,7 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 400;
 }
 .toolName span,
@@ -65,14 +65,14 @@
 .toolDescription {
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.4;
 }
 .toolStatus {
   margin: 0;
   padding: 12px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .showMore {
   margin: 6px auto;

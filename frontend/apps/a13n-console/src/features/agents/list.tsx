@@ -6,7 +6,7 @@ import {
   ArchiveIcon,
   DownloadSimpleIcon,
   PlayIcon,
-  HeartIcon,
+  HeadCircuitIcon,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -106,7 +106,7 @@ export function Agents() {
         <ErrorNotice error={list.error} retry={() => void list.refetch()} />
       ) : !items.length ? (
         <Empty
-          icon={<HeartIcon aria-hidden="true" />}
+          icon={<HeadCircuitIcon aria-hidden="true" />}
           title={
             filtered
               ? t("No matching agents")
