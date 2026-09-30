@@ -109,8 +109,8 @@ compose-up: ## Start the single-host Compose stack and print the Console URL
 
 .PHONY: compose-smoke
 compose-smoke: ## Exercise single-host and quickstart Compose startup and persistence, then remove their disposable stacks
-	@python3 scripts/deploy_smoke.py compose
-	@python3 scripts/deploy_smoke.py quickstart
+	@A13N_SERVICE_IMAGE="$(A13N_SERVICE_IMAGE)" python3 scripts/deploy_smoke.py compose
+	@A13N_SERVICE_IMAGE="$(A13N_SERVICE_IMAGE)" python3 scripts/deploy_smoke.py quickstart
 
 .PHONY: dev
 dev: ## Prepare and start this checkout's scripted model, Service and Console in the background (TRACES=auto|langfuse|none)

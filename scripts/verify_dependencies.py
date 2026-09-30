@@ -51,6 +51,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         "deploy/docker/compose/*",
     ),
     "test_k8s_local.py": ("deploy/kubernetes/*",),
+    "test_deploy_smoke.py": ("Makefile",),
     "test_service_contract_notification.py": (".github/workflows/notify-service-contract.yml",),
     "test_local_validation.py": (
         ".github/workflows/ci-automation.yml",
