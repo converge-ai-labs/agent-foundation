@@ -33,9 +33,7 @@ export function DocumentationPage({
     return (
       <DocsPage full slots={slots} className="pb-16">
         <DocsTitle>{page.data.title}</DocsTitle>
-        <DocsDescription className="text-base">
-          {page.data.description}
-        </DocsDescription>
+        <DocsDescription>{page.data.description}</DocsDescription>
         <DocsBody>
           <APIPage {...withPageDocument(page.data.getOpenAPIPageProps())} />
         </DocsBody>
@@ -45,25 +43,37 @@ export function DocumentationPage({
 
   const MDX = page.data.body;
   const markdown = markdownUrl(page.slugs);
+  const actionsBesideToc = !page.data.full && page.data.toc.length > 0;
+  const actions = (className: string) => (
+    <div
+      className={`flex items-center gap-2 [&>button]:h-7 [&>button]:rounded-lg [&>button]:border-(--a13n-input-border) [&>button]:bg-transparent ${className}`}
+    >
+      <MarkdownCopyButton markdownUrl={markdown} />
+      <OpenMenu
+        markdownUrl={markdown}
+        githubUrl={sourceUrl(`docs/${page.path}`)}
+      />
+    </div>
+  );
 
   return (
     <DocsPage
       toc={page.data.toc}
       full={page.data.full}
+      tableOfContent={
+        actionsBesideToc ? { footer: actions("mt-6 ms-px") } : undefined
+      }
       slots={slots}
       className="pb-16"
     >
-      {/* Page actions sit at the title's right; on phones they follow the description. */}
-      <header className="grid gap-x-6 gap-y-4 pb-2 md:grid-cols-[1fr_auto]">
+      {/* Page actions follow the table of contents when it is shown; otherwise they sit at the
+          title's right, and on phones they follow the description. */}
+      <header className="grid gap-x-6 gap-y-2 pb-2 md:grid-cols-[1fr_auto]">
         <DocsTitle>{page.data.title}</DocsTitle>
-        <div className="flex items-center gap-2 max-md:order-last md:mt-1 md:self-start [&>button]:h-7 [&>button]:rounded-lg [&>button]:border-(--a13n-input-border) [&>button]:bg-transparent">
-          <MarkdownCopyButton markdownUrl={markdown} />
-          <OpenMenu
-            markdownUrl={markdown}
-            githubUrl={sourceUrl(`docs/${page.path}`)}
-          />
-        </div>
-        <DocsDescription className="mb-0 text-base md:col-span-2">
+        {actions(
+          `max-md:order-last max-md:mt-2 md:mt-1 md:self-start ${actionsBesideToc ? "xl:hidden" : ""}`,
+        )}
+        <DocsDescription className="mb-0 md:col-span-2">
           {page.data.description}
         </DocsDescription>
       </header>
