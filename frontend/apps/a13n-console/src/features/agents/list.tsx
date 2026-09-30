@@ -119,7 +119,9 @@ export function Agents() {
                 )
               : archived
                 ? t("Change or clear the search and filters.")
-                : t("Choose a model, give it instructions, and put it to work.")
+                : t(
+                    "Describe what you need to AI Composer, or configure your agent yourself.",
+                  )
           }
           action={!filtered && create}
         />

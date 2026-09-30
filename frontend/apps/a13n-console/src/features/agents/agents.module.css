@@ -533,12 +533,20 @@
 }
 
 /* Agents list toolbar and creation ---------------------------------------- */
+.creationActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
 .splitButton {
   display: inline-flex;
   align-items: stretch;
-  gap: 1px;
+  flex-shrink: 0;
 }
 .splitButton > button:first-of-type {
+  border-right-width: 0;
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
 }
