@@ -51,7 +51,16 @@ API_PROVIDER_BY_ROUTE = {provider.route: provider for provider in API_PROVIDERS}
 
 # Starter suggestions, not a live inventory or an account entitlement claim.
 # Model IDs are case-sensitive and custom endpoints can use other identifiers.
-_OPENAI_MODELS = ("gpt-5.6-sol", "gpt-6-astra", "gpt-5.6-terra", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini")
+_OPENAI_MODELS = (
+    "gpt-6.1-sol",
+    "gpt-6-astra",
+    "gpt-5.6-terra",
+    "gpt-6-sol",
+    "gpt-5.6-sol",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+)
 API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
     "openai-responses": _OPENAI_MODELS,
     "openai-chat": _OPENAI_MODELS,
@@ -208,6 +217,24 @@ _OUTPUT_TOKEN_BUDGETS = {
 
 def settings_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...]:
     """Materialize paired thinking/output recommendations as editable native settings."""
+    # Use the public native setting until the SDK profile recognizes Sol 6.1;
+    # unified thinking is otherwise silently omitted from its requests.
+    if provider in {"openai", "openai-responses", "openai-chat"} and model_id == "gpt-6.1-sol":
+        defaults: dict[str, JsonValue] = (
+            {"openai_reasoning_summary": "detailed", "openai_store": False} if provider != "openai-chat" else {}
+        )
+        return (
+            *(
+                SettingsPreset(
+                    effort,
+                    f"{effort.title()} thinking",
+                    "Reasoning effort; provider output limit",
+                    {**defaults, "openai_reasoning_effort": effort},
+                )
+                for effort in ("high", "medium", "low", "xhigh", "max")
+            ),
+            SettingsPreset("default", "Provider defaults", "Do not force a reasoning effort", defaults),
+        )
     presets = _thinking_presets(provider, model_id)
     budget_provider = "openai" if provider in {"openai-responses", "openai-chat"} else provider
     if provider == "openrouter":
