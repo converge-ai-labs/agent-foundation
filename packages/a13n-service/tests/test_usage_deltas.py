@@ -224,9 +224,10 @@ async def test_individual_facts_remain_immutable_alongside_current_scopes(servic
             )
 
 
-async def test_old_snapshot_writers_can_still_advance_their_own_scopes(service, scripted_model, runs_kit):
+async def test_old_snapshot_scopes_and_their_contributions_are_frozen(service, scripted_model, runs_kit):
     from a13n_harness.usage import UsageSnapshot
     from a13n_service.runs.usage import UsageReport, ingest_late
+    from sqlalchemy.exc import DBAPIError
 
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
@@ -250,15 +251,20 @@ async def test_old_snapshot_writers_can_still_advance_their_own_scopes(service, 
                 digest="1" * 64,
             )
         )
+    for row_id, replacement in (
+        (first.scope.usage_id, UsageSnapshot(**latest.scope.model_dump(), records=latest.records)),
+        (first.records[0].record_id, latest.records[0]),
+    ):
+        with pytest.raises(DBAPIError, match="immutable"):
+            async with transaction(storage) as session:
+                row = await session.get_one(UsageRecordRow, row_id)
+                row.record = replacement.model_dump(mode="json")
+                row.digest = "2" * 64
+    # Historical contributions still count, but neither their scope nor their
+    # values can be advanced by an old snapshot writer after the upgrade.
     async with transaction(storage) as session:
-        scope = await session.get_one(UsageRecordRow, first.scope.usage_id)
-        scope.record = UsageSnapshot(**latest.scope.model_dump(), records=latest.records).model_dump(mode="json")
-        scope.digest = "2" * 64
-        record = await session.get_one(UsageRecordRow, first.records[0].record_id)
-        record.record = latest.records[0].model_dump(mode="json")
-        record.digest = "2" * 64
-    async with transaction(storage) as session:
-        assert (await totals(session, run_id))["input_tokens"] == 9
+        assert (await totals(session, run_id))["input_tokens"] == 4
+        assert (await session.get_one(UsageRecordRow, first.scope.usage_id)).record["sequence"] == 1
     with pytest.raises(ServiceError, match="reporting contract"):
         await ingest_delta(storage, run_id, lease.attempt_id, latest, {})
 
@@ -323,7 +329,7 @@ async def test_takeover_keeps_late_old_scope_and_deduplicates_provider_receipts(
 
 
 @pytest.mark.parametrize("limit", [2, 3])
-async def test_request_budget_counts_inline_calls_without_counting_snapshot_delivery(
+async def test_request_budget_counts_inline_calls_without_counting_delta_delivery(
     executing, scripted_model, runs_kit, limit
 ) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.delegating(executing, scripted_model, "inline")

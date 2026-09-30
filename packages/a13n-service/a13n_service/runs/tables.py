@@ -575,12 +575,12 @@ BEGIN
     THEN RAISE EXCEPTION 'usage attribution is immutable'; END IF;
     IF NEW.record->>'kind' IS DISTINCT FROM OLD.record->>'kind'
     THEN RAISE EXCEPTION 'usage kind is immutable'; END IF;
-    IF OLD.record->>'kind' IN ('snapshot', 'cursor') THEN
+    IF OLD.record->>'kind' = 'cursor' THEN
         IF (NEW.record->>'sequence')::bigint <= (OLD.record->>'sequence')::bigint
-        THEN RAISE EXCEPTION 'usage snapshot sequence must advance'; END IF;
+        THEN RAISE EXCEPTION 'usage cursor sequence must advance'; END IF;
     ELSIF OLD.record->>'kind' != 'model' OR NOT EXISTS (
         SELECT 1 FROM usage_records scope
-        WHERE scope.record->>'kind' IN ('snapshot', 'cursor')
+        WHERE scope.record->>'kind' = 'cursor'
           AND scope.run_attempt_id = OLD.run_attempt_id
           AND scope.harness_run_id = OLD.harness_run_id
     ) THEN RAISE EXCEPTION 'legacy facts and provider receipts are immutable'; END IF;
@@ -602,7 +602,7 @@ class UsageRecordRow(Base):
             "ix_usage_records_scope_owner",
             "run_attempt_id",
             "harness_run_id",
-            postgresql_where=text("record->>'kind' IN ('snapshot', 'cursor')"),
+            postgresql_where=text("record->>'kind' = 'cursor'"),
         ),
         Index("ix_usage_records_workspace_ingested", "workspace_id", "ingested_at"),
         rules(_GUARD_USAGE, trigger("usage_records", "guard_usage", on="BEFORE UPDATE OR DELETE")),
