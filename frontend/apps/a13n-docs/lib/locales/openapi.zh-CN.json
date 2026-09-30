@@ -1,4 +1,6 @@
 {
+  "Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.": "允许访问的规范化主机名/IP 字面值，或对完整规范化主机名匹配的 regex:<Python pattern> 规则。null 表示不限制；空数组拒绝所有目标。",
+  "An accepted snapshot, independent of Agent definitions and Capability configuration.\n\nConsumers explicitly opt into namespaced extensions and own their validation.\nExtension lookups return detached values, not mutable shared state.": "接受的配置快照，独立于 Agent 定义和 Capability 配置。\n\n消费者显式接入带命名空间的扩展，并负责验证。\n扩展查询返回独立副本，而非可变的共享状态。",
   "Image preparation policy; omitted uses native defaults, null disables automatic preparation.": "图像预处理策略；省略时使用原生默认值，null 禁用自动预处理。",
   "Keep the newest images; zero removes all image input.": "保留最新的图像；零表示移除所有图像输入。",
   "Maximum base64-encoded bytes per image; zero disables this byte limit.": "每张图像经过 base64 编码后的最大字节数；零表示禁用此字节限制。",
