@@ -25,9 +25,9 @@ def test_bootstrap_then_operator_disables_and_enables_a_user(
         return json.loads(result.output.splitlines()[-1])
 
     bootstrap = ["bootstrap", "--email", "Owner@Example.com", "--password-stdin"]
-    short = runner.invoke(main, ["--config", str(config), *bootstrap], input="too-short\n")
-    assert short.exit_code == 1 and "12 characters" in short.output
-    created = cli(*bootstrap, password="a-long-enough-password\n")
+    short = runner.invoke(main, ["--config", str(config), *bootstrap], input="short-7\n")
+    assert short.exit_code == 1 and "8 characters" in short.output
+    created = cli(*bootstrap, password="eight-88\n")
     again = runner.invoke(main, ["--config", str(config), *bootstrap], input="another-long-password\n")
     assert again.exit_code == 3 and "already initialized" in again.output
     assert cli("user", "disable", "--email", "OWNER@example.com") == {

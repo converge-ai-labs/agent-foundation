@@ -383,8 +383,8 @@ async def test_the_first_visitor_creates_the_administrator_once(settings: Settin
     ):
         await app.state.runtime.redis.flushdb()
         assert (await client.get("/api/v1/auth/configuration")).json()["initialized"] is False
-        credentials = {"email": EMAIL, "password": PASSWORD}
-        short = await client.post("/api/v1/auth/bootstrap", json={"email": EMAIL, "password": "too-short"})
+        credentials = {"email": EMAIL, "password": "eight-88"}
+        short = await client.post("/api/v1/auth/bootstrap", json={"email": EMAIL, "password": "short-7"})
         foreign = await client.post("/api/v1/auth/bootstrap", json=credentials, headers={"origin": "https://x.test"})
         assert (short.status_code, foreign.status_code) == (400, 403)
         created = await client.post("/api/v1/auth/bootstrap", json=credentials)

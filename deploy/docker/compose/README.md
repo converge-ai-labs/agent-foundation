@@ -1,43 +1,28 @@
 # Service with Docker Compose
 
-## Local quickstart
-
-`a13n-service-quickstart.yaml` is a standalone local trial: Service and Console, PostgreSQL, Redis, and a one-shot initializer. It publishes only `127.0.0.1:8080`, runs the Service as the image's non-root user, and does not mount the host Docker socket.
-
-Download the file into an empty directory and run:
-
-```sh
-docker compose -f a13n-service-quickstart.yaml up -d --wait
-```
-
-From a checkout, use `-f deploy/docker/compose/a13n-service-quickstart.yaml` instead. The source file uses the published `dev` image; a Service release's copy pins that release's image. To test a local build, run `make image-a13n-service` and prefix the Compose command with `A13N_SERVICE_IMAGE=a13n-service:local`.
-
-Open <http://127.0.0.1:8080> and sign in with **`admin@example.com` / `local-public-password-123`**. **Do not expose this trial stack to other machines:** those credentials are public. Add your own model provider under **Models → Add model**, create an agent and select **Try agent**. See [Get started](../../../docs/a13n-service/get-started.md) for the full flow.
-
-The initializer migrates the schema and creates the first organization, workspace and administrator. Repeated starts preserve accounts and data; an initialization failure blocks Service startup. Inspect `docker compose -f a13n-service-quickstart.yaml logs init service` if startup fails.
-
-- **Stop and retain data:** `docker compose -f a13n-service-quickstart.yaml down`.
-- **Resume:** repeat `up -d --wait` with the same file and directory.
-- **Use another port:** prefix the start command with `A13N_PORT=8081` and open <http://127.0.0.1:8081>.
-- **Delete all trial data:** `docker compose -f a13n-service-quickstart.yaml down --volumes`. The next start creates the public trial account again.
-
-The quickstart has its own Compose project and volumes, separate from the deployment below. Keep using the same file/project to resume your data. Plain chat needs no execution environment. Hosted sandbox providers and external Envd targets can be configured separately; local Docker environments require the explicit host authority described below.
+Start with `a13n-service.yaml`: download the file, start Docker Compose, and register your administrator in Console. The [Service quickstart](../../../docs/a13n-service/get-started.md) walks through your first model and agent.
 
 ## Single-host deployment with native Docker
 
 `a13n-service.yaml` runs the Service with every role in one process (`run --role all`), PostgreSQL and Redis. Only the Service is published, on `127.0.0.1:8080`. It serves the Console and the API from one origin, which browsers, API clients and SDKs share. The Service migrates its schema when it starts. It uses the host Docker Engine through `/var/run/docker.sock`: the container starts as root only to join the group that owns the socket, then runs as the image's non-root `app` user. Access to this socket grants host Docker authority, so deploy only where the Service is trusted with that authority.
 
-From the repository root, start the stack and print its Console URL after the Service becomes healthy:
+Download `a13n-service.yaml` into an empty directory and start the stack without a repository checkout or Make:
+
+```sh
+docker compose -f a13n-service.yaml up -d --wait --pull always
+```
+
+From a repository checkout, start the same stack and print its Console URL after the Service becomes healthy:
 
 ```sh
 make compose-up
 ```
 
-The source Compose file defaults to the published `ghcr.io/converge-ai-labs/a13n-service:latest` image, so no source build is needed. The equivalent direct command is `docker compose -f deploy/docker/compose/a13n-service.yaml up -d --wait`; Compose does not print the Console URL after a detached start. To use a local build instead, run `make image-a13n-service` and then `A13N_SERVICE_IMAGE=a13n-service:local make compose-up`.
+The source Compose file defaults to the published `ghcr.io/converge-ai-labs/a13n-service:latest` image, so no source build is needed. `make compose-up` always pulls the stack's images before starting, refreshing cached tags. The equivalent direct command is `docker compose -f deploy/docker/compose/a13n-service.yaml up -d --wait --pull always`; Compose does not print the Console URL after a detached start. To use a local build instead, run `make image-a13n-service` and then `A13N_SERVICE_IMAGE=a13n-service:local make compose-up COMPOSE_PULL=missing`. Use `COMPOSE_PULL=never` to start entirely from local images.
 
 Without a checkout, download `a13n-service.yaml` from a Service release and run `docker compose -f a13n-service.yaml up -d --wait` in its directory. The release's copy pins that release's image, for `linux/amd64` or `linux/arm64`.
 
-Open <http://127.0.0.1:8080> and create the first administrator with an email and a password of at least 12 characters; this signs you in. Only the first visitor can do this, and only the host itself reaches the published port. To create the administrator without a browser, run the `bootstrap` command instead, which prompts for the password:
+Open <http://127.0.0.1:8080>. **On the first launch, register the administrator account** with your email and a password of at least **8 characters**; this creates the organization and workspace and signs you in automatically. The first account is the administrator. On subsequent visits, sign in with your registered credentials. Only the host itself reaches the published port. To create the administrator without a browser, run the `bootstrap` command instead, which prompts for the password:
 
 ```sh
 docker compose -f deploy/docker/compose/a13n-service.yaml exec service \
@@ -46,7 +31,7 @@ docker compose -f deploy/docker/compose/a13n-service.yaml exec service \
 
 CLI bootstrap is completed by the next Service startup; if you run it inside an already running stack, restart `service` to prepare workspace defaults. The browser bootstrap prepares them before returning.
 
-`A13N_PORT` publishes another port and moves the public URL with it; `make compose-up` prints the mapped address. `A13N_SERVICE_IMAGE` selects another image tag. Pull the Service image before starting when you want to refresh a cached `latest` tag. <http://127.0.0.1:8080/readyz> reports Service readiness at the default port.
+`A13N_PORT` publishes another port and moves the public URL with it; `make compose-up` prints the mapped address. `A13N_SERVICE_IMAGE` selects another image tag. <http://127.0.0.1:8080/readyz> reports Service readiness at the default port.
 
 `make compose-smoke` exercises both Compose stacks on disposable projects, including initialization, sign-in and credential persistence across restarts.
 
@@ -99,3 +84,26 @@ docker compose up -d --wait
 ```
 
 To upgrade, back up, then run `docker compose up -d --wait` with the new image: from a checkout, after rebuilding it; with a release's file, after replacing it with the new release's and carrying over your `environment` changes. Compose recreates the Service, which migrates the schema at startup. A migrated schema stops older images at startup; to return to one, restore the backup taken before the upgrade.
+
+## Local quickstart
+
+`a13n-service-quickstart.yaml` remains available as a separate preconfigured local trial: Service and Console, PostgreSQL, Redis, and a one-shot initializer. It publishes only `127.0.0.1:8080`, runs the Service as the image's non-root user, and does not mount the host Docker socket.
+
+Download the file into an empty directory and run:
+
+```sh
+docker compose -f a13n-service-quickstart.yaml up -d --wait
+```
+
+From a checkout, use `-f deploy/docker/compose/a13n-service-quickstart.yaml` instead. The source file uses the published `dev` image; a Service release's copy pins that release's image. To test a local build, run `make image-a13n-service` and prefix the Compose command with `A13N_SERVICE_IMAGE=a13n-service:local`.
+
+Open <http://127.0.0.1:8080> and sign in with **`admin@example.com` / `local-public-password-123`**. **Do not expose this trial stack to other machines:** those credentials are public. Add your own model provider under **Models → Add model**, create an agent and select **Try agent**. See [Get started](../../../docs/a13n-service/get-started.md) for the full flow.
+
+The initializer migrates the schema and creates the first organization, workspace and administrator. Repeated starts preserve accounts and data; an initialization failure blocks Service startup. Inspect `docker compose -f a13n-service-quickstart.yaml logs init service` if startup fails.
+
+- **Stop and retain data:** `docker compose -f a13n-service-quickstart.yaml down`.
+- **Resume:** repeat `up -d --wait` with the same file and directory.
+- **Use another port:** prefix the start command with `A13N_PORT=8081` and open <http://127.0.0.1:8081>.
+- **Delete all trial data:** `docker compose -f a13n-service-quickstart.yaml down --volumes`. The next start creates the public trial account again.
+
+The quickstart has its own Compose project and volumes, separate from the deployment below. Keep using the same file/project to resume your data. Plain chat needs no execution environment. Hosted sandbox providers and external Envd targets can be configured separately; local Docker environments require the explicit host authority described below.

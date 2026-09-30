@@ -113,7 +113,7 @@ def bootstrap_command(ctx: click.Context, email: str, password_stdin: bool) -> N
     try:
         request = BootstrapInput(email=email, password=SecretStr(password))
     except ValidationError:
-        raise click.ClickException("Bootstrap refused: invalid email, or a password under 12 characters") from None
+        raise click.ClickException("Bootstrap refused: invalid email, or a password under 8 characters") from None
     try:
         result = _with_storage(ctx.obj, partial(bootstrap, request=request))
     except AlreadyBootstrapped:

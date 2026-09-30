@@ -16,27 +16,32 @@ Agent Foundation is an open-source library and platform for building and running
 
 > Agent Foundation is in active `0.x` development. APIs and configuration may change between minor releases. This README and the documentation site track `main`; check release notes and package metadata when using a published version.
 
-## Try Service locally
+## Run Service with Docker Compose
 
-Start Service, Console, PostgreSQL, and Redis with **Docker Compose**. The local quickstart creates an administrator and workspace for you; no Python, Node.js, or source build is needed.
+You need **Docker with Docker Compose** and a model provider API key. The stack includes Service, Console, PostgreSQL, Redis, and access to your host Docker Engine for agent execution. No repository clone, Make, Python, Node.js, or source build is needed.
 
-Download the [quickstart Compose file](deploy/docker/compose/a13n-service-quickstart.yaml) into an empty directory, then run:
+Download the [Compose file](deploy/docker/compose/a13n-service.yaml) and start the stack:
 
 ```bash
-docker compose -f a13n-service-quickstart.yaml up -d --wait
+mkdir a13n-service
+cd a13n-service
+curl -fL https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/main/deploy/docker/compose/a13n-service.yaml -o a13n-service.yaml
+docker compose -f a13n-service.yaml up -d --wait --pull always
 ```
 
-Open **<http://127.0.0.1:8080>** and sign in:
+Then open **<http://127.0.0.1:8080>**:
 
-| Email               | Password                    |
-| ------------------- | --------------------------- |
-| `admin@example.com` | `local-public-password-123` |
+1. **First launch: register the administrator account.** Enter your email and choose a password of at least **8 characters**. This creates the first administrator, organization, and workspace, and signs you in automatically.
+2. **Connect a model.** Under **Models**, add your model provider and API key, then select a model.
+3. **Try an agent.** Create an agent, choose the model, and send your first message with **Try agent**.
 
-These public credentials are for the loopback-only local trial. For shared deployments, use your own credentials and the [deployment guide](deploy/docker/compose/README.md). The source Compose file uses the development image; release assets pin a release version.
+The first account created on an uninitialized Service is its administrator. On later visits, sign in with the email and password you registered; restarting preserves your account and data. Additional users join through invitations from an administrator.
 
-Bring your model provider API key. In Console, **add a model → create an agent → try it**. Plain chat needs no sandbox.
+**Already in a repository checkout?** Run `make compose-up` from the repository root to pull images, start the same stack, and print its Console URL.
 
-Continue with the [Service quickstart](docs/a13n-service/get-started.md) for your first conversation, API usage, stop/resume, and troubleshooting.
+The stack binds to loopback and mounts the host Docker socket for Docker execution environments. The source Compose file uses the published `latest` image; release assets pin a release version. See the [deployment guide](deploy/docker/compose/README.md) before exposing Service to other machines.
+
+Continue with the [Service quickstart](docs/a13n-service/get-started.md) for model setup, API usage, stop/resume, and troubleshooting.
 
 ## Use Harness UI
 

@@ -233,7 +233,7 @@ export function Security() {
               <FormField
                 className="min-w-0 w-full"
                 label={t("New password")}
-                description={t("Use at least 12 characters.")}
+                description={t("Use at least 8 characters.")}
               >
                 <Input
                   required={true}
@@ -241,7 +241,7 @@ export function Security() {
                   autoComplete="new-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  minLength={12}
+                  minLength={8}
                   maxLength={128}
                 />
               </FormField>

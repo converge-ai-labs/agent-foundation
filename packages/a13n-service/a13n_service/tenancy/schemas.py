@@ -21,7 +21,7 @@ from a13n_service.tenancy.authorize import Verb
 # Addresses compare case-insensitively everywhere: login, invitations, reset and email change.
 Email = Annotated[EmailStr, AfterValidator(str.lower)]
 Password = Annotated[SecretStr, Field(min_length=1, max_length=1024)]
-NewPassword = Annotated[SecretStr, Field(min_length=12, max_length=1024)]
+NewPassword = Annotated[SecretStr, Field(min_length=8, max_length=1024)]
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 Description = Annotated[str, StringConstraints(max_length=2048)]
 RoleName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,31}$")]

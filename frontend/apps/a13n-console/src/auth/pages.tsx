@@ -62,7 +62,7 @@ function rejectedFields(error: ApiError): string[] {
 
 /**
  * The Service answers a wrong email or password with 401
- * `unauthenticated`, and rejects a password below its 12 character minimum
+ * `unauthenticated`, and rejects a password below its 8 character minimum
  * with 400 `invalid_argument` naming the field. A failed fetch reaches
  * the mutation as a `TypeError` with no response at all.
  */
@@ -94,7 +94,7 @@ function readFailure(
   if (rejected.includes("password"))
     return {
       field: true,
-      message: t("Choose a password with at least 12 characters."),
+      message: t("Choose a password with at least 8 characters."),
     };
   return { message: error.message };
 }
@@ -241,7 +241,7 @@ export function AuthPage() {
     setup: t("The first account administers this Service."),
     invite: t("Create your account to accept this invitation."),
     forgot: t("We'll send a recovery link if your email is eligible."),
-    reset: t("Use at least 12 characters for your new password."),
+    reset: t("Use at least 8 characters for your new password."),
     email: t("Confirm this address while signed in to your account."),
   };
   const submitLabels: Record<Mode, string> = {
@@ -355,7 +355,7 @@ export function AuthPage() {
                 label={t("Password")}
                 description={
                   mode === "invite" || mode === "setup"
-                    ? t("At least 12 characters.")
+                    ? t("At least 8 characters.")
                     : undefined
                 }
                 error={fieldError}
@@ -371,7 +371,7 @@ export function AuthPage() {
                   }
                   value={password}
                   onChange={edit(setPassword)}
-                  minLength={mode === "login" ? 1 : 12}
+                  minLength={mode === "login" ? 1 : 8}
                   maxLength={128}
                 />
               </FormField>

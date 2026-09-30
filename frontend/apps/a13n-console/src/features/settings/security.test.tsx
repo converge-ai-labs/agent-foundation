@@ -138,7 +138,7 @@ it("opens password fields only in a dialog and clears a cancelled draft", async 
     screen.getByRole("dialog", { name: "Change password" }),
   );
   await user.type(dialog.getByLabelText("Current password"), "old-password");
-  await user.type(dialog.getByLabelText("New password"), "new-long-password");
+  await user.type(dialog.getByLabelText("New password"), "eight-88");
   await user.keyboard("{Escape}");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(trigger);
@@ -157,13 +157,13 @@ it("submits password changes from the dialog and keeps this session", async () =
     screen.getByRole("dialog", { name: "Change password" }),
   );
   await user.type(dialog.getByLabelText("Current password"), "old-password");
-  await user.type(dialog.getByLabelText("New password"), "new-long-password");
+  await user.type(dialog.getByLabelText("New password"), "eight-88");
   await user.click(dialog.getByRole("button", { name: "Change password" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(client.POST).toHaveBeenCalledExactlyOnceWith(
     "/api/v1/users/me/password",
     {
-      body: { current_password: "old-password", password: "new-long-password" },
+      body: { current_password: "old-password", password: "eight-88" },
     },
   );
 });
