@@ -685,19 +685,34 @@ async def test_explicit_self_healing_still_works_with_automatic_installation_dis
     assert calls == [1, 2]
 
 
-async def test_default_self_healing_preserves_an_already_wrapped_model() -> None:
+@pytest.mark.parametrize("model_source", ["concrete", "resolver"])
+@pytest.mark.parametrize("context_window", [None, 2_000])
+async def test_default_self_healing_preserves_an_already_wrapped_model(
+    model_source: str,
+    context_window: int | None,
+) -> None:
     model, calls = _recovering_function_model()
+    wrapped = SelfHealingModel(model, rules=())
+    observed: list[tuple[int | None, float | None, bool]] = []
     executable = HarnessBuilder().build(
-        AgentSpec(),
+        HarnessAgentSpec(
+            model="logical:primary" if model_source == "resolver" else None,
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=context_window),
+        ),
         output_type=str,
-        model=SelfHealingModel(model, rules=()),
+        model=wrapped if model_source == "concrete" else None,
+        capabilities=(_ModelProfileObserver(observed),),
     )
     result = await executable.run(
         "continue",
+        bindings=RunBindings.embedded(
+            model_resolver=RecordingModelResolver(wrapped) if model_source == "resolver" else None,
+        ),
         previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
     )
     assert result.status == "failed"
     assert calls == [1]
+    assert observed[0][0] == context_window
 
 
 @pytest.mark.parametrize("exact_match", [False, True])

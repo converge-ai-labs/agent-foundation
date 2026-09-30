@@ -338,7 +338,7 @@ Malformed current tool arguments, ordinary provider reasoning projection, and tr
 
 The default also applies to compaction's nested request through the same Agent. Independent native auxiliary Agents for tool review and media understanding inherit Run observation and usage accounting, not the primary Agent's Capability tree; this builder option does not install self-healing on those Agents.
 
-The Capability runs at the innermost model-request wrapper boundary. After logical resolution and native model inference have selected the effective request Model, it copies the request context and wraps that Model exactly once in `SelfHealingModel`. This preserves the native resolver chain, covers concrete, run-resolved, and natively inferred Models uniformly, and leaves the original request context unchanged. An already wrapped Model is reused.
+The Capability runs at the innermost model-request wrapper boundary. After logical resolution and native model inference have selected the effective request Model, it copies the request context and wraps that Model exactly once in `SelfHealingModel`. This preserves the native resolver chain, covers concrete, run-resolved, and natively inferred Models uniformly, and leaves the original request context unchanged. An existing `SelfHealingModel` anywhere in the native `WrapperModel.wrapped` chain is reused without replacing its rules or removing outer profile and usage wrappers.
 
 `SelfHealingModelCapability` accepts an optional sequence of `ModelRecoveryRule` values. `None` selects the built-in rules; an explicit empty sequence selects no rules. `SelfHealingModel` has the same rule semantics and preserves the native Model interface and profile.
 
