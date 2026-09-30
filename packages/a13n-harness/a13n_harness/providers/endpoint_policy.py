@@ -8,7 +8,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from urllib.parse import SplitResult, parse_qsl, urlsplit, urlunsplit
 
+import httpx2
 from anyio import to_thread
+from httpx2._utils import URLPattern, get_environment_proxies
 
 _SENSITIVE_QUERY_NAMES = frozenset(
     {
@@ -36,6 +38,25 @@ _CLOUD_METADATA_ADDRESSES = frozenset(
 
 class EndpointPolicyError(ValueError):
     """A configurable endpoint violates the deployment outbound policy."""
+
+
+def environment_proxy_routes(url: str) -> bool:
+    """Report whether httpx2 would send this URL through an environment proxy.
+
+    Mirrors httpx2's own environment parsing (`HTTP_PROXY`, `HTTPS_PROXY`,
+    `ALL_PROXY`, `NO_PROXY` and lowercase forms) for callers that need the
+    routing decision before a client exists, without opening a connection.
+    """
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    mounts = sorted((URLPattern(key), proxy) for key, proxy in get_environment_proxies().items())
+    target = httpx2.URL(url)
+    # httpx2 selects the first mount by specificity; `None` is a NO_PROXY bypass.
+    return next(
+        (proxy is not None for pattern, proxy in mounts if pattern.matches(target)),
+        False,
+    )
 
 
 @dataclass(frozen=True, slots=True)

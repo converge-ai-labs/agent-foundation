@@ -97,7 +97,7 @@ a13n-harness-ui
 
 An HTTP proxy URL is also valid for HTTPS destinations: the client uses a CONNECT tunnel. Proxy selection and bypass matching follow `httpx2`; the same bounded HTTP retry policy applies to direct and proxied requests. An explicitly supplied `transport` keeps its own routing rather than adopting environment proxies, and `retry=None` disables retries without disabling proxy discovery.
 
-Provider endpoint validation still applies, including local DNS checks where required. SDK-owned transports that do not use this helper retain their SDK's proxy behavior.
+Provider endpoint validation still applies. When the environment routes an endpoint through a proxy, the proxy owns final DNS resolution and validation skips the local DNS check, so endpoints resolvable only through the proxy are accepted; directly routed endpoints retain their local DNS checks. SDK-owned transports that do not use this helper retain their SDK's proxy behavior.
 
 ## Model authoring aliases
 

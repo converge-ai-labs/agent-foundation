@@ -12,7 +12,7 @@ from pydantic import BaseModel, TypeAdapter
 
 from ...http import EndpointValidator, ProviderHttpError, bounded_response_body
 from ..definition import ProviderDefinition
-from ..endpoint_policy import EndpointPolicy
+from ..endpoint_policy import EndpointPolicy, environment_proxy_routes
 from .apis import MODEL_APIS
 from .credentials import ApiKeyCredential
 from .headers import ExtraHeaders, validate_header_names
@@ -108,7 +108,10 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         try:
             with fail_after(_PROBE_TIMEOUT_SECONDS):
                 request = self.connection_probe(connection)
-                await (endpoint_policy or EndpointPolicy()).validate(request.url, resolve_dns=True)
+                probe_url = str(request.url)
+                await (endpoint_policy or EndpointPolicy()).validate(
+                    probe_url, resolve_dns=not environment_proxy_routes(probe_url)
+                )
                 async with http_client.stream(
                     "GET",
                     request.url,
@@ -143,14 +146,15 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         connection = self.bind(configuration, credential, extra_headers=extra_headers)
         policy = endpoint_policy or EndpointPolicy()
         if connection.endpoint is not None:
-            await policy.validate(connection.endpoint, resolve_dns=True)
+            await policy.validate(connection.endpoint, resolve_dns=not environment_proxy_routes(connection.endpoint))
         for name in self.additional_endpoint_fields:
             endpoint = getattr(connection.configuration, name)
             if endpoint is not None:
-                await policy.validate(endpoint, resolve_dns=True)
+                await policy.validate(endpoint, resolve_dns=not environment_proxy_routes(endpoint))
         native = await to_thread.run_sync(self.build_provider, connection, http_client, api)
         try:
-            await policy.validate(str(native.base_url), resolve_dns=True)
+            native_endpoint = str(native.base_url)
+            await policy.validate(native_endpoint, resolve_dns=not environment_proxy_routes(native_endpoint))
             return MODEL_APIS[api].build(model_name, native)
         except BaseException as error:
             with move_on_after(5, shield=True):

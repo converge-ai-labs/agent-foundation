@@ -11,6 +11,7 @@ from types import TracebackType
 import httpx2
 import pytest
 from a13n_harness.models import ModelHttpRetryConfig, create_model_http_client
+from a13n_harness.providers.endpoint_policy import environment_proxy_routes
 from a13n_harness.providers.model.credentials import ApiKeyCredential
 from a13n_harness.providers.model.routes import build_api_key_model
 from pydantic_ai.messages import ModelRequest, UserPromptPart
@@ -222,3 +223,50 @@ async def test_native_model_reentry_recreates_proxy_client(monkeypatch: pytest.M
         assert all(
             request.startswith(b"POST http://127.0.0.1:1/v1/chat/completions HTTP/1.1\r\n") for request in requests
         )
+
+
+async def test_proxy_routed_endpoint_builds_without_local_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A hostname only the proxy can resolve must not fail Model construction:
+    # the operator's proxy owns final DNS resolution for proxied routes.
+    async with _http_endpoint() as (proxy, _requests):
+        monkeypatch.setenv("https_proxy", proxy)
+        model = await build_api_key_model(
+            "openai-chat:test",
+            ApiKeyCredential(api_key="fixture"),
+            base_url="https://unresolvable.invalid/v1",
+        )
+        assert model.provider is not None
+        await model.provider._own_http_client.aclose()
+
+
+async def test_direct_endpoint_still_requires_local_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NO_PROXY", "*")
+    with pytest.raises(ValueError, match="could not be resolved"):
+        await build_api_key_model(
+            "openai-chat:test",
+            ApiKeyCredential(api_key="fixture"),
+            base_url="https://unresolvable.invalid/v1",
+        )
+
+
+@pytest.mark.parametrize(
+    ("environment", "url", "expected"),
+    [
+        ({"https_proxy": "http://127.0.0.1:1"}, "https://model.invalid/v1", True),
+        ({"HTTPS_PROXY": "http://127.0.0.1:1"}, "https://model.invalid/v1", True),
+        ({"all_proxy": "http://127.0.0.1:1"}, "https://model.invalid/v1", True),
+        ({"http_proxy": "http://127.0.0.1:1"}, "https://model.invalid/v1", False),
+        ({"https_proxy": "http://127.0.0.1:1"}, "http://model.invalid/v1", False),
+        ({"https_proxy": "http://127.0.0.1:1", "NO_PROXY": "model.invalid"}, "https://model.invalid/v1", False),
+        ({"https_proxy": "http://127.0.0.1:1", "NO_PROXY": "other.invalid"}, "https://model.invalid/v1", True),
+        ({"https_proxy": "http://127.0.0.1:1", "NO_PROXY": "*"}, "https://model.invalid/v1", False),
+        ({}, "https://model.invalid/v1", False),
+        ({"https_proxy": "http://127.0.0.1:1"}, "ftp://model.invalid/v1", False),
+    ],
+)
+async def test_environment_proxy_routes(
+    monkeypatch: pytest.MonkeyPatch, environment: dict[str, str], url: str, expected: bool
+) -> None:
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    assert environment_proxy_routes(url) is expected
