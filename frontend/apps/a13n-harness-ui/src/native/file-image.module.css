@@ -1,6 +1,16 @@
 .preview {
   min-width: 0;
 }
+.preview audio,
+.preview video {
+  display: block;
+  width: 100%;
+  max-height: 60dvh;
+  border-radius: 10px;
+}
+.preview video {
+  background: var(--a13n-canvas);
+}
 .canvas {
   display: flex;
   align-items: center;
