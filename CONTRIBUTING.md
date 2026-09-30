@@ -308,6 +308,8 @@ Start the main description with a concise explanation that a reader unfamiliar w
 
 Keep reproduction steps, constraints, implementation details, and validation in the relevant sections after the opening explanation. Scale detail to the change instead of filling every available visual format.
 
+For PR validation, briefly explain how the changed behavior was verified and identify material gaps or known failures. Focus on relevant regression coverage, necessary manual or real-provider checks, and evidence not apparent from CI. Use GitHub checks as the source of CI status rather than copying routine CI, formatting, diff-check, or commit-hook results into the body. Include exact commands only when needed for reproduction or review. Simple changes may need only a sentence; do not invent manual checks or a fixed checklist to fill the section. This presentation guidance does not reduce required local validation or CI gates.
+
 ## Pull Requests
 
 A pull request should:
@@ -315,7 +317,7 @@ A pull request should:
 1. Link the relevant issue when one exists.
 2. Explain the motivation and material changes. For significant design changes, explain the current need for added mechanisms and the effect on understanding and maintenance cost, using the [code quality principles](DEVELOPMENT.md#code-quality-and-design). Routine changes need only a proportionate explanation.
 3. Update affected specifications, docs, tests, and automation.
-4. Report the exact validation commands and outcomes.
+4. Summarize validation evidence and material gaps following the [PR writing guidance](#writing-issues-and-pull-requests).
 5. Request reviewers according to `MAINTAINERS.md`.
 
 Keep commit messages in English. Do not add an agent as a co-author. If assistant attribution is required, use only:

@@ -77,7 +77,7 @@ The [PR Labels workflow](../../../CONTRIBUTING.md#pr-labels) automatically class
 
 Read the repository PR template, preferring the base-branch version. Preserve required headings and checklist items, remove placeholders such as `Closes #`, link a relevant Issue when one exists, and mark only verified conditions. Human-review items require evidence from the human author.
 
-Follow [Writing Issues and Pull Requests](../../../CONTRIBUTING.md#writing-issues-and-pull-requests) for the opening explanation and choice of visuals. Keep the body and diagrams aligned with the final diff when the PR scope changes. Explain material compatibility implications and exact validation outcomes. If no template exists, a short summary and validation section suffice. Pass multiline content with `--body-file` using a temporary file outside the repository. Do not claim a missing check passed or omit a known blocker.
+Follow [Writing Issues and Pull Requests](../../../CONTRIBUTING.md#writing-issues-and-pull-requests) for the opening explanation, choice of visuals, and concise validation evidence. Keep the body and diagrams aligned with the final diff when the PR scope changes. Explain material compatibility implications; use GitHub checks for CI status rather than repeating routine check results in the body. If no template exists, a short summary and validation section suffice. Pass multiline content with `--body-file` using a temporary file outside the repository. Do not claim a missing check passed or omit a known blocker.
 
 Inspect `gh pr checks` once after creating or updating the PR. Report CI as pending, passing, or failed; wait or monitor only when requested. Before retrying an uncertain PR creation, query existing PRs again.
 
