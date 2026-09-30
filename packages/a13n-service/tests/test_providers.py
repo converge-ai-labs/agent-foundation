@@ -535,36 +535,50 @@ async def test_environment_provider_tests_only_read_the_engine(  # type: ignore[
     monkeypatch.setattr(anyio, "getaddrinfo", unresolved)
     transient = await tested({"type": "docker", "config": {"docker_host": "tcp://engine.test:2375"}})
     assert (transient["status"], transient["message"]) == ("failed", "provider_unavailable")
-    # Outside the operator's endpoint policy, the engine is never dialed.
-    denied = await tested({"type": "docker", "config": {"docker_host": "tcp://10.1.2.3:2375"}})
+
+
+async def test_environment_provider_policy_refuses_http_before_dialing(  # type: ignore[no-untyped-def]
+    serve, settings: Settings
+) -> None:
+    # Without an exact HTTP exception, the strict operator policy refuses TCP before dialing.
+    providers = settings.providers.model_copy(update={"require_https": True, "http_origins": ()})
+    with docker_engine() as (docker_host, requests):
+        async with serve(settings=settings.model_copy(update={"providers": providers})) as strict:
+            created = await create(
+                strict, "environment", {"type": "docker", "name": "Docker", "config": {"docker_host": docker_host}}
+            )
+            denied = (await strict.client.post(f"{strict.api}/environment-providers/{created['id']}/test")).json()
     assert (denied["status"], denied["message"]) == ("failed", "provider_endpoint_denied")
+    assert requests == []
 
 
-async def test_docker_accounts_name_only_remote_engines_the_endpoint_policy_allows(service) -> None:  # type: ignore[no-untyped-def]
+async def test_docker_accounts_name_only_remote_engines_the_endpoint_policy_allows(  # type: ignore[no-untyped-def]
+    serve, settings: Settings
+) -> None:
     """An engine runs containers as root on its host: an account that names none uses the operator's, and one that
     names an engine reaches it only over TCP or HTTPS, checked by the endpoint policy before any dial."""
-    collection = f"{service.api}/environment-providers"
-    docker = {"type": "docker", "name": "Docker"}
-    for docker_host in (
-        "unix:///var/run/docker.sock",
-        "ssh://root@127.0.0.1",
-        "npipe:////./pipe/docker_engine",
-        "tcp://127.0.0.1",
-        "tcp://root:hunter2@127.0.0.1:2375",
-        "tcp://127.0.0.1:2375/v1.45",
-    ):
-        refused = await service.client.post(collection, json={**docker, "config": {"docker_host": docker_host}})
-        assert refused.status_code == 400, (docker_host, refused.text)
-        assert refused.json()["error"]["details"]["field"] == "config" and "hunter2" not in refused.text
-    assert (await create(service, "environment", docker))["config"] == {}
+    providers = settings.providers.model_copy(update={"require_https": True, "http_origins": ()})
+    async with serve(settings=settings.model_copy(update={"providers": providers})) as service:
+        collection = f"{service.api}/environment-providers"
+        docker = {"type": "docker", "name": "Docker"}
+        for docker_host in (
+            "unix:///var/run/docker.sock",
+            "ssh://root@127.0.0.1",
+            "npipe:////./pipe/docker_engine",
+            "tcp://127.0.0.1",
+            "tcp://root:hunter2@127.0.0.1:2375",
+            "tcp://127.0.0.1:2375/v1.45",
+        ):
+            refused = await service.client.post(collection, json={**docker, "config": {"docker_host": docker_host}})
+            assert refused.status_code == 400, (docker_host, refused.text)
+            assert refused.json()["error"]["details"]["field"] == "config" and "hunter2" not in refused.text
+        assert (await create(service, "environment", docker))["config"] == {}
 
-    with docker_engine() as (docker_host, requests):
-        private = await create(
-            service, "environment", {**docker, "config": {"docker_host": docker_host.replace("127.0.0.1", "10.1.2.3")}}
-        )
-        tested = (await service.client.post(f"{collection}/{private['id']}/test")).json()
-    assert (tested["status"], tested["message"]) == ("failed", "provider_endpoint_denied")
-    assert requests == []
+        with docker_engine() as (docker_host, requests):
+            remote = await create(service, "environment", {**docker, "config": {"docker_host": docker_host}})
+            tested = (await service.client.post(f"{collection}/{remote['id']}/test")).json()
+        assert (tested["status"], tested["message"]) == ("failed", "provider_endpoint_denied")
+        assert requests == []
 
 
 async def _docker_template(service: SimpleNamespace, name: str, recipe: dict) -> httpx2.Response:

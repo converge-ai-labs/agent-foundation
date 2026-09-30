@@ -31,7 +31,7 @@ class EndpointPolicyError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class EndpointPolicy:
-    """URL syntax, HTTPS and exact Run hostname authorization; no DNS or IP policy."""
+    """URL syntax, HTTPS and Run hostname authorization; no DNS or IP policy."""
 
     configuration: RunConfiguration = field(default_factory=RunConfiguration)
     require_https: bool = False

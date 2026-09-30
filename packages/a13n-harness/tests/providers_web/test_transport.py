@@ -90,9 +90,16 @@ async def test_cancellation_preserved_and_cleanup_bounded(cleanup, caplog, monke
     ],
 )
 async def test_actual_request_destination_is_checked_before_send(url, borrowed):
+    from a13n_harness import RunConfiguration
+    from a13n_harness.providers.endpoint_policy import EndpointPolicy as PublicEndpointPolicy
+
     sent = []
     client = Client(lambda request: sent.append(request) or httpx2.Response(200, text="unexpected"))
-    transport = WebProviderTransport(client=client if borrowed else None, client_factory=lambda: client)
+    transport = WebProviderTransport(
+        client=client if borrowed else None,
+        client_factory=lambda: client,
+        endpoint_policy=PublicEndpointPolicy(configuration=RunConfiguration(allowed_hosts={"allowed.example"})),
+    )
     with pytest.raises(WebProviderError, match="web_search_failed") as error:
         await transport.exchange(
             lambda http: http.build_request("GET", url),

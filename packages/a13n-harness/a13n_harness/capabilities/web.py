@@ -97,13 +97,14 @@ class WebCapability(AbstractCapability[AgentContext]):
         self._run_configuration = RunConfiguration()
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
+        if ctx.deps.configuration.allowed_hosts is None:
+            return self
         owner = WebCapability(self.configuration)
         owner._run_configuration = ctx.deps.configuration
-        if ctx.deps.configuration.allowed_hosts is not None:
-            # Provider-native navigation cannot apply per-hop exact hostname authorization.
-            if owner.configuration.search.mode in {"auto", "native"}:
-                search = owner.configuration.search.model_copy(update={"mode": "host"})
-                owner.configuration = owner.configuration.model_copy(update={"search": search})
+        # Provider-native navigation cannot apply per-hop hostname authorization.
+        if owner.configuration.search.mode in {"auto", "native"}:
+            search = owner.configuration.search.model_copy(update={"mode": "host"})
+            owner.configuration = owner.configuration.model_copy(update={"search": search})
         return owner
 
     def get_native_tools(self) -> list[WebSearchTool]:

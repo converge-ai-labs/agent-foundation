@@ -24,7 +24,7 @@ async def _allow_endpoint(self, endpoint):
 def _wire_model(monkeypatch, handler):
     monkeypatch.setattr(routes.EndpointPolicy, "validate", _allow_endpoint)
     monkeypatch.setattr(
-        routes, "create_model_http_client", lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+        routes, "create_model_http_client", lambda **kwargs: httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
     )
     return routes.build_api_key_model("typesafe:jev-latest", ApiKeyCredential(api_key="fixture"))
 

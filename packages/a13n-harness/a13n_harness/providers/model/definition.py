@@ -11,7 +11,6 @@ from anyio import fail_after, move_on_after, to_thread
 from pydantic import BaseModel, TypeAdapter
 
 from ...http import EndpointValidator, ProviderHttpError, bounded_response_body
-from ...models.configuration import configured_model
 from ..definition import ProviderDefinition
 from ..endpoint_policy import EndpointPolicy
 from .apis import MODEL_APIS
@@ -138,6 +137,8 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         endpoint_policy: EndpointValidator | None = None,
     ) -> Model[Any]:
         """Return a native Model. The caller owns the supplied HTTP client and enters the Model."""
+        from ...models.configuration import configured_model
+
         api = model_api or self.supported_model_apis[0]
         if api not in self.supported_model_apis:
             raise ValueError("the Model API is not supported by this Provider")
