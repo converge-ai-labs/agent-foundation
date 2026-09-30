@@ -100,13 +100,20 @@ Use content filtering only for provider/model multimodal compatibility. Cold-sta
 Image preparation is also enabled by default. Before each model request, `ImageFilterCapability` splits tall static images into full-width segments (4096 pixels high with 50 pixels of overlap), compresses individual images or segments to 5 MiB of base64-encoded bytes and an 8000-pixel maximum axis, and keeps the newest 20 images. Corrupted or unpreparable images and older excess images become explanatory text in that request only. Saved history and original files retain their pixels and metadata.
 
 ```python
-from a13n_harness.filters import ImageFilterConfiguration
+from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
 
-spec = AgentSpec(image_filter=ImageFilterConfiguration(max_images=10, split_large_images=False))
-without_image_preparation = spec.with_updates(image_filter=None)
+characteristics = HarnessModelCharacteristics(
+    image_input=ImageInputPolicy(max_images=10, split_large_images=False),
+)
+spec = AgentSpec(model_characteristics=characteristics)
+without_image_preparation = spec.with_updates(
+    model_characteristics=characteristics.model_copy(update={"image_input": None}),
+)
 ```
 
-Set `max_image_bytes=0` or `max_image_dimension=0` to disable that compression limit independently, and `support_gif=False` to remove binary GIF input. Animated images are not split or flattened into JPEG. The policy covers native user sequences and ordinary tool-return scalar or top-level list images; nested tool JSON is not reinterpreted as an image input. Image URLs count toward the quota but are not fetched or transformed. The policy does not impose a total request-byte budget or guarantee acceptance by every gateway. `AgentMediaUnderstandingProvider` selects its image target's policy independently through its own `image_filter` argument; it never inherits the parent's limits.
+The selected model owns this policy through `model_characteristics.image_input`: omission keeps the default, a partial object uses defaults for unspecified fields, and explicit `null` disables automatic preparation. An explicitly composed `ImageFilterCapability` retains its own policy and suppresses the automatic duplicate. See [all image-input parameters](models.md#image-input-policy).
+
+Set `max_image_bytes=0` or `max_image_dimension=0` to disable that compression limit independently, and `support_gif=False` to remove binary GIF input. Animated images are not split or flattened into JPEG. The policy covers native user sequences and ordinary tool-return scalar or top-level list images; nested tool JSON is not reinterpreted as an image input. Image URLs count toward the quota but are not fetched or transformed. The policy does not impose a total request-byte budget or guarantee acceptance by every gateway. `AgentMediaUnderstandingProvider` selects its image target's policy independently through its typed `image_input` argument; it never inherits the parent's limits.
 
 ## Handoff versus automatic compaction
 

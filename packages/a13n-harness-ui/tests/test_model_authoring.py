@@ -298,3 +298,24 @@ def test_copilot_recipe_and_terminal_use_shared_device_only_declaration():
     assert wizard.question.key == "name"
     wizard.accept("Copilot custom")
     assert wizard.selection("/tmp")["model"]["authentication"] == {"kind": "copilot_subscription"}
+
+
+@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 4}])
+def test_recipe_document_preserves_image_input_policy(policy):
+    from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
+
+    recipe = prepare_model(
+        ModelRecipeRequest(
+            connection="openai-chat",
+            model_id="gpt-5",
+            authentication={"kind": "api_key", "env": "OPENAI_API_KEY"},
+            model_characteristics=HarnessModelCharacteristics.model_validate({"image_input": policy}),
+        )
+    )
+    document = recipe_document(recipe)
+    saved = HarnessModelCharacteristics.model_validate(document["model_characteristics"])
+    assert saved.image_input == (None if policy is None else ImageInputPolicy.model_validate(policy))
+    if policy is None:
+        assert document["model_characteristics"]["image_input"] is None
+    elif policy == {}:
+        assert "image_input" not in document["model_characteristics"]

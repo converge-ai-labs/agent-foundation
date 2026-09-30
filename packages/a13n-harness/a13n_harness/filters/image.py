@@ -41,13 +41,13 @@ from typing import Any
 
 import anyio.to_thread
 from PIL import Image
-from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_ai import BinaryContent, BinaryImage, ImageUrl, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolReturnPart, UserPromptPart
 from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness.context import AgentContext
+from a13n_harness.image_input import ImageInputPolicy
 
 IMAGE_FILTER_CAPABILITY_ID = "a13n.filter.image"
 _MAX_PROCESSING_PIXELS = 80_000_000
@@ -62,34 +62,14 @@ _REMOVED_GIF = (
 )
 
 
-class ImageFilterConfiguration(BaseModel):
-    """Image preparation policy for one target model's request envelope."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    split_large_images: bool = True
-    image_split_max_height: int = Field(default=4096, gt=0)
-    image_split_overlap: int = Field(default=50, ge=0)
-    max_image_bytes: int = Field(default=5 * 1024 * 1024, ge=0)
-    max_image_dimension: int = Field(default=8000, ge=0)
-    max_images: int = Field(default=20, ge=0)
-    support_gif: bool = True
-
-    @model_validator(mode="after")
-    def _validate_overlap(self) -> ImageFilterConfiguration:
-        if self.image_split_overlap >= self.image_split_max_height:
-            raise ValueError("image split overlap must be smaller than the segment height")
-        return self
-
-
 @dataclass(init=False)
 class ImageFilterCapability(AbstractCapability[AgentContext]):
     """Split, compress and prune images without changing retained history."""
 
     id = IMAGE_FILTER_CAPABILITY_ID
 
-    def __init__(self, configuration: ImageFilterConfiguration | None = None) -> None:
-        self.configuration = (configuration or ImageFilterConfiguration()).model_copy(deep=True)
+    def __init__(self, configuration: ImageInputPolicy | None = None) -> None:
+        self.configuration = (configuration or ImageInputPolicy()).model_copy(deep=True)
 
     def get_ordering(self) -> CapabilityOrdering:
         # Run after committed context projection, but before model adapters and
@@ -112,7 +92,7 @@ class ImageFilterCapability(AbstractCapability[AgentContext]):
         return await handler(updated)
 
 
-def _project_images(messages: list[ModelMessage], configuration: ImageFilterConfiguration) -> list[ModelMessage] | None:
+def _project_images(messages: list[ModelMessage], configuration: ImageInputPolicy) -> list[ModelMessage] | None:
     # Bytes are immutable and shared by deepcopy; mutable native metadata and
     # message envelopes remain detached from canonical history and original inputs.
     projected = deepcopy(messages)
@@ -192,7 +172,7 @@ def _restore_shape(original: Any, items: list[Any]) -> Any:
     return items[0]
 
 
-def _prepare_binary_image(item: BinaryContent, configuration: ImageFilterConfiguration) -> list[BinaryContent | str]:
+def _prepare_binary_image(item: BinaryContent, configuration: ImageInputPolicy) -> list[BinaryContent | str]:
     try:
         with Image.open(io.BytesIO(item.data)) as source:
             source.verify()
@@ -266,7 +246,7 @@ def _replace_image(
     )
 
 
-def _compress_image(item: BinaryContent, configuration: ImageFilterConfiguration) -> BinaryContent | str:
+def _compress_image(item: BinaryContent, configuration: ImageInputPolicy) -> BinaryContent | str:
     raw_limit = (configuration.max_image_bytes // 4) * 3 if configuration.max_image_bytes else None
     with Image.open(io.BytesIO(item.data)) as source:
         oversized_dimension = (
@@ -306,4 +286,4 @@ def _compress_image(item: BinaryContent, configuration: ImageFilterConfiguration
         image.close()
 
 
-__all__ = ["ImageFilterCapability", "ImageFilterConfiguration"]
+__all__ = ["ImageFilterCapability", "ImageInputPolicy"]

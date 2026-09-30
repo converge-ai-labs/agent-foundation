@@ -29,7 +29,7 @@ Pass a native model directly through `HarnessBuilder.build(model=...)`, or selec
 
 ## Execution boundary and filters
 
-Each built Agent includes the tool execution boundary, message integrity filter, and request-only image preparation. Image preparation splits tall static images, compresses images to encoded-byte and dimension limits, and retains the newest images without changing saved history or original files. Configure it through `AgentSpec.image_filter`, or set that field to `None` to disable the default. See [Context](../../docs/a13n-harness/context.md#filters).
+Each built Agent includes the tool execution boundary, message integrity filter, and request-only image preparation. Image preparation splits tall static images, compresses images to encoded-byte and dimension limits, and retains the newest images without changing saved history or original files. Configure the selected model's `HarnessModelCharacteristics.image_input` with `ImageInputPolicy`, or set `image_input=None` to disable automatic preparation. See [Context](../../docs/a13n-harness/context.md#filters).
 
 Add Capabilities for policy, context, memory, delegation, or model recovery. Toolsets are available from `a13n_harness.toolsets`, and managed tool contracts from `a13n_harness.tools`.
 

@@ -7,8 +7,15 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
-from a13n_harness.filters import ImageFilterCapability, ImageFilterConfiguration
+from a13n_harness import (
+    AgentSpec,
+    HarnessBuilder,
+    HarnessModelCharacteristics,
+    HarnessState,
+    ImageInputPolicy,
+    RunBindings,
+)
+from a13n_harness.filters import ImageFilterCapability
 from a13n_harness.models import SelfHealingModelCapability
 from a13n_harness.toolsets.file_media import AgentMediaUnderstandingProvider, MediaUnderstandingRequest
 from PIL import Image
@@ -67,7 +74,7 @@ def _images(messages: list[ModelMessage] | tuple[ModelMessage, ...]) -> list[Bin
 
 
 async def _project(
-    history: list[ModelMessage], policy: ImageFilterConfiguration
+    history: list[ModelMessage], policy: ImageInputPolicy
 ) -> tuple[list[ModelMessage], list[ModelMessage]]:
     seen: list[list[ModelMessage]] = []
 
@@ -112,7 +119,7 @@ async def test_split_geometry_overlap_and_native_identity(surface: str) -> None:
         history = [ModelRequest(parts=[part])]
         seen, retained = await _project(
             history,
-            ImageFilterConfiguration(
+            ImageInputPolicy(
                 image_split_max_height=1000, image_split_overlap=100, max_image_bytes=0, max_image_dimension=0
             ),
         )
@@ -142,7 +149,7 @@ async def test_split_geometry_overlap_and_native_identity(surface: str) -> None:
 @pytest.mark.parametrize("height,expected_count", [(4096, 1), (5000, 2)])
 async def test_default_split_threshold(height: int, expected_count: int) -> None:
     native = BinaryContent(_png((12, height)), media_type="image/png")
-    seen, retained = await _project([ModelRequest(parts=[UserPromptPart([native])])], ImageFilterConfiguration())
+    seen, retained = await _project([ModelRequest(parts=[UserPromptPart([native])])], ImageInputPolicy())
     assert len(_images(seen)) == expected_count
     assert _images(retained) == [native]
     if expected_count == 1:
@@ -153,9 +160,7 @@ async def test_prepared_segments_are_compressed_then_counted_newest_first() -> N
     native = BinaryContent(_png((200, 2600)), media_type="image/png", identifier="long")
     seen, retained = await _project(
         [ModelRequest(parts=[UserPromptPart([native])])],
-        ImageFilterConfiguration(
-            image_split_max_height=1000, image_split_overlap=100, max_image_dimension=100, max_images=2
-        ),
+        ImageInputPolicy(image_split_max_height=1000, image_split_overlap=100, max_image_dimension=100, max_images=2),
     )
     images = _images(seen)
     assert [image.identifier for image in images] == ["long-segment-2", "long-segment-3"]
@@ -176,7 +181,7 @@ async def test_count_policy_keeps_latest_across_user_and_tool_parts_without_coun
         ModelResponse(parts=[TextPart("previous")]),
         ModelRequest(parts=[ToolReturnPart("view", [first], tool_call_id="view-1"), UserPromptPart([last, corrupt])]),
     ]
-    seen, retained = await _project(history, ImageFilterConfiguration(max_images=2))
+    seen, retained = await _project(history, ImageInputPolicy(max_images=2))
     assert _images(seen) == [first, last]
     assert "max_images=2" in str(seen[0].parts[0].content)
     assert "broken or corrupted" in str(seen)
@@ -236,7 +241,7 @@ async def test_corrupt_images_do_not_consume_count_or_mutate_canonical_history(
         yield "done"
 
     executable = HarnessBuilder().build(
-        AgentSpec(image_filter=ImageFilterConfiguration(max_images=1)),
+        AgentSpec(model_characteristics=HarnessModelCharacteristics(image_input=ImageInputPolicy(max_images=1))),
         output_type=str,
         model=FunctionModel(stream_function=respond),
     )
@@ -265,7 +270,7 @@ async def test_dimension_only_compression_is_proportional_and_preserves_identity
     native = BinaryImage(_png(size), media_type="image/png", identifier="same", vendor_metadata={"detail": "low"})
     seen, _ = await _project(
         [ModelRequest(parts=[UserPromptPart([native])])],
-        ImageFilterConfiguration(split_large_images=False, max_image_bytes=0),
+        ImageInputPolicy(split_large_images=False, max_image_bytes=0),
     )
     image = _images(seen)[0]
     assert isinstance(image, BinaryImage)
@@ -281,7 +286,7 @@ async def test_encoded_byte_budget_not_raw_byte_budget_triggers_compression() ->
     native = BinaryContent(data, media_type="image/png")
     seen, retained = await _project(
         [ModelRequest(parts=[ToolReturnPart("view", native, tool_call_id="view-1")])],
-        ImageFilterConfiguration(split_large_images=False, max_image_bytes=encoded_limit, max_image_dimension=0),
+        ImageInputPolicy(split_large_images=False, max_image_bytes=encoded_limit, max_image_dimension=0),
     )
     image = _images(seen)[0]
     assert isinstance(image, BinaryContent)
@@ -295,7 +300,7 @@ async def test_encoded_byte_budget_not_raw_byte_budget_triggers_compression() ->
 async def test_impossible_encoded_limits_replace_images_with_explanation(encoded_limit: int) -> None:
     seen, retained = await _project(
         [ModelRequest(parts=[UserPromptPart([BinaryContent(_png((20, 20)), media_type="image/png")])])],
-        ImageFilterConfiguration(max_image_bytes=encoded_limit),
+        ImageInputPolicy(max_image_bytes=encoded_limit),
     )
     assert _images(seen) == []
     assert "could not be prepared" in str(seen[0].parts[0].content)
@@ -306,8 +311,8 @@ async def test_exact_dimension_and_disabled_compression_keep_bytes() -> None:
     native = BinaryContent(_png((8000, 80)), media_type="image/png")
     history = [ModelRequest(parts=[UserPromptPart([native])])]
     for policy in (
-        ImageFilterConfiguration(split_large_images=False),
-        ImageFilterConfiguration(split_large_images=False, max_image_bytes=0, max_image_dimension=0),
+        ImageInputPolicy(split_large_images=False),
+        ImageInputPolicy(split_large_images=False, max_image_bytes=0, max_image_dimension=0),
     ):
         seen, _ = await _project(history, policy)
         assert _images(seen) == [native]
@@ -316,7 +321,7 @@ async def test_exact_dimension_and_disabled_compression_keep_bytes() -> None:
 async def test_transparency_is_composited_onto_white_when_jpeg_is_needed() -> None:
     native = BinaryContent(_png((200, 200), mode="RGBA", color=(255, 0, 0, 0)), media_type="image/png")
     seen, _ = await _project(
-        [ModelRequest(parts=[UserPromptPart([native])])], ImageFilterConfiguration(max_image_dimension=100)
+        [ModelRequest(parts=[UserPromptPart([native])])], ImageInputPolicy(max_image_dimension=100)
     )
     with Image.open(io.BytesIO(_images(seen)[0].data)) as decoded:
         assert decoded.mode == "RGB"
@@ -327,9 +332,9 @@ async def test_transparency_is_composited_onto_white_when_jpeg_is_needed() -> No
 async def test_animation_is_not_flattened_by_splitting_or_compression(format: str, media_type: str) -> None:
     native = BinaryContent(_animated(format), media_type=media_type)
     history = [ModelRequest(parts=[UserPromptPart([native])])]
-    seen, _ = await _project(history, ImageFilterConfiguration())
+    seen, _ = await _project(history, ImageInputPolicy())
     assert _images(seen) == [native]
-    seen, _ = await _project(history, ImageFilterConfiguration(max_image_dimension=100))
+    seen, _ = await _project(history, ImageInputPolicy(max_image_dimension=100))
     assert _images(seen) == []
     assert "could not be prepared" in str(seen[0].parts[0].content)
 
@@ -339,7 +344,7 @@ async def test_gif_policy_applies_after_counting_and_preserves_other_images() ->
     url = ImageUrl("https://example.com/unchanged.gif")
     seen, retained = await _project(
         [ModelRequest(parts=[ToolReturnPart("view", [native, url], tool_call_id="view-1")])],
-        ImageFilterConfiguration(support_gif=False),
+        ImageInputPolicy(support_gif=False),
     )
     assert _images(seen) == [url]
     assert "does not support GIF" in str(seen)
@@ -349,12 +354,12 @@ async def test_gif_policy_applies_after_counting_and_preserves_other_images() ->
 @pytest.mark.parametrize(
     "policy",
     [
-        ImageFilterConfiguration(),
-        ImageFilterConfiguration(split_large_images=False, max_image_bytes=0, max_image_dimension=0),
+        ImageInputPolicy(),
+        ImageInputPolicy(split_large_images=False, max_image_bytes=0, max_image_dimension=0),
     ],
 )
 async def test_processing_pixel_limit_rejects_before_decoding_large_image(
-    policy: ImageFilterConfiguration, monkeypatch: pytest.MonkeyPatch
+    policy: ImageInputPolicy, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     native = BinaryContent(_png((9000, 9000), mode="1", color=0), media_type="image/png")
 
@@ -372,7 +377,7 @@ async def test_nested_tool_json_is_not_reinterpreted_as_model_image_content() ->
     native = BinaryContent(_png((12, 5000)), media_type="image/png")
     nested = {"items": [native], "tuple": (native,)}
     history = [ModelRequest(parts=[ToolReturnPart("view", [nested, (native,)], tool_call_id="view-1")])]
-    seen, retained = await _project(history, ImageFilterConfiguration(max_images=0))
+    seen, retained = await _project(history, ImageInputPolicy(max_images=0))
     assert next(message for message in seen if isinstance(message, ModelRequest)).parts[0].content == [
         nested,
         (native,),
@@ -442,9 +447,9 @@ async def _resolve(model: FunctionModel) -> FunctionModel:
 @pytest.mark.parametrize(
     "spec,expected_count",
     [
-        (AgentSpec(image_filter=None), 1),
+        (AgentSpec(model_characteristics=HarnessModelCharacteristics(image_input=None)), 1),
         (NativeAgentSpec(), 2),
-        (AgentSpec(image_filter=ImageFilterConfiguration(max_images=0)), 0),
+        (AgentSpec(model_characteristics=HarnessModelCharacteristics(image_input=ImageInputPolicy(max_images=0))), 0),
     ],
 )
 async def test_agent_spec_policy_and_opt_out(spec: NativeAgentSpec, expected_count: int) -> None:
@@ -463,7 +468,8 @@ async def test_agent_spec_policy_and_opt_out(spec: NativeAgentSpec, expected_cou
     assert observed == [expected_count]
 
 
-async def test_authored_image_capability_replaces_builder_default() -> None:
+@pytest.mark.parametrize("policy", [ImageInputPolicy(), ImageInputPolicy(max_images=0), None])
+async def test_authored_image_capability_replaces_builder_default(policy: ImageInputPolicy | None) -> None:
     observed = []
 
     async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -473,10 +479,10 @@ async def test_authored_image_capability_replaces_builder_default() -> None:
 
     native = BinaryContent(_png((12, 5000)), media_type="image/png")
     executable = HarnessBuilder().build(
-        AgentSpec(),
+        AgentSpec(model_characteristics=HarnessModelCharacteristics(image_input=policy)),
         output_type=str,
         model=FunctionModel(stream_function=respond),
-        capabilities=(ImageFilterCapability(ImageFilterConfiguration(split_large_images=False)),),
+        capabilities=(ImageFilterCapability(ImageInputPolicy(split_large_images=False)),),
     )
     result = await executable.run([native], bindings=RunBindings.embedded())
     assert result.output_or_raise() == "done"
@@ -511,10 +517,10 @@ async def test_real_function_tool_attachment_uses_the_same_request_filter() -> N
 
 
 @pytest.mark.parametrize(
-    "policy,expected_count", [(ImageFilterConfiguration(), 2), (ImageFilterConfiguration(max_images=1), 1), (None, 1)]
+    "policy,expected_count", [(ImageInputPolicy(), 2), (ImageInputPolicy(max_images=1), 1), (None, 1)]
 )
 async def test_auxiliary_image_target_selects_its_own_policy(
-    policy: ImageFilterConfiguration | None, expected_count: int
+    policy: ImageInputPolicy | None, expected_count: int
 ) -> None:
     observed = []
     native = _png((12, 5000))
@@ -524,7 +530,7 @@ async def test_auxiliary_image_target_selects_its_own_policy(
         observed.append(len(_images(messages)))
         return ModelResponse(parts=[TextPart("image analysis")])
 
-    provider = AgentMediaUnderstandingProvider(models={"image": FunctionModel(respond)}, image_filter=policy)
+    provider = AgentMediaUnderstandingProvider(models={"image": FunctionModel(respond)}, image_input=policy)
     result = await provider.understand(
         MediaUnderstandingRequest(kind="image", media_type="image/png", source_name="image.png", source_bytes=native)
     )
@@ -538,18 +544,24 @@ async def test_auxiliary_image_target_selects_its_own_policy(
 )
 async def test_image_policy_rejects_invalid_limits(configuration: dict[str, int]) -> None:
     with pytest.raises(ValueError):
-        ImageFilterConfiguration.model_validate(configuration)
+        ImageInputPolicy.model_validate(configuration)
 
 
 async def test_image_policy_has_validated_native_spec_round_trip_and_schema() -> None:
-    policy = ImageFilterConfiguration(max_images=3, split_large_images=False)
-    spec = AgentSpec(image_filter=policy)
-    assert AgentSpec.model_validate_json(spec.model_dump_json()).image_filter == policy
-    assert spec.with_updates(image_filter=None).image_filter is None
-    assert spec.image_filter == policy
+    policy = ImageInputPolicy(max_images=3, split_large_images=False)
+    characteristics = HarnessModelCharacteristics(image_input=policy)
+    spec = AgentSpec(model_characteristics=characteristics)
+    assert AgentSpec.model_validate_json(spec.model_dump_json()).model_characteristics == characteristics
+    disabled = spec.with_updates(model_characteristics=characteristics.model_copy(update={"image_input": None}))
+    assert disabled.model_characteristics is not None and disabled.model_characteristics.image_input is None
+    assert spec.model_characteristics == characteristics
     schema = AgentSpec.model_json_schema_with_capabilities()
-    assert schema["properties"]["image_filter"]["default"] == ImageFilterConfiguration().model_dump(mode="json")
-    assert "ImageFilterConfiguration" in schema["$defs"]
+    assert "image_filter" not in schema["properties"] and "image_filter" not in AgentSpec.model_fields
+    assert schema["$defs"]["HarnessModelCharacteristics"]["properties"]["image_input"]["anyOf"] == [
+        {"$ref": "#/$defs/ImageInputPolicy"},
+        {"type": "null"},
+    ]
+    assert schema["$defs"]["ImageInputPolicy"]["properties"]["max_image_bytes"]["default"] == 5 * 1024 * 1024
 
 
 async def test_encoder_failure_becomes_request_only_explanation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -560,7 +572,7 @@ async def test_encoder_failure_becomes_request_only_explanation(monkeypatch: pyt
 
     monkeypatch.setattr(Image.Image, "save", fail_save)
     seen, retained = await _project(
-        [ModelRequest(parts=[UserPromptPart([native])])], ImageFilterConfiguration(max_image_dimension=50)
+        [ModelRequest(parts=[UserPromptPart([native])])], ImageInputPolicy(max_image_dimension=50)
     )
     assert _images(seen) == []
     assert "could not be prepared" in str(seen[0].parts[0].content)
@@ -572,7 +584,7 @@ async def test_cmyk_jpeg_can_be_split_without_losing_spatial_coverage() -> None:
     with Image.new("CMYK", (20, 5000), (0, 255, 255, 0)) as source:
         source.save(buffer, format="JPEG")
     native = BinaryContent(buffer.getvalue(), media_type="image/jpeg", identifier="cmyk")
-    seen, retained = await _project([ModelRequest(parts=[UserPromptPart([native])])], ImageFilterConfiguration())
+    seen, retained = await _project([ModelRequest(parts=[UserPromptPart([native])])], ImageInputPolicy())
     images = _images(seen)
     assert len(images) == 2
     for image, height in zip(images, (4096, 954), strict=True):
@@ -585,7 +597,7 @@ async def test_cmyk_jpeg_can_be_split_without_losing_spatial_coverage() -> None:
 async def test_detected_binary_format_drives_gif_policy_without_rewriting_original_metadata() -> None:
     native = BinaryContent(_animated(size=(20, 20)), media_type="image/png", vendor_metadata={"custom": "source"})
     seen, retained = await _project(
-        [ModelRequest(parts=[UserPromptPart([native])])], ImageFilterConfiguration(support_gif=False)
+        [ModelRequest(parts=[UserPromptPart([native])])], ImageInputPolicy(support_gif=False)
     )
     assert _images(seen) == []
     assert "does not support GIF" in str(seen[0].parts[0].content)
@@ -632,3 +644,37 @@ async def test_default_image_filter_and_self_healing_compose_once_without_changi
     assert _images(result.state.message_history) == [native]
     assert result.state.message_history[:2] == original
     assert previous.message_history == original and history == original
+
+
+@pytest.mark.parametrize("image_input", [{}, {"image_input": {}}])
+def test_default_image_input_preserves_legacy_characteristics_json(image_input: dict[str, object]) -> None:
+    legacy = (
+        '{"capabilities":["audio_understanding","image_understanding"],'
+        '"context_window_tokens":32000,"proactive_context_management_threshold":0.65,"compact_threshold":0.9}'
+    )
+    import json
+
+    characteristics = HarnessModelCharacteristics.model_validate({**json.loads(legacy), **image_input})
+    assert characteristics.image_input == ImageInputPolicy()
+    assert characteristics.model_dump_json() == legacy
+    assert "image_input" not in characteristics.model_dump()
+
+
+def test_explicit_null_image_input_survives_serialization_and_revalidation() -> None:
+    characteristics = HarnessModelCharacteristics(image_input=None)
+    assert characteristics.model_dump(mode="json")["image_input"] is None
+    assert HarnessModelCharacteristics.model_validate_json(characteristics.model_dump_json()).image_input is None
+    spec = AgentSpec(model_characteristics=characteristics)
+    assert AgentSpec.model_validate_json(spec.model_dump_json()).model_characteristics == characteristics
+
+
+def test_image_input_object_uses_native_defaults_and_is_frozen() -> None:
+    characteristics = HarnessModelCharacteristics.model_validate({"image_input": {"support_gif": False}})
+    policy = characteristics.image_input
+    assert policy is not None
+    assert policy == ImageInputPolicy(support_gif=False)
+    assert characteristics.model_dump(mode="json")["image_input"] == policy.model_dump(mode="json")
+    with pytest.raises(ValueError, match="frozen"):
+        policy.max_images = 1
+    with pytest.raises(ValueError, match="frozen"):
+        characteristics.image_input = None

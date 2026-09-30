@@ -2,7 +2,7 @@
 
 from .cold_start import ColdStartFilterCapability, ColdStartFilterConfiguration
 from .content import ContentFilterCapability, ContentFilterConfiguration, MediaFamily
-from .image import ImageFilterCapability, ImageFilterConfiguration
+from .image import ImageFilterCapability
 from .integrity import MessageIntegrityFilterCapability
 
 __all__ = [
@@ -11,7 +11,6 @@ __all__ = [
     "ContentFilterCapability",
     "ContentFilterConfiguration",
     "ImageFilterCapability",
-    "ImageFilterConfiguration",
     "MediaFamily",
     "MessageIntegrityFilterCapability",
 ]

@@ -14,7 +14,7 @@ from pydantic_ai.usage import UsageLimits
 
 from a13n_harness.capability_types import first_party_declarative_capability_types
 from a13n_harness.filters.cold_start import ColdStartFilterConfiguration
-from a13n_harness.filters.image import ImageFilterConfiguration
+from a13n_harness.image_input import ImageInputPolicy
 
 
 class ModelCapability(StrEnum):
@@ -27,12 +27,20 @@ class ModelCapability(StrEnum):
     DOCUMENT_UNDERSTANDING = "document_understanding"
 
 
+_DEFAULT_IMAGE_INPUT = ImageInputPolicy()
+
+
 class HarnessModelCharacteristics(BaseModel):
     """Resolved Harness characteristics of the active Agent model."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     capabilities: frozenset[ModelCapability] = Field(default_factory=frozenset)
+    image_input: ImageInputPolicy | None = Field(
+        default_factory=ImageInputPolicy,
+        exclude_if=lambda value: value == _DEFAULT_IMAGE_INPUT,
+        description="Image preparation policy; omitted uses native defaults, null disables automatic preparation.",
+    )
     context_window_tokens: int | None = Field(default=None, gt=0)
     proactive_context_management_threshold: float | None = Field(default=0.65, ge=0.0, le=1.0)
     compact_threshold: float = Field(default=0.90, gt=0.0, le=1.0)
@@ -62,7 +70,6 @@ class AgentSpec(PydanticAgentSpec):
     system_prompt: str | list[str] | None = None
     toolset_instructions: bool = True
     cold_start_filter: ColdStartFilterConfiguration | None = Field(default_factory=ColdStartFilterConfiguration)
-    image_filter: ImageFilterConfiguration | None = Field(default_factory=ImageFilterConfiguration)
     usage_limits: UsageLimits = Field(default_factory=_default_usage_limits)
     model_characteristics: HarnessModelCharacteristics | None = None
 
@@ -135,14 +142,6 @@ class AgentSpec(PydanticAgentSpec):
             ],
             "default": ColdStartFilterConfiguration().model_dump(mode="json"),
         }
-        definitions["ImageFilterConfiguration"] = ImageFilterConfiguration.model_json_schema()
-        schema["properties"]["image_filter"] = {
-            "anyOf": [
-                {"$ref": "#/$defs/ImageFilterConfiguration"},
-                {"type": "null"},
-            ],
-            "default": ImageFilterConfiguration().model_dump(mode="json"),
-        }
         usage_limits_schema = TypeAdapter(UsageLimits).json_schema()
         usage_limits_schema["default"] = TypeAdapter(UsageLimits).dump_python(
             _default_usage_limits(),
@@ -159,4 +158,4 @@ class AgentSpec(PydanticAgentSpec):
         return schema
 
 
-__all__ = ["AgentSpec", "HarnessModelCharacteristics", "ModelCapability"]
+__all__ = ["AgentSpec", "HarnessModelCharacteristics", "ImageInputPolicy", "ModelCapability"]

@@ -550,3 +550,27 @@ async def test_native_model_settings_roundtrip_and_api_validation(service) -> No
         headers={"if-match": changed.headers["etag"]},
     )
     assert switched.status_code == 400  # Responses summary does not silently survive an API change.
+
+
+@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 4, "max_image_bytes": 1234567}])
+async def test_model_api_round_trips_shared_image_input_policy(service, policy):
+    account = await provider(service)
+    created = await post(service, "/models", manual(account["id"], "images", characteristics={"image_input": policy}))
+    traits = created["config"]["characteristics"]
+    if policy is None:
+        assert traits["image_input"] is None
+    elif policy == {}:
+        assert "image_input" not in traits
+    else:
+        assert all(traits["image_input"][key] == value for key, value in policy.items())
+        assert traits["image_input"]["split_large_images"] is True
+    response = await service.client.get(f"{service.api}/models/images")
+    assert response.status_code == 200
+    assert response.json()["config"]["characteristics"] == traits
+    response = await service.client.patch(
+        f"{service.api}/models/images",
+        headers={"If-Match": response.headers["ETag"]},
+        json={"config": {**created["config"], "characteristics": {**traits, "image_input": None}}},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["config"]["characteristics"]["image_input"] is None

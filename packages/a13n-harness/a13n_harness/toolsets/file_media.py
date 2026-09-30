@@ -21,17 +21,18 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
 from a13n_harness.errors import HarnessError
-from a13n_harness.filters.image import ImageFilterCapability, ImageFilterConfiguration
+from a13n_harness.filters.image import ImageFilterCapability
 from a13n_harness.metering import ModelUsageBinding, ModelUsageCapability
 from a13n_harness.models.binding import selected_model
 from a13n_harness.models.inference import infer_model
 from a13n_harness.observation import _auxiliary_agent_capabilities
 from a13n_harness.providers.environment.models import EnvironmentPath
+from a13n_harness.spec import ImageInputPolicy
 from a13n_harness.usage import ProviderUsage
 
 type NativeInputMediaKind = Literal["image", "video", "audio"]
 
-_DEFAULT_IMAGE_FILTER = ImageFilterConfiguration()
+_DEFAULT_IMAGE_INPUT = ImageInputPolicy()
 
 MAX_MEDIA_UNDERSTANDING_BYTES = 16 * 1024 * 1024
 MAX_MEDIA_UNDERSTANDING_TEXT_CHARS = 4 * 1024 * 1024
@@ -135,7 +136,7 @@ class AgentMediaUnderstandingProvider:
         models: Mapping[NativeInputMediaKind, str | Model],
         model_settings: Mapping[NativeInputMediaKind, ModelSettings] | None = None,
         model_ids: Mapping[NativeInputMediaKind, str] | None = None,
-        image_filter: ImageFilterConfiguration | None = _DEFAULT_IMAGE_FILTER,
+        image_input: ImageInputPolicy | None = _DEFAULT_IMAGE_INPUT,
     ) -> None:
         model_ids = dict(model_ids or {})
         if any(kind not in models for kind in model_ids):
@@ -158,8 +159,8 @@ class AgentMediaUnderstandingProvider:
             settings = ModelSettings(temperature=0.1)
             settings.update(configured_settings.get(kind, {}))
             selection, capabilities = selected_model(model, model_ids.get(kind))
-            if kind == "image" and image_filter is not None:
-                capabilities = (*capabilities, ImageFilterCapability(image_filter))
+            if kind == "image" and image_input is not None:
+                capabilities = (*capabilities, ImageFilterCapability(image_input))
             agent = Agent(
                 selection,
                 capabilities=capabilities,

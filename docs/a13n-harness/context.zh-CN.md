@@ -100,13 +100,20 @@ without_cold_compression = spec.with_updates(cold_start_filter=None)
 图片预处理也默认启用。每次模型请求前，`ImageFilterCapability` 将较高的静态图片切成完整宽度的分段（每段高 4096 像素，相邻段重叠 50 像素），把每张图片或分段压缩到不超过 5 MiB 的 base64 编码字节和单边 8000 像素，并保留最新的 20 张图片。损坏、无法满足限制或较旧的超额图片，只在本次请求中替换为说明文字；保存的历史和原始文件保留原有像素与元数据。
 
 ```python
-from a13n_harness.filters import ImageFilterConfiguration
+from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
 
-spec = AgentSpec(image_filter=ImageFilterConfiguration(max_images=10, split_large_images=False))
-without_image_preparation = spec.with_updates(image_filter=None)
+characteristics = HarnessModelCharacteristics(
+    image_input=ImageInputPolicy(max_images=10, split_large_images=False),
+)
+spec = AgentSpec(model_characteristics=characteristics)
+without_image_preparation = spec.with_updates(
+    model_characteristics=characteristics.model_copy(update={"image_input": None}),
+)
 ```
 
-设置 `max_image_bytes=0` 或 `max_image_dimension=0` 可独立禁用相应的压缩限制；设置 `support_gif=False` 会移除二进制 GIF 输入。动画图片不会分段，也不会转换成丢失动画的 JPEG。该策略处理原生用户内容序列，以及普通工具返回的单个图片或顶层列表中的图片；不会把嵌套工具 JSON 重新解释为图片输入。图片 URL 参与数量限制，但不会被获取或变换。该策略不限制整个请求的总字节，也不保证所有网关都接受请求。`AgentMediaUnderstandingProvider` 通过自己的 `image_filter` 参数独立选择图片目标模型的策略，不继承父 agent 的限制。
+所选模型通过 `model_characteristics.image_input` 拥有该策略：省略时采用默认策略，部分对象为未指定字段采用默认值，显式 `null` 禁用自动预处理。显式组合的 `ImageFilterCapability` 保留自己的策略，并阻止自动重复实例。完整参数见[图片输入策略](models.md#image-input-policy)。
+
+设置 `max_image_bytes=0` 或 `max_image_dimension=0` 可独立禁用相应的压缩限制；设置 `support_gif=False` 会移除二进制 GIF 输入。动画图片不会分段，也不会转换成丢失动画的 JPEG。该策略处理原生用户内容序列，以及普通工具返回的单个图片或顶层列表中的图片；不会把嵌套工具 JSON 重新解释为图片输入。图片 URL 参与数量限制，但不会被获取或变换。该策略不限制整个请求的总字节，也不保证所有网关都接受请求。`AgentMediaUnderstandingProvider` 通过自己的 typed `image_input` 参数独立选择图片目标模型的策略，不继承父 agent 的限制。
 
 ## Handoff 与自动压缩
 

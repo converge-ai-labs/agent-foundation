@@ -309,10 +309,10 @@ The configuration is compatibility policy selected by trusted embedding code, no
 
 The Content Filter preserves accepted native Pydantic values. It classifies `BinaryContent` by canonical media type, treats image/audio/video/document URLs and `UploadedFile` as their native families, rejects credential-bearing URLs, and enforces aggregate item and inline-binary byte limits before provider serialization. An unsupported, unsafe, or over-limit item is replaced in place by one bounded explanatory text value; non-media content, tool-call identity, and request ordering remain unchanged. Scalar content remains scalar for a one-to-one replacement, while list and tuple shapes retain their sequence shape. This filter does not upload, fetch, decode, compress, spill, or persist content and grants no authority.
 
-`ImageFilterCapability` is installed by default through `AgentSpec.image_filter`. It projects image input only through `wrap_model_request`, after committed model-context preparation. The projection reaches concrete, run-resolved, and inferred Models on ordinary and streaming requests without changing canonical messages, original input objects, retained file bytes, or application provenance metadata. It does not write through `RunContext.messages`, acquire files, or fetch URLs.
+`ImageFilterCapability` is installed by default through the selected model's `HarnessModelCharacteristics.image_input`. It projects image input only through `wrap_model_request`, after committed model-context preparation. The projection reaches concrete, run-resolved, and inferred Models on ordinary and streaming requests without changing canonical messages, original input objects, retained file bytes, or application provenance metadata. It does not write through `RunContext.messages`, acquire files, or fetch URLs.
 
 ```python
-class ImageFilterConfiguration(BaseModel):
+class ImageInputPolicy(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     split_large_images: bool = True
@@ -330,7 +330,7 @@ The policy then keeps the newest `max_images` images across request messages, pa
 
 Both native user-content sequences and ordinary tool-return scalar or top-level list media participate in this image projection. Arbitrary nested tool JSON and tuple-valued tool data are not reinterpreted as provider image files. Scalar tool content becomes a list only for a one-to-many split; existing user list/tuple and tool list shapes are otherwise retained. The image policy is trusted target-model configuration rather than inferred provider characteristics or a new profile schema. It has no shared total-request byte budget and cannot guarantee acceptance by every gateway.
 
-`AgentMediaUnderstandingProvider` selects the same default policy independently for its image target through its own `image_filter` constructor argument; a configuration replaces that policy and `None` disables it. It does not inherit the parent Agent's policy, and audio/video targets do not receive the image filter.
+`AgentMediaUnderstandingProvider` selects the same default policy independently for its image target through its typed `image_input` constructor argument; a configuration replaces that policy and `None` disables it. It does not inherit the parent Agent's policy, and audio/video targets do not receive the image filter.
 
 `ColdStartFilterCapability` is installed by default through [AgentSpec cold-start configuration](03-agent-definition-and-build.md#agentdefinition). It can be configured or disabled there. After its configured idle interval since the latest `ModelResponse`, it shortens oversized string leaves in ordinary tool results strictly before that latest response. Those results have already been consumed by the model; the latest response and every later request, including pending tool results, remain exact. Structured dictionaries, lists, and tuples retain their shape and short hint fields; native media and non-string values remain unchanged. The filter does not spill content or replace explicit compaction.
 
@@ -344,7 +344,7 @@ Former global history processors resolve to one current owner:
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | Orphan and duplicate ordinary tool results                                    | Mandatory `MessageIntegrityFilterCapability`                   |
 | Unsupported, unsafe, or over-limit request media                              | Optional `ContentFilterCapability`                             |
-| Request-only image splitting, compression, newest-first count, and GIF policy | AgentSpec-configured `ImageFilterCapability`                   |
+| Request-only image splitting, compression, newest-first count, and GIF policy | Model-characteristics-configured `ImageFilterCapability`       |
 | Cold-cache reduction of already-consumed tool-result strings                  | AgentSpec-configured `ColdStartFilterCapability`               |
 | Current tool-return redaction, bounds, and spill                              | `ToolExecutionBoundaryCapability`                              |
 | Runtime, file, Environment, handoff, working-state, and process notices       | Their focused context or Environment Capabilities              |

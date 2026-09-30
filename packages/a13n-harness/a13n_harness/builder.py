@@ -62,7 +62,7 @@ from a13n_harness.errors import (
 )
 from a13n_harness.execution import ExecutableAgent
 from a13n_harness.filters.cold_start import ColdStartFilterCapability, ColdStartFilterConfiguration
-from a13n_harness.filters.image import ImageFilterCapability, ImageFilterConfiguration
+from a13n_harness.filters.image import ImageFilterCapability
 from a13n_harness.filters.integrity import (
     MessageIntegrityFilterCapability,
 )
@@ -106,6 +106,7 @@ from a13n_harness.recovery import (
     ModelRecoveryPolicy,
 )
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
+from a13n_harness.spec import ImageInputPolicy
 from a13n_harness.tools.invocation import (
     ToolExecutionBoundaryCapability,
 )
@@ -346,7 +347,7 @@ def _cold_start_capabilities(agent: AgentSpec) -> tuple[AbstractCapability[Agent
 class _DefaultImageFilterCapability(AbstractCapability[AgentContext]):
     """Defer the image default until authored native capabilities are resolved."""
 
-    configuration: ImageFilterConfiguration
+    configuration: ImageInputPolicy
 
     def for_agent(self, agent: AbstractAgent[AgentContext, Any]) -> AbstractCapability[AgentContext]:
         leaves: list[AbstractCapability[AgentContext]] = []
@@ -360,7 +361,8 @@ class _DefaultImageFilterCapability(AbstractCapability[AgentContext]):
 
 
 def _image_filter_capabilities(agent: AgentSpec) -> tuple[AbstractCapability[AgentContext], ...]:
-    configuration = agent.image_filter if isinstance(agent, HarnessAgentSpec) else ImageFilterConfiguration()
+    characteristics = agent.model_characteristics if isinstance(agent, HarnessAgentSpec) else None
+    configuration = characteristics.image_input if characteristics is not None else ImageInputPolicy()
     return (_DefaultImageFilterCapability(configuration),) if configuration is not None else ()
 
 
