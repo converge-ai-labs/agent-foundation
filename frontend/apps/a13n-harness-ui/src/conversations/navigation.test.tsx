@@ -327,12 +327,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 function LiveNavigation() {
-  const live = useLiveWorkbench(
-    { display_name: "Test", color: "#000000" },
-    false,
-    () => {},
-  );
-  return <ConversationNavigation presence={live.presence} />;
+  useLiveWorkbench({ display_name: "Test", color: "#000000" }, false, () => {});
+  return <ConversationNavigation />;
 }
 function Location() {
   const location = useLocation();
@@ -907,7 +903,7 @@ it("shows every active conversation before five recent rows and reconciles compl
   }));
   mount("/threads/Active%200");
   const project = await screen.findByRole("region", { name: "One" });
-  await within(project).findByText("Running · 6");
+  await within(project).findByRole("heading", { name: "Running · 6" });
   const runningLinks = () =>
     within(project)
       .getAllByRole("link")
@@ -962,7 +958,7 @@ it("keeps the selected lifecycle observation across pagination but accepts a ref
   ];
   mount("/threads/Selected");
   const project = await screen.findByRole("region", { name: "One" });
-  await within(project).findByText("Running · 1");
+  await within(project).findByRole("heading", { name: "Running · 1" });
   const row = within(project).getByRole("link", { name: /Selected/ });
 
   await act(async () => {
@@ -972,7 +968,7 @@ it("keeps the selected lifecycle observation across pagination but accepts a ref
   });
   await waitFor(() => expect(within(row).queryByText("Running")).toBeNull());
   const more = within(project).getByRole("button", { name: /Show more/ });
-  expect(more.textContent).toBe("");
+  expect(more.textContent).toBe("Show more");
   expect(more.getAttribute("title")).toBe("Show more conversations in One");
   fireEvent.click(more);
   await within(project).findByRole("link", { name: /Older one/ });
@@ -1032,8 +1028,12 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
     within(group).getByRole("button", { name: /^One/, expanded: false }),
   );
   await screen.findByText("Recent 5");
-  expect(within(group).getByText("New results · 1")).toBeTruthy();
-  expect(within(group).getByText("Running · 1")).toBeTruthy();
+  expect(
+    within(group).getByRole("heading", { name: "New results · 1" }),
+  ).toBeTruthy();
+  expect(
+    within(group).getByRole("heading", { name: "Running · 1" }),
+  ).toBeTruthy();
   expect(
     within(group).getAllByRole("img", { name: "New result" }),
   ).toHaveLength(2);
@@ -1066,7 +1066,9 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
     within(group).queryByLabelText(/conversations with new results/),
   ).toBeNull();
   expect(within(group).queryByText(/New results/)).toBeNull();
-  expect(within(group).getByText("Running · 1")).toBeTruthy();
+  expect(
+    within(group).getByRole("heading", { name: "Running · 1" }),
+  ).toBeTruthy();
   expect(writes).toEqual([]);
   vi.restoreAllMocks();
 });
@@ -1214,7 +1216,7 @@ it("keeps workers collapsed on direct navigation and pages them separately from 
   mount("/threads/worker-7");
   await screen.findByRole("link", { name: /coordinator-one/ });
   await screen.findByRole("link", { name: /ordinary-running/ });
-  expect(screen.getByText("Running · 2")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Running · 2" })).toBeTruthy();
   expect(screen.queryByRole("link", { name: /worker-/ })).toBeNull();
   expect(
     activity.filter((url) => url.searchParams.has("coordinator_thread_id")),
@@ -1288,7 +1290,7 @@ it("groups only owners of active unarchived workers under Running and returns th
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const project = screen.getByRole("region", { name: "One" });
-  await within(project).findByText("Running · 1");
+  await within(project).findByRole("heading", { name: "Running · 1" });
   const owner = within(project).getByRole("link", { name: /busy-owner/ });
   expect(within(project).getAllByRole("link")[0]).toBe(owner);
   expect(within(owner).queryByText("Running")).toBeNull();
@@ -1302,13 +1304,17 @@ it("groups only owners of active unarchived workers under Running and returns th
   // One worker finishing does not move an owner with another active worker.
   activeThreads = activeThreads.slice(1);
   await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
-  expect(within(project).getByText("Running · 1")).toBeTruthy();
+  expect(
+    within(project).getByRole("heading", { name: "Running · 1" }),
+  ).toBeTruthy();
   expect(within(project).getAllByRole("link")[0]).toBe(owner);
 
   activeThreads = [];
   await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
   await waitFor(() =>
-    expect(within(project).queryByText(/Running ·/)).toBeNull(),
+    expect(
+      within(project).queryByRole("heading", { name: /Running ·/ }),
+    ).toBeNull(),
   );
   expect(within(project).getAllByRole("link")[0].textContent).toContain(
     "idle-owner",
@@ -1332,7 +1338,7 @@ it("keeps an off-page owner in Running while its worker is active without loadin
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const project = screen.getByRole("region", { name: "One" });
-  await within(project).findByText("Running · 1");
+  await within(project).findByRole("heading", { name: "Running · 1" });
   expect(within(project).getAllByRole("link")[0].textContent).toContain(
     "off-page-owner",
   );
@@ -1669,15 +1675,25 @@ it("moves a starred row only after its save and restores ordinary recency withou
     within(group).getByRole("button", { name: /^One/, expanded: false }),
   );
   const button = await within(group).findByRole("button", {
-    name: "Unstar conversation: Recent 3",
+    name: "Actions for Recent 3",
   });
+  expect(
+    within(group).getByRole("img", { name: "Starred conversation: Recent 3" }),
+  ).toBeTruthy();
   expect(within(group).getAllByRole("link")[0].textContent).toContain(
     "Recent 3",
   );
   await userEvent.click(button);
-  await within(group).findByRole("button", {
-    name: "Star conversation: Recent 3",
-  });
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: "Unstar conversation" }),
+  );
+  await waitFor(() =>
+    expect(
+      within(group).queryByRole("img", {
+        name: "Starred conversation: Recent 3",
+      }),
+    ).toBeNull(),
+  );
   expect(within(group).getAllByRole("link")[0].textContent).toContain(
     "Recent 1",
   );
