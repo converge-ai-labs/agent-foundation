@@ -62,3 +62,17 @@ async def test_api_key_store_rejects_oversized_publication_without_poisoning_rea
     assert len(await store.list()) == 63
     await store.delete("key-0")
     assert len(await store.list()) == 62
+
+
+@pytest.mark.parametrize("keys", [[], {"key-test": {"token": "private-material"}}])
+async def test_api_key_malformed_known_fields_raise_safe_errors_without_overwrite(tmp_path, keys):
+    import json
+
+    store = ApiKeyStore(tmp_path / "auth.json")
+    original = json.dumps({"version": 1, "keys": keys})
+    store.path.write_text(original)
+    for operation in (store.list, lambda: store.load("key-test")):
+        with pytest.raises(HarnessUiError) as caught:
+            await operation()
+        assert "private-material" not in str(caught.value)
+    assert store.path.read_text() == original

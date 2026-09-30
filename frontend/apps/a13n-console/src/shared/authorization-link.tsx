@@ -18,7 +18,7 @@ export function AuthorizationLink({
     <div className={styles.stack} role="status">
       {href ? (
         <a
-          className={styles.back}
+          className="inline-flex items-center gap-1.5 font-medium"
           href={href}
           target={sameTab ? "_self" : "_blank"}
           rel="noopener noreferrer"

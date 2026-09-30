@@ -51,9 +51,11 @@ export function ProviderAccount({
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [copyFailed, setCopyFailed] = useState(false);
 
-  const [method, setMethod] = useState<"device" | "browser">(
-    loginMethods[0] ?? "device",
-  );
+  const [method, setMethod] = useState<
+    "device" | "browser" | "manual_callback"
+  >(provider === "chatgpt" ? "browser" : (loginMethods[0] ?? "device"));
+  const [callbackUrl, setCallbackUrl] = useState("");
+  const [callbackSent, setCallbackSent] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
   const account = useQuery({
@@ -119,12 +121,27 @@ export function ProviderAccount({
       ),
     onSuccess: (status) => {
       setSwitchOpen(false);
+      setCallbackUrl("");
+      setCallbackSent(false);
       queries.setQueryData(["login", provider], status);
       setSession(status.session_id);
       queries.setQueryData(["active-login"], status);
     },
     onSettled: () => {
       void queries.invalidateQueries({ queryKey: ["active-login"] });
+    },
+  });
+  const callback = useMutation({
+    mutationFn: () =>
+      result(
+        client.POST("/api/auth/logins/{session_id}/callback", {
+          params: { path: { session_id: session! } },
+          body: { callback_url: callbackUrl },
+        }),
+      ),
+    onSuccess: () => {
+      setCallbackUrl("");
+      setCallbackSent(true);
     },
   });
   const cancel = useMutation({
@@ -183,6 +200,9 @@ export function ProviderAccount({
     setCopiedCode(null);
     setCopyFailed(false);
   }, [session, code]);
+  useEffect(() => {
+    if (!active) setCallbackUrl("");
+  }, [active]);
   async function copyCode() {
     if (!code) return;
     try {
@@ -204,7 +224,8 @@ export function ProviderAccount({
           cancel.error ||
           logout.error ||
           sources.error ||
-          select.error
+          select.error ||
+          callback.error
         }
       />
       {!active && (
@@ -283,17 +304,19 @@ export function ProviderAccount({
                     label:
                       method === "device"
                         ? "Device code (recommended for remote servers)"
-                        : "Browser callback on the server",
+                        : method === "manual_callback"
+                          ? "Paste the complete callback URL"
+                          : "Automatic browser callback",
                   }))}
                   onValueChange={(value) =>
-                    setMethod(value as "device" | "browser")
+                    setMethod(value as "device" | "browser" | "manual_callback")
                   }
                 />
                 {method === "browser" && (
                   <p>
                     The callback must reach the server's loopback listener. For
-                    a remote host or container, use device login where
-                    supported.
+                    a remote host or container, paste the complete callback URL
+                    for ChatGPT, or use device login where supported.
                   </p>
                 )}
               </details>
@@ -348,7 +371,9 @@ export function ProviderAccount({
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <span>{url}</span>
+                    <span>
+                      {provider === "chatgpt" ? "Sign in with ChatGPT" : url}
+                    </span>
                     <ArrowSquareOut size={18} aria-hidden="true" />
                     <span className="sr-only"> (opens in a new tab)</span>
                   </a>
@@ -379,6 +404,38 @@ export function ProviderAccount({
             </ol>
           )}
           {login.data?.message && <p>{login.data.message}</p>}
+          {active &&
+            provider === "chatgpt" &&
+            login.data?.state === "waiting" && (
+              <details
+                className={accountStyles.advanced}
+                open={method === "manual_callback" || undefined}
+              >
+                <summary>Callback cannot reach this server?</summary>
+                <p>
+                  After authorizing, copy the complete URL from the browser
+                  address bar, even if the browser shows a connection error. It
+                  contains a one-time code; do not share it.
+                </p>
+                <TextField
+                  label="Complete callback URL"
+                  type="password"
+                  value={callbackUrl}
+                  onChange={setCallbackUrl}
+                  disabled={callbackSent}
+                />
+                <Button
+                  loading={callback.isPending}
+                  disabled={!callbackUrl.trim() || callbackSent}
+                  onClick={() => callback.mutate()}
+                >
+                  Complete sign-in
+                </Button>
+                {callbackSent && (
+                  <p role="status">Callback received. Completing sign-in…</p>
+                )}
+              </details>
+            )}
           {login.data?.error_code ===
             "account_switch_confirmation_required" && (
             <Button variant="outline" onClick={() => setSwitchOpen(true)}>
@@ -419,9 +476,11 @@ export function ProviderAccount({
         onOpenChange={setLogoutOpen}
         title={`Log out of ${provider}?`}
         description={
-          account.data?.source_id?.startsWith("native:")
-            ? "Remove the selected Host-owned credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
-            : "Remove the selected local account credentials. This also affects the official CLI and other Hosts sharing this account store. Other accounts remain intact. This does not revoke authorization, delete Models or Agents, or disconnect this browser."
+          provider === "chatgpt"
+            ? "Clear the selected Host's ChatGPT tokens for everyone and request remote revocation. The registration is retained for future sign-in. Codex credentials are not changed."
+            : account.data?.source_id?.startsWith("native:")
+              ? "Remove the selected Host-owned credentials for everyone using this server. Other saved accounts remain intact. This does not revoke GitHub authorization or delete Models and Agents."
+              : "Remove the selected local account credentials. This also affects the official CLI and other Hosts sharing this account store. Other accounts remain intact. This does not revoke authorization, delete Models or Agents, or disconnect this browser."
         }
         closeLabel="Cancel"
         footer={

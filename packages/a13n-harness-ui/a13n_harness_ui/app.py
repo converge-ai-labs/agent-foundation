@@ -161,6 +161,7 @@ from a13n_harness_ui.model_accounts import (
     resolve_grok_scope,
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
+from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
 from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
@@ -177,6 +178,7 @@ from a13n_harness_ui.model_authoring import (
 )
 from a13n_harness_ui.model_catalog import ModelCatalog, ModelCatalogSnapshot
 from a13n_harness_ui.model_runtime import (
+    ChatGPTSubscriptionSource,
     CodexSubscriptionSource,
     CopilotSubscriptionSource,
     GrokSubscriptionSource,
@@ -428,6 +430,7 @@ class HarnessUiApp:
         self._copilot_account = copilot_account
         self._copilot_login = copilot_login
         self._codex_account = codex_account
+        self._chatgpt_account = ChatGPTAccountStore(store.layout.root / "auth.json")
         self._codex_account_error = codex_account_error
         self._rediscover_accounts = rediscover_accounts
         self._resolve_sandbox_executable = resolve_sandbox_executable
@@ -489,6 +492,12 @@ class HarnessUiApp:
             if self._logins is None:
                 raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
             return self._logins.status(session_id)
+
+    async def submit_login_callback(self, session_id: str, callback_url: str) -> LoginStatus:
+        async with self._operation():
+            if self._logins is None:
+                raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
+            return self._logins.submit_callback(session_id, callback_url)
 
     async def cancel_login(self, session_id: str) -> LoginStatus:
         async with self._operation():
@@ -2313,12 +2322,12 @@ class HarnessUiApp:
     async def model_account_candidates(self, provider: Provider | str) -> tuple[AccountCandidate, ...]:
         async with self._operation():
             account = self._account(Provider(provider))
-            return await account.candidates() if isinstance(account, CopilotAccountStore) else ()
+            return await account.candidates() if isinstance(account, CopilotAccountStore | ChatGPTAccountStore) else ()
 
     async def select_model_account(self, provider: Provider | str, selection: AccountSelection) -> AccountProjection:
         async with self._operation():
             account = self._account(Provider(provider))
-            if not isinstance(account, CopilotAccountStore):
+            if not isinstance(account, CopilotAccountStore | ChatGPTAccountStore):
                 raise AppStateError(
                     "This account has no source-selection action.", code="account_selection_unsupported"
                 )
@@ -2329,6 +2338,17 @@ class HarnessUiApp:
         from a13n_harness.providers.model.oauth import discover_copilot_models
 
         async with self._operation():
+            if Provider(provider) is Provider.CHATGPT:
+                from a13n_harness.providers.model.chatgpt import discover_chatgpt_models
+
+                try:
+                    models = await discover_chatgpt_models(credential_source=self._chatgpt_account)
+                    return tuple(ModelChoice(value=item.slug, label=item.display_name) for item in models)
+                except Exception:
+                    raise AppStateError(
+                        "ChatGPT model discovery failed. Check the selected registration and account access.",
+                        code="model_discovery_failed",
+                    ) from None
             if Provider(provider) is not Provider.COPILOT:
                 raise AppStateError("This account has no model-discovery action.", code="model_discovery_unsupported")
             try:
@@ -2689,7 +2709,11 @@ class HarnessUiApp:
                     expected_account_id=request.account_id,
                 ).redeem(request)
 
-    def _account(self, provider: Provider) -> CodexAccountStore | GrokAccountStore | CopilotAccountStore:
+    def _account(
+        self, provider: Provider
+    ) -> ChatGPTAccountStore | CodexAccountStore | GrokAccountStore | CopilotAccountStore:
+        if provider is Provider.CHATGPT:
+            return self._chatgpt_account
         if provider is Provider.COPILOT:
             return self._copilot_account
         if provider is Provider.CODEX:
@@ -2948,6 +2972,9 @@ async def open_harness_ui_app(
                 grok_account_error = exc
             copilot_account = CopilotAccountStore(store.layout.root / "oauth" / "copilot.json")
             subscription_sources: dict[str, SubscriptionSource] = {
+                "chatgpt_subscription": ChatGPTSubscriptionSource(
+                    source=ChatGPTAccountStore(store.layout.root / "auth.json")
+                ),
                 "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
             }
             if codex_account is not None:
@@ -3080,6 +3107,9 @@ async def open_harness_ui_app(
             ]:
                 errors: dict[Provider, AccountStoreError] = {}
                 sources: dict[str, SubscriptionSource] = {
+                    "chatgpt_subscription": ChatGPTSubscriptionSource(
+                        source=ChatGPTAccountStore(store.layout.root / "auth.json")
+                    ),
                     "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
                 }
                 discovered_codex: CodexAccountStore | None = None

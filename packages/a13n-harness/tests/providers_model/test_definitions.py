@@ -18,6 +18,14 @@ from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.models.typesafe import TypeSafeModel
 
 
+class UnusedOAuthSource:
+    async def load(self):
+        raise AssertionError("Construction must not load OAuth credentials")
+
+    async def rotate(self, expected, exchange):
+        raise AssertionError("Construction must not refresh OAuth credentials")
+
+
 class AllowEndpoints:
     async def validate(self, endpoint: str) -> str:
         return endpoint
@@ -48,6 +56,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
         "aws_bedrock": {"aws_access_key_id": "access", "aws_secret_access_key": "secret"},
         "google_vertex": {"project_id": "project", "client_email": "fixture@example.com", "private_key": "fixture-pem"},
         "ollama": None,
+        "openai_chatgpt": None,
     }
     async with httpx2.AsyncClient() as client:
         with patch(
@@ -64,6 +73,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
                         name,
                         configuration=configurations.get(definition.type, {}),
                         credential=credentials.get(definition.type, {"api_key": "secret"}),
+                        credential_source=UnusedOAuthSource() if definition.oauth is not None else None,
                         model_api=api,
                         http_client=client,
                         endpoint_policy=AllowEndpoints(),
@@ -74,7 +84,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
                             assert model.client.max_retries == 0
                         if isinstance(model, BedrockConverseModel):
                             assert model.client.meta.config.retries["total_max_attempts"] == 1
-    assert len(BUILT_IN_MODEL_PROVIDERS) == 14
+    assert len(BUILT_IN_MODEL_PROVIDERS) == 15
 
 
 class Configuration(BaseModel):

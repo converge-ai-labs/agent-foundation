@@ -171,6 +171,16 @@ Environment providers serve [environment templates](#environment-templates) and 
 
 A null creator or updater represents system initialization ([09](09-runtime.md#workspace-provisioning)); authenticated API mutations always record their principal.
 
+### Model Provider OAuth
+
+The `openai_chatgpt` Model Provider owns workspace-shared ChatGPT authorization. This is neither a personal Connection nor a principal credential. Its dedicated `model_provider_oauth` state is scoped by provider, Workspace and Organization and holds a stable host identity, retained issued-client/subject metadata, encrypted complete tokens and pending PKCE attempt, and independent login/refresh claims. Encryption binds each payload to Organization, table, column and provider identity. OAuth changes do not increment the Provider resource version or change its ordinary `credential_configured` flag.
+
+`GET /model-providers/{id}/authorization` requires `read` and exposes only bounded identity, expiry, pending and connection state. `POST …/authorize`, `POST …/authorization/callback` and `DELETE …/authorization` require `write`. Creation takes no static credential. Full callback URL paste is the primary path: the remote Service does not need to accept the browser's loopback connection. The Harness validates the exact redirect, state, expiry, issued client and signed identity; the Service never fetches a submitted callback URL. Invalid input leaves the pending attempt; a valid callback durably consumes it before external exchange. Publication is fenced against replacement or disconnect.
+
+A Worker source reloads this Provider's credentials for requests and serializes refresh using short transactions around a durable exclusive claim. No database session or lock spans network I/O or another worker's wait. Other Workers adopt a published same-account rotation. An uncertain refresh or interrupted claim cannot be replayed and requires reauthorization; only a proven pre-dispatch failure restores eligibility. Successful publication is fenced and installs the complete grant before use.
+
+Disconnect clears local tokens and pending claims before bounded external revocation, retains host/client registration, and reports revocation separately when unconfirmed. Authorization, publication and disconnect record credential-free audit events. `GET …/models` requires `run`, uses the account-specific public catalog, and does not freeze tokens in Model recipes or Runs.
+
 ## Models
 
 ```

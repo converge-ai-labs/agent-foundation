@@ -1,4 +1,4 @@
-import { FormField, Input } from "a13n-ui";
+import { Button, FormField, Input } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
@@ -17,6 +17,7 @@ import {
   ordinaryConfigurationSchema,
 } from "./provider-connection";
 import { useModelProviderDefinitions } from "./provider-definitions";
+import { ProviderAuthorization } from "./provider-authorization";
 import { credentialFieldFor, useProviderDraft } from "./provider-draft";
 
 type Definition = Schema["ProviderType"];
@@ -24,6 +25,7 @@ type Definition = Schema["ProviderType"];
 /** Familiar services first; the rest keep the catalog order. */
 const featured = [
   "openai",
+  "openai_chatgpt",
   "anthropic",
   "google_gemini",
   "google_vertex",
@@ -38,6 +40,7 @@ const featured = [
   "ollama",
 ];
 function hint(definition: Definition) {
+  if (definition.oauth_scheme) return "ChatGPT subscription";
   if (definition.authentication.mode === "forbidden") return "Local endpoint";
   return credentialHint(definition.credential_schema);
 }
@@ -65,9 +68,11 @@ export function connectStepDescription(
   t: (key: string, options?: Record<string, unknown>) => string,
 ) {
   return t(
-    definition.authentication.mode === "forbidden"
-      ? "Point the console at the endpoint that serves your models."
-      : credentialFieldFor(definition).description,
+    definition.oauth_scheme
+      ? "Create a workspace-shared provider, then sign in with ChatGPT."
+      : definition.authentication.mode === "forbidden"
+        ? "Point the console at the endpoint that serves your models."
+        : credentialFieldFor(definition).description,
     { provider: definition.display_name },
   );
 }
@@ -93,9 +98,14 @@ export function ModelProviderCatalog({
 }
 
 /** Catalog-first provider creation. */
-export function AddProvider() {
-  const [open, setOpen] = useState(false),
-    [generation, setGeneration] = useState(0);
+export function AddProvider({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [generation, setGeneration] = useState(0);
   const definitions = useModelProviderDefinitions();
   return (
     <AddProviderCatalogDialog
@@ -104,7 +114,7 @@ export function AddProvider() {
       error={definitions.error}
       open={open}
       onOpenChange={(value) => {
-        setOpen(value);
+        onOpenChange(value);
         if (!value) setGeneration((current) => current + 1);
       }}
     />
@@ -130,6 +140,7 @@ function AddProviderCatalogDialog({
   });
   return (
     <AddProviderDialog<Definition>
+      trigger={null}
       definitions={definitions}
       error={error}
       open={open}
@@ -170,6 +181,15 @@ export function ProviderConnectForm({
   const { t } = useTranslation();
   const { type, save } = draft;
   const keyLink = providerKeyLink(definition);
+  if (draft.createdProvider)
+    return (
+      <CatalogStep backLabel={t("All providers")}>
+        <ProviderAuthorization provider={draft.createdProvider} />
+        <Button type="button" onClick={draft.close}>
+          {t("Done")}
+        </Button>
+      </CatalogStep>
+    );
   return (
     <CatalogStep backLabel={backLabel ?? t("All providers")} onBack={onBack}>
       <form
@@ -205,18 +225,20 @@ export function ProviderConnectForm({
             onChange={(event) => draft.setName(event.target.value)}
           />
         </FormField>
-        <ProviderConnection
-          type={type}
-          schema={definition.configuration_schema}
-          configuration={draft.configuration}
-          onChange={draft.setConfiguration}
-          headers={draft.headers}
-          onHeadersChange={draft.setHeaders}
-          open={draft.advancedOpen}
-          onOpenChange={draft.setAdvancedOpen}
-          onBaseUrlChange={draft.changeBaseUrl}
-          onSuggestedApi={draft.setSuggestedApi}
-        />
+        {!definition.oauth_scheme && (
+          <ProviderConnection
+            type={type}
+            schema={definition.configuration_schema}
+            configuration={draft.configuration}
+            onChange={draft.setConfiguration}
+            headers={draft.headers}
+            onHeadersChange={draft.setHeaders}
+            open={draft.advancedOpen}
+            onOpenChange={draft.setAdvancedOpen}
+            onBaseUrlChange={draft.changeBaseUrl}
+            onSuggestedApi={draft.setSuggestedApi}
+          />
+        )}
         <ErrorNotice error={save.error} />
         <FormActions
           pending={save.isPending}

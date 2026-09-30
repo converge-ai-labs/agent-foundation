@@ -31,6 +31,7 @@ _SUPPORTED_PROVIDERS = frozenset(API_PROVIDER_BY_ROUTE) | frozenset(
         "groq",
         "mistral",
         "openai",
+        "openai-chatgpt",
         "openai-codex",
         "openai-responses",
         "typesafe",
@@ -108,6 +109,7 @@ class PydanticAiModelAdapter:
                     "cohere",
                     "github-copilot",
                     "grok-build",
+                    "openai-chatgpt",
                     "openai-codex",
                 }:
                     raise ValueError("This route does not support gateway session affinity")

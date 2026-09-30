@@ -68,17 +68,40 @@ a13n-harness-ui auth status
 a13n-harness-ui login codex
 a13n-harness-ui login grok
 a13n-harness-ui login copilot
+a13n-harness-ui login chatgpt
 a13n-harness-ui login codex --browser
 a13n-harness-ui auth key list
 a13n-harness-ui auth key set key-primary
 a13n-harness-ui auth key delete key-primary
 ```
 
-默认使用设备授权，无须宿主机回调。自行打开打印的 URL。只有浏览器能访问宿主机回环回调时，才使用 `--browser`；Codex 使用 `http://localhost:1455/auth/callback`。不会自动回退到其他登录方式。授权十五分钟内到期。替换另一个共享账户需通过 CLI 使用 `--allow-account-switch`。
+Codex、Grok 和 Copilot 默认使用设备授权，无须宿主机回调。自行打开打印的 URL。只有浏览器能访问宿主机回环回调时，才使用 `--browser`；Codex 使用 `http://localhost:1455/auth/callback`。不会自动回退到其他登录方式。授权十五分钟内到期。替换另一个共享账户需通过 CLI 使用 `--allow-account-switch`。
 
 使用 API 时，在首次设置、`a13n-harness-ui add model`，或 `a13n-harness-ui add agent` 的 **Create a new model** 分支选择 **API key** 。选择提供方/协议，确认或修改基础 URL，在不回显凭据框输入密钥，选择提供方模型建议（或手动输入区分大小写的 ID），选择设置预设，并检查工作上下文预算。也可用 `key:key-primary` 引用已存密钥，或 `env:OPENAI_API_KEY` 引用 Harness UI 进程可用的环境变量。新密钥立即以新引用保存在本地密钥存储中，与配置发布独立。不要将 API 密钥粘贴到普通输入框。
 
 已存 API 密钥以明文保存于数据根的独立 `auth.json`，文件权限为私有。保护宿主机和备份。配置和 Run 快照只含引用，不含密钥字节。凭据保存/登录与设置发布独立，取消设置不会撤销。
+
+## ChatGPT 订阅
+
+在 Add Model 选择 **ChatGPT subscription**，或运行 `a13n-harness-ui login chatgpt`。终端先显示登录链接，再通过隐藏输入要求提供**完整回调 URL**。授权后复制浏览器地址栏的全部 URL，即使回环页面无法访问也可以。不要粘贴到对话或分享给别人：其中包含一次性授权码。无效 URL 可以修正；交换失败则需要重新登录。
+
+WebUI 优先尝试自动回环回调。如果服务器位于远端，展开 **Callback cannot reach this server?** 并粘贴完整 URL。两条路径使用同一套校验和交换逻辑，绝不请求粘贴的 URL。这是授权码回调流程，不是设备验证码。
+
+```yaml
+schema_version: "1"
+kind: model
+id: model-chatgpt
+name: ChatGPT Subscription
+route: openai-chatgpt:YOUR_ACCOUNT_MODEL_SLUG
+authentication:
+  kind: chatgpt_subscription
+settings: {}
+model_configuration: {}
+```
+
+登录后发现模型 slug，或手动输入。账户可见性不保证推理权限。ChatGPT 使用公共 Responses 端点，固定 `store: false`、`stream: true`、完整输入历史和 developer 指令；普通调用由原生 Model 收集必需的流。不支持端点覆盖、静态 API 密钥、previous-response ID、temperature、Top P、输出 token 上限，以及策略允许的网页搜索之外的托管工具。
+
+凭据以明文保存在 Host 数据根的私有 `auth.json`，与 API 密钥同文件但分区独立，绝不使用 `~/.codex` 或 Codex 凭据。`a13n-harness-ui auth logout chatgpt` 清除 token，保留已颁发注册信息供后续登录，并请求 OpenAI 撤销授权；未确认撤销会单独报告。更换账户会影响使用此 Host 的所有人。
 
 ## GitHub Copilot 订阅
 

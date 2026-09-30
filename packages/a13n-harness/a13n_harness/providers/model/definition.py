@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 import httpx2
 from anyio import fail_after, move_on_after, to_thread
@@ -21,6 +21,8 @@ from .types import ModelConnection, ProviderConfiguration, ValidatedProviderConf
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
     from pydantic_ai.providers import Provider
+
+    from .oauth.chatgpt import OpenAIChatGPTCredentialSource
 
 
 _PROBE_TIMEOUT_SECONDS = 10
@@ -41,6 +43,15 @@ type NativeProviderBuilder[C: ProviderConfiguration, K: BaseModel] = Callable[
     [ModelConnection[C, K], httpx2.AsyncClient, str], Provider[Any]
 ]
 type EndpointResolver = Callable[[Mapping[str, object]], str | None]
+type NativeModelBuilder = Callable[[str, Provider[Any]], Model[Any]]
+
+
+@dataclass(frozen=True, slots=True)
+class ModelOAuth:
+    """A runtime-source capability, separate from user-supplied static credentials."""
+
+    scheme: Literal["openai-chatgpt"]
+    build_provider: Callable[[OpenAIChatGPTCredentialSource, httpx2.AsyncClient, dict[str, str]], Provider[Any]]
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -48,7 +59,9 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
     DOMAIN: ClassVar[str] = "Model"
 
     supported_model_apis: tuple[str, ...]
-    build_provider: NativeProviderBuilder[C, K]
+    build_provider: NativeProviderBuilder[C, K] | None = None
+    oauth: ModelOAuth | None = None
+    build_model: NativeModelBuilder | None = None
     endpoint: str | EndpointResolver | None = None
     connection_probe: Callable[[ModelConnection[C, K]], ConnectionProbeRequest] | None = None
     reserved_headers: tuple[str, ...] = ("authorization",)
@@ -59,6 +72,10 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
     def validate_domain(self) -> None:
         if not self.supported_model_apis or set(self.supported_model_apis) - MODEL_APIS.keys():
             raise ValueError("Model Provider must declare supported native calling APIs")
+        if (self.build_provider is None) == (self.oauth is None):
+            raise ValueError("Model Provider must declare exactly one static or OAuth constructor")
+        if self.oauth is not None and self.credential_model is not None:
+            raise ValueError("OAuth Model Providers acquire credentials from a Host source, not static input")
 
     @property
     def supports_connection_probe(self) -> bool:
@@ -131,6 +148,7 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         *,
         configuration: Mapping[str, object],
         credential: object = None,
+        credential_source: OpenAIChatGPTCredentialSource | None = None,
         model_api: str | None = None,
         http_client: httpx2.AsyncClient,
         extra_headers: Mapping[str, str] | None = None,
@@ -156,10 +174,22 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
             endpoint = getattr(connection.configuration, name)
             if endpoint is not None:
                 await policy.validate(endpoint)
-        native = await to_thread.run_sync(self.build_provider, connection, http_client, api)
+        if self.oauth is not None:
+            if credential_source is None:
+                raise ValueError("the OAuth Model Provider requires an authorized Host credential source")
+            native = self.oauth.build_provider(credential_source, http_client, connection.extra_headers)
+        else:
+            if credential_source is not None:
+                raise ValueError("the Model Provider does not accept an OAuth credential source")
+            assert self.build_provider is not None
+            native = await to_thread.run_sync(self.build_provider, connection, http_client, api)
         try:
             await policy.validate(str(native.base_url))
-            model = MODEL_APIS[api].build(model_name, native)
+            model = (
+                self.build_model(model_name, native)
+                if self.build_model is not None
+                else MODEL_APIS[api].build(model_name, native)
+            )
             return configured_model(model, policy.configuration) if isinstance(policy, EndpointPolicy) else model
         except BaseException as error:
             with move_on_after(5, shield=True):

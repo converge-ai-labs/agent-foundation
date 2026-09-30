@@ -334,6 +334,10 @@ class ApiKeyAuthentication(StrictModel):
         return self
 
 
+class ChatGPTSubscriptionAuthentication(StrictModel):
+    kind: Literal["chatgpt_subscription"]
+
+
 class CodexSubscriptionAuthentication(StrictModel):
     kind: Literal["codex_subscription"]
 
@@ -348,6 +352,7 @@ class CopilotSubscriptionAuthentication(StrictModel):
 
 type ModelAuthentication = Annotated[
     ApiKeyAuthentication
+    | ChatGPTSubscriptionAuthentication
     | CodexSubscriptionAuthentication
     | GrokSubscriptionAuthentication
     | CopilotSubscriptionAuthentication,

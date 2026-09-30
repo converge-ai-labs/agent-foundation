@@ -15,7 +15,12 @@ from anyio import create_task_group
 def test_model_choices_project_release_owned_connections() -> None:
     choices = ModelChoices()
     subscriptions = [c for c in choices.connections if c.authentication != "api_key"]
-    assert [c.id for c in subscriptions] == ["codex", "grok-subscription", "copilot-subscription"]
+    assert [c.id for c in subscriptions] == [
+        "codex",
+        "grok-subscription",
+        "copilot-subscription",
+        "chatgpt-subscription",
+    ]
     providers = [c for c in choices.connections if c.authentication == "api_key"]
     assert tuple(provider.id for provider in providers) == tuple(p.route for p in API_PROVIDERS)
     for provider in providers:
