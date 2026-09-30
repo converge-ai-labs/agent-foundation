@@ -65,6 +65,7 @@
   max-width: 100%;
 }
 .location {
+  width: 320px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -77,7 +78,7 @@
   height: 18px;
 }
 .location > button {
-  width: auto;
+  width: 100%;
   min-width: 0;
   height: 32px;
   padding-inline: 6px;
