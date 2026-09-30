@@ -158,7 +158,7 @@ class RunBindings:
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     model_call_check: ModelCallCheck | None = None
-    usage_reporter: UsageReporter | None = None
+    usage_reporter: UsageReporter | UsageDeltaReporter | None = None
     toolset_instructions: bool | None = None
     deferred_tools_supported: bool = True
     capabilities: tuple[
@@ -184,7 +184,7 @@ class RunBindings:
         environment: EnvironmentRuntime | None = None,
         model_resolver: RunModelResolver | None = None,
         model_call_check: ModelCallCheck | None = None,
-        usage_reporter: UsageReporter | None = None,
+        usage_reporter: UsageReporter | UsageDeltaReporter | None = None,
         toolset_instructions: bool | None = None,
         deferred_tools_supported: bool = True,
         model_context: ModelContextMiddleware | None = None,
@@ -233,7 +233,7 @@ class ModelCallCheck(Protocol):
     async def check(self, call: ModelCall) -> RequestBudget | None: ...
 ```
 
-`RunBindings.usage_reporter` is an optional borrowed `UsageReporter` whose async `report(snapshot: UsageSnapshot)` receives complete detached accounting state directly. `a13n_harness.usage` owns `UsageSnapshot`, `RunUsageSummary`, `UsageReporter`, and validated snapshot selection/restoration. `resume_usage=True` preserves a matching single-writer scope explicitly; default calls start fresh accounting. See [Context Usage Snapshot](12-events-observability-and-usage.md#context-usage-snapshot). Neither collaborator is serialized or grants execution authority.
+`RunBindings.usage_reporter` accepts a borrowed `UsageReporter` with async `report(snapshot: UsageSnapshot)` for complete detached accounting state, or `UsageDeltaReporter` with async `report_delta(delta: UsageDelta)` for changed contributions and scope progress. Delta delivery takes precedence if both methods exist. `a13n_harness.usage` owns these protocols, `UsageScope`, `UsageDelta`, `UsageSnapshot`, `RunUsageSummary`, and validated snapshot selection/restoration. [Reporting Boundary](12-events-observability-and-usage.md#reporting-boundary) owns acknowledgement and retry semantics. `resume_usage=True` preserves a matching single-writer scope explicitly; default calls start fresh accounting. See [Context Usage Snapshot](12-events-observability-and-usage.md#context-usage-snapshot). Neither collaborator is serialized or grants execution authority.
 
 `ModelCallCheckError` is a `RunError` with code `model_call_check_failed` that preserves authoritative refusal across built-in optional auxiliary paths.
 

@@ -359,12 +359,11 @@ def summarize_usage(records: Iterable[UsageRecord], *, tool_calls: int = 0) -> R
     return totals.summary(tool_calls=tool_calls)
 
 
-class UsageSnapshot(BaseModel):
-    """Current accounting state for one single-writer scope, independent of execution checkpoints."""
+class UsageScope(BaseModel):
+    """Bounded identity and progress of one single-writer accounting scope."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["snapshot"] = "snapshot"
     usage_id: str = Field(min_length=1, max_length=128)
     thread_id: str | None = Field(default=None, max_length=256)
     run_id: str = Field(min_length=1, max_length=256)
@@ -373,25 +372,39 @@ class UsageSnapshot(BaseModel):
     delegation_id: str | None = Field(default=None, max_length=512)
     sequence: int = Field(default=0, ge=0)
     tool_calls: int = Field(default=0, ge=0)
+
+
+def _validate_records(scope: UsageScope, records: tuple[UsageRecord, ...]) -> None:
+    ids: set[str] = set()
+    for record in records:
+        if record.record_id in ids or (
+            record.run_id,
+            record.agent_instance_id,
+            record.parent_agent_instance_id,
+            record.delegation_id,
+        ) != (scope.run_id, scope.agent_instance_id, scope.parent_agent_instance_id, scope.delegation_id):
+            raise ValueError("Usage contributions must have unique identities and one owner")
+        ids.add(record.record_id)
+
+
+class UsageSnapshot(UsageScope):
+    """Current accounting state for one single-writer scope, independent of execution checkpoints."""
+
+    kind: Literal["snapshot"] = "snapshot"
     records: tuple[Annotated[UsageRecord, Field(discriminator="kind")], ...] = Field(
         default=(), max_length=_MAX_RECORDS
     )
 
     @model_validator(mode="after")
     def _validate_scope(self) -> UsageSnapshot:
-        ids: set[str] = set()
-        for record in self.records:
-            if record.record_id in ids or (
-                record.run_id,
-                record.agent_instance_id,
-                record.parent_agent_instance_id,
-                record.delegation_id,
-            ) != (self.run_id, self.agent_instance_id, self.parent_agent_instance_id, self.delegation_id):
-                raise ValueError("Usage snapshot contributions must have unique identities and one owner")
-            ids.add(record.record_id)
+        _validate_records(self, self.records)
         if len(dump_json_bytes(self.model_dump(mode="json"))) > 16 * 1024 * 1024:
             raise ValueError("Usage snapshot exceeds its 16 MiB bound")
         return self
+
+    @property
+    def scope(self) -> UsageScope:
+        return UsageScope(**{name: getattr(self, name) for name in UsageScope.model_fields})
 
     @property
     def summary(self) -> RunUsageSummary:
@@ -452,6 +465,39 @@ class UsageReporter(Protocol):
         ...
 
 
+class UsageDelta(BaseModel):
+    """Latest changed contributions since an acknowledged scope sequence, not additive charges."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    scope: UsageScope
+    after_sequence: int = Field(ge=0)
+    records: tuple[Annotated[UsageRecord, Field(discriminator="kind")], ...] = Field(
+        default=(), max_length=_MAX_RECORDS
+    )
+
+    @model_validator(mode="after")
+    def _validate_delta(self) -> UsageDelta:
+        if self.after_sequence >= self.scope.sequence:
+            raise ValueError("Usage delta must advance its acknowledged sequence")
+        _validate_records(self.scope, self.records)
+        if len(dump_json_bytes(self.model_dump(mode="json"))) > 16 * 1024 * 1024:
+            raise ValueError("Usage delta exceeds its 16 MiB bound")
+        return self
+
+
+@runtime_checkable
+class UsageDeltaReporter(Protocol):
+    async def report_delta(self, delta: UsageDelta) -> None:
+        """Atomically persist changes and progress, acknowledging only on successful return.
+
+        Unacknowledged changes remain pending for retry, independently of display delivery.
+        A later delivery may cover an overlapping interval after an uncertain commit.
+        Hosts must reject gaps, deduplicate retries and keep each scope's writer serialized.
+        """
+        ...
+
+
 class UsageReportError(RunError):
     def __init__(self, message: str = "Host usage delivery failed.") -> None:
         super().__init__(message, code="usage_report_failed")
@@ -466,7 +512,7 @@ class RunUsageLedger:
         run_id: str,
         instance: AgentInstanceContext,
         events: HarnessEventEmitter | None = None,
-        reporter: UsageReporter | None = None,
+        reporter: UsageReporter | UsageDeltaReporter | None = None,
         limits: UsageLimits | None = None,
         baseline: RunUsage | None = None,
         thread_id: str | None = None,
@@ -493,7 +539,9 @@ class RunUsageLedger:
         self.reporter = reporter
         self.cost_capability: AbstractModelCostCapability | None = None
         self._records = {r.record_id: r.model_copy(deep=True) for r in snapshot.records} if snapshot else {}
-        self._pending: dict[str, UsageRecord] = {}
+        # One latest value per changed record, retained until display acknowledges it.
+        # Its process-local change sequence also selects unacknowledged persistence.
+        self._pending: dict[str, tuple[int, UsageRecord]] = {}
         self._reported_sequence = self._sequence
         self._persisted_sequence = self._sequence
         self._model_ordinal = 1 + max(
@@ -626,8 +674,8 @@ class RunUsageLedger:
         elif len(self._records) >= _MAX_RECORDS:
             raise RunError("Run usage capacity was exceeded.", code="usage_capacity_exceeded")
         self._records[record.record_id] = record.model_copy(deep=True)
-        self._pending[record.record_id] = record.model_copy(deep=True)
         self._sequence += 1
+        self._pending[record.record_id] = (self._sequence, self._records[record.record_id])
 
     async def _flush(self, *, reason: UsageReportReason, trigger_record_id: str | None = None) -> None:
         try:
@@ -659,15 +707,28 @@ class RunUsageLedger:
 
         async with self._flush_lock:
             snapshot = self.snapshot
+            pending = tuple(self._pending.values())
             if self._state is not None:
                 await self._state.write(USAGE_CAPABILITY_ID, snapshot, version="1")
-            pending = list(self._pending.values())
             if snapshot.sequence == self._reported_sequence:
                 return
             if snapshot.sequence != self._persisted_sequence:
                 if self.reporter is not None:
                     try:
-                        await self.reporter.report(snapshot)
+                        if isinstance(self.reporter, UsageDeltaReporter):
+                            await self.reporter.report_delta(
+                                UsageDelta(
+                                    scope=snapshot.scope,
+                                    after_sequence=self._persisted_sequence,
+                                    records=tuple(
+                                        record.model_copy(deep=True)
+                                        for sequence, record in pending
+                                        if sequence > self._persisted_sequence
+                                    ),
+                                )
+                            )
+                        else:
+                            await self.reporter.report(snapshot)
                     except asyncio.CancelledError as exc:
                         task = asyncio.current_task()
                         if task is not None and task.cancelling():
@@ -679,7 +740,7 @@ class RunUsageLedger:
             if not display:
                 return
             if self._events is not None:
-                chunks = _report_chunks(pending)
+                chunks = _report_chunks([record for _, record in pending])
                 report_id = _stable_id("report", self.usage_id, str(snapshot.sequence))
                 for index, chunk in enumerate(chunks):
                     await emit_harness_event(
@@ -696,8 +757,8 @@ class RunUsageLedger:
                             records=tuple(record.model_dump(mode="json") for record in chunk),
                         ),
                     )
-            for record in pending:
-                if self._pending.get(record.record_id) == record:
+            for sequence, record in pending:
+                if self._pending.get(record.record_id) == (sequence, record):
                     del self._pending[record.record_id]
             self._reported_sequence = snapshot.sequence
 
@@ -787,10 +848,13 @@ __all__ = [
     "RunUsageSummary",
     "UsageAccumulator",
     "UsageCounters",
+    "UsageDelta",
+    "UsageDeltaReporter",
     "UsageMeasure",
     "UsageRecord",
     "UsageReportError",
     "UsageReporter",
+    "UsageScope",
     "UsageSnapshot",
     "intersect_usage_limits",
     "select_usage_snapshot",

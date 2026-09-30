@@ -1,4 +1,4 @@
-"""Current Context accounting and legacy facts from known attempts, including late reports.
+"""Current Context contributions and legacy facts from known attempts, including late reports.
 
 Ingestion is not fenced by the worker lease: it records a past charge, so an expired or finished attempt
 may still report. It is scoped instead to the run's attempt and tenant. Records keep the Harness run that
@@ -10,15 +10,15 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Literal
 
 from a13n_harness.events import UsageReportPayload
 from a13n_harness.usage import (
     ModelUsageRecord,
     ProviderUsageRecord,
+    UsageDelta,
     UsageRecord,
-    UsageSnapshot,
-    select_usage_snapshot,
+    UsageScope,
     validate_contribution,
 )
 from a13n_logging import get_logger
@@ -114,40 +114,79 @@ async def ingest_late(storage: Storage, run_id: str, attempt_id: str, reports: S
         await ingest(session, run, attempt, reports)
 
 
-async def ingest_snapshot(
+class _UsageCursor(UsageScope):
+    """Fixed-size durable progress; contribution rows hold the actual accounting facts."""
+
+    kind: Literal["cursor"] = "cursor"
+
+
+async def ingest_delta(
     storage: Storage,
     run_id: str,
     attempt_id: str,
-    snapshot: UsageSnapshot,
+    delta: UsageDelta,
     calls: Mapping[str, ResolvedModel],
 ) -> None:
-    """Replace one producer's latest state and its query projection in a short transaction.
+    """Commit changed contributions and their scope progress in one short transaction.
 
-    The attempt lock serializes reports, not execution authority. A sealed or fenced
-    attempt may still deliver charges, but cannot move any execution checkpoint here.
+    The producer retains unacknowledged changes. Overlapping delivery can follow an
+    uncertain commit, but a gap cannot advance progress past missing contributions.
     """
+    cursor = _UsageCursor(**delta.scope.model_dump())
+    payload = cursor.model_dump(mode="json")
+    digest = hashlib.sha256(canonical_json([delta.model_dump(mode="json"), run_id, attempt_id])).hexdigest()
+    reports = []
+    for record in sorted(delta.records, key=lambda record: record.record_id):
+        model = calls.get(record.call_id or "") if isinstance(record, ModelUsageRecord) else None
+        reports.append(UsageReport(record, model.id if model else None, price_snapshot(model) if model else None))
     async with transaction(storage) as session:
-        # Match checkpoint lock order: inserts also acquire a Run foreign-key lock.
-        # Taking Attempt first can deadlock with a checkpoint holding Run then waiting for Attempt.
+        # Keep checkpoint lock order. Late charges are deliberately not lease-fenced.
         run = await session.get(RunRow, run_id, with_for_update=True)
         attempt = await session.scalar(select(AttemptRow).where(AttemptRow.id == attempt_id).with_for_update())
         if run is None or attempt is None or attempt.run_id != run.id:
             raise ServiceError("not_found", "Usage report names no matching attempt")
-        scope = await session.get(UsageRecordRow, snapshot.usage_id)
+        scope = await session.get(UsageRecordRow, cursor.usage_id)
+        previous_sequence = 0
         if scope is not None:
-            if scope.run_id != run_id or scope.run_attempt_id != attempt_id:
-                raise ServiceError("conflict", "Usage scope changed its attempt")
-            previous = UsageSnapshot.model_validate(scope.record)
-            selected = select_usage_snapshot(previous, snapshot)
-            if selected.sequence == previous.sequence:
+            if scope.run_id != run_id or scope.run_attempt_id != attempt_id or scope.record.get("kind") != "cursor":
+                raise ServiceError("conflict", "Usage scope changed its owner or reporting contract")
+            previous = _UsageCursor.model_validate(scope.record)
+            progress = {"sequence", "tool_calls"}
+            if previous.model_dump(exclude=progress) != cursor.model_dump(exclude=progress):
+                raise ServiceError("conflict", "Usage scope changed its owner")
+            previous_sequence = previous.sequence
+            if cursor.sequence < previous_sequence:
                 return
-        reports = []
-        for record in snapshot.records:
-            model = calls.get(record.call_id or "") if isinstance(record, ModelUsageRecord) else None
-            reports.append(UsageReport(record, model.id if model else None, price_snapshot(model) if model else None))
-        reports.sort(key=lambda report: report.record.record_id)
-        # Normalized current contributions preserve existing indexed SQL summaries
-        # and each contribution's first ingestion time. They are not revision history.
+            if cursor.sequence == previous_sequence:
+                if scope.digest != digest:
+                    raise ServiceError("conflict", "Usage sequence has conflicting facts")
+                return
+            if cursor.tool_calls < previous.tool_calls:
+                raise ServiceError("conflict", "Usage scope lost observed tool calls")
+        if delta.after_sequence > previous_sequence:
+            raise ServiceError("conflict", "Usage delivery skipped unacknowledged changes")
+        if scope is None:
+            session.add(
+                UsageRecordRow(
+                    id=cursor.usage_id,
+                    organization_id=run.organization_id,
+                    workspace_id=run.workspace_id,
+                    run_id=run.id,
+                    run_attempt_id=attempt.id,
+                    harness_run_id=cursor.run_id,
+                    call_id=None,
+                    record=payload,
+                    digest=digest,
+                    model_id=None,
+                    price_snapshot=None,
+                )
+            )
+        else:
+            scope.record = payload
+            scope.digest = digest
+        # Make the scope visible to guard_usage inside this transaction. A later
+        # failure rolls this back together with every contribution mutation.
+        await session.flush()
         for start in range(0, len(reports), 128):
             rows = {
                 report.record.record_id: _values(run, attempt, report, report.record.model_dump(mode="json"))
@@ -174,53 +213,32 @@ async def ingest_snapshot(
                 if row.record != candidate["record"]:
                     row.record = candidate["record"]
                     row.digest = candidate["digest"]
-        payload = snapshot.model_dump(mode="json")
-        digest = hashlib.sha256(canonical_json([payload, run.id, attempt.id, None, None])).hexdigest()
-        if scope is None:
-            session.add(
-                UsageRecordRow(
-                    id=snapshot.usage_id,
-                    organization_id=run.organization_id,
-                    workspace_id=run.workspace_id,
-                    run_id=run.id,
-                    run_attempt_id=attempt.id,
-                    harness_run_id=snapshot.run_id,
-                    call_id=None,
-                    record=payload,
-                    digest=digest,
-                    model_id=None,
-                    price_snapshot=None,
-                )
-            )
-        else:
-            scope.record = payload
-            scope.digest = digest
 
 
-class SnapshotReporter:
-    """Attempt-owned delivery, inherited by inline children without combining their scopes."""
+class DeltaReporter:
+    """Attempt-owned delivery of unacknowledged batches, inherited by inline children."""
 
     def __init__(self, storage: Storage, run_id: str, attempt_id: str, buffer: UsageBuffer) -> None:
         from anyio import Lock
 
         self.storage, self.run_id, self.attempt_id, self.buffer = storage, run_id, attempt_id, buffer
-        self._pending: dict[str, UsageSnapshot] = {}
+        self._pending: dict[tuple[str, int], UsageDelta] = {}
         self._lock = Lock()
 
-    async def report(self, snapshot: UsageSnapshot) -> None:
-        previous = self._pending.get(snapshot.usage_id)
-        self._pending[snapshot.usage_id] = (
-            select_usage_snapshot(previous, snapshot) if previous is not None else snapshot.model_copy(deep=True)
-        )
+    async def report_delta(self, delta: UsageDelta) -> None:
+        key = (delta.scope.usage_id, delta.scope.sequence)
+        previous = self._pending.get(key)
+        if previous is not None and previous != delta:
+            raise ServiceError("conflict", "Usage sequence has conflicting pending facts")
+        self._pending[key] = delta.model_copy(deep=True)
         await self.flush()
 
     async def flush(self) -> None:
         async with self._lock:
-            for snapshot in tuple(self._pending.values()):
-                await ingest_snapshot(self.storage, self.run_id, self.attempt_id, snapshot, self.buffer.calls)
-                self.buffer.ingested_snapshot(snapshot)
-                if self._pending.get(snapshot.usage_id) == snapshot:
-                    del self._pending[snapshot.usage_id]
+            for key, delta in tuple(self._pending.items()):
+                await ingest_delta(self.storage, self.run_id, self.attempt_id, delta, self.buffer.calls)
+                self.buffer.ingested_records(delta.records)
+                del self._pending[key]
 
 
 def price_snapshot(model: ResolvedModel) -> dict[str, JsonValue] | None:
@@ -267,8 +285,8 @@ class UsageBuffer:
         delivered = {report.record.record_id for report in reports}
         self._pending = [report for report in self._pending if report.record.record_id not in delivered]
 
-    def ingested_snapshot(self, snapshot: UsageSnapshot) -> None:
-        delivered = {record.record_id for record in snapshot.records}
+    def ingested_records(self, records: Iterable[UsageRecord]) -> None:
+        delivered = {record.record_id for record in records}
         self.seen.update(delivered)
         self._pending = [report for report in self._pending if report.record.record_id not in delivered]
 

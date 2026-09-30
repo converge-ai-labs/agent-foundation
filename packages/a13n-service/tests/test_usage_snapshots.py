@@ -1,27 +1,26 @@
 """Latest accounting stays durable independently of fenced execution checkpoints."""
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from a13n_harness import StateError
-from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, UsageSnapshot
+from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, UsageDelta, UsageScope
 from a13n_service.infra.db import transaction
+from a13n_service.infra.errors import ServiceError
 from a13n_service.runs.claim import claim
 from a13n_service.runs.tables import RunRow, UsageRecordRow
-from a13n_service.runs.usage import SnapshotReporter, UsageBuffer, ingest_snapshot, totals
-from sqlalchemy import select
+from a13n_service.runs.usage import DeltaReporter, UsageBuffer, ingest_delta, totals
+from sqlalchemy import event, select
 
 pytestmark = pytest.mark.anyio
 
 
-def snapshot(owner: str, tokens: int, sequence: int) -> UsageSnapshot:
-    return UsageSnapshot(
-        usage_id=f"scope_{owner}",
-        run_id=owner,
-        agent_instance_id="root",
-        sequence=sequence,
+def delta(owner: str, tokens: int, sequence: int) -> UsageDelta:
+    return UsageDelta(
+        scope=UsageScope(usage_id=f"scope_{owner}", run_id=owner, agent_instance_id="root", sequence=sequence),
+        after_sequence=sequence - 1,
         records=(
             ModelUsageRecord(
                 record_id=f"record_{owner}",
@@ -36,9 +35,7 @@ def snapshot(owner: str, tokens: int, sequence: int) -> UsageSnapshot:
     )
 
 
-async def test_latest_snapshot_replaces_projection_without_revising_execution(
-    service, scripted_model, runs_kit
-) -> None:  # type: ignore[no-untyped-def]
+async def test_latest_delta_replaces_contribution_without_revising_execution(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
     run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
     scripted_model.say("Done")
@@ -50,24 +47,24 @@ async def test_latest_snapshot_replaces_projection_without_revising_execution(
             await session.scalars(select(UsageRecordRow.run_attempt_id).where(UsageRecordRow.run_id == run_id))
         ).first()
     assert attempt_id is not None
-    first, latest = snapshot("late", 4, 1), snapshot("late", 9, 2)
-    await ingest_snapshot(service.runtime.storage, run_id, attempt_id, first, {})
+    first, latest = delta("late", 4, 1), delta("late", 9, 2)
+    await ingest_delta(service.runtime.storage, run_id, attempt_id, first, {})
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(UsageRecordRow, "record_late")
         ingested_at = row.ingested_at
     await asyncio.gather(
-        *(ingest_snapshot(service.runtime.storage, run_id, attempt_id, item, {}) for item in (latest, first, latest))
+        *(ingest_delta(service.runtime.storage, run_id, attempt_id, item, {}) for item in (latest, first, latest))
     )
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(UsageRecordRow, "record_late")
         scope = await session.get_one(UsageRecordRow, "scope_late")
         run = await session.get_one(RunRow, run_id)
         assert row.record["request_usage"]["input_tokens"] == 9 and row.ingested_at == ingested_at
-        assert scope.record == latest.model_dump(mode="json")
+        assert scope.record == {"kind": "cursor", **latest.scope.model_dump(mode="json")}
         assert (run.checkpoint, run.usage_at_seal) == (checkpoint, sealed)
         assert (await totals(session, run_id))["requests"] == 2
-    with pytest.raises(StateError, match="conflicting facts"):
-        await ingest_snapshot(service.runtime.storage, run_id, attempt_id, snapshot("late", 10, 2), {})
+    with pytest.raises(ServiceError, match="conflicting facts"):
+        await ingest_delta(service.runtime.storage, run_id, attempt_id, delta("late", 10, 2), {})
 
 
 async def test_reporter_retains_failed_delivery_for_retry(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -77,20 +74,128 @@ async def test_reporter_retains_failed_delivery_for_retry(service, scripted_mode
     agent = await runs_kit.create_agent(service, scripted_model)
     run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
     [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
-    reporter = SnapshotReporter(service.runtime.storage, run_id, lease.attempt_id, UsageBuffer({}))
-    original = usage.ingest_snapshot
+    reporter = DeltaReporter(service.runtime.storage, run_id, lease.attempt_id, UsageBuffer({}))
+    original = usage.ingest_delta
 
     async def unavailable(*args, **kwargs):  # type: ignore[no-untyped-def]
         raise OSError("database unavailable")
 
-    monkeypatch.setattr(usage, "ingest_snapshot", unavailable)
+    monkeypatch.setattr(usage, "ingest_delta", unavailable)
     with pytest.raises(OSError):
-        await reporter.report(snapshot("retry", 4, 1))
-    monkeypatch.setattr(usage, "ingest_snapshot", original)
+        await reporter.report_delta(delta("retry", 4, 1))
+    monkeypatch.setattr(usage, "ingest_delta", original)
     await reporter.flush()
     async with transaction(service.runtime.storage) as session:
         assert (await session.get_one(UsageRecordRow, "scope_retry")).record["sequence"] == 1
         assert (await totals(session, run_id))["requests"] == 1
+
+
+async def test_unknown_commit_outcome_retries_without_recounting(service, scripted_model, runs_kit, monkeypatch):
+    from a13n_service.runs import usage
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+    [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
+    reporter = DeltaReporter(service.runtime.storage, run_id, lease.attempt_id, UsageBuffer({}))
+    original = usage.ingest_delta
+
+    async def committed_without_ack(*args, **kwargs):
+        await original(*args, **kwargs)
+        raise OSError("commit acknowledgement lost")
+
+    monkeypatch.setattr(usage, "ingest_delta", committed_without_ack)
+    with pytest.raises(OSError):
+        await reporter.report_delta(delta("retry", 4, 1))
+    monkeypatch.setattr(usage, "ingest_delta", original)
+    # A subsequent report can still include the unacknowledged earlier interval.
+    await reporter.report_delta(delta("retry", 9, 2).model_copy(update={"after_sequence": 0}))
+    async with transaction(service.runtime.storage) as session:
+        assert (await totals(session, run_id)) == {"requests": 1, "input_tokens": 9, "output_tokens": 0}
+        assert (await session.get_one(UsageRecordRow, "scope_retry")).record["sequence"] == 2
+
+
+async def test_gap_and_conflicting_contribution_do_not_advance_progress(service, scripted_model, runs_kit):
+    from a13n_harness import RunError
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+    [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
+    storage = service.runtime.storage
+    first = delta("atomic", 4, 1)
+    with pytest.raises(ServiceError, match="skipped"):
+        await ingest_delta(storage, run_id, lease.attempt_id, delta("atomic", 9, 2), {})
+    await ingest_delta(storage, run_id, lease.attempt_id, first, {})
+    with pytest.raises(ServiceError, match="skipped"):
+        await ingest_delta(storage, run_id, lease.attempt_id, delta("atomic", 9, 3), {})
+    second = delta("atomic", 9, 2)
+    invalid = second.model_copy(
+        update={
+            "records": (
+                second.records[0].model_copy(update={"source": "changed"}),
+                second.records[0].model_copy(update={"record_id": "new-record"}),
+            )
+        }
+    )
+    with pytest.raises(RunError, match="attribution"):
+        await ingest_delta(storage, run_id, lease.attempt_id, invalid, {})
+    async with transaction(storage) as session:
+        assert (await session.get_one(UsageRecordRow, "scope_atomic")).record["sequence"] == 1
+        assert await session.get(UsageRecordRow, "new-record") is None
+        assert (await totals(session, run_id))["input_tokens"] == 4
+    await ingest_delta(storage, run_id, lease.attempt_id, second, {})
+
+
+@pytest.mark.parametrize("refinement", [False, True])
+async def test_database_work_depends_on_changes_not_scope_size(service, scripted_model, runs_kit, refinement):
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+    [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
+    storage = service.runtime.storage
+    measurements = []
+    for size in (100, 1000, 9000):
+        initial = delta(f"scale-{size}", 4, size)
+        records = tuple(initial.records[0].model_copy(update={"record_id": f"record-{size}-{i}"}) for i in range(size))
+        initial = initial.model_copy(update={"after_sequence": 0, "records": records})
+        await ingest_delta(storage, run_id, lease.attempt_id, initial, {})
+        changed = records[-1].model_copy(
+            update={
+                "record_id": records[-1].record_id if refinement else f"record-{size}-new",
+                "request_usage": BoundedRequestUsage(input_tokens=7),
+            }
+        )
+        current = UsageDelta(
+            scope=initial.scope.model_copy(update={"sequence": size + 1}), after_sequence=size, records=(changed,)
+        )
+        statements = []
+        owner = asyncio.current_task()
+
+        def measured(
+            connection, cursor, statement, parameters, context, executemany, *, owner=owner, statements=statements
+        ):
+            if asyncio.current_task() is owner:
+                statements.append(
+                    (statement, cursor.rowcount, len(json.dumps(context.compiled_parameters, default=str)))
+                )
+
+        engine = storage.engine.sync_engine
+        event.listen(engine, "after_cursor_execute", measured)
+        try:
+            await ingest_delta(storage, run_id, lease.attempt_id, current, {})
+        finally:
+            event.remove(engine, "after_cursor_execute", measured)
+        measurements.append((len(statements), sum(max(0, rows) for _, rows, _ in statements)))
+        assert sum(bytes_ for _, _, bytes_ in statements) < 5000
+        async with transaction(storage) as session:
+            cursor = await session.get_one(UsageRecordRow, current.scope.usage_id)
+            assert "records" not in cursor.record and len(json.dumps(cursor.record)) < 1024
+            assert (await session.get_one(UsageRecordRow, changed.record_id)).record["request_usage"][
+                "input_tokens"
+            ] == 7
+    assert len(set(measurements)) == 1
+    assert measurements[0][0] <= 8 and measurements[0][1] <= 8
 
 
 async def test_individual_facts_remain_immutable_alongside_current_scopes(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
@@ -103,11 +208,11 @@ async def test_individual_facts_remain_immutable_alongside_current_scopes(servic
     run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
     [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
 
-    legacy = snapshot("legacy", 5, 1).records[0]
+    legacy = delta("legacy", 5, 1).records[0]
     await ingest_late(service.runtime.storage, run_id, lease.attempt_id, [UsageReport(legacy)])
     async with transaction(service.runtime.storage) as session:
         before = await session.get_one(UsageRecordRow, legacy.record_id)
-    await ingest_snapshot(service.runtime.storage, run_id, lease.attempt_id, snapshot("new", 3, 1), {})
+    await ingest_delta(service.runtime.storage, run_id, lease.attempt_id, delta("new", 3, 1), {})
     async with transaction(service.runtime.storage) as session:
         after = await session.get_one(UsageRecordRow, legacy.record_id)
         assert (after.record, after.digest, after.ingested_at) == (before.record, before.digest, before.ingested_at)
@@ -117,6 +222,45 @@ async def test_individual_facts_remain_immutable_alongside_current_scopes(servic
             await session.execute(
                 update(UsageRecordRow).where(UsageRecordRow.id == legacy.record_id).values(digest="0" * 64)
             )
+
+
+async def test_old_snapshot_writers_can_still_advance_their_own_scopes(service, scripted_model, runs_kit):
+    from a13n_harness.usage import UsageSnapshot
+    from a13n_service.runs.usage import UsageReport, ingest_late
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+    [lease] = await claim(service.runtime, worker_id="test", worker_build="test", limit=1)
+    storage = service.runtime.storage
+    first, latest = delta("old-worker", 4, 1), delta("old-worker", 9, 2)
+    await ingest_late(storage, run_id, lease.attempt_id, [UsageReport(first.records[0])])
+    async with transaction(storage) as session:
+        record = await session.get_one(UsageRecordRow, first.records[0].record_id)
+        snapshot = UsageSnapshot(**first.scope.model_dump(), records=first.records)
+        session.add(
+            UsageRecordRow(
+                id=snapshot.usage_id,
+                organization_id=record.organization_id,
+                workspace_id=record.workspace_id,
+                run_id=run_id,
+                run_attempt_id=lease.attempt_id,
+                harness_run_id=snapshot.run_id,
+                record=snapshot.model_dump(mode="json"),
+                digest="1" * 64,
+            )
+        )
+    async with transaction(storage) as session:
+        scope = await session.get_one(UsageRecordRow, first.scope.usage_id)
+        scope.record = UsageSnapshot(**latest.scope.model_dump(), records=latest.records).model_dump(mode="json")
+        scope.digest = "2" * 64
+        record = await session.get_one(UsageRecordRow, first.records[0].record_id)
+        record.record = latest.records[0].model_dump(mode="json")
+        record.digest = "2" * 64
+    async with transaction(storage) as session:
+        assert (await totals(session, run_id))["input_tokens"] == 9
+    with pytest.raises(ServiceError, match="reporting contract"):
+        await ingest_delta(storage, run_id, lease.attempt_id, latest, {})
 
 
 async def test_takeover_keeps_late_old_scope_and_deduplicates_provider_receipts(
@@ -140,8 +284,8 @@ async def test_takeover_keeps_late_old_scope_and_deduplicates_provider_receipts(
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
     [new] = await claim(service.runtime, worker_id="new", worker_build="test", limit=1)
 
-    def with_receipt(owner: str) -> UsageSnapshot:
-        value = snapshot(owner, 3, 1)
+    def with_receipt(owner: str) -> UsageDelta:
+        value = delta(owner, 3, 1)
         receipt = ProviderUsageRecord(
             record_id="receipt_shared",
             run_id=owner,
@@ -159,10 +303,17 @@ async def test_takeover_keeps_late_old_scope_and_deduplicates_provider_receipts(
         )
         return value.model_copy(update={"records": (*value.records, receipt)})
 
-    await ingest_snapshot(service.runtime.storage, run_id, old.attempt_id, with_receipt("old"), {})
-    await ingest_snapshot(service.runtime.storage, run_id, new.attempt_id, with_receipt("new"), {})
-    late = with_receipt("old").model_copy(update={"sequence": 2, "tool_calls": 1})
-    await ingest_snapshot(service.runtime.storage, run_id, old.attempt_id, late, {})
+    await ingest_delta(service.runtime.storage, run_id, old.attempt_id, with_receipt("old"), {})
+    await ingest_delta(service.runtime.storage, run_id, new.attempt_id, with_receipt("new"), {})
+    late = with_receipt("old")
+    late = late.model_copy(
+        update={
+            "scope": late.scope.model_copy(update={"sequence": 2, "tool_calls": 1}),
+            "after_sequence": 1,
+            "records": (),
+        }
+    )
+    await ingest_delta(service.runtime.storage, run_id, old.attempt_id, late, {})
     async with transaction(service.runtime.storage) as session:
         receipt = await session.get_one(UsageRecordRow, "receipt_shared")
         assert receipt.run_attempt_id == old.attempt_id

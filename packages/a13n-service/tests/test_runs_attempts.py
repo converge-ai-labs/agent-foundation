@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 
 import pytest
-from a13n_harness.usage import ModelUsageRecord, UsageSnapshot
+from a13n_harness.usage import ModelUsageRecord
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.models import service as models_service
@@ -307,15 +307,15 @@ async def test_a_cancelled_attempt_still_records_its_usage(service, scripted_mod
     """Inline child charges persist before the parent's next checkpoint and survive cancellation."""
     charged: set[str] = set()
     both = asyncio.Event()
-    ingested = UsageBuffer.ingested_snapshot
+    ingested = UsageBuffer.ingested_records
 
-    def watched(buffer: UsageBuffer, snapshot: UsageSnapshot) -> None:
-        ingested(buffer, snapshot)
-        charged.update(record.record_id for record in snapshot.records if isinstance(record, ModelUsageRecord))
+    def watched(buffer: UsageBuffer, records) -> None:
+        ingested(buffer, records)
+        charged.update(record.record_id for record in records if isinstance(record, ModelUsageRecord))
         if len(charged) >= 2:
             both.set()
 
-    monkeypatch.setattr(UsageBuffer, "ingested_snapshot", watched)
+    monkeypatch.setattr(UsageBuffer, "ingested_records", watched)
     worker = {"toolsets": {"configuration": {"enabled": True}}}
     agent = await runs_kit.delegating(service, scripted_model, "inline", worker=worker)
     gate = asyncio.Event()

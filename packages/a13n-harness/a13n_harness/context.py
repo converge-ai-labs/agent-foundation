@@ -54,6 +54,7 @@ if TYPE_CHECKING:
         ProviderUsage,
         ProviderUsageRecord,
         RunUsageLedger,
+        UsageDeltaReporter,
         UsageRecord,
         UsageReporter,
         UsageSnapshot,
@@ -154,7 +155,7 @@ class RunBindings:
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
     model_call_check: ModelCallCheck | None = None
-    usage_reporter: UsageReporter | None = None
+    usage_reporter: UsageReporter | UsageDeltaReporter | None = None
     observation: HarnessObservationContext | None = None
     tool_result_directory: str | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
@@ -164,10 +165,10 @@ class RunBindings:
     )
 
     def __post_init__(self) -> None:
-        from a13n_harness.usage import UsageReporter
+        from a13n_harness.usage import UsageDeltaReporter, UsageReporter
 
-        if self.usage_reporter is not None and not isinstance(self.usage_reporter, UsageReporter):
-            raise TypeError("RunBindings.usage_reporter must implement UsageReporter")
+        if self.usage_reporter is not None and not isinstance(self.usage_reporter, (UsageReporter, UsageDeltaReporter)):
+            raise TypeError("RunBindings.usage_reporter must implement UsageReporter or UsageDeltaReporter")
         if self.model_call_check is not None and not isinstance(self.model_call_check, ModelCallCheck):
             raise TypeError("RunBindings.model_call_check must implement ModelCallCheck")
         if not isinstance(self.deferred_tools_supported, bool):
@@ -220,7 +221,7 @@ class RunBindings:
         deferred_tools_supported: bool = True,
         model_context: ModelContextMiddleware | None = None,
         model_call_check: ModelCallCheck | None = None,
-        usage_reporter: UsageReporter | None = None,
+        usage_reporter: UsageReporter | UsageDeltaReporter | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         web: WebBinding | None = None,
         media_reader: MediaReader | None = None,
@@ -383,7 +384,7 @@ class AgentContext:
     _model_recovery: ModelRecoveryState = field(default_factory=ModelRecoveryState, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None
     model_call_check: ModelCallCheck | None = None
-    usage_reporter: UsageReporter | None = None
+    usage_reporter: UsageReporter | UsageDeltaReporter | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,
         repr=False,

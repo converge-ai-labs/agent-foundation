@@ -5,13 +5,13 @@ from decimal import Decimal
 
 import httpx2
 import pytest
-from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, UsageSnapshot
+from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, UsageDelta, UsageScope
 from a13n_service.infra.db import transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.runs.claim import claim
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, UsageRecordRow
-from a13n_service.runs.usage import ingest_snapshot
+from a13n_service.runs.usage import ingest_delta
 from sqlalchemy import select
 
 pytestmark = pytest.mark.anyio
@@ -177,7 +177,7 @@ async def test_cost_order_and_cursor_scope(service, scripted_model, runs_kit):  
         assert response.status_code == 400 and response.json()["error"]["code"] == "invalid_cursor"
 
 
-async def test_latest_snapshot_is_counted_once_and_other_workspace_is_empty(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def test_latest_delta_is_counted_once_and_other_workspace_is_empty(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
     run_id, attempt_id = await observed_run(service, runs_kit, agent)
@@ -191,14 +191,12 @@ async def test_latest_snapshot_is_counted_once_and_other_workspace_is_empty(serv
         request_usage=BoundedRequestUsage(input_tokens=10),
     )
     for seq, tokens in ((1, 10), (2, 30), (2, 30)):
-        snapshot = UsageSnapshot(
-            usage_id="scope_latest",
-            run_id=record.run_id,
-            agent_instance_id="root",
-            sequence=seq,
+        delta = UsageDelta(
+            scope=UsageScope(usage_id="scope_latest", run_id=record.run_id, agent_instance_id="root", sequence=seq),
+            after_sequence=seq - 1,
             records=(record.model_copy(update={"request_usage": BoundedRequestUsage(input_tokens=tokens)}),),
         )
-        await ingest_snapshot(service.runtime.storage, run_id, attempt_id, snapshot, {})
+        await ingest_delta(service.runtime.storage, run_id, attempt_id, delta, {})
     now = datetime.now(UTC)
     params = {"start": (now - timedelta(minutes=1)).isoformat(), "end": (now + timedelta(minutes=1)).isoformat()}
     overview = await read(service, **params)

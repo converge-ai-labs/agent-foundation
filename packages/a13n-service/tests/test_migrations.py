@@ -1,5 +1,6 @@
 """The generated revisions build exactly the schema the tests use: tables, rules and all."""
 
+import pytest
 from a13n_service.distribution import OSS
 from a13n_service.migrations.runner import check, migration_connection, upgrade
 from a13n_service.settings import Database
@@ -59,3 +60,28 @@ def test_revisions_downgrade_to_an_empty_schema_and_upgrade_again(empty_database
     assert rows(empty_database, OBJECTS) == [("relation", "alembic_version")]
     upgrade(empty_database, OSS)
     check(empty_database, OSS)
+
+
+@pytest.mark.parametrize("invalid_index", [False, True])
+def test_usage_cursor_migration_retries_after_concurrent_index_build(
+    empty_database: Database, invalid_index: bool
+) -> None:
+    upgrade(empty_database, OSS)
+    with migration_connection(empty_database, OSS) as config:
+        # Concurrent index DDL commits before the revision marker. Model an
+        # interruption in that window, including a failed build's invalid index.
+        command.stamp(config, "123fec952fe1")
+        if invalid_index:
+            connection = config.attributes["connection"]
+            connection.execute(
+                text(
+                    "UPDATE pg_index SET indisvalid = false WHERE indexrelid = 'ix_usage_records_scope_owner'::regclass"
+                )
+            )
+            connection.commit()
+    upgrade(empty_database, OSS)
+    check(empty_database, OSS)
+    assert rows(
+        empty_database,
+        "SELECT indisvalid::text FROM pg_index WHERE indexrelid = 'ix_usage_records_scope_owner'::regclass",
+    ) == [("true",)]

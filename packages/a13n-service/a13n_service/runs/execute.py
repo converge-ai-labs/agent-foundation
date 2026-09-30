@@ -83,7 +83,7 @@ from a13n_service.runs.seal import release_attempt, seal, seal_attempt
 from a13n_service.runs.stream import ThreadStream
 from a13n_service.runs.subagents import ChildRuns
 from a13n_service.runs.tables import RunRow, ThreadRow
-from a13n_service.runs.usage import SnapshotReporter, UsageBuffer, ingest_late, totals
+from a13n_service.runs.usage import DeltaReporter, UsageBuffer, ingest_late, totals
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
 logger = get_logger(__name__)
@@ -331,7 +331,7 @@ class _Attempt:
         models = {model.key: model for model in plan.agent.models()}
         self.check = CallCheck(runtime, control, self._call_context(), models=models, used=plan.used, limit=plan.limit)
         self.usage = UsageBuffer(self.check.calls)
-        self.usage_reporter = SnapshotReporter(runtime.storage, lease.run_id, lease.attempt_id, self.usage)
+        self.usage_reporter = DeltaReporter(runtime.storage, lease.run_id, lease.attempt_id, self.usage)
         self.yielding = False
         self.live: ThreadStream | None = None
 
