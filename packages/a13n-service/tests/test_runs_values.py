@@ -1,22 +1,24 @@
 """Run value contracts reject impossible outcomes and account for the bytes stored on disk."""
 
-from datetime import UTC, datetime
-
 import pytest
-from a13n_service.runs.display import Display, DisplayFold, Item
+from a13n_service.runs.display import Display
 from a13n_service.runs.schemas import Outcome, Pending, PendingCall
+from a13n_stream_protocol import DisplayProjector, DisplayScope
 from pydantic import ValidationError
+from pydantic_ai.messages import ModelResponse, TextPart
 
 PENDING = Pending(approvals=(), calls=(PendingCall(tool_call_id="call_test", tool_name="lookup", arguments={}),))
 FAILURE = {"code": "test_failure", "message": "Failed"}
 
 
-def test_old_displays_have_no_resume_hint_and_new_attempts_do_not_inherit_it() -> None:
-    old = Display.model_validate({"items": [], "position": {"attempt": 1, "sequence": 3}, "dropped": 0})
-    assert old.resume_after is None
-    old.resume_after = "123-0"
-    assert Display.model_validate_json(old.model_dump_json()).resume_after == "123-0"
-    assert DisplayFold("run_test", old, attempt=2, max_bytes=65536).snapshot().resume_after is None
+def test_display_cutover_rejects_old_values_and_attempts_start_without_a_hint() -> None:
+    with pytest.raises(ValidationError):
+        Display.model_validate({"items": [], "position": {"attempt": 1, "sequence": 3}, "dropped": 0})
+    display = Display.empty("run_test", attempt=1).model_copy(update={"resume_after": "123-0"})
+    assert Display.model_validate_json(display.model_dump_json()).resume_after == "123-0"
+    renewed = Display(snapshot=display.for_attempt(2))
+    assert renewed.resume_after is None
+    assert renewed.position.attempt == 2 and renewed.position.sequence == 0
 
 
 @pytest.mark.parametrize(
@@ -51,21 +53,14 @@ def test_valid_outcomes_round_trip(outcome: Outcome) -> None:
 
 
 @pytest.mark.parametrize("text", ["汉" * 30000, "🙂" * 20000])
-def test_display_budget_counts_utf8_bytes_and_caches_the_omitted_size(text: str) -> None:
-    item = Item(
-        id="itm_test",
-        kind="text_message",
-        state="completed",
-        first_stream_id="1-1",
-        last_stream_id="1-2",
-        started_at=datetime(2026, 9, 26, tzinfo=UTC),
-        content={"text": text},
-    )
-    fold = DisplayFold("run_test", Display(items=[item]), attempt=1, max_bytes=65536)
-    snapshot = fold.snapshot()
-    assert snapshot.items[0].content == {"omitted": True}
+def test_display_budget_counts_utf8_bytes_and_retains_omission_count(text: str) -> None:
+    projector = DisplayProjector(Display.empty("run_test", attempt=1).snapshot, max_bytes=65536)
+    projector.scope(DisplayScope(id="scope", thread_id="thread", run_id="native"))
+    projector.reconcile_message("scope", 0, ModelResponse(parts=[TextPart(text)]))
+    snapshot = projector.capture()
+    assert snapshot.blocks == () and snapshot.omitted == 1
     assert len(snapshot.model_dump_json().encode()) < 65536
-    assert fold.snapshot() == snapshot
+    assert projector.capture() == snapshot
 
 
 @pytest.mark.parametrize(

@@ -204,10 +204,10 @@ test("SSE handles split UTF-8, CRLF, multiline payloads and cancellation", async
   assert.deepEqual(frames, [
     { id: "2-0", event: "message", data: "你好\nworld" },
   ]);
-  await assert.rejects(async () => {
-    for await (const _ of decodeSse(chunks("data: partial"))) {
-    }
-  }, ProtocolError);
+  const partial = [];
+  for await (const frame of decodeSse(chunks("data: partial")))
+    partial.push(frame);
+  assert.deepEqual(partial, []);
   let canceled = false;
   const body = new ReadableStream({
     start(controller) {
@@ -227,8 +227,22 @@ test("Thread stream resumes after its last cursor and reports control frames", a
     run_id: "run_one",
     attempt: 1,
     sequence: 2,
-    event: { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "hi" },
-    item: { id: "itm_one", kind: "text_message", state: "in_progress" },
+    delta: {
+      format: "display-delta/1",
+      producer: { run_id: "run_one", generation: "1" },
+      from_sequence: 1,
+      through_sequence: 2,
+      operations: [
+        {
+          op: "block.append",
+          id: "m",
+          field: "text",
+          expected_revision: 1,
+          revision: 2,
+          value: "hi",
+        },
+      ],
+    },
   };
   const client = createClient({
     baseUrl,
@@ -243,7 +257,9 @@ test("Thread stream resumes after its last cursor and reports control frames", a
       );
     },
   });
-  const stream = client.streamThread("ws_one", "th_one", { after: "4-0" });
+  const stream = client.streamThread("ws_one", "th_one", {
+    resume: { run: "run_one", position: "1-1", after: "4-0" },
+  });
   assert.deepEqual((await stream.next()).value, {
     type: "delta",
     cursor: "5-0",
@@ -259,7 +275,7 @@ test("Thread stream resumes after its last cursor and reports control frames", a
   });
   await assert.rejects(stream.next(), ProtocolError);
   assert.equal(requests.length, 1);
-  assert.equal(requests[0].url, `${baseUrl}/api/v1/threads/th_one/stream`);
+  assert.equal(new URL(requests[0].url).searchParams.get("position"), "1-1");
   assert.equal(requests[0].headers.get("X-Workspace-ID"), "ws_one");
   assert.equal(requests[0].headers.get("Last-Event-ID"), "4-0");
 });
@@ -317,4 +333,63 @@ test("reconnects with the consumer's current complete position and matching hint
   assert.equal(new URL(requests[1].url).searchParams.get("run"), "run_one");
   assert.equal(new URL(requests[1].url).searchParams.get("position"), "1-160");
   assert.equal(requests[1].headers.get("Last-Event-ID"), "8-0");
+});
+
+for (const tail of ["", "id: 999-0\nevent: delta\ndata: {", "data: 你好"]) {
+  test(`EOF reconnects without acknowledging an incomplete frame: ${JSON.stringify(tail)}`, async () => {
+    const requests = [];
+    let resume = { run: "run_one", position: "1-10", after: "10-0" };
+    const client = createClient({
+      baseUrl,
+      auth: { type: "session" },
+      fetch: async (request) => {
+        requests.push(request);
+        return new Response(
+          chunks(
+            requests.length === 1
+              ? 'event: boundary\ndata: {"run_id":"run_one","attempt":1,"sequence":10}\n\n' +
+                  tail
+              : 'event: changed\ndata: {"version":6}\n\n',
+          ),
+          {
+            headers: { "Content-Type": "text/event-stream" },
+          },
+        );
+      },
+    });
+    const stream = client.streamThread("ws_one", "th_one", {
+      resume: () => resume,
+    });
+    const first = (await stream.next()).value;
+    assert.equal(first.type, "boundary");
+    assert.equal(first.cursor, "");
+    resume = { run: "run_one", position: "1-12", after: "12-0" };
+    assert.deepEqual((await stream.next()).value, {
+      type: "changed",
+      version: 6,
+    });
+    assert.equal(requests.length, 2);
+    assert.equal(new URL(requests[1].url).searchParams.get("position"), "1-12");
+    assert.equal(requests[1].headers.get("Last-Event-ID"), "12-0");
+    await stream.return();
+    client.close();
+  });
+}
+
+test("a stream that repeatedly ends without a complete frame exhausts its retry budget", async () => {
+  let calls = 0;
+  const client = createClient({
+    baseUrl,
+    auth: { type: "session" },
+    fetch: async () => {
+      calls++;
+      return new Response(chunks("data: unfinished"), {
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    },
+  });
+  const stream = client.streamThread("ws_one", "th_one");
+  await assert.rejects(stream.next(), /stream ended/);
+  assert.equal(calls, 3);
+  client.close();
 });

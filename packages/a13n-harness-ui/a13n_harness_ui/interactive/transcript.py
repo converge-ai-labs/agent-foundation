@@ -302,6 +302,13 @@ class Transcript:
             block.close()
             self.evicted = True
 
+    def remove(self, block_id: int) -> None:
+        block = self.blocks.pop(block_id, None)
+        if block is not None:
+            self.source_bytes -= block.size
+            block.close()
+            self.dirty = True
+
     def complete(self, block_id: int) -> None:
         block = self.blocks.get(block_id)
         if block is not None:

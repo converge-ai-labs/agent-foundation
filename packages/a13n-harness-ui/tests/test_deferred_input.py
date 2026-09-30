@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 import pytest
 from a13n_harness import DeferredToolResume, HarnessState
 from a13n_harness_ui.storage.contracts import (
-    CompactChildDisplay,
     StoredChildCheckpoint,
     StoredContinuation,
     StoredDeferredInput,
@@ -14,6 +13,8 @@ from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
 from pydantic_ai import ToolApproved, ToolDenied, ToolFailed, ToolReturn
 from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
+
+from .display_fixtures import display_snapshot
 
 
 @pytest.mark.parametrize("child", [False, True])
@@ -53,11 +54,13 @@ def test_checkpoint_roundtrip_preserves_native_accepted_input(tmp_path, child, v
             child_thread_id=state.thread_id,
             child_run_id="run_test",
             segment_index=0,
-            display=CompactChildDisplay(),
+            display=display_snapshot(state.message_history, thread_id=state.thread_id),
             terminal=True,
         )
     else:
-        checkpoint = StoredContinuation(**fields)
+        checkpoint = StoredContinuation(
+            **fields, display=display_snapshot(state.message_history, thread_id=state.thread_id)
+        )
     path = tmp_path / "checkpoint.json"
     path.write_text(checkpoint.model_dump_json())
     restored = type(checkpoint).model_validate_json(path.read_text())

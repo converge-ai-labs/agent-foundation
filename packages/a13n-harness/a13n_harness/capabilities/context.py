@@ -659,7 +659,9 @@ class ContextRestoredEvent(CapabilityEvent, namespace="a13n.context", name="rest
 
 
 @dataclass(kw_only=True)
-class CompactionSummaryEvent(CapabilityEvent, namespace="a13n.context", name="compaction_summary"):
+class CompactionSummaryEvent(
+    CapabilityEvent, namespace="a13n.context", name="compaction_summary", dispatch="immediate"
+):
     """The generated replacement summary, not telemetry or an assistant answer.
 
     Content follows the native Capability event channel; content-free Harness

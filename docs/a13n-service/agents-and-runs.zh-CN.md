@@ -323,7 +323,7 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 `GET …/runs/{run_id}` 返回运行：`status`、`trigger`、`lineage`（`root`、`continue` 或 `fork`）、`parent_run_id`、启动运行的 `input` 或 `resume`、`options`、`environment_mounts`、`memory_mounts`、`pending`、`output`、`failure {code, message}`、`usage_at_seal`、`labels` 和时间戳。`output` 为 agent 最终文本，或符合 `output_spec` 的 JSON。
 
 - `GET …/threads/{thread_id}/runs` 按从新到旧列出线程运行。`head_run_id` 是最近完成或等待运行，`current_run_id` 是活跃运行。
-- `GET …/runs/{run_id}/items` 返回运行显示项（文本、推理消息、工具调用和观测），包含 `position`、可选 `resume_after` 和 `complete`。运行结束时尚在进行的项显示为 `interrupted`。显示数据最多 4096 项；`dropped` 记录超限后移除的最旧项数量。
+- `GET …/runs/{run_id}/items` 返回 `run` 和包含输入、文本、推理、工具、媒体及执行摘要的紧凑 `snapshot`，以及 `display_revision`、`position`、可选 `resume_after` 和 `complete`。已封存 Run 中尚未结束的块应显示为 interrupted。显示数据在字节预算内最多保留 4096 个块；`snapshot.omitted` 记录移除的块数。生产端连续性状态不对外暴露。
 - `GET …/runs/{run_id}/lineage` 返回运行及其祖先，可跨分叉，按最近到最远排列。
 - `GET …/runs/{run_id}/attempts` 列出执行尝试及其 `start_reason`（`initial`、worker 丢失后的 `recovery`、worker 关闭时的 `handoff`）和结果。非 handoff 尝试达到 `max_attempts` 后运行失败。
 
@@ -337,24 +337,24 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 curl -N "$A13N_URL/api/v1/threads/$THREAD/stream" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-| 事件       | 数据                                       | 含义                                                                                                   |
-| ---------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `delta`    | `{run_id, attempt, sequence, event, item}` | 活跃运行的一个 [AG-UI](https://docs.ag-ui.com) 事件及其修改的显示项（`{id, kind, state}` 或 `null`）。 |
-| `boundary` | `{run_id, attempt, sequence}`              | 运行提交了检查点；显示项现在覆盖截至此处的全部内容。                                                   |
-| `changed`  | `{version}`                                | 线程变化（运行开始、结束或收件箱变化）；请重新读取线程。                                               |
-| `reset`    | `{run_id}`                                 | 运行进入新尝试；丢弃实时输出并重新读取显示项。                                                         |
-| `gap`      | `{run_id}`                                 | 跳过了实时输出；请重新读取运行显示项。                                                                 |
+| 事件       | 数据                                 | 含义                                                     |
+| ---------- | ------------------------------------ | -------------------------------------------------------- |
+| `delta`    | `{run_id, attempt, sequence, delta}` | 一批原子应用的共享显示操作。                             |
+| `boundary` | `{run_id, attempt, sequence}`        | 运行提交了检查点；显示项现在覆盖截至此处的全部内容。     |
+| `changed`  | `{version}`                          | 线程变化（运行开始、结束或收件箱变化）；请重新读取线程。 |
+| `reset`    | `{run_id}`                           | 运行进入新尝试；丢弃实时输出并重新读取显示项。           |
+| `gap`      | `{run_id, position?}`                | 跳过了实时输出；请重新读取 Run 的紧凑快照。              |
 
 事件流是临时观测，运行显示项才是持久记录。渲染线程时：
 
 1. 对活跃运行读取 `GET …/runs/{run_id}/items`。`position` 非 null 时，用 `?run=<run_id>&position=<position>` 打开事件流，将非 null 的 `resume_after` 作为 `Last-Event-ID` 请求头。没有已保存位置时，不带游标开始保留事件回放。
-2. 应用 `attempt` 和 `sequence` 晚于显示项 `position`（`"{attempt}-{sequence}"`）的 `delta` 帧。
+2. 原子应用每批尚未覆盖的 `delta`。其 producer 必须匹配 Run 和 attempt，`from_sequence` 必须等于已应用序号，`through_sequence` 每批递增一。在展示整批内容前校验所有块修订号；已覆盖的批次不再应用。操作包括 `block.put`、`block.append`、`scope.put` 和 `blocks.remove`。
 3. 收到 `reset` 时，丢弃被替代的临时输出并重读显示项。收到 `gap` 时，重读显示项，将位置与 gap 的可选 `position` 比较：只有缺失范围被覆盖后才清除 gap，否则等待新检查点或终态。收到 `changed` 时重读线程。
-4. 连接时及运行仍活跃期间定期检查 Run：订阅前已经结束的 Run 可能不会再发送通知。封存后读取最终显示项。
+4. 活跃期间定期刷新紧凑快照，而不只是查询 Run 状态：即使最后的 Redis 增量和通知都丢失，保存的显示状态仍可能已经推进。拒绝旧 Run 版本或较早的保存位置；封存后读取最终快照。
 
-快照的 `resume_after` 可能滞后，因为检查点不等待 Redis 写入。提供 Run 和 position 时，服务器过滤已覆盖增量，并利用保留提示直接定位。提示缺失、过期或不兼容时，回退到过滤后的保留事件回放；这些情况本身不表示输出丢失。客户端仍需对重叠投递去重。网络重连时保留显示数据，发送持续应用的位置及匹配提示；页面刷新后先加载快照。不能跨过 gap 推进位置。`worker.stream_coalesce_seconds` 内到达的同一消息或工具调用的连续文本、推理或参数增量，会合并为一个 `delta`，其事件携带合并文本。每个检查点之后，Service 在显示项已覆盖的事件达到 `worker.stream_trim_seconds` 后删除它们；事件流还限制为约 `worker.stream_length` 条，并在最后输出后 `worker.stream_ttl` 秒删除。
+快照的 `resume_after` 可能滞后，因为检查点不等待 Redis 写入。提供 Run 和 position 时，服务器过滤已覆盖增量，并利用保留提示直接定位。提示缺失、过期或不兼容时，回退到过滤后的保留事件回放；这些情况本身不表示输出丢失。客户端仍需对重叠投递去重。网络重连时保留显示数据，发送持续应用的位置及匹配提示；页面刷新后先加载快照。不能跨过 gap 推进位置。生产端在 `worker.stream_coalesce_seconds` 内合并类型化操作，再为整批分配一个序号。检查点只能裁剪其快照已覆盖且满足 `worker.stream_trim_seconds` 的 Redis 前缀；延迟到达的 boundary 不能删除较新的临时输出。事件流还限制为约 `worker.stream_length` 条，并在最后输出后 `worker.stream_ttl` 秒删除。
 
-`delta` 和 `boundary` 帧携带 SSE `id`。未提供 Run/position 的读取方可将最后 ID 放入 `Last-Event-ID` 重连，游标缺失时报告 `gap`。提供 Run/position 的读取方只在必需序列缺失或传输失败时收到 gap。请重新加载显示项，在后续 boundary 或 Run 封存时重新评估覆盖。Service 每 15 秒发送 keep-alive 注释，工作空间访问权限结束时关闭事件流。帧 JSON Schema 位于 `proto/a13n-service/thread-stream.schema.json`。
+来自 Redis 的 `delta` 和 `boundary` 帧携带 SSE `id`；来自 SQL 的 boundary 没有 ID。仅提供请求头的恢复请求会被拒绝：提示必须与已应用的 Run/position 配对。只有必需序号缺失或传输不确定才报告 gap，提示过期本身不算丢失。遇到 EOF 时丢弃不完整的最后一帧，并从已应用位置按有界退避重连。重新加载快照，在后续 boundary 或 Run 封存时重新评估覆盖。Service 每 15 秒发送 keep-alive 注释，工作空间访问权限结束时关闭事件流。帧 JSON Schema 位于 `proto/a13n-service/thread-stream.schema.json`。
 
 ## 用量
 

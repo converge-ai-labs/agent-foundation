@@ -332,6 +332,7 @@ class ThreadWatch:
     snapshot: ThreadFocusSnapshot
     events: LiveSubscription
     root_stream: RootStreamReplay | None = None
+    child_streams: tuple[RootStreamReplay, ...] = ()
 
 
 def _cwd_project_ids(source: LoadedHarnessUiConfiguration, directory: str) -> tuple[str, ...]:
@@ -2590,9 +2591,11 @@ class HarnessUiApp:
                     root_operation=root_operation,
                     recent_events=tuple(reversed(retained_events)),
                     root_stream=root_stream.summary if root_stream is not None else None,
+                    child_streams=tuple(stream.summary for stream in subscription.child_streams),
                 ),
                 events=subscription,
                 root_stream=root_stream,
+                child_streams=subscription.child_streams,
             )
 
     @asynccontextmanager

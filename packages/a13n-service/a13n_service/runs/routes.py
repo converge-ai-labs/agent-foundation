@@ -196,6 +196,8 @@ async def thread_stream(
     """Live output of the thread's runs over SSE: `delta` and `boundary` frames with `changed`, `reset`, `gap`."""
     if (run is None) != (position is None):
         raise invalid("position", "run and position must be provided together")
+    if last_event_id is not None and run is None:
+        raise invalid("Last-Event-ID", "A Redis hint requires run and position coverage")
     resume = None
     if run is not None and position is not None:
         attempt, sequence = map(int, position.split("-"))

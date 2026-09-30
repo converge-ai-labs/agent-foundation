@@ -15916,6 +15916,379 @@
         "title": "RealtimeCommand",
         "type": "object"
       },
+      "BlockAppend": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "block.append",
+            "default": "block.append",
+            "title": "Op",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "field": {
+            "enum": [
+              "text",
+              "arguments",
+              "signature"
+            ],
+            "title": "Field",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 1,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "revision": {
+            "minimum": 2,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "field",
+          "expected_revision",
+          "revision",
+          "value"
+        ],
+        "title": "BlockAppend",
+        "type": "object"
+      },
+      "BlockKind": {
+        "enum": [
+          "input",
+          "text",
+          "reasoning",
+          "tool_chunk",
+          "context_summary",
+          "media",
+          "extension"
+        ],
+        "type": "string"
+      },
+      "BlockPut": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "block.put",
+            "default": "block.put",
+            "title": "Op",
+            "type": "string"
+          },
+          "block": {
+            "$ref": "#/components/schemas/DisplayBlock"
+          },
+          "expected_revision": {
+            "minimum": 0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "block",
+          "expected_revision"
+        ],
+        "title": "BlockPut",
+        "type": "object"
+      },
+      "BlockStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "deferred",
+          "unknown"
+        ],
+        "type": "string"
+      },
+      "BlocksRemove": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "blocks.remove",
+            "default": "blocks.remove",
+            "title": "Op",
+            "type": "string"
+          },
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          },
+          "omitted": {
+            "minimum": 0,
+            "title": "Omitted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ids",
+          "omitted"
+        ],
+        "title": "BlocksRemove",
+        "type": "object"
+      },
+      "DisplayBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "scope_id": {
+            "title": "Scope Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BlockKind"
+          },
+          "revision": {
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BlockStatus",
+            "default": "pending"
+          },
+          "content": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Content",
+            "type": "object"
+          },
+          "message_index": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message Index"
+          },
+          "part_index": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Part Index"
+          }
+        },
+        "required": [
+          "id",
+          "scope_id",
+          "kind",
+          "revision"
+        ],
+        "title": "DisplayBlock",
+        "type": "object"
+      },
+      "DisplayDelta": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "const": "display-delta/1",
+            "default": "display-delta/1",
+            "title": "Format",
+            "type": "string"
+          },
+          "producer": {
+            "$ref": "#/components/schemas/Producer"
+          },
+          "from_sequence": {
+            "minimum": 0,
+            "title": "From Sequence",
+            "type": "integer"
+          },
+          "through_sequence": {
+            "minimum": 1,
+            "title": "Through Sequence",
+            "type": "integer"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/DisplayOperation"
+            },
+            "minItems": 1,
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "producer",
+          "from_sequence",
+          "through_sequence",
+          "operations"
+        ],
+        "title": "DisplayDelta",
+        "type": "object"
+      },
+      "DisplayOperation": {
+        "discriminator": {
+          "mapping": {
+            "block.append": "#/components/schemas/BlockAppend",
+            "block.put": "#/components/schemas/BlockPut",
+            "blocks.remove": "#/components/schemas/BlocksRemove",
+            "scope.put": "#/components/schemas/ScopePut"
+          },
+          "propertyName": "op"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/BlockPut"
+          },
+          {
+            "$ref": "#/components/schemas/BlockAppend"
+          },
+          {
+            "$ref": "#/components/schemas/ScopePut"
+          },
+          {
+            "$ref": "#/components/schemas/BlocksRemove"
+          }
+        ]
+      },
+      "DisplayPosition": {
+        "additionalProperties": false,
+        "properties": {
+          "producer": {
+            "$ref": "#/components/schemas/Producer"
+          },
+          "sequence": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "producer"
+        ],
+        "title": "DisplayPosition",
+        "type": "object"
+      },
+      "DisplayScope": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "parent_scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Parent Scope Id"
+          },
+          "parent_tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Parent Tool Call Id"
+          },
+          "invocation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Invocation Id"
+          },
+          "status": {
+            "default": "running",
+            "enum": [
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "deferred"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "thread_id",
+          "run_id"
+        ],
+        "title": "DisplayScope",
+        "type": "object"
+      },
+      "FocusCommitFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "display_commit",
+            "default": "display_commit",
+            "title": "Kind",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "chunk_count": {
+            "minimum": 1,
+            "title": "Chunk Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run_id",
+          "chunk_count"
+        ],
+        "title": "FocusCommitFrame",
+        "type": "object"
+      },
       "FocusEventFrame": {
         "additionalProperties": false,
         "properties": {
@@ -15964,8 +16337,8 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "const": "root_stream",
-            "default": "root_stream",
+            "const": "display_chunk",
+            "default": "display_chunk",
             "title": "Kind",
             "type": "string"
           },
@@ -15973,19 +16346,21 @@
             "title": "Run Id",
             "type": "string"
           },
-          "events": {
-            "items": {
-              "$ref": "#/components/schemas/RootStreamEvent"
-            },
-            "maxItems": 16,
-            "minItems": 1,
-            "title": "Events",
-            "type": "array"
+          "index": {
+            "minimum": 0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "data": {
+            "maxLength": 49152,
+            "title": "Data",
+            "type": "string"
           }
         },
         "required": [
           "run_id",
-          "events"
+          "index",
+          "data"
         ],
         "title": "FocusReplayFrame",
         "type": "object"
@@ -16023,7 +16398,7 @@
       },
       "LiveEvent": {
         "additionalProperties": false,
-        "description": "Detached bounded AG-UI event correlated to one complete root lineage.",
+        "description": "One atomic display delta or bounded control in a root lineage.",
         "properties": {
           "epoch": {
             "maxLength": 80,
@@ -16113,6 +16488,17 @@
           "payload_omitted": {
             "title": "Payload Omitted",
             "type": "boolean"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayDelta"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -16127,6 +16513,25 @@
           "payload_omitted"
         ],
         "title": "LiveEvent",
+        "type": "object"
+      },
+      "Producer": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "generation": {
+            "title": "Generation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "generation"
+        ],
+        "title": "Producer",
         "type": "object"
       },
       "ResetFrame": {
@@ -16182,49 +16587,9 @@
         "title": "RootOperationNotice",
         "type": "object"
       },
-      "RootStreamEvent": {
-        "additionalProperties": false,
-        "properties": {
-          "index": {
-            "minimum": 0,
-            "title": "Index",
-            "type": "integer"
-          },
-          "event_type": {
-            "title": "Event Type",
-            "type": "string"
-          },
-          "payload": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/JsonValue"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payload"
-          },
-          "payload_omitted": {
-            "title": "Payload Omitted",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "index",
-          "event_type",
-          "payload",
-          "payload_omitted"
-        ],
-        "title": "RootStreamEvent",
-        "type": "object"
-      },
       "RootStreamSummary": {
         "additionalProperties": false,
-        "description": "Finite observer prefix covered by a focused watch's cutover.",
+        "description": "A compact producer baseline covered by the focused watch cutover.",
         "properties": {
           "thread_id": {
             "title": "Thread Id",
@@ -16233,6 +16598,30 @@
           "run_id": {
             "title": "Run Id",
             "type": "string"
+          },
+          "parent_thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Parent Thread Id"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Execution Id"
           },
           "base_continuation_id": {
             "anyOf": [
@@ -16245,19 +16634,43 @@
             ],
             "title": "Base Continuation Id"
           },
-          "event_count": {
-            "minimum": 0,
-            "title": "Event Count",
-            "type": "integer"
+          "position": {
+            "$ref": "#/components/schemas/DisplayPosition"
+          },
+          "checkpoints": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Checkpoints",
+            "type": "object"
           }
         },
         "required": [
           "thread_id",
           "run_id",
           "base_continuation_id",
-          "event_count"
+          "position"
         ],
         "title": "RootStreamSummary",
+        "type": "object"
+      },
+      "ScopePut": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "scope.put",
+            "default": "scope.put",
+            "title": "Op",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/DisplayScope"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "title": "ScopePut",
         "type": "object"
       },
       "SummaryCursor": {
@@ -16509,6 +16922,14 @@
               }
             ],
             "default": null
+          },
+          "child_streams": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RootStreamSummary"
+            },
+            "title": "Child Streams",
+            "type": "array"
           }
         },
         "required": [
@@ -16535,12 +16956,13 @@
           "frame": {
             "discriminator": {
               "mapping": {
+                "display_chunk": "#/components/schemas/FocusReplayFrame",
+                "display_commit": "#/components/schemas/FocusCommitFrame",
                 "event": "#/components/schemas/FocusEventFrame",
                 "invalidation": "#/components/schemas/SummaryEventFrame",
                 "open": "#/components/schemas/SummaryOpenFrame",
                 "ready": "#/components/schemas/FocusReadyFrame",
                 "reset": "#/components/schemas/ResetFrame",
-                "root_stream": "#/components/schemas/FocusReplayFrame",
                 "snapshot": "#/components/schemas/FocusSnapshotFrame"
               },
               "propertyName": "kind"
@@ -16551,6 +16973,9 @@
               },
               {
                 "$ref": "#/components/schemas/FocusReplayFrame"
+              },
+              {
+                "$ref": "#/components/schemas/FocusCommitFrame"
               },
               {
                 "$ref": "#/components/schemas/FocusReadyFrame"

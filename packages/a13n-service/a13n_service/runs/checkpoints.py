@@ -14,18 +14,20 @@ from typing import TYPE_CHECKING, Literal
 
 import anyio
 from a13n_harness import HarnessState
+from anyio import to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from a13n_service.infra.db import transaction
-from a13n_service.infra.errors import conflict
+from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, new_key, read
 from a13n_service.infra.outbox import Claim, OutboxKind, OutboxRow, enqueue, settle
 from a13n_service.runs import inbox
 from a13n_service.runs.attempts import Lease, LeaseLost
 from a13n_service.runs.display import Display, StreamPosition
+from a13n_service.runs.object_codec import CODECS, CONTENT_TYPE, ObjectKind
 from a13n_service.runs.tables import AttemptRow, RunRow
 from a13n_service.runs.usage import UsageReport, ingest
 
@@ -33,9 +35,8 @@ if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
 
 # Bumped only with an explicit migration or rejection plan for outstanding checkpoints.
-FORMAT = 1
-
-type ObjectKind = Literal["state", "display"]
+FORMAT = 2
+DISPLAY_FORMAT = 2
 
 
 class _Frozen(BaseModel):
@@ -65,7 +66,7 @@ class DisplayPointer(Pointer):
 
 
 class RunState(_Frozen):
-    format: Literal[1] = FORMAT
+    format: Literal[2] = FORMAT
     harness: HarnessState
     seq: int = Field(ge=1)
     attempt: int = Field(ge=1)
@@ -92,11 +93,20 @@ async def publish(objects: ObjectStore, lease: Lease, kind: ObjectKind, data: by
     """Write outside any session to a new key of the lease's attempt; the caller commits the reference only after
     the store acknowledged it."""
     key = new_key(f"{prefix(lease.organization_id, lease.run_id, kind)}/{lease.number}")
-    return await objects.put(key, data, content_type="application/json")
+    encoded = await to_thread.run_sync(CODECS[kind].encode, data)
+    return await objects.put(key, encoded, content_type=CONTENT_TYPE)
 
 
 def _ref(pointer: Pointer) -> ObjectRef:
-    return ObjectRef(key=pointer.key, digest=pointer.digest, size=pointer.size, content_type="application/json")
+    return ObjectRef(key=pointer.key, digest=pointer.digest, size=pointer.size, content_type=CONTENT_TYPE)
+
+
+async def _load(objects: ObjectStore, pointer: Pointer, kind: ObjectKind) -> bytes:
+    codec = CODECS[kind]
+    if pointer.size > codec.encoded_bytes:
+        raise ServiceError("unavailable", "Run object exceeds its encoded byte limit", {"dependency": "objects"})
+    data = await read(objects, _ref(pointer))
+    return await to_thread.run_sync(codec.decode, data)
 
 
 def claimable() -> ColumnElement[bool]:
@@ -122,13 +132,17 @@ async def load_state(objects: ObjectStore, run_id: str, pointer: StatePointer | 
         return None
     if pointer.format != FORMAT:
         raise conflict("run", run_id, "checkpoint_incompatible")
-    return RunState.model_validate_json(await read(objects, _ref(pointer)))
+    data = await _load(objects, pointer, "state")
+    return await to_thread.run_sync(RunState.model_validate_json, data)
 
 
 async def load_display(objects: ObjectStore, pointer: DisplayPointer | None) -> Display | None:
     if pointer is None:
         return None
-    return Display.model_validate_json(await read(objects, _ref(pointer)))
+    if pointer.format != DISPLAY_FORMAT:
+        raise ServiceError("unavailable", "Run display format is incompatible", {"dependency": "objects"})
+    data = await _load(objects, pointer, "display")
+    return await to_thread.run_sync(Display.model_validate_json, data)
 
 
 class Committed(_Frozen):
@@ -147,14 +161,18 @@ class Committed(_Frozen):
 
 
 async def publish_display(runtime: Runtime, lease: Lease, display: Display) -> DisplayPointer:
-    ref = await publish(runtime.objects, lease, "display", display.model_dump_json().encode())
-    return DisplayPointer(key=ref.key, digest=ref.digest, size=ref.size, format=FORMAT, position=display.position)
+    data = await to_thread.run_sync(lambda: display.model_dump_json().encode())
+    ref = await publish(runtime.objects, lease, "display", data)
+    return DisplayPointer(
+        key=ref.key, digest=ref.digest, size=ref.size, format=DISPLAY_FORMAT, position=display.position
+    )
 
 
 async def publish_checkpoint(runtime: Runtime, lease: Lease, state: RunState, display: Display) -> Committed:
     """Write the checkpoint's objects outside any session; `commit` makes them the run's checkpoint."""
+    state_data = await to_thread.run_sync(lambda: state.model_dump_json().encode())
     state_ref, display_pointer = await asyncio.gather(
-        publish(runtime.objects, lease, "state", state.model_dump_json().encode()),
+        publish(runtime.objects, lease, "state", state_data),
         publish_display(runtime, lease, display),
         return_exceptions=True,
     )

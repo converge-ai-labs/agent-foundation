@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import json
 from collections import OrderedDict, deque
-from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness.usage import ModelUsageRecord
-from a13n_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol.display import (
+    BlockAppend,
+    BlockPut,
+    BlocksRemove,
+    DisplayDelta,
+    DisplayPosition,
+    DisplaySnapshot,
+)
+from a13n_stream_protocol.projector import DisplayProjector
 from ag_ui.core import CustomEvent
 from ag_ui.core import Event as AguiEvent
 from anyio import (
@@ -47,7 +55,7 @@ class LiveCursor(_StreamModel):
 
 
 class LiveEvent(_StreamModel):
-    """Detached bounded AG-UI event correlated to one complete root lineage."""
+    """One atomic display delta or bounded control in a root lineage."""
 
     epoch: str = Field(min_length=1, max_length=80)
     sequence: int = Field(ge=1)
@@ -60,90 +68,74 @@ class LiveEvent(_StreamModel):
     event_type: str = Field(min_length=1, max_length=128)
     payload: dict[str, JsonValue] | None
     payload_omitted: bool
+    delta: DisplayDelta | None = None
 
 
 class RootStreamSummary(_StreamModel):
-    """Finite observer prefix covered by a focused watch's cutover."""
+    """A compact producer baseline covered by the focused watch cutover."""
 
     thread_id: str
     run_id: str
+    parent_thread_id: str | None = None
+    execution_id: str | None = None
     base_continuation_id: str | None
-    event_count: int = Field(ge=0)
-
-
-class RootStreamEvent(_StreamModel):
-    index: int = Field(ge=0)
-    event_type: str
-    payload: dict[str, JsonValue] | None
-    payload_omitted: bool
+    position: DisplayPosition
+    checkpoints: dict[str, int] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
 class RootStreamReplay:
     summary: RootStreamSummary
-    observer: HarnessAguiObserver
-    observed_count: int
-    supplements: tuple[tuple[int, AguiEvent], ...] = ()
+    display: DisplaySnapshot
+    controls: tuple[LiveEvent, ...] = ()
+    block_sequences: dict[str, int] = field(default_factory=dict)
 
     def includes_continuation(self, continuation_id: str | None) -> bool:
-        """The original base or a checkpoint covered by this exact replay prefix."""
-        if continuation_id == self.summary.base_continuation_id:
-            return True
-        for start in range(0, self.observed_count, 16):
-            for event in self.observer.snapshot(start=start, stop=min(start + 16, self.observed_count)):
-                if isinstance(event, CustomEvent) and event.name == "a13n.harness_ui.checkpoint":
-                    value = event.value
-                    source = value.get("event") if isinstance(value, dict) else None
-                    if isinstance(source, dict) and source.get("continuation_id") == continuation_id:
-                        return True
-        return False
+        return continuation_id == self.summary.base_continuation_id or continuation_id in self.summary.checkpoints
 
-    def batches(self) -> Iterator[tuple[RootStreamEvent, ...]]:
-        """Read only the captured prefix; do not copy an entire Run per page."""
-        batch = []
-        for index, event in enumerate(self._events()):
-            payload, omitted = _bounded_payload(event)
-            batch.append(
-                RootStreamEvent(index=index, event_type=event.type.value, payload=payload, payload_omitted=omitted)
-            )
-            if len(batch) == 16:
-                yield tuple(batch)
-                batch = []
-        if batch:
-            yield tuple(batch)
-
-    def _events(self) -> Iterator[AguiEvent]:
-        position = 0
-        for stop, event in self.supplements:
-            for start in range(position, stop, 16):
-                yield from self.observer.snapshot(start=start, stop=min(start + 16, stop))
-            position = stop
-            yield event
-        for start in range(position, self.observed_count, 16):
-            yield from self.observer.snapshot(start=start, stop=min(start + 16, self.observed_count))
+    def chunks(self) -> Iterator[str]:
+        # ASCII JSON keeps every chunk bounded in UTF-8, even for non-ASCII text.
+        # Continuity is native capture bookkeeping, not browser presentation.
+        encoded = json.dumps(
+            {
+                "display": self.display.model_dump(mode="json", exclude={"continuity"}),
+                "block_sequences": self.block_sequences,
+                "controls": [control.model_dump(mode="json") for control in self.controls],
+            },
+            ensure_ascii=True,
+        )
+        for start in range(0, len(encoded), 48 * 1024):
+            yield encoded[start : start + 48 * 1024]
 
 
 @dataclass(slots=True)
 class _RootStream:
     thread_id: str
     run_id: str
-    observer: HarnessAguiObserver
+    root_thread_id: str
+    parent_thread_id: str | None
+    execution_id: str | None
+    projector: DisplayProjector
     base_continuation_id: str | None
-    published_count: int = 0
-    supplements: list[tuple[int, AguiEvent]] = field(default_factory=list)
-    apps: dict[str, AppReference] = field(default_factory=dict)
+    checkpoints: OrderedDict[str, int] = field(default_factory=OrderedDict)
+    controls: OrderedDict[str, LiveEvent] = field(default_factory=OrderedDict)
+    block_sequences: dict[str, int] = field(default_factory=dict)
 
     def capture(self) -> RootStreamReplay:
+        snapshot = self.projector.capture()
         return RootStreamReplay(
             summary=RootStreamSummary(
                 thread_id=self.thread_id,
                 run_id=self.run_id,
+                parent_thread_id=self.parent_thread_id,
+                execution_id=self.execution_id,
                 base_continuation_id=self.base_continuation_id,
-                event_count=self.published_count + len(self.supplements),
+                position=snapshot.position,
+                checkpoints=dict(self.checkpoints),
             ),
-            observer=self.observer,
-            observed_count=self.published_count,
-            supplements=tuple(self.supplements),
+            display=snapshot,
+            controls=tuple(self.controls.values()),
+            block_sequences=dict(self.block_sequences),
         )
 
 
@@ -230,11 +222,24 @@ class LiveSubscription:
     """One App-owned best-effort detailed stream with an explicit cutover."""
 
     def __init__(
-        self, subscriber: _LiveSubscriber, cursor: LiveCursor, root_stream: RootStreamReplay | None = None
+        self,
+        subscriber: _LiveSubscriber,
+        cursor: LiveCursor,
+        root_stream: RootStreamReplay | None = None,
+        child_streams: tuple[RootStreamReplay, ...] = (),
+        capture_display: Callable[[str, str], RootStreamReplay | None] | None = None,
     ) -> None:
         self._subscriber = subscriber
         self._cursor = cursor
         self.root_stream = root_stream
+        self.child_streams = child_streams
+        self._capture_display = capture_display
+
+    def display_baseline(self, thread_id: str, run_id: str) -> RootStreamReplay | None:
+        """Refresh a native subscriber from the same producer, not from raw replay."""
+        if self._subscriber.root_thread_id is None or self._capture_display is None:
+            return None
+        return self._capture_display(thread_id, run_id)
 
     @property
     def cursor(self) -> LiveCursor:
@@ -309,6 +314,87 @@ class HarnessUiLiveHub:
     def epoch(self) -> str:
         return self._epoch
 
+    def register_display(
+        self,
+        *,
+        projector: DisplayProjector,
+        root_thread_id: str,
+        thread_id: str,
+        parent_thread_id: str | None = None,
+        execution_id: str | None = None,
+        base_continuation_id: str | None = None,
+    ) -> None:
+        """Bind delivery on the producer loop before entering native execution.
+
+        Like the locked subscription sections, this synchronous path never yields.
+        The projector owns all display semantics; the hub retains only bounded
+        delivery entries and references that same producer for a fresh baseline.
+        """
+        run_id = projector.state.position.producer.run_id
+        current = _RootStream(
+            thread_id, run_id, root_thread_id, parent_thread_id, execution_id, projector, base_continuation_id
+        )
+        self._root_streams[thread_id] = current
+        self._terminal_streams.pop(thread_id, None)
+
+        def offer(delta: DisplayDelta) -> None:
+            if self._closed or self._root_streams.get(thread_id) is not current:
+                return
+            for operation in delta.operations:
+                if isinstance(operation, BlockPut):
+                    current.block_sequences.setdefault(operation.block.id, delta.through_sequence)
+                elif isinstance(operation, BlockAppend):
+                    current.block_sequences.setdefault(operation.id, delta.through_sequence)
+                elif isinstance(operation, BlocksRemove):
+                    for block_id in operation.ids:
+                        current.block_sequences.pop(block_id, None)
+            # A single large native value can exceed the delta budget. Keep an
+            # explicit gap, never part of an atomic operation. Bootstrap covers it.
+            omitted = len(delta.model_dump_json().encode()) > 256 * 1024
+            self._offer(
+                run_kind="root" if parent_thread_id is None else "child",
+                root_thread_id=root_thread_id,
+                parent_thread_id=parent_thread_id,
+                thread_id=thread_id,
+                run_id=run_id,
+                execution_id=execution_id,
+                event_type="DISPLAY_DELTA",
+                payload=None,
+                payload_omitted=omitted,
+                delta=None if omitted else delta,
+            )
+
+        projector.bind_delivery(offer)
+
+    def _offer(self, **values: Any) -> LiveEvent:
+        self._sequence += 1
+        event = LiveEvent(epoch=self._epoch, sequence=self._sequence, **values)
+        self._ring.append(event)
+        root_thread_id = event.root_thread_id
+        ring = self._root_rings.get(root_thread_id)
+        if ring is None:
+            ring = deque(maxlen=self._ring_size)
+            self._root_rings[root_thread_id] = ring
+            self._root_floors[root_thread_id] = self._evicted_root_floor
+        if len(ring) == self._ring_size:
+            self._root_floors[root_thread_id] = ring[0].sequence
+        ring.append(event)
+        self._root_rings.move_to_end(root_thread_id)
+        stale = []
+        for subscriber in self._subscribers:
+            if not subscriber.accepts(event) or subscriber.gap:
+                continue
+            try:
+                subscriber.send.send_nowait(event)
+            except WouldBlock:
+                subscriber.gap = True
+            except (BrokenResourceError, ClosedResourceError):
+                stale.append(subscriber)
+        for subscriber in stale:
+            self._discard_subscriber(subscriber)
+        self._trim_root_rings()
+        return event
+
     async def publish(
         self,
         *,
@@ -319,30 +405,32 @@ class HarnessUiLiveHub:
         run_id: str,
         events: Sequence[AguiEvent],
         execution_id: str | None = None,
-        observer: HarnessAguiObserver | None = None,
-        base_continuation_id: str | None = None,
         supplements: Sequence[AguiEvent] = (),
     ) -> None:
-        """Publish detached events while marking slow subscribers for reset.
-
-        The root producer supplies its existing observer and its latest batch.
-        Only the published prefix becomes visible to new subscriptions, even if
-        observation precedes asynchronous publication.
-        """
-        start = 0 if observer is None else observer.event_count - len(events)
-        if observer is not None and (run_kind != "root" or start < 0):
-            raise ValueError("observer replay requires the root's latest observed batch")
-        for offset, source in enumerate((*events, *supplements)):
-            is_supplement = offset >= len(events)
+        """Publish small controls separately from producer-owned display output."""
+        for source in (*events, *supplements):
             async with self._lock:
                 if self._closed:
                     return
-                stale: list[_LiveSubscriber] = []
-                self._sequence += 1
+                current = self._root_streams.get(thread_id)
+                if current is not None and current.run_id != run_id:
+                    current = None
+                if current is not None:
+                    current.projector.flush()
+                control = source.type.value in {"RUN_STARTED", "RUN_FINISHED", "RUN_ERROR"} or (
+                    isinstance(source, CustomEvent)
+                    and source.name
+                    in {
+                        "a13n.harness.usage",
+                        "a13n.harness_ui.checkpoint",
+                        "a13n.shell.status",
+                        "a13n.harness.recovery",
+                    }
+                )
+                if not control:
+                    continue
                 payload, omitted = _bounded_payload(source)
-                event = LiveEvent(
-                    epoch=self._epoch,
-                    sequence=self._sequence,
+                event = self._offer(
                     run_kind=run_kind,
                     root_thread_id=root_thread_id,
                     parent_thread_id=parent_thread_id,
@@ -353,50 +441,40 @@ class HarnessUiLiveHub:
                     payload=payload,
                     payload_omitted=omitted,
                 )
-                self._ring.append(event)
-                ring = self._root_rings.get(root_thread_id)
-                if ring is None:
-                    ring = deque(maxlen=self._ring_size)
-                    self._root_rings[root_thread_id] = ring
-                    self._root_floors[root_thread_id] = self._evicted_root_floor
-                if len(ring) == self._ring_size:
-                    self._root_floors[root_thread_id] = ring[0].sequence
-                ring.append(event)
-                self._root_rings.move_to_end(root_thread_id)
-                if observer is not None:
-                    current = self._root_streams.get(thread_id)
-                    if current is None or current.run_id != run_id:
-                        current = _RootStream(thread_id, run_id, observer, base_continuation_id)
-                        self._root_streams[thread_id] = current
-                        self._terminal_streams.pop(thread_id, None)
-                    if is_supplement:
-                        current.supplements.append((current.published_count, source.model_copy(deep=True)))
-                        if isinstance(source, CustomEvent) and source.name == METADATA_KEY:
-                            for item in source.value["event"]["apps"]:
-                                reference = AppReference.model_validate(item, strict=False)
-                                current.apps[reference.app_id] = reference
-                    else:
-                        current.published_count = start + offset + 1
-                self._trim_root_rings()
-                for subscriber in self._subscribers:
-                    if not subscriber.accepts(event) or subscriber.gap:
-                        continue
-                    try:
-                        subscriber.send.send_nowait(event.model_copy(deep=True))
-                    except WouldBlock:
-                        subscriber.gap = True
-                    except (BrokenResourceError, ClosedResourceError):
-                        stale.append(subscriber)
-                for subscriber in stale:
-                    self._discard_subscriber(subscriber)
-            # A large framed event must not overflow even a ready consumer merely
-            # because its producer submitted one batch. Never await under the lock.
+                if current is not None:
+                    key = source.name if isinstance(source, CustomEvent) else "lifecycle"
+                    if isinstance(source, CustomEvent) and isinstance(source.value, dict):
+                        # Forwarded inline controls retain their source Run. A
+                        # later child usage sample must not hide root context,
+                        # and one process must not replace another's status.
+                        source_run = source.value.get("run_id", run_id)
+                        key += f":{source_run}"
+                        value = source.value.get("event")
+                        if source.name == "a13n.shell.status" and isinstance(value, dict):
+                            key += f":{value.get('process_id')}"
+                    current.controls[key] = event
+                    current.controls.move_to_end(key)
+                    while len(current.controls) > 64:
+                        current.controls.popitem(last=False)
+                    if isinstance(source, CustomEvent) and source.name == "a13n.harness_ui.checkpoint":
+                        value = source.value["event"]
+                        current.checkpoints[value["continuation_id"]] = value["display_sequence"]
+                        while len(current.checkpoints) > 256:
+                            current.checkpoints.popitem(last=False)
             await checkpoint()
 
     async def retains_mcp_app(self, reference: AppReference) -> bool:
         async with self._lock:
             current = self._root_streams.get(reference.thread_id)
-            return current is not None and current.apps.get(reference.app_id) == reference
+            if current is None:
+                return False
+            encoded = reference.model_dump(mode="json")
+            return any(
+                isinstance(metadata := block.content.get("metadata"), dict)
+                and isinstance(references := metadata.get(METADATA_KEY), list)
+                and encoded in references
+                for block in current.projector.state.blocks.values()
+            )
 
     async def finish_root(self, *, thread_id: str, run_id: str, saved_continuation_id: str | None) -> None:
         """Release saved Runs; bound inspection of terminal unsaved output."""
@@ -411,13 +489,15 @@ class HarnessUiLiveHub:
                 return
             self._terminal_streams[thread_id] = None
             self._terminal_streams.move_to_end(thread_id)
-            while len(self._terminal_streams) > 256:
+            while len(self._terminal_streams) > 16:
                 expired, _ = self._terminal_streams.popitem(last=False)
                 self._root_streams.pop(expired, None)
             self._trim_root_rings()
 
     def _trim_root_rings(self) -> None:
-        pinned = self._root_streams.keys() - self._terminal_streams.keys()
+        pinned = {
+            stream.root_thread_id for key, stream in self._root_streams.items() if key not in self._terminal_streams
+        }
         pinned.update(sub.root_thread_id for sub in self._subscribers if sub.root_thread_id is not None)
         idle = [root for root in self._root_rings if root not in pinned]
         for root in idle[:-16]:
@@ -445,6 +525,18 @@ class HarnessUiLiveHub:
         async with self._lock:
             if self._closed:
                 raise LivePresentationError("The detailed live hub is closed.", code="live_unavailable")
+            # Flush and capture every producer before allocating the cutover.
+            # Callback delivery and these locked sections never yield, so no
+            # operation can fall between captured coverage and subscription.
+            streams = (
+                tuple(
+                    stream.capture()
+                    for stream in self._root_streams.values()
+                    if stream.root_thread_id == root_thread_id
+                )
+                if after is None
+                else ()
+            )
             start_sequence = self._validate_cursor(after, root_thread_id)
             ring = self._ring if root_thread_id is None else self._root_rings.get(root_thread_id, ())
             replay = [event for event in ring if event.sequence > start_sequence]
@@ -461,11 +553,12 @@ class HarnessUiLiveHub:
             if root_thread_id is not None and root_thread_id not in self._root_rings:
                 self._root_rings[root_thread_id] = deque(maxlen=self._ring_size)
                 self._root_floors[root_thread_id] = start_sequence
-            root_stream = self._root_streams.get(root_thread_id or "")
             subscription = LiveSubscription(
                 subscriber,
                 LiveCursor(epoch=self._epoch, sequence=start_sequence),
-                root_stream.capture() if root_stream is not None and after is None else None,
+                next((stream for stream in streams if stream.summary.parent_thread_id is None), None),
+                tuple(stream for stream in streams if stream.summary.parent_thread_id is not None),
+                lambda thread, run: self._capture_display(root_thread_id, thread, run),
             )
         try:
             yield subscription
@@ -475,6 +568,12 @@ class HarnessUiLiveHub:
             with CancelScope(shield=True):
                 async with self._lock:
                     self._discard_subscriber(subscriber)
+
+    def _capture_display(self, root: str | None, thread: str, run: str) -> RootStreamReplay | None:
+        stream = self._root_streams.get(thread)
+        return (
+            stream.capture() if stream is not None and stream.run_id == run and stream.root_thread_id == root else None
+        )
 
     def _validate_cursor(self, after: LiveCursor | None, root_thread_id: str | None) -> int:
         if after is None:

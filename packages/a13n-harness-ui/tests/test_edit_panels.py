@@ -8,6 +8,8 @@ import pytest
 from a13n_harness_ui.interactive.panels import capability_panel, shell_result_preview, tool_result
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 
+from .terminal_display_fixtures import present_tool
+
 
 @pytest.mark.parametrize(
     "before, after, counts, body",
@@ -68,20 +70,23 @@ def test_edit_over_comparison_budget_returns_a_plain_fact_with_raw_details(befor
 
 def test_oversized_edit_replaces_call_with_one_borderless_fact_and_preserves_details() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "large", "tool_call_name": "edit"})
-    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "large", "delta": '{"file_path":"file.py"}'})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "large"})
+    present_tool(renderer, "large", name="edit", arguments="", arguments_complete=False, status="pending")
+    present_tool(renderer, "large", arguments='{"file_path":"file.py"}')
+    present_tool(renderer, "large", arguments_complete=True)
     before = "x\n" * 6000
-    renderer.ingest(
-        "CUSTOM",
-        {
-            "name": "a13n.filesystem.edit_applied",
-            "value": {
-                "event": {"tool_call_id": "large", "file_path": "file.py", "before": before, "after": before + "last"}
-            },
+    present_tool(
+        renderer,
+        "large",
+        metadata={
+            "a13n.harness-ui.applied_edit": {
+                "tool_call_id": "large",
+                "file_path": "file.py",
+                "before": before,
+                "after": before + "last",
+            }
         },
     )
-    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "large", "content": '{"ok":true}'})
+    present_tool(renderer, "large", result='{"ok":true}')
     try:
         renderer.transcript.render(100)
         text = "\n".join("".join(text for _, text in row).rstrip() for row in renderer.transcript.rows)
@@ -98,11 +103,15 @@ def test_oversized_edit_replaces_call_with_one_borderless_fact_and_preserves_det
 @pytest.mark.parametrize("detailed", [False, True])
 def test_rendered_edit_panel_shows_only_one_path_and_no_hunk_coordinates(detailed: bool) -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest(
-        "CUSTOM",
-        {
-            "name": "a13n.filesystem.edit_applied",
-            "value": {"event": {"file_path": "file.py", "before": "context\nold\n", "after": "context\nnew\n"}},
+    present_tool(
+        renderer,
+        "edit",
+        metadata={
+            "a13n.harness-ui.applied_edit": {
+                "file_path": "file.py",
+                "before": "context\nold\n",
+                "after": "context\nnew\n",
+            }
         },
     )
     try:
@@ -145,12 +154,10 @@ def test_edit_heading_reflows_between_border_and_subdued_path_without_losing_con
     renderer = StreamRenderer(Status())
     renderer.transcript.theme = resolve_theme(theme)
     renderer.transcript.detailed = detailed
-    renderer.ingest(
-        "CUSTOM",
-        {
-            "name": "a13n.filesystem.edit_applied",
-            "value": {"event": {"file_path": path, "before": "old\n", "after": "new\n"}},
-        },
+    present_tool(
+        renderer,
+        "edit",
+        metadata={"a13n.harness-ui.applied_edit": {"file_path": path, "before": "old\n", "after": "new\n"}},
     )
     title = f"Edit · {path} · +1 -1"
     fitting_width = get_cwidth(title) + 6

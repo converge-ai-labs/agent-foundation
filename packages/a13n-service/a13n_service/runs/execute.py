@@ -38,6 +38,7 @@ from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_logging import exception_details, get_logger
+from a13n_stream_protocol import DisplayCapture, DisplayDelta, DisplayProjector, DisplaySnapshot
 from pydantic import JsonValue
 from pydantic_ai.messages import UserContent
 from pydantic_ai.usage import UsageLimits
@@ -63,7 +64,7 @@ from a13n_service.runs.boundaries import Boundaries, SafeBoundary
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import Committed, RunState
 from a13n_service.runs.coalesce import Coalescer
-from a13n_service.runs.display import Display, DisplayFold
+from a13n_service.runs.display import MAX_FIELD_CHARS, MAX_ITEMS, Display
 from a13n_service.runs.environments.execution import PreparedMount, open_mounts, prepare_mounts
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
@@ -260,7 +261,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         state=state,
         resume=resume,
         resume_input=resume_input,
-        display=display or Display(),
+        display=display or Display.empty(lease.run_id),
         committed=committed,
         seq=own.seq if own is not None else 0,
     )
@@ -317,9 +318,18 @@ class _Attempt:
         self.runtime, self.lease, self.control, self.plan = runtime, lease, control, plan
         self.committed, self.seq = plan.committed, plan.seq
         worker = runtime.settings.worker
-        self.fold = DisplayFold(lease.run_id, plan.display, attempt=lease.number, max_bytes=worker.display_bytes)
-        # What an earlier attempt left unfinished continues only if this attempt streams it again.
-        self.fold.interrupt()
+        self.live: ThreadStream | None = None
+        self.projector = DisplayProjector(
+            plan.display.for_attempt(lease.number),
+            publish=self._delta,
+            max_blocks=MAX_ITEMS,
+            max_bytes=worker.display_bytes,
+            max_field_chars=MAX_FIELD_CHARS,
+            ignored_capabilities=frozenset({"a13n.service.boundary"}),
+            batch=worker.stream_coalesce_seconds > 0,
+        )
+        self.capture = DisplayCapture(self.projector, include_initial=False)
+        self.harness_run_id: str | None = None
         self.offers = _Offers(plan.assigned)
         self.recipient = Recipient(
             plan.agent.model.config.characteristics.capabilities,
@@ -327,13 +337,16 @@ class _Attempt:
         )
         # The memory cursors the run's history holds context as of; recovery starts from the committed ones.
         self.cursors = MemoryCursors(plan.memory_cursors)
-        self.boundaries = Boundaries(self.cursors.snapshot)
+        self.boundaries = Boundaries(self.cursors.snapshot, self.capture)
         models = {model.key: model for model in plan.agent.models()}
         self.check = CallCheck(runtime, control, self._call_context(), models=models, used=plan.used, limit=plan.limit)
         self.usage = UsageBuffer(self.check.calls)
         self.usage_reporter = DeltaReporter(runtime.storage, lease.run_id, lease.attempt_id, self.usage)
         self.yielding = False
-        self.live: ThreadStream | None = None
+
+    def _delta(self, delta: DisplayDelta) -> None:
+        if self.live is not None:
+            self.live.delta(delta)
 
     async def run(self) -> None:
         try:
@@ -383,9 +396,9 @@ class _Attempt:
             executable = agent.build(
                 root,
                 capabilities=lambda node: (
-                    [self.boundaries, *host.capabilities(node), *host.memory]
+                    [self.capture, self.boundaries, *host.capabilities(node), *host.memory]
                     if node is root
-                    else host.capabilities(node)
+                    else [self.capture, *host.capabilities(node)]
                 ),
                 child_bindings=host.bindings,
                 operators=self._operator,
@@ -402,8 +415,8 @@ class _Attempt:
                 )
             )
             self.live = live
-            output = await stack.enter_async_context(
-                Coalescer(self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds)
+            await stack.enter_async_context(
+                Coalescer(self.projector, window=runtime.settings.worker.stream_coalesce_seconds)
             )
             start = partial(
                 executable.stream,
@@ -423,12 +436,13 @@ class _Attempt:
                 if environments
                 else start()
             )
+            self.harness_run_id = stream.run_id
             await claim.start(runtime, self.lease, harness_run_id=stream.run_id)
             async with stream:
                 interrupt = asyncio.create_task(self._cancel_when_stopped(stream))
                 try:
                     async for item in stream:
-                        await self._observe(item, stream, output)
+                        await self._observe(item, stream)
                 finally:
                     interrupt.cancel()
         if stream.result is None:
@@ -464,24 +478,20 @@ class _Attempt:
                 raise
             raise _EnvironmentUnavailable(error.message) from error
 
-    async def _observe(self, item: HarnessStreamEvent, stream: HarnessRunStream, output: Coalescer) -> None:
+    async def _observe(self, item: HarnessStreamEvent, stream: HarnessRunStream) -> None:
         event = item.event if isinstance(item, HarnessEvent) else None
         if isinstance(event, HarnessExtensionEvent) and event.kind == "usage":
             self.usage.report(event.payload)  # Every charge of the run, an inline child run's included.
-        if item.run_id != stream.run_id:
-            return  # Other output of an inline child run belongs to that child's own observation.
-        if isinstance(event, SafeBoundary):
-            await self._boundary(event, stream, output)
-            return
-        output.observe(item)
+        if item.run_id == stream.run_id and isinstance(event, SafeBoundary):
+            await self._boundary(event, stream)
 
-    async def _boundary(self, boundary: SafeBoundary, stream: HarnessRunStream, output: Coalescer) -> None:
+    async def _boundary(self, boundary: SafeBoundary, stream: HarnessRunStream) -> None:
         if boundary.at == "model":
             self.offers.requested = True
-        output.flush()  # The checkpoint's display covers every event observed before the boundary.
         staged = self.boundaries.take(boundary.token)
-        steers = await self._commit(staged.state, cursors=staged.cursors)
-        output.boundary()
+        steers = await self._commit(staged.state, cursors=staged.cursors, display=staged.display)
+        assert self.live is not None
+        self.live.boundary(staged.display.position.sequence)
         if boundary.at == "model" and self.control.handoff.is_set():
             # Yield where the request in flight is simply sent again; at a tool boundary recovery would have to
             # treat calls that never ran as unknown effects. Steers just assigned stay with the run.
@@ -497,12 +507,13 @@ class _Attempt:
         state: HarnessState,
         *,
         cursors: dict[str, str | None],
+        display: DisplaySnapshot,
         outcome: Outcome | None = None,
         deferred: JsonValue = None,
     ) -> list[Offered]:
         """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
         the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned."""
-        display = self._display()
+        captured = self._display(display)
         if self._near_deadline():
             raise LeaseLost()
         consumed = self.offers.incorporated(state)
@@ -517,7 +528,7 @@ class _Attempt:
                 deferred=deferred,
                 resume_input_consumed=self.plan.resume_input is None or self.offers.requested,
             ),
-            display,
+            captured,
         )
         worker = self.runtime.settings.worker
         steers: list[Offered] = []
@@ -630,14 +641,17 @@ class _Attempt:
             return
         # Completed and suspended results always carry their state.
         assert result.state is not None
+        assert self.harness_run_id is not None
+        display = self.capture.capture(self.harness_run_id, result.state.message_history)
         if result.status == "completed":
             outcome = Outcome(status="completed", output=self._output(result.output))
-            await self._commit(result.state, cursors=self.cursors.snapshot(), outcome=outcome)
+            await self._commit(result.state, cursors=self.cursors.snapshot(), display=display, outcome=outcome)
         else:
             assert result.deferred is not None
             outcome = Outcome(status="waiting", pending=deferred.pending(result.deferred))
             await self._commit(
                 result.state,
+                display=display,
                 cursors=self.cursors.snapshot(),
                 outcome=outcome,
                 deferred=deferred.dump(result.deferred),
@@ -645,25 +659,27 @@ class _Attempt:
 
     async def _seal_interrupted(self, outcome: Outcome) -> None:
         """Seal a failure or cancellation with the display this attempt folded, its unfinished items interrupted."""
-        self.fold.interrupt()
+        for scope in tuple(self.projector.state.scopes.values()):
+            if scope.status == "running":
+                self.projector.finish_scope(scope.id, "cancelled" if outcome.status == "cancelled" else "failed")
         display = None
         if not self._near_deadline():
             display = await checkpoints.publish_display(self.runtime, self.lease, self._display())
         await seal_attempt(self.runtime, self.lease, outcome, display=display)
 
-    def _display(self) -> Display:
+    def _display(self, snapshot: DisplaySnapshot | None = None) -> Display:
         """Capture a safe resume hint without waiting for queued Redis writes.
 
         The writer replaces one immutable value on the same event loop. Terminal callers read it after close.
         """
-        display = self.fold.snapshot()
+        display = Display(snapshot=snapshot if snapshot is not None else self.projector.capture())
         written = self.live.last_written if self.live is not None else None
         if (
             written is not None
             and written.attempt == display.position.attempt
             and written.sequence <= display.position.sequence
         ):
-            display.resume_after = written.redis_id
+            display = display.model_copy(update={"resume_after": written.redis_id})
         return display
 
     def _near_deadline(self) -> bool:
@@ -733,6 +749,7 @@ class _Attempt:
             model_resolver=resolver,
             model_call_check=self.check,
             usage_reporter=self.usage_reporter,
+            extension_observer=self.projector.observe_extension,
             observation=attempt_observation(
                 organization_id=lease.organization_id,
                 workspace_id=lease.workspace_id,

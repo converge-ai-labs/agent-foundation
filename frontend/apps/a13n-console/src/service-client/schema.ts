@@ -3566,6 +3566,24 @@ export interface components {
        */
       token: string;
     };
+    /** @enum {string} */
+    BlockKind:
+      | "input"
+      | "text"
+      | "reasoning"
+      | "tool_chunk"
+      | "context_summary"
+      | "media"
+      | "extension";
+    /** @enum {string} */
+    BlockStatus:
+      | "pending"
+      | "running"
+      | "succeeded"
+      | "failed"
+      | "cancelled"
+      | "deferred"
+      | "unknown";
     /** BootstrapInput */
     BootstrapInput: {
       /**
@@ -3961,6 +3979,85 @@ export interface components {
       action: "deny";
       /** Reason */
       reason?: string | null;
+    };
+    /** DisplayBlock */
+    DisplayBlock: {
+      /** Content */
+      content: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Id */
+      id: string;
+      kind: components["schemas"]["BlockKind"];
+      /** Message Index */
+      message_index: number | null;
+      /** Part Index */
+      part_index: number | null;
+      /** Revision */
+      revision: number;
+      /** Scope Id */
+      scope_id: string;
+      /** @default pending */
+      status: components["schemas"]["BlockStatus"];
+    };
+    /** DisplayPosition */
+    DisplayPosition: {
+      producer: components["schemas"]["Producer"];
+      /**
+       * Sequence
+       * @default 0
+       */
+      sequence: number;
+    };
+    /** DisplayScope */
+    DisplayScope: {
+      /** Id */
+      id: string;
+      /** Invocation Id */
+      invocation_id: string | null;
+      /** Parent Scope Id */
+      parent_scope_id: string | null;
+      /** Parent Tool Call Id */
+      parent_tool_call_id: string | null;
+      /** Run Id */
+      run_id: string;
+      /**
+       * Status
+       * @default running
+       * @enum {string}
+       */
+      status: "running" | "completed" | "failed" | "cancelled" | "deferred";
+      /** Thread Id */
+      thread_id: string;
+    };
+    /** DisplaySnapshot */
+    DisplaySnapshot: {
+      /**
+       * Blocks
+       * @default []
+       */
+      blocks: components["schemas"]["DisplayBlock"][];
+      /** Continuity */
+      continuity: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /**
+       * Format
+       * @default display/1
+       * @constant
+       */
+      format: "display/1";
+      /**
+       * Omitted
+       * @default 0
+       */
+      omitted: number;
+      position: components["schemas"]["DisplayPosition"];
+      /**
+       * Scopes
+       * @default []
+       */
+      scopes: components["schemas"]["DisplayScope"][];
     };
     /** EmailChangeConfirm */
     EmailChangeConfirm: {
@@ -4445,33 +4542,6 @@ export interface components {
       /** Secret */
       secret: string;
     };
-    /** Item */
-    Item: {
-      /** Content */
-      content: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
-      /** Ended At */
-      ended_at?: string | null;
-      /** First Stream Id */
-      first_stream_id: string;
-      /** Id */
-      id: string;
-      kind: components["schemas"]["ItemKind"];
-      /** Last Stream Id */
-      last_stream_id: string;
-      /**
-       * Started At
-       * Format: date-time
-       */
-      started_at: string;
-      state: components["schemas"]["ItemState"];
-    };
-    /** @enum {string} */
-    ItemKind:
-      "text_message" | "reasoning_message" | "tool_call" | "observation";
-    /** @enum {string} */
-    ItemState: "in_progress" | "completed" | "interrupted" | "failed";
     /** JsonPart */
     JsonPart: {
       /**
@@ -5597,6 +5667,13 @@ export interface components {
       /** Status */
       status: string;
     };
+    /** Producer */
+    Producer: {
+      /** Generation */
+      generation: string;
+      /** Run Id */
+      run_id: string;
+    };
     /** Profile */
     Profile: {
       /**
@@ -5894,15 +5971,14 @@ export interface components {
     RunItems: {
       /** Complete */
       complete: boolean;
-      /** Dropped */
-      dropped: number;
-      /** Items */
-      items: components["schemas"]["Item"][];
+      /** Display Revision */
+      display_revision: string | null;
       /** Position */
       position: string | null;
       /** Resume After */
       resume_after?: string | null;
       run: components["schemas"]["RunView"];
+      snapshot: components["schemas"]["DisplaySnapshot"];
     };
     /** RunLabels */
     RunLabels: {

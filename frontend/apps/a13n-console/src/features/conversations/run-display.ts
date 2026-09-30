@@ -74,7 +74,8 @@ export function useRunDisplay(
     let read = buffer.read;
     let known = cache.getQueryData(queries.attempts(runId).queryKey) ?? [];
     const asked = new Set<number>();
-    let omitted = read?.items.some((item) => isOmitted(item.content)) ?? false;
+    let omitted =
+      read?.snapshot.blocks.some((item) => isOmitted(item.content)) ?? false;
     let frame: number | undefined;
     function publish() {
       if (frame !== undefined) return;
@@ -88,7 +89,7 @@ export function useRunDisplay(
           ...runExecution(read.run, current),
           // Items the display dropped took their execution facts with them.
           coverage:
-            omitted || buffer.incomplete || !!read.dropped
+            omitted || buffer.incomplete || !!read.snapshot.omitted
               ? "partial"
               : "complete",
         });
@@ -117,7 +118,6 @@ export function useRunDisplay(
         ),
       ]);
       signal.throwIfAborted();
-      read = next;
       known = list;
       cache.setQueryData(queries.run(runId).queryKey, next.run);
       buffer.reconcile(
@@ -125,12 +125,13 @@ export function useRunDisplay(
         Math.max(0, ...list.map((attempt) => attempt.number)),
         discard,
       );
-      omitted = next.items.some((item) => isOmitted(item.content));
+      read = buffer.read!;
+      omitted = read.snapshot.blocks.some((item) => isOmitted(item.content));
       setIncomplete(omitted);
       setGap(omitted || buffer.incomplete);
-      setDropped(next.dropped);
+      setDropped(read.snapshot.omitted);
       publish();
-      return next;
+      return read;
     }
     async function receive(delta: ThreadDelta, cursor: string) {
       if (delta.attempt < buffer.attempt || read?.complete) return;
@@ -151,11 +152,8 @@ export function useRunDisplay(
       // attachment; its Run reports a seal the stream would never announce.
       const check = setInterval(() => {
         if (!read || read.complete) return;
-        void current(() =>
-          cache.fetchQuery({ ...queries.run(runId), staleTime: 0 }),
-        )
-          .then((run) => (run.sealed_at ? reconcile() : undefined))
-          .catch(() => undefined);
+        // Check durable display even if the last delta and its boundary notice both vanished.
+        void reconcile().catch(() => undefined);
       }, SEAL_CHECK_MS);
       try {
         for await (const next of client.streamThread(workspace.id, threadId, {

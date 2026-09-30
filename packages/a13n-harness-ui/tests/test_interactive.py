@@ -22,6 +22,8 @@ from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from pydantic_ai.models.function import FunctionModel
 
+from .terminal_display_fixtures import present_text, present_tool
+
 
 async def _retained_history(backend: SessionBackend) -> str:
     from a13n_harness_ui.interactive.history import restore_transcript
@@ -106,33 +108,33 @@ def test_status_elapsed_respects_terminal_width(width: int) -> None:
 def test_renderer_modes_switch_without_replay_and_preserve_control_safety() -> None:
     status = Status()
     renderer = StreamRenderer(status)
-    renderer.ingest("THINKING_TEXT_MESSAGE_CONTENT", {"delta": "hidden summary"})
-    renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "Hello "})
+    present_text(renderer, "hidden summary", message_id="default", kind="reasoning")
+    present_text(renderer, "Hello ", message_id="default")
     assert renderer.drain() == "hidden summaryHello "
     assert renderer.drain() == ""
     status.mode = "detailed"
-    renderer.ingest("REASONING_MESSAGE_CONTENT", {"delta": "public reasoning"})
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit-1", "tool_call_name": "edit"})
-    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "edit-1", "delta": '{"file_path":"a.py"}'})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit-1"})
-    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "edit-1", "content": "edited"})
+    present_text(renderer, "public reasoning", message_id="default", kind="reasoning")
+    present_tool(renderer, "edit-1", name="edit", arguments="", arguments_complete=False, status="pending")
+    present_tool(renderer, "edit-1", arguments='{"file_path":"a.py"}')
+    present_tool(renderer, "edit-1", arguments_complete=True)
+    present_tool(renderer, "edit-1", result="edited")
     result = renderer.drain()
     assert "public reasoning" in result
     tool = next(block for block in renderer.transcript.blocks.values() if "edit | returned" in block.source)
     assert "edited" in tool.source and "file_path" not in tool.source
     assert "hidden summary" not in result
     assert "\x1b" not in terminal_text("unsafe\x1b]52;c;YQ==\x07")
-    renderer.ingest("TEXT_MESSAGE_CONTENT", None)
+    renderer.ingest_control("RUN_ERROR", None)
     assert renderer.gap
 
 
 def test_stream_argument_and_result_memory_is_bounded() -> None:
     renderer = StreamRenderer(Status(mode="detailed"), limit=128)
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "write"})
+    present_tool(renderer, "one", name="write", arguments="", arguments_complete=False, status="pending")
     for _ in range(1000):
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": "x" * 1000})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
-    renderer.ingest("TOOL_CALL_RESULT", {"content": "\n".join(["line"] * 100)})
+        present_tool(renderer, "one", arguments="x" * 1000)
+    present_tool(renderer, "one", arguments_complete=True)
+    present_tool(renderer, "unknown", result="\n".join(["line"] * 100))
     assert len(renderer.drain()) < 2048
     assert "Arguments exceed display budget" in "".join(block.source for block in renderer.transcript.blocks.values())
 
@@ -141,21 +143,30 @@ def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellati
     status = Status(mode="detailed")
     renderer = StreamRenderer(status, limit=128)
     for run_id in ("child-a", "child-b"):
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "edit"}, child=True, run_id=run_id)
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"}, child=True, run_id=run_id)
+        present_tool(
+            renderer,
+            "one",
+            child=True,
+            run_id=run_id,
+            name="edit",
+            arguments="",
+            arguments_complete=False,
+            status="pending",
+        )
+        present_tool(renderer, "one", child=True, run_id=run_id, arguments_complete=True)
     for run_id in ("child-b", "child-a"):
-        renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": "done"}, child=True, run_id=run_id)
+        present_tool(renderer, "one", child=True, run_id=run_id, result="done")
     result = renderer.drain()
     assert "edit | returned" in result and "child-a" in result
     assert "child-b" in result
     for index in range(256):
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": str(index), "tool_call_name": "edit"})
+        present_tool(renderer, str(index), name="edit", arguments="", arguments_complete=False, status="pending")
     assert len(renderer._tools) == 128
-    renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "answer"})
+    present_text(renderer, "answer", message_id="default")
     assert status.state == "responding"
     status.state = "cancelling"
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "late", "tool_call_name": "edit"})
-    renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "late answer"})
+    present_tool(renderer, "late", name="edit", arguments="", arguments_complete=False, status="pending")
+    present_text(renderer, "late answer", message_id="default")
     assert status.state == "cancelling"
 
 
@@ -271,10 +282,8 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         sources = [block.source for block in renderer.transcript.blocks.values()]
         assert sum(source == "> Do the task" for source in sources) == 1, sources
         page = await app.get_thread_transcript(thread_id=backend.thread_id, limit=50)
-        hidden = [part for entry in page.entries for part in entry.parts if not part.metadata.display]
-        assert any("GLOBAL GUIDANCE" in (part.text or "") for part in hidden)
-        assert any("Harness UI TUI" in (part.text or "") for part in hidden)
-        assert any("FINAL REPOSITORY RULE" in (part.text or "") for part in hidden)
+        assert not [part for entry in page.entries for part in entry.parts if not part.metadata.display]
+        # Hidden native instructions stay in execution state, not display checkpoints.
         # A fresh adapter reads retained native metadata, not transient renderer state.
         resumed = SessionBackend(app, CliRequest(), cwd, Status())
         await resumed.resume(backend.thread_id)
@@ -730,7 +739,7 @@ async def test_active_guidance_reaches_native_model_in_order_without_another_roo
 async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> None:
     from a13n_harness import AgentContext, AgentSpec, HarnessBuilder, HarnessEvent, RunBindings
     from a13n_harness.model_context import ModelInputEvent
-    from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
+    from a13n_stream_protocol import ContentMetadata
     from pydantic_ai.capabilities import AbstractCapability
     from pydantic_ai.messages import EnqueuedMessagesEvent, TextContent
 
@@ -752,11 +761,16 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
     async def respond(messages, info):
         yield "done"
 
-    executable = HarnessBuilder().build(
-        AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond), capabilities=(EnqueueOnce(),)
-    )
-    observer = HarnessAguiObserver()
+    from .terminal_display_fixtures import capture_fixture
+
     renderer = StreamRenderer(Status())
+    capture = capture_fixture(renderer)
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+        capabilities=(EnqueueOnce(), capture),
+    )
     batches, deliveries = [], []
     try:
         async with executable.stream("INITIAL_BODY", bindings=RunBindings.embedded()) as stream:
@@ -773,8 +787,6 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
                         )
                     elif isinstance(source.event, EnqueuedMessagesEvent):
                         deliveries.append(source.event.enqueue_id)
-                for event in observer.observe(source):
-                    renderer.ingest(event.type.value, event.model_dump(mode="json"))
         rendered = "\n".join(block.source for block in renderer.transcript.blocks.values())
         assert [text for batch in batches for text in batch] == ["INITIAL_BODY"]
         assert len(set(deliveries)) == count

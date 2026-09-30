@@ -474,9 +474,9 @@ async def items(service: SimpleNamespace, run_id: str) -> dict[str, Any]:
 
 def texts(listing: dict[str, Any]) -> list[tuple[str | None, str]]:
     return [
-        (item["content"].get("role"), item["content"]["text"])
-        for item in listing["items"]
-        if item["kind"] == "text_message" and item["content"].get("metadata", {}).get("display", True)
+        ("user" if item["kind"] == "input" else "assistant", item["content"]["text"])
+        for item in listing["snapshot"]["blocks"]
+        if item["kind"] in {"input", "text"}
     ]
 
 

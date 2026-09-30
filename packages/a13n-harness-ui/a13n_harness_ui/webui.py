@@ -84,7 +84,7 @@ from a13n_harness_ui.interactive_transport import (
     authenticate_interactive,
     receive_text,
 )
-from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, SummaryCursor, SummaryInvalidation
+from a13n_harness_ui.live import LiveCursor, LiveEvent, SummaryCursor, SummaryInvalidation
 from a13n_harness_ui.mcp_apps.context import AppContext, AppContextReference, AppContextUpdate
 from a13n_harness_ui.mcp_apps.messages import AppMessageReceipt, AppMessageRequest
 from a13n_harness_ui.mcp_apps.models import AppPresentation, AppReference
@@ -271,9 +271,16 @@ class FocusSnapshotFrame(SurfaceModel):
 
 
 class FocusReplayFrame(SurfaceModel):
-    kind: Literal["root_stream"] = "root_stream"
+    kind: Literal["display_chunk"] = "display_chunk"
     run_id: str
-    events: tuple[RootStreamEvent, ...] = Field(min_length=1, max_length=16)
+    index: int = Field(ge=0)
+    data: str = Field(max_length=48 * 1024)
+
+
+class FocusCommitFrame(SurfaceModel):
+    kind: Literal["display_commit"] = "display_commit"
+    run_id: str
+    chunk_count: int = Field(ge=1)
 
 
 class FocusReadyFrame(SurfaceModel):
@@ -328,6 +335,7 @@ class RealtimeFrame(SurfaceModel):
     frame: (
         FocusSnapshotFrame
         | FocusReplayFrame
+        | FocusCommitFrame
         | FocusReadyFrame
         | FocusEventFrame
         | SummaryOpenFrame
@@ -1697,7 +1705,9 @@ def create_webui(
 
     async def focus_frames(
         thread_id: str, after: str | None
-    ) -> AsyncGenerator[FocusSnapshotFrame | FocusReplayFrame | FocusReadyFrame | FocusEventFrame | ResetFrame]:
+    ) -> AsyncGenerator[
+        FocusSnapshotFrame | FocusReplayFrame | FocusCommitFrame | FocusReadyFrame | FocusEventFrame | ResetFrame
+    ]:
         try:
             if after is not None:
                 parsed = _parse_cursor(after, "focus", thread_id)
@@ -1714,13 +1724,17 @@ def create_webui(
                         snapshot=watch.snapshot,
                         resume_cursor=(
                             _cursor("focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence)
-                            if watch.root_stream is None
+                            if watch.root_stream is None and not watch.child_streams
                             else None
                         ),
                     )
-                    if watch.root_stream is not None:
-                        for batch in watch.root_stream.batches():
-                            yield FocusReplayFrame(run_id=watch.root_stream.summary.run_id, events=batch)
+                    streams = ((watch.root_stream,) if watch.root_stream is not None else ()) + watch.child_streams
+                    for stream in streams:
+                        count = 0
+                        for count, chunk in enumerate(stream.chunks(), 1):
+                            yield FocusReplayFrame(run_id=stream.summary.run_id, index=count - 1, data=chunk)
+                        yield FocusCommitFrame(run_id=stream.summary.run_id, chunk_count=count)
+                    if streams:
                         yield FocusReadyFrame(
                             resume_cursor=_cursor(
                                 "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence

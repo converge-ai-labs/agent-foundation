@@ -36,6 +36,7 @@ from pydantic_ai.messages import (
     PartEndEvent,
     PartStartEvent,
     RetryPromptPart,
+    TextContent,
     TextPart,
     ThinkingPart,
     ToolCallPart,
@@ -115,9 +116,11 @@ async def test_stream_failure_resumes_with_partial_history_and_shared_usage() ->
     assert interrupted.state == "interrupted"
     assert interrupted.parts == [TextPart(content="partial answer")]
     assert any(
-        isinstance(message, ModelRequest)
-        and any(getattr(part, "content", None) == _recovery_policy().continuation_prompt for part in message.parts)
+        isinstance(part, UserPromptPart)
+        and tuple(part.content) == (TextContent(_recovery_policy().continuation_prompt, metadata={"display": False}),)
         for message in calls[1]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
     )
     response_run_ids = {
         message.run_id
@@ -662,9 +665,11 @@ async def test_recovery_prompt_factory_receives_the_failure_and_repaired_history
     assert isinstance(factory_calls[0][2][-1], ModelResponse)
     assert factory_calls[0][2][-1].state == "interrupted"
     assert any(
-        isinstance(message, ModelRequest)
-        and any(getattr(part, "content", None) == "custom continuation" for part in message.parts)
+        isinstance(part, UserPromptPart)
+        and tuple(part.content) == (TextContent("custom continuation", metadata={"display": False}),)
         for message in calls[1]
+        if isinstance(message, ModelRequest)
+        for part in message.parts
     )
 
 

@@ -41,6 +41,34 @@ export function applyObservation(
   const type = typeof payload.type === "string" ? payload.type : "";
   let next = current;
   if (
+    name === "a13n.display.model_request" ||
+    name === "a13n.display.context_operation"
+  ) {
+    const model = name === "a13n.display.model_request";
+    const status = String(payload.status ?? "unknown");
+    return addStep(next, at, {
+      id: at.id,
+      scope,
+      kind: model
+        ? "llm"
+        : payload.operation === "handoff"
+          ? "handoff"
+          : "compaction",
+      state:
+        status === "succeeded"
+          ? "completed"
+          : status === "pending"
+            ? "running"
+            : status,
+      items: [],
+      messageCount: numeric(payload.message_count) ?? undefined,
+      contextTokens: numeric(payload.request_tokens) ?? undefined,
+      errorCode:
+        typeof payload.error_code === "string" ? payload.error_code : undefined,
+      detail: payload,
+    });
+  }
+  if (
     (name === "a13n.pydantic_ai.part_start" ||
       name === "a13n.pydantic_ai.part_end") &&
     isRecord(payload.part)

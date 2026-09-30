@@ -197,6 +197,7 @@ class AgentReconstructor:
         *,
         subagent_operator: SubagentOperator | None,
         root_capabilities: Sequence[AbstractCapability[Any]] = (),
+        inline_capabilities: Sequence[AbstractCapability[Any]] = (),
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         pricing_catalog: PricingCatalog | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
@@ -208,7 +209,11 @@ class AgentReconstructor:
                     "Memory organization requires a new scope admission.", code="memory_admission_required"
                 )
             return self._reconstruct_memory(
-                composition, organization, root_capabilities, subscription_sources, pricing_catalog
+                composition,
+                organization,
+                root_capabilities,
+                subscription_sources,
+                pricing_catalog,
             )
         memory, cursors = bind_memory(
             self._configuration_root,
@@ -248,6 +253,7 @@ class AgentReconstructor:
                 plugin_catalog=plugin_catalog,
                 subagent_operator=subagent_operator,
                 root_capabilities=tuple(root_capabilities),
+                inline_capabilities=tuple(inline_capabilities),
                 root=True,
                 path_layout=path_layout,
                 model_recipes=model_recipes,
@@ -335,6 +341,7 @@ class AgentReconstructor:
         plugin_catalog: HarnessPluginFactoryCatalog,
         subagent_operator: SubagentOperator | None,
         root_capabilities: tuple[AbstractCapability[Any], ...],
+        inline_capabilities: tuple[AbstractCapability[Any], ...],
         root: bool,
         path_layout: EnvironmentPathLayout,
         model_recipes: dict[str, ResolvedModelRecipe],
@@ -392,8 +399,7 @@ class AgentReconstructor:
             capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))
         elif native_default_tools:
             capabilities.append(_NativeDefaultToolsCapability())
-        if root:
-            capabilities.extend(root_capabilities)
+        capabilities.extend(root_capabilities if root else inline_capabilities)
 
         plugins = tuple(
             plugin_catalog.create_plugin(
@@ -417,6 +423,7 @@ class AgentReconstructor:
                     plugin_catalog=plugin_catalog,
                     subagent_operator=subagent_operator,
                     root_capabilities=(),
+                    inline_capabilities=inline_capabilities,
                     root=False,
                     path_layout=path_layout,
                     model_recipes=model_recipes,

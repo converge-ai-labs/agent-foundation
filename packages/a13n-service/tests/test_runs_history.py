@@ -5,7 +5,7 @@ import json
 from dataclasses import replace
 
 import pytest
-from a13n_service.runs import display
+from a13n_service.runs import execute
 from a13n_service.runs.accept import ThreadAdvancer, advance
 
 pytestmark = pytest.mark.anyio
@@ -195,16 +195,17 @@ async def test_run_items_keep_the_newest_over_their_limit(service, scripted_mode
     scripted_model.say("Hello")
     await (await runs_kit.attempt(service))
     complete = await runs_kit.items(service, run_id)
-    assert complete["dropped"] == 0 and len(complete["items"]) > 2
+    assert complete["snapshot"]["omitted"] == 0 and len(complete["snapshot"]["blocks"]) == 3
 
-    # Over its item limit the display keeps the newest items and counts the others.
-    monkeypatch.setattr(display, "MAX_ITEMS", 2)
+    # Over its block limit the display keeps the newest blocks and counts the others.
+    monkeypatch.setattr(execute, "MAX_ITEMS", 1)
     bounded = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
     scripted_model.say("Hello")
     await (await runs_kit.attempt(service))
     listing = await runs_kit.items(service, bounded)
-    assert listing["dropped"] == len(complete["items"]) - 2, listing
-    assert [item["kind"] for item in listing["items"]] == [item["kind"] for item in complete["items"]][-2:]
+    assert listing["snapshot"]["omitted"] >= 2, listing
+    assert [block["kind"] for block in listing["snapshot"]["blocks"]] == ["text"]
+    assert runs_kit.texts(listing) == [("assistant", "Hello")]
 
 
 async def test_invalid_question_results_leave_the_wait_unchanged(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

@@ -16,6 +16,7 @@ from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.model_context import ModelInputEvent, user_prompt_content
 from a13n_harness_ui.conversation import ConversationExcerpt, checkpoint_excerpt
 from a13n_harness_ui.root_checkpoint import RootCheckpointCapability, ThreadCheckpointEvent
+from a13n_stream_protocol.display import DisplaySnapshot
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
     EnqueuedMessagesEvent,
@@ -55,7 +56,7 @@ async def test_checkpoint_exports_committed_handoff_and_context_not_provider_mer
     calls: list[list[ModelMessage]] = []
     events: list[HarnessEvent] = []
 
-    async def save(state: HarnessState) -> str:
+    async def save(state: HarnessState, snapshot: DisplaySnapshot | None) -> str:
         saved.append(state)
         return f"checkpoint-{len(saved)}"
 
@@ -128,7 +129,7 @@ async def test_checkpoint_excludes_nested_compaction_and_rebinds_after_outer_exi
     release_helper = asyncio.Event()
     provider_calls: list[str] = []
 
-    async def save(state: HarnessState) -> str:
+    async def save(state: HarnessState, snapshot: DisplaySnapshot | None) -> str:
         saved.append(state)
         return f"checkpoint-{len(saved)}"
 
@@ -206,7 +207,7 @@ async def test_failed_checkpoint_emits_no_marker_or_model_request_and_can_be_reu
     attempts: list[HarnessState] = []
     calls = 0
 
-    async def save(state: HarnessState) -> str:
+    async def save(state: HarnessState, snapshot: DisplaySnapshot | None) -> str:
         attempts.append(state)
         if len(attempts) == 1:
             raise OSError("checkpoint disk unavailable")
@@ -252,7 +253,7 @@ async def test_consumed_steering_is_saved_once_before_its_native_checkpoint_mark
     release_first = asyncio.Event()
     calls = 0
 
-    async def save(state: HarnessState) -> str:
+    async def save(state: HarnessState, snapshot: DisplaySnapshot | None) -> str:
         saved.append(state)
         return f"checkpoint-{len(saved)}"
 
@@ -320,7 +321,7 @@ async def test_checkpoint_rebinds_to_native_recovery_attempt_in_the_same_harness
     events: list[HarnessEvent] = []
     calls = 0
 
-    async def save(state: HarnessState) -> str:
+    async def save(state: HarnessState, snapshot: DisplaySnapshot | None) -> str:
         saved.append(state)
         return f"checkpoint-{len(saved)}"
 

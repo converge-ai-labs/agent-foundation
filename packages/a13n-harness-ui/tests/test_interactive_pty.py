@@ -237,11 +237,13 @@ class Backend:
         if admitted is not None:
             admitted()
         self.receipt_id = "receipt-fixture"
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "fixture-stream\n"})
+        from a13n_stream_protocol.display import DisplayState, DisplaySnapshot, DisplayPosition, Producer, DisplayScope, DisplayBlock, BlockPut, ScopePut
+        state = DisplayState(DisplaySnapshot(position=DisplayPosition(producer=Producer(run_id="fixture", generation="1")), scopes=(DisplayScope(id="fixture", thread_id="thread", run_id="fixture"),)))
+        state.publish((BlockPut(block=DisplayBlock(id="text",scope_id="fixture",kind="text",revision=1,content={"text":"fixture-stream\n"}),expected_revision=0),))
+        renderer.display_blocks(state, ("text",))
         await self.steered.wait()
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit", "tool_call_name": "view"})
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "edit", "delta": '{"file_path":"fixture.py"}'})
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit"})
+        state.publish((BlockPut(block=DisplayBlock(id="tool",scope_id="fixture",kind="tool_chunk",revision=1,content={"name":"view","tool_call_id":"edit","arguments":'{"file_path":"fixture.py"}',"arguments_complete":True}),expected_revision=0),))
+        renderer.display_blocks(state, ("tool",))
         await self.stop.wait()
         Path("cancelled").touch()
         return "fixture-cancelled"

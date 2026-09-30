@@ -1,11 +1,11 @@
 import type { ThreadDelta } from "../../service-client";
 import type { Schema } from "../../shared/api";
 import {
-  applyDelta,
-  comparePositions,
-  isFragment,
-  type DisplayItem,
-} from "./display";
+  DisplayGap,
+  DisplayState,
+  type DisplaySnapshot,
+} from "a13n-ui/display";
+import { comparePositions, displayItems, type DisplayItem } from "./display";
 
 const positionOf = (delta: ThreadDelta) => `${delta.attempt}-${delta.sequence}`;
 const atLeast = (have: string | undefined, need: string) =>
@@ -19,10 +19,17 @@ const successor = (position: string) => {
 export class RunDisplayState {
   read?: Schema["RunItems"];
   attempt = 0;
-  items = new Map<string, DisplayItem>();
+  get items(): Map<string, DisplayItem> {
+    return this.state
+      ? displayItems(this.state.capture(), this.read?.complete)
+      : new Map();
+  }
   position?: string;
   after?: string;
-  private pending: { delta: ThreadDelta; cursor: string }[] = [];
+  private state?: DisplayState;
+  private pending: { delta: ThreadDelta; cursor: string; bytes: number }[] = [];
+  private pendingBytes = 0;
+  private replayFloor?: string;
   private missingThrough?: string;
   private uncertain = false;
   private boundarySeen?: string;
@@ -39,6 +46,25 @@ export class RunDisplayState {
 
   /** Rebuild only the contiguous suffix; later events wait for a snapshot to fill any holes. */
   reconcile(next: Schema["RunItems"], attempt: number, discard = false) {
+    // Only selected durable coverage may replace a saved baseline, never a stale HTTP response.
+    if (this.read && next.run.version < this.read.run.version) return;
+    if (
+      this.read?.position &&
+      next.position &&
+      comparePositions(next.position, this.read.position) < 0
+    )
+      return;
+    if (this.read?.complete && !next.complete) return;
+    // Evicted deltas are already represented in the current state. An older
+    // baseline cannot replace it until durable coverage spans that prefix.
+    if (
+      !discard &&
+      !next.complete &&
+      attempt <= this.attempt &&
+      this.replayFloor &&
+      !atLeast(next.position ?? undefined, this.replayFloor)
+    )
+      return;
     attempt = Math.max(
       attempt,
       this.attempt,
@@ -46,14 +72,23 @@ export class RunDisplayState {
     );
     if (discard || attempt !== this.attempt || next.complete) {
       this.pending = [];
+      this.pendingBytes = 0;
+      this.replayFloor = undefined;
       this.missingThrough = undefined;
       this.uncertain = false;
       this.boundarySeen = undefined;
     }
     this.attempt = attempt;
     this.read = next;
-    this.items = new Map(next.items.map((item) => [item.id, item]));
     const sameAttempt = next.position?.split("-")[0] === String(attempt);
+    // OpenAPI represents arbitrary JSON content as unknown; HTTP JSON is a shared JsonValue.
+    const baseline = structuredClone(next.snapshot) as DisplaySnapshot;
+    if (!sameAttempt)
+      baseline.position = {
+        producer: { run_id: next.run.id, generation: String(attempt) },
+        sequence: 0,
+      };
+    this.state = new DisplayState(baseline);
     this.position = sameAttempt ? next.position! : `${attempt}-0`;
     this.after = sameAttempt ? (next.resume_after ?? undefined) : undefined;
     if (next.complete) return;
@@ -63,6 +98,11 @@ export class RunDisplayState {
       ({ delta }) =>
         delta.attempt === attempt && !atLeast(this.position, positionOf(delta)),
     );
+    this.pendingBytes = this.pending.reduce(
+      (sum, frame) => sum + frame.bytes,
+      0,
+    );
+    this.replayFloor = undefined;
     for (const frame of this.pending) this.apply(frame.delta, frame.cursor);
   }
 
@@ -90,9 +130,17 @@ export class RunDisplayState {
       this.reconcile(this.read, delta.attempt, true);
     if (atLeast(this.position, positionOf(delta))) return false;
     const wasIncomplete = this.incomplete;
-    this.pending.push({ delta, cursor });
+    // Bound both count and encoded bytes, including a single oversized batch.
+    const bytes = new TextEncoder().encode(JSON.stringify(delta)).byteLength;
+    this.pending.push({ delta, cursor, bytes });
+    this.pendingBytes += bytes;
+    while (this.pending.length > 1024 || this.pendingBytes > 4 * 1024 * 1024) {
+      const removed = this.pending.shift()!;
+      this.pendingBytes -= removed.bytes;
+      this.replayFloor = positionOf(removed.delta);
+    }
     this.apply(delta, cursor);
-    return !wasIncomplete && this.incomplete && !isFragment(delta);
+    return !wasIncomplete && this.incomplete;
   }
 
   private apply(delta: ThreadDelta, cursor: string) {
@@ -101,12 +149,17 @@ export class RunDisplayState {
       this.gap(`${delta.attempt}-${BigInt(delta.sequence) - 1n}`);
       return;
     }
-    // A fragment's full observation is available only from a later display.
-    if (isFragment(delta) && delta.item) {
+    if (!this.state) {
       this.gap(position);
       return;
     }
-    applyDelta(this.items, delta);
+    try {
+      this.state.apply(delta.delta);
+    } catch (error) {
+      if (!(error instanceof DisplayGap)) throw error;
+      this.gap(position);
+      return;
+    }
     this.position = position;
     this.after = cursor;
     this.uncertain = false;
@@ -119,7 +172,7 @@ export class RunDisplayState {
     const position = `${attempt}-${sequence}`;
     if (atLeast(this.position, position)) {
       this.uncertain = false;
-      if (attempt === this.attempt) this.after = cursor;
+      if (attempt === this.attempt && cursor) this.after = cursor;
       return false;
     }
     this.gap(position);

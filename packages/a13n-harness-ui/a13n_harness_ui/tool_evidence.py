@@ -15,23 +15,24 @@ _METADATA_KEY = "a13n.harness-ui.applied_edit"
 class ToolEvidenceCollector:
     """Annotate actual result parts before continuation capture, never model-facing content."""
 
-    def __init__(self, *, run_id: str) -> None:
-        self.run_id = run_id
-        self._pending: dict[str, AppliedEditView] = {}
+    def __init__(self) -> None:
+        self._pending: dict[tuple[str, str], AppliedEditView] = {}
 
     def observe(self, item: object) -> None:
-        if not isinstance(item, HarnessEvent) or item.run_id != self.run_id:
+        if not isinstance(item, HarnessEvent):
             return
         event = item.event
         if isinstance(event, FileEditAppliedEvent) and event.tool_call_id:
-            self._pending[event.tool_call_id] = AppliedEditView(
+            self._pending[(item.run_id, event.tool_call_id)] = AppliedEditView(
                 file_path=event.file_path,
                 before=event.before,
                 after=event.after,
             )
+            while len(self._pending) > 128:
+                self._pending.pop(next(iter(self._pending)))
         elif isinstance(event, FunctionToolResultEvent) and isinstance(event.part, ToolReturnPart):
             part = event.part
-            edit = self._pending.pop(part.tool_call_id, None)
+            edit = self._pending.pop((item.run_id, part.tool_call_id), None)
             if edit is not None and (part.metadata is None or isinstance(part.metadata, dict)):
                 part.metadata = {**(part.metadata or {}), _METADATA_KEY: edit.model_dump(mode="json")}
 

@@ -58,6 +58,12 @@ class HarnessExtensionEvent(BaseModel):
 
 Extension payloads are small discriminated schemas owned by their subsystem. First-party producers construct a frozen typed Pydantic payload and pass only `model_dump(mode="json")` output to the open envelope; they do not assemble payload dictionaries ad hoc. The event envelope does not duplicate definition, lineage, policy, or host lifecycle fields already available from run context. [`Public API and Packaging`](14-public-api-and-packaging.md) owns `HarnessRunResultEvent` and the `HarnessStreamEvent` union.
 
+## Producer Observation
+
+A Host may bind a synchronous `RunBindings.extension_observer` to observe validated, detached Harness extensions at emission before public queue delivery. The binding follows actual root and inline-child Run creation, including their first lifecycle extensions; forwarded child observations are not observed a second time. The callback must not perform I/O or wait for a stream consumer. It is process-local observation, not proof of plugin-transformed public delivery, durability, or successful execution. Native model and tool observations remain owned by upstream Capability hooks. Stream Protocol combines these producer seams with canonical-history reconciliation for display capture; it does not consume the outer stream to reconstruct a checkpoint.
+
+Internal model-recovery prompts retain explicit `display: false` content metadata in native history. Custom recovery text and media preserve model-visible content and other metadata but are not presented as human-authored input.
+
 ## Adaptation
 
 ```mermaid

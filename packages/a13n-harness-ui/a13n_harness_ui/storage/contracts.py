@@ -7,11 +7,11 @@ from typing import Annotated, Literal, Self
 
 from a13n_harness import DeferredToolResume, HarnessState, SafeFailure
 from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_stream_protocol.display import DisplaySnapshot
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
 from a13n_harness_ui.conversation import ConversationExcerpt
-from a13n_harness_ui.display_history import DisplayHistory, saved_display_history
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
 
@@ -176,6 +176,7 @@ class Thread(StoredContract):
 class StoredThreadInitialState(StoredContract):
     schema_version: Literal["1"] = "1"
     harness_state: HarnessState
+    display: DisplaySnapshot | None = None
     created_at: datetime
 
     @field_validator("created_at")
@@ -213,19 +214,16 @@ class StoredDeferredInput(StoredContract):
 
 
 class StoredContinuation(StoredContract):
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     harness_release: str = Field(min_length=1, max_length=128)
     run_composition: ObjectRef
     harness_state: HarnessState
+    display: DisplaySnapshot
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     deferred_requests: DeferredToolRequests | None = None
     accepted_input: StoredDeferredInput | None = None
     memory_cursors: dict[str, str | None] = Field(default_factory=dict, exclude_if=lambda value: not value)
     created_at: datetime
-
-    @property
-    def display_history(self) -> DisplayHistory | None:
-        return saved_display_history(self.harness_state)
 
     @field_validator("created_at")
     @classmethod
@@ -275,6 +273,8 @@ class CompactChildActivity(StoredContract):
 
 
 class CompactChildDisplay(StoredContract):
+    """Derived, bounded presentation; never a checkpoint or semantic accumulator."""
+
     activities: tuple[CompactChildActivity, ...] = Field(default=(), max_length=512)
     mcp_apps: tuple[AppReference, ...] = Field(default=(), max_length=128)
     # The latest completed answer is retained losslessly; transport reads are paged.
@@ -282,7 +282,7 @@ class CompactChildDisplay(StoredContract):
 
 
 class StoredChildCheckpoint(StoredContract):
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     harness_release: str = Field(min_length=1, max_length=128)
     execution_id: str = Field(min_length=1, max_length=80)
     child_thread_id: str = Field(min_length=1, max_length=80)
@@ -293,7 +293,9 @@ class StoredChildCheckpoint(StoredContract):
     deferred_requests: DeferredToolRequests | None = None
     accepted_input: StoredDeferredInput | None = None
     memory_cursors: dict[str, str | None] = Field(default_factory=dict, exclude_if=lambda value: not value)
-    display: CompactChildDisplay
+    display: DisplaySnapshot
+    # Latest completed answer remains lossless independently of display retention.
+    final_answer: str | None = None
     terminal: bool
     created_at: datetime
 

@@ -1,4 +1,3 @@
-import type { Schema } from "../../shared/api";
 import type { DisplayItem } from "./display";
 
 /**
@@ -10,7 +9,7 @@ export const TIME = "2026-09-12T00:00:00Z";
 
 export function item(
   id: string,
-  kind: Schema["ItemKind"],
+  kind: DisplayItem["kind"],
   content: Record<string, unknown>,
   { attempt = 1, occurredAt = TIME } = {},
 ): DisplayItem {

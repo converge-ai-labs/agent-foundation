@@ -1,24 +1,25 @@
-# Agent Stream Protocol Observation
+# Agent Stream Protocol Observation and Display
 
 ## Design Position
 
-`a13n-stream-protocol` is the shared process-local adapter from public Harness stream items to Agent User Interaction Protocol events. One `HarnessAguiObserver` converts the items for one Harness Run, uses standard AG-UI events where their semantics match directly, falls back to `CUSTOM` for every other public observation, applies an optional Host processor, and accumulates the resulting events in observation order. A fresh observer can atomically reconstruct that process-local state by folding a finite Host-supplied history of the same public source items before live observation continues.
+`a13n-stream-protocol` owns shared native-to-display semantics and public Harness-to-AG-UI conversion. Its compact display projector joins native message history with live native events by source address; both Hosts use the same interpretation. Browsers apply typed operations rather than maintaining a second semantic event fold. `HarnessAguiConverter` converts one Run without retaining its event transcript. `HarnessAguiObserver` additionally supports explicit finite source-history reconstruction and accumulation; live Host display recovery uses compact snapshots, not that accumulator.
 
-The package does not define another execution or lifecycle layer. It does not run or resume an Agent, manufacture missing Harness lifecycle observations, accept application commands, retain or select durable history, assign Host event identities, or own a transport. A Host consumes each live Harness item once, routes each Run to one observer, and decides whether and how to retain source history, persist, broadcast, filter, compact, or render the returned AG-UI events.
+The package does not define another execution or lifecycle layer. It does not run or resume an Agent, manufacture missing Harness lifecycle observations, accept application commands, retain or select durable history, assign Host event identities, or own a transport. A Host binds producer capture to canonical native boundaries and decides visibility, persistence, retention, and transport. Explicit AG-UI consumers route each live Run to a converter or finite-history observer without using that accumulator as compact display recovery.
 
 ## Boundaries
 
-| Concern                                        | Owner                          | Relationship                                                                                             |
-| ---------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| Model, tool, and provider event semantics      | Pydantic AI                    | The observer maps its public events without redefining their lifecycle                                   |
-| Process-local event correlation and lifecycle  | Harness                        | Supplies ordered `HarnessEvent` and terminal `HarnessRunResultEvent` values with Thread and Run identity |
-| Harness-to-AG-UI conversion                    | Agent Stream Protocol          | Uses standard AG-UI events where they apply directly and `CUSTOM` otherwise                              |
-| Application visibility and filtering           | Host processor                 | May retain, replace declared content fields on, or drop each converted event                             |
-| Process-local reconstruction and accumulation  | Agent Stream Protocol observer | Folds Host-supplied source history and retains post-processor events for one Run in observation order    |
-| History retention, selection, and live cutover | Host                           | Supplies an exact finite source prefix and selects where subsequent live observation begins              |
-| Persistence, event IDs, replay, and fan-out    | Host                           | Stores or delivers returned events under its own Session or Execution contract                           |
-| HTTP, SSE, WebSocket, or in-process delivery   | Host transport                 | Serializes and carries AG-UI events without becoming their execution authority                           |
-| Display state                                  | Renderer                       | Interprets AG-UI events for one surface                                                                  |
+| Concern                                         | Owner                          | Relationship                                                                                             |
+| ----------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Model, tool, and provider event semantics       | Pydantic AI                    | The observer maps its public events without redefining their lifecycle                                   |
+| Process-local event correlation and lifecycle   | Harness                        | Supplies ordered `HarnessEvent` and terminal `HarnessRunResultEvent` values with Thread and Run identity |
+| Harness-to-AG-UI conversion                     | Agent Stream Protocol          | Uses standard AG-UI events where they apply directly and `CUSTOM` otherwise                              |
+| Application visibility and filtering            | Host processor                 | May retain, replace declared content fields on, or drop each converted event                             |
+| Process-local reconstruction and accumulation   | Agent Stream Protocol observer | Folds Host-supplied source history and retains post-processor events for one Run in observation order    |
+| History retention, selection, and live cutover  | Host                           | Supplies an exact finite source prefix and selects where subsequent live observation begins              |
+| Persistence, event IDs, replay, and fan-out     | Host                           | Stores or delivers returned events under its own Session or Execution contract                           |
+| HTTP, SSE, WebSocket, or in-process delivery    | Host transport                 | Serializes and carries AG-UI events without becoming their execution authority                           |
+| Compact display semantics and atomic operations | Agent Stream Protocol          | Projects native values once; Python and TypeScript applicators share the operation contract              |
+| Visual presentation                             | Renderer                       | Renders compact blocks without interpreting native or AG-UI lifecycle semantics                          |
 
 The [Harness event contract](../a13n-harness/12-events-observability-and-usage.md) owns the source stream. [Harness UI local storage and recovery](../a13n-harness-ui/03-local-storage-and-recovery.md) own local retention. [Service facts and delivery](../a13n-service/07-facts-and-delivery.md) owns hosted run facts, display and the thread stream.
 
@@ -36,6 +37,41 @@ flowchart LR
 The Harness imports no AG-UI, UI, Session, HTTP, or terminal-rendering type. Agent Stream Protocol depends only on public Harness and Pydantic AI stream types plus the upstream AG-UI schema library. It imports no Harness UI session implementation, a13n Service persistence model, or transport framework.
 
 Harness and Agent Stream Protocol are one release group. A `release/a13n-harness-v<version>` release assigns both distributions the same version, and the published Protocol artifact requires that exact Harness version. This shared release defines the supported source event union; runtime protocol-profile negotiation is not part of the process-local observer.
+
+## Compact Display Contract
+
+A display is an observation, never resumable Agent state or execution authority. The Host pairs a detached display capture with its selected native checkpoint and owns publication, fencing, retention, and recovery. The projector retains compact blocks and positional continuity, not a second native message transcript or an unbounded raw event log.
+
+### Identity and coverage
+
+`Producer = {run_id, generation}` identifies one writer. A `DisplayPosition` contains that producer and its nonnegative `sequence`. A Host selects a fresh generation for an execution attempt; restoring another attempt starts from the last durable baseline at sequence zero, discarding any superseded provisional suffix. Sequence is semantic coverage, not a Redis ID, WebSocket cursor, checkpoint revision, or timestamp.
+
+Inline child Runs have distinct scopes (`id`, `thread_id`, `run_id`, parent scope and tool call, optional invocation identity), but share their root producer and sequence. Async child Runs have their own producer and selected checkpoint coverage. Scope identity is immutable; its `running`, `completed`, `failed`, `cancelled`, or `deferred` status may change independently from its parent tool.
+
+Blocks have a stable `id`, `scope_id`, positive `revision`, `kind`, `status`, JSON `content`, and optional native `message_index` and `part_index` for inspection and comments. Kinds are `input`, `text`, `reasoning`, `tool_chunk`, `context_summary`, `media`, and `extension`. Status is `pending`, `running`, `succeeded`, `failed`, `cancelled`, `deferred`, or `unknown`. Native addresses, not text equality, join live parts with canonical history, including identical adjacent inputs and context replacement. Tool call IDs correlate arguments and results within their owning scope.
+
+### Wire values and atomic application
+
+`DisplaySnapshot` has format `display/1`, a position, ordered scopes and blocks, cumulative `omitted` count, and producer-only JSON `continuity`. It is self-contained. A `DisplayDelta` has format `display-delta/1`, producer, `from_sequence`, `through_sequence`, and a nonempty ordered operations array. One complete batch advances exactly one sequence (`through_sequence = from_sequence + 1`).
+
+| Operation                                                      | Preconditions and effect                                                                                                                   |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `block.put {block, expected_revision}`                         | Absent blocks have revision zero. The replacement revision is exactly `expected_revision + 1`; an existing block keeps its scope and kind. |
+| `block.append {id, field, value, expected_revision, revision}` | Append text to `text`, `arguments`, or `signature` on an existing block, advancing exactly one revision.                                   |
+| `scope.put {scope}`                                            | Create a scope whose parent already exists, or update only its status. Scope lineage is acyclic.                                           |
+| `blocks.remove {ids, omitted}`                                 | Remove existing blocks and publish a nondecreasing cumulative omission count.                                                              |
+
+The applicator stages only affected values. It validates the entire batch before exposing any change; a failed suffix cannot partially apply a valid prefix. A covered same-producer batch is a no-op. An uncovered sequence gap, producer mismatch, or failed revision/identity precondition requires an authoritative baseline. Captures and restores are detached from caller mutation. Python and browser implementations apply the same protocol fixtures.
+
+### Native projection and capture
+
+Canonical native messages supply input visibility, payload-free media references, text/reasoning, tool arguments/results, and inspection addresses. `display: false` content stays hidden, including when input is also delivered as a native capability event. Binary bytes are not serialized into display media. Custom display-bearing capability/extension events retain their named JSON payload; Host control events are excluded by the Host, and usage, state, and diagnostic observations do not become transcript content. Lifecycle and context-operation updates collapse into one scope-keyed extension summary per model request or context operation, preserving known outcome and context measurements without retaining raw event history. Native provider tools remain distinguishable from application tools. Unknown timing is not invented.
+
+Argument completion does not mean execution completion. A call with complete arguments remains `pending` until its execution wrapper enters; `running` means execution was entered, not that an external side effect occurred. Tool results or retry failures determine completion, and observed cancellation is not relabeled as success or ordinary failure by later native reconciliation. Tool return metadata stays attached to the same tool block. Context summaries survive handoff or compaction exactly once while synthetic helper prompts do not become user-visible history.
+
+Native `on_event` is a live observation hook, not a universal emission-time checkpoint barrier. A Host captures canonical history at its producer-owned boundary without waiting for public stream delivery. Validated Harness extension observation runs synchronously before the bounded delivery queue; forwarding an inline event does not observe it again. Context-summary decisions reach producer hooks before replacement checkpoints. Publication callbacks must be nonblocking and loss-handling: live delivery failure cannot roll back producer state or become checkpoint authority.
+
+Retention is Host policy. Limits on block count, block bytes, and field characters are applied through explicit operations, including truncation metadata and removals, so replay matches capture. Retained display does not replace full native state. A self-contained checkpoint still serializes its retained history; this format does not claim changed-page storage or constant checkpoint-write cost.
 
 ## Observer Contract
 

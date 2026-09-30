@@ -19,6 +19,8 @@ import {
   type ThreadFrame,
 } from "../../service-client";
 import type { Schema } from "../../shared/api";
+import type { DisplayItem } from "./display";
+import type { DisplaySnapshot, JsonValue } from "a13n-ui/display";
 import { conversationQueries, invalidateConversation } from "./api";
 import { useRunDisplay } from "./run-display";
 import {
@@ -31,7 +33,53 @@ let client: Client;
 let cache: QueryClient;
 let requests: Request[];
 let read: (request: Request) => Promise<Response>;
-let display: Schema["RunItems"];
+type FixtureDisplay = Omit<
+  Schema["RunItems"],
+  "snapshot" | "display_revision"
+> & {
+  items: DisplayItem[];
+  dropped: number;
+};
+let display: FixtureDisplay;
+
+function snapshot(value: FixtureDisplay): DisplaySnapshot {
+  const [attempt, sequence] = (value.position ?? "0-0").split("-");
+  return {
+    format: "display/1",
+    position: {
+      producer: { run_id: "run_one", generation: attempt! },
+      sequence: Number(sequence),
+    },
+    scopes: [
+      {
+        id: "scope",
+        run_id: "harness",
+        thread_id: "thread_one",
+        parent_scope_id: null,
+        parent_tool_call_id: null,
+        invocation_id: null,
+        status: "running",
+      },
+    ],
+    omitted: value.dropped,
+    continuity: {},
+    blocks: value.items.map((item) => ({
+      id: item.id,
+      scope_id: "scope",
+      kind: item.kind === "observation" ? "extension" : "text",
+      revision: Math.max(1, Number(item.last_stream_id.split("-")[1])),
+      status:
+        item.state === "completed"
+          ? "succeeded"
+          : item.state === "interrupted"
+            ? "unknown"
+            : "running",
+      message_index: null,
+      part_index: null,
+      content: item.content as Record<string, JsonValue>,
+    })),
+  };
+}
 let attempts: number[];
 let thread: Schema["ThreadView"];
 let frames: ReturnType<typeof channel>;
@@ -61,8 +109,8 @@ function message(
   text: string,
   first: string,
   last = first,
-  state: Schema["ItemState"] = "in_progress",
-): Schema["Item"] {
+  state: DisplayItem["state"] = "in_progress",
+): DisplayItem {
   return {
     id: `item_${first}`,
     kind: "text_message",
@@ -80,7 +128,15 @@ function message(
 
 function response(request: Request) {
   const path = new URL(request.url).pathname;
-  if (path.endsWith("/items")) return Response.json(display);
+  if (path.endsWith("/items"))
+    return Response.json({
+      run: display.run,
+      complete: display.complete,
+      position: display.position,
+      resume_after: display.resume_after,
+      display_revision: `revision-${display.position}`,
+      snapshot: snapshot(display),
+    });
   if (path.endsWith("/attempts"))
     return Response.json({
       items: attempts.map((number) =>
@@ -133,8 +189,40 @@ const delta = (
     run_id: "run_one",
     attempt,
     sequence,
-    event: { type: "TEXT_MESSAGE_CONTENT", messageId: item, delta: text },
-    item: { id: item, kind: "text_message", state: "in_progress" },
+    delta: {
+      format: "display-delta/1",
+      producer: { run_id: "run_one", generation: String(attempt) },
+      from_sequence: sequence - 1,
+      through_sequence: sequence,
+      operations:
+        sequence === 1
+          ? [
+              {
+                op: "block.put",
+                expected_revision: 0,
+                block: {
+                  id: item,
+                  scope_id: "scope",
+                  kind: "text",
+                  status: "running",
+                  revision: 1,
+                  message_index: null,
+                  part_index: null,
+                  content: { text },
+                },
+              },
+            ]
+          : [
+              {
+                op: "block.append",
+                id: item,
+                field: "text",
+                expected_revision: sequence - 1,
+                revision: sequence,
+                value: text,
+              },
+            ],
+    },
   },
 });
 const boundary = (attempt: number, sequence: number): ThreadFrame => ({
@@ -292,7 +380,7 @@ it("reads a Run without following its Thread when not live", async () => {
   expect(client.streamThread).not.toHaveBeenCalled();
 });
 
-it("times a reloaded Run's Items from its display", async () => {
+it("does not invent times absent from compact blocks", async () => {
   display = {
     ...display,
     run: run({ status: "completed" }),
@@ -302,9 +390,7 @@ it("times a reloaded Run's Items from its display", async () => {
   };
   render(<View live={false} />);
   await waitFor(() =>
-    expect(screen.getByTestId("times").textContent).toBe(
-      "2026-09-20T10:00:01.000Z → 2026-09-20T10:00:03.000Z",
-    ),
+    expect(screen.getByTestId("times").textContent).toBe("null → null"),
   );
 });
 
@@ -423,8 +509,28 @@ const observed = (
     run_id: "run_one",
     attempt: 1,
     sequence,
-    event: { type: "CUSTOM", name, value },
-    item: { id: `obs_${sequence}`, kind: "observation", state: "completed" },
+    delta: {
+      format: "display-delta/1",
+      producer: { run_id: "run_one", generation: "1" },
+      from_sequence: sequence - 1,
+      through_sequence: sequence,
+      operations: [
+        {
+          op: "block.put",
+          expected_revision: 0,
+          block: {
+            id: `obs_${sequence}`,
+            scope_id: "scope",
+            kind: "extension",
+            status: "unknown",
+            revision: 1,
+            message_index: null,
+            part_index: null,
+            content: { name, value: value as JsonValue },
+          },
+        },
+      ],
+    },
   },
 });
 
@@ -449,12 +555,12 @@ it("reads the execution from the observations the stream delivers", async () => 
   );
 });
 
-it("waits for the next boundary's display to hold an event the stream fragmented", async () => {
+it("waits for a durable boundary after a missing atomic batch", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
   expect(pathRequests("/items")).toHaveLength(1);
   await act(async () => {
-    frames.push(observed(2, "a13n.stream.fragment", { part: 1 }));
+    frames.push({ type: "gap", run_id: "run_one", position: "1-2" });
   });
   display = {
     ...display,
@@ -476,7 +582,7 @@ it("waits for the next boundary's display to hold an event the stream fragmented
   await act(async () => {
     frames.push(boundary(1, 2));
   });
-  await waitFor(() => expect(pathRequests("/items")).toHaveLength(2));
+  await waitFor(() => expect(pathRequests("/items")).toHaveLength(3));
 });
 
 it("reconciles the sealed display once the Thread's current Run moves on", async () => {

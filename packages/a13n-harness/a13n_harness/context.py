@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from a13n_harness.capabilities.working_state import TaskStateBinding, WorkingStateObserver
     from a13n_harness.environment.providers import BoundEnvironment as Environment
     from a13n_harness.environment.providers import EnvironmentRuntime
-    from a13n_harness.events import HarnessEventEmitter
+    from a13n_harness.events import ExtensionObserver, HarnessEventEmitter
     from a13n_harness.execution import ExecutableAgent
     from a13n_harness.model_context import (
         ModelContextMiddleware,
@@ -151,6 +151,7 @@ class RunBindings:
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
     working_state_observer: WorkingStateObserver | None = None
+    extension_observer: ExtensionObserver | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
@@ -230,6 +231,7 @@ class RunBindings:
         skill_selection: frozenset[str] | None = None,
         task_state: TaskStateBinding | None = None,
         working_state_observer: WorkingStateObserver | None = None,
+        extension_observer: ExtensionObserver | None = None,
         client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
@@ -257,6 +259,7 @@ class RunBindings:
             skill_selection=skill_selection,
             task_state=task_state,
             working_state_observer=working_state_observer,
+            extension_observer=extension_observer,
             client_toolsets=client_toolsets,
             tool_result_directory=tool_result_directory,
             metadata=metadata or {},
@@ -398,6 +401,7 @@ class AgentContext:
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
     working_state_observer: WorkingStateObserver | None = None
+    extension_observer: ExtensionObserver | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     skill_paths: RunSkillPaths = field(default_factory=RunSkillPaths, compare=False)
     tool_metadata: ToolRuntimeMetadata = field(default_factory=ToolRuntimeMetadata, compare=False)

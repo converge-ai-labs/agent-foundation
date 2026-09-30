@@ -10,6 +10,8 @@ import type { Schema } from "../../../shared/api";
 import { useAgent } from "../../agents/queries";
 import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { emptyExecution } from "../execution";
+import { displayItems } from "../display";
+import type { DisplaySnapshot } from "a13n-ui/display";
 import { presentItems } from "../projection";
 import { useRunDisplay } from "../run-display";
 import { runTimeline } from "../timeline";
@@ -271,7 +273,15 @@ function HistoricalRun({
   const agent = useAgent(runQuery.data?.agent_id);
   const retained = useQuery({ ...queries.items(runId), staleTime: 60_000 });
   const items = useMemo(
-    () => presentItems(retained.data?.items ?? []),
+    () =>
+      presentItems(
+        retained.data
+          ? displayItems(
+              retained.data.snapshot as DisplaySnapshot,
+              retained.data.complete,
+            ).values()
+          : [],
+      ),
     [retained.data],
   );
   const run = runQuery.data;
@@ -310,7 +320,7 @@ function HistoricalRun({
         timeline={timeline}
         agentName={agent.data?.name}
         agentImageUrl={agent.data?.image_url}
-        earlier={<DroppedItems count={retained.data.dropped} />}
+        earlier={<DroppedItems count={retained.data.snapshot.omitted} />}
         separatorAction={
           <Link
             className={styles.separatorLink}

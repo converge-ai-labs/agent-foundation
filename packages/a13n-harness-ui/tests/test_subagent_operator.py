@@ -9,9 +9,11 @@ import pytest
 from a13n_harness import SafeFailure
 from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.settings import StorageSettings
-from a13n_harness_ui.storage import ChildExecutionHead, CompactChildDisplay, ObjectKind, ObjectRef, open_local_store
+from a13n_harness_ui.storage import ChildExecutionHead, ObjectKind, ObjectRef, open_local_store
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from anyio import Event
+
+from .display_fixtures import display_capture
 
 pytestmark = pytest.mark.anyio
 
@@ -168,7 +170,7 @@ async def test_terminal_child_projection_does_not_expose_stale_local_control(
         parent_thread_id=head.parent_thread_id,
         stream=unavailable,
         done=Event(),
-        display=CompactChildDisplay(),
+        display=display_capture(),
     )
 
     async def unreadable_checkpoint(_head: ChildExecutionHead):
@@ -214,16 +216,11 @@ def test_child_failure_projection_is_bounded() -> None:
         details={"value": "z" * (70 * 1024)},
     )
     projected = subagent_module._surface_failure(failure)
-    display = subagent_module._with_failure(CompactChildDisplay(final_answer="Earlier output"), failure)
 
     assert len(projected.code) == 256
     assert len(projected.message) <= 32 * 1024
     assert projected.details is None
-    assert display.activities[-1].kind == "failure"
-    assert display.activities[-1].text == projected.message
     assert projected.message.endswith("[message truncated]")
-    assert display.final_answer == "Earlier output"
-    assert CompactChildDisplay.model_validate_json(display.model_dump_json()) == display
     assert failure.message == "y" * (40 * 1024)
 
 
@@ -243,8 +240,9 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
     from pydantic_ai.agent.spec import AgentSpec
     from pydantic_ai.models.test import TestModel
 
+    capture = display_capture()
     executable = HarnessBuilder().build(
-        AgentSpec(), output_type=str, model=TestModel(custom_output_text="child answer")
+        AgentSpec(), capabilities=(capture,), output_type=str, model=TestModel(custom_output_text="child answer")
     )
     state = HarnessState.new()
     stream = executable.stream("work", previous_state=state)
@@ -305,20 +303,23 @@ async def test_child_finalization_failure_preserves_checkpoint_without_success(
         environment=cast(Any, SimpleNamespace(finalize=AsyncMock(return_value=finalized))),
         stream=stream,
         agent_instance_id="child-agent",
-        display=CompactChildDisplay(),
+        display=capture,
     )
     active = subagent_module._ActiveSegment(
         execution_id=head.execution_id,
         parent_thread_id=head.parent_thread_id,
         stream=stream,
         done=Event(),
-        display=CompactChildDisplay(),
+        display=capture,
     )
     await operator._execute_segment(prepared, active, INVALID_SPAN)
     finish.assert_awaited_once()
     outcome = finish.await_args.kwargs
     assert outcome["checkpoint"] == checkpoint
     assert "child answer" in str(publish.await_args.kwargs["state"].message_history)
+    assert any(block.content.get("text") == "child answer" for block in publish.await_args.kwargs["display"].blocks)
+    if finalization_failure is None:
+        assert publish.await_args.kwargs["final_answer"] == "child answer"
     assert active.done.is_set()
     if finalization_failure is None:
         assert outcome["status"] == "succeeded"
@@ -387,6 +388,7 @@ async def test_child_deferred_recovery_preserves_new_resume_prompt(recovery: boo
     )
     stream = operator._new_stream(
         reconstructed=reconstructed,
+        display=display_capture(),
         input="new continuation instruction",
         usage_limits=None,
         identity=AgentIdentityRef(issuer="test", subject="child"),

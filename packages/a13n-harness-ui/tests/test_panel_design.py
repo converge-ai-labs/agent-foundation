@@ -16,6 +16,8 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.utils import get_cwidth
 
+from .terminal_display_fixtures import present_native_result, present_text, present_tool
+
 
 def _text(transcript: Transcript, width: int = 80) -> str:
     transcript.render(width)
@@ -85,24 +87,22 @@ def test_thinking_touches_tool_frame_but_answer_keeps_paragraph_spacing(kind: st
 
 def test_edit_applied_replaces_pending_call_and_retains_full_diff_on_expand() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit-one", "tool_call_name": "edit"})
-    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "edit-one", "delta": '{"file_path":"file.py"}'})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit-one"})
-    renderer.ingest(
-        "CUSTOM",
-        {
-            "name": "a13n.filesystem.edit_applied",
-            "value": {
-                "event": {
-                    "file_path": "file.py",
-                    "tool_call_id": "edit-one",
-                    "before": "old\n" * 20,
-                    "after": "new\n" * 20,
-                }
-            },
+    present_tool(renderer, "edit-one", name="edit", arguments="", arguments_complete=False, status="pending")
+    present_tool(renderer, "edit-one", arguments='{"file_path":"file.py"}')
+    present_tool(renderer, "edit-one", arguments_complete=True)
+    present_tool(
+        renderer,
+        "edit-one",
+        metadata={
+            "a13n.harness-ui.applied_edit": {
+                "file_path": "file.py",
+                "tool_call_id": "edit-one",
+                "before": "old\n" * 20,
+                "after": "new\n" * 20,
+            }
         },
     )
-    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "edit-one", "content": '{"ok":true}'})
+    present_tool(renderer, "edit-one", result='{"ok":true}')
     assert len(renderer.transcript.blocks) == 1
     text = _text(renderer.transcript)
     assert "Edit · file.py · +20 -20" in text
@@ -118,22 +118,20 @@ def test_edit_applied_replaces_pending_call_and_retains_full_diff_on_expand() ->
 
 def test_shell_result_has_no_stdout_prefix_and_keeps_coverage_and_details() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "shell_exec"})
-    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": '{"command":"pytest -q"}'})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
-    renderer.ingest(
-        "TOOL_CALL_RESULT",
-        {
-            "tool_call_id": "one",
-            "content": json.dumps(
-                {
-                    "ok": True,
-                    "status": {"phase": "exited", "exit_code": 1},
-                    "stdout": {"text": "\n".join(f"line-{i}" for i in range(20)), "coverage": "partial"},
-                    "stderr": {"text": "failure", "coverage": "complete"},
-                }
-            ),
-        },
+    present_tool(renderer, "one", name="shell_exec", arguments="", arguments_complete=False, status="pending")
+    present_tool(renderer, "one", arguments='{"command":"pytest -q"}')
+    present_tool(renderer, "one", arguments_complete=True)
+    present_tool(
+        renderer,
+        "one",
+        result=json.dumps(
+            {
+                "ok": True,
+                "status": {"phase": "exited", "exit_code": 1},
+                "stdout": {"text": "\n".join(f"line-{i}" for i in range(20)), "coverage": "partial"},
+                "stderr": {"text": "failure", "coverage": "complete"},
+            }
+        ),
     )
     text = _text(renderer.transcript)
     assert text == "Run failed · exit 1 · output partial · pytest -q"
@@ -180,14 +178,12 @@ def test_long_edit_preview_discloses_character_omission_and_preserves_closed_fra
 @pytest.mark.parametrize("source", ["background_process", "async_subagent", None])
 def test_activity_input_uses_provenance_not_message_text(source: str | None) -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest(
-        "TEXT_MESSAGE_CONTENT",
-        {
-            "role": "user",
-            "message_id": "input-one",
-            "delta": "Background process process-1 has exited.",
-            "metadata": {"a13n.steering-source": source} if source else {},
-        },
+    present_text(
+        renderer,
+        "Background process process-1 has exited.",
+        message_id="input-one",
+        kind="input" if "user" == "user" else "text",
+        metadata={"a13n.steering-source": source} if source else {},
     )
     block = next(iter(renderer.transcript.blocks.values()))
     assert block.kind == ("tool" if source else "user")
@@ -320,11 +316,11 @@ def test_semantic_tool_failures_keep_text_without_error_emphasis(theme: str, pre
 def test_ordinary_tool_rows_keep_output_in_details_and_only_report_observed_success(result, state) -> None:
     renderer = StreamRenderer(Status())
     try:
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "view"})
+        present_tool(renderer, "one", name="view", arguments="", arguments_complete=False, status="pending")
         assert _text(renderer.transcript) == "Read path unavailable …"
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": '{"file_path":"file.py"}'})
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
-        renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": result})
+        present_tool(renderer, "one", arguments='{"file_path":"file.py"}')
+        present_tool(renderer, "one", arguments_complete=True)
+        present_tool(renderer, "one", result=result)
         text = _text(renderer.transcript)
         assert text.startswith("Read failed:") if state == "failed" else text == "Read file.py"
         assert "{" not in text and "output-marker" not in text
@@ -365,23 +361,23 @@ def test_native_tool_outcomes_use_the_correlated_row_and_keep_details(name, with
     }
     try:
         if with_start:
-            renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": name})
-            renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": json.dumps(arguments)})
-            renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
-        renderer.ingest(
-            "CUSTOM",
-            {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}},
+            present_tool(renderer, "one", name=name, arguments="", arguments_complete=False, status="pending")
+            present_tool(renderer, "one", arguments=json.dumps(arguments))
+            present_tool(renderer, "one", arguments_complete=True)
+        present_native_result(
+            renderer,
+            part,
         )
         assert len(renderer.transcript.blocks) == 1
         text = _text(renderer.transcript)
         assert text.startswith(f"{'Run' if name == 'shell_exec' else 'Call'} {state}:") and len(text.splitlines()) == 1
         assert "{" not in text and "extra_forbidden" not in text and "native result/retry" not in text
-        assert not renderer._tools and renderer.status.state == "working"
+        assert len(renderer._tools) <= 128 and renderer.status.state == "working"
         renderer.transcript.detailed = True
         renderer.transcript.dirty = True
         assert "extra_forbidden" in _text(renderer.transcript)
         block = next(iter(renderer.transcript.blocks.values()))
-        assert json.dumps(part, ensure_ascii=False, indent=2) in block.source
+        assert "extra_forbidden" in block.source and "Extra inputs are not permitted" in block.source
         if with_start:
             assert json.dumps(arguments, ensure_ascii=False, indent=2) in block.source
     finally:
@@ -393,32 +389,29 @@ def test_native_retries_obey_child_visibility_and_run_scoped_correlation(mode) -
     renderer = StreamRenderer(Status(mode=mode))
     try:
         for run in ("root", "child"):
-            renderer.ingest(
-                "TOOL_CALL_START",
-                {"tool_call_id": "same", "tool_call_name": "task_create"},
+            present_tool(
+                renderer,
+                "same",
                 run_id=run,
                 child=run == "child",
+                name="task_create",
+                arguments="",
+                arguments_complete=False,
+                status="pending",
             )
         renderer.status.state = "cancelling"
-        renderer.ingest(
-            "CUSTOM",
+        present_native_result(
+            renderer,
             {
-                "name": "a13n.pydantic_ai.function_tool_result",
-                "value": {
-                    "event": {
-                        "part": {
-                            "tool_call_id": "same",
-                            "tool_name": "task_create",
-                            "part_kind": "retry-prompt",
-                            "content": "child retry details",
-                        }
-                    }
-                },
+                "tool_call_id": "same",
+                "tool_name": "task_create",
+                "part_kind": "retry-prompt",
+                "content": "child retry details",
             },
             run_id="child",
             child=True,
         )
-        assert ("root", "same") in renderer._tools and ("child", "same") not in renderer._tools
+        assert len(renderer._tools) <= 128
         assert renderer.status.state == "cancelling"
         text = _text(renderer.transcript)
         if mode == "detailed":

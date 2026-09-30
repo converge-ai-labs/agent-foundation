@@ -21,11 +21,16 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.exceptions import AgentRunError, ModelHTTPError, RunCancelled, UsageLimitExceeded, UserError
 from pydantic_ai.messages import (
     AgentStreamEvent,
+    BinaryContent,
     EnqueuedMessagesEvent,
+    FileUrl,
     ModelMessage,
     ModelRequest,
     ModelResponse,
     SystemPromptPart,
+    TextContent,
+    UploadedFile,
+    UserContent,
 )
 from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
@@ -613,7 +618,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._new_message_index = len(self._latest_messages)
         self._cancel_event = asyncio.Event()
 
-        self._emitter = _RunEventEmitter(self.thread_id, self.run_id)
+        self._emitter = _RunEventEmitter(self.thread_id, self.run_id, observer=bindings.extension_observer)
         self._environment_change_drain = _EnvironmentChangeDrain()
         self._environment_event_task: asyncio.Task[None] | None = None
         self._response_pump_task: asyncio.Task[None] | None = None
@@ -853,6 +858,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             skill_selection=bindings.skill_selection,
             task_state=bindings.task_state,
             working_state_observer=bindings.working_state_observer,
+            extension_observer=bindings.extension_observer,
             client_toolsets=bindings.client_toolsets,
             tool_result_directory=bindings.tool_result_directory,
             _capability_provenance=_CapabilityProvenance(
@@ -1841,6 +1847,21 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 retry_input = await policy.build_prompt(retry_error, retry_index, self._latest_messages)
                 observe_output(span, {"retry_input_available": retry_input is not None}, status="prepared")
             current_input = normalize_input(retry_input)
+            # Recovery is model context, not a new user submission. Record that
+            # distinction in native history so every display consumer honors it.
+            retry_content = (current_input.value,) if isinstance(current_input.value, str) else current_input.value
+            if retry_content is not None:
+                hidden: list[UserContent] = []
+                for item in retry_content:
+                    if isinstance(item, str):
+                        item = TextContent(item)
+                    if isinstance(item, TextContent):
+                        metadata = item.metadata if isinstance(item.metadata, dict) else {}
+                        item = replace(item, metadata={**metadata, "display": False})
+                    elif isinstance(item, BinaryContent | FileUrl | UploadedFile):
+                        item = replace(item, vendor_metadata={**(item.vendor_metadata or {}), "display": False})
+                    hidden.append(item)
+                current_input = current_input.replace(hidden)
             current_history = self._latest_messages
             attempt_index += 1
 

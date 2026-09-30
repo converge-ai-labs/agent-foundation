@@ -10,6 +10,8 @@ from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.interactive.theme import resolve_theme
 from a13n_harness_ui.surfaces import NotePage, NoteView
 
+from .terminal_display_fixtures import present_tool
+
 
 def _visible(renderer: StreamRenderer, *, detailed: bool = False, width: int = 120) -> str:
     renderer.transcript.detailed = detailed
@@ -92,11 +94,11 @@ def test_empty_snapshot_is_quiet_until_requested_or_notes_are_removed() -> None:
 )
 def test_note_tools_preview_keys_and_observed_outcomes(name, arguments, result, label, key) -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "note-one", "tool_call_name": name})
-    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "note-one", "delta": json.dumps(arguments)})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "note-one"})
+    present_tool(renderer, "note-one", name=name, arguments="", arguments_complete=False, status="pending")
+    present_tool(renderer, "note-one", arguments=json.dumps(arguments))
+    present_tool(renderer, "note-one", arguments_complete=True)
     assert f"Call {name} {key} …" in _visible(renderer)
-    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "note-one", "content": json.dumps(result)})
+    present_tool(renderer, "note-one", result=json.dumps(result))
     visible = _visible(renderer)
     assert len(visible.splitlines()) == 1
     assert name in visible and key in visible

@@ -14,6 +14,8 @@ from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+from .terminal_display_fixtures import present_tool
+
 
 @pytest.mark.parametrize(
     "directory, path, expected",
@@ -49,13 +51,13 @@ def test_running_and_completed_tool_labels_keep_raw_payloads(name: str, key: str
     result = {"ok": True, key: path, "content": f"literal output {path}"}
     renderer = StreamRenderer(Status(directory=tmp_path))
     try:
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": name})
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": json.dumps(arguments)})
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
+        present_tool(renderer, "one", name=name, arguments="", arguments_complete=False, status="pending")
+        present_tool(renderer, "one", arguments=json.dumps(arguments))
+        present_tool(renderer, "one", arguments_complete=True)
         block = next(iter(renderer.transcript.blocks.values()))
         assert block.preview == f"{dict(view='Read', write='Call write', ls='List')[name]} {Path('src/file.py')} …"
         assert json.dumps(arguments, ensure_ascii=False, indent=2) in block.source
-        renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": json.dumps(result)})
+        present_tool(renderer, "one", result=json.dumps(result))
         assert str(tmp_path) not in (block.preview or "")
         assert str(Path("src/file.py")) in (block.preview or "")
         assert json.dumps(arguments, ensure_ascii=False, indent=2) in block.source
@@ -91,18 +93,17 @@ def test_interleaved_child_paths_keep_invocation_base_and_run_identity(tmp_path:
     paths = {"root": tmp_path / "file.py", "child": tmp_path.parent / "other" / "file.py"}
     try:
         for run, path in paths.items():
-            for kind, payload in (
-                ("START", {"tool_call_name": "view"}),
-                ("ARGS", {"delta": json.dumps({"file_path": str(path)})}),
-                ("END", {}),
-            ):
-                renderer.ingest(
-                    f"TOOL_CALL_{kind}", {"tool_call_id": "same", **payload}, run_id=run, child=run == "child"
-                )
-        for run in reversed(paths):
-            renderer.ingest(
-                "TOOL_CALL_RESULT", {"tool_call_id": "same", "content": "done"}, run_id=run, child=run == "child"
+            present_tool(
+                renderer,
+                "same",
+                name="view",
+                arguments=json.dumps({"file_path": str(path)}),
+                arguments_complete=True,
+                run_id=run,
+                child=run == "child",
             )
+        for run in reversed(paths):
+            present_tool(renderer, "same", run_id=run, child=run == "child", result="done")
         root, child = renderer.transcript.blocks.values()
         assert root.preview == "Read file.py"
         assert "done" not in (root.preview or "") and "done" in root.source
@@ -142,11 +143,15 @@ def test_shell_passes_explicit_directory_and_rendering_does_not_follow_chdir(
         try:
             monkeypatch.chdir(elsewhere)
             assert shell.status.directory == tmp_path
-            shell.renderer.ingest(
-                "CUSTOM",
-                {
-                    "name": "a13n.filesystem.edit_applied",
-                    "value": {"event": {"file_path": str(tmp_path / "file.py"), "before": "old\n", "after": "new\n"}},
+            present_tool(
+                shell.renderer,
+                "edit",
+                metadata={
+                    "a13n.harness-ui.applied_edit": {
+                        "file_path": str(tmp_path / "file.py"),
+                        "before": "old\n",
+                        "after": "new\n",
+                    }
                 },
             )
             block = next(iter(shell.renderer.transcript.blocks.values()))
@@ -164,12 +169,12 @@ def test_long_tool_paths_wrap_without_losing_the_relative_path(width, name, key,
     path = str(tmp_path / relative)
     renderer = StreamRenderer(Status(directory=tmp_path))
     try:
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": name})
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": json.dumps({key: path})})
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
+        present_tool(renderer, "one", name=name, arguments="", arguments_complete=False, status="pending")
+        present_tool(renderer, "one", arguments=json.dumps({key: path}))
+        present_tool(renderer, "one", arguments_complete=True)
         for completed in (False, True):
             if completed:
-                renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": '{"ok":true}'})
+                present_tool(renderer, "one", result='{"ok":true}')
             renderer.transcript.render(width)
             rows = ["".join(text for _, text in row) for row in renderer.transcript.rows]
             assert len(rows) > 1

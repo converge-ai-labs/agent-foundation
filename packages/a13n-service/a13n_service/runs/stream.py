@@ -12,12 +12,12 @@ frames, so a client can always fall back to the durable view:
 """
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from a13n_logging import exception_details, get_logger
+from a13n_stream_protocol import DisplayDelta
 from pydantic import BaseModel, Field
 from pydantic.json_schema import JsonSchemaMode, models_json_schema
 from redis.asyncio import Redis
@@ -27,9 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.redis import StreamEntry, append, last_id, read, read_entry, read_range, trim
-from a13n_service.runs.display import ItemRef, Observed, StreamPosition
+from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.tables import AttemptRow, ThreadRow
+from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Access, Authenticated, reauthenticate, workspace_scope
@@ -58,13 +58,12 @@ def stream_key(thread_id: str) -> str:
 
 
 class Delta(BaseModel):
-    """A data frame: one AG-UI event of a run's attempt at its per-attempt sequence, and the item it changed."""
+    """A data frame: one atomic batch of shared display operations."""
 
     run_id: str
     attempt: int
     sequence: int
-    event: dict[str, Any]
-    item: ItemRef | None
+    delta: DisplayDelta
 
 
 class Boundary(BaseModel):
@@ -142,6 +141,7 @@ class ThreadStream:
         self.buffer: asyncio.Queue[dict[str, str]] = asyncio.Queue(WRITE_BUFFER)
         self.writer: asyncio.Task[None] | None = None
         self.last_written: WrittenPosition | None = None
+        self._offered_sequence = 0
 
     async def __aenter__(self) -> "ThreadStream":
         self.writer = asyncio.create_task(self._write(), name=f"stream-{self.run_id}")
@@ -157,17 +157,15 @@ class ThreadStream:
         finally:
             self.writer.cancel()
 
-    def delta(self, observed: Observed) -> None:
-        event = json.dumps(observed.event, separators=(",", ":"))
-        if len(event) > MAX_DELTA_BYTES:
+    def delta(self, delta: DisplayDelta) -> None:
+        self._offered_sequence = delta.through_sequence
+        payload = delta.model_dump_json()
+        if len(payload.encode()) > MAX_DELTA_BYTES:
             return
-        fields = {"sequence": str(observed.sequence), "event": event}
-        if observed.item is not None:
-            fields["item"] = observed.item.model_dump_json()
-        self._put(fields)
+        self._put({"sequence": str(delta.through_sequence), "delta": payload})
 
     def boundary(self, sequence: int) -> None:
-        self._put({"sequence": str(sequence), "boundary": "1"})
+        self._put({"sequence": str(sequence), "boundary": "1", "prefix_sequence": str(self._offered_sequence)})
 
     def _put(self, fields: dict[str, str]) -> None:
         try:
@@ -187,8 +185,14 @@ class ThreadStream:
             for entry_id, fields in zip(ids, entries, strict=bool(ids)):
                 if "boundary" not in fields:
                     self.last_written = WrittenPosition(self.attempt, int(fields["sequence"]), entry_id)
-            # Redis returns no IDs for entries it dropped; their boundary trims nothing.
-            boundaries = [entry_id for entry_id, fields in zip(ids, entries, strict=bool(ids)) if "boundary" in fields]
+            # A slow checkpoint may append its marker after newer deltas. Its
+            # Redis prefix is trimmable only if the checkpoint covers that prefix.
+            # Redis returns no IDs for dropped entries; their boundary trims nothing.
+            boundaries = [
+                entry_id
+                for entry_id, fields in zip(ids, entries, strict=bool(ids))
+                if "boundary" in fields and int(fields["prefix_sequence"]) <= int(fields["sequence"])
+            ]
             if boundaries:
                 retained = _retained_from(boundaries[-1], worker.stream_trim_seconds)
                 await trim(self.redis, self.key, min_id=retained, timeout=timeout)
@@ -217,6 +221,8 @@ class Snapshot:
     version: int
     run_id: str | None
     attempt: int
+    display_revision: str | None = None
+    display_position: StreamPosition | None = None
 
 
 class Revoked(Exception):
@@ -249,9 +255,20 @@ async def _snapshots(session: AsyncSession, thread_ids: list[str]) -> dict[str, 
         .scalar_subquery()
     )
     rows = await session.execute(
-        select(ThreadRow.id, ThreadRow.version, ThreadRow.current_run_id, latest).where(ThreadRow.id.in_(thread_ids))
+        select(ThreadRow.id, ThreadRow.version, ThreadRow.current_run_id, latest, RunRow.display)
+        .outerjoin(RunRow, RunRow.id == ThreadRow.current_run_id)
+        .where(ThreadRow.id.in_(thread_ids))
     )
-    return {thread_id: Snapshot(version, run_id, attempt or 0) for thread_id, version, run_id, attempt in rows}
+    return {
+        thread_id: Snapshot(
+            version,
+            run_id,
+            attempt or 0,
+            display["digest"] if display else None,
+            StreamPosition.model_validate(display["position"]) if display else None,
+        )
+        for thread_id, version, run_id, attempt, display in rows
+    }
 
 
 async def _may_read(session: AsyncSession, access: Access, credential: Authenticated, workspace_id: str) -> bool:
@@ -407,6 +424,27 @@ class _View:
             frames.append(_frame("changed", Changed(version=snapshot.version)))
         if snapshot.run_id is not None and self._replaced(snapshot.run_id, snapshot.attempt):
             frames.append(_frame("reset", RunSignal(run_id=snapshot.run_id)))
+        position = snapshot.display_position
+        if (
+            snapshot.run_id is not None
+            and position is not None
+            and (
+                snapshot.display_revision != self.snapshot.display_revision
+                or self.sequences.get((snapshot.run_id, position.attempt), 0) < position.sequence
+            )
+        ):
+            if self.sequences.get((snapshot.run_id, position.attempt), 0) < position.sequence:
+                frames.append(_frame("gap", Gap(run_id=snapshot.run_id, position=str(position))))
+            frames.append(
+                _frame(
+                    "boundary",
+                    Boundary(
+                        run_id=snapshot.run_id,
+                        attempt=position.attempt,
+                        sequence=position.sequence,
+                    ),
+                )
+            )
         self.snapshot = snapshot
         return frames
 
@@ -444,8 +482,7 @@ class _View:
             run_id=run_id,
             attempt=attempt,
             sequence=sequence,
-            event=json.loads(fields["event"]),
-            item=ItemRef.model_validate_json(fields["item"]) if "item" in fields else None,
+            delta=DisplayDelta.model_validate_json(fields["delta"]),
         )
         return [*frames, _frame("delta", delta, entry.id)]
 
@@ -466,14 +503,7 @@ async def frames(
         after = "0-0"
         if last_event_id is not None:
             seen = await read_entry(redis, key, last_event_id)
-            if resume is None:
-                after = last_event_id
-                if seen is not None:
-                    view.seed(seen)
-                else:
-                    for frame in view.gap():
-                        yield frame
-            elif seen is not None:
+            if resume is not None and seen is not None:
                 fields = seen.fields
                 # A hint cannot skip output beyond the client's coverage or from another attempt/run.
                 if (
@@ -482,6 +512,7 @@ async def frames(
                     and fields["run_id"] == resume.run_id
                     and int(fields["attempt"]) == resume.position.attempt
                     and int(fields["sequence"]) <= resume.position.sequence
+                    and ("boundary" not in fields or int(fields["prefix_sequence"]) <= resume.position.sequence)
                 ):
                     after = last_event_id
             # An absent or incompatible hint replays retained entries against the business position.
@@ -496,6 +527,10 @@ async def frames(
                 for frame in await view.entry(entry):
                     yield frame
             after = batch[-1].id
+        # Durable output can advance while both Redis delta and notice are lost.
+        # This also covers a reader joining after that quiet-tail loss.
+        for frame in view.update(view.snapshot):
+            yield frame
         while True:
             try:
                 signal = await asyncio.wait_for(reader.signals.get(), timeout=KEEPALIVE_SECONDS)

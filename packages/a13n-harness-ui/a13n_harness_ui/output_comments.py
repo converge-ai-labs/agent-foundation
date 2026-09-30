@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic_ai.messages import ModelResponse, TextPart
-
 from a13n_harness_ui.errors import StoreConflictError, ThreadError
 from a13n_harness_ui.output_comment_models import (
     ChildOutputLocation,
@@ -160,18 +158,25 @@ class OutputComments:
                 raise StoreConflictError("Child output cursor selection changed.", code="comment_target_stale")
             position = decoded.position
         values: list[SavedOutputView] = []
-        for index, activity in enumerate(checkpoint.display.activities):
-            if activity.kind == "text" and activity.text is not None:
+        for index, block in enumerate(checkpoint.display.blocks):
+            text = block.content.get("text")
+            if block.kind == "text" and block.status == "succeeded" and isinstance(text, str):
                 target = SavedOutputTarget(
                     producing_thread_id=head.child_thread_id,
                     source_id=head.selected_checkpoint.logical_digest,
                     location=ChildOutputLocation(execution_id=execution_id, activity=index),
                 )
                 values.append(
-                    SavedOutputView(target=target, text=activity.text, offset=0, total_characters=len(activity.text))
+                    SavedOutputView(
+                        target=target,
+                        text=text[:65536],
+                        offset=0,
+                        total_characters=len(text),
+                        next_offset=65536 if len(text) > 65536 else None,
+                    )
                 )
-        if checkpoint.display.final_answer is not None:
-            text = checkpoint.display.final_answer
+        if checkpoint.final_answer is not None:
+            text = checkpoint.final_answer
             target = SavedOutputTarget(
                 producing_thread_id=head.child_thread_id,
                 source_id=head.selected_checkpoint.logical_digest,
@@ -242,27 +247,30 @@ class OutputComments:
         location = target.location
         if isinstance(location, RootOutputLocation):
             continuation = await self._store.objects.read_model(source, StoredContinuation)
-            history = (
-                display.messages
-                if (display := continuation.display_history) is not None
-                else continuation.harness_state.message_history
-            )
-            if continuation.harness_state.thread_id == target.producing_thread_id and location.message < len(history):
-                message = history[location.message]
-                if isinstance(message, ModelResponse) and location.part < len(message.parts):
-                    part = message.parts[location.part]
-                    if isinstance(part, TextPart):
-                        return part.content
+            scopes = {scope.id: scope for scope in continuation.display.scopes}
+            if continuation.harness_state.thread_id == target.producing_thread_id:
+                for block in continuation.display.blocks:
+                    scope = scopes[block.scope_id]
+                    if (
+                        block.kind == "text"
+                        and block.message_index == location.message
+                        and block.part_index == location.part
+                        and scope.thread_id == target.producing_thread_id
+                        and scope.parent_scope_id is None
+                        and isinstance(block.content.get("text"), str)
+                    ):
+                        return str(block.content["text"])
         else:
             checkpoint = await self._store.objects.read_model(source, StoredChildCheckpoint)
             if (
                 checkpoint.execution_id == location.execution_id
                 and checkpoint.child_thread_id == target.producing_thread_id
             ):
-                if location.activity is None and checkpoint.display.final_answer is not None:
-                    return checkpoint.display.final_answer
-                if location.activity is not None and location.activity < len(checkpoint.display.activities):
-                    activity = checkpoint.display.activities[location.activity]
-                    if activity.kind == "text" and activity.text is not None:
-                        return activity.text
+                if location.activity is None and checkpoint.final_answer is not None:
+                    return checkpoint.final_answer
+                if location.activity is not None and location.activity < len(checkpoint.display.blocks):
+                    block = checkpoint.display.blocks[location.activity]
+                    text = block.content.get("text")
+                    if block.kind == "text" and block.status == "succeeded" and isinstance(text, str):
+                        return text
         raise ThreadError("Target is not saved visible assistant text.", code="comment_target_invalid")

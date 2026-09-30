@@ -1,5 +1,133 @@
 {
   "$defs": {
+    "BlockAppend": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "field": {
+          "enum": [
+            "text",
+            "arguments",
+            "signature"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "op": {
+          "const": "block.append",
+          "default": "block.append",
+          "title": "Op",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 2,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "id",
+        "field",
+        "expected_revision",
+        "revision",
+        "value"
+      ],
+      "title": "BlockAppend",
+      "type": "object"
+    },
+    "BlockKind": {
+      "enum": [
+        "input",
+        "text",
+        "reasoning",
+        "tool_chunk",
+        "context_summary",
+        "media",
+        "extension"
+      ],
+      "type": "string"
+    },
+    "BlockPut": {
+      "additionalProperties": false,
+      "properties": {
+        "block": {
+          "$ref": "#/$defs/DisplayBlock"
+        },
+        "expected_revision": {
+          "minimum": 0,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "op": {
+          "const": "block.put",
+          "default": "block.put",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "block",
+        "expected_revision"
+      ],
+      "title": "BlockPut",
+      "type": "object"
+    },
+    "BlockStatus": {
+      "enum": [
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "deferred",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "BlocksRemove": {
+      "additionalProperties": false,
+      "properties": {
+        "ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ids",
+          "type": "array"
+        },
+        "omitted": {
+          "minimum": 0,
+          "title": "Omitted",
+          "type": "integer"
+        },
+        "op": {
+          "const": "blocks.remove",
+          "default": "blocks.remove",
+          "title": "Op",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "ids",
+        "omitted"
+      ],
+      "title": "BlocksRemove",
+      "type": "object"
+    },
     "Boundary": {
       "description": "The run committed a checkpoint whose display covers the attempt up to `sequence`.",
       "properties": {
@@ -38,26 +166,14 @@
       "type": "object"
     },
     "Delta": {
-      "description": "A data frame: one AG-UI event of a run's attempt at its per-attempt sequence, and the item it changed.",
+      "description": "A data frame: one atomic batch of shared display operations.",
       "properties": {
         "attempt": {
           "title": "Attempt",
           "type": "integer"
         },
-        "event": {
-          "additionalProperties": true,
-          "title": "Event",
-          "type": "object"
-        },
-        "item": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ItemRef"
-            },
-            {
-              "type": "null"
-            }
-          ]
+        "delta": {
+          "$ref": "#/$defs/DisplayDelta"
         },
         "run_id": {
           "title": "Run Id",
@@ -72,10 +188,221 @@
         "run_id",
         "attempt",
         "sequence",
-        "event",
-        "item"
+        "delta"
       ],
       "title": "Delta",
+      "type": "object"
+    },
+    "DisplayBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Content",
+          "type": "object"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/BlockKind"
+        },
+        "message_index": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message Index"
+        },
+        "part_index": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Part Index"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "scope_id": {
+          "title": "Scope Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/BlockStatus",
+          "default": "pending"
+        }
+      },
+      "required": [
+        "id",
+        "scope_id",
+        "kind",
+        "revision",
+        "status",
+        "content",
+        "message_index",
+        "part_index"
+      ],
+      "title": "DisplayBlock",
+      "type": "object"
+    },
+    "DisplayDelta": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {
+          "const": "display-delta/1",
+          "default": "display-delta/1",
+          "title": "Format",
+          "type": "string"
+        },
+        "from_sequence": {
+          "minimum": 0,
+          "title": "From Sequence",
+          "type": "integer"
+        },
+        "operations": {
+          "items": {
+            "$ref": "#/$defs/DisplayOperation"
+          },
+          "minItems": 1,
+          "title": "Operations",
+          "type": "array"
+        },
+        "producer": {
+          "$ref": "#/$defs/Producer"
+        },
+        "through_sequence": {
+          "minimum": 1,
+          "title": "Through Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "format",
+        "producer",
+        "from_sequence",
+        "through_sequence",
+        "operations"
+      ],
+      "title": "DisplayDelta",
+      "type": "object"
+    },
+    "DisplayOperation": {
+      "discriminator": {
+        "mapping": {
+          "block.append": "#/$defs/BlockAppend",
+          "block.put": "#/$defs/BlockPut",
+          "blocks.remove": "#/$defs/BlocksRemove",
+          "scope.put": "#/$defs/ScopePut"
+        },
+        "propertyName": "op"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/BlockPut"
+        },
+        {
+          "$ref": "#/$defs/BlockAppend"
+        },
+        {
+          "$ref": "#/$defs/ScopePut"
+        },
+        {
+          "$ref": "#/$defs/BlocksRemove"
+        }
+      ]
+    },
+    "DisplayScope": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "invocation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Invocation Id"
+        },
+        "parent_scope_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Scope Id"
+        },
+        "parent_tool_call_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Tool Call Id"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "status": {
+          "default": "running",
+          "enum": [
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+            "deferred"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "thread_id": {
+          "title": "Thread Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "thread_id",
+        "run_id",
+        "parent_scope_id",
+        "parent_tool_call_id",
+        "invocation_id",
+        "status"
+      ],
+      "title": "DisplayScope",
       "type": "object"
     },
     "Gap": {
@@ -105,45 +432,25 @@
       "title": "Gap",
       "type": "object"
     },
-    "ItemKind": {
-      "enum": [
-        "text_message",
-        "reasoning_message",
-        "tool_call",
-        "observation"
-      ],
-      "type": "string"
-    },
-    "ItemRef": {
-      "description": "The item a live event changed, and its state after the event.",
+    "JsonValue": {},
+    "Producer": {
+      "additionalProperties": false,
       "properties": {
-        "id": {
-          "title": "Id",
+        "generation": {
+          "title": "Generation",
           "type": "string"
         },
-        "kind": {
-          "$ref": "#/$defs/ItemKind"
-        },
-        "state": {
-          "$ref": "#/$defs/ItemState"
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
         }
       },
       "required": [
-        "id",
-        "kind",
-        "state"
+        "run_id",
+        "generation"
       ],
-      "title": "ItemRef",
+      "title": "Producer",
       "type": "object"
-    },
-    "ItemState": {
-      "enum": [
-        "in_progress",
-        "completed",
-        "interrupted",
-        "failed"
-      ],
-      "type": "string"
     },
     "RunSignal": {
       "description": "The payload of `reset` and `gap`.",
@@ -157,6 +464,26 @@
         "run_id"
       ],
       "title": "RunSignal",
+      "type": "object"
+    },
+    "ScopePut": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "scope.put",
+          "default": "scope.put",
+          "title": "Op",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/DisplayScope"
+        }
+      },
+      "required": [
+        "op",
+        "scope"
+      ],
+      "title": "ScopePut",
       "type": "object"
     }
   },

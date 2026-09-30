@@ -295,7 +295,16 @@ async def test_child_streams_provisional_text_before_message_close_and_saved_com
                             continue
                         event = frame["event"]
                         child_events.append(event)
-                        if event["event_type"] == "TEXT_MESSAGE_CONTENT" and "Provisional" in event["payload"]["delta"]:
+                        if (
+                            event["event_type"] == "DISPLAY_DELTA"
+                            and event["delta"] is not None
+                            and any(
+                                operation["op"] == "block.put"
+                                and operation["block"]["kind"] == "text"
+                                and "Provisional" in operation["block"]["content"].get("text", "")
+                                for operation in event["delta"]["operations"]
+                            )
+                        ):
                             observed.set()
                         if event["event_type"] == "RUN_FINISHED":
                             completed.set()
@@ -314,9 +323,12 @@ async def test_child_streams_provisional_text_before_message_close_and_saved_com
                     child = (await api.get(prefix + "/children")).json()["executions"][0]
                     assert child["persisted_status"] == "running"
                     assert not any(
-                        event["event_type"] == "TEXT_MESSAGE_END"
-                        and event["payload"].get("message_id") == child_events[-1]["payload"].get("message_id")
+                        operation["op"] == "block.put"
+                        and operation["block"]["kind"] == "text"
+                        and operation["block"]["status"] == "succeeded"
                         for event in child_events
+                        if event["delta"] is not None
+                        for operation in event["delta"]["operations"]
                     )
                     saved = await api.get(prefix + f"/children/{child['execution_id']}/saved-output")
                     assert saved.status_code == 400 and saved.json()["error"]["code"] == "comment_source_unavailable"

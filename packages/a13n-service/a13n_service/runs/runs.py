@@ -104,17 +104,14 @@ async def items(runtime: Runtime, actor: Principal, workspace_id: str, run_id: s
         # again names the display that replaced it.
         pointer, view = await _read(runtime.storage, actor, workspace_id, run_id)
         display = await checkpoints.load_display(runtime.objects, pointer)
-    display = display or Display()
+    display = display or Display.empty(run_id)
     sealed = view.sealed_at is not None
     return RunItems(
         run=view,
-        items=[
-            item.model_copy(update={"state": "interrupted"}) if sealed and item.state == "in_progress" else item
-            for item in display.items
-        ],
+        snapshot=display.snapshot.model_copy(update={"continuity": {}}),
+        display_revision=pointer.digest if pointer is not None else None,
         position=str(display.position) if pointer is not None else None,
         resume_after=display.resume_after,
-        dropped=display.dropped,
         complete=sealed,
     )
 

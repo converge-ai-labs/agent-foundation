@@ -3,7 +3,6 @@
 import asyncio
 import json
 from dataclasses import replace
-from datetime import datetime
 from typing import Any
 
 import pytest
@@ -30,10 +29,9 @@ async def test_a_message_runs_to_completion(executing, scripted_model, runs_kit)
     assert "hi" in str(runs_kit.user_texts(request))
     listing = await runs_kit.items(executing, run["id"])
     assert listing["complete"] and runs_kit.texts(listing) == [("user", "hi"), ("assistant", "Hello there")]
-    assert all(item["state"] == "completed" for item in listing["items"] if item["kind"] == "text_message")
-    # Each item keeps when its first event occurred and when the event that finished it did.
-    for item in listing["items"]:
-        assert datetime.fromisoformat(item["started_at"]) <= datetime.fromisoformat(item["ended_at"]), item
+    assert all(item["status"] == "succeeded" for item in listing["snapshot"]["blocks"] if item["kind"] == "text")
+    assert listing["display_revision"] is not None
+    assert listing["snapshot"]["continuity"] == {}
     entry = await executing.client.get(f"{executing.api}/threads/{run['thread_id']}/inbox")
     assert [item["status"] for item in entry.json()["items"]] == ["consumed"]
 
@@ -142,7 +140,7 @@ async def test_an_interrupt_cancels_the_model_call_in_flight(executing, scripted
     saved = await executing.runtime.redis.xrange(
         f"a13n:thread:{run['thread_id']}", min=listing["resume_after"], max=listing["resume_after"]
     )
-    assert saved and "event" in saved[0][1]
+    assert saved and "delta" in saved[0][1]
     entry = await executing.client.get(f"{executing.api}/threads/{run['thread_id']}/inbox")
     # The request carried the input and its checkpoint committed before the call: it was consumed.
     assert [item["status"] for item in entry.json()["items"]] == ["consumed"]
@@ -230,21 +228,26 @@ async def test_the_thread_stream_carries_live_output_and_resumes(executing, scri
         async with runs_kit.frames(url, headers) as stream:
             before = await runs_kit.until(stream, lambda frame: frame[0] == "boundary")
             # The input the run was offered streams before the checkpoint that consumed it.
-            inputs = [data["event"].get("delta") for event, _, data in before if event == "delta"]
+            inputs = [
+                operation["block"]["content"].get("text")
+                for event, _, data in before
+                if event == "delta"
+                for operation in data["delta"]["operations"]
+                if operation["op"] == "block.put"
+            ]
             assert "stream this" in inputs
-            first_delta = next(entry_id for event, entry_id, _ in before if event == "delta")
+            _, first_delta, first = next(frame for frame in before if frame[0] == "delta")
             gate.set()
             after = await runs_kit.until(
                 stream, lambda frame: frame[0] == "delta" and "Streaming reply" in str(frame[2])
             )
-        assert all(
-            data["item"] is None or data["item"]["id"].startswith("itm_") for e, _, data in after if e == "delta"
-        )
+        assert all(data["delta"]["format"] == "display-delta/1" for e, _, data in after if e == "delta")
 
         # Resuming after the first delta continues its sequence without a gap.
-        async with runs_kit.frames(url, {**headers, "last-event-id": first_delta}) as resumed:
-            event, _, data = await anext(resumed)
-            assert event == "delta" and data["sequence"] == 2
+        resume_url = url + f"?run={first['run_id']}&position={first['attempt']}-{first['sequence']}"
+        async with runs_kit.frames(resume_url, {**headers, "last-event-id": first_delta}) as resumed:
+            frames = await runs_kit.until(resumed, lambda frame: frame[0] == "delta")
+            assert frames[-1][2]["sequence"] == first["sequence"] + 1
         # A position that is not one is refused, instead of a gap the client would reconnect after forever.
         stream_path = f"{executing.api}/threads/{thread_id}/stream"
         malformed = await executing.client.get(stream_path, headers={**headers, "last-event-id": "latest"})
@@ -368,7 +371,7 @@ async def test_an_admission_refusal_prevents_the_call_and_fails_the_run(service,
     saved = await service.runtime.redis.xrange(
         f"a13n:thread:{run['thread_id']}", min=listing["resume_after"], max=listing["resume_after"]
     )
-    assert saved and "event" in saved[0][1]
+    assert saved and "delta" in saved[0][1]
 
 
 async def test_an_inline_subagent_runs_inside_its_parents_run(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

@@ -26,6 +26,8 @@ from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+from .terminal_display_fixtures import present_text
+
 
 def _text(renderer: StreamRenderer) -> str:
     return "\n".join(block.source for block in renderer.transcript.blocks.values())
@@ -36,9 +38,12 @@ def test_local_input_is_immediate_and_deduplicates_only_explicit_source() -> Non
     renderer.local_input("input-one", "same words")
     assert _text(renderer) == "> same words"
     for source in ("input-one", "input-two"):
-        renderer.ingest(
-            "TEXT_MESSAGE_CONTENT",
-            {"message_id": source, "role": "user", "delta": "same words", "metadata": {"source_id": source}},
+        present_text(
+            renderer,
+            "same words",
+            message_id=source,
+            kind="input" if "user" == "user" else "text",
+            metadata={"source_id": source},
         )
     assert _text(renderer).count("same words") == 2
 
@@ -256,41 +261,27 @@ async def test_ctrl_c_feedback_edit_disarms_exit_and_f2_toggles() -> None:
 
 
 def test_terminal_is_one_consumer_of_structured_media_input() -> None:
-    from a13n_harness import HarnessEvent
-    from a13n_harness.model_context import ModelInputEvent
-    from a13n_stream_protocol import HarnessAguiObserver
     from pydantic_ai.messages import BinaryContent, ImageUrl
+
+    from .terminal_display_fixtures import present_input
 
     content = [
         BinaryContent(data=b"private pixels", media_type="image/png", vendor_metadata={"image_object_id": "image-one"}),
         ImageUrl("https://example.test/picture.png"),
     ]
-    event = HarnessEvent(
-        thread_id="thread-one",
-        run_id="run-one",
-        sequence=1,
-        occurred_at=datetime.now(UTC),
-        event=ModelInputEvent(content=content),
-    )
     renderer = StreamRenderer(Status())
-    observed = HarnessAguiObserver().observe(event)
-    for item in observed:
-        renderer.ingest(item.type.value, item.model_dump(mode="json"))
+    state = present_input(renderer, content)
     assert "image/png · 14 bytes" in _text(renderer)
     assert "https://example.test/picture.png" in _text(renderer)
     assert "private pixels" not in _text(renderer)
-    assert observed[0].model_extra["metadata"]["image_object_id"] == "image-one"
+    assert next(iter(state.blocks.values())).content["metadata"]["image_object_id"] == "image-one"
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("fragmented", [False, True])
 @pytest.mark.parametrize("terminal_status", ["completed", "failed", "cancelled", "error"])
-async def test_live_cost_and_zero_context_are_projected_before_completion(
-    fragmented: bool, terminal_status: str, tmp_path: Path
-) -> None:
+async def test_live_cost_and_zero_context_are_projected_before_completion(terminal_status: str, tmp_path: Path) -> None:
     from a13n_harness_ui.interactive.backend import SessionBackend
     from a13n_harness_ui.live import HarnessUiLiveHub
-    from a13n_stream_protocol import fragment_custom_event
     from ag_ui.core import CustomEvent
 
     root = ModelUsageRecord(
@@ -310,20 +301,18 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
     )
     child = root.model_copy(update={"record_id": "child-1", "parent_agent_instance_id": "root"})
     report = CustomEvent(
-        name="a13n.usage",
+        name="a13n.harness.usage",
         value={
             "event": {
                 "schema_version": "1",
                 "payload": {
                     "type": "usage_report",
                     "records": [item.model_dump(mode="json") for item in (root, root, child, zero)],
-                    "padding": "x" * (50000 if fragmented else 0),
                 },
             }
         },
     )
-    events = fragment_custom_event(report, identity="usage-one")
-    assert (len(events) > 1) == fragmented
+    events = (report,)
     hub = HarnessUiLiveHub()
     release, updated = asyncio.Event(), asyncio.Event()
 
@@ -422,7 +411,7 @@ async def test_recovered_final_answer_keeps_markdown_separate_from_notices(
     hub = HarnessUiLiveHub()
     renderer = StreamRenderer(Status())
     if gap:
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "partial", "delta": "Incomplete **answer"})
+        present_text(renderer, "Incomplete **answer", message_id="partial")
     renderer.gap = gap
     outcome = SimpleNamespace(
         execution=SimpleNamespace(output=answer, output_omitted=output_omitted),
@@ -459,7 +448,7 @@ async def test_recovered_final_answer_keeps_markdown_separate_from_notices(
             assert any("bold" in style and "Important result" in text for style, text in fragments)
             assert "# Recovered heading" not in "".join(text for _, text in fragments)
         # A later normal streamed response still takes the Markdown path.
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "next", "delta": "**Next answer**"})
+        present_text(renderer, "**Next answer**", message_id="next")
         assert list(renderer.transcript.blocks.values())[-1].markdown
     finally:
         renderer.transcript.close()

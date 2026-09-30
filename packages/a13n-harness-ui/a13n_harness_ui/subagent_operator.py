@@ -53,21 +53,13 @@ from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot, intersect_usage_limits
 from a13n_logging import get_logger
-from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
+from a13n_stream_protocol import HarnessAguiConverter
+from a13n_stream_protocol.display import DisplaySnapshot, Producer
+from a13n_stream_protocol.projector import DisplayProjector
+from a13n_stream_protocol.session import DisplayCapture
 from ag_ui.core import Event as AguiEvent
 from ag_ui.core.events import (
-    CustomEvent,
-    ReasoningMessageContentEvent,
-    ReasoningMessageEndEvent,
-    ReasoningMessageStartEvent,
     RunErrorEvent,
-    TextMessageContentEvent,
-    TextMessageEndEvent,
-    TextMessageStartEvent,
-    ToolCallArgsEvent,
-    ToolCallEndEvent,
-    ToolCallResultEvent,
-    ToolCallStartEvent,
 )
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
@@ -90,11 +82,13 @@ from a13n_harness_ui.composition import (
     ThreadCompositionSelection,
 )
 from a13n_harness_ui.diagnostics import exception_feedback
+from a13n_harness_ui.display import baseline, enrich_tool
+from a13n_harness_ui.display_projection import child_presentation
 from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentRunService
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError, StoreError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.models import AppReference
-from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY, AppSnapshots
+from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
 from a13n_harness_ui.model_runtime import SubscriptionSource
 from a13n_harness_ui.observation import (
     UiObservation,
@@ -109,7 +103,6 @@ from a13n_harness_ui.restart_models import RestartItem, RestartPrincipal
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     ChildExecutionHead,
-    CompactChildActivity,
     CompactChildDisplay,
     LocalStore,
     MarkdownSubagentSource,
@@ -130,6 +123,7 @@ from a13n_harness_ui.surfaces import (
     SurfaceModel,
 )
 from a13n_harness_ui.thread_files import ThreadFiles
+from a13n_harness_ui.tool_evidence import ToolEvidenceCollector
 from a13n_harness_ui.tool_images import ToolImageCollector
 
 _JSON_ADAPTER = TypeAdapter(JsonValue)
@@ -193,7 +187,8 @@ class _ActiveSegment:
     parent_thread_id: str
     stream: HarnessRunStream[Any]
     done: Event
-    display: CompactChildDisplay
+    display: DisplayCapture
+    final_answer: str | None = None
     cleanup_succeeded: bool = False
 
 
@@ -210,7 +205,8 @@ class _PreparedSegment:
     environment: EnvironmentRunPlan
     stream: HarnessRunStream[Any]
     agent_instance_id: str
-    display: CompactChildDisplay
+    display: DisplayCapture
+    final_answer: str | None = None
 
 
 class _SubagentRequestError(RunCoordinationError):
@@ -421,14 +417,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 code="subagent_plan_invalid",
             )
         pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
+        display = DisplayCapture(_child_projector())
         reconstructed = self._agents.reconstruct(
             published.value,
             pricing_catalog=pricing_catalog,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
-            root_capabilities=()
-            if self._restart is None
-            else (RestartPauseCapability(self._restart, state.thread_id),),
+            root_capabilities=(display,)
+            + (() if self._restart is None else (RestartPauseCapability(self._restart, state.thread_id),)),
+            inline_capabilities=(display,),
         )
         environment = await self._environments.prepare(published.value)
         initial = await self._store.objects.publish_model(
@@ -456,6 +453,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         )
         stream = self._new_stream(
             reconstructed=reconstructed,
+            display=display,
             input=plan.context.input,
             usage_limits=usage_limits,
             identity=identity,
@@ -492,7 +490,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             environment=environment,
             stream=stream,
             agent_instance_id=agent_instance_id,
-            display=CompactChildDisplay(),
+            display=display,
         )
         try:
             await self._start_segment(prepared)
@@ -840,15 +838,16 @@ class HarnessUiSubagentOperator(SubagentOperator):
             parent_node=scope.composition.root,
         )
         pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
+        display = DisplayCapture(await to_thread.run_sync(_child_projector, checkpoint.display))
         reconstructed = self._agents.reconstruct(
             published.value,
             pricing_catalog=pricing_catalog,
             memory_positions=checkpoint.memory_cursors,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
-            root_capabilities=()
-            if self._restart is None
-            else (RestartPauseCapability(self._restart, thread.thread_id),),
+            root_capabilities=(display,)
+            + (() if self._restart is None else (RestartPauseCapability(self._restart, thread.thread_id),)),
+            inline_capabilities=(display,),
         )
         environment = await self._environments.prepare(published.value)
         execution_id = _public_id("execution")
@@ -865,6 +864,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         accepted = checkpoint.accepted_input.recover() if checkpoint.accepted_input is not None else None
         stream = self._new_stream(
             reconstructed=reconstructed,
+            display=display,
             input=plan.context.input,
             deferred_resume=accepted,
             usage_limits=usage_limits,
@@ -901,7 +901,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             environment=environment,
             stream=stream,
             agent_instance_id=agent_instance_id,
-            display=checkpoint.display,
+            display=display,
+            final_answer=checkpoint.final_answer,
         )
         try:
             await self._start_segment(prepared)
@@ -961,13 +962,16 @@ class HarnessUiSubagentOperator(SubagentOperator):
             composition=parent_composition,
         )
         pricing = await to_thread.run_sync(get_current_pricing_catalog)
+        display = DisplayCapture(await to_thread.run_sync(_child_projector, checkpoint.display))
         reconstructed = self._agents.reconstruct(
             composition,
             pricing_catalog=pricing,
             memory_positions=checkpoint.memory_cursors,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
-            root_capabilities=() if self._restart is None else (RestartPauseCapability(self._restart, item.thread_id),),
+            root_capabilities=(display,)
+            + (() if self._restart is None else (RestartPauseCapability(self._restart, item.thread_id),)),
+            inline_capabilities=(display,),
         )
         environment = await self._environments.prepare(composition)
         execution_id, agent_instance_id = _public_id("execution"), _public_id("agent")
@@ -977,6 +981,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         try:
             stream = self._new_stream(
                 reconstructed=reconstructed,
+                display=display,
                 input=None,
                 deferred_resume=accepted,
                 usage_limits=limits,
@@ -1007,7 +1012,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 environment=environment,
                 stream=stream,
                 agent_instance_id=agent_instance_id,
-                display=checkpoint.display,
+                display=display,
+                final_answer=checkpoint.final_answer,
             )
             await self._start_segment(prepared)
         except BaseException as exc:
@@ -1019,6 +1025,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self,
         *,
         reconstructed: ReconstructedAgent,
+        display: DisplayCapture,
         input: RunInputValue | None,
         usage_limits: UsageLimits | None,
         identity: AgentIdentityRef,
@@ -1030,6 +1037,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         deferred_resume: DeferredToolResume | None = None,
         resume_usage: bool = False,
     ) -> HarnessRunStream[Any]:
+        if display.sessions:
+            display.projector = _child_projector(display.projector.capture())
+            display.sessions.clear()
         bindings = RunBindings(
             instance=AgentInstanceContext(
                 identity=identity,
@@ -1044,10 +1054,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
             tool_result_directory=environment.tool_result_directory,
             model_resolver=reconstructed.model_resolver.fresh(),
             usage_reporter=self._store.usage.reporter(state.thread_id),
+            extension_observer=display.projector.observe_extension,
             file_media_understanding=reconstructed.file_media_understanding(state.thread_id),
         )
         bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
-        return reconstructed.executable.stream(
+        stream = reconstructed.executable.stream(
             input if deferred_resume is None or deferred_resume.recovery else None,
             bindings=bindings,
             previous_state=state,
@@ -1055,6 +1066,22 @@ class HarnessUiSubagentOperator(SubagentOperator):
             deferred_resume=deferred_resume,
             usage_limits=usage_limits,
         )
+        display.projector.state.position = display.projector.state.position.model_copy(
+            update={
+                "producer": Producer(
+                    run_id=stream.run_id, generation=display.projector.state.position.producer.generation
+                )
+            }
+        )
+        if self._live_hub is not None:
+            self._live_hub.register_display(
+                projector=display.projector,
+                root_thread_id=parent.root_thread_id,
+                parent_thread_id=parent.thread_id,
+                thread_id=state.thread_id,
+                execution_id=execution_id,
+            )
+        return stream
 
     async def _start_segment(self, prepared: _PreparedSegment) -> None:
         done = Event()
@@ -1064,6 +1091,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             stream=prepared.stream,
             done=done,
             display=prepared.display,
+            final_answer=prepared.final_answer,
         )
         async with self._lock:
             self._require_started_locked()
@@ -1114,6 +1142,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         state=state,
                         deferred_requests=deferred,
                         display=display,
+                        final_answer=current.final_answer,
                         terminal=False,
                         expected=expected_checkpoint,
                     )
@@ -1121,6 +1150,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     accepted = _deny_deferred(deferred)
                     next_stream = self._new_stream(
                         reconstructed=current.reconstructed,
+                        display=current.display,
                         input=current.input,
                         usage_limits=current.usage_limits,
                         identity=current.identity,
@@ -1135,7 +1165,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         retained = self._active.get(current.head.execution_id)
                         if retained is not None:
                             retained.stream = next_stream
-                            retained.display = display
                             self._signal_change_locked()
                     current = _PreparedSegment(
                         head=current.head,
@@ -1149,7 +1178,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         environment=next_environment,
                         stream=next_stream,
                         agent_instance_id=current.agent_instance_id,
-                        display=display,
+                        display=current.display,
+                        final_answer=current.final_answer,
                     )
                     continue
                 record_output(result.output, status=result.status)
@@ -1160,6 +1190,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     expected_checkpoint,
                     terminal_events,
                     accepted=current.stream.pending_deferred_input,
+                    final_answer=current.final_answer,
                     memory_positions=current.reconstructed.memory_cursors.snapshot(),
                 )
                 await self._publish_summary(current.head)
@@ -1194,7 +1225,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         state=state,
                         deferred_requests=None,
                         accepted=current.stream.pending_deferred_input,
-                        display=active.display,
+                        display=_capture_display(current, state),
+                        final_answer=current.final_answer,
                         terminal=True,
                     )
                 except Exception as checkpoint_error:
@@ -1224,6 +1256,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         self._restart.finished(current.state.thread_id)
                     active.done.set()
                     self._signal_change_locked()
+                if self._live_hub is not None:
+                    await self._live_hub.finish_root(
+                        thread_id=current.state.thread_id, run_id=current.stream.run_id, saved_continuation_id=None
+                    )
                 # Persisted terminal status precedes cleanup; publish again only
                 # after process-local activity is no longer observable as active.
                 await self._publish_summary_by_execution(current.head.execution_id)
@@ -1246,7 +1282,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             state=state,
             deferred_requests=None,
             accepted=prepared.stream.pending_deferred_input,
-            display=active.display,
+            display=_capture_display(prepared, state),
+            final_answer=prepared.final_answer,
             terminal=True,
         )
         await self._store.child_executions.finish(
@@ -1290,12 +1327,12 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self,
         prepared: _PreparedSegment,
         active: _ActiveSegment,
-    ) -> tuple[HarnessRunResult[Any], CompactChildDisplay, tuple[AguiEvent, ...]]:
-        observer = HarnessAguiObserver()
+    ) -> tuple[HarnessRunResult[Any], DisplaySnapshot, tuple[AguiEvent, ...]]:
+        observer = HarnessAguiConverter(fragment=False)
+        tool_evidence = ToolEvidenceCollector()
         tool_images = ToolImageCollector(
             run_id=prepared.stream.run_id, thread_id=prepared.state.thread_id, files=self._thread_files
         )
-        compactor = _DisplayCompactor(prepared.display)
         result: HarnessRunResult[Any] | None = None
         terminal_events: tuple[AguiEvent, ...] = ()
         run_error: BaseException | None = None
@@ -1317,6 +1354,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 async with prepared.stream as stream:
                     async for item in stream:
                         record_skill_event(item)
+                        tool_evidence.observe(item)
                         await self._store.usage.observe(thread_id=prepared.state.thread_id, item=item)
                         image_events = await tool_images.observe(item)
                         app_events = (
@@ -1324,10 +1362,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                             if self._mcp_apps is not None
                             else ()
                         )
+                        enrich_tool(prepared.display, item)
                         events = (*observer.observe(item), *image_events, *app_events)
-                        compactor.observe(events)
-                        async with self._lock:
-                            active.display = compactor.snapshot()
                         if isinstance(item, HarnessRunResultEvent):
                             # Completion remains fenced by cleanup and checkpoint
                             # publication in _finish_result; token delivery is not
@@ -1357,6 +1393,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     )
             except BaseException as exc:
                 finalization_error = exc
+        if run_error is not None or finalization_error is not None:
+            prepared.display.projector.finish_scope(
+                prepared.stream.run_id, "cancelled" if isinstance(run_error, get_cancelled_exc_class()) else "failed"
+            )
         if run_error is not None:
             if finalization_error is not None:
                 run_error.add_note(f"Environment finalization also failed: {finalization_error!r}")
@@ -1378,23 +1418,26 @@ class HarnessUiSubagentOperator(SubagentOperator):
             result = result.replace(
                 failure=result.failure.model_copy(update={"message": f"{result.failure.message}\n{feedback}"})
             )
-        return result, compactor.snapshot(), terminal_events
+        display = _capture_display(prepared, result.state)
+        return result, display, terminal_events
 
     async def _finish_result(
         self,
         head: ChildExecutionHead,
         result: HarnessRunResult[Any],
-        display: CompactChildDisplay,
+        display: DisplaySnapshot,
         expected: ObjectRef | None,
         terminal_events: tuple[AguiEvent, ...],
         *,
+        final_answer: str | None = None,
         accepted: DeferredToolResume | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> tuple[AguiEvent, ...]:
         if result.status == "completed":
             state = result.state
             assert state is not None
-            terminal_display = _with_completion(display, output=result.output)
+            if isinstance(result.output, str) and result.output:
+                final_answer = result.output
             try:
                 checkpoint = await self._publish_checkpoint_object(
                     head=head,
@@ -1403,7 +1446,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     state=state,
                     deferred_requests=None,
                     accepted=accepted,
-                    display=terminal_display,
+                    display=display,
+                    final_answer=final_answer,
                     terminal=True,
                 )
                 await self._store.child_executions.finish(
@@ -1424,11 +1468,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
 
         if result.status == "failed":
             failure = result.failure or SafeFailure(code="subagent_failed", message="The child execution failed.")
-            terminal_display = _with_failure(display, failure)
             await self._finish_non_success(
                 head=head,
                 result=result,
-                display=terminal_display,
+                display=display,
+                final_answer=final_answer,
                 status="failed",
                 failure=failure,
                 expected=expected,
@@ -1438,11 +1482,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
             return terminal_events
 
         if result.status == "cancelled":
-            terminal_display = _with_completion(display, output=None)
             await self._finish_non_success(
                 head=head,
                 result=result,
-                display=terminal_display,
+                display=display,
+                final_answer=final_answer,
                 status="cancelled",
                 failure=None,
                 expected=expected,
@@ -1461,7 +1505,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         *,
         head: ChildExecutionHead,
         result: HarnessRunResult[Any],
-        display: CompactChildDisplay,
+        display: DisplaySnapshot,
+        final_answer: str | None,
         status: str,
         failure: SafeFailure | None,
         expected: ObjectRef | None,
@@ -1480,6 +1525,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     deferred_requests=None,
                     accepted=accepted,
                     display=display,
+                    final_answer=final_answer,
                     terminal=True,
                 )
             except Exception:
@@ -1500,8 +1546,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         run_id: str,
         state: HarnessState,
         deferred_requests: DeferredToolRequests | None,
-        display: CompactChildDisplay,
+        display: DisplaySnapshot,
         terminal: bool,
+        final_answer: str | None = None,
         expected: ObjectRef | None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> ObjectRef:
@@ -1512,6 +1559,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             state=state,
             deferred_requests=deferred_requests,
             display=display,
+            final_answer=final_answer,
             terminal=terminal,
         )
         await self._store.child_executions.select_checkpoint(
@@ -1531,8 +1579,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         run_id: str,
         state: HarnessState,
         deferred_requests: DeferredToolRequests | None,
-        display: CompactChildDisplay,
+        display: DisplaySnapshot,
         terminal: bool,
+        final_answer: str | None = None,
         accepted: DeferredToolResume | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> ObjectRef:
@@ -1548,6 +1597,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             accepted_input=StoredDeferredInput.capture(accepted, state),
             deferred_requests=deferred_requests,
             display=display,
+            final_answer=final_answer,
             terminal=terminal,
             created_at=datetime.now(UTC),
         )
@@ -1841,14 +1891,12 @@ class HarnessUiSubagentOperator(SubagentOperator):
     async def _execution_display(self, head: ChildExecutionHead) -> CompactChildDisplay:
         async with self._lock:
             active = self._active.get(head.execution_id)
-            display = active.display if active is not None else None
-        if display is None:
-            display = (
-                (await self._read_checkpoint(head)).display
-                if head.selected_checkpoint is not None
-                else CompactChildDisplay()
-            )
-        return display
+            if active is not None:
+                return child_presentation(active.display.projector.capture(), active.final_answer)
+        if head.selected_checkpoint is None:
+            return CompactChildDisplay()
+        checkpoint = await self._read_checkpoint(head)
+        return child_presentation(checkpoint.display, checkpoint.final_answer)
 
     async def _execution_view(
         self, head: ChildExecutionHead, *, display: CompactChildDisplay | None = None
@@ -1898,101 +1946,17 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self._changed = Event()
 
 
-class _DisplayCompactor:
-    """Retain only bounded closed AG-UI activity."""
+def _child_projector(saved: DisplaySnapshot | None = None) -> DisplayProjector:
+    return DisplayProjector(
+        baseline("preparing", saved), batch=True, max_blocks=512, max_bytes=4 * 1024 * 1024, max_field_chars=32768
+    )
 
-    def __init__(self, initial: CompactChildDisplay) -> None:
-        self._activities = list(initial.activities)
-        self._apps = {item.app_id: item for item in initial.mcp_apps}
-        self._final_answer = initial.final_answer
-        self._text: dict[str, str] = {}
-        self._reasoning: dict[str, str] = {}
-        self._tool_names: dict[str, str] = {}
-        self._tool_arguments: dict[str, str] = {}
-        self._tool_results: dict[str, str] = {}
-        self._tool_ended: set[str] = set()
 
-    def observe(self, events: Sequence[AguiEvent]) -> None:
-        for event in events:
-            extra = event.model_extra or {}
-            metadata = ContentMetadata.from_native(extra.get("metadata"))
-            if not metadata.display or extra.get("role") == "user":
-                continue
-            if isinstance(event, CustomEvent) and event.name == METADATA_KEY:
-                value = event.value
-                if isinstance(value, dict) and isinstance(value.get("event"), dict):
-                    for item in value["event"].get("apps", []):
-                        reference = AppReference.model_validate(item, strict=False)
-                        self._apps[reference.app_id] = reference
-                    while len(self._apps) > 128:
-                        del self._apps[next(iter(self._apps))]
-            elif isinstance(event, TextMessageStartEvent):
-                self._text[event.message_id] = ""
-            elif isinstance(event, TextMessageContentEvent):
-                self._text[event.message_id] = _append_bounded(self._text.get(event.message_id, ""), event.delta)
-            elif isinstance(event, TextMessageEndEvent):
-                text = self._text.pop(event.message_id, "")
-                if text:
-                    self._append(CompactChildActivity(kind="text", text=text))
-            elif isinstance(event, ReasoningMessageStartEvent):
-                self._reasoning[event.message_id] = ""
-            elif isinstance(event, ReasoningMessageContentEvent):
-                self._reasoning[event.message_id] = _append_bounded(
-                    self._reasoning.get(event.message_id, ""),
-                    event.delta,
-                )
-            elif isinstance(event, ReasoningMessageEndEvent):
-                text = self._reasoning.pop(event.message_id, "")
-                if text:
-                    self._append(CompactChildActivity(kind="thinking", text=text))
-            elif isinstance(event, ToolCallStartEvent):
-                self._tool_names[event.tool_call_id] = event.tool_call_name
-            elif isinstance(event, ToolCallArgsEvent):
-                self._tool_arguments[event.tool_call_id] = _append_bounded(
-                    self._tool_arguments.get(event.tool_call_id, ""),
-                    event.delta,
-                    limit=_MAX_TOOL_VALUE_TEXT,
-                )
-            elif isinstance(event, ToolCallResultEvent):
-                tool_call_id = event.tool_call_id
-                self._tool_results[tool_call_id] = _append_bounded(
-                    self._tool_results.get(tool_call_id, ""),
-                    event.content,
-                    limit=_MAX_TOOL_VALUE_TEXT,
-                )
-                if tool_call_id in self._tool_ended:
-                    self._finish_tool(tool_call_id)
-            elif isinstance(event, ToolCallEndEvent):
-                tool_call_id = event.tool_call_id
-                self._tool_ended.add(tool_call_id)
-                if tool_call_id in self._tool_results:
-                    self._finish_tool(tool_call_id)
-
-    def snapshot(self) -> CompactChildDisplay:
-        return CompactChildDisplay(
-            activities=tuple(self._activities[-_MAX_DISPLAY_ACTIVITIES:]),
-            mcp_apps=tuple(self._apps.values()),
-            final_answer=self._final_answer,
-        )
-
-    def _finish_tool(self, tool_call_id: str) -> None:
-        name = self._tool_names.pop(tool_call_id, None)
-        self._tool_ended.discard(tool_call_id)
-        if name is None:
-            return
-        self._append(
-            CompactChildActivity(
-                kind="tool",
-                tool_name=name[:128],
-                arguments=_safe_json(self._tool_arguments.pop(tool_call_id, None)),
-                result=_safe_json(self._tool_results.pop(tool_call_id, None)),
-            )
-        )
-
-    def _append(self, activity: CompactChildActivity) -> None:
-        self._activities.append(activity)
-        if len(self._activities) > _MAX_DISPLAY_ACTIVITIES:
-            del self._activities[: len(self._activities) - _MAX_DISPLAY_ACTIVITIES]
+def _capture_display(prepared: _PreparedSegment, state: HarnessState | None) -> DisplaySnapshot:
+    capture = prepared.display
+    if state is not None and prepared.stream.run_id in capture.sessions:
+        return capture.capture(prepared.stream.run_id, state.message_history)
+    return capture.projector.capture()
 
 
 async def _finalize_rejected(
@@ -2107,30 +2071,6 @@ def _deny_deferred(requests: DeferredToolRequests) -> DeferredToolResume:
     )
 
 
-def _with_completion(display: CompactChildDisplay, *, output: object) -> CompactChildDisplay:
-    activities = list(display.activities)
-    final_answer = display.final_answer
-    if isinstance(output, str) and output:
-        final_answer = output
-        if not (activities and activities[-1].kind == "text" and activities[-1].text == output):
-            activities.append(CompactChildActivity(kind="text", text=output[:_MAX_ACTIVITY_TEXT]))
-    activities.append(CompactChildActivity(kind="completion"))
-    return CompactChildDisplay(
-        activities=tuple(activities[-_MAX_DISPLAY_ACTIVITIES:]),
-        final_answer=final_answer,
-    )
-
-
-def _with_failure(display: CompactChildDisplay, failure: SafeFailure) -> CompactChildDisplay:
-    # Keep the original SafeFailure for settlement; only the compact display
-    # uses the existing explicitly marked failure preview.
-    activities = [*display.activities, CompactChildActivity(kind="failure", text=_surface_failure(failure).message)]
-    return CompactChildDisplay(
-        activities=tuple(activities[-_MAX_DISPLAY_ACTIVITIES:]),
-        final_answer=display.final_answer,
-    )
-
-
 def _activity_snapshot(display: CompactChildDisplay) -> SubagentActivitySnapshot | None:
     if not display.activities:
         return None
@@ -2142,8 +2082,8 @@ def _activity_snapshot(display: CompactChildDisplay) -> SubagentActivitySnapshot
             tool_call_id=f"tool-{index + 1}",
             tool_name=activity.tool_name or "unknown",
             status="success",
-            arguments=activity.arguments,
-            result=activity.result,
+            arguments=_redact_json(activity.arguments),
+            result=_redact_json(activity.result),
         )
         for index, activity in enumerate(tools)
     )
@@ -2157,11 +2097,6 @@ def _activity_snapshot(display: CompactChildDisplay) -> SubagentActivitySnapshot
             len([item for item in display.activities if item.kind == "tool"]) - len(tools),
         ),
     )
-
-
-def _append_bounded(current: str, delta: str, *, limit: int = _MAX_ACTIVITY_TEXT) -> str:
-    value = current + delta
-    return value if len(value) <= limit else value[-limit:]
 
 
 def _safe_json(value: str | None) -> JsonValue | None:

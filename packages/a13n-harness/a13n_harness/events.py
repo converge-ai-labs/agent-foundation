@@ -400,6 +400,16 @@ class HarnessRunResultEvent[OutputT]:
 type HarnessStreamEvent[OutputT] = HarnessEvent | HarnessRunResultEvent[OutputT]
 
 
+class ExtensionObserver(Protocol):
+    """Synchronous producer observation, distinct from public stream delivery.
+
+    Hosts must not perform I/O or wait for a stream consumer here. The value is
+    validated and detached; observing it is not proof of public delivery.
+    """
+
+    def __call__(self, *, thread_id: str, run_id: str, event: HarnessExtensionEvent) -> None: ...
+
+
 @runtime_checkable
 class HarnessEventEmitter(Protocol):
     """Run-local path for Harness extensions into the canonical stream."""
@@ -474,9 +484,12 @@ class _ChildEventForwarder:
 class _RunEventEmitter:
     """Bounded queue consumed concurrently with the active Pydantic event iterator."""
 
-    def __init__(self, thread_id: str, run_id: str, *, capacity: int = 64) -> None:
+    def __init__(
+        self, thread_id: str, run_id: str, *, capacity: int = 64, observer: ExtensionObserver | None = None
+    ) -> None:
         self.thread_id = thread_id
         self.run_id = run_id
+        self._observer = observer
         self._queue: asyncio.Queue[HarnessExtensionEvent | HarnessEvent] = asyncio.Queue(maxsize=capacity)
         self._child_runs: dict[str, str] = {}
         self._child_provenance_by_token: WeakKeyDictionary[_ChildEventProvenanceToken, _ChildEventProvenance] = (
@@ -496,6 +509,8 @@ class _RunEventEmitter:
             validated = HarnessExtensionEvent.model_validate(event.model_dump(), strict=True)
         except ValueError as exc:
             raise RunError("Harness extension event is invalid.", code="event_invalid") from exc
+        if self._observer is not None:
+            self._observer(thread_id=self.thread_id, run_id=self.run_id, event=validated.model_copy(deep=True))
         await self._put(validated)
 
     def bind_child(self, child: _RunEventEmitter) -> _ChildEventForwarder:

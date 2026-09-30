@@ -204,7 +204,7 @@ async def test_resume_input_is_atomic_ordered_and_idempotent(service, scripted_m
     assert {m["tool_call_id"] for m in request["messages"] if m["role"] == "tool"} == {"approve", "review", "question"}
     assert len(await runs_kit.inbox(service, waiting["thread_id"])) == 1
     display = await runs_kit.items(service, run["id"])
-    inputs = [i for i in display["items"] if i["kind"] == "text_message" and "Use the revised invoice" in str(i)]
+    inputs = [i for i in display["snapshot"]["blocks"] if i["kind"] == "input" and "Use the revised invoice" in str(i)]
     assert len(inputs) == 1 and inputs[0]["content"]["metadata"]["source_id"] == run["id"]
 
 

@@ -276,3 +276,35 @@ async def test_a_wait_for_children_ends_when_the_worker_drains(service, scripted
     assert (await runs_kit.get_run(service, run_id))["status"] == "accepted"
     attempts = (await service.client.get(f"{service.api}/runs/{run_id}/attempts")).json()["items"]
     assert [item["status"] for item in attempts] == ["yielded"]
+
+
+async def test_inline_children_share_display_producer_but_keep_scoped_blocks(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    coordinator = await runs_kit.delegating(service, scripted_model, "inline")
+    scripted_model.call(
+        "delegate", {"subagent": "helper", "prompt": "compute"}, call_id="call_d", to="Role: coordinator"
+    )
+    scripted_model.say("Child answer", to="Role: worker")
+    scripted_model.say("Root answer", to="Role: coordinator")
+    submitted = await runs_kit.start_thread(service, coordinator, "delegate")
+    run_id = submitted["run"]["id"]
+    await (await runs_kit.attempt(service))
+    listing = await runs_kit.items(service, run_id)
+    assert listing["run"]["status"] == "completed", listing
+    snapshot = listing["snapshot"]
+    assert snapshot["position"]["producer"] == {"run_id": run_id, "generation": "1"}
+    roots = [scope for scope in snapshot["scopes"] if scope["parent_scope_id"] is None]
+    children = [scope for scope in snapshot["scopes"] if scope["parent_scope_id"] is not None]
+    assert len(roots) == len(children) == 1
+    root, child = roots[0], children[0]
+    assert child["parent_scope_id"] == root["id"] and child["parent_tool_call_id"] == "call_d"
+    assert root["status"] == child["status"] == "completed"
+    assert [
+        (block["scope_id"], block["content"]["text"]) for block in snapshot["blocks"] if block["kind"] == "text"
+    ] == [
+        (child["id"], "Child answer"),
+        (root["id"], "Root answer"),
+    ]
+    calls = [block for block in snapshot["blocks"] if block["kind"] == "tool_chunk"]
+    assert len(calls) == 1 and calls[0]["status"] == "succeeded"
+    summaries = [block for block in snapshot["blocks"] if block["content"].get("name") == "a13n.display.model_request"]
+    assert len(summaries) == 3 and all(block["status"] == "succeeded" for block in summaries)

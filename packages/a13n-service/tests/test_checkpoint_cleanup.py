@@ -198,7 +198,7 @@ async def test_a_failed_publication_cannot_leave_another_write_behind_seal(runti
     monkeypatch.setattr(runtime.objects, "put", put)
     lease = Lease("run_test", "rat_test", "thr_test", tenant.organization_id, tenant.workspace_id, 1, "worker", "token")
     state = RunState(harness=HarnessState.new(thread_id=lease.thread_id), seq=1, attempt=1)
-    publishing = asyncio.create_task(checkpoints.publish_checkpoint(runtime, lease, state, Display()))
+    publishing = asyncio.create_task(checkpoints.publish_checkpoint(runtime, lease, state, Display.empty(lease.run_id)))
     try:
         await started.wait()
         await asyncio.sleep(0)

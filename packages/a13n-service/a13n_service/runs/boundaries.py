@@ -1,9 +1,8 @@
 """Safe boundaries of a Harness run, where the worker commits a checkpoint.
 
 The capability exports the state at each boundary, with the memory cursors that history was delivered, and marks
-the boundary's position in the event stream with a `SafeBoundary` event. The worker folds every event before the
-marker into the display, so the display it commits with that state covers exactly the same history, then
-acknowledges the boundary.
+the boundary's position in the event stream with a `SafeBoundary` event. The producer captures compact display with canonical history before export awaits. The consumer commits
+that detached pair, even if native output advances before the marker is delivered, then acknowledges the boundary.
 
 - Before a model request the hook does not wait: the marker only reaches the stream once the request starts,
   and a model call needs no durable checkpoint first. The request can always be sent again, so this is where
@@ -20,15 +19,23 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from a13n_harness import AgentContext, HarnessState
+from a13n_harness.model_context import ModelContextCoordinatorCapability
+from a13n_stream_protocol import DisplayCapture, DisplaySnapshot
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapRunHandler
-from pydantic_ai.messages import CapabilityEvent, ModelMessage, ToolCallPart
+from pydantic_ai.capabilities import (
+    AbstractCapability,
+    CapabilityOrdering,
+    ValidatedToolArgs,
+    WrapModelRequestHandler,
+    WrapRunHandler,
+)
+from pydantic_ai.messages import CapabilityEvent, ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
 
 
 @dataclass(kw_only=True)
-class SafeBoundary(CapabilityEvent, namespace="a13n.service"):
+class SafeBoundary(CapabilityEvent, namespace="a13n.service", name="boundary"):
     token: int = 0
     # "model" before a model request, "tool" before tool execution.
     at: Literal["model", "tool"] = "model"
@@ -40,12 +47,14 @@ class Staged:
 
     state: HarnessState
     cursors: dict[str, str | None]
+    display: DisplaySnapshot
 
 
 class Boundaries(AbstractCapability[AgentContext]):
     id = "a13n.service.boundaries"
 
-    def __init__(self, cursors: Callable[[], dict[str, str | None]]) -> None:
+    def __init__(self, cursors: Callable[[], dict[str, str | None]], display: DisplayCapture) -> None:
+        self.display = display
         # The run's delivered memory cursors, snapshotted with each exported state.
         self.cursors = cursors
         self.primary: str | None = None
@@ -54,6 +63,9 @@ class Boundaries(AbstractCapability[AgentContext]):
         self.tokens = 0
         # The history length of the latest staged boundary; a boundary without new history is not staged again.
         self.staged_length = -1
+
+    def get_ordering(self) -> CapabilityOrdering:
+        return CapabilityOrdering(wrapped_by=(ModelContextCoordinatorCapability,))
 
     def take(self, token: int) -> Staged:
         return self.states.pop(token)
@@ -72,12 +84,16 @@ class Boundaries(AbstractCapability[AgentContext]):
             if owner:
                 self.primary = None
 
-    async def before_model_request(
-        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
-    ) -> ModelRequestContext:
+    async def wrap_model_request(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        request_context: ModelRequestContext,
+        handler: WrapModelRequestHandler,
+    ) -> ModelResponse:
         if ctx.run_id == self.primary:
-            await self._stage(ctx, request_context.messages, "model")
-        return request_context
+            await self._stage(ctx, ctx.messages, "model")
+        return await handler(request_context)
 
     async def before_tool_execute(
         self, ctx: RunContext[AgentContext], *, call: ToolCallPart, tool_def: ToolDefinition, args: ValidatedToolArgs
@@ -99,6 +115,7 @@ class Boundaries(AbstractCapability[AgentContext]):
         token = self.tokens
         self.acknowledged[token] = asyncio.get_running_loop().create_future()
         cursors = self.cursors()  # Taken with `messages`, before the export awaits.
-        self.states[token] = Staged(await ctx.deps.export_state(messages), cursors)
+        display = self.display.capture(ctx.deps.run_id, messages)
+        self.states[token] = Staged(await ctx.deps.export_state(messages), cursors, display)
         await ctx.emit(SafeBoundary(token=token, at=at))
         return token

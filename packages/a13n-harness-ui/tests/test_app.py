@@ -1124,8 +1124,15 @@ async def test_application_retains_failed_and_interrupted_history(
             with fail_after(5):
                 await started.wait()
                 if interrupted:
-                    while (await watch.events.receive()).event_type != "TEXT_MESSAGE_CONTENT":
-                        pass
+                    from a13n_stream_protocol.display import BlockPut
+
+                    while True:
+                        event = await watch.events.receive()
+                        if event.delta is not None and any(
+                            isinstance(operation, BlockPut) and operation.block.kind == "text"
+                            for operation in event.delta.operations
+                        ):
+                            break
                     assert (await app.cancel_root_operation(receipt.receipt_id)).accepted
                 operation = await app.wait_root_operation(receipt.receipt_id)
         assert operation.status is (RootOperationStatus.cancelled if interrupted else RootOperationStatus.failed)
@@ -1249,74 +1256,48 @@ async def test_cancel_before_stream_entry_does_not_export_unavailable_state(
         assert "Root continuation save failed" not in caplog.text
 
 
-@pytest.mark.parametrize("saved_kind", ["version", "position", "mapping", "stale", "absent"])
-async def test_display_restore_validates_before_runtime_detachment(
-    tmp_path: Path, monkeypatch, saved_kind: str
-) -> None:
-    from dataclasses import replace
-
-    from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
+@pytest.mark.parametrize("saved_kind", ["version", "scope", "absent"])
+async def test_display_restore_validates_before_runtime_entry(tmp_path: Path, monkeypatch, saved_kind: str) -> None:
+    from a13n_harness_ui.storage import StoredContinuation
+    from pydantic import ValidationError
 
     root = _write_configuration(tmp_path)
-    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
-        executor = app._root_runs._executor
-        executor._agents = _CompletedReconstructor()
+        app._root_runs._executor._agents = _CompletedReconstructor()
         thread = await app.create_thread()
         first = await app.submit_thread(thread_id=thread.thread_id, prompt="original native history")
         assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
         prior = (await app.get_thread(thread.thread_id)).continuation_id
-        capture = executor.capture
-        create_context = HarnessRunStream._create_context
-        contexts = []
+        read = app._store.objects.read_model
 
-        async def altered_admission(**kwargs):
-            admission = await capture(**kwargs)
-            state = admission.previous_state
-            entries = state.agent_context_state.entries
-            key = "a13n.harness-ui.display-history"
-            entry = entries.pop(key)
-            data = entry.data
-            assert isinstance(data, dict)
-            if saved_kind == "position":
-                data["model_positions"] = [9999]
-            elif saved_kind == "mapping":
-                data["model_positions"] = []
-            elif saved_kind == "stale":
-                data["model_history_digest"] = "0" * 64
-            if saved_kind != "absent":
-                entries[key] = CapabilityState(version="future" if saved_kind == "version" else "1", data=data)
-            return replace(
-                admission,
-                previous_state=state.model_copy(
-                    update={"agent_context_state": AgentContextStateSnapshot(entries=entries)}
-                ),
-            )
+        async def altered_read(reference, model):
+            stored = await read(reference, model)
+            if model is StoredContinuation:
+                data = stored.model_dump(mode="json")
+                if saved_kind == "version":
+                    data["schema_version"] = "1"
+                elif saved_kind == "scope":
+                    data["display"]["scopes"] = []
+                else:
+                    data.pop("display")
+                return StoredContinuation.model_validate(data)
+            return stored
 
-        async def record_context(stream, environment):
-            contexts.append(stream.run_id)
-            return await create_context(stream, environment)
+        async def unexpected_context(*args, **kwargs):
+            pytest.fail("Malformed saved display must fail before runtime entry")
 
-        monkeypatch.setattr(executor, "capture", altered_admission)
-        monkeypatch.setattr(HarnessRunStream, "_create_context", record_context)
-        second = await app.submit_thread(thread_id=thread.thread_id, prompt="next input")
-        result = await app.wait_root_operation(second.receipt_id)
-        if saved_kind in {"stale", "absent"}:
-            assert result.status is RootOperationStatus.completed
-            assert len(contexts) == 1
-            history = await app.get_thread_transcript(thread_id=thread.thread_id)
-            assert "original native history" in str(history) and "next input" in str(history)
-        else:
-            assert result.status is RootOperationStatus.failed
-            assert contexts == []
-            assert (await app.get_thread(thread.thread_id)).continuation_id == prior
+        with monkeypatch.context() as patch:
+            patch.setattr(app._store.objects, "read_model", altered_read)
+            patch.setattr(HarnessRunStream, "_create_context", unexpected_context)
+            with pytest.raises(ValidationError):
+                await app.submit_thread(thread_id=thread.thread_id, prompt="next input")
+        assert (await app.get_thread(thread.thread_id)).continuation_id == prior
 
 
 @pytest.mark.parametrize("failed_entry", [False, True])
 async def test_native_run_excludes_display_but_every_saved_checkpoint_retains_it(
     tmp_path: Path, monkeypatch, failed_entry: bool
 ) -> None:
-    from a13n_harness_ui.display_history import saved_display_history
     from a13n_harness_ui.storage import StoredContinuation
 
     root = _write_configuration(tmp_path)
@@ -1354,9 +1335,9 @@ async def test_native_run_excludes_display_but_every_saved_checkpoint_retains_it
             if kwargs["object_kind"] is ObjectKind.continuation:
                 value = kwargs["value"]
                 assert isinstance(value, StoredContinuation)
-                display = saved_display_history(value.harness_state)
-                assert display is not None
-                assert "display-only old prompt" in str(display.messages)
+                display = value.display
+                assert "a13n.harness-ui.display-history" not in value.harness_state.agent_context_state.entries
+                assert "display-only old prompt" in str(display.blocks)
                 publications.append(display)
             return await publish(**kwargs)
 
@@ -1418,10 +1399,8 @@ async def test_failed_stream_entry_still_exports_retained_state(
     ("owner", "name"),
     [
         ("root", "with_goal"),
-        ("root", "detach_display_history"),
-        ("collector", "__init__"),
-        ("collector", "capture"),
-        ("root", "with_display_history"),
+        ("root", "baseline"),
+        ("root", "project_continuation"),
         ("goal", "with_goal"),
     ],
 )
@@ -1430,7 +1409,7 @@ async def test_root_history_preparation_runs_off_loop(tmp_path: Path, monkeypatc
 
     root = _write_configuration(tmp_path)
     loop_thread = threading.get_ident()
-    target = {"root": root_execution, "collector": root_execution.DisplayHistoryCollector, "goal": goal}[owner]
+    target = {"root": root_execution, "goal": goal}[owner]
     original = getattr(target, name)
     calls = []
 
@@ -1470,8 +1449,8 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
     finished = threading.Event()
     captures = []
     model_calls = []
-    restore = root_execution.detach_display_history
-    capture = root_execution.DisplayHistoryCollector.capture
+    restore = root_execution.with_goal
+    project = root_execution.project_continuation
 
     def blocked(call):
         assert threading.get_ident() != loop_thread
@@ -1482,16 +1461,17 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
         finally:
             finished.set()
 
-    def restore_history(state):
-        return blocked(lambda: restore(state)) if stage == "prepare" else restore(state)
+    def restore_history(*args, **kwargs):
+        return blocked(lambda: restore(*args, **kwargs)) if stage == "prepare" else restore(*args, **kwargs)
 
-    def capture_history(self, history, *, completed=False):
+    def project_history(continuation):
         if captures and started.is_set():
-            assert finished.is_set(), "Terminal capture raced the checkpoint worker"
+            assert finished.is_set(), "Terminal encoding raced the checkpoint worker"
+        completed = any(scope.status == "completed" for scope in continuation.display.scopes)
         captures.append(completed)
         if (stage == "checkpoint" and len(captures) == 1) or (stage == "terminal" and completed):
-            return blocked(lambda: capture(self, history, completed=completed))
-        return capture(self, history, completed=completed)
+            return blocked(lambda: project(continuation))
+        return project(continuation)
 
     async def model(messages, info):
         model_calls.append(messages)
@@ -1501,8 +1481,8 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
-    monkeypatch.setattr(root_execution, "detach_display_history", restore_history)
-    monkeypatch.setattr(root_execution.DisplayHistoryCollector, "capture", capture_history)
+    monkeypatch.setattr(root_execution, "with_goal", restore_history)
+    monkeypatch.setattr(root_execution, "project_continuation", project_history)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
         selections = []
         select = app._store.threads.select_continuation
@@ -1571,7 +1551,7 @@ async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path,
         async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
             assert watch.root_stream is not None
             assert watch.root_stream.summary.base_continuation_id == prior
-            assert watch.root_stream.summary.event_count > 0
+            assert watch.root_stream.summary.position.sequence > 0
         monkeypatch.setattr(app._store.objects, "publish_model", publish)
         third = await app.submit_thread(thread_id=thread.thread_id, prompt="third")
         assert (await app.wait_root_operation(third.receipt_id)).status is RootOperationStatus.completed
@@ -1837,6 +1817,7 @@ class _CompletedReconstructor:
         *,
         subagent_operator,
         root_capabilities=(),
+        inline_capabilities=(),
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
@@ -1858,6 +1839,7 @@ class _DeferredReconstructor:
         *,
         subagent_operator,
         root_capabilities=(),
+        inline_capabilities=(),
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
@@ -1931,6 +1913,7 @@ class _SlowReconstructor:
         *,
         subagent_operator,
         root_capabilities=(),
+        inline_capabilities=(),
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
@@ -2215,8 +2198,7 @@ async def test_root_input_checkpoint_is_saved_before_model_output_and_advances_a
                         if replay is not None:
                             markers = [
                                 item
-                                for batch in replay.batches()
-                                for item in batch
+                                for item in replay.controls
                                 if item.payload is not None and item.payload.get("name") == "a13n.harness_ui.checkpoint"
                             ]
                             if markers:
@@ -2658,6 +2640,8 @@ async def test_oversized_history_is_indexed_once_and_hot_inspections_never_decod
     from a13n_harness_ui.thread_projection import ThreadProjectionService
     from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
 
+    from .display_fixtures import display_snapshot
+
     async with open_harness_ui_app(
         _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
     ) as app:
@@ -2684,7 +2668,8 @@ async def test_oversized_history_is_indexed_once_and_hot_inspections_never_decod
             update={
                 "harness_state": saved.harness_state.model_copy(
                     update={"message_history_json": encode_messages(history)}
-                )
+                ),
+                "display": display_snapshot(history, thread_id=thread.thread_id),
             }
         )
         replacement = (await app._store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)).ref
@@ -2783,6 +2768,8 @@ async def test_old_inspection_counts_rebuild_from_saved_metadata_across_history_
     from a13n_harness_ui.storage.read_models import project_continuation
     from pydantic_ai.messages import ModelRequest, ModelResponse, TextContent, TextPart, UserPromptPart
 
+    from .display_fixtures import display_snapshot
+
     settings = _settings(tmp_path / "state")
     root = _write_configuration(tmp_path)
     async with open_harness_ui_app(settings, configuration_path=root) as app:
@@ -2806,7 +2793,8 @@ async def test_old_inspection_counts_rebuild_from_saved_metadata_across_history_
             update={
                 "harness_state": stored.harness_state.model_copy(
                     update={"message_history_json": encode_messages(history)},
-                )
+                ),
+                "display": display_snapshot(history, thread_id=thread.thread_id),
             }
         )
         replacement = (await app._store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)).ref
@@ -2816,14 +2804,15 @@ async def test_old_inspection_counts_rebuild_from_saved_metadata_across_history_
             replacement=replacement,
             read_model=project_continuation(value),
         )
-        project = thread_projection._transcript_turns
+        project = thread_projection.transcript
 
-        def legacy_counts(history, completed=()):
-            return tuple(turn.model_copy(update={"steering_count": 3}) for turn in project(history, completed))
+        def legacy_counts(*args, **kwargs):
+            entries, turns = project(*args, **kwargs)
+            return entries, tuple(turn.model_copy(update={"steering_count": 3}) for turn in turns)
 
         with monkeypatch.context() as old:
             old.setattr(inspection, "INSPECTION_VERSION", 1)
-            old.setattr(thread_projection, "_transcript_turns", legacy_counts)
+            old.setattr(thread_projection, "transcript", legacy_counts)
             page = await app.get_thread_transcript(thread_id=thread.thread_id, limit=1)
             assert page.turns[0].steering_count == 3
         assert await app._store.inspections.header(thread.thread_id, replacement.logical_digest) is None

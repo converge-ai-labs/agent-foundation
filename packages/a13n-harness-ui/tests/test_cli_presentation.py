@@ -21,6 +21,8 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.selection import SelectionState
 
+from .terminal_display_fixtures import present_text
+
 
 def _png() -> bytes:
     stream = BytesIO()
@@ -165,8 +167,8 @@ def test_huge_delta_and_cache_budgets_are_visible_and_bounded() -> None:
 
 def test_interleaved_runs_keep_distinct_markdown_blocks_and_scroll_anchor() -> None:
     renderer = StreamRenderer(Status(mode="detailed"))
-    for run, text in (("root", "root-1"), ("child", "child-1"), ("root", "root-2")):
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "same", "delta": text}, run_id=run, child=run == "child")
+    for run, text in (("root", "root-1"), ("child", "child-1"), ("root", "root-1root-2")):
+        present_text(renderer, text, run_id=run, child=run == "child", message_id="same")
     sources = [block.source for block in renderer.transcript.blocks.values()]
     assert sources == ["root-1root-2", "**Subagent · child**\n\nchild-1"]
     control = TranscriptControl(renderer.transcript)
@@ -187,19 +189,14 @@ def test_interleaved_runs_keep_distinct_markdown_blocks_and_scroll_anchor() -> N
 )
 def test_retry_notice_respects_child_visibility(mode: str, child: bool, visible: bool) -> None:
     renderer = StreamRenderer(Status(mode=mode))
-    renderer.ingest(
+    renderer.ingest_control(
         "CUSTOM",
         {
             "name": "a13n.harness.recovery",
             "value": {
                 "event": {
                     "kind": "recovery",
-                    "payload": {
-                        "type": "model_retry_scheduled",
-                        "attempt": 2,
-                        "max_attempts": 5,
-                        "delay_seconds": 0.5,
-                    },
+                    "payload": {"type": "model_retry_scheduled", "attempt": 2, "max_attempts": 5, "delay_seconds": 0.5},
                 }
             },
         },
@@ -238,22 +235,26 @@ async def test_model_stream_retry_renders_only_a_system_notice_until_exhaustion(
         if exhausted or calls == 1:
             raise httpx2.ReadError("private provider error")
 
+    from .terminal_display_fixtures import capture_fixture
+
+    renderer = StreamRenderer(Status())
+    capture = capture_fixture(renderer)
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
+        capabilities=(capture,),
         model=FunctionModel(stream_function=stream),
         model_recovery=ModelRecoveryPolicy(
             enabled=True, max_attempts=2, backoff_initial_seconds=0, backoff_max_seconds=0
         ),
     )
-    renderer = StreamRenderer(Status())
     observer = HarnessAguiObserver()
     errors = []
     async with executable.stream("start", bindings=RunBindings.embedded()) as run:
         async for item in run:
             for event in observer.observe(item):
                 payload = event.model_dump(mode="json", by_alias=True)
-                renderer.ingest(payload["type"], payload)
+                renderer.ingest_control(payload["type"], payload)
                 if payload["type"] == "RUN_ERROR":
                     errors.append(payload)
                     assert calls == 2

@@ -201,7 +201,10 @@ function occurrence(
 function facts(items: readonly DisplayItem[]): Fact[] {
   const list: Fact[] = [];
   for (const item of items) {
-    const opened = occurrence(item.id, item.first_stream_id, item.started_at);
+    const opened = {
+      ...occurrence(item.id, item.first_stream_id, item.started_at),
+      scope: item.scope_id ?? attemptOf(item.first_stream_id),
+    };
     if (item.kind === "observation") {
       list.push({ kind: "observation", at: opened, content: item.content });
       continue;
@@ -220,7 +223,10 @@ function facts(items: readonly DisplayItem[]): Fact[] {
     )
       list.push({
         kind: "finished",
-        at: occurrence(item.id, item.last_stream_id, item.ended_at ?? null),
+        at: {
+          ...occurrence(item.id, item.last_stream_id, item.ended_at ?? null),
+          scope: opened.scope,
+        },
         item: presented,
       });
   }
@@ -356,6 +362,22 @@ export function runExecution(
     else {
       presented.set(fact.item.id, fact.item);
       execution = opened(execution, fact.at, fact.item, fact.callId);
+    }
+  }
+  // Compact native blocks and scope lineage carry execution provenance without
+  // replaying raw part/lifecycle observations or joining by globally unique call IDs.
+  for (const item of items) {
+    const step = execution.steps.find((step) => step.id === item.id);
+    if (!step) continue;
+    if (item.content.native === true) step.native = true;
+    const child = item.content.inline_scope;
+    if (isRecord(child)) {
+      step.kind = "subagent";
+      step.dispatchOnly = false;
+      step.state = String(child.status);
+      step.detail = child;
+      for (const nested of execution.steps)
+        if (nested.scope === child.id) nested.parentId = step.id;
     }
   }
   return closeAtSeal(execution, run);

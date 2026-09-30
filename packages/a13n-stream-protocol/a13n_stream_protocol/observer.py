@@ -101,17 +101,15 @@ class _ObserverState:
     parts: dict[int, _PartCursor] = field(default_factory=dict)
 
 
-class HarnessAguiObserver:
-    """Convert and accumulate one public Harness run as typed AG-UI events."""
+class HarnessAguiConverter:
+    """Convert one Harness run without retaining an event transcript."""
 
-    def __init__(self, *, processor: AguiEventProcessor | None = None) -> None:
+    def __init__(self, *, processor: AguiEventProcessor | None = None, fragment: bool = True) -> None:
         self._processor = processor
+        self._fragment = fragment
         self._thread_id: str | None = None
         self._run_id: str | None = None
         self._state = _ObserverState()
-        self._events: list[Event] = []
-        self._resuming = False
-        self._resume_completed = False
 
     @property
     def thread_id(self) -> str | None:
@@ -123,36 +121,8 @@ class HarnessAguiObserver:
         """Return the bound Harness Run identity, if observation has begun."""
         return self._run_id
 
-    async def resume(self, history: AsyncIterable[HarnessStreamEvent[Any]]) -> None:
-        """Atomically rebuild this fresh observer from finite source history.
-
-        Historical events are accumulated but not returned. Observation and
-        another resumption are rejected until the history iterable finishes.
-        """
-        if not isinstance(history, AsyncIterable):
-            raise TypeError("history must be an async iterable of Harness stream events")
-        if self._resuming:
-            raise AguiObservationError("Observer resumption is already in progress")
-        if self._resume_completed or self._thread_id is not None or self._run_id is not None:
-            raise AguiObservationError("Observer resumption requires a fresh observer")
-
-        staged = HarnessAguiObserver(processor=self._processor)
-        self._resuming = True
-        try:
-            async for item in history:
-                staged.observe(item)
-            self._thread_id = staged._thread_id
-            self._run_id = staged._run_id
-            self._state = staged._state
-            self._events = staged._events
-            self._resume_completed = True
-        finally:
-            self._resuming = False
-
     def observe(self, item: HarnessStreamEvent[Any]) -> tuple[Event, ...]:
-        """Convert and atomically accumulate one source item."""
-        if self._resuming:
-            raise AguiObservationError("Cannot observe while observer resumption is in progress")
+        """Atomically advance conversion state and return detached frames."""
         if not isinstance(item, HarnessEvent | HarnessRunResultEvent):
             raise TypeError("item must be a HarnessEvent or HarnessRunResultEvent")
         self._validate_correlation(item)
@@ -173,7 +143,7 @@ class HarnessAguiObserver:
             for index, event in enumerate(processed)
             for frame in (
                 fragment_custom_event(event, identity=f"{item.thread_id}:{item.run_id}:{item.sequence}:{index}")
-                if isinstance(event, CustomEvent)
+                if self._fragment and isinstance(event, CustomEvent)
                 else [event]
             )
         ]
@@ -181,25 +151,7 @@ class HarnessAguiObserver:
         self._thread_id = item.thread_id
         self._run_id = item.run_id
         self._state = staged_state
-        self._events.extend(stored)
-        return _copy_events(stored)
-
-    @property
-    def event_count(self) -> int:
-        """Number of accumulated frames, usable as a finite snapshot boundary."""
-        return len(self._events)
-
-    def snapshot(self, *, start: int = 0, stop: int | None = None) -> tuple[Event, ...]:
-        """Return detached accumulated frames in the requested half-open range.
-
-        Capture ``event_count`` once and use it as ``stop`` when reading a
-        growing observer in batches. Positions are observer-local, not transport
-        sequence numbers. The no-argument form retains the complete snapshot.
-        """
-        end = len(self._events) if stop is None else stop
-        if start < 0 or end < start or end > len(self._events):
-            raise ValueError("snapshot range is outside the accumulated events")
-        return _copy_events(self._events[start:end])
+        return stored
 
     def _validate_correlation(self, item: HarnessStreamEvent[Any]) -> None:
         if self._thread_id is not None and item.thread_id != self._thread_id:
@@ -342,6 +294,69 @@ class HarnessAguiObserver:
                 raise AguiObservationError(f"The event processor changed structural field {field_name}")
         _validate_nested_source_correlation(original, replacement)
         return replacement.model_copy(deep=True)
+
+
+class HarnessAguiObserver(HarnessAguiConverter):
+    """Explicit source-replay accumulator for callers needing AG-UI history.
+
+    Live display projection uses HarnessAguiConverter, never this accumulator.
+    """
+
+    def __init__(self, *, processor: AguiEventProcessor | None = None) -> None:
+        super().__init__(processor=processor)
+        self._events: list[Event] = []
+        self._resuming = False
+        self._resume_completed = False
+
+    def observe(self, item: HarnessStreamEvent[Any]) -> tuple[Event, ...]:
+        if self._resuming:
+            raise AguiObservationError("Cannot observe while observer resumption is in progress")
+        events = super().observe(item)
+        self._events.extend(_copy_events(events))
+        return events
+
+    async def resume(self, history: AsyncIterable[HarnessStreamEvent[Any]]) -> None:
+        """Atomically rebuild this fresh observer from finite source history.
+
+        Historical events are accumulated but not returned. Observation and
+        another resumption are rejected until the history iterable finishes.
+        """
+        if not isinstance(history, AsyncIterable):
+            raise TypeError("history must be an async iterable of Harness stream events")
+        if self._resuming:
+            raise AguiObservationError("Observer resumption is already in progress")
+        if self._resume_completed or self._thread_id is not None or self._run_id is not None:
+            raise AguiObservationError("Observer resumption requires a fresh observer")
+
+        staged = HarnessAguiObserver(processor=self._processor)
+        self._resuming = True
+        try:
+            async for item in history:
+                staged.observe(item)
+            self._thread_id = staged._thread_id
+            self._run_id = staged._run_id
+            self._state = staged._state
+            self._events = staged._events
+            self._resume_completed = True
+        finally:
+            self._resuming = False
+
+    @property
+    def event_count(self) -> int:
+        """Number of accumulated frames, usable as a finite snapshot boundary."""
+        return len(self._events)
+
+    def snapshot(self, *, start: int = 0, stop: int | None = None) -> tuple[Event, ...]:
+        """Return detached accumulated frames in the requested half-open range.
+
+        Capture ``event_count`` once and use it as ``stop`` when reading a
+        growing observer in batches. Positions are observer-local, not transport
+        sequence numbers. The no-argument form retains the complete snapshot.
+        """
+        end = len(self._events) if stop is None else stop
+        if start < 0 or end < start or end > len(self._events):
+            raise ValueError("snapshot range is outside the accumulated events")
+        return _copy_events(self._events[start:end])
 
 
 def _convert_input(item: HarnessEvent, content: Sequence[UserContent]) -> list[Event]:

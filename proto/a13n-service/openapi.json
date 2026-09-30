@@ -2077,6 +2077,30 @@
         "title": "BearerCredential",
         "type": "object"
       },
+      "BlockKind": {
+        "enum": [
+          "input",
+          "text",
+          "reasoning",
+          "tool_chunk",
+          "context_summary",
+          "media",
+          "extension"
+        ],
+        "type": "string"
+      },
+      "BlockStatus": {
+        "enum": [
+          "pending",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled",
+          "deferred",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "BootstrapInput": {
         "properties": {
           "email": {
@@ -3216,6 +3240,220 @@
           "action"
         ],
         "title": "Deny",
+        "type": "object"
+      },
+      "DisplayBlock": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Content",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/BlockKind"
+          },
+          "message_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Index"
+          },
+          "part_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Part Index"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "scope_id": {
+            "title": "Scope Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BlockStatus",
+            "default": "pending"
+          }
+        },
+        "required": [
+          "id",
+          "scope_id",
+          "kind",
+          "revision",
+          "status",
+          "content",
+          "message_index",
+          "part_index"
+        ],
+        "title": "DisplayBlock",
+        "type": "object"
+      },
+      "DisplayPosition": {
+        "additionalProperties": false,
+        "properties": {
+          "producer": {
+            "$ref": "#/components/schemas/Producer"
+          },
+          "sequence": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "producer",
+          "sequence"
+        ],
+        "title": "DisplayPosition",
+        "type": "object"
+      },
+      "DisplayScope": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "invocation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invocation Id"
+          },
+          "parent_scope_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Scope Id"
+          },
+          "parent_tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Tool Call Id"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "default": "running",
+            "enum": [
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "deferred"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "thread_id",
+          "run_id",
+          "parent_scope_id",
+          "parent_tool_call_id",
+          "invocation_id",
+          "status"
+        ],
+        "title": "DisplayScope",
+        "type": "object"
+      },
+      "DisplaySnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DisplayBlock"
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "continuity": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Continuity",
+            "type": "object"
+          },
+          "format": {
+            "const": "display/1",
+            "default": "display/1",
+            "title": "Format",
+            "type": "string"
+          },
+          "omitted": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Omitted",
+            "type": "integer"
+          },
+          "position": {
+            "$ref": "#/components/schemas/DisplayPosition"
+          },
+          "scopes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DisplayScope"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "format",
+          "position",
+          "scopes",
+          "blocks",
+          "omitted",
+          "continuity"
+        ],
+        "title": "DisplaySnapshot",
         "type": "object"
       },
       "EmailChangeConfirm": {
@@ -4625,82 +4863,6 @@
         ],
         "title": "IssuedKey",
         "type": "object"
-      },
-      "Item": {
-        "additionalProperties": false,
-        "properties": {
-          "content": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Content",
-            "type": "object"
-          },
-          "ended_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ended At"
-          },
-          "first_stream_id": {
-            "title": "First Stream Id",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "kind": {
-            "$ref": "#/components/schemas/ItemKind"
-          },
-          "last_stream_id": {
-            "title": "Last Stream Id",
-            "type": "string"
-          },
-          "started_at": {
-            "format": "date-time",
-            "title": "Started At",
-            "type": "string"
-          },
-          "state": {
-            "$ref": "#/components/schemas/ItemState"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "state",
-          "first_stream_id",
-          "last_stream_id",
-          "started_at",
-          "content"
-        ],
-        "title": "Item",
-        "type": "object"
-      },
-      "ItemKind": {
-        "enum": [
-          "text_message",
-          "reasoning_message",
-          "tool_call",
-          "observation"
-        ],
-        "type": "string"
-      },
-      "ItemState": {
-        "enum": [
-          "in_progress",
-          "completed",
-          "interrupted",
-          "failed"
-        ],
-        "type": "string"
       },
       "JsonPart": {
         "additionalProperties": false,
@@ -8200,6 +8362,25 @@
         "title": "PrincipalSummary",
         "type": "object"
       },
+      "Producer": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "title": "Generation",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "generation"
+        ],
+        "title": "Producer",
+        "type": "object"
+      },
       "Profile": {
         "properties": {
           "created_at": {
@@ -9108,16 +9289,16 @@
             "title": "Complete",
             "type": "boolean"
           },
-          "dropped": {
-            "title": "Dropped",
-            "type": "integer"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/Item"
-            },
-            "title": "Items",
-            "type": "array"
+          "display_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Revision"
           },
           "position": {
             "anyOf": [
@@ -9143,13 +9324,16 @@
           },
           "run": {
             "$ref": "#/components/schemas/RunView"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/DisplaySnapshot"
           }
         },
         "required": [
           "run",
-          "items",
+          "snapshot",
+          "display_revision",
           "position",
-          "dropped",
           "complete"
         ],
         "title": "RunItems",

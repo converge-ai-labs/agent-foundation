@@ -21,7 +21,9 @@ export async function* decodeSse(
   try {
     while (true) {
       const chunk = await reader.read();
-      buffer += decoder.decode(chunk.value, { stream: !chunk.done });
+      // An incomplete final UTF-8 sequence is part of an uncommitted frame, not a protocol violation.
+      if (chunk.done) return;
+      buffer += decoder.decode(chunk.value, { stream: true });
       let boundary: number;
       while ((boundary = buffer.search(/[\r\n]/)) >= 0) {
         if (
@@ -56,11 +58,6 @@ export async function* decodeSse(
       }
       if (buffer.length + size > maxFrameCharacters)
         throw new ProtocolError("SSE frame exceeds the size limit.");
-      if (chunk.done) {
-        if (buffer || values.length)
-          throw new ProtocolError("The stream ended inside an SSE frame.");
-        return;
-      }
     }
   } finally {
     await reader.cancel().catch(() => undefined);

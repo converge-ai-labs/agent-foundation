@@ -168,7 +168,7 @@ def test_nonzero_process_exit_is_failed_not_a_green_completion(callback: bool) -
         running = json.dumps({"process_id": "process-one", "status": {"phase": "running"}})
         renderer._observe_shell_result(running, "pytest", "run-one")
         if callback:
-            renderer.ingest(
+            renderer.ingest_control(
                 "CUSTOM",
                 {
                     "name": "a13n.shell.status",
@@ -194,3 +194,37 @@ def test_nonzero_process_exit_is_failed_not_a_green_completion(callback: bool) -
         assert "[failed (exit 127)]" in red
     finally:
         renderer.transcript.close()
+
+
+def test_context_row_removal_rereads_surviving_summary_without_stale_details() -> None:
+    from a13n_stream_protocol.display import BlocksRemove
+
+    from .terminal_display_fixtures import present_context, present_summary, state_for
+
+    renderer = StreamRenderer(Status())
+    present_summary(renderer, "compact-one", "retained summary")
+    present_context(renderer, "compact-one", status="succeeded")
+    state = state_for(renderer)
+    assert any("retained summary" in block.source for block in renderer.transcript.blocks.values())
+    removed = ("root:execution:compact-one",)
+    state.publish([BlocksRemove(ids=removed, omitted=1)])
+    changed = renderer.remove_blocks(state, removed)
+    renderer.display_blocks(state, changed)
+    sources = "\n".join(block.source for block in renderer.transcript.blocks.values())
+    assert "Compacting context" in sources
+    assert "retained summary" not in sources
+    assert "Context lifecycle" not in sources
+    removed = ("root:context:compact-one",)
+    state.publish([BlocksRemove(ids=removed, omitted=2)])
+    renderer.display_blocks(state, renderer.remove_blocks(state, removed))
+    assert not renderer.transcript.blocks
+
+
+def test_full_tool_arguments_use_transcript_budget_not_pending_output_budget() -> None:
+    from .terminal_display_fixtures import present_tool
+
+    renderer = StreamRenderer(Status())
+    arguments = json.dumps({"value": "x" * 12000 + "full-arguments-tail"})
+    present_tool(renderer, "large", name="custom_tool", arguments=arguments, arguments_complete=True)
+    assert any("full-arguments-tail" in block.source for block in renderer.transcript.blocks.values())
+    assert all(not hasattr(preview, "arguments") for preview in renderer._tools.values())

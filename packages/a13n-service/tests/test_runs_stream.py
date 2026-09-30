@@ -1,72 +1,24 @@
-"""The thread stream: coalesced fragments, trimming at boundaries, and what readers receive after a trim."""
+"""Typed producer batches, durable coverage and Redis replay recovery."""
 
 import asyncio
 import json
-from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 import pytest
-from a13n_harness import HarnessEvent
 from a13n_service.runs import stream as stream_module
-from a13n_service.runs.coalesce import MAX_MERGED_CHARS, Coalescer
-from a13n_service.runs.display import Display, DisplayFold, Observed
+from a13n_service.runs.coalesce import Coalescer
+from a13n_service.runs.display import Display
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import ThreadStream, WrittenPosition, stream_key
 from a13n_service.settings import Settings
-from pydantic_ai.messages import (
-    FunctionToolResultEvent,
-    PartDeltaEvent,
-    PartEndEvent,
-    PartStartEvent,
-    RetryPromptPart,
-    TextPart,
-    TextPartDelta,
-    ThinkingPart,
-    ThinkingPartDelta,
-    ToolCallPart,
-    ToolCallPartDelta,
-    ToolReturnPart,
-)
+from a13n_stream_protocol import DisplayDelta, DisplayProjector, DisplayScope, DisplayState, Producer
+from a13n_stream_protocol.display import BlockPut, ScopePut
+from pydantic_ai.messages import PartDeltaEvent, PartEndEvent, PartStartEvent, TextPart, TextPartDelta
 from redis.asyncio import Redis
 
 pytestmark = pytest.mark.anyio
-
 RUN = "run_stream"
-PART_DELTA = "a13n.pydantic_ai.part_delta"
-_AT = datetime(2026, 9, 24, tzinfo=UTC)
-
-
-def _harness(native: list[Any]) -> list[HarnessEvent]:
-    return [
-        HarnessEvent(
-            thread_id="thread",
-            run_id="harness",
-            sequence=index,
-            occurred_at=_AT + timedelta(milliseconds=index),
-            event=event,
-        )
-        for index, event in enumerate(native)
-    ]
-
-
-def _text(index: int, *pieces: str) -> list[Any]:
-    return [
-        PartStartEvent(index=index, part=TextPart("")),
-        *(PartDeltaEvent(index=index, delta=TextPartDelta(content_delta=piece)) for piece in pieces),
-        PartEndEvent(index=index, part=TextPart("".join(pieces))),
-    ]
-
-
-def _tool_call(index: int, call_id: str, *arguments: str) -> list[Any]:
-    return [
-        PartStartEvent(index=index, part=ToolCallPart(tool_name="search", args=None, tool_call_id=call_id)),
-        *(
-            PartDeltaEvent(index=index, delta=ToolCallPartDelta(args_delta=piece, tool_call_id=call_id))
-            for piece in arguments
-        ),
-        PartEndEvent(index=index, part=ToolCallPart(tool_name="search", args="".join(arguments), tool_call_id=call_id)),
-    ]
 
 
 def _trimming(settings: Settings, window: float) -> Settings:
@@ -77,203 +29,93 @@ async def _entries(redis: Redis, thread_id: str) -> list[tuple[str, dict[str, st
     return await redis.xrange(stream_key(thread_id))
 
 
-def _events(entries: list[tuple[str, dict[str, str]]]) -> list[dict[str, Any]]:
-    return [json.loads(fields["event"]) for _, fields in entries if "event" in fields]
+def _batches(entries):
+    return [DisplayDelta.model_validate_json(fields["delta"]) for _, fields in entries if "delta" in fields]
 
 
-def _contents(events: list[dict[str, Any]], kind: str = "TEXT_MESSAGE_CONTENT") -> list[str]:
-    return [event["delta"] for event in events if event["type"] == kind]
+def _puts(entries):
+    return [op.block for delta in _batches(entries) for op in delta.operations if isinstance(op, BlockPut)]
 
 
-def _streamed_arguments(events: list[dict[str, Any]]) -> list[str]:
-    return [event["value"]["event"]["delta"]["args_delta"] for event in events if event.get("name") == PART_DELTA]
-
-
-def _argument_items(display: Display) -> list[str | None]:
-    """The argument text of each observation item holding a tool call's streamed arguments; None once omitted."""
-    texts: list[str | None] = []
-    for item in display.items:
-        if item.kind == "observation" and item.content["name"] == PART_DELTA:
-            value: Any = item.content["value"]
-            texts.append(None if value == {"omitted": True} else value["event"]["delta"]["args_delta"])
-    return texts
-
-
-def _replies(events: list[dict[str, Any]]) -> list[str]:
-    """The streamed text deltas of assistant messages."""
-    replies = {event["messageId"] for event in events if event["type"] == "TEXT_MESSAGE_START"}
-    replies &= {event["messageId"] for event in events if event.get("role") == "assistant"}
-    return [
-        event["delta"] for event in events if event["type"] == "TEXT_MESSAGE_CONTENT" and event["messageId"] in replies
-    ]
-
-
-async def _coalesce(
-    runtime: Runtime, sources: list[HarnessEvent], *, window: float, boundary_after: int | None = None
-) -> tuple[list[tuple[str, dict[str, str]]], Display]:
-    """Feed Harness events through a coalescer as an attempt does, committing a boundary after the event at
-    `boundary_after`; the stream entries and the display it leaves."""
-    thread_id = f"thr_{uuid4().hex}"
-    fold = DisplayFold(RUN, Display(), attempt=1, max_bytes=runtime.settings.worker.display_bytes)
-    live = ThreadStream(runtime.redis, runtime.settings, thread_id=thread_id, run_id=RUN, attempt=1)
-    async with live, Coalescer(fold, live, window=window) as output:
-        for index, source in enumerate(sources):
-            output.observe(source)
-            if index == boundary_after:
-                output.flush()
-                output.boundary()
-            if index % 100 == 0:
-                await live.buffer.join()  # A model streams slower than this loop: let the writer keep up.
-    return await _entries(runtime.redis, thread_id), fold.snapshot()
-
-
-def _positionless(display: Display) -> list[dict[str, Any]]:
-    """Items without the stream positions they record, which merging renumbers; an observation's ID is its
-    position."""
-    return [
-        item.model_dump(exclude={"first_stream_id", "last_stream_id", *(("id",) if item.kind == "observation" else ())})
-        for item in display.items
-    ]
-
-
-# Coalescing
-
-
-async def test_fragments_merge_and_fold_the_same_display(runtime: Runtime) -> None:
-    thinking = [
-        PartStartEvent(index=0, part=ThinkingPart("")),
-        *(PartDeltaEvent(index=0, delta=ThinkingPartDelta(content_delta=piece)) for piece in ("Let ", "me ", "see")),
-        PartEndEvent(index=0, part=ThinkingPart("Let me see", signature="sig")),
-    ]
-    sources = _harness(
-        [
-            *thinking,
-            *_text(1, "Look", "ing ", "it ", "up"),
-            *_tool_call(2, "call-1", '{"q":', '"x"}'),
-            *_tool_call(3, "call-2", "{}"),
-            FunctionToolResultEvent(ToolReturnPart(tool_name="search", content="found", tool_call_id="call-1")),
-            FunctionToolResultEvent(RetryPromptPart("bad arguments", tool_name="search", tool_call_id="call-2")),
-            *_text(4, "It ", "is ", "x"),
-            # The same part index in a later model response is another part.
-            *_tool_call(2, "call-3", '{"r":', "1}"),
-        ]
+def _delta(sequence: int, run_id: str = RUN, *, attempt: int = 1) -> DisplayDelta:
+    return DisplayDelta(
+        producer=Producer(run_id=run_id, generation=str(attempt)),
+        from_sequence=sequence - 1,
+        through_sequence=sequence,
+        operations=(ScopePut(scope=DisplayScope(id="scope", thread_id="thread", run_id="harness")),),
     )
-    # The boundary arrives while "Look" and "ing " are held.
-    each, unmerged = await _coalesce(runtime, sources, window=0, boundary_after=7)
-    merged_entries, merged = await _coalesce(runtime, sources, window=60, boundary_after=7)
-
-    events = _events(merged_entries)
-    assert _contents(events, "REASONING_MESSAGE_CONTENT") == ["Let me see"]
-    assert _contents(events) == ["Looking ", "it up", "It is x"]
-    assert len(_contents(_events(each))) == 7
-    # A tool call's streamed arguments merge per part, as one observation item each.
-    assert _streamed_arguments(_events(each)) == ['{"q":', '"x"}', "{}", '{"r":', "1}"]
-    assert _streamed_arguments(events) == ['{"q":"x"}', "{}", '{"r":1}']
-    assert _argument_items(merged) == ['{"q":"x"}', "{}", '{"r":1}']
-    # Sequences stay dense, and the boundary covers every event observed before it.
-    sequences = [int(fields["sequence"]) for _, fields in merged_entries]
-    boundary = next(index for index, (_, fields) in enumerate(merged_entries) if "boundary" in fields)
-    assert sequences[:boundary] + sequences[boundary + 1 :] == list(range(1, len(merged_entries)))
-    assert sequences[boundary] == sequences[boundary - 1]
-    assert merged.position.sequence == len(merged_entries) - 1 < unmerged.position.sequence
-    assert _positionless(merged) == _positionless(unmerged)
-    failed = [item for item in merged.items if item.kind == "tool_call" and item.state == "failed"]
-    assert [item.content["toolCallId"] for item in failed] == ["call-2"]
-    assert [item.content.get("encrypted_value") for item in merged.items if item.kind == "reasoning_message"] == ["sig"]
 
 
-async def test_a_long_streamed_tool_call_is_one_item_and_few_entries(runtime: Runtime) -> None:
-    pieces = ["tok "] * 3000
-    # Arguments beyond the observation limit keep the one item, without its value.
-    oversized = ["x" * 20000] * 2
-    sources = _harness([*_tool_call(0, "call-1", *pieces), *_tool_call(1, "call-2", *oversized)])
-    each, unmerged = await _coalesce(runtime, sources, window=0)
-    merged_entries, merged = await _coalesce(runtime, sources, window=60)
-
-    assert len(_streamed_arguments(_events(each))) == 3002
-    assert len(_streamed_arguments(_events(merged_entries))) == 4
-    assert "".join(_streamed_arguments(_events(merged_entries))[:2]) == "".join(pieces)
-    assert _argument_items(merged) == ["".join(pieces), None]
-    assert _positionless(merged) == _positionless(unmerged)
-    # Per tool call: its start observation, its argument observation and the call.
-    assert len(unmerged.items) == len(merged.items) == 6
-
-
-async def test_a_merged_fragment_stays_within_the_bound(runtime: Runtime) -> None:
-    long = "x" * 5000
-    entries, _ = await _coalesce(runtime, _harness(_text(0, long, long, long, "y", "z")), window=60)
-
-    assert [len(delta) for delta in _contents(_events(entries))] == [5000, 5000, 5002]
-    assert all(len(delta) <= MAX_MERGED_CHARS for delta in _contents(_events(entries)))
-
-
-async def test_a_pause_releases_held_text_within_the_window(runtime: Runtime) -> None:
+async def _produce(runtime: Runtime, *, window: float, pieces: list[str], cancel: bool = False):
     thread_id = f"thr_{uuid4().hex}"
-    start, hel, lo, end = _harness(_text(0, "Hel", "lo"))
-    fold = DisplayFold(RUN, Display(), attempt=1, max_bytes=runtime.settings.worker.display_bytes)
+    baseline = Display.empty(RUN, attempt=1).snapshot
     live = ThreadStream(runtime.redis, runtime.settings, thread_id=thread_id, run_id=RUN, attempt=1)
-    async with live, Coalescer(fold, live, window=0.05) as output:
-        output.observe(start)
-        output.observe(hel)
-        async with asyncio.timeout(5):
-            while not _contents(_events(await _entries(runtime.redis, thread_id))):
-                await asyncio.sleep(0.02)
-        output.observe(lo)
-        output.observe(end)
-
-    assert _contents(_events(await _entries(runtime.redis, thread_id))) == ["Hel", "lo"]
-
-
-async def test_the_attempt_end_releases_a_held_fragment(runtime: Runtime) -> None:
-    for ending in (None, asyncio.CancelledError):
-        thread_id = f"thr_{uuid4().hex}"
-        start, hello, _ = _harness(_text(0, "Hello"))
-        fold = DisplayFold(RUN, Display(), attempt=1, max_bytes=runtime.settings.worker.display_bytes)
-        live = ThreadStream(runtime.redis, runtime.settings, thread_id=thread_id, run_id=RUN, attempt=1)
-        try:
-            async with live, Coalescer(fold, live, window=60) as output:
-                output.observe(start)
-                output.observe(hello)
-                if ending is not None:
-                    raise ending
-        except asyncio.CancelledError:
-            pass
-
-        assert _contents(_events(await _entries(runtime.redis, thread_id))) == ["Hello"], ending
-        assert fold.snapshot().items[0].content["text"] == "Hello"
+    projector = DisplayProjector(baseline, publish=live.delta, batch=window > 0)
+    try:
+        async with live, Coalescer(projector, window=window):
+            projector.scope(DisplayScope(id="scope", thread_id="thread", run_id="harness"))
+            projector.observe("scope", 0, PartStartEvent(index=0, part=TextPart("")))
+            for index, piece in enumerate(pieces):
+                projector.observe("scope", 0, PartDeltaEvent(index=0, delta=TextPartDelta(piece)))
+                if index % 100 == 0:
+                    await live.buffer.join()
+            if cancel:
+                raise asyncio.CancelledError
+            projector.observe("scope", 0, PartEndEvent(index=0, part=TextPart("".join(pieces))))
+    except asyncio.CancelledError:
+        pass
+    entries = await _entries(runtime.redis, thread_id)
+    replay = DisplayState(baseline)
+    for delta in _batches(entries):
+        replay.apply(delta)
+    assert replay.capture() == projector.capture()
+    return entries, projector.capture()
 
 
-async def test_a_streamed_reply_reaches_the_stream_coalesced(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+async def test_batches_are_dense_and_replay_the_same_display(runtime: Runtime) -> None:
+    each, immediate = await _produce(runtime, window=0, pieces=["tok "] * 400)
+    batches, batched = await _produce(runtime, window=60, pieces=["tok "] * 400)
+    assert batched.blocks == immediate.blocks
+    assert len(batches) < len(each) // 10
+    assert [delta.through_sequence for delta in _batches(batches)] == list(range(1, len(batches) + 1))
+
+
+async def test_batch_size_and_attempt_end_bound_pending_operations(runtime: Runtime) -> None:
+    entries, final = await _produce(runtime, window=60, pieces=["x" * 5000] * 10, cancel=True)
+    assert final.blocks[0].content["text"] == "x" * 50000
+    assert len(entries) > 1
+    assert all(len(delta.operations) <= 128 for delta in _batches(entries))
+
+
+async def test_timer_publishes_without_public_stream_consumption(runtime: Runtime) -> None:
+    delivered = asyncio.Event()
+    projector = DisplayProjector(
+        Display.empty(RUN, attempt=1).snapshot, publish=lambda delta: delivered.set(), batch=True
+    )
+    async with Coalescer(projector, window=0.01):
+        projector.scope(DisplayScope(id="scope", thread_id="thread", run_id="harness"))
+        async with asyncio.timeout(2):
+            await delivered.wait()
+        assert projector.state.position.sequence == 1
+
+
+async def test_a_streamed_reply_reaches_the_stream_coalesced(executing, scripted_model, runs_kit) -> None:
     agent = await runs_kit.create_agent(executing, scripted_model)
     pieces = ["tok "] * 400
     scripted_model.say(*pieces)
     run = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "fast"))["run"]["id"])
-
     entries = await _entries(executing.runtime.redis, run["thread_id"])
-    replies = _replies(_events(entries))
-    assert "".join(replies) == "".join(pieces)
-    assert len(replies) <= len(pieces) // 10, replies
     listing = await runs_kit.items(executing, run["id"])
     assert runs_kit.texts(listing) == [("user", "fast"), ("assistant", "".join(pieces))]
-    last_id, last_fields = [(entry_id, fields) for entry_id, fields in entries if "boundary" not in fields][-1]
+    replay = DisplayState(Display.empty(run["id"], attempt=1).snapshot)
+    batches = _batches(entries)
+    for delta in batches:
+        replay.apply(delta)
+    assert replay.capture().blocks == tuple(Display.model_validate({"snapshot": listing["snapshot"]}).snapshot.blocks)
+    assert len(batches) < len(pieces) // 10
+    last_id, fields = [(entry_id, fields) for entry_id, fields in entries if "delta" in fields][-1]
     assert listing["resume_after"] == last_id
-    assert listing["position"] == f"{last_fields['attempt']}-{last_fields['sequence']}"
-    deltas = [int(fields["sequence"]) for _, fields in entries if "boundary" not in fields]
-    assert deltas == list(range(1, len(deltas) + 1))
-
-    # Text the model pauses in the middle of reaches readers within the window instead of waiting for the rest.
-    scripted_model.say("Hello", " world", interval=0.5)
-    paused = await runs_kit.sealed(executing, (await runs_kit.start_thread(executing, agent, "slow"))["run"]["id"])
-    assert _replies(_events(await _entries(executing.runtime.redis, paused["thread_id"]))) == ["Hello", " world"]
-
-
-# Trimming
-
-
-def _delta(sequence: int) -> Observed:
-    return Observed(
-        sequence=sequence, event={"type": "TEXT_MESSAGE_CONTENT", "messageId": "msg", "delta": str(sequence)}, item=None
-    )
+    assert listing["position"] == f"1-{fields['sequence']}"
 
 
 @pytest.mark.parametrize("failure", ["dropped", "pending"])
@@ -468,7 +310,7 @@ async def test_a_run_keeps_only_the_tail_after_its_latest_boundary(serve, settin
 
     # The input streamed before the checkpoint that consumed it; the reply after it.
     assert "boundary" in entries[0][1] and "Removed" not in json.dumps(entries)
-    assert _replies(_events(entries)) == ["Kept"]
+    assert any(block.content.get("text") == "Kept" for block in _puts(entries))
 
 
 async def _queued_run(service, scripted_model, runs_kit) -> dict[str, Any]:  # type: ignore[no-untyped-def]
@@ -483,7 +325,10 @@ async def _frames(stream: Any, count: int) -> list[tuple[str, Any]]:
 
 
 async def test_readers_after_a_trim_receive_the_tail_and_gaps(service, scripted_model, listen, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.runs.claim import claim
+
     run = await _queued_run(service, scripted_model, runs_kit)
+    await claim(service.runtime, worker_id="trim-test", worker_build="test", limit=1)
     settings = _trimming(service.runtime.settings, 0)
     async with ThreadStream(
         service.runtime.redis, settings, thread_id=run["thread_id"], run_id=run["id"], attempt=1
@@ -500,10 +345,14 @@ async def test_readers_after_a_trim_receive_the_tail_and_gaps(service, scripted_
         async with runs_kit.frames(url, headers) as stream:
             assert await _frames(stream, 3) == [("gap", None), ("boundary", 2), ("delta", 3)]
         # A reader resuming exactly at the boundary continues without a gap.
-        async with runs_kit.frames(url, {**headers, "last-event-id": boundary_id}) as stream:
+        async with runs_kit.frames(
+            url + f"?run={run['id']}&position=1-2", {**headers, "last-event-id": boundary_id}
+        ) as stream:
             assert await _frames(stream, 1) == [("delta", 3)]
         # A reader whose position was removed starts with a gap.
-        async with runs_kit.frames(url, {**headers, "last-event-id": "1-0"}) as stream:
+        async with runs_kit.frames(
+            url + f"?run={run['id']}&position=1-0", {**headers, "last-event-id": "1-0"}
+        ) as stream:
             assert (await _frames(stream, 1))[0] == ("gap", None)
 
 
@@ -513,7 +362,7 @@ async def test_a_live_reader_skipped_past_removed_entries_gets_a_gap(service, sc
     fields = {"run_id": run["id"], "attempt": "1"}
 
     def delta(sequence: int) -> dict[str, str]:
-        return {**fields, "sequence": str(sequence), "event": json.dumps(_delta(sequence).event)}
+        return {**fields, "sequence": str(sequence), "delta": _delta(sequence, run["id"]).model_dump_json()}
 
     first = await redis.xadd(key, delta(1))
     headers = await runs_kit.bearer(service)
@@ -576,7 +425,7 @@ async def test_snapshot_position_filters_replay_and_ignores_unsafe_hints(
                 "run_id": run["id"],
                 "attempt": "1",
                 "sequence": str(sequence),
-                "event": json.dumps(_delta(sequence).event),
+                "delta": _delta(sequence, run["id"]).model_dump_json(),
                 **extra,
             },
         )
@@ -615,7 +464,7 @@ async def test_snapshot_position_reports_only_the_missing_suffix(service, script
             "run_id": run["id"],
             "attempt": "1",
             "sequence": "151",
-            "event": json.dumps(_delta(151).event),
+            "delta": _delta(151, run["id"]).model_dump_json(),
         },
     )
     async with listen(service.app) as base:
@@ -668,12 +517,20 @@ async def test_resuming_an_older_attempt_resets_before_the_new_attempt_tail(
     assert second.number == 2
     redis, key = service.runtime.redis, stream_key(run["thread_id"])
     await redis.xadd(
-        key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "event": json.dumps(_delta(100).event)}
+        key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "delta": _delta(100, run["id"]).model_dump_json()}
     )
-    await redis.xadd(key, {"run_id": run["id"], "attempt": "2", "sequence": "1", "event": json.dumps(_delta(1).event)})
+    await redis.xadd(
+        key,
+        {
+            "run_id": run["id"],
+            "attempt": "2",
+            "sequence": "1",
+            "delta": _delta(1, run["id"], attempt=2).model_dump_json(),
+        },
+    )
     # A fenced-out worker can finish an old Redis write after the new attempt starts.
     cursor = await redis.xadd(
-        key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "event": json.dumps(_delta(100).event)}
+        key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "delta": _delta(100, run["id"]).model_dump_json()}
     )
     headers = {**await runs_kit.bearer(service), "Last-Event-ID": cursor}
     async with listen(service.app) as base:
@@ -707,3 +564,66 @@ async def test_failed_checkpoint_publication_never_enqueues_a_boundary_or_trims(
     entries = await _entries(service.runtime.redis, submitted["thread"]["id"])
     assert all("boundary" not in fields for _, fields in entries)
     assert not trimmed
+
+
+async def test_delayed_boundary_neither_trims_nor_seeks_past_uncommitted_output(
+    service, scripted_model, listen, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.runs.claim import claim
+
+    run = await _queued_run(service, scripted_model, runs_kit)
+    await claim(service.runtime, worker_id="delayed-boundary", worker_build="test", limit=1)
+    async with ThreadStream(
+        service.runtime.redis,
+        _trimming(service.runtime.settings, 0),
+        thread_id=run["thread_id"],
+        run_id=run["id"],
+        attempt=1,
+    ) as live:
+        live.delta(_delta(1))
+        # Produced while persistence of snapshot 1 awaits object storage / SQL.
+        live.delta(_delta(2))
+        live.boundary(1)
+    entries = await _entries(service.runtime.redis, run["thread_id"])
+    assert [(fields["sequence"], "boundary" in fields) for _, fields in entries] == [
+        ("1", False),
+        ("2", False),
+        ("1", True),
+    ]
+    headers = await runs_kit.bearer(service)
+    async with listen(service.app) as base:
+        url = f"{base}{service.api}/threads/{run['thread_id']}/stream?run={run['id']}&position=1-1"
+        async with runs_kit.frames(url, {**headers, "last-event-id": entries[-1][0]}) as stream:
+            assert await _frames(stream, 2) == [("delta", 2), ("boundary", 1)]
+
+
+async def test_sql_refresh_announces_quiet_tail_without_redis_delta_or_notice(
+    service, scripted_model, listen, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.tables import RunRow
+
+    run = await _queued_run(service, scripted_model, runs_kit)
+    await claim(service.runtime, worker_id="quiet-tail", worker_build="test", limit=1)
+    headers = await runs_kit.bearer(service)
+    async with listen(service.app) as base:
+        url = f"{base}{service.api}/threads/{run['thread_id']}/stream?run={run['id']}&position=1-0"
+        async with runs_kit.frames(url, headers) as stream:
+            async with transaction(service.runtime.storage) as session:
+                row = await session.get(RunRow, run["id"])
+                assert row is not None
+                # The stream reads only selected pointer identity and coverage.
+                row.display = {
+                    "key": "quiet-tail",
+                    "digest": "a" * 64,
+                    "size": 1,
+                    "format": 2,
+                    "position": {"attempt": 1, "sequence": 2},
+                }
+            frames = await runs_kit.until(stream, lambda frame: frame[0] == "boundary")
+            assert any(event == "gap" and data["position"] == "1-2" for event, _, data in frames)
+            assert frames[-1][1] is None and frames[-1][2]["sequence"] == 2
+        # Joining after the quiet tail also observes SQL coverage, without a version change.
+        async with runs_kit.frames(url, headers) as stream:
+            assert await _frames(stream, 2) == [("gap", None), ("boundary", 2)]

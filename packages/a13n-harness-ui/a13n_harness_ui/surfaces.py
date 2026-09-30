@@ -640,6 +640,7 @@ class ThreadFocusSnapshot(SurfaceModel):
     root_operation: RootOperationView | None = None
     recent_events: tuple[LiveEvent, ...] = ()
     root_stream: RootStreamSummary | None = None
+    child_streams: tuple[RootStreamSummary, ...] = ()
 
 
 class LaunchProjectSelected(SurfaceModel):

@@ -1,15 +1,33 @@
 from __future__ import annotations
 
 import pytest
+from a13n_harness_ui.display import baseline
 from a13n_harness_ui.errors import LivePresentationError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub, LiveCursor, SummaryCursor
-from ag_ui.core.events import TextMessageContentEvent
+from a13n_stream_protocol.display import DisplayScope, DisplaySnapshot, DisplayState
+from a13n_stream_protocol.projector import DisplayProjector
+from ag_ui.core.events import RunErrorEvent
+from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
 
 pytestmark = pytest.mark.anyio
 
 
-def _text_event(value: str) -> TextMessageContentEvent:
-    return TextMessageContentEvent(timestamp=1, message_id="message-1", delta=value)
+def _text_event(value: str) -> RunErrorEvent:
+    return RunErrorEvent(timestamp=1, message=value)
+
+
+def _producer(hub, thread="thread-root", run="run-root", *, parent=None, execution=None, batch=False):
+    projector = DisplayProjector(baseline(run, None), batch=batch)
+    hub.register_display(
+        projector=projector,
+        root_thread_id=parent or thread,
+        thread_id=thread,
+        parent_thread_id=parent,
+        execution_id=execution,
+        base_continuation_id="saved-before",
+    )
+    projector.scope(DisplayScope(id=run, run_id=run, thread_id=thread))
+    return projector
 
 
 async def test_live_hub_cutover_follows_complete_root_lineage_and_detaches_events() -> None:
@@ -48,12 +66,12 @@ async def test_live_hub_cutover_follows_complete_root_lineage_and_detaches_event
         assert retained.parent_thread_id == "thread-1"
         assert retained.thread_id == "thread-child"
         assert retained.payload is not None
-        assert retained.payload["delta"] == "child"
-        retained.payload["delta"] = "changed"
+        assert retained.payload["message"] == "child"
+        retained.payload["message"] = "changed"
 
     snapshot = await hub.snapshot(root_thread_id="thread-1")
     assert snapshot[-1].payload is not None
-    assert snapshot[-1].payload["delta"] == "child"
+    assert snapshot[-1].payload["message"] == "child"
     await hub.close()
 
 
@@ -130,98 +148,37 @@ async def test_summary_hub_emits_lightweight_replayable_invalidation_hints() -> 
     await hub.close()
 
 
-async def test_large_compaction_summary_reaches_live_renderer_without_payload_omission() -> None:
-    from datetime import UTC, datetime
+async def test_large_baseline_is_chunked_and_detached_without_fragment_event_history() -> None:
+    import json
 
-    from a13n_harness import HarnessEvent
-    from a13n_harness.capabilities import CompactionSummaryEvent
-    from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
-    from a13n_stream_protocol import HarnessAguiObserver
+    hub = HarnessUiLiveHub(ring_size=2)
+    projector = _producer(hub)
+    summary = "完整 summary.\n" * 8000
+    projector.summary("run-root", "compact-1", "compaction", summary)
+    async with hub.subscribe(root_thread_id="thread-root") as subscription:
+        replay = subscription.root_stream
+        assert replay is not None
+        chunks = list(replay.chunks())
+        assert len(chunks) > 1
+        assert all(len(chunk.encode()) <= 48 * 1024 for chunk in chunks)
+        parsed = DisplaySnapshot.model_validate(json.loads("".join(chunks))["display"])
+        assert parsed.blocks[0].content["text"] == summary
+        assert parsed.position == replay.summary.position
+        projector.summary("run-root", "compact-1", "compaction", "changed")
+        assert replay.display.blocks[0].content["text"] == summary
+    await hub.close()
 
-    summary = "Complete summary.\n" * 8000
-    source = HarnessEvent(
-        thread_id="thread-1",
-        run_id="run-1",
-        sequence=0,
-        occurred_at=datetime.now(UTC),
-        event=CompactionSummaryEvent(operation_id="compact-1", summary=summary),
-    )
+
+async def test_oversized_delta_is_explicit_gap_but_fresh_baseline_covers_it() -> None:
     hub = HarnessUiLiveHub()
-    await hub.publish(
-        run_kind="root",
-        root_thread_id="thread-1",
-        parent_thread_id=None,
-        thread_id="thread-1",
-        run_id="run-1",
-        events=HarnessAguiObserver().observe(source),
-    )
-    renderer = StreamRenderer(Status())
-    for event in await hub.snapshot():
-        assert not event.payload_omitted
-        renderer.ingest(event.event_type, event.payload, run_id=event.run_id)
-    assert next(iter(renderer.transcript.blocks.values())).source == "Compacting context…"
-    renderer.ingest(
-        "CUSTOM",
-        {
-            "name": "a13n.harness.context",
-            "value": {"event": {"payload": {"type": "compaction_completed", "operation_id": "compact-1"}}},
-        },
-        run_id="run-1",
-    )
-    blocks = list(renderer.transcript.blocks.values())
-    assert blocks[0].source.endswith(summary)
-    assert blocks[0].kind == "compact"
-    assert not renderer.assistant_seen
-
-
-async def test_large_fragment_batch_reaches_an_active_bounded_subscriber() -> None:
-    import asyncio
-    from datetime import UTC, datetime
-
-    from a13n_harness import HarnessEvent
-    from a13n_harness.toolsets.events import FileEditAppliedEvent
-    from a13n_stream_protocol import CustomEventAssembler, HarnessAguiObserver
-
-    content = "line\n" * 40000
-    source = HarnessEvent(
-        thread_id="thread-one",
-        run_id="run-one",
-        sequence=0,
-        occurred_at=datetime.now(UTC),
-        event=FileEditAppliedEvent(file_path="large.txt", before=content, after=content + "final"),
-    )
-    events = HarnessAguiObserver().observe(source)
-    assert len(events) > 64
-    hub = HarnessUiLiveHub()
-    assembler = CustomEventAssembler()
-    complete = []
-    async with hub.subscribe() as subscription:
-
-        async def consume():
-            for _ in events:
-                event = await subscription.__anext__()
-                assert event.payload is not None
-                result = assembler.accept(event.payload)
-                if result is not None:
-                    complete.append(result)
-
-        consumer = asyncio.create_task(consume())
-        try:
-            await hub.publish(
-                run_kind="root",
-                root_thread_id="thread-one",
-                parent_thread_id=None,
-                thread_id="thread-one",
-                run_id="run-one",
-                events=events,
-            )
-            await asyncio.wait_for(consumer, 3)
-        finally:
-            consumer.cancel()
-            await asyncio.gather(consumer, return_exceptions=True)
-    assert len(complete) == 1
-    assert complete[0]["value"]["event"]["after"] == content + "final"
-    assert not assembler.gap
+    projector = _producer(hub)
+    async with hub.subscribe(root_thread_id="thread-root") as subscription:
+        projector.observe("run-root", 0, PartStartEvent(index=0, part=TextPart(content="x" * (300 * 1024))))
+        event = await subscription.receive()
+        assert event.event_type == "DISPLAY_DELTA"
+        assert event.delta is None and event.payload_omitted
+    async with hub.subscribe(root_thread_id="thread-root") as subscription:
+        assert subscription.root_stream.display.blocks[0].content["text"] == "x" * (300 * 1024)
     await hub.close()
 
 
@@ -231,12 +188,15 @@ async def test_child_display_does_not_treat_input_or_compaction_as_an_answer() -
     from a13n_harness import HarnessEvent
     from a13n_harness.capabilities import CompactionSummaryEvent
     from a13n_harness.model_context import ModelInputEvent
-    from a13n_harness_ui.subagent_operator import CompactChildDisplay, _DisplayCompactor
-    from a13n_stream_protocol import HarnessAguiObserver
+    from a13n_harness_ui.display_projection import child_presentation
+    from a13n_stream_protocol.display import DisplayScope
+    from a13n_stream_protocol.projector import DisplayProjector
     from pydantic_ai.messages import PartEndEvent, PartStartEvent, TextContent, TextPart
 
-    observer = HarnessAguiObserver()
-    display = _DisplayCompactor(CompactChildDisplay())
+    from .display_fixtures import display_snapshot
+
+    display = DisplayProjector(display_snapshot())
+    display.scope(DisplayScope(id="run-1", run_id="run-1", thread_id="thread-1"))
     for sequence, event in enumerate(
         [
             ModelInputEvent(
@@ -250,122 +210,84 @@ async def test_child_display_does_not_treat_input_or_compaction_as_an_answer() -
         source = HarnessEvent(
             thread_id="thread-1", run_id="run-1", sequence=sequence, occurred_at=datetime.now(UTC), event=event
         )
-        display.observe(observer.observe(source))
-    assert [activity.text for activity in display.snapshot().activities] == ["actual answer"]
+        display.observe("run-1", 0, source.event)
+    assert [activity.text for activity in child_presentation(display.capture()).activities] == ["actual answer"]
 
 
-async def test_root_observer_bootstrap_survives_ring_eviction_and_publication_races() -> None:
-    from datetime import UTC, datetime
-
-    from a13n_harness import HarnessEvent
-    from a13n_stream_protocol import HarnessAguiObserver
-    from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
-
-    observer = HarnessAguiObserver()
+async def test_producer_bootstrap_covers_stalled_delivery_and_ring_eviction_atomically() -> None:
     hub = HarnessUiLiveHub(ring_size=2)
-
-    def observe(sequence, value):
-        return observer.observe(
-            HarnessEvent(
-                thread_id="thread-root",
-                run_id="run-root",
-                sequence=sequence,
-                occurred_at=datetime.now(UTC),
-                event=value,
-            )
-        )
-
-    async def publish(events):
-        await hub.publish(
-            run_kind="root",
-            root_thread_id="thread-root",
-            parent_thread_id=None,
-            thread_id="thread-root",
-            run_id="run-root",
-            events=events,
-            observer=observer,
-            base_continuation_id="saved-before",
-        )
-
-    await publish(observe(1, PartStartEvent(index=0, part=TextPart(content="begin"))))
-    for index in range(2, 40):
-        await publish(observe(index, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta=str(index)))))
-    count = observer.event_count
-    # Accumulated but not published yet: this must appear only in subsequent live delivery.
-    pending = observe(40, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="pending")))
+    projector = _producer(hub, batch=True)
+    projector.observe("run-root", 0, PartStartEvent(index=0, part=TextPart(content="begin")))
+    for index in range(40):
+        projector.observe("run-root", 0, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta=str(index))))
+        projector.flush()
+    # No public event consumer has run. A staged tail must be flushed before cutover.
+    projector.observe("run-root", 0, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="pending")))
     async with hub.subscribe(root_thread_id="thread-root") as subscription:
         replay = subscription.root_stream
         assert replay is not None
-        assert replay.observer is observer  # Existing owner, no second payload store.
-        assert replay.summary.event_count == count
+        assert not hasattr(replay, "observer")
         assert replay.summary.base_continuation_id == "saved-before"
-        batches = list(replay.batches())
-        events = [item for batch in batches for item in batch]
-        assert all(len(batch) <= 16 for batch in batches)
-        assert [item.index for item in events] == list(range(count))
-        assert any(item.payload and item.payload.get("delta") == "begin" for item in events)
-        assert not any(item.payload and item.payload.get("delta") == "pending" for item in events)
-        await publish(pending)
+        assert replay.display.blocks[0].content["text"].endswith("pending")
+        state = DisplayState(replay.display)
+        original = list(replay.chunks())
+        projector.observe("run-root", 0, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="next")))
+        projector.flush()
         delivered = await subscription.receive()
-        assert delivered.sequence > subscription.root_stream.summary.event_count
-        assert delivered.payload is not None and delivered.payload["delta"] == "pending"
-        assert [item for batch in replay.batches() for item in batch] == events
+        assert delivered.sequence > subscription.cursor.sequence
+        assert delivered.delta.from_sequence == replay.display.position.sequence
+        state.apply(delivered.delta)
+        assert state.capture() == projector.capture()
         await hub.finish_root(thread_id="thread-root", run_id="run-root", saved_continuation_id="saved-after")
         assert "thread-root" not in hub._root_streams
-        assert list(replay.batches()) == batches  # Existing delivery retains its finite reference.
+        assert list(replay.chunks()) == original
     async with hub.subscribe(root_thread_id="thread-root") as subscription:
         assert subscription.root_stream is None
     await hub.close()
 
 
+async def test_child_baseline_has_own_producer_under_same_family_cutover() -> None:
+    hub = HarnessUiLiveHub()
+    root = _producer(hub, batch=True)
+    child = _producer(
+        hub, thread="thread-child", run="run-child", parent="thread-root", execution="exec-one", batch=True
+    )
+    root.observe("run-root", 0, PartStartEvent(index=0, part=TextPart(content="root")))
+    child.observe("run-child", 0, PartStartEvent(index=0, part=TextPart(content="child")))
+    async with hub.subscribe(root_thread_id="thread-root") as subscription:
+        assert (
+            subscription.root_stream.display.position.producer
+            != subscription.child_streams[0].display.position.producer
+        )
+        assert subscription.child_streams[0].display.blocks[0].content["text"] == "child"
+        assert subscription.child_streams[0].summary.execution_id == "exec-one"
+        child.observe("run-child", 0, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="next")))
+        child.flush()
+        event = await subscription.receive()
+        assert event.sequence > subscription.cursor.sequence
+        assert event.execution_id == "exec-one"
+    await hub.close()
+
+
 async def test_unsaved_root_retention_is_bounded_and_never_evicts_active_runs() -> None:
-    from datetime import UTC, datetime
-
-    from a13n_harness import HarnessEvent
-    from a13n_stream_protocol import HarnessAguiObserver
-    from pydantic_ai.messages import PartStartEvent, TextPart
-
     hub = HarnessUiLiveHub(ring_size=2)
-
-    async def start(thread_id, run_id):
-        observer = HarnessAguiObserver()
-        events = observer.observe(
-            HarnessEvent(
-                thread_id=thread_id,
-                run_id=run_id,
-                sequence=1,
-                occurred_at=datetime.now(UTC),
-                event=PartStartEvent(index=0, part=TextPart(content="output")),
-            )
-        )
-        await hub.publish(
-            run_kind="root",
-            root_thread_id=thread_id,
-            parent_thread_id=None,
-            thread_id=thread_id,
-            run_id=run_id,
-            events=events,
-            observer=observer,
-        )
-
     for index in range(20):
-        await start(f"thread-active-{index}", f"run-active-{index}")
-    for index in range(257):
-        thread_id = f"thread-{index}"
-        await start(thread_id, f"run-{index}")
-        await hub.finish_root(thread_id=thread_id, run_id=f"run-{index}", saved_continuation_id=None)
-    assert len(hub._terminal_streams) == 256
+        _producer(hub, f"thread-active-{index}", f"run-active-{index}")
+    for index in range(17):
+        thread = f"thread-{index}"
+        _producer(hub, thread, f"run-{index}")
+        await hub.finish_root(thread_id=thread, run_id=f"run-{index}", saved_continuation_id=None)
+    assert len(hub._terminal_streams) == 16
     assert "thread-0" not in hub._root_streams
     for index in range(20):
         assert f"thread-active-{index}" in hub._root_streams
         assert f"thread-active-{index}" in hub._root_rings
     assert len(hub._root_rings) == 36
-    await start("thread-256", "run-replacement")
-    await hub.finish_root(thread_id="thread-256", run_id="run-256", saved_continuation_id="old-save")
-    async with hub.subscribe(root_thread_id="thread-256") as subscription:
-        assert subscription.root_stream is not None
+    _producer(hub, "thread-16", "run-replacement")
+    await hub.finish_root(thread_id="thread-16", run_id="run-16", saved_continuation_id="old-save")
+    async with hub.subscribe(root_thread_id="thread-16") as subscription:
         assert subscription.root_stream.summary.run_id == "run-replacement"
-    assert "thread-256" not in hub._terminal_streams
+    assert "thread-16" not in hub._terminal_streams
     await hub.close()
     assert not hub._root_streams
 
@@ -406,4 +328,47 @@ async def test_root_replay_is_not_evicted_by_another_roots_events() -> None:
     with pytest.raises(LivePresentationError, match="no longer retained"):
         async with hub.subscribe(root_thread_id="quiet", after=cursor):
             pass
+    await hub.close()
+
+
+async def test_baseline_retains_controls_by_source_and_process_with_explicit_omission() -> None:
+    from ag_ui.core.events import CustomEvent
+
+    hub = HarnessUiLiveHub()
+    _producer(hub)
+    controls = [
+        CustomEvent(name="a13n.harness.usage", value={"run_id": run, "event": {"payload": {"source": run}}})
+        for run in ("run-root", "inline-child")
+    ]
+    controls.extend(
+        CustomEvent(
+            name="a13n.shell.status", value={"run_id": "run-root", "event": {"process_id": process, "phase": "running"}}
+        )
+        for process in ("process-one", "process-two")
+    )
+    controls.append(
+        CustomEvent(name="a13n.harness.recovery", value={"run_id": "run-root", "event": {"text": "x" * (65 * 1024)}})
+    )
+    await hub.publish(
+        run_kind="root",
+        root_thread_id="thread-root",
+        thread_id="thread-root",
+        parent_thread_id=None,
+        run_id="run-root",
+        events=controls,
+    )
+    async with hub.subscribe(root_thread_id="thread-root") as subscription:
+        retained = subscription.root_stream.controls
+        assert len(retained) == 5
+        assert {
+            event.payload["value"]["run_id"]
+            for event in retained
+            if event.payload and event.payload.get("name") == "a13n.harness.usage"
+        } == {"run-root", "inline-child"}
+        assert {
+            event.payload["value"]["event"]["process_id"]
+            for event in retained
+            if event.payload and event.payload.get("name") == "a13n.shell.status"
+        } == {"process-one", "process-two"}
+        assert retained[-1].payload is None and retained[-1].payload_omitted
     await hub.close()

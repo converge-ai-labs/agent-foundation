@@ -7,6 +7,8 @@ import json
 import pytest
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 
+from .terminal_display_fixtures import present_block, present_tool
+
 
 def _visible(renderer: StreamRenderer, *, detailed: bool = False, width: int = 120) -> str:
     renderer.transcript.detailed = detailed
@@ -16,7 +18,7 @@ def _visible(renderer: StreamRenderer, *, detailed: bool = False, width: int = 1
 
 
 def _status(renderer, *, phase="exited", code=0, callback=False, run="root", child=False):
-    renderer.ingest(
+    renderer.ingest_control(
         "CUSTOM",
         {
             "name": "a13n.shell.status",
@@ -36,32 +38,34 @@ def _status(renderer, *, phase="exited", code=0, callback=False, run="root", chi
 
 
 def _start(renderer, *, name="shell_start", command="pytest -q", run="root", child=False):
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "call-one", "tool_call_name": name}, run_id=run, child=child)
-    renderer.ingest(
-        "TOOL_CALL_ARGS",
-        {"tool_call_id": "call-one", "delta": json.dumps({"command": command})},
+    present_tool(
+        renderer,
+        "call-one",
         run_id=run,
         child=child,
+        name=name,
+        arguments="",
+        arguments_complete=False,
+        status="pending",
     )
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "call-one"}, run_id=run, child=child)
+    present_tool(renderer, "call-one", run_id=run, child=child, arguments=json.dumps({"command": command}))
+    present_tool(renderer, "call-one", run_id=run, child=child, arguments_complete=True)
 
 
 def _result(renderer, *, phase="running", code=None, run="root", child=False):
-    renderer.ingest(
-        "TOOL_CALL_RESULT",
-        {
-            "tool_call_id": "call-one",
-            "content": json.dumps(
-                {
-                    "ok": True,
-                    "process_id": "process-one",
-                    "status": {"phase": phase, "exit_code": code},
-                    "stdout": {"text": "output", "coverage": "complete"},
-                }
-            ),
-        },
+    present_tool(
+        renderer,
+        "call-one",
         run_id=run,
         child=child,
+        result=json.dumps(
+            {
+                "ok": True,
+                "process_id": "process-one",
+                "status": {"phase": phase, "exit_code": code},
+                "stdout": {"text": "output", "coverage": "complete"},
+            }
+        ),
     )
 
 
@@ -114,7 +118,7 @@ def test_process_observation_end_is_run_scoped_and_gaps_are_not_complete_counts(
         _start(renderer, run=run)
         _result(renderer, run=run)
     assert "Background 2" in renderer.background_hint
-    renderer.ingest("RUN_FINISHED", {}, run_id="root")
+    renderer.ingest_control("RUN_FINISHED", {}, run_id="root")
     assert "Background 1" in renderer.background_hint
     assert "unavailable" in renderer.process_details()
     renderer.gap = True
@@ -195,7 +199,7 @@ def test_child_background_completion_obeys_mode_and_keeps_run_identity() -> None
 def test_internal_and_unknown_capability_events_are_not_conversation_content(mode: str, child: bool, name: str) -> None:
     renderer = StreamRenderer(Status(mode=mode))
     try:
-        renderer.ingest(
+        renderer.ingest_control(
             "CUSTOM",
             {
                 "name": name,
@@ -219,15 +223,15 @@ def test_internal_and_unknown_capability_events_are_not_conversation_content(mod
 
 
 def _capture(renderer: StreamRenderer, result: dict, *, run: str = "root") -> None:
-    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "call-one", "content": json.dumps(result)}, run_id=run)
+    present_tool(renderer, "call-one", run_id=run, result=json.dumps(result))
 
 
 def _wait(renderer: StreamRenderer, *, run: str = "root", process_id: str = "process-one") -> None:
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "call-one", "tool_call_name": "shell_wait"}, run_id=run)
-    renderer.ingest(
-        "TOOL_CALL_ARGS", {"tool_call_id": "call-one", "delta": json.dumps({"process_id": process_id})}, run_id=run
+    present_tool(
+        renderer, "call-one", run_id=run, name="shell_wait", arguments="", arguments_complete=False, status="pending"
     )
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "call-one"}, run_id=run)
+    present_tool(renderer, "call-one", run_id=run, arguments=json.dumps({"process_id": process_id}))
+    present_tool(renderer, "call-one", run_id=run, arguments_complete=True)
 
 
 @pytest.mark.parametrize("streams", [{}, {"stdout": {"text": ""}, "stderr": {"text": ""}}])
@@ -359,7 +363,7 @@ def test_long_capture_cannot_push_coverage_notices_out_of_preview_budget() -> No
 
 def test_start_only_shell_is_one_row_before_arguments_arrive() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "shell_exec"})
+    present_tool(renderer, "one", name="shell_exec", arguments="", arguments_complete=False, status="pending")
     assert _visible(renderer) == "Run command unavailable …"
     renderer.transcript.close()
 
@@ -408,7 +412,7 @@ def test_shell_exec_and_wait_wrap_summary_without_dumping_capture(name: str, wid
 def test_unavailable_native_status_never_falls_back_to_output_preview(result: str, label: str) -> None:
     renderer = StreamRenderer(Status())
     _start(renderer, name="shell_exec", command="check")
-    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "call-one", "content": result}, run_id="root")
+    present_tool(renderer, "call-one", run_id="root", result=result)
     assert _visible(renderer) == f"Run {label} · check"
     expanded = _visible(renderer, detailed=True)
     assert '"command": "check"' in expanded
@@ -425,24 +429,22 @@ def test_shell_review_timeout_renders_observed_denial_without_a_frontend_timer(m
     try:
         _start(renderer, name="shell_exec")
         assert "Automatically denied" not in _visible(renderer)
-        renderer.ingest(
-            "CUSTOM",
+        present_block(
+            renderer,
+            "tool-fact",
+            "extension",
             {
-                "name": "a13n.harness.tool",
+                "event_kind": "tool",
+                "name": "tool_review_result",
                 "value": {
-                    "event": {
-                        "kind": "tool",
-                        "payload": {
-                            "type": "tool_review_result",
-                            "status": "error",
-                            "error_code": "tool_review_timeout",
-                            "decision": "deny",
-                            "result": None,
-                            "tool_id": "environment.shell_exec",
-                            "tool_name": "shell_exec",
-                            "tool_call_id": "call-one",
-                        },
-                    }
+                    "type": "tool_review_result",
+                    "status": "error",
+                    "error_code": "tool_review_timeout",
+                    "decision": "deny",
+                    "result": None,
+                    "tool_id": "environment.shell_exec",
+                    "tool_name": "shell_exec",
+                    "tool_call_id": "call-one",
                 },
             },
         )
@@ -461,28 +463,20 @@ def test_unified_shell_review_result_uses_existing_custom_event_renderer(decisio
     renderer = StreamRenderer(Status(mode="concise"))
     try:
         _start(renderer, name="shell_exec")
-        renderer.ingest(
-            "CUSTOM",
+        present_block(
+            renderer,
+            "tool-fact",
+            "extension",
             {
-                "name": "a13n.harness.tool",
+                "event_kind": "tool",
+                "name": "tool_review_result",
                 "value": {
-                    "event": {
-                        "kind": "tool",
-                        "payload": {
-                            "type": "tool_review_result",
-                            "status": "completed",
-                            "tool_id": "environment.shell_exec",
-                            "tool_call_id": "call-one",
-                            "decision": decision,
-                            "result": {
-                                "assessment": {
-                                    "risk": "high",
-                                    "reason": reason,
-                                },
-                                "usage": [],
-                            },
-                        },
-                    }
+                    "type": "tool_review_result",
+                    "status": "completed",
+                    "tool_id": "environment.shell_exec",
+                    "tool_call_id": "call-one",
+                    "decision": decision,
+                    "result": {"assessment": {"risk": "high", "reason": reason}, "usage": []},
                 },
             },
         )

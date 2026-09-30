@@ -577,6 +577,7 @@ def _create_inline_child_bindings(
         model_resolver=parent.model_resolver,
         model_call_check=parent.model_call_check,
         usage_reporter=parent.usage_reporter,
+        extension_observer=parent.extension_observer,
         toolset_instructions=parent._toolset_instructions_override,
         deferred_tools_supported=False,
         capabilities=(invocation_policy,) if invocation_policy is not None else (),

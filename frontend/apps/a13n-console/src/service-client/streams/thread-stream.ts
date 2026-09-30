@@ -1,17 +1,14 @@
 import { ApiError, isRecord, ProtocolError } from "../errors.js";
-import type { components } from "../schema.js";
+import type { DisplayDelta } from "a13n-ui/display";
 import { delay, workspaceHeaders, type Transport } from "../transport.js";
 import { decodeSse } from "./sse.js";
 
-type ItemRef = Pick<components["schemas"]["Item"], "id" | "kind" | "state">;
-
-/** One AG-UI event of a run attempt at its per-attempt sequence, and the display item it changed. */
+/** One atomic batch of shared display operations. */
 export interface ThreadDelta {
   run_id: string;
   attempt: number;
   sequence: number;
-  event: Record<string, unknown> & { type: string };
-  item: ItemRef | null;
+  delta: DisplayDelta;
 }
 
 /**
@@ -41,7 +38,6 @@ export interface ThreadResume {
 
 export interface ThreadStreamOptions {
   signal?: AbortSignal;
-  after?: string;
   /** Read again for every connection attempt, after the consumer has applied frames. */
   resume?: ThreadResume | (() => ThreadResume | undefined);
 }
@@ -83,7 +79,7 @@ function parseFrame(event: string, id: string, text: string): ThreadFrame {
   }
   if (
     (event === "delta" || event === "boundary") &&
-    id &&
+    (event === "boundary" || id) &&
     runId &&
     isCount(data.attempt) &&
     isCount(data.sequence)
@@ -97,9 +93,14 @@ function parseFrame(event: string, id: string, text: string): ThreadFrame {
         sequence: data.sequence,
       };
     if (
-      isRecord(data.event) &&
-      typeof data.event.type === "string" &&
-      (data.item === null || isRecord(data.item))
+      isRecord(data.delta) &&
+      data.delta.format === "display-delta/1" &&
+      isRecord(data.delta.producer) &&
+      data.delta.producer.run_id === runId &&
+      data.delta.producer.generation === String(data.attempt) &&
+      data.delta.through_sequence === data.sequence &&
+      data.delta.from_sequence === data.sequence - 1 &&
+      Array.isArray(data.delta.operations)
     )
       return {
         type: "delta",
@@ -111,7 +112,7 @@ function parseFrame(event: string, id: string, text: string): ThreadFrame {
   throw new ProtocolError(`Invalid thread stream ${event} frame.`);
 }
 
-/** Follow live output using consumer coverage when supplied, or the last yielded cursor otherwise. */
+/** Reconnect only from consumer-applied coverage; Redis IDs are optional seek hints. */
 export async function* threadStream(
   transport: Transport,
   workspaceId: string,
@@ -121,7 +122,6 @@ export async function* threadStream(
   const signal = options.signal
     ? AbortSignal.any([options.signal, transport.signal])
     : transport.signal;
-  let cursor = options.after;
   for (let attempt = 0; ; attempt++) {
     signal.throwIfAborted();
     const headers = new Headers({
@@ -130,7 +130,7 @@ export async function* threadStream(
     });
     const resume =
       typeof options.resume === "function" ? options.resume() : options.resume;
-    const after = options.resume ? resume?.after : cursor;
+    const after = resume?.after;
     if (after) headers.set("Last-Event-ID", after);
     const url = new URL(
       `${transport.baseUrl}/api/v1/threads/${encodeURIComponent(threadId)}/stream`,
@@ -156,10 +156,10 @@ export async function* threadStream(
         const frame = parseFrame(sse.event, sse.id, sse.data);
         yield frame;
         attempt = 0;
-        // Resume advances only when the consumer requests the next frame.
-        if ("cursor" in frame) cursor = frame.cursor;
       }
-      return;
+      throw new Error(
+        "The thread stream ended; reconnect from applied coverage.",
+      );
     } catch (error) {
       if (
         signal.aborted ||

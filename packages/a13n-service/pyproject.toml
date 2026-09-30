@@ -40,6 +40,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.41,<3",
     "starlette>=0.52,<2",
     "uvicorn>=0.35,<1",
+    "zstandard>=0.25,<0.26",
 ]
 
 [project.scripts]

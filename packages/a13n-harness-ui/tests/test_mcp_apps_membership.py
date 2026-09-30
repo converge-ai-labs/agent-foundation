@@ -4,32 +4,23 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_harness import HarnessEvent, HarnessState
+from a13n_harness import HarnessState
 from a13n_harness_ui.app import open_harness_ui_app
-from a13n_harness_ui.display_history import DisplayHistory, DisplayHistoryCollector, with_display_history
+from a13n_harness_ui.display import baseline
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.live import HarnessUiLiveHub
 from a13n_harness_ui.mcp_apps.models import AppReference, AppSnapshot
 from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY
 from a13n_harness_ui.storage import ObjectKind, ObjectRef, StoredContinuation
 from a13n_harness_ui.storage.contracts import ThreadReadModel
-from a13n_stream_protocol import HarnessAguiObserver
-from ag_ui.core import CustomEvent
+from a13n_stream_protocol.display import DisplayScope
+from a13n_stream_protocol.projector import DisplayProjector
 from pydantic_ai.messages import ModelRequest, PartStartEvent, TextPart, ToolReturnPart, UserPromptPart
 
+from .display_fixtures import display_snapshot
 from .test_app import _settings, _write_configuration
 
 pytestmark = pytest.mark.anyio
-
-
-def _event(reference):
-    return CustomEvent(
-        name=METADATA_KEY,
-        value={
-            "run_id": reference.run_id,
-            "event": {"tool_call_id": reference.tool_call_id, "apps": [reference.model_dump(mode="json")]},
-        },
-    )
 
 
 async def _original(app, thread_id, *, count=1):
@@ -56,26 +47,38 @@ async def _original(app, thread_id, *, count=1):
     )
 
 
-async def _publish(hub, observer, reference, *, sequence=1, apps=True):
-    events = observer.observe(
-        HarnessEvent(
+async def _publish(hub, projector, reference, *, sequence=1, apps=True):
+    if projector is None:
+        projector = DisplayProjector(baseline(reference.run_id, None))
+        hub.register_display(
+            projector=projector,
+            root_thread_id=reference.thread_id,
             thread_id=reference.thread_id,
-            run_id=reference.run_id,
-            sequence=sequence,
-            occurred_at=datetime.now(UTC),
-            event=PartStartEvent(index=sequence, part=TextPart(content=f"answer-{sequence}")),
         )
-    )
-    await hub.publish(
-        run_kind="root",
-        root_thread_id=reference.thread_id,
-        parent_thread_id=None,
-        thread_id=reference.thread_id,
-        run_id=reference.run_id,
-        observer=observer,
-        events=events,
-        supplements=(_event(reference),) if apps else (),
-    )
+        projector.scope(
+            DisplayScope(
+                id=reference.run_id,
+                run_id=reference.run_id,
+                thread_id=reference.thread_id,
+            )
+        )
+    projector.observe(reference.run_id, sequence, PartStartEvent(index=0, part=TextPart(content=f"answer-{sequence}")))
+    if apps:
+        projector.reconcile_message(
+            reference.run_id,
+            sequence + 100,
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        "counter",
+                        "done",
+                        tool_call_id=reference.tool_call_id,
+                        metadata={METADATA_KEY: [reference.model_dump(mode="json")]},
+                    )
+                ]
+            ),
+        )
+    return projector
 
 
 async def test_public_open_and_activation_reject_orphans_before_connection_acquisition(tmp_path, monkeypatch):
@@ -90,7 +93,7 @@ async def test_public_open_and_activation_reject_orphans_before_connection_acqui
             with pytest.raises(HarnessUiError, match="not in retained"):
                 await method(thread.thread_id, reference)
         assert acquire.await_count == 0
-        await _publish(app._live_hub, HarnessAguiObserver(), reference)
+        await _publish(app._live_hub, None, reference)
         assert (await app.open_mcp_app(thread.thread_id, reference)).reference == reference
         substituted = await _original(app, thread.thread_id, count=2)
         with pytest.raises(HarnessUiError, match="not in retained"):
@@ -99,7 +102,7 @@ async def test_public_open_and_activation_reject_orphans_before_connection_acqui
             await app.open_mcp_app(thread.thread_id, reference.model_copy(update={"thread_id": "other"}))
 
 
-async def test_live_replay_keeps_supplements_ordered_and_membership_outlives_ring_only_until_release():
+async def test_live_display_membership_outlives_ring_only_until_release():
     hub = HarnessUiLiveHub(ring_size=2)
     reference = AppReference(
         app_id="app-1",
@@ -109,25 +112,25 @@ async def test_live_replay_keeps_supplements_ordered_and_membership_outlives_rin
         server_id="mcp-1",
         tool_name="counter",
     )
-    observer = HarnessAguiObserver()
-    await _publish(hub, observer, reference)
+    projector = await _publish(hub, None, reference)
     async with hub.subscribe(root_thread_id=reference.thread_id) as subscription:
         captured = subscription.root_stream
         assert captured is not None
-        prefix = [event for batch in captured.batches() for event in batch]
-        assert prefix[-1].payload["name"] == METADATA_KEY
-        assert captured.summary.event_count == observer.event_count + 1
+        prefix = captured.display.model_dump(mode="json")
+        tool = next(block for block in captured.display.blocks if block.kind == "tool_chunk")
+        assert tool.content["metadata"][METADATA_KEY] == [reference.model_dump(mode="json")]
         for sequence in range(2, 10):
-            await _publish(hub, observer, reference, sequence=sequence, apps=False)
-        assert [event for batch in captured.batches() for event in batch] == prefix
+            await _publish(hub, projector, reference, sequence=sequence, apps=False)
+        assert captured.display.model_dump(mode="json") == prefix
     assert await hub.retains_mcp_app(reference)
-    assert not any(event.payload.get("name") == METADATA_KEY for event in await hub.snapshot())
+    assert all(event.event_type == "DISPLAY_DELTA" for event in await hub.snapshot())
     async with hub.subscribe(root_thread_id=reference.thread_id) as subscription:
         replay = subscription.root_stream
-        events = [event for batch in replay.batches() for event in batch]
-        assert len(events) == replay.summary.event_count == observer.event_count + 1
-        assert [event.index for event in events] == list(range(len(events)))
-        assert [event.payload["name"] for event in events if event.event_type == "CUSTOM"] == [METADATA_KEY]
+        assert replay is not None
+        assert replay.display.position.sequence > captured.display.position.sequence
+        tools = [block for block in replay.display.blocks if block.kind == "tool_chunk"]
+        assert len(tools) == 1
+        assert tools[0].content["metadata"][METADATA_KEY] == [reference.model_dump(mode="json")]
     await hub.finish_root(thread_id=reference.thread_id, run_id=reference.run_id, saved_continuation_id="saved")
     assert not await hub.retains_mcp_app(reference)
     await hub.close()
@@ -153,10 +156,8 @@ async def test_saved_display_membership_survives_clear_context_pagination_and_re
             ),
             *(ModelRequest(parts=[UserPromptPart(f"later-{i}")]) for i in range(110)),
         )
-        state = with_display_history(
-            HarnessState.new(thread_id=thread.thread_id),
-            DisplayHistoryCollector((), DisplayHistory(messages=messages)).capture(()),
-        )
+        state = HarnessState.new(thread_id=thread.thread_id)
+        display = display_snapshot(messages, thread_id=thread.thread_id)
         saved = await app._store.objects.publish_model(
             object_kind=ObjectKind.continuation,
             value=StoredContinuation(
@@ -165,10 +166,11 @@ async def test_saved_display_membership_survives_clear_context_pagination_and_re
                     object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64
                 ),
                 harness_state=state,
+                display=display,
                 created_at=datetime.now(UTC),
             ),
         )
-        await _publish(app._live_hub, HarnessAguiObserver(), reference)
+        await _publish(app._live_hub, None, reference)
         await app._store.threads.select_continuation(
             thread_id=thread.thread_id, expected=None, replacement=saved.ref, read_model=ThreadReadModel()
         )
@@ -185,9 +187,11 @@ async def test_saved_display_membership_survives_clear_context_pagination_and_re
 async def test_child_membership_pages_resumed_displays_and_reopens_selected_checkpoint(tmp_path, monkeypatch):
     from typing import Any, cast
 
-    from a13n_harness_ui.storage.contracts import CompactChildDisplay, StoredChildCheckpoint
+    from a13n_harness_ui.storage.contracts import StoredChildCheckpoint
     from a13n_harness_ui.subagent_operator import _ActiveSegment
     from anyio import Event
+
+    from .display_fixtures import display_capture, display_snapshot
 
     root = _write_configuration(tmp_path)
     root.write_text(root.read_text() + "webui:\n  mcp_apps:\n    enabled: true\n")
@@ -229,7 +233,7 @@ async def test_child_membership_pages_resumed_displays_and_reopens_selected_chec
             segment_index=0,
             run_composition=composition,
             harness_state=HarnessState.new(thread_id="thread_childapp"),
-            display=CompactChildDisplay(),
+            display=display_snapshot(),
             terminal=True,
             created_at=datetime.now(UTC),
         )
@@ -244,19 +248,33 @@ async def test_child_membership_pages_resumed_displays_and_reopens_selected_chec
             run_composition=composition,
         )
         operator = app._subagent_operator
+        from pydantic_ai.messages import ModelRequest, ToolReturnPart
+
+        messages = [
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        tool_name="widget",
+                        tool_call_id=reference.tool_call_id,
+                        content="ready",
+                        metadata={"a13n.harness-ui.mcp_apps": [reference.model_dump(mode="json")]},
+                    )
+                ]
+            )
+        ]
         active = _ActiveSegment(
             execution_id=resumed.execution_id,
             parent_thread_id=parent.thread_id,
             stream=cast(Any, object()),
             done=Event(),
-            display=CompactChildDisplay(mcp_apps=(reference,)),
+            display=display_capture(messages),
         )
         operator._active[resumed.execution_id] = active
         assert (await app.open_mcp_app("thread_childapp", reference)).reference == reference
-        active.display = CompactChildDisplay()
+        active.display = display_capture()
         with pytest.raises(HarnessUiError, match="not in retained"):
             await app.open_mcp_app("thread_childapp", reference)
-        active.display = CompactChildDisplay(mcp_apps=(reference,))
+        active.display = display_capture(messages)
         saved = await app._store.objects.publish_model(
             object_kind=ObjectKind.child_checkpoint,
             value=checkpoint.model_copy(
@@ -264,7 +282,7 @@ async def test_child_membership_pages_resumed_displays_and_reopens_selected_chec
                     "execution_id": resumed.execution_id,
                     "child_run_id": resumed.child_run_id,
                     "segment_index": resumed.segment_index,
-                    "display": active.display,
+                    "display": active.display.projector.capture(),
                 }
             ),
         )

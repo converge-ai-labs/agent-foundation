@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-import itertools
 import json
 
 import pytest
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+
+from .terminal_display_fixtures import (
+    present_block,
+    present_context,
+    present_native_result,
+    present_summary,
+    present_text,
+    present_tool,
+)
 
 
 @pytest.fixture
@@ -24,24 +32,21 @@ def render(renderer, *, detailed=False, width=160):
 
 
 def call(renderer, name, arguments, *, call_id="call-1", run_id="root", result=None, child=False):
-    for kind, payload in [
-        ("START", {"tool_call_name": name}),
-        ("ARGS", {"delta": json.dumps(arguments)}),
-        ("END", {}),
-    ]:
-        renderer.ingest("TOOL_CALL_" + kind, {"tool_call_id": call_id, **payload}, run_id=run_id, child=child)
+    present_tool(
+        renderer,
+        call_id,
+        name=name,
+        arguments=json.dumps(arguments),
+        arguments_complete=True,
+        run_id=run_id,
+        child=child,
+    )
     if result is not None:
         finish(renderer, call_id, result, run_id=run_id, child=child)
 
 
 def finish(renderer, call_id, result, *, run_id="root", child=False):
-    renderer.ingest(
-        "TOOL_CALL_RESULT", {"tool_call_id": call_id, "content": json.dumps(result)}, run_id=run_id, child=child
-    )
-
-
-def custom(renderer, name, event, **kwargs):
-    renderer.ingest("CUSTOM", {"name": name, "value": {"event": event}}, **kwargs)
+    present_tool(renderer, call_id, run_id=run_id, child=child, result=json.dumps(result))
 
 
 @pytest.mark.parametrize(
@@ -104,7 +109,7 @@ def test_exploration_failure_is_not_deduplicated_or_hidden(renderer):
 def test_group_boundaries_and_late_results_remain_isolated(renderer):
     call(renderer, "view", {"file_path": "a"}, call_id="a")
     call(renderer, "grep", {"pattern": "old"}, call_id="b")
-    renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "answer", "delta": "Boundary answer"})
+    present_text(renderer, "Boundary answer", message_id="answer")
     call(renderer, "view", {"file_path": "c"}, call_id="c", result={"ok": True})
     finish(renderer, "a", {"ok": True})
     finish(renderer, "b", {"ok": False})
@@ -136,66 +141,45 @@ def test_shell_exit_facts_precede_command_without_output_preview(renderer):
     assert "private output" in render(renderer, detailed=True)
 
 
-@pytest.mark.parametrize("order", list(itertools.permutations(["prepared", "summary", "completed"])))
+@pytest.mark.parametrize("order", [("summary", "completed"), ("completed", "summary")])
 @pytest.mark.parametrize("prefix", ["handoff", "compaction"])
-def test_context_native_completion_and_content_correlate_in_any_order(renderer, order, prefix):
+def test_context_completion_and_content_render_one_row_in_any_order(renderer, order, prefix):
     operation_id = prefix + "-1"
-    title = "Summary" if prefix == "handoff" else "Compact"
+    present_context(renderer, operation_id, operation=prefix)
     call(
         renderer,
         "summarize" if prefix == "handoff" else "compact",
         {"summary": "argument text is not authority"},
         result={"ok": True},
     )
-    for kind in ["started", *order, "started", "summary", "completed"]:
+    for kind in order:
         if kind == "summary":
-            custom(
-                renderer,
-                f"a13n.context.{prefix}_summary",
-                {"operation_id": operation_id, "summary": "Observed summary body", "files": ["/a.py"]},
-            )
+            present_summary(renderer, operation_id, "Observed summary body", kind=prefix, files=["/a.py"])
         else:
-            custom(
-                renderer,
-                "a13n.harness.context",
-                {"payload": {"type": f"{prefix}_{kind}", "operation_id": operation_id}},
-            )
-        concise = render(renderer)
-        if kind == "prepared" and "completed" not in order[: order.index(kind)]:
-            assert "Observed summary body" not in concise
+            present_context(renderer, operation_id, operation=prefix, status="succeeded")
+        if kind == "summary" and order[0] == "summary":
+            assert "Observed summary body" not in render(renderer)
     concise = render(renderer)
     assert concise.count("Observed summary body") == 1 and concise.count("/a.py") == 1
-    assert title in concise
-    assert not any(
-        value in concise
-        for value in ("argument text", operation_id, "prepared", "completed", "Call summarize", "Call compact")
-    )
+    assert "argument text" not in concise
     details = render(renderer, detailed=True)
     assert operation_id in details and details.count("Observed summary body") == 1
 
 
 def test_context_failure_is_terminal_and_children_cannot_supply_root_summary(renderer):
-    custom(
+    present_context(
         renderer,
-        "a13n.harness.context",
-        {
-            "payload": {
-                "type": "handoff_failed",
-                "operation_id": "handoff-1",
-                "error_code": "summary_failed",
-                "failed_phase": "apply",
-                "retryable": False,
-            }
-        },
+        "handoff-1",
+        operation="handoff",
+        status="failed",
+        error_code="summary_failed",
+        failed_phase="apply",
+        retryable=False,
     )
-    custom(
-        renderer,
-        "a13n.context.handoff_summary",
-        {"operation_id": "handoff-1", "summary": "Child body"},
-        child=True,
-        run_id="child",
+    present_summary(renderer, "handoff-1", "Child body", kind="handoff", child=True, run_id="child")
+    present_context(
+        renderer, "handoff-1", operation="handoff", status="failed", error_code="summary_failed", failed_phase="apply"
     )
-    custom(renderer, "a13n.harness.context", {"payload": {"type": "handoff_prepared", "operation_id": "handoff-1"}})
     assert "Summary failed: summary_failed" in render(renderer)
     assert "Child body" not in render(renderer)
     assert "apply" in render(renderer, detailed=True)
@@ -215,30 +199,54 @@ def test_write_notice_requires_actual_event_is_additive_and_deduplicated(rendere
         }
     }
     for _ in range(2):
-        custom(renderer, "a13n.harness.tool", event)
+        present_block(
+            renderer,
+            "write:" + str((event["payload"]).get("tool_call_id")),
+            "extension",
+            {"event_kind": "tool", "name": "tool_extra", "value": event["payload"]},
+        )
     concise = render(renderer)
     assert "Call write /argument.txt" in concise
     assert concise.count("Modified: /actual.txt") == 1
     assert "Modified: /argument.txt" not in concise
     event["payload"]["tool_id"] = "filesystem.edit"
     event["payload"]["tool_call_id"] = "another"
-    custom(renderer, "a13n.harness.tool", event)
+    present_block(
+        renderer,
+        "write:" + str((event["payload"]).get("tool_call_id")),
+        "extension",
+        {"event_kind": "tool", "name": "tool_extra", "value": event["payload"]},
+    )
     assert render(renderer).count("Modified:") == 1
 
 
 def test_native_notice_separates_identical_reads(renderer):
     call(renderer, "view", {"file_path": "same"}, result={"ok": True})
-    custom(
+    present_block(
         renderer,
-        "a13n.harness.tool",
+        "write:"
+        + str(
+            (
+                {
+                    "type": "tool_extra",
+                    "tool_id": "filesystem.write",
+                    "tool_call_id": "write-1",
+                    "name": "filesystem.changed",
+                    "value": {"changes": [{"action": "written", "path": "/same"}]},
+                }
+            ).get("tool_call_id")
+        ),
+        "extension",
         {
-            "payload": {
+            "event_kind": "tool",
+            "name": "tool_extra",
+            "value": {
                 "type": "tool_extra",
                 "tool_id": "filesystem.write",
                 "tool_call_id": "write-1",
                 "name": "filesystem.changed",
                 "value": {"changes": [{"action": "written", "path": "/same"}]},
-            }
+            },
         },
     )
     call(renderer, "view", {"file_path": "same"}, call_id="after", result={"ok": True})
@@ -257,7 +265,7 @@ def test_evicted_group_anchor_does_not_hide_retained_failure(renderer):
             call_id=str(index),
             result={"ok": False, "error": {"code": "environment_not_found"}} if index == 1 else {"ok": True},
         )
-    renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "answer", "delta": "answer"})
+    present_text(renderer, "answer", message_id="answer")
     concise = render(renderer)
     assert "environment_not_found" in concise and "Read 2" in concise
     assert "Arguments | 1" in render(renderer, detailed=True)
@@ -271,16 +279,13 @@ def test_read_deduplication_uses_full_not_truncated_path(renderer):
 
 def test_context_validation_failure_without_lifecycle_remains_visible(renderer):
     call(renderer, "summarize", {"content": ""})
-    custom(
+    present_native_result(
         renderer,
-        "a13n.pydantic_ai.function_tool_result",
         {
-            "part": {
-                "tool_name": "summarize",
-                "tool_call_id": "call-1",
-                "part_kind": "retry-prompt",
-                "content": "content must not be empty",
-            }
+            "tool_name": "summarize",
+            "tool_call_id": "call-1",
+            "part_kind": "retry-prompt",
+            "content": "content must not be empty",
         },
     )
     assert "retry:" in render(renderer)

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
+from a13n_stream_protocol import DisplaySnapshot
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -24,7 +25,6 @@ from a13n_service.infra.labels import Labels
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts
-from a13n_service.runs.display import Item
 from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate
 from a13n_service.runs.history import MessageHistory
 
@@ -479,13 +479,13 @@ class RunItems(BaseModel):
     """A run's committed display with the run it describes. Live output continues after `position`."""
 
     run: RunView
-    items: list[Item]
+    snapshot: DisplaySnapshot
+    # Selected immutable display revision; rejects stale responses at equal coverage.
+    display_revision: str | None
     # The "{attempt}-{sequence}" stream position the items cover; None until the first checkpoint.
     position: str | None
     # A confirmed Redis delta ID covered by this display, usable as SSE Last-Event-ID while retained.
     resume_after: str | None = None
-    # Earlier items the display dropped over its item limit.
-    dropped: int
     # Execution sealed: the items are final and live output no longer applies.
     complete: bool
 

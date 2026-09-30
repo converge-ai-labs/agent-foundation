@@ -9,6 +9,8 @@ from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.interactive.rows import RowStore
 from a13n_harness_ui.interactive.transcript import Transcript, TranscriptControl
 
+from .terminal_display_fixtures import present_tool
+
 
 def text(transcript, width=40):
     transcript.render(width)
@@ -16,13 +18,13 @@ def text(transcript, width=40):
 
 
 def applied(renderer, after, *, path="file.py"):
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit", "tool_call_name": "edit"})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit"})
-    renderer.ingest(
-        "CUSTOM",
-        {
-            "name": "a13n.filesystem.edit_applied",
-            "value": {"event": {"tool_call_id": "edit", "file_path": path, "before": "", "after": after}},
+    present_tool(renderer, "edit", name="edit", arguments="", arguments_complete=False, status="pending")
+    present_tool(renderer, "edit", arguments_complete=True)
+    present_tool(
+        renderer,
+        "edit",
+        metadata={
+            "a13n.harness-ui.applied_edit": {"tool_call_id": "edit", "file_path": path, "before": "", "after": after}
         },
     )
 
@@ -56,9 +58,7 @@ def test_hundred_long_diff_lines_keep_three_rows_each_and_expand_with_failed_res
     try:
         after = "".join(f"row-{index:02d} " + "wide content " * 15 + f" tail-{index:02d}\n" for index in range(100))
         applied(renderer, after, path="long/path/" * 12 + "unique-file.py")
-        renderer.ingest(
-            "TOOL_CALL_RESULT", {"tool_call_id": "edit", "content": '{"ok":false,"error":{"message":"failed later"}}'}
-        )
+        present_tool(renderer, "edit", result='{"ok":false,"error":{"message":"failed later"}}')
         concise = text(renderer.transcript, 30)
         assert len(concise.splitlines()) > 64
         starts = [index for index, row in enumerate(concise.splitlines()) if "+row-" in row]
@@ -112,10 +112,10 @@ def test_wrapped_exploration_rows_keep_later_members_and_expanded_raw_arguments(
         for index, tool in enumerate(("view", "glob")):
             args = {"file_path": "nested/" * 30 + "ending.py"} if tool == "view" else {"pattern": "**/最后的文件.py"}
             call_id = str(index)
-            renderer.ingest("TOOL_CALL_START", {"tool_call_id": call_id, "tool_call_name": tool})
-            renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": call_id, "delta": json.dumps(args)})
-            renderer.ingest("TOOL_CALL_END", {"tool_call_id": call_id})
-            renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": call_id, "content": '{"ok":true}'})
+            present_tool(renderer, call_id, name=tool, arguments="", arguments_complete=False, status="pending")
+            present_tool(renderer, call_id, arguments=json.dumps(args))
+            present_tool(renderer, call_id, arguments_complete=True)
+            present_tool(renderer, call_id, result='{"ok":true}')
         concise = text(renderer.transcript, 24)
         assert "ending.py" in concise.replace("\n", "")
         assert "最后的文件.py" in concise

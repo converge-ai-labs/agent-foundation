@@ -1,0 +1,410 @@
+{
+  "baseline": {
+    "format": "display/1",
+    "position": {
+      "producer": {
+        "run_id": "run",
+        "generation": "attempt-1"
+      },
+      "sequence": 0
+    },
+    "scopes": [],
+    "blocks": [],
+    "omitted": 0,
+    "continuity": {}
+  },
+  "accepted": [
+    {
+      "name": "scope and text are atomic",
+      "delta": {
+        "format": "display-delta/1",
+        "producer": {
+          "run_id": "run",
+          "generation": "attempt-1"
+        },
+        "from_sequence": 0,
+        "through_sequence": 1,
+        "operations": [
+          {
+            "op": "scope.put",
+            "scope": {
+              "id": "root",
+              "thread_id": "thread",
+              "run_id": "run",
+              "parent_scope_id": null,
+              "parent_tool_call_id": null,
+              "invocation_id": null,
+              "status": "running"
+            }
+          },
+          {
+            "op": "block.put",
+            "block": {
+              "id": "text",
+              "scope_id": "root",
+              "kind": "text",
+              "revision": 1,
+              "status": "running",
+              "content": {
+                "text": "Hello"
+              },
+              "message_index": null,
+              "part_index": null
+            },
+            "expected_revision": 0
+          }
+        ]
+      },
+      "snapshot": {
+        "format": "display/1",
+        "position": {
+          "producer": {
+            "run_id": "run",
+            "generation": "attempt-1"
+          },
+          "sequence": 1
+        },
+        "scopes": [
+          {
+            "id": "root",
+            "thread_id": "thread",
+            "run_id": "run",
+            "parent_scope_id": null,
+            "parent_tool_call_id": null,
+            "invocation_id": null,
+            "status": "running"
+          }
+        ],
+        "blocks": [
+          {
+            "id": "text",
+            "scope_id": "root",
+            "kind": "text",
+            "revision": 1,
+            "status": "running",
+            "content": {
+              "text": "Hello"
+            },
+            "message_index": null,
+            "part_index": null
+          }
+        ],
+        "omitted": 0,
+        "continuity": {}
+      }
+    },
+    {
+      "name": "two revisions in one batch",
+      "delta": {
+        "format": "display-delta/1",
+        "producer": {
+          "run_id": "run",
+          "generation": "attempt-1"
+        },
+        "from_sequence": 1,
+        "through_sequence": 2,
+        "operations": [
+          {
+            "op": "block.append",
+            "id": "text",
+            "field": "text",
+            "expected_revision": 1,
+            "revision": 2,
+            "value": " 世界"
+          },
+          {
+            "op": "block.append",
+            "id": "text",
+            "field": "text",
+            "expected_revision": 2,
+            "revision": 3,
+            "value": "!"
+          }
+        ]
+      },
+      "snapshot": {
+        "format": "display/1",
+        "position": {
+          "producer": {
+            "run_id": "run",
+            "generation": "attempt-1"
+          },
+          "sequence": 2
+        },
+        "scopes": [
+          {
+            "id": "root",
+            "thread_id": "thread",
+            "run_id": "run",
+            "parent_scope_id": null,
+            "parent_tool_call_id": null,
+            "invocation_id": null,
+            "status": "running"
+          }
+        ],
+        "blocks": [
+          {
+            "id": "text",
+            "scope_id": "root",
+            "kind": "text",
+            "revision": 3,
+            "status": "running",
+            "content": {
+              "text": "Hello 世界!"
+            },
+            "message_index": null,
+            "part_index": null
+          }
+        ],
+        "omitted": 0,
+        "continuity": {}
+      }
+    },
+    {
+      "name": "inline scope and tool",
+      "delta": {
+        "format": "display-delta/1",
+        "producer": {
+          "run_id": "run",
+          "generation": "attempt-1"
+        },
+        "from_sequence": 2,
+        "through_sequence": 3,
+        "operations": [
+          {
+            "op": "scope.put",
+            "scope": {
+              "id": "child",
+              "thread_id": "child-thread",
+              "run_id": "child-run",
+              "parent_scope_id": "root",
+              "parent_tool_call_id": "call",
+              "invocation_id": null,
+              "status": "running"
+            }
+          },
+          {
+            "op": "block.put",
+            "block": {
+              "id": "tool",
+              "scope_id": "child",
+              "kind": "tool_chunk",
+              "revision": 1,
+              "status": "pending",
+              "content": {
+                "arguments": "{}"
+              },
+              "message_index": null,
+              "part_index": null
+            },
+            "expected_revision": 0
+          }
+        ]
+      },
+      "snapshot": {
+        "format": "display/1",
+        "position": {
+          "producer": {
+            "run_id": "run",
+            "generation": "attempt-1"
+          },
+          "sequence": 3
+        },
+        "scopes": [
+          {
+            "id": "root",
+            "thread_id": "thread",
+            "run_id": "run",
+            "parent_scope_id": null,
+            "parent_tool_call_id": null,
+            "invocation_id": null,
+            "status": "running"
+          },
+          {
+            "id": "child",
+            "thread_id": "child-thread",
+            "run_id": "child-run",
+            "parent_scope_id": "root",
+            "parent_tool_call_id": "call",
+            "invocation_id": null,
+            "status": "running"
+          }
+        ],
+        "blocks": [
+          {
+            "id": "text",
+            "scope_id": "root",
+            "kind": "text",
+            "revision": 3,
+            "status": "running",
+            "content": {
+              "text": "Hello 世界!"
+            },
+            "message_index": null,
+            "part_index": null
+          },
+          {
+            "id": "tool",
+            "scope_id": "child",
+            "kind": "tool_chunk",
+            "revision": 1,
+            "status": "pending",
+            "content": {
+              "arguments": "{}"
+            },
+            "message_index": null,
+            "part_index": null
+          }
+        ],
+        "omitted": 0,
+        "continuity": {}
+      }
+    },
+    {
+      "name": "retention removes exact prefix",
+      "delta": {
+        "format": "display-delta/1",
+        "producer": {
+          "run_id": "run",
+          "generation": "attempt-1"
+        },
+        "from_sequence": 3,
+        "through_sequence": 4,
+        "operations": [
+          {
+            "op": "blocks.remove",
+            "ids": [
+              "text"
+            ],
+            "omitted": 1
+          }
+        ]
+      },
+      "snapshot": {
+        "format": "display/1",
+        "position": {
+          "producer": {
+            "run_id": "run",
+            "generation": "attempt-1"
+          },
+          "sequence": 4
+        },
+        "scopes": [
+          {
+            "id": "root",
+            "thread_id": "thread",
+            "run_id": "run",
+            "parent_scope_id": null,
+            "parent_tool_call_id": null,
+            "invocation_id": null,
+            "status": "running"
+          },
+          {
+            "id": "child",
+            "thread_id": "child-thread",
+            "run_id": "child-run",
+            "parent_scope_id": "root",
+            "parent_tool_call_id": "call",
+            "invocation_id": null,
+            "status": "running"
+          }
+        ],
+        "blocks": [
+          {
+            "id": "tool",
+            "scope_id": "child",
+            "kind": "tool_chunk",
+            "revision": 1,
+            "status": "pending",
+            "content": {
+              "arguments": "{}"
+            },
+            "message_index": null,
+            "part_index": null
+          }
+        ],
+        "omitted": 1,
+        "continuity": {}
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "failed suffix rolls back prefix",
+      "delta": {
+        "format": "display-delta/1",
+        "producer": {
+          "run_id": "run",
+          "generation": "attempt-1"
+        },
+        "from_sequence": 4,
+        "through_sequence": 5,
+        "operations": [
+          {
+            "op": "block.append",
+            "id": "tool",
+            "field": "arguments",
+            "expected_revision": 1,
+            "revision": 2,
+            "value": " "
+          },
+          {
+            "op": "block.append",
+            "id": "tool",
+            "field": "arguments",
+            "expected_revision": 1,
+            "revision": 2,
+            "value": "invalid"
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing removal",
+      "delta": {
+        "format": "display-delta/1",
+        "producer": {
+          "run_id": "run",
+          "generation": "attempt-1"
+        },
+        "from_sequence": 4,
+        "through_sequence": 5,
+        "operations": [
+          {
+            "op": "blocks.remove",
+            "ids": [
+              "missing"
+            ],
+            "omitted": 2
+          }
+        ]
+      }
+    },
+    {
+      "name": "scope identity immutable",
+      "delta": {
+        "format": "display-delta/1",
+        "producer": {
+          "run_id": "run",
+          "generation": "attempt-1"
+        },
+        "from_sequence": 4,
+        "through_sequence": 5,
+        "operations": [
+          {
+            "op": "scope.put",
+            "scope": {
+              "id": "child",
+              "thread_id": "different",
+              "run_id": "child-run",
+              "parent_scope_id": "root",
+              "parent_tool_call_id": "call",
+              "invocation_id": null,
+              "status": "running"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from datetime import UTC, datetime
 from io import BytesIO
 
 import pytest
-from a13n_harness import HarnessEvent
-from a13n_harness.model_context import ModelInputEvent
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.history import restore_transcript
 from a13n_harness_ui.interactive.inline_attachments import AttachmentBuffer, AttachmentProcessor, InlineAttachments
@@ -15,7 +12,6 @@ from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.interactive.shell import CliShell
 from a13n_harness_ui.surfaces import TranscriptEntry, TranscriptPage, TranscriptPart
 from a13n_harness_ui.thread_files import AttachmentUpload, ComposerAttachment, composer_attachment_label
-from a13n_stream_protocol import HarnessAguiObserver
 from a13n_stream_protocol.messages import project_input_content
 from PIL import Image
 from prompt_toolkit.application import create_app_session
@@ -25,6 +21,8 @@ from prompt_toolkit.layout.processors import TransformationInput
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.selection import SelectionState
 from pydantic_ai.messages import BinaryContent, TextContent
+
+from .terminal_display_fixtures import present_input
 
 
 def _image() -> AttachmentUpload:
@@ -219,27 +217,15 @@ def test_live_and_history_combine_parts_without_internal_details_or_duplicate_ec
         TextContent("internal file path and metadata", metadata=metadata(3, "file#2", "requirements.md")),
         TextContent(" after", metadata=metadata(4)),
     ]
-    event = HarnessEvent(
-        thread_id="thread-inline",
-        run_id="run-inline",
-        sequence=1,
-        occurred_at=datetime.now(UTC),
-        event=ModelInputEvent(content=content),
-    )
-    observer = HarnessAguiObserver()
     renderer = StreamRenderer(Status())
-    events = observer.observe(event)
-    for item in events:
-        renderer.ingest(item.type.value, item.model_dump(mode="json"))
+    present_input(renderer, content)
     expected = "> before " + "x" * 17000 + "[image#1] using [file#2: requirements.md] after"
     assert _source(renderer) == expected
-    for item in events:
-        renderer.ingest(item.type.value, item.model_dump(mode="json"))
+    present_input(renderer, content)
     assert _source(renderer) == expected
     local = StreamRenderer(Status())
     local.local_input("input-inline", expected[2:])
-    for item in events:
-        local.ingest(item.type.value, item.model_dump(mode="json"))
+    present_input(local, content)
     assert _source(local) == expected
     parts = []
     for item in content:

@@ -33,6 +33,7 @@ from pydantic_ai.tools import DeferredToolRequests
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
 from a13n_harness_ui.conversation import excerpt_text, input_excerpt
+from a13n_harness_ui.display_projection import transcript
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_apps.snapshots import app_references
@@ -695,10 +696,8 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
     state = stored.harness_state
     if state.thread_id != thread.thread_id:
         raise ThreadError("Thread state belongs to another Thread.", code="thread_continuation_incompatible")
-    display = stored.display_history if isinstance(stored, StoredContinuation) else None
+    display = stored.display
     model_history = state.message_history
-    history = display.messages if display is not None else model_history
-    completed = display.completed_responses if display is not None else ()
     continuation_id = thread.continuation.logical_digest if thread.continuation else None
     notes = NotePage(continuation_id=continuation_id)
     tasks = TaskPage(continuation_id=continuation_id)
@@ -720,13 +719,17 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         notes=notes,
         tasks=tasks,
     )
-    turns = _transcript_turns(history, completed)
+    if display is None:
+        # A fresh/imported initial state has not entered a display producer yet.
+        entries = tuple(
+            _message_entry(position, message, thread=thread) for position, message in enumerate(model_history)
+        )
+        turns = _transcript_turns(model_history)
+    else:
+        entries, turns = transcript(display, thread_id=thread.thread_id, source_id=continuation_id)
     return InspectionData(
         metadata_json=metadata.model_dump_json(),
-        entries=tuple(
-            _message_entry(position, message, thread=thread).model_dump_json()
-            for position, message in enumerate(history)
-        ),
+        entries=tuple(entry.model_dump_json() for entry in entries),
         turns=tuple(
             InspectionTurn(turn.turn_id, turn.input_position, turn.end_position, turn.model_dump_json())
             for turn in turns

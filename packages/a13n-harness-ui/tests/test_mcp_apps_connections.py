@@ -198,14 +198,15 @@ async def test_real_agent_captures_complete_result_without_changing_model_output
 
 @pytest.mark.parametrize("missing_resource", [False, True])
 async def test_original_snapshot_is_retained_without_replaying_tools(tmp_path: Path, missing_resource: bool) -> None:
+    from a13n_harness_ui.display_projection import child_presentation
     from a13n_harness_ui.mcp_apps.connections import CapturedCall
     from a13n_harness_ui.mcp_apps.models import AppResource, AppSnapshot
     from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY, AppSnapshots, app_references
     from a13n_harness_ui.settings import StorageSettings
     from a13n_harness_ui.storage import open_local_store
-    from a13n_harness_ui.storage.contracts import CompactChildDisplay
-    from a13n_harness_ui.subagent_operator import _DisplayCompactor
-    from ag_ui.core import CustomEvent
+    from pydantic_ai.messages import ModelRequest
+
+    from .display_fixtures import display_snapshot
 
     connections = Connections()
     try:
@@ -223,9 +224,8 @@ async def test_original_snapshot_is_retained_without_replaying_tools(tmp_path: P
             metadata = {METADATA_KEY: [reference.model_dump(mode="json")]}
             part = ToolReturnPart("counter", {"count": 1}, tool_call_id="call-one", metadata=metadata)
             assert app_references(part) == (reference,)
-            compactor = _DisplayCompactor(CompactChildDisplay())
-            compactor.observe((CustomEvent(name=METADATA_KEY, value={"event": {"apps": metadata[METADATA_KEY]}}),))
-            assert compactor.snapshot().mcp_apps == (reference,)
+            display = display_snapshot([ModelRequest(parts=[part])])
+            assert child_presentation(display).mcp_apps == (reference,)
             assert (await snapshots.read(reference)).connected
             saved = await store.objects.read_model(reference.snapshot, AppSnapshot)
             assert saved.result["_meta"] == {"private": "not-for-the-model"}

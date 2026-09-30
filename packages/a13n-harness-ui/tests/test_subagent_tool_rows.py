@@ -8,6 +8,8 @@ import pytest
 from a13n_harness_ui.interactive.rendering import terminal_text
 from a13n_harness_ui.interactive.tool_rows import semantic_tool_row, subagent_result_row
 
+from .terminal_display_fixtures import present_native_result, present_tool
+
 
 @pytest.mark.parametrize(
     "name,arguments,expected",
@@ -143,9 +145,8 @@ def test_search_pattern_and_root_limits_each_disclose_omission():
     assert row == "Search " + "x" * 499 + "… in " + "y" * 499 + "…"
 
 
-@pytest.mark.parametrize("native_first", [True, False])
 @pytest.mark.parametrize("name", ["delegate", "steer_subagent"])
-def test_streamed_subagent_receipts_wrap_and_deduplicate_native_protocol_results(name, native_first):
+def test_reduced_subagent_receipts_wrap_without_duplicate_rows(name):
     from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 
     renderer = StreamRenderer(Status())
@@ -167,19 +168,16 @@ def test_streamed_subagent_receipts_wrap_and_deduplicate_native_protocol_results
         "outcome": "success",
         "content": result,
     }
-    native = ("CUSTOM", {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}})
-    protocol = ("TOOL_CALL_RESULT", {"tool_call_id": "call", "content": json.dumps(result)})
     try:
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "call", "tool_call_name": name})
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "call", "delta": json.dumps(arguments)})
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "call"})
+        present_tool(renderer, "call", name=name, arguments="", arguments_complete=False, status="pending")
+        present_tool(renderer, "call", arguments=json.dumps(arguments))
+        present_tool(renderer, "call", arguments_complete=True)
         renderer.transcript.render(24)
         pending = "\n".join("".join(text for _, text in row) for row in renderer.transcript.rows)
         assert "wrapped" in pending and "…" in pending
         assert "at return" not in pending and "accepted" not in pending
-        events = [native, protocol] if native_first else [protocol, native]
-        for event in events + events:
-            renderer.ingest(*event)
+        for _ in range(2):
+            present_native_result(renderer, part)
         assert len(renderer.transcript.blocks) == 1
         renderer.transcript.render(24)
         visible = "\n".join("".join(text for _, text in row) for row in renderer.transcript.rows)
@@ -187,7 +185,8 @@ def test_streamed_subagent_receipts_wrap_and_deduplicate_native_protocol_results
         assert ("at return" if name == "delegate" else "accepted for delivery") in " ".join(visible.split())
         assert "Call tool" not in visible and len(visible.splitlines()) > 4
         source = next(iter(renderer.transcript.blocks.values())).source
-        assert "part_kind" in source and "Additional tool result" in source
+        assert "Tool" not in source or "Arguments" in source
+        assert "exec-123" in source
         assert "wrapped tasks" in source or "wrapped guidance" in source
     finally:
         renderer.transcript.close()
@@ -198,11 +197,9 @@ def test_native_subagent_failure_is_not_overwritten_by_protocol_success():
 
     renderer = StreamRenderer(Status())
     try:
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "call", "tool_call_name": "steer_subagent"})
-        renderer.ingest(
-            "TOOL_CALL_ARGS", {"tool_call_id": "call", "delta": '{"execution_id":"exec-123","message":"new guidance"}'}
-        )
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "call"})
+        present_tool(renderer, "call", name="steer_subagent", arguments="", arguments_complete=False, status="pending")
+        present_tool(renderer, "call", arguments='{"execution_id":"exec-123","message":"new guidance"}')
+        present_tool(renderer, "call", arguments_complete=True)
         part = {
             "part_kind": "tool-return",
             "tool_name": "steer_subagent",
@@ -210,10 +207,11 @@ def test_native_subagent_failure_is_not_overwritten_by_protocol_success():
             "outcome": "denied",
             "content": "not allowed",
         }
-        renderer.ingest("CUSTOM", {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}})
-        renderer.ingest(
-            "TOOL_CALL_RESULT", {"tool_call_id": "call", "content": '{"execution_id":"exec-123","accepted":true}'}
+        present_native_result(
+            renderer,
+            part,
         )
+        present_tool(renderer, "call", result='{"execution_id":"exec-123","accepted":true}')
         block = next(iter(renderer.transcript.blocks.values()))
         assert "denied" in block.preview and "accepted for delivery" not in block.preview
         assert len(renderer.transcript.blocks) == 1

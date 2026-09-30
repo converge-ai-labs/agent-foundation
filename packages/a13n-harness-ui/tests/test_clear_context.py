@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
-from a13n_harness_ui.display_history import saved_display_history
 from a13n_harness_ui.errors import RunCoordinationError, StoreConflictError, ThreadError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.storage import StoredContinuation
@@ -92,8 +91,8 @@ async def test_clear_context_retains_history_but_restarts_model_and_working_stat
         assert selected is not None and selected.continuation is not None
         stored = await app._store.objects.read_model(selected.continuation, StoredContinuation)
         assert not stored.harness_state.message_history
-        assert set(stored.harness_state.agent_context_state.entries) == {"a13n.harness-ui.display-history"}
-        assert saved_display_history(stored.harness_state) is not None
+        assert not stored.harness_state.agent_context_state.entries
+        assert stored.display.blocks
         with pytest.raises(ThreadError, match="context changed"):
             await app.clear_thread_context(thread_id=thread.thread_id, expected_continuation_id=before.continuation_id)
 

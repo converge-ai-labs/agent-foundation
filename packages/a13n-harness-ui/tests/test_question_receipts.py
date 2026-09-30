@@ -11,6 +11,8 @@ from a13n_harness_ui.interactive.theme import resolve_theme
 from a13n_harness_ui.surfaces import QuestionOptionView, QuestionView, StructuredQuestionRequestView
 from prompt_toolkit.utils import get_cwidth
 
+from .terminal_display_fixtures import present_native_result, present_tool
+
 
 @pytest.fixture
 def renderer():
@@ -46,48 +48,43 @@ def render(renderer, *, detailed=False, width=120):
 
 def result(renderer, value, *, native=False, outcome="success", call_id="question-1", run_id="response-run"):
     if native:
-        renderer.ingest(
-            "CUSTOM",
+        present_native_result(
+            renderer,
             {
-                "name": "a13n.pydantic_ai.function_tool_result",
-                "value": {
-                    "event": {
-                        "part": {
-                            "part_kind": "tool-return",
-                            "tool_name": "ask_user_question",
-                            "tool_call_id": call_id,
-                            "content": value,
-                            "outcome": outcome,
-                        }
-                    }
-                },
+                "part_kind": "tool-return",
+                "tool_name": "ask_user_question",
+                "tool_call_id": call_id,
+                "content": value,
+                "outcome": outcome,
             },
             run_id=run_id,
         )
     else:
-        renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": call_id, "content": json.dumps(value)}, run_id=run_id)
+        present_tool(renderer, call_id, run_id=run_id, result=json.dumps(value))
 
 
 def streamed_request(renderer, pending, *, run_id="question-run"):
-    renderer.ingest(
-        "TOOL_CALL_START",
-        {"tool_call_id": pending.request_id, "tool_call_name": pending.tool_name},
+    present_tool(
+        renderer,
+        pending.request_id,
         run_id=run_id,
+        name=pending.tool_name,
+        arguments="",
+        arguments_complete=False,
+        status="pending",
     )
-    renderer.ingest(
-        "TOOL_CALL_ARGS",
-        {
-            "tool_call_id": pending.request_id,
-            "delta": json.dumps({"questions": [item.model_dump() for item in pending.questions]}),
-        },
+    present_tool(
+        renderer,
+        pending.request_id,
         run_id=run_id,
+        arguments=json.dumps({"questions": [item.model_dump() for item in pending.questions]}),
     )
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": pending.request_id}, run_id=run_id)
+    present_tool(renderer, pending.request_id, run_id=run_id, arguments_complete=True)
 
 
 def test_registration_and_run_finish_do_not_claim_an_answer(renderer):
     renderer.register_questions(request())
-    renderer.ingest("RUN_FINISHED", {}, run_id="question-run")
+    renderer.ingest_control("RUN_FINISHED", {}, run_id="question-run")
     assert render(renderer) == ""
     assert renderer.drain() == ""
 
@@ -99,7 +96,7 @@ def test_typed_question_survives_fresh_response_run(renderer, native, legacy_win
 
     monkeypatch.setattr(module, "Console", partial(module.Console, legacy_windows=legacy_windows))
     renderer.register_questions(request())
-    renderer.ingest("RUN_FINISHED", {}, run_id="question-run")
+    renderer.ingest_control("RUN_FINISHED", {}, run_id="question-run")
     result(renderer, {"answers": {request().questions[0].question: "Python"}}, native=native)
     concise = render(renderer)
     assert "Questions" in concise
@@ -116,7 +113,7 @@ def test_typed_question_survives_fresh_response_run(renderer, native, legacy_win
 
 
 @pytest.mark.parametrize("first_native", [False, True])
-def test_native_and_protocol_results_share_one_receipt_and_preserve_raw_details(renderer, first_native):
+def test_reduced_result_replacement_keeps_one_receipt_and_details(renderer, first_native):
     renderer.register_questions(request())
     answer = {"answers": {request().questions[0].question: "Python"}}
     result(renderer, answer, native=first_native)
@@ -126,9 +123,8 @@ def test_native_and_protocol_results_share_one_receipt_and_preserve_raw_details(
     assert render(renderer).count("Answered · Language") == 1
     assert renderer.drain().count("Answered · Language") == 1
     details = render(renderer, detailed=True)
-    assert details.count("Native result") == 1
     assert details.count("Tool result") == 1
-    assert '"outcome": "success"' in details
+    assert "Tool result | returned" in details
 
 
 def test_history_tool_arguments_register_without_a_live_decision(renderer):
@@ -152,7 +148,7 @@ def test_native_failure_is_not_an_answer_even_with_valid_answer_content(renderer
     assert "[x]" not in render(renderer)
     assert "[ ] Python" in render(renderer) and "[ ] Rust" in render(renderer)
     assert "Call " not in render(renderer)
-    assert f'"outcome": "{outcome}"' in render(renderer, detailed=True)
+    assert f"Tool result | {outcome}" in render(renderer, detailed=True)
 
 
 def test_timeout_diagnostic_survives_without_claiming_success(renderer):
@@ -240,11 +236,12 @@ def test_question_panel_wraps_options_and_preserves_selection(renderer, theme, w
 
 def test_question_correlation_is_root_only(renderer):
     renderer.register_questions(request())
-    renderer.ingest(
-        "TOOL_CALL_RESULT",
-        {"tool_call_id": "question-1", "content": json.dumps({"answers": {request().questions[0].question: "Python"}})},
+    present_tool(
+        renderer,
+        "question-1",
         child=True,
         run_id="child-run",
+        result=json.dumps({"answers": {request().questions[0].question: "Python"}}),
     )
     assert render(renderer) == ""
 
@@ -272,20 +269,13 @@ def test_receipt_payload_is_literal_and_control_sequences_are_removed(renderer):
 
 def test_native_retry_is_not_an_answer(renderer):
     renderer.register_questions(request())
-    renderer.ingest(
-        "CUSTOM",
+    present_native_result(
+        renderer,
         {
-            "name": "a13n.pydantic_ai.function_tool_result",
-            "value": {
-                "event": {
-                    "part": {
-                        "part_kind": "retry-prompt",
-                        "tool_name": "ask_user_question",
-                        "tool_call_id": "question-1",
-                        "content": "Answer validation failed.",
-                    }
-                }
-            },
+            "part_kind": "retry-prompt",
+            "tool_name": "ask_user_question",
+            "tool_call_id": "question-1",
+            "content": "Answer validation failed.",
         },
     )
     assert "Not answered · Language" in render(renderer)
@@ -295,13 +285,11 @@ def test_native_retry_is_not_an_answer(renderer):
 
 def test_unknown_explicit_tool_name_does_not_match_registered_question(renderer):
     renderer.register_questions(request())
-    renderer.ingest(
-        "TOOL_CALL_RESULT",
-        {
-            "tool_call_id": "question-1",
-            "tool_call_name": "other_tool",
-            "content": json.dumps({"answers": {request().questions[0].question: "Python"}}),
-        },
+    present_tool(
+        renderer,
+        "question-1",
+        result=json.dumps({"answers": {request().questions[0].question: "Python"}}),
+        name="other_tool",
     )
     assert render(renderer) == "Call other_tool"
 

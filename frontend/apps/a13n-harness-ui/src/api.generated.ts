@@ -5609,6 +5609,148 @@ export interface components {
              */
             after?: string | null;
         };
+        /** BlockAppend */
+        BlockAppend: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "block.append";
+            /** Id */
+            id: string;
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "text" | "arguments" | "signature";
+            /** Expected Revision */
+            expected_revision: number;
+            /** Revision */
+            revision: number;
+            /** Value */
+            value: string;
+        };
+        /** @enum {string} */
+        BlockKind: "input" | "text" | "reasoning" | "tool_chunk" | "context_summary" | "media" | "extension";
+        /** BlockPut */
+        BlockPut: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "block.put";
+            block: components["schemas"]["DisplayBlock"];
+            /** Expected Revision */
+            expected_revision: number;
+        };
+        /** @enum {string} */
+        BlockStatus: "pending" | "running" | "succeeded" | "failed" | "cancelled" | "deferred" | "unknown";
+        /** BlocksRemove */
+        BlocksRemove: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "blocks.remove";
+            /** Ids */
+            ids: string[];
+            /** Omitted */
+            omitted: number;
+        };
+        /** DisplayBlock */
+        DisplayBlock: {
+            /** Id */
+            id: string;
+            /** Scope Id */
+            scope_id: string;
+            kind: components["schemas"]["BlockKind"];
+            /** Revision */
+            revision: number;
+            /** @default pending */
+            status?: components["schemas"]["BlockStatus"];
+            /** Content */
+            content?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Message Index
+             * @default null
+             */
+            message_index?: number | null;
+            /**
+             * Part Index
+             * @default null
+             */
+            part_index?: number | null;
+        };
+        /** DisplayDelta */
+        DisplayDelta: {
+            /**
+             * Format
+             * @default display-delta/1
+             * @constant
+             */
+            format?: "display-delta/1";
+            producer: components["schemas"]["Producer"];
+            /** From Sequence */
+            from_sequence: number;
+            /** Through Sequence */
+            through_sequence: number;
+            /** Operations */
+            operations: components["schemas"]["DisplayOperation"][];
+        };
+        DisplayOperation: components["schemas"]["BlockPut"] | components["schemas"]["BlockAppend"] | components["schemas"]["ScopePut"] | components["schemas"]["BlocksRemove"];
+        /** DisplayPosition */
+        DisplayPosition: {
+            producer: components["schemas"]["Producer"];
+            /**
+             * Sequence
+             * @default 0
+             */
+            sequence?: number;
+        };
+        /** DisplayScope */
+        DisplayScope: {
+            /** Id */
+            id: string;
+            /** Thread Id */
+            thread_id: string;
+            /** Run Id */
+            run_id: string;
+            /**
+             * Parent Scope Id
+             * @default null
+             */
+            parent_scope_id?: string | null;
+            /**
+             * Parent Tool Call Id
+             * @default null
+             */
+            parent_tool_call_id?: string | null;
+            /**
+             * Invocation Id
+             * @default null
+             */
+            invocation_id?: string | null;
+            /**
+             * Status
+             * @default running
+             * @enum {string}
+             */
+            status?: "running" | "completed" | "failed" | "cancelled" | "deferred";
+        };
+        /** FocusCommitFrame */
+        FocusCommitFrame: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "display_commit";
+            /** Run Id */
+            run_id: string;
+            /** Chunk Count */
+            chunk_count: number;
+        };
         /** FocusEventFrame */
         FocusEventFrame: {
             /**
@@ -5636,11 +5778,13 @@ export interface components {
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
-            kind: "root_stream";
+            kind: "display_chunk";
             /** Run Id */
             run_id: string;
-            /** Events */
-            events: components["schemas"]["RootStreamEvent"][];
+            /** Index */
+            index: number;
+            /** Data */
+            data: string;
         };
         /** FocusSnapshotFrame */
         FocusSnapshotFrame: {
@@ -5655,7 +5799,7 @@ export interface components {
         };
         /**
          * LiveEvent
-         * @description Detached bounded AG-UI event correlated to one complete root lineage.
+         * @description One atomic display delta or bounded control in a root lineage.
          */
         LiveEvent: {
             /** Epoch */
@@ -5691,6 +5835,15 @@ export interface components {
             } | null;
             /** Payload Omitted */
             payload_omitted: boolean;
+            /** @default null */
+            delta?: components["schemas"]["DisplayDelta"] | null;
+        };
+        /** Producer */
+        Producer: {
+            /** Run Id */
+            run_id: string;
+            /** Generation */
+            generation: string;
         };
         /** ResetFrame */
         ResetFrame: {
@@ -5714,32 +5867,41 @@ export interface components {
             /** Brief */
             brief: string;
         };
-        /** RootStreamEvent */
-        RootStreamEvent: {
-            /** Index */
-            index: number;
-            /** Event Type */
-            event_type: string;
-            /** Payload */
-            payload: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
-            /** Payload Omitted */
-            payload_omitted: boolean;
-        };
         /**
          * RootStreamSummary
-         * @description Finite observer prefix covered by a focused watch's cutover.
+         * @description A compact producer baseline covered by the focused watch cutover.
          */
         RootStreamSummary: {
             /** Thread Id */
             thread_id: string;
             /** Run Id */
             run_id: string;
+            /**
+             * Parent Thread Id
+             * @default null
+             */
+            parent_thread_id?: string | null;
+            /**
+             * Execution Id
+             * @default null
+             */
+            execution_id?: string | null;
             /** Base Continuation Id */
             base_continuation_id: string | null;
-            /** Event Count */
-            event_count: number;
+            position: components["schemas"]["DisplayPosition"];
+            /** Checkpoints */
+            checkpoints?: {
+                [key: string]: number;
+            };
+        };
+        /** ScopePut */
+        ScopePut: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            op: "scope.put";
+            scope: components["schemas"]["DisplayScope"];
         };
         /** SummaryCursor */
         SummaryCursor: {
@@ -5835,6 +5997,11 @@ export interface components {
             recent_events?: components["schemas"]["LiveEvent"][];
             /** @default null */
             root_stream?: components["schemas"]["RootStreamSummary"] | null;
+            /**
+             * Child Streams
+             * @default []
+             */
+            child_streams?: components["schemas"]["RootStreamSummary"][];
         };
         /** RealtimeFrame */
         RealtimeFrame: {
@@ -5847,7 +6014,7 @@ export interface components {
             /** Channel */
             channel: string;
             /** Frame */
-            frame: components["schemas"]["FocusSnapshotFrame"] | components["schemas"]["FocusReplayFrame"] | components["schemas"]["FocusReadyFrame"] | components["schemas"]["FocusEventFrame"] | components["schemas"]["SummaryOpenFrame"] | components["schemas"]["SummaryEventFrame"] | components["schemas"]["ResetFrame"];
+            frame: components["schemas"]["FocusSnapshotFrame"] | components["schemas"]["FocusReplayFrame"] | components["schemas"]["FocusCommitFrame"] | components["schemas"]["FocusReadyFrame"] | components["schemas"]["FocusEventFrame"] | components["schemas"]["SummaryOpenFrame"] | components["schemas"]["SummaryEventFrame"] | components["schemas"]["ResetFrame"];
         };
         /** RealtimePing */
         RealtimePing: {

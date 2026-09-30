@@ -35,7 +35,7 @@ def edit_event(call_id="call-one", *, before="before\n", after="after\n"):
 
 
 def test_applied_evidence_round_trips_without_changing_model_facing_result_or_other_metadata() -> None:
-    collector = ToolEvidenceCollector(run_id="run-one")
+    collector = ToolEvidenceCollector()
     collector.observe(envelope(edit_event()))
     part = ToolReturnPart("edit", {"ok": False}, "call-one", metadata={"keep": "value"}, outcome="failed")
     collector.observe(envelope(FunctionToolResultEvent(part)))
@@ -51,7 +51,7 @@ def test_applied_evidence_round_trips_without_changing_model_facing_result_or_ot
 
 
 def test_edit_retention_is_complete_and_does_not_associate_other_runs_or_call_ids() -> None:
-    collector = ToolEvidenceCollector(run_id="run-one")
+    collector = ToolEvidenceCollector()
     collector.observe(envelope(edit_event(), run_id="run-other"))
     unrelated = ToolReturnPart("edit", {}, "call-one")
     collector.observe(envelope(FunctionToolResultEvent(unrelated)))

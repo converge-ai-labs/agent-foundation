@@ -10,7 +10,15 @@ from pathlib import Path
 
 import yaml
 from a13n_harness.input import RunInputValue
-from a13n_stream_protocol import CustomEventAssembler
+from a13n_stream_protocol.display import (
+    BlockAppend,
+    BlockPut,
+    BlocksRemove,
+    DisplayGap,
+    DisplayPosition,
+    DisplaySnapshot,
+    DisplayState,
+)
 
 from a13n_harness_ui.app import HarnessUiApp
 from a13n_harness_ui.cli import CliRequest
@@ -780,7 +788,7 @@ class SessionBackend:
         await self.refresh()
         thread_id = await self.ensure_session()
         last_ordinal = -1
-        custom_events = CustomEventAssembler()
+        displays: dict[tuple[str, str], DisplayState] = {}
         # Snapshot before admission; live notifications refresh this committed
         # projection rather than adding potentially overlapping child deltas.
         totals = await self.app.thread_usage(thread_id=thread_id)
@@ -789,13 +797,58 @@ class SessionBackend:
 
             async def ingest(event: LiveEvent) -> bool:
                 nonlocal last_ordinal
-                if event.event_type == "CUSTOM" and event.payload is not None:
-                    payload = custom_events.accept(event.payload)
-                    renderer.gap |= custom_events.gap
-                    if payload is None:
+                if event.event_type == "DISPLAY_DELTA":
+                    delta = event.delta
+                    if delta is None:
+                        renderer.gap = True
                         return False
-                    event = event.model_copy(update={"payload": payload})
-                renderer.ingest(
+                    key = (event.thread_id, event.run_id)
+                    display = displays.get(key)
+                    changed: tuple[str, ...] = ()
+                    if display is None or display.position.producer != delta.producer:
+                        baseline = subscription.display_baseline(*key)
+                        if baseline is not None:
+                            display = DisplayState(baseline.display)
+                            changed = tuple(baseline.block_sequences)
+                        elif delta.from_sequence == 0:
+                            display = DisplayState(DisplaySnapshot(position=DisplayPosition(producer=delta.producer)))
+                        else:
+                            renderer.gap = True
+                            return False
+                        displays[key] = display
+                        while len(displays) > 16:
+                            displays.pop(next(iter(displays)))
+                    try:
+                        if display.apply(delta):
+                            changed = tuple(
+                                dict.fromkeys(
+                                    (
+                                        *changed,
+                                        *(
+                                            op.block.id if isinstance(op, BlockPut) else op.id
+                                            for op in delta.operations
+                                            if isinstance(op, BlockPut | BlockAppend)
+                                        ),
+                                    )
+                                )
+                            )
+                            removed = tuple(
+                                identifier
+                                for op in delta.operations
+                                if isinstance(op, BlocksRemove)
+                                for identifier in op.ids
+                            )
+                            changed = tuple(dict.fromkeys((*changed, *renderer.remove_blocks(display, removed))))
+                    except DisplayGap:
+                        # A gap is explicit; never synthesize missing native state.
+                        # Final outcome/history repairs the root's display below.
+                        renderer.gap = True
+                        return False
+                    renderer.display_blocks(
+                        display, changed, child=event.run_kind == "child", execution_id=event.execution_id
+                    )
+                    return False
+                renderer.ingest_control(
                     event.event_type,
                     event.payload,
                     child=event.run_kind == "child",

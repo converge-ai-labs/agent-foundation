@@ -89,6 +89,10 @@ Inputs, applied steering, and all Agent text—including progress messages and e
 
 If part of a saved turn is not loaded, **Load earlier messages in this turn** appears directly in the conversation. It loads the missing messages and execution activity without requiring you to open details; failures offer an explicit retry. Pending questions and approvals also remain actionable outside the disclosures. Navigation and expansion are personal display choices, not evidence of successful execution or changes to the Agent's context or another participant's view.
 
+Reconnect restores a compact display snapshot for the root and live subagents, then follows newer output without replaying every token event. A missing range triggers a fresh snapshot, not a claim that missing output was recovered. Saved history and execution continuation remain separate: seeing live text does not mean it has been saved. Very large live baselines above the browser's 64 MiB per-producer budget stop current-output delivery with an explicit notice; saved history remains available.
+
+Root and child checkpoints use the new typed display envelope (schema version 2). Older checkpoint formats are not automatically converted or used as fallback input; mixed-version writers are unsupported. Preserve a backup and use the matching earlier release to inspect old data before switching a data root to this format.
+
 ## Pending questions, approvals, and external results
 
 The pending-decision form handles structured questions, generic tool approvals, and externally supplied tool results. Shell approvals show the risk assessment and reason before the command, working directory, and selected mount. Environment variable values are hidden in argument previews. Other approvals show the tool, arguments, and available review context without requiring a tool-specific form.

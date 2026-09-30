@@ -2,15 +2,15 @@
 
 ## Overview
 
-This directory defines the shared Agent User Interaction Protocol observation boundary distributed as `a13n-stream-protocol`. The package converts every public Harness stream item to standard AG-UI events where a direct mapping exists and to a namespaced `CUSTOM` event otherwise.
+This directory defines shared compact-display semantics and the public AG-UI observation boundary distributed as `a13n-stream-protocol`. Native capture projects stable blocks and scoped execution summaries; Python and TypeScript applicators apply atomic typed operations. The package also converts public Harness stream items to standard AG-UI events or namespaced `CUSTOM` fallback events.
 
 One process-local observer binds to one Harness Run, can apply an optional Host processor, accumulates the resulting events in order, and can atomically reconstruct a fresh instance from a finite Host-supplied public source history. It is not a scheduler, lifecycle authority, Session store, durable event log, durable replay system, transport, browser SDK, or second Agent runtime.
 
 ## Document Catalog
 
-| Document                         | Owning contract                                                                                                                                                         |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [00-overview.md](00-overview.md) | Dependency direction, observer state and reconstruction, event conversion, custom fallback, Host processing, accumulation, lifecycle ownership, and the schema boundary |
+| Document                         | Owning contract                                                                                                                                                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md) | Compact-display identities and operations, native capture, dependency direction, observer reconstruction, AG-UI conversion, Host processing and lifecycle ownership |
 
 ## Reading Paths
 
@@ -20,16 +20,16 @@ Read `00`, then [Harness Events and Usage](../a13n-harness/12-events-observabili
 
 ### Build Harness UI Surfaces
 
-Read `00`, then [Harness UI Runtime Subagents and Surfaces](../a13n-harness-ui/05-runtime-subagents-and-surfaces.md). Both local surfaces consume the same post-processor AG-UI events, while Harness UI owns persistence, replay, fan-out, and transport.
+Read `00`, then [Harness UI Runtime Subagents and Surfaces](../a13n-harness-ui/05-runtime-subagents-and-surfaces.md). Compact snapshots and typed deltas share one semantic projector; Harness UI owns persistence, replay, fan-out, and transport. AG-UI conversion remains available to embedding adapters.
 
 ### Service observation
 
-The Service uses AG-UI as the event vocabulary of its durable display and thread stream, owned by [facts and delivery](../a13n-service/07-facts-and-delivery.md). Shared stream adapters remain available to other Hosts.
+The Service uses compact snapshots for durable display and shared typed deltas for its thread stream, owned by [facts and delivery](../a13n-service/07-facts-and-delivery.md). Producer coverage is independent of its optional Redis seek hint.
 
 ## Authority Rules
 
 - Pydantic AI and the Harness own run execution, public source events, lifecycle observations, results, and `HarnessState`.
-- Agent Stream Protocol owns standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and atomic reconstruction from a supplied source history.
+- Agent Stream Protocol owns native-to-display projection, compact values, revision-checked atomic operations and matching applicators, as well as standard AG-UI conversion, `CUSTOM` fallback and explicit finite-history observation.
 - A Host owns input acceptance, visibility policy, source-history retention and selection, cursors, gaps, replay-to-live cutover, persistence, event identities, fan-out, cancellation, and transport lifecycle.
 - A renderer owns ephemeral view state only.
 - AG-UI event delivery is observation. It never commits execution, proves external side effects, grants tool authority, or becomes continuation state.
