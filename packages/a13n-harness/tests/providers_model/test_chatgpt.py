@@ -35,7 +35,7 @@ def grant(marker="old", expires=3600):
     return OpenAIChatGPTCredentials(
         subject="subject-1",
         client_id="oaiapp_test",
-        ext_agent_host_id="host-1",
+        ext_agent_host_id="urn:uuid:39c5c744-23fa-4e9d-8be9-350c2fcaf520",
         expires_at=datetime.now(UTC) + timedelta(seconds=expires),
         scopes=SCOPES,
         access_token=f"synthetic-access-{marker}",
@@ -64,7 +64,7 @@ def callback(flow, **changes):
 
 def flow(client=None, credentials=None):
     return OpenAIChatGPTOAuthFlow.start(
-        ext_agent_host_id="host-1",
+        ext_agent_host_id="urn:uuid:39c5c744-23fa-4e9d-8be9-350c2fcaf520",
         agent_name="Test Agent",
         redirect_uri="http://127.0.0.1:18455/auth/callback",
         http_client=client,
@@ -79,7 +79,7 @@ async def test_registration_roundtrip_preserves_pkce_state_and_host():
     assert params["agent_name_hint"] == ["Test Agent"]
     assert params["resource"] == [RESOURCE]
     assert params["scope"] == [" ".join(SCOPES)]
-    assert params["ext_agent_host_id"] == ["host-1"]
+    assert params["ext_agent_host_id"] == ["urn:uuid:39c5c744-23fa-4e9d-8be9-350c2fcaf520"]
     restored = OpenAIChatGPTOAuthFlow(
         TypeAdapter(ChatGPTAuthorization).validate_json(
             TypeAdapter(ChatGPTAuthorization).dump_json(current.authorization)
@@ -197,7 +197,9 @@ async def test_signed_identity_and_direct_scope_are_required(invalid):
         else:
             result = await current.exchange_callback(callback(current))
             assert result.subject == "subject-1" and result.client_id == "oaiapp_test"
-            assert result.ext_agent_host_id == "host-1" and result.scopes == SCOPES
+            assert (
+                result.ext_agent_host_id == "urn:uuid:39c5c744-23fa-4e9d-8be9-350c2fcaf520" and result.scopes == SCOPES
+            )
     assert all(request.url.host == "auth.openai.com" for request in requests)
 
 

@@ -259,6 +259,7 @@ class LoginSessions:
                 )
                 raise
 
+        succeeded = False
         try:
             with session.scope:
                 with fail_after(900):
@@ -282,8 +283,8 @@ class LoginSessions:
                         )
                     else:
                         raise HarnessUiError("No login flow is registered for this account.", code="login_unsupported")
-                    session.status = session.status.model_copy(update={"state": "succeeded"})
-            if session.scope.cancel_called and session.status.state != "succeeded":
+                    succeeded = True
+            if session.scope.cancel_called and not succeeded:
                 session.status = session.status.model_copy(update={"state": "cancelled"})
         except TimeoutError:
             session.status = session.status.model_copy(
@@ -306,7 +307,10 @@ class LoginSessions:
             if isinstance(account, ChatGPTAccountStore):
                 with CancelScope(shield=True):
                     await account.cancel(session.status.session_id)
-            if session.status.state in {"starting", "waiting"}:
+            # Publish success only after cleanup; the next login can start immediately.
+            if succeeded:
+                session.status = session.status.model_copy(update={"state": "succeeded"})
+            elif session.status.state in {"starting", "waiting"}:
                 session.status = session.status.model_copy(update={"state": "cancelled"})
             session.status = session.status.model_copy(update={"verification_url": None, "user_code": None})
             session.done.set()

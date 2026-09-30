@@ -5,6 +5,7 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlencode, urlsplit
+from uuid import UUID
 
 import anyio
 import pytest
@@ -60,13 +61,26 @@ def grant(host):
     )
 
 
-async def connect(service, monkeypatch, no_task_connection):
+async def connect(service, monkeypatch, no_task_connection, *, legacy_host=False):
     provider = await create(service, "model", {"type": "openai_chatgpt", "name": "ChatGPT"})
     path = f"{service.api}/model-providers/{provider['id']}"
+    if legacy_host:
+        async with transaction(service.runtime.storage) as session:
+            session.add(
+                ModelProviderOAuthRow(
+                    provider_id=provider["id"],
+                    organization_id=service.tenant.organization_id,
+                    workspace_id=service.tenant.workspace_id,
+                    host_id="host_legacy",
+                    refresh_blocked=False,
+                )
+            )
     started = await service.client.post(path + "/authorize", json={})
     assert started.status_code == 200, started.text
     start = started.json()
     query = parse_qs(urlsplit(start["authorization_url"]).query)
+    host_id = query["ext_agent_host_id"][0]
+    assert UUID(host_id).version == 4 and UUID(host_id).urn == host_id
     url = (
         query["redirect_uri"][0]
         + "?"
@@ -108,10 +122,11 @@ async def connect(service, monkeypatch, no_task_connection):
     return provider, path, source
 
 
+@pytest.mark.parametrize("legacy_host", [False, True])
 async def test_provider_login_is_shared_encrypted_and_does_not_change_resource_version(
-    service, monkeypatch, no_task_connection
+    service, monkeypatch, no_task_connection, legacy_host
 ):
-    provider, path, source = await connect(service, monkeypatch, no_task_connection)
+    provider, path, source = await connect(service, monkeypatch, no_task_connection, legacy_host=legacy_host)
     assert (await service.client.get(path)).json()["version"] == provider["version"]
     async with short_session(service.runtime.storage) as session:
         row = await session.get(ModelProviderOAuthRow, provider["id"])

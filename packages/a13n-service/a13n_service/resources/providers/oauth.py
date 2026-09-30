@@ -10,6 +10,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from time import monotonic
 from typing import Literal
+from uuid import uuid4
 
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.oauth.chatgpt import (
@@ -159,10 +160,13 @@ async def authorize(
                 provider_id=provider_id,
                 organization_id=provider.organization_id,
                 workspace_id=workspace_id,
-                host_id=new_object_id("host"),
+                host_id=uuid4().urn,
                 refresh_blocked=False,
             )
             session.add(row)
+        # Only an unregistered host can replace its rejected legacy identifier.
+        if row.client_id is None and row.host_id.startswith("host_"):
+            row.host_id = uuid4().urn
         credentials = _credentials(row, keys) if row.tokens is not None and not body.new_registration else None
         flow = OpenAIChatGPTOAuthFlow.start(
             ext_agent_host_id=row.host_id,

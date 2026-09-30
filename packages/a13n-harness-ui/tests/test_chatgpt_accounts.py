@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode
+from uuid import UUID
 
 import pytest
 from a13n_harness.providers.model.oauth.chatgpt import SCOPES, OpenAIChatGPTCredentials, OpenAIChatGPTOAuthFlow
@@ -49,6 +50,8 @@ def callback(flow: OpenAIChatGPTOAuthFlow) -> str:
 async def signed_in(path: Path, monkeypatch: pytest.MonkeyPatch) -> ChatGPTAccountStore:
     store = ChatGPTAccountStore(path)
     flow = await store.begin("first", "http://127.0.0.1:43111/auth/callback")
+    host_id = flow.authorization.ext_agent_host_id
+    assert UUID(host_id).version == 4 and UUID(host_id).urn == host_id
 
     async def exchange(self, url):
         assert self.validate_callback(url).client_id == "issued-client"
@@ -60,11 +63,16 @@ async def signed_in(path: Path, monkeypatch: pytest.MonkeyPatch) -> ChatGPTAccou
     return store
 
 
-async def test_chatgpt_uses_one_auth_writer_preserves_keys_and_fences_pending(tmp_path, monkeypatch):
+@pytest.mark.parametrize("legacy_host", [False, True])
+async def test_chatgpt_uses_one_auth_writer_preserves_keys_and_fences_pending(tmp_path, monkeypatch, legacy_host):
     path = tmp_path / "auth.json"
     keys = ApiKeyStore(path)
     await keys.put(ApiKeyInput(credential_ref="key-test", key=SecretStr("private-api-key")))
     await keys.document.update(lambda document: document.update({"unrelated": {"value": 42}}))
+    if legacy_host:
+        await keys.document.update(
+            lambda document: document.update({"openai_chatgpt": {"host_id": "host-" + "a" * 32}})
+        )
     store = await signed_in(path, monkeypatch)
     assert await keys.load("key-test") == "private-api-key"
     assert json.loads(path.read_text())["unrelated"] == {"value": 42}
@@ -75,6 +83,7 @@ async def test_chatgpt_uses_one_auth_writer_preserves_keys_and_fences_pending(tm
     flow = await store.begin("returning", "http://127.0.0.1:43112/auth/callback")
     assert flow.authorization.client_id == "issued-client"
     assert flow.authorization.subject == "test-subject"
+    assert flow.authorization.ext_agent_host_id == (await store.load()).ext_agent_host_id
     with pytest.raises(UserError):
         await store.complete("returning", callback(flow).replace(flow.authorization.state, "wrong-state"))
     assert json.loads(path.read_text())["openai_chatgpt"]["pending"] is not None

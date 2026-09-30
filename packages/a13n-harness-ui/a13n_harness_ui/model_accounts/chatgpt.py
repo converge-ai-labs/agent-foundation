@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import secrets
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from a13n_harness.providers.model.oauth.chatgpt import (
     ChatGPTAuthorization,
@@ -46,7 +46,7 @@ class _Registration(BaseModel):
 
 class _State(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    host_id: str = Field(default_factory=lambda: "host-" + secrets.token_hex(16))
+    host_id: str = Field(default_factory=lambda: uuid4().urn)
     selected: str | None = None
     registrations: dict[str, _Registration] = Field(default_factory=dict, repr=False)
     pending: ChatGPTAuthorization | None = Field(default=None, repr=False)
@@ -84,6 +84,9 @@ class ChatGPTAccountStore:
         async with self.exclusive():
 
             def change(state: _State) -> ChatGPTAuthorization:
+                # Repair pre-registration state written before UUID URNs were used.
+                if not state.registrations and state.host_id.startswith("host-"):
+                    state.host_id = uuid4().urn
                 selected = state.registrations.get(state.selected or "") if not new_registration else None
                 flow = OpenAIChatGPTOAuthFlow.start(
                     ext_agent_host_id=state.host_id,
