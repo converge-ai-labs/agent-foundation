@@ -20,7 +20,7 @@ from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from a13n_harness._json import dump_json_bytes, require_finite_json
 from a13n_harness.errors import RunError
 from a13n_harness.state import HarnessState
-from a13n_harness.tools._output import _model_only_tool_return
+from a13n_harness.tools._output import _render_tool_return
 
 MAX_DEFERRED_ITEMS = 128
 MAX_DEFERRED_METADATA_BYTES = 64 * 1024
@@ -149,7 +149,7 @@ def preflight_deferred_resume(
             if isinstance(call_result, ToolReturn):
                 require_finite_json(call_result.return_value)
                 require_finite_json(call_result.metadata)
-                detached.results.calls[call_id] = _model_only_tool_return(call_result)
+                detached.results.calls[call_id] = _render_tool_return(call_result)
             else:
                 require_finite_json(call_result)
         for approval in detached.results.approvals.values():

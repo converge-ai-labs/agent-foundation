@@ -6,7 +6,8 @@ from collections.abc import Iterable
 from typing import Literal
 
 from a13n_harness import HarnessEvent, HarnessExtensionEvent, HarnessRunResult
-from a13n_harness.model_context import ModelInputEvent, user_prompt_content
+from a13n_harness.content import ContentItem, request_input_content
+from a13n_harness.model_context import ModelInputEvent
 from a13n_stream_protocol.messages import project_input_content
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.messages import (
@@ -16,7 +17,6 @@ from pydantic_ai.messages import (
     PartEndEvent,
     TextPart,
     UserContent,
-    UserPromptPart,
 )
 
 EXCERPT_LIMIT = 2048
@@ -51,7 +51,7 @@ def excerpt_text(text: str, limit: int = EXCERPT_LIMIT) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 1] + "…"
 
 
-def input_excerpt(content: Iterable[UserContent]) -> str:
+def input_excerpt(content: Iterable[UserContent | ContentItem]) -> str:
     text: list[str] = []
     attachments: list[str] = []
     for item in content:
@@ -83,12 +83,7 @@ def checkpoint_excerpt(previous: ConversationExcerpt, history: Iterable[object])
         if isinstance(message, ModelRequest):
             if (message.metadata or {}).get("a13n.context") in {"handoff", "compaction"}:
                 continue
-            text = input_excerpt(
-                content
-                for part in message.parts
-                if isinstance(part, UserPromptPart)
-                for content in user_prompt_content(part)
-            )
+            text = input_excerpt(request_input_content(message))
             if text:
                 value = ConversationExcerpt(first_input=value.first_input or excerpt_text(text, 512), latest_input=text)
         elif isinstance(message, ModelResponse):
@@ -107,7 +102,7 @@ class ExcerptCollector:
         self.changed = False
         self._reply = ""
 
-    def _input(self, content: Iterable[UserContent]) -> None:
+    def _input(self, content: Iterable[UserContent | ContentItem]) -> None:
         text = input_excerpt(content)
         if not text:
             return
@@ -127,12 +122,7 @@ class ExcerptCollector:
         elif isinstance(event, EnqueuedMessagesEvent):
             for message in event.messages:
                 if isinstance(message, ModelRequest):
-                    self._input(
-                        content
-                        for part in message.parts
-                        if isinstance(part, UserPromptPart)
-                        for content in user_prompt_content(part)
-                    )
+                    self._input(request_input_content(message))
         elif isinstance(event, HarnessExtensionEvent):
             if isinstance(event.payload, dict) and event.payload.get("type") == "model_request_started":
                 self._reply = ""

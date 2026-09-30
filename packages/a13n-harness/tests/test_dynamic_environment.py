@@ -1133,14 +1133,14 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -
         for message in call
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, UserPromptPart) and isinstance(part.content, list)
+        if isinstance(part, ToolReturnPart) and isinstance(part.content, list)
         for item in part.content
         if isinstance(item, BinaryContent)
     ]
     assert len(binaries) == 1
     assert binaries[0].data == b"\x89PNG"
     assert binaries[0].media_type == "image/png"
-    assert binaries[0].vendor_metadata == {"display": False, "source_id": "a13n.tool"}
+    assert binaries[0].vendor_metadata is None
 
 
 async def test_view_uses_run_scoped_understanding_when_active_model_lacks_native_media(

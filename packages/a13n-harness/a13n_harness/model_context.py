@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from copy import copy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
@@ -25,6 +25,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestContext
 
+from a13n_harness.content import ContentItem, ContentMetadata, replace_request_parts, request_parts
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 
@@ -39,7 +40,7 @@ _MAX_AGGREGATE_BYTES = 2 * 1024 * 1024
 class ModelInputEvent(CapabilityEvent, namespace="a13n.context", name="model_input"):
     """Fresh native input content; transport adapters own presentation projection."""
 
-    content: list[UserContent]
+    content: Sequence[UserContent | ContentItem]
 
 
 def user_prompt_content(part: UserPromptPart) -> list[UserContent]:
@@ -191,7 +192,7 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
             await ctx.emit(
                 ModelInputEvent(
                     content=[
-                        TextContent(block.content, metadata={"display": False, "source_id": block.source_id})
+                        ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))
                         for block in projection.blocks
                     ]
                 )
@@ -297,7 +298,7 @@ def _commit_projection(
         return messages
     final = messages[-1]
     assert isinstance(final, ModelRequest)
-    original_parts = list(final.parts)
+    original_parts = request_parts(final)
     preamble = [block for block in projection.blocks if block.placement is ModelContextPlacement.INPUT_PREAMBLE]
     epilogue = [block for block in projection.blocks if block.placement is ModelContextPlacement.REQUEST_EPILOGUE]
 
@@ -308,22 +309,28 @@ def _commit_projection(
         input_index = next(
             index
             for index, part in enumerate(original_parts)
-            if isinstance(part, (UserPromptPart, ToolAvailabilityDeltaPart))
+            if isinstance(part[0], (UserPromptPart, ToolAvailabilityDeltaPart))
         )
     else:
         input_index = len(original_parts)
 
     inserted_parts = [
-        UserPromptPart([TextContent(block.content, metadata={"display": False, "source_id": block.source_id})])
+        (
+            UserPromptPart(block.content),
+            [ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))],
+        )
         for block in preamble
     ]
     parts = [*original_parts[:input_index], *inserted_parts, *original_parts[input_index:]]
     parts.extend(
-        UserPromptPart([TextContent(block.content, metadata={"display": False, "source_id": block.source_id})])
+        (
+            UserPromptPart(block.content),
+            [ContentItem(block.content, ContentMetadata(display=False, source_id=block.source_id))],
+        )
         for block in epilogue
     )
     updated = list(messages)
-    updated[-1] = replace(final, parts=tuple(parts))
+    updated[-1] = replace_request_parts(final, parts)
     return updated
 
 

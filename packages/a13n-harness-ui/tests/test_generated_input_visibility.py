@@ -9,8 +9,9 @@ from dataclasses import replace
 import pytest
 from a13n_harness import AgentContext, HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.capabilities import CodeActCapability
+from a13n_harness.content import request_input_content
 from a13n_harness.filters import ContentFilterCapability, ContentFilterConfiguration
-from a13n_harness.model_context import user_prompt_content
+from a13n_harness.tools._output import TOOL_CONTENT_METADATA_KEY, tool_execution_value
 from a13n_harness.toolsets.codeact import CodeActPolicyToolset, CodeActToolPolicy
 from a13n_harness_ui.conversation import ConversationExcerpt, checkpoint_excerpt
 from a13n_harness_ui.display_history import DisplayHistoryCollector, saved_display_history, with_display_history
@@ -19,7 +20,7 @@ from a13n_stream_protocol import HarnessAguiObserver
 from pydantic_ai import BinaryContent, RunContext, TextContent, ToolReturn
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability, Hooks
-from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
+from pydantic_ai.messages import CachePoint, ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -27,11 +28,11 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("runner", [False, True], ids=["direct", "codeact"])
-@pytest.mark.parametrize("shape", ["scalar", "list", "tuple", "media", "filtered"])
+@pytest.mark.parametrize("shape", ["scalar", "list", "tuple", "media", "filtered", "cache"])
 async def test_supplemental_content_never_becomes_authored_input(runner: bool, shape: str) -> None:
     # Identical authored and injected text must remain distinguishable by origin.
     original_text = TextContent("same", metadata={"source_id": "attachment", "custom": "keep", "display": True})
-    original_media = BinaryContent(b"1234", media_type="image/png", vendor_metadata={"source_id": "attachment"})
+    original_media = BinaryContent(b"1234", media_type="image/png", vendor_metadata={"detail": "high"})
     supplemental = (
         "same"
         if shape == "scalar"
@@ -39,6 +40,8 @@ async def test_supplemental_content_never_becomes_authored_input(runner: bool, s
         if shape == "tuple"
         else [original_media]
         if shape in {"media", "filtered"}
+        else [original_text, CachePoint(ttl="1h")]
+        if shape == "cache"
         else [original_text, "same"]
     )
 
@@ -56,35 +59,43 @@ async def test_supplemental_content_never_becomes_authored_input(runner: bool, s
             yield {
                 0: DeltaToolCall(
                     name="run_code" if runner else "attach",
-                    json_args=json.dumps({"code": "await attach(value=1)"}) if runner else '{"value":1}',
+                    json_args=json.dumps(
+                        {"code": "result = await attach(value=1)\nassert result == 'tool readable value'\nresult"}
+                    )
+                    if runner
+                    else '{"value":1}',
                     tool_call_id="attach-1",
                 )
             }
             return
-        # Supplement reaches the model alongside genuine steering, not a blanket
-        # hidden tool-result request. The provider text/media itself is retained.
-        content = [
-            item
+        # Supplemental values belong to the native tool return, never user input.
+        part = next(
+            part
             for message in messages
             if isinstance(message, ModelRequest)
             for part in message.parts
-            if isinstance(part, UserPromptPart)
-            for item in user_prompt_content(part)
-        ]
-        injected = [
-            item
-            for item in content
-            if (isinstance(item, TextContent) and (item.metadata or {}).get("source_id") in {"attachment", "a13n.tool"})
-            or (isinstance(item, BinaryContent) and (item.vendor_metadata or {}).get("source_id") == "attachment")
-        ]
-        assert injected
-        assert all(
-            (item.metadata if isinstance(item, TextContent) else item.vendor_metadata)["display"] is False
-            for item in injected
+            if isinstance(part, ToolReturnPart)
         )
+        assert TOOL_CONTENT_METADATA_KEY in (part.metadata or {})
+        assert isinstance(part.content, list)
+        injected = part.content[1:]
+        assert injected
         if shape == "filtered":
-            assert isinstance(injected[0], TextContent)
-            assert "exceeds request limits" in injected[0].content
+            assert isinstance(injected[0], str)
+            assert "exceeds request limits" in injected[0]
+        elif shape == "media":
+            assert isinstance(injected[0], BinaryContent)
+            assert injected[0].vendor_metadata == {"detail": "high"}
+        prompts = [
+            item.value
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for item in request_input_content(message)
+        ]
+        assert not any(isinstance(item, BinaryContent) for item in prompts)
+        if shape == "cache":
+            assert any(isinstance(item, CachePoint) and item.ttl == "1h" for item in prompts)
+            assert not any(isinstance(item, CachePoint) for item in injected)
         yield "done"
 
     tools = Capability(tools=[attach], id="attachments")
@@ -146,7 +157,7 @@ async def test_supplemental_content_never_becomes_authored_input(runner: bool, s
         assert [part.text for part in visible_users] == ["same", "same"]
         assert any(part.kind == "tool_result" for part in parts)
     assert original_text.metadata == {"source_id": "attachment", "custom": "keep", "display": True}
-    assert original_media.vendor_metadata == {"source_id": "attachment"}
+    assert original_media.vendor_metadata == {"detail": "high"}
 
 
 async def test_resumed_external_supplement_is_hidden_without_hiding_the_tool_result() -> None:
@@ -184,5 +195,95 @@ async def test_resumed_external_supplement_is_hidden_without_hiding_the_tool_res
     ]
     assert [part.text for part in parts if part.kind == "user" and part.metadata.display] == ["real input"]
     assert any(part.kind == "tool_result" and part.value == "external result" for part in parts)
-    supplement = next(part for part in parts if part.metadata.source_id == "a13n.tool")
-    assert supplement.text == "real input" and supplement.metadata.display is False
+    tool = next(
+        part
+        for message in state.message_history
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, ToolReturnPart)
+    )
+    assert tool_execution_value(tool.content, tool.metadata) == "external result"
+    assert tool.content == ["external result", "real input"]
+
+
+@pytest.mark.parametrize("runner", [False, True], ids=["direct", "codeact"])
+async def test_inline_deferred_media_preserves_structured_execution_and_safe_observer(runner: bool) -> None:
+    from pydantic_ai import DeferredToolResults
+    from pydantic_ai.capabilities import HandleDeferredToolCalls
+    from pydantic_ai.exceptions import CallDeferred
+
+    def attach() -> dict:
+        raise CallDeferred()
+
+    supplied = ToolReturn(
+        {"values": [2, 3]}, content=[BinaryContent(b"\xff\x00binary", media_type="image/png"), "supplement"]
+    )
+
+    async def handle(ctx, requests):
+        return DeferredToolResults(calls={call.tool_call_id: supplied for call in requests.calls})
+
+    requests = 0
+
+    async def model(messages, info):
+        nonlocal requests
+        requests += 1
+        if requests == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="run_code" if runner else "attach",
+                    json_args=json.dumps(
+                        {
+                            "code": "result = await attach()\nassert isinstance(result, dict)\nassert isinstance(result['values'], list)\nsum(result['values'])"
+                        }
+                    )
+                    if runner
+                    else "{}",
+                    tool_call_id="inline-1",
+                )
+            }
+        else:
+            part = next(
+                part
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, ToolReturnPart)
+            )
+            value = tool_execution_value(part.content, part.metadata)
+            if runner:
+                assert value == 5
+            else:
+                assert value == {"values": [2, 3]}
+            assert any(isinstance(item, BinaryContent) for item in part.content)
+            yield "done"
+
+    tools = Capability(tools=[attach], id="inline-tools")
+    capabilities = [tools, HandleDeferredToolCalls(handler=handle, id="inline-handler")]
+    if runner:
+        capabilities[0] = Capability(
+            toolsets=[
+                CodeActPolicyToolset(
+                    wrapped=FunctionToolset([attach], id="inline-tools"),
+                    policy=CodeActToolPolicy(tools={"attach": True}),
+                )
+            ],
+            id="inline-tools",
+        )
+        capabilities.append(CodeActCapability())
+    executable = HarnessBuilder().build(
+        AgentSpec(), model=FunctionModel(stream_function=model), output_type=str, capabilities=capabilities
+    )
+    observer = HarnessAguiObserver()
+    events = []
+    async with executable.stream("real input") as run:
+        async for item in run:
+            events.extend(event.model_dump(mode="json") for event in observer.observe(item))
+    assert run.result is not None and run.result.output_or_raise() == "done"
+    encoded = json.dumps(events)
+    assert "binary" not in encoded
+    assert "supplement" not in encoded
+    assert supplied.return_value == {"values": [2, 3]}
+    assert supplied.content is not None
+    state = HarnessState.model_validate_json(run.result.state.model_dump_json())
+    assert [turn.preview for turn in _transcript_turns(state.message_history)] == ["real input"]
+    assert checkpoint_excerpt(ConversationExcerpt(), state.message_history).latest_input == "real input"

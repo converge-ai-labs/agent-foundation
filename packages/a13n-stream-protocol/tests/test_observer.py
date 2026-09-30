@@ -973,6 +973,8 @@ def test_input_image_links_are_presented_without_inline_data_or_fetching() -> No
 
 @pytest.mark.parametrize("delivered", [False, True])
 def test_native_input_types_preserve_caller_metadata_without_binary_transport(delivered: bool) -> None:
+    from a13n_harness import ContentItem, ContentMetadata
+    from a13n_harness.content import input_request
     from a13n_harness.model_context import ModelInputEvent
     from pydantic_ai.messages import (
         AudioUrl,
@@ -990,15 +992,21 @@ def test_native_input_types_preserve_caller_metadata_without_binary_transport(de
     content = [
         "plain input",
         TextContent("annotated", metadata=metadata),
-        ImageUrl("https://example.test/image.png", vendor_metadata=metadata),
-        AudioUrl("https://example.test/audio.mp3", vendor_metadata=metadata),
-        VideoUrl("https://example.test/video.mp4", vendor_metadata=metadata),
-        DocumentUrl("https://example.test/document.pdf", vendor_metadata=metadata),
-        BinaryContent(data=b"never-return-these-image-bytes", media_type="image/png", vendor_metadata=metadata),
-        UploadedFile("file-example", provider_name="openai", vendor_metadata=metadata),
+        ImageUrl("https://example.test/image.png"),
+        AudioUrl("https://example.test/audio.mp3"),
+        VideoUrl("https://example.test/video.mp4"),
+        DocumentUrl("https://example.test/document.pdf"),
+        BinaryContent(data=b"never-return-these-image-bytes", media_type="image/png"),
+        UploadedFile("file-example", provider_name="openai"),
         CachePoint(),
     ]
-    request = ModelRequest(parts=[UserPromptPart(content)])
+    content = [
+        ContentItem(item, ContentMetadata.model_validate(metadata))
+        if not isinstance(item, str | TextContent | CachePoint)
+        else item
+        for item in content
+    ]
+    request = input_request(content)
     before = ModelMessagesTypeAdapter.dump_json([request])
     source = (
         EnqueuedMessagesEvent(enqueue_id="input-one", messages=(request,))
@@ -1026,7 +1034,7 @@ def test_native_input_types_preserve_caller_metadata_without_binary_transport(de
     import base64
 
     assert b"never-return-these-image-bytes" not in encoded
-    assert base64.b64encode(content[6].data) not in encoded
+    assert base64.b64encode(content[6].value.data) not in encoded
     if delivered:
         delivery = next(body for body in bodies if body.get("name") == "a13n.pydantic_ai.enqueued_messages")
         assert delivery["value"]["event"] == {"event_kind": "enqueued_messages", "enqueue_id": "input-one"}
@@ -1096,3 +1104,20 @@ def test_steering_request_start_before_previous_part_end_preserves_message_ident
     assert first[0].message_id != second[0].message_id
     starts = [event.message_id for event in observer.snapshot() if isinstance(event, TextMessageStartEvent)]
     assert len(starts) == len(set(starts)) == 2
+
+
+@pytest.mark.parametrize("outcome", ["failed", "denied", "interrupted"])
+def test_non_success_lowered_tool_media_keeps_outcome_without_transporting_payload(outcome) -> None:
+    from a13n_harness.tools._output import _render_tool_return
+    from pydantic_ai import BinaryContent, ToolReturn
+
+    image = BinaryContent(b"\xff\x00payload", media_type="image/png")
+    rendered = _render_tool_return(ToolReturn({"error": "not completed"}, content=[image]))
+    part = ToolReturnPart("view", rendered.return_value, "call-failed", metadata=rendered.metadata, outcome=outcome)
+    native = FunctionToolResultEvent(part)
+    (event,) = HarnessAguiObserver().observe(_event(0, native))
+    assert isinstance(event, CustomEvent)
+    assert event.value["event"]["part"]["outcome"] == outcome
+    assert event.value["event"]["part"]["content"] == {"error": "not completed"}
+    assert "payload" not in event.model_dump_json()
+    assert part.content == [{"error": "not completed"}, image]

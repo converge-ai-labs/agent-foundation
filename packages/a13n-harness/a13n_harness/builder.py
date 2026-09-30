@@ -70,7 +70,6 @@ from a13n_harness.model_context import (
     ModelContextCoordinatorCapability,
 )
 from a13n_harness.models.binding import resolve_run_model
-from a13n_harness.models.content import ModelContentCapability
 from a13n_harness.models.inference import GatewayModelProviderFactory, infer_model
 from a13n_harness.models.profile import project_context_window
 from a13n_harness.models.request_headers import (
@@ -647,7 +646,6 @@ class HarnessBuilder:
                 *authored_capabilities,
                 *default_model_costs,
                 ModelRequestHeadersCapability(self._model_request_patch_configuration),
-                ModelContentCapability(),
                 *structured_output_capabilities,
                 UsageCapability(),
             )

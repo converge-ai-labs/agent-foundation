@@ -8,12 +8,13 @@ from dataclasses import dataclass, replace
 from pydantic import JsonValue
 from pydantic_ai.messages import UserContent
 
+from a13n_harness.content import ContentItem
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.errors import InputError
 from a13n_harness.identity import AgentInstanceContext
 
 NativeRunInput = str | Sequence[UserContent]
-RunInputValue = NativeRunInput
+RunInputValue = str | Sequence[UserContent | ContentItem]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,7 +34,7 @@ RunInputFactory = Callable[[RunPreparationContext], Awaitable[RunInputValue]]
 class SemanticRunInput:
     """Normalized process-local input seen by Harness middleware."""
 
-    value: str | tuple[UserContent, ...] | None
+    value: str | tuple[UserContent | ContentItem, ...] | None
 
     def replace(self, value: RunInputValue | None) -> SemanticRunInput:
         """Return a new semantic input after applying normal validation."""

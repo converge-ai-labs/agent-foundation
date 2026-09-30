@@ -35,7 +35,7 @@ from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.tools._output import (
     _apply_result_policy,
-    _model_only_tool_return,
+    _render_tool_return,
 )
 from a13n_harness.tools.approval import (
     APPROVAL_PRESENTATION_KEY,
@@ -174,6 +174,11 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     async def on_event(self, ctx: RunContext[AgentContext], *, event: Any) -> None:
         if isinstance(event, DeferredToolResultsEvent):
             await record_approval_denials(None, event.results, context=ctx.deps)
+            # Native inline external resolution bypasses execution hooks. This
+            # awaited event precedes conversion of accepted results into history.
+            for call_id, result in event.results.calls.items():
+                if isinstance(result, ToolReturn):
+                    event.results.calls[call_id] = _render_tool_return(result)
 
     async def before_model_request(
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
@@ -229,9 +234,9 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
         args: ValidatedToolArgs,
         result: Any,
     ) -> Any:
-        # Outermost after hooks run last, including content replaced by other
-        # Capabilities after Toolset dispatch. Only supplemental content is hidden.
-        return _model_only_tool_return(result) if isinstance(result, ToolReturn) else result
+        # The final native settlement owns model rendering. Nested CodeAct calls
+        # retain their structured values until the outer runner returns.
+        return _render_tool_return(result) if isinstance(result, ToolReturn) else result
 
     async def handle_deferred_tool_calls(
         self,

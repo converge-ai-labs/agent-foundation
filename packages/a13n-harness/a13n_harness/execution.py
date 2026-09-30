@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Mapping, Sequence
 from copy import deepcopy
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from traceback import walk_tb
 from typing import TYPE_CHECKING, Any, cast, overload
@@ -39,6 +39,13 @@ from a13n_harness.capabilities.context import (
 )
 from a13n_harness.capabilities.steering import (
     SteeringBridge,
+)
+from a13n_harness.content import (
+    content_items,
+    native_content,
+    normalize_request_history,
+    replace_request_parts,
+    request_parts,
 )
 from a13n_harness.context import (
     AgentContext,
@@ -275,12 +282,16 @@ def _reconcile_system_prompt(
     for index, message in enumerate(reconciled):
         if not isinstance(message, ModelRequest):
             continue
-        parts = tuple(part for part in message.parts if not isinstance(part, SystemPromptPart))
+        parts = [
+            (part, annotations)
+            for part, annotations in request_parts(message)
+            if not isinstance(part, SystemPromptPart)
+        ]
         if first_request:
-            parts = (*[SystemPromptPart(content=block) for block in system_prompt], *parts)
+            parts = [*[(SystemPromptPart(content=block), None) for block in system_prompt], *parts]
             first_request = False
-        if parts != tuple(message.parts):
-            reconciled[index] = replace(message, parts=parts)
+        if tuple(part for part, _ in parts) != tuple(message.parts):
+            reconciled[index] = replace_request_parts(message, parts)
     return tuple(reconciled)
 
 
@@ -1625,14 +1636,23 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._latest_messages = current_history
 
         while True:
+            current_history = normalize_request_history(
+                current_history,
+                has_new_prompt=current_input.value is not None,
+                has_deferred_results=deferred_results is not None and attempt_index == 0,
+            )
+            self._latest_messages = current_history
             await exchange.context._steering.resolve_delivered(current_history)
             retry_error: BaseException | None = None
             recovery.attempt_id = f"model-attempt-{uuid4().hex}"
+            exchange.context._steering.attempt_content = (
+                content_items(current_input.value) if current_input.value is not None else None
+            )
             recovery.request_error = None
             response_tracker = InterruptedResponseTracker()
             attempt_token = self._observation.record_model_attempt() if self._observation is not None else None
             manager = self._executable._agent.run_stream_events(
-                current_input.value,
+                native_content(current_input.value) if current_input.value is not None else None,
                 message_history=current_history,
                 deferred_tool_results=(deferred_results if attempt_index == 0 else None),
                 run_id=recovery.attempt_id,

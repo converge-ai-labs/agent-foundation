@@ -19,7 +19,13 @@ It does not add a hosted input wire format, durable model registry, serialized s
 
 ```python
 type NativeRunInput = str | Sequence[UserContent]
-type RunInputValue = NativeRunInput
+type RunInputValue = str | Sequence[UserContent | ContentItem]
+
+
+@dataclass(frozen=True, slots=True)
+class ContentItem:
+    value: UserContent
+    metadata: ContentMetadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +44,7 @@ type RunInputFactory = Callable[
 
 @dataclass(frozen=True, slots=True)
 class SemanticRunInput:
-    value: str | tuple[UserContent, ...] | None
+    value: str | tuple[UserContent | ContentItem, ...] | None
 ```
 
 `run()` and `stream()` accept either an immediate value or one async factory, never both. The factory runs exactly once after Harness has entered the fresh Environment adapters and atomically published the initial mount set, but before plugin middleware or Pydantic execution. It can use trusted run identity, metadata, scoped readiness, and the entered Environment without depending on `DynamicEnvironmentCapability` or receiving a live Pydantic run handle.
@@ -47,8 +53,16 @@ Normalization rules are deliberately small:
 
 - `None` means no new input and does not manufacture an empty prompt;
 - a string must be non-empty;
-- a `Sequence[UserContent]` must be non-empty and is copied to a tuple;
+- a `Sequence[UserContent | ContentItem]` must be non-empty and is copied to a tuple;
 - bytes and non-sequence values are rejected.
+
+### Content Annotations
+
+The Harness owns `ContentItem` and `ContentMetadata`. A `ContentItem` pairs one native `UserContent` value with presentation annotations: `display` defaults to true, `source_id` is optional, `media` defaults to false, and opaque JSON application references are preserved. These annotations grant no authority and are not model instructions. Native `TextContent.metadata` is accepted as application metadata at input normalization; native media `vendor_metadata` contains provider options only, such as `detail`, `fps`, and `media_resolution`.
+
+Execution unwraps envelopes before the native Agent or provider sees input. Authored input and steering remain native `UserPromptPart` values. Canonical `ModelRequest.metadata['a13n.content']` stores annotations as a mapping from decimal part-index strings to ordered per-item metadata objects. A string prompt has one item. The item count must match its prompt, and native message/state JSON serialization preserves this mapping.
+
+Content and annotations travel together through canonical part insertion, replacement, removal, request merging, replay, and system-prompt reconciliation. Each primary recovery attempt uses its current input's annotations, not the initial logical Run's envelope. Whole-history compaction and handoff replacements discard the template's positional annotations and steering identities; retained input requests keep their own annotations and delivery identities. Equal text or bytes never identify annotation ownership. Provider-normalized temporary histories do not reconstruct application annotations. Live input, transcript history, retained display history, and conversation excerpts share the same annotation-aware projection. Cache markers remain model-only. Metadata absence on imported native input uses ordinary visible defaults; media vendor options are never interpreted as presentation annotations.
 
 Plugins receive `SemanticRunInput` and can replace it through the same normalization. The trusted `AgentContext` cannot be replaced. Hosted correlation, content references, artifact policy, and transport schemas belong to the Host adapter that creates native Pydantic `UserContent` before calling the Harness.
 
@@ -307,9 +321,9 @@ class ContentFilterConfiguration(BaseModel):
 
 The configuration is compatibility policy selected by trusted embedding code, not a second `ModelProfile`, provider capability registry, or inference from a model name. A dynamic `RunModelResolver` that routes among incompatible media surfaces selects an Agent definition or trusted policy valid for that route; model content never widens the policy.
 
-The Content Filter preserves accepted native Pydantic values. It classifies `BinaryContent` by canonical media type, treats image/audio/video/document URLs and `UploadedFile` as their native families, rejects credential-bearing URLs, and enforces aggregate item and inline-binary byte limits before provider serialization. An unsupported, unsafe, or over-limit item is replaced in place by one bounded explanatory text value; non-media content, tool-call identity, and request ordering remain unchanged. Replacements in `UserPromptPart` use native `TextContent` carrying a detached copy of the original media's application metadata, including display visibility and input identity. Ordinary `ToolReturnPart` replacements remain string values. Scalar content remains scalar for a one-to-one replacement, while list and tuple shapes retain their sequence shape. This filter does not upload, fetch, decode, compress, spill, or persist content and grants no authority.
+The Content Filter preserves accepted native Pydantic values. It classifies `BinaryContent` by canonical media type, treats image/audio/video/document URLs and `UploadedFile` as their native families, rejects credential-bearing URLs, and enforces aggregate item and inline-binary byte limits before provider serialization. An unsupported, unsafe, or over-limit item is replaced in place by one bounded explanatory text value; non-media content, tool-call identity, and request ordering remain unchanged. Replacements in `UserPromptPart` use native `TextContent`; the canonical annotation for the replaced slot retains its display visibility, source identity, and opaque application references. Ordinary `ToolReturnPart` replacements remain string values. Scalar content remains scalar for a one-to-one replacement, while list and tuple shapes retain their sequence shape. This filter does not upload, fetch, decode, compress, spill, or persist content and grants no authority.
 
-Harness presentation keys `display` and `source_id` remain in canonical media history but are not Google provider parameters. The mandatory model-content boundary removes only those keys from detached outbound media before native Google rendering, preserving media payloads, identifiers, and provider options such as `fps` and `media_resolution`. It covers requests, streams, and request-time token counting, including Google models inside native wrapper and fallback compositions. Other provider adapters remain unchanged. This projection sits below history-repair wrappers so exact self-healing repairs still update canonical history.
+Provider adapters receive only native content and provider-specific media options. Presentation annotations remain in Harness-owned canonical request metadata, outside media `vendor_metadata`; Google requests, streams, and request-time token counting use the native adapter without a Harness metadata sanitizer.
 
 `ColdStartFilterCapability` is installed by default through [AgentSpec cold-start configuration](03-agent-definition-and-build.md#agentdefinition). It can be configured or disabled there. After its configured idle interval since the latest `ModelResponse`, it shortens oversized string leaves in ordinary tool results strictly before that latest response. Those results have already been consumed by the model; the latest response and every later request, including pending tool results, remain exact. Structured dictionaries, lists, and tuples retain their shape and short hint fields; native media and non-string values remain unchanged. The filter does not spill content or replace explicit compaction.
 
@@ -362,7 +376,7 @@ Default rules are narrow tested provider repairs:
 | Modified or invalidly signed Anthropic thinking | Remove thinking parts                                                               |
 | Stale or unverifiable reasoning                 | Remove thinking parts                                                               |
 
-Oversized-image reminders inserted into native user-prompt parts are `TextContent` with `display: false` and source ID `a13n.model.self-healing`. They remain model-visible recovery instructions, not human-authored submissions. Ordinary user text in the same prompt is retained. Tool-return reminders remain tool content. Original image files are unchanged; further inspection should use a smaller preview rather than reattaching the same oversized original.
+Oversized-image reminders inserted into native user-prompt parts are `TextContent` with canonical slot annotations `display: false` and source ID `a13n.model.self-healing`, preserving opaque application references. They remain model-visible recovery instructions, not human-authored submissions. Ordinary user text in the same prompt is retained. Tool-return reminders remain tool content. Original image files are unchanged; further inspection should use a smaller preview rather than reattaching the same oversized original.
 
 The wrapper does not retry generic transport, rate-limit, tool, output-validation, or cancellation failures. Provider/client `RetryConfig` owns transport retry.
 

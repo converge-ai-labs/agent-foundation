@@ -7,10 +7,12 @@ from a13n_harness import (
     HarnessBuilder,
     RunBindings,
 )
+from a13n_harness.content import ContentItem, ContentMetadata, annotate_prompt, prompt_content
 from a13n_harness.filters import (
     ContentFilterCapability,
     ContentFilterConfiguration,
 )
+from a13n_harness.tools._output import tool_execution_value
 from pydantic_ai import BinaryContent, ImageUrl, TextContent, ToolReturn
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -64,21 +66,12 @@ async def test_content_filter_handles_user_and_tool_return_media_without_text_sp
             for part in message.parts
             if type(part) is ToolReturnPart
         ]
-        assert returned[-1].content == "ordinary tool text remains ordinary"
-        filtered_content = [
-            part.content
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, UserPromptPart)
-            and isinstance(part.content, list)
-            and len(part.content) == 2
-            and all(
-                isinstance(item, TextContent) and item.metadata.get("source_id") == "a13n.tool" for item in part.content
-            )
-        ][-1]
-        assert "URL is unsafe" in filtered_content[0].content
-        assert "exceeds request limits" in filtered_content[1].content
+        assert (
+            tool_execution_value(returned[-1].content, returned[-1].metadata) == "ordinary tool text remains ordinary"
+        )
+        filtered_content = returned[-1].content[1:]
+        assert "URL is unsafe" in filtered_content[0]
+        assert "exceeds request limits" in filtered_content[1]
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -119,10 +112,12 @@ async def test_filter_replacements_preserve_user_metadata_without_changing_tool_
     from pydantic_ai.models.test import TestModel
 
     metadata = {"display": display, "source_id": "original-input", "application": {"keep": True}}
-    media = BinaryContent(b"1234", media_type="image/png", vendor_metadata=metadata)
+    media = BinaryContent(b"1234", media_type="image/png", vendor_metadata={"detail": "high"})
     content = media if shape == "scalar" else (media,) if shape == "tuple" else [media]
     part = ToolReturnPart("view", content, tool_call_id="view-1") if tool_result else UserPromptPart(content)
     request = ModelRequest(parts=[part], metadata={"keep": "request"})
+    if not tool_result:
+        request = annotate_prompt(request, 0, [ContentItem(media, ContentMetadata.model_validate(metadata))])
     context = ModelRequestContext(
         model=TestModel(),
         messages=[request],
@@ -145,9 +140,12 @@ async def test_filter_replacements_preserve_user_metadata_without_changing_tool_
         assert "exceeds request limits" in replacement
     else:
         assert isinstance(replacement, TextContent)
-        assert replacement.metadata == metadata
-        assert replacement.metadata is not metadata
-        assert replacement.metadata["application"] is not metadata["application"]
-    assert filtered.messages[0].metadata == {"keep": "request"}
+        annotation = prompt_content(filtered.messages[0], 0)[0].metadata
+        assert annotation.model_dump(exclude_defaults=True) == ContentMetadata.model_validate(metadata).model_dump(
+            exclude_defaults=True
+        )
+        annotation.model_extra["application"]["keep"] = False
+        assert prompt_content(request, 0)[0].metadata.model_extra["application"] == {"keep": True}
+    assert filtered.messages[0].metadata["keep"] == "request"
     assert request.parts[0] is part
-    assert media.vendor_metadata == metadata
+    assert media.vendor_metadata == {"detail": "high"}

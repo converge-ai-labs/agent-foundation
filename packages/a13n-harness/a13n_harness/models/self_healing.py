@@ -30,6 +30,8 @@ from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext
 
+from a13n_harness.content import ContentItem, annotate_prompt, prompt_content
+
 HistoryRepair = Callable[[list[ModelMessage]], int]
 ErrorMatcher = Callable[[Exception], bool]
 
@@ -278,7 +280,7 @@ def _drop_inline_images(history: list[ModelMessage]) -> int:
     for message in history:
         if not isinstance(message, ModelRequest):
             continue
-        for part in message.parts:
+        for part_index, part in enumerate(message.parts):
             if isinstance(part, UserPromptPart):
                 media_part = part
             elif type(part) is ToolReturnPart:
@@ -305,14 +307,24 @@ def _drop_inline_images(history: list[ModelMessage]) -> int:
             if isinstance(content, str) or not isinstance(content, Sequence):
                 continue
             items = list(content)
+            annotated = prompt_content(message, part_index) if isinstance(media_part, UserPromptPart) else None
             changed = False
             for index, item in enumerate(items):
                 if isinstance(item, BinaryContent) and item.media_type.startswith("image/"):
                     items[index] = reminder
+                    if annotated is not None:
+                        annotated[index] = ContentItem(
+                            reminder,
+                            annotated[index].metadata.model_copy(
+                                update={"display": False, "source_id": "a13n.model.self-healing"}
+                            ),
+                        )
                     removed += 1
                     changed = True
             if changed:
                 media_part.content = items
+                if annotated is not None:
+                    message.metadata = annotate_prompt(message, part_index, annotated).metadata
     return removed
 
 

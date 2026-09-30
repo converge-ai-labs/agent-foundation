@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterable, Callable, Sequence
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast
 
 from a13n_harness import (
@@ -15,8 +15,10 @@ from a13n_harness import (
     HarnessRunResultEvent,
     HarnessStreamEvent,
 )
+from a13n_harness.content import ContentItem, request_input_content
 from a13n_harness.events import ToolExtraEventPayload
-from a13n_harness.model_context import ModelInputEvent, user_prompt_content
+from a13n_harness.model_context import ModelInputEvent
+from a13n_harness.tools._output import tool_execution_value
 from ag_ui.core import Event
 from ag_ui.core.events import (
     BaseEvent,
@@ -40,6 +42,7 @@ from ag_ui.core.events import (
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     CapabilityEvent,
+    DeferredToolResultsEvent,
     EnqueuedMessagesEvent,
     FunctionToolResultEvent,
     ModelRequest,
@@ -56,7 +59,6 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UnknownCapabilityEvent,
     UserContent,
-    UserPromptPart,
 )
 from pydantic_ai.tools import DeferredToolRequests
 
@@ -225,9 +227,7 @@ class HarnessAguiObserver:
                 content
                 for message in source.messages
                 if isinstance(message, ModelRequest)
-                for part in message.parts
-                if isinstance(part, UserPromptPart)
-                for content in user_prompt_content(part)
+                for content in request_input_content(message)
             ]
             return [
                 CustomEvent(
@@ -236,6 +236,23 @@ class HarnessAguiObserver:
                     value=_source_value(item, {"event_kind": source.event_kind, "enqueue_id": source.enqueue_id}),
                 ),
                 *_convert_input(item, content),
+            ]
+        elif isinstance(source, DeferredToolResultsEvent):
+            # Each resolved value is emitted separately as a readable tool result.
+            # The batch lifecycle event must never serialize supplemental media.
+            return [
+                CustomEvent(
+                    timestamp=_timestamp_ms(item),
+                    name="a13n.pydantic_ai.deferred_tool_results",
+                    value=_source_value(
+                        item,
+                        {
+                            "event_kind": source.event_kind,
+                            "call_ids": list(source.results.calls),
+                            "approval_ids": list(source.results.approvals),
+                        },
+                    ),
+                )
             ]
         elif isinstance(source, CapabilityEvent):
             # Preserve the native kind and payload, including user-defined capabilities.
@@ -344,7 +361,7 @@ class HarnessAguiObserver:
         return replacement.model_copy(deep=True)
 
 
-def _convert_input(item: HarnessEvent, content: Sequence[UserContent]) -> list[Event]:
+def _convert_input(item: HarnessEvent, content: Sequence[UserContent | ContentItem]) -> list[Event]:
     events: list[Event] = []
     for index, native in enumerate(content):
         projected = project_input_content(native)
@@ -547,15 +564,24 @@ def _convert_tool_result(
 ) -> list[Event]:
     part = event.part
     if not isinstance(part, ToolReturnPart) or part.outcome != "success":
-        return []
-    # Supplemental tool content is model-only input (and may contain binary
-    # media). It must not replace the readable return value in presentation.
+        # Preserve native failure/retry correlation, but not model-only media.
+        projected_part = (
+            replace(part, content=tool_execution_value(part.content, part.metadata))
+            if isinstance(part, ToolReturnPart)
+            else part
+        )
+        projected = replace(event, part=projected_part)
+        if isinstance(projected, FunctionToolResultEvent):
+            projected = replace(projected, content=None)
+        return [_custom_pydantic_event(item, projected)]
+    # Supplemental native tool content can contain binary media. Only the
+    # explicitly marked execution value is readable presentation content.
     return [
         ToolCallResultEvent(
             timestamp=_timestamp_ms(item),
             message_id=f"{part.tool_call_id}:result",
             tool_call_id=part.tool_call_id,
-            content=_tool_result_text(part.content),
+            content=_tool_result_text(tool_execution_value(part.content, part.metadata)),
             role="tool",
         )
     ]

@@ -105,11 +105,9 @@ class ContentFilterCapability(AbstractCapability[AgentContext]):
                         or binary_bytes + item_bytes > self.configuration.max_binary_bytes
                     ):
                         text = _filtered_message(family, unsafe=unsafe_url)
-                        filtered.append(
-                            TextContent(text, metadata=item.vendor_metadata)
-                            if isinstance(part, UserPromptPart)
-                            else text
-                        )
+                        # Replacement is one-for-one, so request/tool annotations
+                        # remain associated with the same content slot.
+                        filtered.append(TextContent(text) if isinstance(part, UserPromptPart) else text)
                         part_changed = True
                         continue
                     media_items += 1

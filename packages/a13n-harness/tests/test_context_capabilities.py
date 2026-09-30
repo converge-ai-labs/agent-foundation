@@ -457,11 +457,11 @@ async def test_handoff_replays_delivered_multimodal_steering_in_order() -> None:
     assert "Do not deploy; follow this image" in _user_text(list(result.state.message_history))
     # Restoring history is not another input delivery, even when it retains steering.
     fresh = [
-        content.content
+        content.value.content if isinstance(content.value, TextContent) else content.value
         for item in events
         if isinstance(item.event, ModelInputEvent)
         for content in item.event.content
-        if isinstance(content, TextContent) and (content.metadata or {}).get("display") is not False
+        if content.metadata.display and isinstance(content.value, str | TextContent)
     ]
     assert fresh == ["Initial current task"]
     from pydantic_ai.messages import EnqueuedMessagesEvent
@@ -795,11 +795,11 @@ async def test_compaction_retains_only_applied_inputs_from_the_current_logical_r
     async with executable.stream("Next request", bindings=RunBindings.embedded(), previous_state=previous) as run:
         result = await _consume_run(run, events)
     fresh = [
-        content.content
+        content.value.content if isinstance(content.value, TextContent) else content.value
         for item in events
         if isinstance(item.event, ModelInputEvent)
         for content in item.event.content
-        if isinstance(content, TextContent) and (content.metadata or {}).get("display") is not False
+        if content.metadata.display and isinstance(content.value, str | TextContent)
     ]
     assert fresh == ["Next request"]
 

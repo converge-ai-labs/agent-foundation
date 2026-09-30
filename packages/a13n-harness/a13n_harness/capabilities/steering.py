@@ -12,7 +12,9 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
+from pydantic_ai.models import ModelRequestContext
 
+from a13n_harness.content import ContentItem, annotate_prompt, content_items, input_request
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.events import HarnessEventEmitter, SteeringInputEnqueuedPayload, emit_harness_event
 from a13n_harness.input import RunInputValue, SemanticRunInput, normalize_input
@@ -67,6 +69,8 @@ class SteeringBridge:
         self._retained_requests: tuple[ModelRequest, ...] = ()
         self._pending_requests: dict[str, ModelRequest] = {}
         self._active_context: RunContext[Any] | None = None
+        self.initial_content: list[ContentItem] | None = None
+        self.attempt_content: list[ContentItem] | None = None
         self._prepared = False
         self._lock = asyncio.Lock()
 
@@ -95,6 +99,7 @@ class SteeringBridge:
         async with self._lock:
             if self._prepared:
                 return
+            self.initial_content = content_items(input.value) if input.value is not None else None
             retained: tuple[ModelRequest, ...] = ()
             if self._retain_inputs:
                 if restore_retained:
@@ -262,7 +267,9 @@ def steering_input_ids(messages: Sequence[ModelMessage]) -> tuple[str, ...]:
         input_id
         for message in messages
         if isinstance(message, ModelRequest) and message.metadata is not None
-        if isinstance(input_id := message.metadata.get(_INPUT_ID_METADATA_KEY), str)
+        for value in [message.metadata.get(_INPUT_ID_METADATA_KEY)]
+        for input_id in (value if isinstance(value, list) else [value])
+        if isinstance(input_id, str)
     )
 
 
@@ -275,10 +282,7 @@ def _request_for_input(
     metadata = {_SOURCE_RUN_METADATA_KEY: source_run_id}
     if input_id is not None:
         metadata[_INPUT_ID_METADATA_KEY] = input_id
-    return ModelRequest(
-        parts=[UserPromptPart(content=deepcopy(input))],
-        metadata=metadata,
-    )
+    return input_request(deepcopy(input), metadata=metadata)
 
 
 @dataclass(init=False)
@@ -287,6 +291,7 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
 
     id = STEERING_CAPABILITY_ID
     _input_observed: bool = False
+    _input_annotated_attempt: str | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost")
@@ -304,6 +309,32 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
         ctx.deps._record_run_capability(STEERING_CAPABILITY_ID, replacement)
         return replacement
 
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        # Native execution builds each primary attempt's first request. Attach
+        # that attempt's input annotations once; nested compaction calls and
+        # recovery without new input must not reuse the initial envelope.
+        content = ctx.deps._steering.attempt_content
+        if (
+            ctx.run_id == ctx.deps._model_recovery.attempt_id
+            and ctx.run_step == 1
+            and content is not None
+            and self._input_annotated_attempt != ctx.run_id
+        ):
+            request = ctx.messages[-1]
+            if isinstance(request, ModelRequest):
+                index = next(
+                    index
+                    for index in range(len(request.parts) - 1, -1, -1)
+                    if isinstance(request.parts[index], UserPromptPart)
+                )
+                annotated = annotate_prompt(request, index, content)
+                ctx.messages[-1] = annotated
+                request_context.messages[-1] = annotated
+                self._input_annotated_attempt = ctx.run_id
+        return request_context
+
     async def wrap_run(
         self,
         ctx: RunContext[AgentContext],
@@ -315,7 +346,12 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
             if owned and not self._input_observed:
                 self._input_observed = True
                 if ctx.prompt is not None:
-                    await ctx.emit(ModelInputEvent(content=user_prompt_content(UserPromptPart(ctx.prompt))))
+                    await ctx.emit(
+                        ModelInputEvent(
+                            content=ctx.deps._steering.initial_content
+                            or user_prompt_content(UserPromptPart(ctx.prompt))
+                        )
+                    )
             return await handler()
         finally:
             ctx.deps._steering.unbind(ctx, owned=owned)

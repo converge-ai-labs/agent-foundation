@@ -64,7 +64,6 @@ from a13n_harness.environment.dynamic import (
 from a13n_harness.errors import DefinitionError
 from a13n_harness.filters.integrity import MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID, MessageIntegrityFilterCapability
 from a13n_harness.model_context import MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID, ModelContextCoordinatorCapability
-from a13n_harness.models.content import MODEL_CONTENT_CAPABILITY_ID, ModelContentCapability
 from a13n_harness.models.request_headers import MODEL_REQUEST_HEADERS_CAPABILITY_ID, ModelRequestHeadersCapability
 from a13n_harness.models.structured_output import (
     STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID,
@@ -107,7 +106,6 @@ _BUILT_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], str]] = {
     STEERING_CAPABILITY_ID: (SteeringCapability, "steering"),
     MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID: (ModelContextCoordinatorCapability, "model context coordinator"),
     MODEL_REQUEST_HEADERS_CAPABILITY_ID: (ModelRequestHeadersCapability, "model request headers"),
-    MODEL_CONTENT_CAPABILITY_ID: (ModelContentCapability, "model content"),
     STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID: (
         StructuredOutputAutoToolChoiceCapability,
         "structured-output compatibility",

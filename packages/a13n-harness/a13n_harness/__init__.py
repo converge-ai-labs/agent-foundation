@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         SubagentIdentityPolicy,
         derive_child_identity,
     )
+    from a13n_harness.content import ContentItem, ContentMetadata
     from a13n_harness.context import AgentContext, RunBindings
     from a13n_harness.environment import (
         Environment,
@@ -69,6 +70,7 @@ _EXPORTS = {
         "AgentContext",
         "RunBindings",
     ),
+    "a13n_harness.content": ("ContentItem", "ContentMetadata"),
     "a13n_harness.environment": (
         "Environment",
         "EnvironmentEntry",
