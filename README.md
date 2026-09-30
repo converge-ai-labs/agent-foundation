@@ -20,6 +20,10 @@ Agent Foundation is an open-source library and platform for building and running
 
 Start Service, Console, PostgreSQL, and Redis with **Docker Compose**. The local quickstart creates an administrator and workspace for you; no Python, Node.js, or source build is needed.
 
+![Service Console showing workspace usage, daily spending, and a per-agent breakdown](.github/assets/service-console.png)
+
+*Service Console — Monitor agent usage, token consumption, and cost across your workspace. Shown with fictional demo data.*
+
 Download the [quickstart Compose file](deploy/docker/compose/a13n-service-quickstart.yaml) into an empty directory, then run:
 
 ```bash
@@ -41,6 +45,10 @@ Continue with the [Service quickstart](docs/a13n-service/get-started.md) for you
 ## Use Harness UI
 
 For individual work or trusted collaborators, Harness UI offers a terminal agent and browser workbench over the same Harness. Explore repositories, edit files, run commands, and try models, tools, Skills, and environments interactively.
+
+![Harness UI showing an agent reviewing a project's quickstart alongside its Markdown preview](.github/assets/harness-ui.png)
+
+*Harness UI — Review agent output alongside project files in the browser workbench. Shown with a fictional project and a local demo model.*
 
 ```bash
 uv tool install a13n-harness-ui
