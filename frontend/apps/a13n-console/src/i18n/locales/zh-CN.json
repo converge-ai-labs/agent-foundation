@@ -918,7 +918,7 @@
   "Agent download failed. Try again.": "Agent 下载失败，请重试。",
   "Saved version {{version}} · Credentials and dependent resources are not included.": "已保存版本 {{version}} · 不包含凭据内容和依赖资源本身。",
   "New agent": "新建 Agent",
-  "Configure manually": "手动配置",
+  "Create manually": "手动创建",
   "Create with AI": "用 AI 创建",
   "Import YAML": "导入 YAML",
   "Import agent": "导入 Agent",

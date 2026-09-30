@@ -63,7 +63,7 @@ export function AgentCreationMenu() {
         )}
         <div className={styles.splitButton}>
           <Button variant="outline" onClick={() => navigate("new")}>
-            {t("Configure manually")}
+            {t("Create manually")}
           </Button>
           <Menu>
             <MenuTrigger

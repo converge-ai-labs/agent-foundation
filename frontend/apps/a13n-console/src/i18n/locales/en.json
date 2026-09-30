@@ -918,7 +918,7 @@
   "Agent download failed. Try again.": "Agent download failed. Try again.",
   "Saved version {{version}} · Credentials and dependent resources are not included.": "Saved version {{version}} · Credentials and dependent resources are not included.",
   "New agent": "New agent",
-  "Configure manually": "Configure manually",
+  "Create manually": "Create manually",
   "Create with AI": "Create with AI",
   "Import YAML": "Import YAML",
   "Import agent": "Import agent",
