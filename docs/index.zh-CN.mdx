@@ -1,0 +1,58 @@
+---
+title: Agent Foundation
+description: 面向 AI agent 的开源自托管基础。
+---
+
+<Intro title="Agent Foundation" action={{ text: "选择使用方式", href: "/overview/choose-your-path/" }}>
+
+面向 AI agent 的开源自托管基础。你可以部署托管式 Service，将 Harness 库嵌入应用，或使用 Harness UI 进行交互式工作。
+
+</Intro>
+
+<Section title="产品">
+<Products>
+<Product icon="service" title="Service" audience="团队与应用" href="/a13n-service/" start="/a13n-service/get-started/">
+
+自托管平台，提供身份管理、工作空间、持久执行和会话保存，可通过 Console 或 HTTP API 使用。
+
+</Product>
+<Product icon="harness" title="Harness" audience="Python 开发者" href="/a13n-harness/" start="/a13n-harness/getting-started/">
+
+将指令、工具和能力组合成 agent，并在你的进程中运行的库。存储和访问控制由你的应用负责。
+
+</Product>
+<Product icon="harness-ui" title="Harness UI" audience="个人与小团队" href="/a13n-harness-ui/" start="/a13n-harness-ui/setup/">
+
+在代码仓库中与 agent 协作的终端和浏览器工作台，可共享对话、文件和终端。
+
+</Product>
+</Products>
+</Section>
+
+<Section title="从任务开始">
+<Rows>
+<Row title="部署共享 agent 平台" href="/a13n-service/get-started/">在本地运行 Service 并配置模型</Row>
+<Row title="使用团队的 agent" href="/a13n-service/use-platform/">在已有平台上开始对话</Row>
+<Row title="为应用接入托管 agent" href="/a13n-service/connect-application/">完成认证、提交任务并读取结果</Row>
+<Row title="用 Python 构建 agent" href="/a13n-harness/getting-started/">先运行离线示例，再添加工具和模型</Row>
+<Row title="在仓库中交互式工作" href="/a13n-harness-ui/setup/">连接模型，通过终端或浏览器使用</Row>
+<Row title="让应用访问文件和执行命令" href="/environments/getting-started/">无论是否使用 agent，都可以使用同一套 provider</Row>
+</Rows>
+</Section>
+
+<Section title="基础组件">
+<Rows>
+<Row title="Environments" href="/environments/">可移植的文件、命令、进程和计算机访问</Row>
+<Row title="Envd" href="/a13n-envd/">通过 Environment Interaction Protocol 操作文件和进程</Row>
+<Row title="Stream Protocol" href="/a13n-stream-protocol/">将 Harness 观测转换为有类型的 AG-UI 事件</Row>
+<Row title="Logging" href="/a13n-logging/">结构化日志和进程级日志配置</Row>
+</Rows>
+</Section>
+
+<Note>
+
+本站跟随 `main` 分支。Agent Foundation 正处于 `0.x` 开发阶段，API 和配置可能在次版本之间发生变化。
+
+源码环境配置请参阅[贡献指南](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md)，架构约定请参阅[规范](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec)，发行包和示例请参阅[软件包目录](overview/packages.md)。
+
+</Note>

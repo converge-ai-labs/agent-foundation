@@ -74,14 +74,16 @@ Trivial corrections may start as a pull request when no material discussion or t
 
 ## Documentation System
 
-Documentation sources live in `docs/` as Markdown pages with front matter; each folder's `meta.json` owns its navigation order. Markdown is the single content source: the same pages read correctly on GitHub and in the bundled Harness UI configuration Skill, and the site renders a few portable forms (GitHub alerts, fence titles and tabs, Mermaid) as richer components. `.mdx` is reserved for composed pages such as `docs/index.mdx`, the site home page. The canonical public site is `https://a13n-docs.converge.ai/`.
+Documentation sources live in `docs/` as Markdown pages with front matter; each language's navigation JSON owns its navigation order. English sources keep their existing paths; Simplified Chinese translations use `.zh-CN.md` or `.zh-CN.mdx` with `meta.zh-CN.json` navigation and the same logical page slugs. Markdown is the single content source: the same pages read correctly on GitHub and in the bundled Harness UI configuration Skill, and the site renders a few portable forms (GitHub alerts, fence titles and tabs, Mermaid) as richer components. `.mdx` is reserved for composed pages such as `docs/index.mdx`, the site home page. The canonical public site is `https://a13n-docs.converge.ai/`.
 
 - `frontend/apps/a13n-docs` is the private Fumadocs (Next.js) application in the frontend workspace that owns site layout, theme, and search, and generates the Service API reference from `proto/a13n-service/openapi.json`. It has no release identity.
+- English human pages retain their existing URLs; Simplified Chinese pages use `/zh-CN/`. Navigation, search, page metadata, and site controls follow the page language. Corresponding headings retain the English source IDs so section links remain stable across languages.
+- `llms.txt`, `llms-full.txt`, `/md/`, and the bundled Harness UI configuration Skill consume English sources only. Published OpenAPI and Schema downloads retain the canonical machine contract; translations of API descriptions apply only to the human-facing reference.
 - `make docs-serve` runs the local documentation server.
 - `make docs-build` performs the static export into `frontend/apps/a13n-docs/out/` and fails on any broken internal link or anchor.
 - `.github/workflows/docs.yml` builds pull-request artifacts and deploys `main` to Cloudflare Pages through Wrangler.
 
-Site configuration and generated output do not live in `docs/`, which holds only pages and `meta.json` navigation.
+Site configuration and generated output do not live in `docs/`, which holds only pages and navigation JSON.
 
 The main site owns Service guides and the Service HTTP API reference. The Service overview points readers to the independent SDK and CLI repositories; the site does not generate or vendor language-specific SDK API references.
 

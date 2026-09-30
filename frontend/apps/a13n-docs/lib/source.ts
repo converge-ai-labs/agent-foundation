@@ -9,6 +9,10 @@ import { createOpenAPI } from "fumadocs-openapi/server";
 import { createElement, Fragment } from "react";
 import { z } from "zod";
 import { icon } from "./icons";
+import { i18n } from "./i18n";
+import openapiChinese from "./locales/openapi.zh-CN.json";
+import { translateOpenAPI } from "./translate-openapi";
+import { remarkTranslationHeadings } from "./remark-translation-headings";
 import { remarkAlerts } from "./remark-alerts";
 import { referenceFiles } from "./site";
 
@@ -19,7 +23,12 @@ const docs = defineDocs({
     schema: pageSchema.extend({ sidebarTitle: z.string().optional() }),
     postprocess: { includeProcessedMarkdown: true },
     mdxOptions: applyMdxPreset({
-      remarkPlugins: [remarkAlerts, remarkMdxMermaid],
+      remarkPlugins: (plugins) => [
+        remarkTranslationHeadings,
+        ...plugins,
+        remarkAlerts,
+        remarkMdxMermaid,
+      ],
       rehypeCodeOptions: {
         themes: { light: "github-light", dark: "github-dark" },
       },
@@ -46,27 +55,110 @@ const serviceDocument = {
 
 export const openapi = createOpenAPI({ input: { service: serviceDocument } });
 
+const apiSource = await openapi.staticSource({
+  baseDir: "a13n-service/api-reference",
+  per: "operation",
+  // Untagged operations are the process probes (`/healthz`, `/readyz`).
+  groupBy: (entry) =>
+    entry.type === "operation"
+      ? (serviceDocument.paths[entry.item.path]?.[entry.item.method]
+          ?.tags?.[0] ?? "health")
+      : "webhooks",
+  // Readable URLs from operation summaries, such as `runs/create-run`.
+  name: (entry) =>
+    entry.info.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, ""),
+  meta: true,
+});
+const apiTranslations: Record<string, string> = {
+  ...openapiChinese,
+  "Local quickstart deployment": "本地快速入门部署",
+};
+const localizedDocument = translateOpenAPI(serviceDocument, apiTranslations);
+const apiFolderNames: Record<string, string> = {
+  agents: "Agent",
+  assets: "资源包",
+  sessions: "会话",
+  threads: "线程",
+  runs: "执行",
+  items: "条目",
+  models: "模型",
+  workspaces: "工作空间",
+  organizations: "组织",
+  connections: "连接",
+  skills: "Skill",
+  environments: "环境",
+  memories: "记忆",
+  files: "文件",
+  health: "健康检查",
+  uploads: "上传",
+  users: "用户",
+  auth: "认证",
+  identity: "身份",
+  webhooks: "Webhook",
+  providers: "Provider",
+  subscriptions: "订阅",
+  tenancy: "租户管理",
+  usage: "用量",
+};
+
+const chineseApiFiles: typeof apiSource.files = apiSource.files.map((file) => {
+  const path = file.path.replace(/(\.[^/.]+)$/, ".zh-CN$1");
+  if (file.type === "meta")
+    return {
+      ...file,
+      path,
+      data: {
+        ...file.data,
+        title: file.data.title
+          ? (apiFolderNames[file.data.title] ?? file.data.title)
+          : undefined,
+      },
+    };
+  return {
+    ...file,
+    path,
+    data: {
+      ...file.data,
+      title: file.data.title
+        ? (apiTranslations[file.data.title] ?? file.data.title)
+        : undefined,
+      description: file.data.description
+        ? (apiTranslations[file.data.description] ?? file.data.description)
+        : undefined,
+      structuredData: {
+        headings: file.data.structuredData.headings.map((heading) => ({
+          ...heading,
+          content: apiTranslations[heading.content] ?? heading.content,
+        })),
+        contents: file.data.structuredData.contents.map((content) => ({
+          ...content,
+          content: apiTranslations[content.content] ?? content.content,
+        })),
+      },
+      getOpenAPIPageProps() {
+        const props = file.data.getOpenAPIPageProps();
+        return {
+          ...props,
+          payload: { ...props.payload, bundled: localizedDocument },
+        };
+      },
+    },
+  };
+});
+
+const localizedApiSource: typeof apiSource = {
+  files: [...apiSource.files, ...chineseApiFiles],
+};
+
 export const source = loader({
   baseUrl: "/",
+  i18n,
   source: {
     docs: docs.toFumadocsSource(),
-    openapi: await openapi.staticSource({
-      baseDir: "a13n-service/api-reference",
-      per: "operation",
-      // Untagged operations are the process probes (`/healthz`, `/readyz`).
-      groupBy: (entry) =>
-        entry.type === "operation"
-          ? (serviceDocument.paths[entry.item.path]?.[entry.item.method]
-              ?.tags?.[0] ?? "health")
-          : "webhooks",
-      // Readable URLs from operation summaries, such as `runs/create-run`.
-      name: (entry) =>
-        entry.info.title
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, ""),
-      meta: true,
-    }),
+    openapi: localizedApiSource,
   },
   icon,
   plugins: ({ typedPlugin }) => [

@@ -1,0 +1,32 @@
+{
+  "title": "Harness UI",
+  "description": "终端与浏览器工作台",
+  "root": true,
+  "icon": "harness-ui",
+  "pages": [
+    "index",
+    "---开始使用---",
+    "installation",
+    "setup",
+    "everyday-use",
+    "webui",
+    "---配置---",
+    "configuration-recipes",
+    "configuration",
+    "models-and-authentication",
+    "agents-and-subagents",
+    "environments-and-projects",
+    "---添加工具---",
+    "extensions-and-mcp",
+    "mcp",
+    "mcp-apps",
+    "skills-and-content-plugins",
+    "native-and-web-tools",
+    "---运行与参考---",
+    "command-reference",
+    "embedding",
+    "http-api",
+    "automation-and-troubleshooting",
+    "observation"
+  ]
+}

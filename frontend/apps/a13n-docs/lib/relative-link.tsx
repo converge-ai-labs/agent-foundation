@@ -1,5 +1,6 @@
 import { createRelativeLink } from "fumadocs-ui/mdx";
 import type { ComponentProps } from "react";
+import { localeUrl } from "./i18n";
 import { type DocsPage, source } from "./source";
 
 // A bare Markdown file link such as `replay.md#errors`, which GitHub also resolves.
@@ -11,7 +12,13 @@ export function relativeLink(page: DocsPage) {
   return function Link({ href, ...props }: ComponentProps<"a">) {
     return (
       <RelativeLink
-        href={href && BARE_FILE_LINK.test(href) ? `./${href}` : href}
+        href={
+          href && BARE_FILE_LINK.test(href)
+            ? `./${href}`
+            : href
+              ? localeUrl(href, page.locale === "zh-CN" ? "zh-CN" : "en")
+              : href
+        }
         {...props}
       />
     );

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import a13n_logging
 import click
+import pytest
 import yaml
 from a13n_envd_client.eip.v1 import METHODS
 from a13n_harness_ui.cli import cli
@@ -26,8 +27,12 @@ DOCS = ROOT / "docs"
 HOME = DOCS / "index.mdx"
 
 
-def _pages() -> list[Path]:
-    return sorted(path for path in DOCS.rglob("*") if path.suffix in {".md", ".mdx"})
+def _pages(locale: str | None = None, folder: Path = DOCS) -> list[Path]:
+    return sorted(
+        path
+        for path in folder.rglob("*")
+        if path.suffix in {".md", ".mdx"} and (locale is None or (".zh-CN." in path.name) == (locale == "zh-CN"))
+    )
 
 
 def _front_matter(path: Path) -> tuple[dict[str, object], str]:
@@ -39,11 +44,12 @@ def _front_matter(path: Path) -> tuple[dict[str, object], str]:
     return data, body
 
 
-def _navigation(folder: Path) -> list[Path]:
+def _navigation(folder: Path, locale: str = "en") -> list[Path]:
     """Pages reachable from a folder's meta.json, following Fumadocs page references."""
-    meta = folder / "meta.json"
+    suffix = ".zh-CN" if locale == "zh-CN" else ""
+    meta = folder / f"meta{suffix}.json"
     if not meta.is_file():
-        return sorted(path for path in folder.rglob("*") if path.suffix in {".md", ".mdx"})
+        return _pages(locale, folder)
     pages: list[Path] = []
     for entry in json.loads(meta.read_text(encoding="utf-8"))["pages"]:
         if entry.startswith("---") or entry.startswith("["):
@@ -51,16 +57,24 @@ def _navigation(folder: Path) -> list[Path]:
         # `...folder` lists a folder's pages in place; paths may leave the folder.
         target = Path(os.path.normpath(folder / entry.removeprefix("...")))
         if target.is_dir():
-            pages.extend(_navigation(target))
+            pages.extend(_navigation(target, locale))
         else:
-            matches = [target.with_suffix(suffix) for suffix in (".md", ".mdx") if target.with_suffix(suffix).is_file()]
+            matches = [
+                Path(f"{target}{suffix}{extension}")
+                for extension in (".md", ".mdx")
+                if Path(f"{target}{suffix}{extension}").is_file()
+            ]
             assert matches, f"{meta.relative_to(ROOT)} lists missing page {entry}"
             pages.extend(matches)
     return pages
 
 
 def test_docs_contains_only_pages_and_navigation() -> None:
-    other = [path for path in DOCS.rglob("*") if path.is_file() and path not in _pages() and path.name != "meta.json"]
+    other = [
+        path
+        for path in DOCS.rglob("*")
+        if path.is_file() and path not in _pages() and path.name not in {"meta.json", "meta.zh-CN.json"}
+    ]
     assert not other, "docs/ holds Markdown pages and meta.json navigation only"
 
 
@@ -73,10 +87,12 @@ def test_every_page_has_title_and_description_front_matter() -> None:
         assert "h1" not in headings, f"{path} repeats its title as a heading"
 
 
-def test_every_page_has_exactly_one_navigation_entry() -> None:
-    listed = _navigation(DOCS)
+@pytest.mark.parametrize("locale", ["en", "zh-CN"])
+def test_every_page_has_exactly_one_navigation_entry(locale: str) -> None:
+    listed = _navigation(DOCS, locale)
     assert len(listed) == len(set(listed)), [path for path in listed if listed.count(path) > 1]
-    assert set(listed) == set(_pages()) - {HOME}
+    home = DOCS / ("index.zh-CN.mdx" if locale == "zh-CN" else "index.mdx")
+    assert set(listed) == set(_pages(locale)) - {home}
 
 
 def test_harness_ui_documentation_stays_plain_markdown() -> None:
@@ -197,3 +213,8 @@ def test_logging_reference_covers_every_public_export() -> None:
     text = (ROOT / "docs/a13n-logging/index.md").read_text(encoding="utf-8")
     for name in a13n_logging.__all__:
         assert f"`{name}" in text, name
+
+
+def test_chinese_documentation_covers_canonical_pages() -> None:
+    translated = {Path(str(path).replace(".zh-CN.", ".")) for path in _pages("zh-CN")}
+    assert translated == set(_pages("en"))

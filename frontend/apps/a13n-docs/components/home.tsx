@@ -1,14 +1,17 @@
 import { ArrowRight, CaretRight } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { type Locale, localeUrl, messages } from "@/lib/i18n";
 import { icon } from "@/lib/icons";
 
 export function Intro({
+  locale = "en",
   title,
   action,
   children,
 }: {
   title: string;
+  locale?: Locale;
   action: { text: string; href: string };
   children: ReactNode;
 }) {
@@ -21,7 +24,7 @@ export function Intro({
         {children}
       </div>
       <Link
-        href={action.href}
+        href={localeUrl(action.href, locale)}
         className="mt-7 inline-flex h-9 items-center gap-1.5 rounded-lg bg-fd-primary px-3.5 text-sm font-medium text-fd-primary-foreground transition-opacity duration-150 hover:opacity-90"
       >
         {action.text}
@@ -51,6 +54,7 @@ export function Products({ children }: { children: ReactNode }) {
 }
 
 export function Product({
+  locale = "en",
   icon: name,
   title,
   audience,
@@ -58,6 +62,7 @@ export function Product({
   start,
   children,
 }: {
+  locale?: Locale;
   icon: string;
   title: string;
   audience: string;
@@ -77,17 +82,17 @@ export function Product({
       </div>
       <div className="mt-auto flex items-center gap-4 text-[13px] font-medium">
         <Link
-          href={start}
+          href={localeUrl(start, locale)}
           className="inline-flex items-center gap-1 hover:underline hover:underline-offset-4"
         >
-          Get started
+          {messages[locale].getStarted}
           <ArrowRight className="size-3.5" />
         </Link>
         <Link
-          href={href}
+          href={localeUrl(href, locale)}
           className="text-fd-muted-foreground transition-colors duration-150 hover:text-fd-foreground"
         >
-          Overview
+          {messages[locale].overview}
         </Link>
       </div>
     </div>
@@ -104,17 +109,19 @@ export function Rows({ children }: { children: ReactNode }) {
 }
 
 export function Row({
+  locale = "en",
   title,
   href,
   children,
 }: {
   title: string;
   href: string;
+  locale?: Locale;
   children: ReactNode;
 }) {
   return (
     <Link
-      href={href}
+      href={localeUrl(href, locale)}
       className="group flex items-center gap-3 rounded-[10px] px-3.5 py-3 transition-colors duration-150 hover:bg-fd-accent"
     >
       <span className="min-w-0 flex-1">

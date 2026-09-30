@@ -23,7 +23,7 @@ Read [Local setup](#local-setup) and [Local validation](#local-validation) for t
 
 ## Repository Language
 
-Write repository code and documentation in English. UI translation resources contain their target-language text.
+Write repository code, specifications, and canonical documentation in English. UI translation resources and localized user documentation contain their target-language text.
 
 ## Before You Start
 
@@ -274,12 +274,13 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 - Lead with Agent Foundation's own product boundaries: Harness is the foundation; Harness UI is the playground and interactive workbench; Service operates managed agents. Describe user outcomes before implementation details.
 - Keep third-party framework branding out of product introductions and feature pitches. Retain exact imports, configuration keys, protocol names, integration names, and attribution where needed for accurate technical instructions and licensing; do not invent replacement APIs to hide a dependency.
 - Keep README, component entry pages, and package descriptions consistent with implemented capabilities. Distinguish Harness UI's trusted shared instance from Service's managed identities, permissions, and durable execution.
-- `docs/` holds Markdown pages and `meta.json` navigation only. Each folder's `meta.json` orders its pages; list every new, moved, or removed page there.
+- `docs/` holds Markdown pages and navigation JSON only. English files keep their existing names; Simplified Chinese pages and navigation use `.zh-CN.md`, `.zh-CN.mdx`, and `meta.zh-CN.json`. Each language's navigation orders its pages using the same logical slugs; list every new, moved, or removed page there.
 - Start every page with `title` and `description` front matter, plus `sidebarTitle` when the navigation needs a shorter label. The site renders the title, so the body does not repeat it as a `#` heading.
 - Write plain Markdown that also reads well on GitHub and in the bundled Harness UI configuration Skill. The site enhances a few portable forms: GitHub alerts such as `> [!NOTE]` become callouts, a fence `title="app.py"` labels a code block, consecutive fences with `tab="Python"` become tabs, and `mermaid` fences render diagrams.
-- Link other pages by relative file path, such as `models.md#credentials`. The site build fails on any broken internal link or anchor.
+- Translate user-facing prose into natural technical Chinese, preserving meaning, prerequisites, and limitations. Keep product names, identifiers, commands, and terms such as agent and skill where appropriate. Synchronize affected translations when canonical prose changes.
+- Link other pages by relative English file path, such as `models.md#credentials`. The site resolves the target in the current language and keeps the canonical English heading IDs in translated pages. Preserve heading count, order, and depth in translations. The site build fails on any broken internal link or anchor.
 - Use `.mdx` only for composed pages such as the site home page. Pages under `docs/a13n-harness-ui/` stay `.md` because the Skill bundles them verbatim.
-- `frontend/apps/a13n-docs` owns the site: layout, theme, and Service API reference pages generated from `proto/a13n-service/openapi.json`. It also publishes `llms.txt`, `llms-full.txt`, and every page as Markdown under `/md/`.
+- `frontend/apps/a13n-docs` owns the site: layout, theme, and Service API reference pages generated from `proto/a13n-service/openapi.json`. English pages keep their existing URLs; Simplified Chinese human pages use `/zh-CN/`. It also publishes English-only `llms.txt`, `llms-full.txt`, and Markdown under `/md/`; the bundled Harness UI configuration Skill stays English. Machine-readable OpenAPI and Schema downloads remain unchanged.
 - Run `make docs-build` after documentation or site changes.
 - The canonical public site is [a13n-docs.converge.ai](https://a13n-docs.converge.ai/).
 - The `Docs` GitHub Actions workflow publishes build artifacts for pull requests and deploys `main` to the `agent-foundation-docs` Cloudflare Pages project.

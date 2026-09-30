@@ -1,4 +1,6 @@
 "use client";
+import { useMemo } from "react";
+import { useLocale } from "./provider";
 import { useDocsSearch } from "fumadocs-core/search/client";
 import { staticClient } from "fumadocs-core/search/client/orama-static";
 import {
@@ -13,9 +15,9 @@ import {
   type SharedProps,
 } from "fumadocs-ui/components/dialog/search";
 
-const client = staticClient({});
-
 export default function DocsSearchDialog(props: SharedProps) {
+  const locale = useLocale();
+  const client = useMemo(() => staticClient({ locale }), [locale]);
   const { search, setSearch, query } = useDocsSearch({ client });
 
   return (

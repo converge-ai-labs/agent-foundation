@@ -1,4 +1,6 @@
 "use client";
+import { useLocale } from "./provider";
+import { messages } from "@/lib/i18n";
 import {
   ArrowUpRight,
   CaretDown,
@@ -19,12 +21,13 @@ interface OpenMenuProps {
 
 /** The page's "Open" menu: its source, its Markdown, and assistants primed to read it. */
 export function OpenMenu(props: OpenMenuProps) {
+  const t = messages[useLocale()];
   return (
     <Popover>
       <PopoverTrigger
         className={`${buttonVariants({ variant: "secondary", size: "sm" })} gap-2 data-[popup-open]:bg-fd-accent`}
       >
-        Open
+        {t.open}
         <CaretDown className="size-3.5 text-fd-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent className="flex flex-col">
@@ -36,22 +39,23 @@ export function OpenMenu(props: OpenMenuProps) {
 
 // Mounted only while the menu is open, so the page URL comes from the browser.
 function OpenMenuLinks({ markdownUrl, githubUrl }: OpenMenuProps) {
-  const q = `Read ${window.location.href}, I want to ask questions about it.`;
+  const t = messages[useLocale()];
+  const q = t.prompt.replace("{url}", window.location.href);
   const links = [
-    { title: "Open in GitHub", href: githubUrl, icon: <GitHubMark /> },
-    { title: "View as Markdown", href: markdownUrl, icon: <FileText /> },
+    { title: t.openGitHub, href: githubUrl, icon: <GitHubMark /> },
+    { title: t.markdown, href: markdownUrl, icon: <FileText /> },
     {
-      title: "Open in ChatGPT",
+      title: t.openChatGPT,
       href: `https://chatgpt.com/?${new URLSearchParams({ prompt: q, hints: "search" })}`,
       icon: <BrandMark path={OPENAI} />,
     },
     {
-      title: "Open in Claude",
+      title: t.openClaude,
       href: `https://claude.ai/new?${new URLSearchParams({ q })}`,
       icon: <BrandMark path={ANTHROPIC} />,
     },
     {
-      title: "Open in Cursor",
+      title: t.openCursor,
       href: `https://cursor.com/link/prompt?${new URLSearchParams({ text: q })}`,
       icon: <BrandMark path={CURSOR} />,
     },
