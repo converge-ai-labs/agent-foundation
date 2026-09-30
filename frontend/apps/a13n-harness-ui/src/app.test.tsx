@@ -660,6 +660,43 @@ it("retains source edits across rejected access and reauthentication", async () 
   ).toBe("Before access expired");
 });
 
+it("collapses and restores desktop navigation without losing expanded Projects", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const request = input as Request;
+    if (new URL(request.url).pathname === "/api/projects")
+      return json([{ project_id: "project-main", name: "Main" }]);
+    return fixture(request);
+  });
+  render(<BrowserApp />);
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Workbench navigation",
+  });
+  const project = await within(sidebar).findByRole("button", {
+    name: "Main",
+    expanded: false,
+  });
+  await userEvent.click(project);
+  await userEvent.click(
+    within(sidebar).getByRole("button", { name: "Collapse navigation" }),
+  );
+  const expand = await screen.findByRole("button", {
+    name: "Expand navigation",
+  });
+  expect(localStorage.getItem("a13n-harness-ui.sidebar")).toBe("collapsed");
+  await waitFor(() => expect(document.activeElement).toBe(expand));
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      within(sidebar).getByRole("button", { name: "Collapse navigation" }),
+    ),
+  );
+  expect(
+    within(sidebar).getByRole("button", { name: "Main", expanded: true }),
+  ).toBe(project);
+  expect(localStorage.getItem("a13n-harness-ui.sidebar")).toBe("expanded");
+});
+
 it("works without browser storage", async () => {
   const get = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
     throw new Error("Storage disabled");

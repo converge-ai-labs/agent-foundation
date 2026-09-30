@@ -13,13 +13,11 @@ type Row = Pick<Schema<"ThreadActivityView">, "thread"> &
 
 export function CoordinatorEntry({
   row,
-  presence,
   enabled,
   selected,
   selectedUpdatedAt,
 }: {
   row: Row;
-  presence: Schema<"PresenceFrame"> | null;
   enabled: boolean;
   selected?: Schema<"ThreadSummary">;
   selectedUpdatedAt: number;
@@ -105,7 +103,7 @@ export function CoordinatorEntry({
           />
         </Button>
         <div className={styles.conversation}>
-          <ThreadRow row={row} presence={presence} showRestore="compact" />
+          <ThreadRow row={row} showRestore="compact" />
         </div>
       </div>
       {expanded && (
@@ -114,11 +112,7 @@ export function CoordinatorEntry({
           aria-label={`Workers for ${row.thread.title || "Coordinator"}`}
         >
           {visibleRows.map((item) => (
-            <ThreadRow
-              key={item.thread.thread_id}
-              row={item}
-              presence={presence}
-            />
+            <ThreadRow key={item.thread.thread_id} row={item} />
           ))}
           {workers.isPending && !workers.data && (
             <small role="status">Loading workers…</small>

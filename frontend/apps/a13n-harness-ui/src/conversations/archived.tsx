@@ -56,7 +56,7 @@ export function ArchivedPage() {
         {rows.map((row) => (
           <div key={row.thread.thread_id} className={styles.row}>
             <small>{row.project_name}</small>
-            <ThreadRow row={row} presence={null} showRestore />
+            <ThreadRow row={row} showRestore />
           </div>
         ))}
       </div>
