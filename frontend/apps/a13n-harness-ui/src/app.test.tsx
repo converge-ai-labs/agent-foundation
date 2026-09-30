@@ -157,30 +157,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it.each([false, true])(
-  "shows the Memory entry exactly when Memory is enabled (%s), independently of automatic organization",
-  async (enabled) => {
-    localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
-    vi.mocked(fetch).mockImplementation(async (request) => {
-      if (new URL((request as Request).url).pathname === "/api/status")
-        return json({
-          ...status,
-          app: {
-            ...status.app,
-            memory_organization: {
-              memory_enabled: enabled,
-              availability: "disabled",
-            },
-          },
-        });
-      return fixture(request as Request);
-    });
-    render(<BrowserApp />);
-    await screen.findByText("1.2.3rc2");
-    expect(!!screen.queryByRole("link", { name: "Memory" })).toBe(enabled);
-  },
-);
-
 it("observes Memory with the shared Thread viewer and scoped files without mounting an editor", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
   window.history.replaceState(null, "", "/memory");

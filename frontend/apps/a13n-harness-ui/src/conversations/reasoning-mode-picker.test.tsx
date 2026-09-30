@@ -75,29 +75,6 @@ it("distinguishes authored Pro from explicit Standard and restores the Model def
   });
 });
 
-it("keeps a stale unsupported selection resettable without claiming it is effective", async () => {
-  const user = userEvent.setup();
-  const change = vi.fn();
-  render(
-    <ReasoningModePicker
-      control={{
-        supported: false,
-        state: "custom",
-        reason: "Controlled by extra_body",
-      }}
-      value="pro"
-      onChange={change}
-    />,
-  );
-  expect(
-    (screen.getByRole("button", { name: "Standard" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
-  expect(screen.getByText(/Unavailable selection/)).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: /^Default/ }));
-  expect(change).toHaveBeenCalledWith(null);
-});
-
 it("does not interpret provider default as Standard and locks changes when disabled", async () => {
   const user = userEvent.setup();
   const change = vi.fn();

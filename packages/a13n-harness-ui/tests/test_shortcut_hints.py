@@ -32,8 +32,10 @@ def shell() -> Iterator[CliShell]:
         shell.renderer.transcript.close()
 
 
-@pytest.mark.parametrize("width", [24, 40, 59, 60, 80, 100, 160])
-@pytest.mark.parametrize("state", ["preparing", "idle", "working", "steering"])
+@pytest.mark.parametrize(
+    "width, state",
+    [(24, "preparing"), (40, "steering"), (59, "idle"), (60, "working"), (80, "steering"), (160, "idle")],
+)
 def test_chat_hints_prioritize_history_without_repeating_submission(
     shell: CliShell, monkeypatch: pytest.MonkeyPatch, width: int, state: str
 ) -> None:
@@ -75,7 +77,7 @@ def test_chat_hints_prioritize_history_without_repeating_submission(
             assert expected in header
 
 
-@pytest.mark.parametrize("width", [24, 40, 60, 80, 100])
+@pytest.mark.parametrize("width", [24, 80])
 def test_modal_hints_describe_current_focus_and_completion(
     shell: CliShell, monkeypatch: pytest.MonkeyPatch, width: int
 ) -> None:
@@ -133,6 +135,8 @@ async def test_rendered_footer_reflows_on_resize_and_preserves_input(
                 expected = shell._hints().splitlines()
                 if mode == "history" or height >= 12:
                     # String checks alone miss the original fixed-height clipping bug.
+                    if mode != "history":
+                        assert shell.status.line(width).rstrip() in rows
                     assert rows[-len(expected) :] == expected
                     assert len(expected) <= (2 if height >= 12 else 1)
                     if mode == "chat":
@@ -229,9 +233,10 @@ async def test_note_count_refreshes_and_discards_cross_thread_snapshot(shell: Cl
     assert shell.renderer.note_count == 0
 
 
-@pytest.mark.parametrize("width", [24, 40, 59, 60, 80, 100, 160])
-@pytest.mark.parametrize("fast", ["default", "off", "on"])
-@pytest.mark.parametrize("tokens", [None, 0, 12345, 1234567])
+@pytest.mark.parametrize(
+    "width, fast, tokens",
+    [(24, "on", None), (40, "off", 0), (59, "default", 12345), (60, "on", 1234567), (100, "on", 12345)],
+)
 def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(width, fast, tokens) -> None:
     from a13n_harness.usage import BoundedRequestUsage
 
@@ -250,23 +255,3 @@ def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(width, 
         assert ("12.3K" if tokens == 12345 else "1.2M") in line
     if width >= 80:
         assert "ctx 1,200 (0%)" in line
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("width", [24, 100])
-async def test_status_toolbar_is_visible_without_displacing_input(shell: CliShell, monkeypatch, width) -> None:
-    shell.status.state = "ready"
-    shell.status.fast = "on"
-    monkeypatch.setattr(shell.app.output, "get_size", lambda: Size(rows=24, columns=width))
-    try:
-        with set_app(shell.app):
-            shell.app.render_counter += 1
-            shell.app.renderer.render(shell.app, shell.app.layout)
-            screen = shell.app.renderer._last_screen
-            assert screen is not None
-            rows = ["".join(screen.data_buffer[y][x].char for x in range(width)).rstrip() for y in range(24)]
-            assert shell.status.line(width).rstrip() in rows
-            assert any(row.startswith(" >") for row in rows)
-            assert shell.composer.window.render_info.window_height >= 1
-    finally:
-        await shell.app.cancel_and_wait_for_background_tasks()

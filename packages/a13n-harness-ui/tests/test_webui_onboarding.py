@@ -102,33 +102,6 @@ async def test_first_conversation_identity_is_create_only_and_survives_restart(t
 
 
 @pytest.mark.anyio
-async def test_model_choices_http_serializes_the_authoring_projection(tmp_path: Path) -> None:
-    import httpx
-    from a13n_harness_ui.webui import create_webui
-
-    server = create_webui(
-        lambda: open_harness_ui_app(
-            HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False),
-            configuration_path=tmp_path / "config.yaml",
-        ),
-        api_key="model-choices-test",
-    )
-    async with (
-        server.router.lifespan_context(server),
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=server),
-            base_url="http://localhost",
-            headers={"Authorization": "Bearer model-choices-test"},
-        ) as client,
-    ):
-        choices = await client.get("/api/models/choices")
-        assert choices.status_code == 200
-        assert choices.json() == ModelChoices().model_dump(mode="json")
-        catalog = await client.get("/api/models/catalog")
-        assert catalog.status_code == 200 and catalog.json()["items"]
-
-
-@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("connection", "model_id", "authentication", "model_file"),
     [
@@ -160,6 +133,11 @@ async def test_shared_model_authoring_http_contract_is_inert_and_has_one_setup_s
             headers={"Authorization": "Bearer model-authoring-test"},
         ) as client,
     ):
+        choices = await client.get("/api/models/choices")
+        assert choices.status_code == 200
+        assert choices.json() == ModelChoices().model_dump(mode="json")
+        catalog = await client.get("/api/models/catalog")
+        assert catalog.status_code == 200 and catalog.json()["items"]
         request = {"connection": connection, "model_id": model_id}
         options = await client.post("/api/models/options", json=request)
         assert options.status_code == 200

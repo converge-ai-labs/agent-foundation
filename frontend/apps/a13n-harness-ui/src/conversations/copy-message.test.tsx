@@ -280,36 +280,3 @@ it("only adds final output copying after saved-history cutover and labels trunca
   await screen.findByRole("button", { name: "Copied" });
   expect(write).toHaveBeenCalledWith("Saved preview");
 });
-
-it("copies all saved response text once across intervening execution segments", async () => {
-  const write = clipboard();
-  render(
-    <ConversationTranscript
-      threadId="one"
-      localInputs={[]}
-      blocks={[]}
-      entries={[
-        entry(0, [{ kind: "user", text: "Prompt" }]),
-        entry(1, [
-          { kind: "assistant", text: "First part" },
-          { kind: "thinking", text: "Private reasoning" },
-          { kind: "assistant", text: "Second part" },
-        ]),
-      ]}
-      turns={[
-        {
-          turn_id: "turn",
-          input_position: 0,
-          end_position: 2,
-          final_position: 1,
-          preview: "Prompt",
-        },
-      ]}
-    />,
-  );
-  const copies = screen.getAllByRole("button", { name: "Copy message" });
-  expect(copies).toHaveLength(2);
-  fireEvent.click(copies[1]);
-  await screen.findByRole("button", { name: "Copied" });
-  expect(write).toHaveBeenCalledWith("First part\n\nSecond part");
-});

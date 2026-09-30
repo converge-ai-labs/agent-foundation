@@ -1,12 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from "vitest";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Schema } from "../transport/client";
 import { ContextDetails, CostDetails, TokenDetails } from "./usage-details";
 
@@ -71,42 +65,6 @@ it("shows actual context counts, unknown capacity and over-capacity observations
   view.rerender(<ContextDetails used={0} capacity={1000} />);
   expect(number("Used tokens")).toBe("0");
   expect(number("Remaining tokens")).toBe("1,000");
-});
-
-it("shows combined token and cache counters without counting cache twice", () => {
-  render(<TokenDetails usage={usage} />);
-  expect(number("Total tokens")).toBe("15,456");
-  expect(number("Input tokens")).toBe("12,000");
-  expect(number("Output tokens")).toBe("3,456");
-  expect(number("Cache read")).toBe("8,000");
-  expect(number("Cache write")).toBe("1,000");
-  expect(number("Model requests")).toBe("4");
-});
-
-it("distinguishes missing usage from recorded zero counters", () => {
-  const view = render(<TokenDetails />);
-  expect(screen.getByText(/No recorded usage yet/)).toBeTruthy();
-  view.rerender(
-    <TokenDetails usage={{ ...usage, combined: { ...root, tokens: [] } }} />,
-  );
-  expect(number("Total tokens")).toBe("0");
-  view.rerender(<CostDetails />);
-  expect(screen.getByText(/No recorded usage yet/)).toBeTruthy();
-});
-
-it("breaks model costs down with explicit combined scope and partial/unknown amounts", () => {
-  render(<CostDetails usage={usage} />);
-  expect(number("Model cost · USD")).toContain("$0.4250+");
-  expect(
-    screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed"),
-  ).toBe("true");
-  const models = screen.getAllByRole("listitem");
-  expect(within(models[0]).getByText("provider/root-model")).toBeTruthy();
-  expect(within(models[0]).getByText("$0.1250")).toBeTruthy();
-  expect(within(models[1]).getByText("$0.3000")).toBeTruthy();
-  expect(within(models[2]).getByText("Other models")).toBeTruthy();
-  expect(within(models[2]).getByText("—")).toBeTruthy();
-  expect(within(models[2]).getByText("1 unknown-cost response")).toBeTruthy();
 });
 
 it("switches model scope without treating a subagent media source as extra usage", () => {

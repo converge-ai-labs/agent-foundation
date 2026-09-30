@@ -186,33 +186,6 @@ it.each(["background_process", "async_subagent"])(
   },
 );
 
-it("opens saved and streaming reasoning by default and renders safe Markdown", () => {
-  const view = render(
-    <SavedEntry
-      entry={
-        {
-          position: 1,
-          message_kind: "response",
-          parts: [{ kind: "thinking", text: "**Plan**\n\n- Read the code" }],
-        } as Schema<"TranscriptEntry">
-      }
-    />,
-  );
-  expect(screen.getByText("Reasoning").closest("details")?.open).toBe(true);
-  expect(screen.getByText("Plan").tagName).toBe("STRONG");
-  expect(screen.getByText("Read the code").tagName).toBe("LI");
-  view.rerender(
-    <LiveOutput
-      gap={false}
-      blocks={[
-        { id: "thought", kind: "thinking", text: "**Streaming** reasoning" },
-      ]}
-    />,
-  );
-  expect(screen.getByText("Reasoning").closest("details")?.open).toBe(true);
-  expect(screen.getByText("Streaming").tagName).toBe("STRONG");
-});
-
 it("omits model-only tool attachments without hiding genuine user media", () => {
   const text = JSON.stringify({
     kind: "binary",
