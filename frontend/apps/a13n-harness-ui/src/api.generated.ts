@@ -3463,6 +3463,8 @@ export interface components {
         HarnessModelCharacteristics: {
             /** Capabilities */
             capabilities?: components["schemas"]["ModelCapability"][];
+            /** @description Image preparation policy; omitted uses native defaults, null disables automatic preparation. */
+            image_input?: components["schemas"]["ImageInputPolicy"] | null;
             /** Context Window Tokens */
             context_window_tokens?: number | null;
             /**
@@ -3475,6 +3477,50 @@ export interface components {
              * @default 0.9
              */
             compact_threshold?: number;
+        };
+        /**
+         * ImageInputPolicy
+         * @description Preparation limits for one model's image input, not native ModelSettings.
+         */
+        ImageInputPolicy: {
+            /**
+             * Split Large Images
+             * @default true
+             */
+            split_large_images?: boolean;
+            /**
+             * Image Split Max Height
+             * @default 4096
+             */
+            image_split_max_height?: number;
+            /**
+             * Image Split Overlap
+             * @default 50
+             */
+            image_split_overlap?: number;
+            /**
+             * Max Image Bytes
+             * @description Maximum base64-encoded bytes per image; zero disables this byte limit.
+             * @default 5242880
+             */
+            max_image_bytes?: number;
+            /**
+             * Max Image Dimension
+             * @description Maximum image axis; zero disables this limit.
+             * @default 8000
+             */
+            max_image_dimension?: number;
+            /**
+             * Max Images
+             * @description Keep the newest images; zero removes all image input.
+             * @default 20
+             */
+            max_images?: number;
+            /**
+             * Support Gif
+             * @default true
+             */
+            support_gif?: boolean;
         };
         JsonValue: unknown;
         /**
