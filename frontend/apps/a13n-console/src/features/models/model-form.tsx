@@ -23,6 +23,12 @@ import { ManageProvidersLink } from "../providers";
 import { modelApi } from "./api";
 import { CatalogPicker, catalogRefKey } from "./catalog-picker";
 import { ModelIcon } from "./model-icon";
+import { ImageInputFields } from "./image-input-fields";
+import {
+  imageInputDraft,
+  imageInputPolicy,
+  imageInputErrors,
+} from "./image-input";
 import { ModelInformation, characteristicsInput } from "./model-information";
 import { defaultModelKey, keyPattern } from "./model-options";
 import { ModelSettingsFields, requestDefaults } from "./model-settings";
@@ -94,6 +100,10 @@ export function useModelDraft({
     enabled: original?.value.enabled ?? true,
   }));
   const [initial] = useState(draft);
+  const [imageInput, setImageInput] = useState(() =>
+    imageInputDraft(draft.characteristics.image_input),
+  );
+  const [initialImageInput] = useState(imageInput);
   const [settingsJson, setSettingsJson] = useState(() =>
     JSON.stringify(requestDefaults(original?.value.config), null, 2),
   );
@@ -128,7 +138,8 @@ export function useModelDraft({
   );
   const dirty =
     JSON.stringify(draft) !== JSON.stringify(initial) ||
-    settingsJson !== initialSettingsJson;
+    settingsJson !== initialSettingsJson ||
+    JSON.stringify(imageInput) !== JSON.stringify(initialImageInput);
   function change<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
@@ -145,6 +156,7 @@ export function useModelDraft({
     );
     const pricing = item.pricing ?? official?.pricing ?? null;
     setPricingBase(pricing);
+    setImageInput(imageInputDraft(item.characteristics.image_input));
     setDraft((current) => ({
       ...current,
       catalog_ref: item.ref,
@@ -161,6 +173,7 @@ export function useModelDraft({
     setProvider(id);
     setSettingsJson("{}");
     setPricingBase(null);
+    setImageInput(imageInputDraft());
     setDraft((current) => ({
       ...current,
       catalog_ref: null,
@@ -186,11 +199,15 @@ export function useModelDraft({
         throw new Error(t("Choose a provider and API."));
       const settings = jsonObject(settingsJson);
       if (settingsSchema) validateSettings(settingsSchema, settings);
+      const imagePolicy = imageInputPolicy(imageInput);
       const config = {
         settings,
         model_name: draft.model_name.trim(),
         model_api: callingApi,
-        characteristics: draft.characteristics,
+        characteristics: {
+          ...draft.characteristics,
+          ...(imagePolicy === undefined ? {} : { image_input: imagePolicy }),
+        },
       };
       const identity = {
         provider: selectedProvider.type,
@@ -221,6 +238,10 @@ export function useModelDraft({
         );
       return api.updateModel(original.value.key, original.etag, body);
     },
+    onError: () => {
+      if (Object.values(imageInputErrors(imageInput)).some(Boolean))
+        setSettingsExpanded(true);
+    },
     onSuccess: (model) => {
       void cache.invalidateQueries();
       onSaved?.(model);
@@ -250,6 +271,8 @@ export function useModelDraft({
     setSettingsJson,
     settingsExpanded,
     setSettingsExpanded,
+    imageInput,
+    setImageInput,
     dirty,
     save,
     incomplete: !draft.model_name.trim() || !draft.name.trim() || !callingApi,
@@ -411,7 +434,11 @@ export function ModelFields({ model }: { model: ModelDraft }) {
       <DisclosureSection
         title={t("Advanced")}
         summary={
-          model.settingsJson.trim() !== "{}" ? t("Configured") : undefined
+          model.settingsJson.trim() !== "{}" ||
+          model.imageInput.policy !== undefined ||
+          JSON.stringify(model.imageInput) !== JSON.stringify(imageInputDraft())
+            ? t("Configured")
+            : undefined
         }
         open={model.settingsExpanded}
         onOpenChange={model.setSettingsExpanded}
@@ -421,6 +448,10 @@ export function ModelFields({ model }: { model: ModelDraft }) {
           onChange={model.setSettingsJson}
           schema={model.settingsSchema}
           modelApi={model.callingApi}
+        />
+        <ImageInputFields
+          value={model.imageInput}
+          onChange={model.setImageInput}
         />
       </DisclosureSection>
     </>

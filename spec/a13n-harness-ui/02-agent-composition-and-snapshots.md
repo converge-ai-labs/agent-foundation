@@ -41,7 +41,9 @@ Preset expansion does not run when loading resources, reconstructing a Run, reus
 
 ### Model Characteristics and Operation Overrides
 
-Model resources may include native `HarnessModelCharacteristics` under `model_characteristics`: `context_window_tokens`, `proactive_context_management_threshold`, and `compact_threshold`, together with the native optional capabilities field. The complete value is captured in `ResolvedModelRecipe` and passed to the fresh native `AgentSpec`. Absent values retain native defaults; old captures without this field remain readable. Host defaults do not overwrite an explicitly configured capability policy.
+Model resources may include native `HarnessModelCharacteristics` under `model_characteristics`: `context_window_tokens`, `proactive_context_management_threshold`, and `compact_threshold`, together with the native capabilities and `image_input` fields. The complete value is captured in `ResolvedModelRecipe` and passed to the fresh native `AgentSpec`. Absent values retain native defaults; old captures without this field remain readable. Host defaults do not overwrite an explicitly configured capability policy.
+
+`model_characteristics.image_input` uses the Harness-owned [image input policy](../a13n-harness/16-input-model-and-output.md#request-and-history-filters). Omission enables default preparation, an object customizes the policy, and explicit null disables automatic preparation. The selected root, independently selected child, and image-understanding Model each own their policy; an image auxiliary call does not inherit the caller's policy. Captured policies govern reconstruction, even after the Model resource changes. The exact default policy is omitted from canonical captures to preserve historical serialization and recipe identities; explicit null remains present.
 
 For the `runtime_context` capability, an omitted `context_window_tokens` is resolved from the effective Model's characteristics at capture time. An explicitly configured value remains authoritative. Native handoff reminders and compaction retain their own derivation and explicit-policy semantics.
 

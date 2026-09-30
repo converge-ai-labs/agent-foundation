@@ -1,4 +1,5 @@
 import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
+import typesafeIcon from "./typesafe.svg";
 
 /** Display identities only. These mappings never select an endpoint or account. */
 export interface Brand {
@@ -98,6 +99,10 @@ const curatedBrands: Record<string, Brand> = {
   jina: { icon: `${lobeIconsCdn}jina.svg` },
   perplexity: { icon: `${lobeIconsCdn}perplexity-color.svg` },
   serpapi: { icon: "https://serpapi.com/favicon.ico" },
+  tinyfish: {
+    icon: "https://www.tinyfish.ai/favicon-for-app/icon0.svg",
+    hosts: ["tinyfish.ai", "www.tinyfish.ai", "agent.tinyfish.ai"],
+  },
   openai: { icon: `${lobeIconsCdn}openai.svg`, invertInDark: true },
   anthropic: { icon: `${lobeIconsCdn}anthropic.svg`, invertInDark: true },
   google_gemini: { icon: `${lobeIconsCdn}gemini-color.svg` },
@@ -108,7 +113,14 @@ const curatedBrands: Record<string, Brand> = {
   ollama: { icon: `${lobeIconsCdn}ollama.svg`, invertInDark: true },
   alibaba_model_studio: { icon: `${lobeIconsCdn}qwen-color.svg` },
   deepseek: { icon: `${lobeIconsCdn}deepseek-color.svg` },
-  moonshot: { icon: `${lobeIconsCdn}kimi-color.svg` },
+  // The color mark has a white letter; the monochrome mark works on both themes.
+  kimi: { icon: `${lobeIconsCdn}kimi.svg`, invertInDark: true },
+  moonshot: { icon: `${lobeIconsCdn}kimi.svg`, invertInDark: true },
+  typesafe: {
+    icon: typesafeIcon,
+    invertInDark: true,
+    hosts: ["typesafe.ai", "api.typesafe.ai"],
+  },
   zhipu: { icon: `${lobeIconsCdn}zhipu-color.svg` },
   docker: {
     icon: "https://cdn.jsdelivr.net/gh/pheralb/svgl@41d98985b481036562a6406e5c361af8a2781493/static/library/docker.svg",

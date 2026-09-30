@@ -37,6 +37,8 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 | `brave`, `perplexity`, `serpapi`                             | search         | `api_key` |
 | `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `tinyfish` | search, scrape | `api_key` |
 
+![Console 中的搜索与抓取 provider 目录，包含 TinyFish](../../.github/assets/console-search-providers.webp)
+
 必须逐个显式启用 web 工具；仅启用工具集不会启用任何工具。工具配置如下：
 
 ```json
@@ -69,6 +71,10 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 连接没有删除操作。`PATCH {"enabled": false}` 立即停止所有使用，包括运行中的 agent 调用；`{"enabled": true}` 恢复使用。`POST …/revoke` 立即清除凭据，并尽力请求 provider 在远程撤销，结果记录在 `remote_revocation` 中（`revoked`、`failed`，或没有远程撤销目标时的 `skipped`）。`PATCH` 和 `revoke` 需要连接的 `If-Match`；修改前重新读取，因为授权和 token 刷新会改变版本。已禁用连接或已归档工作空间中的连接也可撤销：移除凭据属于退出管理操作。
 
 ### 远程 MCP 服务器
+
+在 Console 中打开 **Connections → New connection**，搜索或浏览远程 MCP server 目录。选择目录中的 server，或通过 **Custom Remote MCP** 输入自己的 endpoint。根据 server 的要求，连接支持 OAuth、Bearer token、静态请求头或无需认证。
+
+![Console 连接目录中的多个远程 MCP server](../../.github/assets/console-mcp-connection.webp)
 
 ```sh
 curl -X POST "$A13N_URL/api/v1/connections" \

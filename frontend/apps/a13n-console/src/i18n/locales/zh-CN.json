@@ -1791,5 +1791,16 @@
   "Usage is grouped by ingestion time. Runs are counted by start time; average time includes only sealed runs.": "用量按入库时间统计，运行次数按开始时间统计；平均耗时仅包含已结束的运行。",
   "Costs are in USD. Cached tokens are included in input tokens.": "费用以美元计价。缓存 Token 已包含在输入 Token 中。",
   "From": "开始时间",
-  "Refresh": "刷新"
+  "Refresh": "刷新",
+  "Image input": "图片输入",
+  "Prepare images": "预处理图片",
+  "Validate and resize images before sending them to this model.": "发送给此模型前，验证图片并调整尺寸。",
+  "Support GIF": "支持 GIF",
+  "Keep binary GIF images; when off, they are omitted from requests.": "保留二进制 GIF 图片；关闭后，请求中会省略它们。",
+  "Max images": "最多图片数",
+  "Per request. Zero removes all images.": "每次请求的上限。设为 0 会移除全部图片。",
+  "Max image size (MiB)": "单张图片大小上限（MiB）",
+  "Base64-encoded size per image. 1 MiB = 1,048,576 bytes; zero disables the limit.": "按单张图片的 Base64 编码大小计算。1 MiB = 1,048,576 字节；设为 0 不限制大小。",
+  "Enter a whole number of images, zero or greater.": "请输入大于或等于 0 的整数图片数量。",
+  "Enter a non-negative image size that converts to whole bytes.": "请输入非负的图片大小，换算结果须为整数个字节。"
 }

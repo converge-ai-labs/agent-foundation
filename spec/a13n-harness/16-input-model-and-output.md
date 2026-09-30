@@ -309,6 +309,29 @@ The configuration is compatibility policy selected by trusted embedding code, no
 
 The Content Filter preserves accepted native Pydantic values. It classifies `BinaryContent` by canonical media type, treats image/audio/video/document URLs and `UploadedFile` as their native families, rejects credential-bearing URLs, and enforces aggregate item and inline-binary byte limits before provider serialization. An unsupported, unsafe, or over-limit item is replaced in place by one bounded explanatory text value; non-media content, tool-call identity, and request ordering remain unchanged. Scalar content remains scalar for a one-to-one replacement, while list and tuple shapes retain their sequence shape. This filter does not upload, fetch, decode, compress, spill, or persist content and grants no authority.
 
+`ImageFilterCapability` is installed by default through the selected model's `HarnessModelCharacteristics.image_input`. It projects image input only through `wrap_model_request`, after committed model-context preparation. The projection reaches concrete, run-resolved, and inferred Models on ordinary and streaming requests without changing canonical messages, original input objects, retained file bytes, or application provenance metadata. It does not write through `RunContext.messages`, acquire files, or fetch URLs.
+
+```python
+class ImageInputPolicy(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    split_large_images: bool = True
+    image_split_max_height: int = 4096
+    image_split_overlap: int = 50
+    max_image_bytes: int = 5 * 1024 * 1024
+    max_image_dimension: int = 8000
+    max_images: int = 20
+    support_gif: bool = True
+```
+
+The image policy first validates binary images, splits tall static images into ordered full-width vertical segments with the configured overlap, and compresses each image or segment when its encoded-byte or per-axis dimension limit is exceeded. Splitting preserves spatial coverage rather than selecting or discarding a semantic region. Segment identities are distinct; one-to-one transformations preserve the native image subtype, identity, and vendor metadata. Compression resizes proportionally and produces JPEG, compositing transparent pixels onto white. The byte limit applies to base64-encoded payload bytes, with a raw budget of `(max_image_bytes // 4) * 3`; zero disables that limit, and `max_image_dimension=0` independently disables dimension-based resizing. Compression cannot flatten animation, and animated images bypass segmentation. Corrupt images and images that cannot satisfy the configured limits are replaced by explanatory text. Static images must pass pixel decoding before they consume the image count, even when no split or compression is needed. Static pixel decoding and pixel-changing processing are bounded to 80 million source pixels and run off the event loop.
+
+The policy then keeps the newest `max_images` images across request messages, parts, and content items, replacing older images with explanatory text. Segments count as individual images; corrupted or unpreparable inputs do not consume the count. `max_images=0` removes all image input. Finally, `support_gif=False` replaces binary GIFs with a compatibility explanation. Native `ImageUrl` values participate in counting but are not fetched, decoded, split, compressed, or classified by URL suffix. Other media and Model response files remain unchanged.
+
+Both native user-content sequences and ordinary tool-return scalar or top-level list media participate in this image projection. Arbitrary nested tool JSON and tuple-valued tool data are not reinterpreted as provider image files. Scalar tool content becomes a list only for a one-to-many split; existing user list/tuple and tool list shapes are otherwise retained. The image policy is trusted target-model configuration rather than inferred provider characteristics or a new profile schema. It has no shared total-request byte budget and cannot guarantee acceptance by every gateway.
+
+`AgentMediaUnderstandingProvider` selects the same default policy independently for its image target through its typed `image_input` constructor argument; a configuration replaces that policy and `None` disables it. It does not inherit the parent Agent's policy, and audio/video targets do not receive the image filter.
+
 `ColdStartFilterCapability` is installed by default through [AgentSpec cold-start configuration](03-agent-definition-and-build.md#agentdefinition). It can be configured or disabled there. After its configured idle interval since the latest `ModelResponse`, it shortens oversized string leaves in ordinary tool results strictly before that latest response. Those results have already been consumed by the model; the latest response and every later request, including pending tool results, remain exact. Structured dictionaries, lists, and tuples retain their shape and short hint fields; native media and non-string values remain unchanged. The filter does not spill content or replace explicit compaction.
 
 A tool result with native `ToolReturnPart.metadata` containing `"a13n.cold-start": "preserve"` is exempt from this cold-start reduction. The marker is application metadata, not model-visible content or execution authority, and native history serialization preserves it across runs without consulting current mounts or skill selection. [Skill file views](09-context-and-memory.md#skills-and-discovery) produce this marker after successful reads. Untagged history retains ordinary trimming behavior; old results are not inferred or backfilled. The exemption neither bypasses the tool execution boundary's initial output limits and redaction nor prevents compaction or handoff from replacing history.
@@ -317,18 +340,19 @@ The tool execution boundary does not duplicate Filter behavior. It preserves nat
 
 Former global history processors resolve to one current owner:
 
-| Behavior                                                                | Owner                                                          |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Orphan and duplicate ordinary tool results                              | Mandatory `MessageIntegrityFilterCapability`                   |
-| Unsupported, unsafe, or over-limit request media                        | Optional `ContentFilterCapability`                             |
-| Cold-cache reduction of already-consumed tool-result strings            | AgentSpec-configured `ColdStartFilterCapability`               |
-| Current tool-return redaction, bounds, and spill                        | `ToolExecutionBoundaryCapability`                              |
-| Runtime, file, Environment, handoff, working-state, and process notices | Their focused context or Environment Capabilities              |
-| Accepted live user or Agent messages                                    | Native enqueue plus Host delivery acceptance                   |
-| Media acquisition, transformation, or upload                            | Optional Media Capability/provider integration                 |
-| System instructions and provider request rendering                      | `AgentSpec`, native Model profile, and provider adapter        |
-| Exact provider-history rejection repair                                 | Default-on `SelfHealingModelCapability` and `SelfHealingModel` |
-| Interrupted-history normalization and `ModelAttempt` recovery           | Harness state recovery and `HarnessRunStream`                  |
+| Behavior                                                                      | Owner                                                          |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Orphan and duplicate ordinary tool results                                    | Mandatory `MessageIntegrityFilterCapability`                   |
+| Unsupported, unsafe, or over-limit request media                              | Optional `ContentFilterCapability`                             |
+| Request-only image splitting, compression, newest-first count, and GIF policy | Model-characteristics-configured `ImageFilterCapability`       |
+| Cold-cache reduction of already-consumed tool-result strings                  | AgentSpec-configured `ColdStartFilterCapability`               |
+| Current tool-return redaction, bounds, and spill                              | `ToolExecutionBoundaryCapability`                              |
+| Runtime, file, Environment, handoff, working-state, and process notices       | Their focused context or Environment Capabilities              |
+| Accepted live user or Agent messages                                          | Native enqueue plus Host delivery acceptance                   |
+| Other media acquisition, transformation, or upload                            | Optional Media Capability/provider integration                 |
+| System instructions and provider request rendering                            | `AgentSpec`, native Model profile, and provider adapter        |
+| Exact provider-history rejection repair                                       | Default-on `SelfHealingModelCapability` and `SelfHealingModel` |
+| Interrupted-history normalization and `ModelAttempt` recovery                 | Harness state recovery and `HarnessRunStream`                  |
 
 Malformed current tool arguments, ordinary provider reasoning projection, and transport retry remain upstream Model/adapter/client concerns rather than generic Filters. An exact residual provider incompatibility uses `SelfHealingModelCapability` or another narrowly scoped compatibility Capability only when the native profile lacks the required public behavior.
 

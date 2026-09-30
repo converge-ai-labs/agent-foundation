@@ -335,6 +335,92 @@ it("applies a newly selected model immediately, including its catalog values", a
   );
 });
 
+it("seeds image input from each selected catalog model instead of leaking the previous draft", async () => {
+  state.catalog = {
+    items: [
+      {
+        ...entry,
+        characteristics: { ...entry.characteristics, image_input: null },
+      },
+      {
+        ...secondEntry,
+        characteristics: {
+          ...secondEntry.characteristics,
+          image_input: {
+            support_gif: false,
+            max_images: 9,
+            max_image_bytes: 2621440,
+          },
+        },
+      },
+    ],
+    status: "ready",
+  };
+  mount({ providerId: "mprov_test" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /GPT-5\.5/ }));
+  await user.click(screen.getByRole("button", { name: /^Advanced/ }));
+  expect(
+    screen
+      .getByRole("switch", { name: "Prepare images" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  await user.click(screen.getByRole("button", { name: "Choose a model" }));
+  await user.click(await screen.findByRole("button", { name: /GPT-5\.6/ }));
+  expect(
+    screen
+      .getByRole("switch", { name: "Prepare images" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(
+    screen
+      .getByRole("switch", { name: "Support GIF" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  expect((screen.getByLabelText("Max images") as HTMLInputElement).value).toBe(
+    "9",
+  );
+  expect(
+    (screen.getByLabelText("Max image size (MiB)") as HTMLInputElement).value,
+  ).toBe("2.5");
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalled());
+  expect(
+    state.POST.mock.calls[0][1].body.config.characteristics.image_input,
+  ).toEqual({ support_gif: false, max_images: 9, max_image_bytes: 2621440 });
+});
+
+it("resets image input when changing providers and omits the untouched default policy", async () => {
+  state.providers = [
+    provider,
+    { ...provider, id: "mprov_second", name: "Second endpoint" },
+  ];
+  mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /My endpoint/ }));
+  await user.click(await screen.findByRole("button", { name: /Custom model/ }));
+  await user.click(screen.getByRole("button", { name: /^Advanced/ }));
+  await user.click(screen.getByRole("switch", { name: "Prepare images" }));
+  await user.click(screen.getByRole("button", { name: "Choose a model" }));
+  await user.click(screen.getByRole("button", { name: "Choose a provider" }));
+  await user.click(screen.getByRole("button", { name: /Second endpoint/ }));
+  await user.click(await screen.findByRole("button", { name: /Custom model/ }));
+  expect(
+    screen
+      .getByRole("switch", { name: "Prepare images" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  expect((screen.getByLabelText("Max images") as HTMLInputElement).value).toBe(
+    "20",
+  );
+  await user.type(screen.getByLabelText("Upstream model"), "company-smart");
+  await user.type(screen.getByLabelText("Name"), "Smart");
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalled());
+  expect(state.POST.mock.calls[0][1].body.provider_id).toBe("mprov_second");
+  expect(state.POST.mock.calls[0][1].body.config.characteristics).toEqual({});
+});
+
 it("uses the official model price for an OpenAI-compatible connection", async () => {
   mount({ providerId: "mprov_test" });
   const user = userEvent.setup();
@@ -616,4 +702,124 @@ it("keeps invalid JSON editable and rejects settings for a different API", async
     await screen.findByText(/must NOT have additional properties/),
   ).toBeTruthy();
   expect(state.PATCH).not.toHaveBeenCalled();
+});
+
+it("edits image input controls while preserving exact bytes, hidden policy and other traits", async () => {
+  const saved = {
+    ...model,
+    config: {
+      ...model.config,
+      characteristics: {
+        ...model.config.characteristics,
+        compact_threshold: 0.75,
+        image_input: {
+          max_image_bytes: 1234567,
+          max_image_dimension: 3456,
+          split_large_images: false,
+          image_split_max_height: 2222,
+          image_split_overlap: 11,
+        },
+      },
+    },
+  };
+  state.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("{key}")
+      ? saved
+      : path === "/api/v1/provider-types/{kind}"
+        ? { items: state.types }
+        : path === "/api/v1/model-catalog"
+          ? state.catalog
+          : { items: state.providers },
+    response: response(),
+  }));
+  mount({ modelKey: "smart" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /^Advanced/ }));
+  expect(
+    screen
+      .getByRole("switch", { name: "Prepare images" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(
+    (screen.getByLabelText("Max image size (MiB)") as HTMLInputElement).value,
+  ).toBe(String(1234567 / 1048576));
+  await user.click(screen.getByRole("switch", { name: "Support GIF" }));
+  fireEvent.change(screen.getByLabelText("Max images"), {
+    target: { value: "7" },
+  });
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalled());
+  expect(state.PATCH.mock.calls[0][1].body.config.characteristics).toEqual({
+    ...saved.config.characteristics,
+    image_input: {
+      ...saved.config.characteristics.image_input,
+      support_gif: false,
+      max_images: 7,
+    },
+  });
+});
+
+it("saves disabled preparation as null and keeps it disabled after reopening", async () => {
+  mount({ modelKey: "smart" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /^Advanced/ }));
+  await user.click(screen.getByRole("switch", { name: "Prepare images" }));
+  expect(screen.queryByLabelText("Max images")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalled());
+  const saved = { ...model, config: state.PATCH.mock.calls[0][1].body.config };
+  expect(saved.config.characteristics.image_input).toBeNull();
+  cleanup();
+  state.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("{key}")
+      ? saved
+      : path === "/api/v1/provider-types/{kind}"
+        ? { items: state.types }
+        : path === "/api/v1/model-catalog"
+          ? state.catalog
+          : { items: state.providers },
+    response: response(),
+  }));
+  mount({ modelKey: "smart" });
+  await user.click(await screen.findByRole("button", { name: /^Advanced/ }));
+  expect(
+    screen
+      .getByRole("switch", { name: "Prepare images" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+});
+
+it("keeps invalid image input visible and does not submit it", async () => {
+  mount({ modelKey: "smart" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /^Advanced/ }));
+  fireEvent.change(screen.getByLabelText("Max images"), {
+    target: { value: "1.5" },
+  });
+  expect(
+    screen.getByText("Enter a whole number of images, zero or greater."),
+  ).not.toBeNull();
+  // Submit directly too: request validation must not rely only on HTML constraints.
+  fireEvent.submit(
+    screen.getByRole("button", { name: "Save changes" }).closest("form")!,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getAllByText("Enter a whole number of images, zero or greater.")
+        .length,
+    ).toBe(2),
+  );
+  expect(state.PATCH).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Max images"), {
+    target: { value: "20" },
+  });
+  fireEvent.change(screen.getByLabelText("Max image size (MiB)"), {
+    target: { value: "2.5" },
+  });
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalled());
+  expect(
+    state.PATCH.mock.calls[0][1].body.config.characteristics.image_input
+      .max_image_bytes,
+  ).toBe(2621440);
 });

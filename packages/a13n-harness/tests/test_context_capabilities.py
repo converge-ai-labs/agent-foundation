@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -336,9 +337,9 @@ async def test_handoff_reprojects_current_notes_after_history_replacement() -> N
     assert "note-before-handoff" not in str(calls[-1])
 
 
-async def test_handoff_preserves_structured_multimodal_original_request() -> None:
+async def test_handoff_preserves_structured_multimodal_original_request(png_image_bytes: bytes) -> None:
     calls: list[list[ModelMessage]] = []
-    image = BinaryContent(data=b"\xff\x00image", media_type="image/png")
+    image = BinaryContent(data=png_image_bytes, media_type="image/png")
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         calls.append(messages)
@@ -382,14 +383,14 @@ async def test_handoff_preserves_structured_multimodal_original_request() -> Non
     assert restored_image.data == image.data
     assert restored_image.media_type == image.media_type
     assert result.state is not None
-    assert "_wBpbWFnZQ==" in result.state.model_dump_json()
+    assert base64.urlsafe_b64encode(image.data).decode() in result.state.model_dump_json()
 
 
-async def test_handoff_replays_delivered_multimodal_steering_in_order() -> None:
+async def test_handoff_replays_delivered_multimodal_steering_in_order(png_image_bytes: bytes) -> None:
     started = asyncio.Event()
     release = asyncio.Event()
     calls: list[list[ModelMessage]] = []
-    image = BinaryContent(data=b"steering-image", media_type="image/png")
+    image = BinaryContent(data=png_image_bytes, media_type="image/png")
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         del info

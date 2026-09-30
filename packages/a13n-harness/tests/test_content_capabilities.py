@@ -251,7 +251,7 @@ async def _body(*chunks: bytes) -> AsyncIterator[bytes]:
         yield chunk
 
 
-async def test_media_capability_returns_native_binary_with_run_scoped_reader() -> None:
+async def test_media_capability_returns_native_binary_with_run_scoped_reader(png_image_bytes: bytes) -> None:
     usage = ProviderUsage(
         usage_id="media-1",
         provider="media-provider",
@@ -264,7 +264,7 @@ async def test_media_capability_returns_native_binary_with_run_scoped_reader() -
             kind="image",
             source_url="https://example.com/image.png?variant=large",
             media_type="image/png",
-            data=b"\x89PNG",
+            data=png_image_bytes,
             usage=(usage,),
         )
     )
@@ -294,7 +294,7 @@ async def test_media_capability_returns_native_binary_with_run_scoped_reader() -
     assert reader.requests[0].max_audio_bytes == 64 * 1024 * 1024
     binaries = _native_binary(seen)
     assert len(binaries) == 1
-    assert binaries[0].data == b"\x89PNG"
+    assert binaries[0].data == png_image_bytes
     assert binaries[0].media_type == "image/png"
     assert binaries[0].vendor_metadata == {"display": False}
     provider_record = next(record for record in result.usage_records if isinstance(record, ProviderUsageRecord))

@@ -242,7 +242,15 @@ async def test_view_native_first_with_configured_auxiliary_in_root_and_child(tmp
             }
         )
     )
-    (tmp_path / "sample.png").write_bytes(b"\x89PNG")
+    import io
+
+    from PIL import Image
+
+    with Image.new("RGB", (16, 16), "red") as image:
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+    image_bytes = buffer.getvalue()
+    (tmp_path / "sample.png").write_bytes(image_bytes)
     agent_path = tmp_path / "agents/main.yaml"
     agent = yaml.safe_load(agent_path.read_text())
     agent["capabilities"] = [{"capability": "dynamic_environment", "configuration": {"files_enabled": True}}]
@@ -314,9 +322,45 @@ async def test_view_native_first_with_configured_auxiliary_in_root_and_child(tmp
     assert returns
     if native:
         assert auxiliary_threads == []
-        assert binaries and binaries[0].data == b"\x89PNG"
+        assert binaries and binaries[0].data == image_bytes
     else:
         assert len(auxiliary_threads) == 1
         assert auxiliary_threads[0] in primary_threads
         assert (auxiliary_threads[0] != primary_threads[0]) is delegated
         assert any(part.content == "label from auxiliary" for part in returns)
+
+
+@pytest.mark.parametrize("policy, count", [(None, 1), ({"max_images": 0}, 0), ({}, 0)])
+async def test_auxiliary_image_input_uses_captured_target_policy(tmp_path, monkeypatch, policy, count):
+    # Invalid bytes distinguish disabled preparation from default validation.
+    source = await load_harness_ui_configuration(write_configuration(tmp_path, {"image": "model-vision"}))
+    model = source.models["model-vision"]
+    document = model.model_dump(mode="json")
+    document["model_characteristics"]["image_input"] = policy
+    (tmp_path / "models/vision.yaml").write_text(yaml.safe_dump(document))
+    source = await load_harness_ui_configuration(tmp_path / "custom.yaml")
+    captured = AgentCompositionResolver().resolve_run(source, selection())
+    restored = ResolvedRunComposition.model_validate_json(captured.model_dump_json())
+    source.models["model-vision"] = source.models["model-text"]
+    seen = []
+
+    from pydantic_ai import BinaryContent
+    from pydantic_ai.messages import ModelResponse, TextPart, UserPromptPart
+    from pydantic_ai.models.function import FunctionModel
+
+    async def infer(messages, info):
+        seen.extend(
+            item
+            for message in messages
+            for part in message.parts
+            if isinstance(part, UserPromptPart) and isinstance(part.content, list)
+            for item in part.content
+            if isinstance(item, BinaryContent)
+        )
+        return ModelResponse(parts=[TextPart("description")])
+
+    resolver = HarnessUiModelResolver({})
+    monkeypatch.setattr(resolver, "resolve", AsyncMock(return_value=FunctionModel(infer)))
+    media = FileMediaUnderstanding(restored.media_understanding, resolver, thread_id="thread-image")
+    assert (await media.understand(request())).text == "description"
+    assert len(seen) == count

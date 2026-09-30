@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
-from a13n_harness import HarnessModelCharacteristics
+from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
 from a13n_harness.models import (
     ModelCharacteristicsAlias,
     ModelCharacteristicsAliasCatalog,
@@ -19,6 +19,36 @@ from pydantic_ai.settings import ModelSettings
 
 def _provider_settings(**values: Any) -> ModelSettings:
     return cast(ModelSettings, values)
+
+
+@pytest.mark.parametrize("image_input", [None, ImageInputPolicy(), ImageInputPolicy(max_images=3)])
+def test_explicit_image_policy_overrides_alias_even_when_default_is_not_serialized(
+    image_input: ImageInputPolicy | None,
+) -> None:
+    alias_policy = ImageInputPolicy(support_gif=False, max_images=1)
+    catalog = ModelCharacteristicsAliasCatalog(
+        {
+            "anthropic:limited-images": ModelCharacteristicsAlias(
+                key="anthropic:limited-images",
+                provider="anthropic",
+                transform=lambda traits: traits.model_copy(update={"image_input": alias_policy}),
+            )
+        }
+    )
+    retained = resolve_model_characteristics(
+        "anthropic:claude-sonnet-5",
+        aliases=("anthropic:limited-images",),
+        overrides=HarnessModelCharacteristics(compact_threshold=0.8),
+        catalog=catalog,
+    )
+    assert retained is not None and retained.image_input == alias_policy
+    selected = resolve_model_characteristics(
+        "anthropic:claude-sonnet-5",
+        aliases=("anthropic:limited-images",),
+        overrides=HarnessModelCharacteristics(image_input=image_input),
+        catalog=catalog,
+    )
+    assert selected is not None and selected.image_input == image_input
 
 
 def test_builtin_alias_catalogs_contain_only_anthropic_choices() -> None:

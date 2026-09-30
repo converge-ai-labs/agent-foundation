@@ -299,6 +299,11 @@ class _MediaUnderstanding:
             },
             model_settings={kind: _settings(model, {}) for kind, model in self.agent.media.items()},
             model_ids={kind: model.key for kind, model in self.agent.media.items()},
+            image_input=(
+                self.agent.media["image"].config.characteristics.image_input
+                if "image" in self.agent.media
+                else HarnessModelCharacteristics().image_input
+            ),
         )
         return await provider.understand(request, usage=usage)
 
@@ -406,6 +411,7 @@ def _characteristics(agent: ResolvedAgent) -> HarnessModelCharacteristics:
     declared, policy = agent.model.config.characteristics, agent.config.model_characteristics
     return HarnessModelCharacteristics(
         capabilities=declared.capabilities,
+        image_input=declared.image_input,
         context_window_tokens=policy.context_window_tokens or declared.context_window_tokens,
         proactive_context_management_threshold=policy.proactive_context_management_threshold,
         compact_threshold=policy.compact_threshold,

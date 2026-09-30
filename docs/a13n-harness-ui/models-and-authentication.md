@@ -341,6 +341,22 @@ Harness UI accepts the legacy name `context_window` in configuration and saved s
 
 These values guide Harness behavior; they do not give a model modalities or token entitlement it lacks. Agent-level explicit context-capability thresholds remain authoritative. Review the selected provider's supported settings before changing a generic example.
 
+### Image input preparation
+
+Model files accept `model_characteristics.image_input`, independently of context thresholds and capabilities. Omit it for default preparation, supply an object to customize it, or set it to `null` to disable automatic preparation:
+
+```yaml
+model_characteristics:
+  image_input:
+    support_gif: false
+    max_images: 10
+    max_image_bytes: 5242880
+```
+
+All seven fields and defaults are documented in the shared [image input policy reference](../a13n-harness/models.md#image-input-policy), including dimension and splitting controls. The byte budget is **base64-encoded size per image**, not original file size or total request size. Unspecified object fields retain native defaults. GIF support is a declared policy, not automatic model detection.
+
+The selected root, independent child and image-understanding Model each use their own policy. Run capture freezes the complete policy; reconstruction uses it even after you edit the Model file. Historical captures retain their serialization without being rewritten.
+
 ### Account-store locations
 
 Codex shares its supported file store under `CODEX_HOME` (default `~/.codex`). Harness UI respects the upstream credential-store policy and reports unsupported stores rather than replacing them. Grok uses `GROK_AUTH_PATH` before `GROK_HOME` or its default file; inline `GROK_AUTH` is not a shared writable-login mode. Account inspection does not log in or refresh credentials. Codex model requests use an explicit shared-store credential source. A provider caches credentials within its lifetime and rereads storage before refresh, not on every request. A new Run or account operation gets a fresh provider. If refreshed credentials cannot be saved, the request fails, but the provider retains the rotated credentials in memory; resolve the store conflict and start a new Run rather than assuming the rotation was persisted. Grok retains its Harness-owned refresh lifecycle.
