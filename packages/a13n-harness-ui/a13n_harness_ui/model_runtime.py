@@ -11,6 +11,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from a13n_harness import AgentContext
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models.inference import RequestHeadersModel
@@ -73,7 +74,9 @@ class HarnessUiModelResolver:
         *,
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         api_keys: ApiKeyStore | None = None,
+        configuration: RunConfiguration | None = None,
     ) -> None:
+        self.configuration = configuration or RunConfiguration()
         self._api_keys = api_keys
         self._recipes = MappingProxyType({key: value.model_copy(deep=True) for key, value in recipes.items()})
         self._subscription_sources = MappingProxyType(dict(subscription_sources or {}))
@@ -83,6 +86,7 @@ class HarnessUiModelResolver:
             self._recipes,
             subscription_sources=self._subscription_sources,
             api_keys=self._api_keys,
+            configuration=self.configuration,
         )
 
     async def __call__(
@@ -108,6 +112,11 @@ class HarnessUiModelResolver:
             if isinstance(header, str):
                 return RequestHeadersModel(model, common_headers={header: derive_model_affinity_id(thread_id)})
             return model
+        if self.configuration.allowed_hosts is not None:
+            raise ModelResolutionError(
+                "This subscription Model transport cannot enforce Run allowed hosts.",
+                code="model_configuration_unsupported",
+            )
         if isinstance(authentication, CodexSubscriptionAuthentication):
             from a13n_harness.models.codex import CodexRequestModel
 
@@ -163,7 +172,10 @@ class HarnessUiModelResolver:
             raise ModelResolutionError("Invalid Model base URL.", code="model_reconstruction_failed")
         try:
             return await build_api_key_model(
-                recipe.route, ApiKeyCredential.model_validate({"api_key": api_key}), base_url=base_url
+                recipe.route,
+                ApiKeyCredential.model_validate({"api_key": api_key}),
+                base_url=base_url,
+                configuration=self.configuration,
             )
         except Exception as exc:
             raise ModelResolutionError(

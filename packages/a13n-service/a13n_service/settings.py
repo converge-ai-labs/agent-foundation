@@ -395,9 +395,6 @@ class Composer(Section):
 class Providers(Section):
     """Outbound network policy, call bounds and browser authorization flows for every provider and connection."""
 
-    ssrf_protection: bool = True
-    private_domains: tuple[str, ...] = ()
-    private_cidrs: tuple[str, ...] = ()
     http_origins: tuple[str, ...] = ()
     require_https: bool = True
     # Exact URLs a browser authorization may return to after the connection callback, besides any page on the
@@ -419,12 +416,9 @@ class Providers(Section):
 
     @property
     def endpoint_policy(self) -> EndpointPolicy:
-        return EndpointPolicy.from_operator_allowlist(
-            private_domains=self.private_domains,
-            private_cidrs=self.private_cidrs,
+        return EndpointPolicy.from_http_origins(
             http_origins=self.http_origins,
             require_https=self.require_https,
-            ssrf_protection=self.ssrf_protection,
         )
 
 
@@ -466,7 +460,7 @@ class Telemetry(Section):
             return None
         return LogFile(path=self.log_file, max_bytes=self.log_file_max_mb * 1024 * 1024, backups=self.log_file_backups)
 
-    def trace_config(self, *, ssrf_protection: bool = True) -> TraceProvider | None:
+    def trace_config(self) -> TraceProvider | None:
         """The selected backend, for export and query; None when disabled. Each backend checks its own keys."""
         url = self.trace_url.rstrip("/") if self.trace_url else None
         timeout = self.trace_query_timeout
@@ -479,7 +473,6 @@ class Telemetry(Section):
                     self.langfuse_public_key,
                     self.langfuse_secret_key,
                     timeout=timeout,
-                    ssrf_protection=ssrf_protection,
                 )
             case "logfire":
                 return Logfire.configure(
@@ -487,7 +480,6 @@ class Telemetry(Section):
                     self.logfire_write_token,
                     self.logfire_read_token,
                     timeout=timeout,
-                    ssrf_protection=ssrf_protection,
                 )
 
 

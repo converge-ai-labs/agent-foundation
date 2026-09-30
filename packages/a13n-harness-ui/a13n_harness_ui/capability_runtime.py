@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ipaddress
 from collections.abc import AsyncIterator, Collection
 from dataclasses import replace
 from html.parser import HTMLParser
@@ -13,6 +12,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 from uuid import uuid4
 
 import httpx2
+from a13n_harness._urls import require_http_url
 from a13n_harness.capabilities import (
     DocumentConversionError,
     DocumentConversionRequest,
@@ -32,6 +32,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID
+from a13n_harness.configuration import HostNotAllowedError, RunConfiguration
 from a13n_harness.context import AgentContext, RunBindings
 from anyio import to_thread
 from pydantic_ai import RunContext
@@ -43,32 +44,22 @@ _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 class HttpWebPolicy(WebPolicy):
-    """Validate HTTP(S) URLs with an optional, DNS-free literal destination guard."""
+    """Validate HTTP(S) URLs against the accepted Run's exact allowed hosts."""
 
-    def __init__(self, *, ssrf_protection: bool = False) -> None:
-        self.ssrf_protection = ssrf_protection
+    def __init__(self, configuration: RunConfiguration | None = None) -> None:
+        self.configuration = configuration or RunConfiguration()
 
     async def authorize(self, url: str, *, purpose: str) -> None:
         del purpose
         try:
-            parsed = urlsplit(url)
-            hostname = parsed.hostname
-            port = parsed.port
-        except ValueError as exc:
-            raise WebProviderError("web_url_invalid") from exc
-        if parsed.scheme not in {"http", "https"} or not hostname or port == 0:
-            raise WebProviderError("web_url_invalid")
-        if not self.ssrf_protection:
-            return
-        hostname = hostname.rstrip(".").casefold()
-        if hostname == "localhost" or hostname.endswith(".localhost"):
-            raise WebProviderError("web_destination_denied")
+            if require_http_url(url).port == 0:
+                raise ValueError("URL port cannot be zero")
+        except ValueError as error:
+            raise WebProviderError("web_url_invalid") from error
         try:
-            address = ipaddress.ip_address(hostname)
-        except ValueError:
-            return
-        if not address.is_global:
-            raise WebProviderError("web_destination_denied")
+            self.configuration.authorize_url(url)
+        except HostNotAllowedError as error:
+            raise WebProviderError("web_destination_denied") from error
 
 
 class HttpxWebClient:
@@ -223,14 +214,12 @@ class LocalDocumentConverter:
 def production_run_bindings(
     bindings: RunBindings,
     owner_capability_ids: Collection[str],
-    *,
-    web_ssrf_protection: bool = False,
 ) -> RunBindings:
     """Supply fresh Host collaborators required by one logical Harness Run."""
 
     if WEB_CAPABILITY_ID in owner_capability_ids:
         client = HttpxWebClient()
-        policy = HttpWebPolicy(ssrf_protection=web_ssrf_protection)
+        policy = HttpWebPolicy(bindings.configuration)
         bindings = replace(
             bindings,
             web=WebBinding(

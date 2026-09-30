@@ -148,41 +148,8 @@ def test_outbox_invalid_policy_fails_at_startup(outbox: dict) -> None:
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_ssrf_protection_environment_overrides_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_environment: None, enabled: bool
-) -> None:
-    assert load_settings().providers.endpoint_policy.ssrf_protection
+def test_https_policy_environment_overrides_file(tmp_path, monkeypatch, clean_environment, enabled):
     config = tmp_path / "service.toml"
-    config.write_text(f"[providers]\nssrf_protection = {str(not enabled).lower()}\n")
-    monkeypatch.setenv("A13N_PROVIDERS__SSRF_PROTECTION", str(enabled).lower())
-    loaded = load_settings(config)
-    assert loaded.providers.ssrf_protection is enabled
-    assert loaded.providers.endpoint_policy.ssrf_protection is enabled
-    assert loaded.providers.endpoint_policy.require_https
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize("enabled", [False, True])
-async def test_process_runtime_applies_ssrf_switch_to_providers_and_traces(tmp_path: Path, enabled: bool) -> None:
-    from contextlib import AsyncExitStack
-
-    from a13n_service.app import open_runtime
-    from a13n_service.distribution import OSS
-    from a13n_service.providers.traces.langfuse import Langfuse
-
-    config = Settings.model_validate(
-        {
-            "providers": {"ssrf_protection": enabled},
-            "objects": {"root": str(tmp_path)},
-            "telemetry": {
-                "trace_backend": "langfuse",
-                "trace_url": "https://proxy-only.test",
-                "langfuse_public_key": "pk-test",
-                "langfuse_secret_key": "sk-test",
-            },
-        }
-    )
-    async with AsyncExitStack() as stack:
-        runtime = await open_runtime(stack, OSS, config, executes=False)
-        assert runtime.endpoint_policy.ssrf_protection is enabled
-        assert isinstance(runtime.traces, Langfuse) and runtime.traces.ssrf_protection is enabled
+    config.write_text(f"[providers]\nrequire_https = {str(not enabled).lower()}\n")
+    monkeypatch.setenv("A13N_PROVIDERS__REQUIRE_HTTPS", str(enabled).lower())
+    assert load_settings(config).providers.endpoint_policy.require_https is enabled

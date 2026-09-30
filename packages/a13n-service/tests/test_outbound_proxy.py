@@ -2,12 +2,12 @@
 
 import asyncio
 import os
-import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import httpx2
 import pytest
+from a13n_harness import RunConfiguration
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.outbound import open_http
@@ -51,20 +51,8 @@ async def proxy_server(*, status: int = 200, encoding: str = "identity") -> Asyn
                 await asyncio.gather(*tasks)
 
 
-def resolve_to(monkeypatch: pytest.MonkeyPatch, *addresses: str) -> None:
-    async def resolve(host: str, port: int, **kwargs):
-        assert host == "target.test"
-        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port)) for address in addresses]
-
-    monkeypatch.setattr("a13n_service.infra.outbound.anyio.getaddrinfo", resolve)
-
-
 @pytest.mark.parametrize("status", [200, 302])
 async def test_service_proxy_keeps_host_hooks_and_redirect_policy(monkeypatch: pytest.MonkeyPatch, status: int) -> None:
-    async def unexpected_dns(*args, **kwargs):
-        pytest.fail("Proxy destinations must be resolved by the trusted proxy")
-
-    monkeypatch.setattr("a13n_service.infra.outbound.allowed_addresses", unexpected_dns)
     calls = []
 
     async def before(request: httpx2.Request) -> None:
@@ -86,15 +74,13 @@ async def test_service_proxy_keeps_host_hooks_and_redirect_policy(monkeypatch: p
     assert b"Bearer origin-token" in requests[0]
 
 
-@pytest.mark.parametrize("addresses", [("127.0.0.1",), ("93.184.216.34", "127.0.0.1"), ("169.254.169.254",)])
-async def test_service_no_proxy_still_denies_every_unsafe_dns_answer(
-    monkeypatch: pytest.MonkeyPatch, addresses: tuple[str, ...]
-) -> None:
-    resolve_to(monkeypatch, *addresses)
-    monkeypatch.setenv("NO_PROXY", "target.test")
+@pytest.mark.parametrize("bypass", [False, True])
+async def test_service_authorizes_hosts_before_direct_or_proxy_routing(monkeypatch, bypass):
+    monkeypatch.setenv("NO_PROXY", "target.test" if bypass else "")
     async with proxy_server() as (proxy, requests):
         monkeypatch.setenv("ALL_PROXY", proxy)
-        async with open_http(EndpointPolicy(), timeout=2, max_bytes=10) as client:
+        policy = EndpointPolicy(configuration=RunConfiguration(allowed_hosts={"other.test"}))
+        async with open_http(policy, timeout=2, max_bytes=10) as client:
             with pytest.raises(EndpointPolicyError):
                 await client.get("http://target.test/read")
     assert not requests
@@ -104,7 +90,6 @@ async def test_service_no_proxy_still_denies_every_unsafe_dns_answer(
 async def test_service_proxy_keeps_response_bounds(
     monkeypatch: pytest.MonkeyPatch, encoding: str, max_bytes: int
 ) -> None:
-    resolve_to(monkeypatch, "93.184.216.34")
     async with proxy_server(encoding=encoding) as (proxy, requests):
         monkeypatch.setenv("ALL_PROXY", proxy)
         async with open_http(EndpointPolicy(), timeout=2, max_bytes=max_bytes) as client:
@@ -113,29 +98,26 @@ async def test_service_proxy_keeps_response_bounds(
     assert len(requests) == 1
 
 
-async def test_service_proxy_keeps_literal_address_url_restrictions(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_service_proxy_keeps_run_literal_host_restrictions(monkeypatch: pytest.MonkeyPatch) -> None:
     async with proxy_server() as (proxy, requests):
         monkeypatch.setenv("ALL_PROXY", proxy)
-        async with open_http(EndpointPolicy(), timeout=2, max_bytes=10) as client:
+        async with open_http(
+            EndpointPolicy(configuration=RunConfiguration(allowed_hosts={"target.test"})), timeout=2, max_bytes=10
+        ) as client:
             with pytest.raises(EndpointPolicyError):
                 await client.get("http://169.254.169.254/metadata")
     assert not requests
 
 
 @pytest.mark.parametrize("proxied", [False, True])
-async def test_disabled_service_ssrf_uses_native_transport(
+async def test_service_uses_native_transport_without_pre_resolution(
     monkeypatch: pytest.MonkeyPatch, clean_environment: None, proxied: bool
 ) -> None:
     from a13n_service.settings import load_settings
 
-    monkeypatch.setenv("A13N_PROVIDERS__SSRF_PROTECTION", "false")
     monkeypatch.setenv("A13N_PROVIDERS__REQUIRE_HTTPS", "false")
     policy = load_settings().providers.endpoint_policy
 
-    async def unexpected_dns(*args, **kwargs):
-        pytest.fail("Disabled SSRF transport must not pre-resolve or pin destinations")
-
-    monkeypatch.setattr("a13n_service.infra.outbound.allowed_addresses", unexpected_dns)
     async with proxy_server() as (server, requests):
         if proxied:
             monkeypatch.setenv("HTTP_PROXY", server)
@@ -150,9 +132,9 @@ async def test_disabled_service_ssrf_uses_native_transport(
         assert requests[0].startswith(b"GET http://proxy-only.test/read HTTP/1.1")
 
 
-async def test_disabled_service_ssrf_keeps_response_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_service_direct_transport_keeps_response_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
     async with proxy_server() as (server, requests):
-        async with open_http(EndpointPolicy(ssrf_protection=False), timeout=2, max_bytes=3) as client:
+        async with open_http(EndpointPolicy(), timeout=2, max_bytes=3) as client:
             with pytest.raises(ServiceError) as error:
                 await client.get(server + "/read")
     assert error.value.code == "payload_too_large"

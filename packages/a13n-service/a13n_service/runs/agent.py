@@ -30,6 +30,7 @@ from a13n_harness import (
     HarnessModelCharacteristics,
     ModelRecoveryPolicy,
     RunBindings,
+    RunConfiguration,
     RunModelResolver,
     SubagentDefinition,
 )
@@ -213,7 +214,9 @@ async def resolve(
     return await node(revision.agent_id, revision.revision_id, config)
 
 
-async def open_models(stack: AsyncExitStack, runtime: Runtime, agent: ResolvedAgent) -> dict[str, Model]:
+async def open_models(
+    stack: AsyncExitStack, runtime: Runtime, agent: ResolvedAgent, *, configuration: RunConfiguration | None = None
+) -> dict[str, Model]:
     """Every model of the agent and its inline subagents, by model key, opened once and closed by `stack`."""
     opened: dict[str, Model] = {}
     for model in agent.models():
@@ -223,7 +226,7 @@ async def open_models(stack: AsyncExitStack, runtime: Runtime, agent: ResolvedAg
                     model,
                     registry=runtime.registry,
                     keys=runtime.keys,
-                    policy=runtime.endpoint_policy,
+                    policy=runtime.endpoint_policy.for_run(configuration or RunConfiguration()),
                     settings=runtime.settings.providers,
                 )
             )

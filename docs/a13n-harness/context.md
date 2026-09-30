@@ -19,6 +19,25 @@ An agent needs relevant input now and enough state to continue later. Harness ke
 
 A model context budget does not enable tools by itself. Select the corresponding Capability, then configure its thresholds. For continuation serialization and human decisions, use [State and Resume](state-and-resume.md).
 
+## Run configuration
+
+Use `RunConfiguration` for immutable caller-selected values shared by one Run's consumers, not mutable working state or Capability constructor settings:
+
+```python
+from a13n_harness import RunBindings, RunConfiguration
+
+configuration = RunConfiguration(
+    allowed_hosts={"api.example.com", "docs.example.com"},
+    extensions={"example.reader": {"images": True}},
+)
+bindings = RunBindings.embedded(configuration=configuration)
+# Pass bindings to executable.run(..., bindings=bindings).
+```
+
+Plugins and tools read `AgentContext.configuration` (`ctx.deps.configuration` in native tool context). A consumer explicitly validates its namespaced extension, for example `context.configuration.extensions.get("example.reader")`; nested values are detached, so editing them cannot mutate the accepted snapshot. Harness does not automatically merge extensions into Capabilities or register extension schemas.
+
+`allowed_hosts=None` is unrestricted; an empty set denies all. Matching is exact after hostname/IP normalization, with no wildcard, port, CIDR or subdomain matching. Call `configuration.authorize_url(url)` before each owned HTTP(S) request and redirect hop; it checks the declared hostname without DNS resolution or IP pinning. First-party Host transports opt in explicitly. Restrictive configuration uses Host Web tools rather than native search, avoids direct video URL forwarding and rejects opaque native Model/MCP routes. Native Model media URLs, including history and tool returns, are refused under restriction before SDK downloading or provider forwarding; materialize authorized content as `BinaryContent` instead. An injected Model resolver or media reader must enforce the snapshot for its own requests. Arbitrary shell and plugin networking requires deployment or Environment isolation. Hosts capture this value for durable recovery and async children; Harness reuses it across internal recovery and inline children.
+
 ## Context Composition
 
 Harness context features use one model-context coordinator, so each owner contributes a bounded block without directly rewriting another owner's messages.

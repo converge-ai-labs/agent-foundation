@@ -15,8 +15,7 @@ pytestmark = pytest.mark.anyio
 
 
 class _AllowEndpoint:
-    async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str:
-        assert resolve_dns
+    async def validate(self, endpoint: str) -> str:
         return endpoint.rstrip("/")
 
 

@@ -89,17 +89,26 @@ class MediaToolset:
         )
 
         try:
+            ctx.deps.configuration.authorize_url(url)
             request = MediaReadRequest(
                 url=url,
                 instructions=instructions,
                 max_image_bytes=self._configuration.max_image_bytes,
                 max_video_bytes=self._configuration.max_video_bytes,
                 max_audio_bytes=self._configuration.max_audio_bytes,
-                allow_direct_video_url=self._configuration.allow_direct_video_urls,
+                allow_direct_video_url=(
+                    self._configuration.allow_direct_video_urls and ctx.deps.configuration.allowed_hosts is None
+                ),
+                configuration=ctx.deps.configuration,
             )
             async with asyncio.timeout(self._configuration.deadline_seconds):
                 raw = await self._reader.read(request)
             resource = MediaResource.model_validate(raw)
+            ctx.deps.configuration.authorize_url(resource.source_url)
+            if resource.direct_url is not None:
+                ctx.deps.configuration.authorize_url(resource.direct_url)
+                if ctx.deps.configuration.allowed_hosts is not None:
+                    return _media_error("direct_media_url_disabled")
             for usage in resource.usage:
                 await ctx.deps.record_provider_usage(
                     usage,

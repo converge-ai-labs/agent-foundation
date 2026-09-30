@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from urllib.parse import unquote, urlsplit
 
 import httpx2
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.media_types import text_charset
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
@@ -51,14 +52,16 @@ def _text(entry: Offered, text: str) -> TextContent:
 _TRANSIENT_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 
 
-async def _fetch(runtime: Runtime, url: str, *, field: str) -> tuple[str, bytes]:
+async def _fetch(runtime: Runtime, url: str, *, field: str, configuration: RunConfiguration) -> tuple[str, bytes]:
     """The URL's `Content-Type` and content, fetched once. An address the policy refuses or a definitive answer
     fails the input at `field`; a network error or a transient answer is `unavailable`, so a later attempt fetches
     it again."""
     providers = runtime.settings.providers
     try:
         async with open_http(
-            runtime.endpoint_policy, timeout=providers.operation_seconds, max_bytes=providers.response_bytes
+            runtime.endpoint_policy.for_run(configuration),
+            timeout=providers.operation_seconds,
+            max_bytes=providers.response_bytes,
         ) as client:
             response = await client.get(url)
             if response.status_code in _TRANSIENT_STATUSES:
@@ -104,9 +107,9 @@ async def _asset(runtime: Runtime, principal: Principal, entry: Offered, asset_i
     )
 
 
-async def _url(runtime: Runtime, entry: Offered, url: str, *, field: str) -> Attached:
+async def _url(runtime: Runtime, entry: Offered, url: str, *, field: str, configuration: RunConfiguration) -> Attached:
     """The URL's content, named by the last segment of its path."""
-    content_type, data = await _fetch(runtime, url, field=field)
+    content_type, data = await _fetch(runtime, url, field=field, configuration=configuration)
 
     async def read() -> bytes:
         return data
@@ -124,7 +127,13 @@ async def _url(runtime: Runtime, entry: Offered, url: str, *, field: str) -> Att
 
 
 async def _message(
-    runtime: Runtime, principal: Principal, recipient: Recipient, environment: BoundEnvironment, entry: Offered
+    runtime: Runtime,
+    principal: Principal,
+    recipient: Recipient,
+    environment: BoundEnvironment,
+    entry: Offered,
+    *,
+    configuration: RunConfiguration,
 ) -> tuple[UserContent, ...]:
     parts: list[UserContent] = []
     for index, part in enumerate(MessagePayload.model_validate(entry.payload).content):
@@ -137,7 +146,7 @@ async def _message(
                 file = await _asset(runtime, principal, entry, part.asset_id, field=f"content.{index}.asset_id")
                 parts.append(await attachments.attach(recipient, environment, file))
             case UrlPart():
-                file = await _url(runtime, entry, part.url, field=f"content.{index}.url")
+                file = await _url(runtime, entry, part.url, field=f"content.{index}.url", configuration=configuration)
                 parts.append(await attachments.attach(recipient, environment, file))
     return tuple(parts)
 
@@ -148,10 +157,16 @@ def _child_result(entry: Offered) -> tuple[UserContent, ...]:
 
 
 async def content(
-    runtime: Runtime, principal: Principal, recipient: Recipient, environment: BoundEnvironment, entry: Offered
+    runtime: Runtime,
+    principal: Principal,
+    recipient: Recipient,
+    environment: BoundEnvironment,
+    entry: Offered,
+    *,
+    configuration: RunConfiguration,
 ) -> tuple[UserContent, ...]:
     """The entry's model-visible content, its files placed in the run's primary `environment`. Assets are read with
     the run principal's access."""
     if entry.kind == "message":
-        return await _message(runtime, principal, recipient, environment, entry)
+        return await _message(runtime, principal, recipient, environment, entry, configuration=configuration)
     return _child_result(entry)

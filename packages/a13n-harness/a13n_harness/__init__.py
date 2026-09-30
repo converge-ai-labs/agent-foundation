@@ -18,6 +18,7 @@ if TYPE_CHECKING:
         SubagentIdentityPolicy,
         derive_child_identity,
     )
+    from a13n_harness.configuration import RunConfiguration
     from a13n_harness.context import AgentContext, RunBindings
     from a13n_harness.environment import (
         Environment,
@@ -65,6 +66,7 @@ if TYPE_CHECKING:
     from a13n_harness.tools.deferred import DeferredToolResume
 
 _EXPORTS = {
+    "a13n_harness.configuration": ("RunConfiguration",),
     "a13n_harness.context": (
         "AgentContext",
         "RunBindings",

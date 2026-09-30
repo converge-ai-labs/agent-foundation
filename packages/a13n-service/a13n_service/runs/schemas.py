@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
+from a13n_harness.configuration import RunConfiguration
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -122,14 +123,16 @@ class RunOptions(_Frozen):
     """What a message may choose for the run it starts. A steer joins a run with the defaults or equal options."""
 
     labels: Labels = Field(default_factory=dict)
+    # Omission (or null) on a steer retains the accepted snapshot. A configuration object is explicit.
+    configuration: RunConfiguration | None = None
     max_usage: UsageLimit | None = None
     # Changes to the revision's configuration for this run only. Submission validates them; acceptance freezes
     # them into the run's options with their pins resolved, validating them again in any later transaction.
     overrides: AgentOverride | None = None
 
     def digest(self) -> str:
-        """What a steer's options must match: the options as submitted, since acceptance freezes the run's."""
-        return hashlib.sha256(canonical_json(self.model_dump(mode="json"))).hexdigest()
+        """Joining choices as submitted; Run configuration is compared separately to its accepted snapshot."""
+        return hashlib.sha256(canonical_json(self.model_dump(mode="json", exclude={"configuration"}))).hexdigest()
 
 
 def _normalize_mcp_headers(value: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:

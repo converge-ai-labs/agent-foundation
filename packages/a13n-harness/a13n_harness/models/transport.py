@@ -10,6 +10,8 @@ import httpx2
 from pydantic_ai.retries import AsyncHTTPX2TenacityTransport, RetryConfig, wait_retry_after
 from tenacity import retry_if_exception, stop_after_attempt, wait_exponential
 
+from a13n_harness.configuration import RunConfiguration
+
 DEFAULT_MODEL_HTTP_RETRY_STATUS_CODES = frozenset({429, 502, 503, 504})
 
 
@@ -49,6 +51,7 @@ def create_model_http_client(
     connect: int = 5,
     transport: httpx2.AsyncBaseTransport | None = None,
     retry: ModelHttpRetryConfig | None = DEFAULT_MODEL_HTTP_RETRY_CONFIG,
+    configuration: RunConfiguration | None = None,
 ) -> httpx2.AsyncClient:
     """Create a caller-owned provider client with transport retries and timeouts.
 
@@ -73,6 +76,7 @@ def create_model_http_client(
         timeout=httpx2.Timeout(timeout=timeout, connect=connect),
         transport=transport,
         retry=retry,
+        configuration=configuration or RunConfiguration(),
     )
 
 
@@ -85,10 +89,15 @@ class _ModelHttpClient(httpx2.AsyncClient):
         timeout: httpx2.Timeout,
         transport: httpx2.AsyncBaseTransport | None,
         retry: ModelHttpRetryConfig | None,
+        configuration: RunConfiguration,
     ) -> None:
         self._model_retry = retry
+
         # Passing a retry wrapper here would disable httpx2's environment proxies.
-        super().__init__(timeout=timeout, transport=transport)
+        async def authorize(request: httpx2.Request) -> None:
+            configuration.authorize_url(str(request.url))
+
+        super().__init__(timeout=timeout, transport=transport, event_hooks={"request": [authorize]})
 
     # Keep the dependency's private construction hooks localized here. Delegating
     # all arguments preserves its TLS, proxy and pool defaults without copying

@@ -19,7 +19,7 @@ from pydantic_ai.models.typesafe import TypeSafeModel
 
 
 class AllowEndpoints:
-    async def validate(self, endpoint: str, *, resolve_dns: bool) -> str:
+    async def validate(self, endpoint: str) -> str:
         return endpoint
 
 

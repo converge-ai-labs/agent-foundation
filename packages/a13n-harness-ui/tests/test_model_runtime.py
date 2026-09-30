@@ -182,7 +182,7 @@ async def test_jev_is_resolved_as_a_normal_api_key_model(monkeypatch, base_url):
     from a13n_harness_ui.model_adapters import PydanticAiModelAdapter
     from pydantic_ai.models.typesafe import TypeSafeModel
 
-    async def validate(self, endpoint, *, resolve_dns=True):
+    async def validate(self, endpoint):
         return endpoint
 
     monkeypatch.setattr(routes.EndpointPolicy, "validate", validate)

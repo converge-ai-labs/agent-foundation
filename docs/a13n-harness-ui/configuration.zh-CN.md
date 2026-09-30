@@ -102,7 +102,6 @@ tools:
   interaction_timeout_seconds: 120
   enable_codeact: true
 security:
-  web_ssrf_protection: false
   shell_review:
     enable: false
     risk_threshold: null
@@ -332,13 +331,15 @@ export no_proxy=localhost,127.0.0.1,::1
 
 配置的代理是可信出站基础设施，负责目标 DNS 解析和网络限制。Host Web 工具使用原生 HTTP 连接，不预解析目标域名或固定 IP，直连和 `NO_PROXY` 路径也一样。只通过代理访问外网的机器不再需要本地目标 DNS。HTTP(S) URL 校验、TLS 验证、重定向检查、超时和响应限制仍启用。代理请求失败不会回退为直连。
 
-`security.web_ssrf_protection` 默认为 `false`，允许 Web 工具访问本地和内网目标。要启用轻量目标检查，设置：
+`run_configuration` 为每次接受的根 Run 及其子 Run 选择同一不可变配置：
 
 ```yaml
-security:
-  web_ssrf_protection: true
+run_configuration:
+  allowed_hosts: [api.example.com, docs.example.com]
+  extensions:
+    example.reader: {images: true}
 ```
 
-启用后，Web 工具拒绝请求和重定向 URL 中的 `localhost`、`.localhost` 名称以及非公网 IP 字面量。检查不做 DNS 查询，因此不能阻止域名解析到内网地址或 DNS 重绑定。这不是网络隔离；更强的限制应由部署环境或代理实施。该设置随 root 和 child Run 捕获，修改只影响后续接受的 Run，不改变活动 Run。它不改变 Model、MCP 或 Environment 策略。
+省略 `allowed_hosts` 或设为 null 表示不限制目标；`[]` 拒绝全部目标。条目精确匹配规范化的域名或 IP 字面值，不支持通配符、子域匹配、端口或 CIDR。请包含所需 Model、Web 和 MCP 的全部域名。检查针对直连和代理请求 URL 声明的主机名，包括宿主拥有的重定向跳转；不解析 DNS，也不固定 IP。根与子 Run 的组合保留该快照，修改仅影响后续根 Run，不改变活跃或重建的 Run。API-key Model 客户端及 Host Web/MCP 支持此配置；无法检查内部传输的订阅 Model 会拒绝限制性配置。Extensions 是供显式接入的消费者使用的带命名空间 JSON 值，不会自动变成 Capability 构造参数。任意 shell 和可信插件的网络流量仍需部署或 Environment 网络隔离。
 
 明文回环 MCP 和明文本地/provider 私有 Envd 附加仍直连。HTTPS Envd 附加遵循代理变量。第三方 SDK 所有的传输保留 SDK 代理行为；守护进程发起的 Envd 配对和反向 WebSocket 连接，与 Python HTTP 附加客户端相互独立。

@@ -25,6 +25,7 @@ from a13n_harness.capabilities import (
     RecordMount,
     RecordToolKey,
 )
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.providers.memory import MemoryRecord, MemoryStoreError, Origin, RecordPage, RecordStore
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import select
@@ -211,6 +212,7 @@ async def record_memory_capability(
     principal: Principal,
     authority: ExecutionAuthority,
     tools: Collection[RecordToolKey],
+    configuration: RunConfiguration | None = None,
 ) -> AsyncIterator[RecordMemoryCapability | None]:
     """The capability over the planned record memories whose stores open, which stay open until the context
     exits; None when there is none."""
@@ -222,7 +224,9 @@ async def record_memory_capability(
             if (record := memory.record) is None:
                 continue
             try:
-                store = await stack.enter_async_context(open_record_store(runtime, record.provider, record.namespace))
+                store = await stack.enter_async_context(
+                    open_record_store(runtime, record.provider, record.namespace, configuration=configuration)
+                )
             except (ServiceError, ValueError, MemoryStoreError) as error:
                 logger.warning(
                     "Record memory skipped",

@@ -19,6 +19,25 @@ agent 既需要当前任务相关的输入，也需要足够的状态来继续�
 
 设置模型上下文预算不会自动启用工具。先选择相应的 Capability，再配置阈值。继续执行时的序列化和人工决策，参阅[状态与恢复](state-and-resume.md)。
 
+## Run 配置
+
+使用 `RunConfiguration` 保存调用方为一次 Run 选择、由多个消费者共享的不可变值，而不是可变工作状态或 Capability 构造参数：
+
+```python
+from a13n_harness import RunBindings, RunConfiguration
+
+configuration = RunConfiguration(
+    allowed_hosts={"api.example.com", "docs.example.com"},
+    extensions={"example.reader": {"images": True}},
+)
+bindings = RunBindings.embedded(configuration=configuration)
+# Pass bindings to executable.run(..., bindings=bindings).
+```
+
+插件和工具通过 `AgentContext.configuration` 读取配置（原生工具上下文中为 `ctx.deps.configuration`）。消费者显式验证自己的命名空间扩展，例如 `context.configuration.extensions.get("example.reader")`；嵌套值是独立副本，修改它们不会改变接受的快照。Harness 不会自动将 extensions 合并到 Capabilities，也不注册扩展 schema。
+
+`allowed_hosts=None` 不限制目标，空集合拒绝全部目标。域名/IP 规范化后精确匹配，不支持通配符、端口、CIDR 或子域匹配。在每个自有 HTTP(S) 请求及重定向跳转前调用 `configuration.authorize_url(url)`；它检查声明的主机名，不解析 DNS，也不固定 IP。第一方 Host 传输显式接入。限制性配置使用 Host Web 工具代替原生搜索，避免直接转发视频 URL，并拒绝无法检查的原生 Model/MCP 路由。限制性配置还会在 SDK 下载或 provider 转发前拒绝原生 Model 的媒体 URL，包括历史和工具返回中的 URL；请将已授权的内容物化为 `BinaryContent`。注入的 Model resolver 或媒体 reader 必须为自身请求执行该快照。任意 shell 和插件的网络流量仍需部署或 Environment 隔离。Host 为持久恢复和异步子 Run 捕获配置；Harness 在内部恢复及内联子 Run 中复用它。
+
 ## 组合上下文
 
 Harness 的上下文功能共用一个模型上下文协调器。每个功能只贡献一个大小受限的内容块，不直接改写其他功能的消息。

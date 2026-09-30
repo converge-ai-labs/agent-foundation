@@ -5888,6 +5888,36 @@ export interface components {
       workspace_id: string;
     };
     /**
+     * RunConfiguration
+     * @description An accepted snapshot, independent of Agent definitions and Capability configuration.
+     *
+     *     Consumers explicitly opt into namespaced extensions and own their validation.
+     *     Extension lookups return detached values, not mutable shared state.
+     */
+    "RunConfiguration-Input": {
+      /** Allowed Hosts */
+      allowed_hosts?: string[] | null;
+      /** Extensions */
+      extensions?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+    };
+    /**
+     * RunConfiguration
+     * @description An accepted snapshot, independent of Agent definitions and Capability configuration.
+     *
+     *     Consumers explicitly opt into namespaced extensions and own their validation.
+     *     Extension lookups return detached values, not mutable shared state.
+     */
+    "RunConfiguration-Output": {
+      /** Allowed Hosts */
+      allowed_hosts?: string[] | null;
+      /** Extensions */
+      extensions?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+    };
+    /**
      * RunItems
      * @description A run's committed display with the run it describes. Live output continues after `position`.
      */
@@ -5923,6 +5953,7 @@ export interface components {
      * @description What a message may choose for the run it starts. A steer joins a run with the defaults or equal options.
      */
     "RunOptions-Input": {
+      configuration?: components["schemas"]["RunConfiguration-Input"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -5935,6 +5966,7 @@ export interface components {
      * @description What a message may choose for the run it starts. A steer joins a run with the defaults or equal options.
      */
     "RunOptions-Output": {
+      configuration?: components["schemas"]["RunConfiguration-Output"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;

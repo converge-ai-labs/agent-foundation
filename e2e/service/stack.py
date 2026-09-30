@@ -124,7 +124,6 @@ active_key_id = "e2e"
 [encryption.keys]
 e2e = {json.dumps(stores.encryption_key)}
 [providers]
-private_cidrs = ["127.0.0.0/8"]
 require_https = false
 [worker]
 slots = {worker_slots}

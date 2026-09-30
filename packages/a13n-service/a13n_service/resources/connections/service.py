@@ -266,7 +266,7 @@ async def _validated_config(
         if connection_type != "mcp":
             raise invalid("config", "a connector type needs an app configuration")
         try:
-            url = await policy.validate(config.url, resolve_dns=False)
+            url = await policy.validate(config.url)
         except ValueError as error:
             raise invalid("config.url", str(error)) from None
         return config.model_copy(update={"url": url})

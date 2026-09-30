@@ -152,7 +152,7 @@ def settings(database: Database, redis_url: str, tmp_path: Path) -> Settings:
         redis={"url": redis_url},
         objects={"root": tmp_path / "objects"},
         encryption={"active_key_id": "test", "keys": {"test": base64.b64encode(b"k" * 32).decode()}},
-        providers={"private_cidrs": ["127.0.0.0/8"], "require_https": False},
+        providers={"require_https": False},
         # On a loaded machine an application's first connection can take longer than the default 2 s startup check.
         server={"readiness_timeout": 30},
     )

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import anyio
 from a13n_harness import EnvironmentMount as HarnessMount
+from a13n_harness import RunConfiguration
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, update
 
@@ -116,7 +117,9 @@ async def _inspect(
 
 
 @asynccontextmanager
-async def open_mounts(runtime: Runtime, prepared: Sequence[PreparedMount]) -> AsyncIterator[dict[str, HarnessMount]]:
+async def open_mounts(
+    runtime: Runtime, prepared: Sequence[PreparedMount], *, configuration: RunConfiguration | None = None
+) -> AsyncIterator[dict[str, HarnessMount]]:
     """Unentered adapters for `agent.stream(environments=..., default_environment=PRIMARY if present)`.
 
     The Harness enters and closes the adapters it binds; leaving closes the rest and marks the instances used.
@@ -126,7 +129,9 @@ async def open_mounts(runtime: Runtime, prepared: Sequence[PreparedMount]) -> As
         stack.push_async_callback(_mark_used, runtime, [item.target.environment_id for item in prepared])
         mounts: dict[str, HarnessMount] = {}
         for item in prepared:
-            adapter = await construct(runtime, item.target, operation_id=None, allow_create=False)
+            adapter = await construct(
+                runtime, item.target, operation_id=None, allow_create=False, configuration=configuration
+            )
             stack.push_async_callback(close, adapter)
             mounts[item.name] = HarnessMount(
                 adapter,

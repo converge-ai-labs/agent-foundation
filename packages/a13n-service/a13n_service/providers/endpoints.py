@@ -12,8 +12,6 @@ from a13n_harness.providers.environment.docker.provider import DockerConnectionC
 from a13n_harness.providers.environment.errors import EnvironmentProviderErrorCategory, provider_error
 from pydantic import BaseModel
 
-from a13n_service.infra.outbound import allowed_addresses
-
 # A remote Docker engine's scheme, and the one its API is spoken over.
 _REMOTE_ENGINE = {"tcp": "http", "https": "https"}
 
@@ -47,15 +45,8 @@ def dialed_endpoint(configuration: BaseModel) -> str | None:
 
 
 async def check_endpoint(type_: str, endpoint: str, policy: EndpointPolicy) -> None:
-    """Refuse an endpoint the operator's policy denies before dialing. When SSRF protection is enabled,
-    resolve the host once; resolution failures are transient unavailability, not policy denials."""
+    """Authorize the declared endpoint before dialing; native routing owns resolution."""
     try:
-        _, hostname, port = policy.validate_syntax(endpoint)
-        if not policy.ssrf_protection:
-            return
-        try:
-            await allowed_addresses(policy, hostname, port)
-        except OSError:
-            raise provider_error(type_, "provider_unavailable", EnvironmentProviderErrorCategory.UNAVAILABLE) from None
+        await policy.validate(endpoint)
     except EndpointPolicyError:
         raise provider_error(type_, "provider_endpoint_denied", EnvironmentProviderErrorCategory.DENIED) from None

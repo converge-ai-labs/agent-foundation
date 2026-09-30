@@ -12,7 +12,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
 
-from a13n_harness import AgentContext, RunBindings
+from a13n_harness import AgentContext, RunBindings, RunConfiguration
 from a13n_harness.capabilities import FileToolKey, MemoryCursors, RecordToolKey
 from a13n_harness.capabilities.web import WebBinding
 from pydantic_ai.capabilities import AbstractCapability
@@ -148,6 +148,7 @@ async def open_host(
     principal: Principal,
     authority: ExecutionAuthority,
     cursors: MemoryCursors,
+    configuration: RunConfiguration,
 ) -> AsyncIterator[Host]:
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
     passes `check`. The file memory records the context it delivers in `cursors`."""
@@ -163,12 +164,14 @@ async def open_host(
                     redis=runtime.redis,
                     keys=runtime.keys,
                     registry=runtime.registry,
-                    policy=runtime.endpoint_policy,
+                    policy=runtime.endpoint_policy.for_run(configuration),
                     settings=runtime.settings.providers,
                 )
             )
             if parts.web is not None:
-                webs[revision_id] = await stack.enter_async_context(open_web(parts.web, check, runtime=runtime))
+                webs[revision_id] = await stack.enter_async_context(
+                    open_web(parts.web, check, runtime=runtime, configuration=configuration)
+                )
         files = file_memory(
             runtime.storage,
             runtime.settings.memory,
@@ -181,7 +184,13 @@ async def open_host(
         )
         records = await stack.enter_async_context(
             record_memory_capability(
-                runtime, plan.memories, lease=lease, principal=principal, authority=authority, tools=plan.record_tools
+                runtime,
+                plan.memories,
+                lease=lease,
+                principal=principal,
+                authority=authority,
+                tools=plan.record_tools,
+                configuration=configuration,
             )
         )
         memory = tuple(capability for capability in (files, records) if capability is not None)

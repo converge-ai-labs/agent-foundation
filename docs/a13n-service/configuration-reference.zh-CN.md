@@ -193,8 +193,6 @@ description: 全部 Service 设置的环境变量、类型、范围和默认值�
 
 | 设置                               | 环境变量                                 | 类型 / 选项 | 约束与默认值                                       |
 | ---------------------------------- | ---------------------------------------- | ----------- | -------------------------------------------------- |
-| `providers.private_domains`        | `A13N_PROVIDERS__PRIVATE_DOMAINS`        | 字符串数组  | default=[]                                         |
-| `providers.private_cidrs`          | `A13N_PROVIDERS__PRIVATE_CIDRS`          | 字符串数组  | default=[]                                         |
 | `providers.http_origins`           | `A13N_PROVIDERS__HTTP_ORIGINS`           | 字符串数组  | default=[]                                         |
 | `providers.require_https`          | `A13N_PROVIDERS__REQUIRE_HTTPS`          | 布尔值      | default=true                                       |
 | `providers.return_urls`            | `A13N_PROVIDERS__RETURN_URLS`            | 字符串数组  | default=[]                                         |

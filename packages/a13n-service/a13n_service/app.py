@@ -163,7 +163,7 @@ async def open_runtime(
     telemetry = config.telemetry
     instrumentation = await stack.enter_async_context(
         open_instrumentation(
-            telemetry.trace_config(ssrf_protection=config.providers.ssrf_protection) if executes else None,
+            telemetry.trace_config() if executes else None,
             metered=telemetry.metrics_port is not None,
             content=HarnessTraceContent(telemetry.trace_content),
         )
@@ -184,7 +184,7 @@ async def open_runtime(
         admission=distribution.admission,
         instrumentation=instrumentation,
         # Backends hold no connection between queries, so the query side needs no lifecycle.
-        traces=telemetry.trace_config(ssrf_protection=config.providers.ssrf_protection),
+        traces=telemetry.trace_config(),
     )
 
 

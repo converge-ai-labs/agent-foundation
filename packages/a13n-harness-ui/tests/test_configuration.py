@@ -594,15 +594,16 @@ def test_proxy_rejects_duplicate_membership_and_copies_lists() -> None:
 @pytest.mark.parametrize(
     "setting,expected",
     [
-        ("", False),
-        ("security:\n  web_ssrf_protection: false\n", False),
-        ("security:\n  web_ssrf_protection: true\n", True),
+        ("", None),
+        ("run_configuration:\n  allowed_hosts: null\n", None),
+        ("run_configuration:\n  allowed_hosts: []\n", frozenset()),
+        ("run_configuration:\n  allowed_hosts: [EXAMPLE.com.]\n", frozenset({"example.com"})),
     ],
 )
-async def test_web_ssrf_protection_configuration_round_trips(tmp_path: Path, setting: str, expected: bool) -> None:
+async def test_run_configuration_round_trips(tmp_path: Path, setting: str, expected) -> None:
     path = _write_source_tree(tmp_path, root='schema_version: "1"\n' + setting)
     original = path.read_bytes()
     loaded = await load_harness_ui_configuration(path)
-    assert loaded.document.security.web_ssrf_protection is expected
+    assert loaded.document.run_configuration.allowed_hosts == expected
     assert type(loaded).model_validate_json(loaded.model_dump_json()) == loaded
     assert path.read_bytes() == original

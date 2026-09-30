@@ -102,7 +102,6 @@ tools:
   interaction_timeout_seconds: 120
   enable_codeact: true
 security:
-  web_ssrf_protection: false
   shell_review:
     enable: false
     risk_threshold: null
@@ -332,13 +331,15 @@ Uppercase forms and `ALL_PROXY` are supported. Selection and bypass matching fol
 
 The proxy you configure is trusted outbound infrastructure and owns destination DNS and network restrictions. Host Web tools use native HTTP connections and never pre-resolve destination hostnames or pin IP addresses, including on direct and `NO_PROXY` routes. This allows proxy-only hosts to work without local destination DNS. HTTP(S) URL validation, TLS verification, redirect checks, deadlines and response limits remain enabled. A failed proxy request does not fall back to direct.
 
-`security.web_ssrf_protection` defaults to `false`, allowing local and private Web destinations. To opt into a lightweight destination guard, set:
+`run_configuration` selects one immutable configuration for each accepted root Run and its children:
 
 ```yaml
-security:
-  web_ssrf_protection: true
+run_configuration:
+  allowed_hosts: [api.example.com, docs.example.com]
+  extensions:
+    example.reader: {images: true}
 ```
 
-When enabled, Web tools reject `localhost`, `.localhost` names and non-public literal IP addresses in request and redirect URLs. The guard never performs DNS lookups: it does not block domains that resolve to private addresses or prevent DNS rebinding. It is not network isolation; enforce stronger restrictions in your deployment or proxy. The setting is captured for root and child Runs; edits affect later accepted Runs, not active ones. It does not change Model, MCP or Environment policies.
+Omit `allowed_hosts` or set it to null for unrestricted destinations; `[]` denies all. Entries match exact normalized hostnames or IP literals, without wildcards, subdomain matching, ports or CIDRs. Include every required Model, Web and MCP hostname. The check uses declared URL hostnames on direct and proxy routes, including owned redirect hops; it never resolves DNS or pins IPs. Root and child compositions retain the snapshot; edits affect later root Runs, not active or reconstructed ones. API-key Model clients and Host Web/MCP support it; opaque subscription Model transports reject restrictive configurations. Extensions are namespaced JSON values for explicitly opting-in consumers, not automatic Capability constructor settings. Arbitrary shell and trusted plugin traffic require deployment or Environment network isolation.
 
 Plaintext loopback MCP and plaintext local/provider-private Envd attachments stay direct. HTTPS Envd attachments honor proxy variables. Third-party SDK-owned transports retain their SDK's proxy behavior; daemon-initiated Envd pairing and reverse WebSocket connections are separate from the Python HTTP attachment client.

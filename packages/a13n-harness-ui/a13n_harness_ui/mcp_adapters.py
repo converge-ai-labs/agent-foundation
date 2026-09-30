@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import os
 import re
+from functools import partial
 from pathlib import Path
 
 import httpx2
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
 from anyio import to_thread
@@ -66,7 +68,9 @@ class HarnessUiMCP(MCP[AgentContext]):
             return existing
 
         client_transport, effective_recipe, init_timeout = await prepare_mcp_transport(
-            self._recipe, self._configuration_root
+            self._recipe,
+            self._configuration_root,
+            configuration=ctx.deps.configuration,
         )
         if self._apps is not None:
             connection = await self._apps.acquire(
@@ -91,14 +95,21 @@ class HarnessUiMCP(MCP[AgentContext]):
 
 
 async def prepare_mcp_transport(
-    recipe: ResolvedMcpRecipe, configuration_root: Path | None
+    recipe: ResolvedMcpRecipe,
+    configuration_root: Path | None,
+    *,
+    configuration: RunConfiguration | None = None,
 ) -> tuple[ClientTransport, str, int]:
     """Resolve current credentials for a fresh Run or App operation; never persist the comparison value."""
     transport = recipe.transport
+    configuration = configuration or RunConfiguration()
     if isinstance(transport, McpRemoteTransport):
+        configuration.authorize_url(transport.url)
         values = await resolve_mcp_values(transport.headers, configuration_root)
         client_transport = StreamableHttpTransport(
-            transport.url, headers=values or None, httpx_client_factory=_no_redirect_client
+            transport.url,
+            headers=values or None,
+            httpx_client_factory=partial(_no_redirect_client, configuration=configuration),
         )
         init_timeout = 5
     elif isinstance(transport, McpCommandTransport):
@@ -110,7 +121,7 @@ async def prepare_mcp_transport(
     else:
         raise TypeError("unsupported MCP transport")
     # Selection provenance does not change the live server binding.
-    return client_transport, repr((transport.model_dump(), values)), init_timeout
+    return client_transport, repr((transport.model_dump(), values, configuration.model_dump(mode="json"))), init_timeout
 
 
 async def resolve_mcp_values(
@@ -160,14 +171,21 @@ def _no_redirect_client(
     auth: httpx2.Auth | None = None,
     *,
     follow_redirects: bool = False,
+    configuration: RunConfiguration | None = None,
 ) -> httpx2.AsyncClient:
     """Accept the transport factory contract while retaining Host redirect policy."""
     del follow_redirects
+    configuration = configuration or RunConfiguration()
+
+    async def authorize(request: httpx2.Request) -> None:
+        configuration.authorize_url(str(request.url))
+
     return httpx2.AsyncClient(
         headers=headers,
         timeout=timeout,
         auth=auth,
         follow_redirects=False,
+        event_hooks={"request": [authorize]},
         # Configuration allows plaintext only to literal loopback. Keep that
         # request local even when the process has an HTTP/ALL proxy configured.
         mounts={"http://": httpx2.AsyncHTTPTransport(trust_env=False)},

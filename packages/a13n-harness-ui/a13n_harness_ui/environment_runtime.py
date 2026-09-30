@@ -456,6 +456,8 @@ class EnvironmentRunService:
                     )
                 )
             for binding in composition.environment_bindings:
+                if isinstance(binding.device.transport, HttpDeviceTransport):
+                    composition.run_configuration.authorize_url(binding.device.transport.configuration.endpoint)
                 mounts.append(await self._prepare_device_mount(composition.thread_id, binding))
             for index, ((_plugin_id, root, _skills), (_layout_id, mount_path)) in enumerate(
                 zip(content_plugins, path_layout.content_plugin_roots, strict=True),

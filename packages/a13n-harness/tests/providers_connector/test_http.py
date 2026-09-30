@@ -12,7 +12,7 @@ pytestmark = pytest.mark.anyio
 @pytest.mark.parametrize("path", ["@127.0.0.1/private", "//other.example/private", "/\\other", "/path#fragment"])
 async def test_malformed_path_never_dispatches(path):
     class Policy:
-        async def validate(self, endpoint, *, resolve_dns):
+        async def validate(self, endpoint):
             pytest.fail("Malformed path reached policy")
 
     def send(request):
@@ -33,7 +33,7 @@ async def test_final_url_query_validated_and_redirect_not_followed():
     sent = []
 
     class Policy:
-        async def validate(self, endpoint, *, resolve_dns):
+        async def validate(self, endpoint):
             validated.append(endpoint)
             return endpoint
 
@@ -59,7 +59,7 @@ async def test_final_url_query_validated_and_redirect_not_followed():
 
 async def test_policy_resolution_is_inside_budget_without_unknown_write():
     class Policy:
-        async def validate(self, endpoint, *, resolve_dns):
+        async def validate(self, endpoint):
             await anyio.sleep_forever()
 
     def send(request):
@@ -75,25 +75,16 @@ async def test_policy_resolution_is_inside_budget_without_unknown_write():
     assert not error.value.outcome_unknown
 
 
-async def test_dns_worker_does_not_extend_transport_deadline(monkeypatch):
-    from threading import Event
-
+async def test_connector_hostname_denial_happens_before_dispatch():
+    from a13n_harness import RunConfiguration
     from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
-    release = Event()
+    def send(request):
+        pytest.fail("Denied hostname must not be dispatched")
 
-    def resolve(*args):
-        release.wait(2)
-        return ("93.184.216.34",)
-
-    monkeypatch.setattr("a13n_harness.providers.endpoint_policy._resolve_addresses", resolve)
-    async with httpx2.AsyncClient(
-        transport=httpx2.MockTransport(lambda request: pytest.fail("DNS timeout dispatched"))
-    ) as client:
-        transport = ConnectorHttpClient(client, EndpointPolicy(), response_max_bytes=128, timeout_seconds=0.01)
-        try:
-            with anyio.fail_after(0.2), pytest.raises(ConnectorProviderError) as error:
-                await transport.request("POST", endpoint="https://approved.example", path="/write", write=True)
-            assert not error.value.outcome_unknown
-        finally:
-            release.set()
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(send)) as client:
+        policy = EndpointPolicy(configuration=RunConfiguration(allowed_hosts=set()))
+        transport = ConnectorHttpClient(client, policy, response_max_bytes=128, timeout_seconds=0.1)
+        with pytest.raises(ConnectorProviderError) as error:
+            await transport.request("POST", endpoint="https://denied.test", path="/write", write=True)
+        assert not error.value.outcome_unknown

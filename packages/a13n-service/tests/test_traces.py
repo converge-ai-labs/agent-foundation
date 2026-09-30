@@ -633,9 +633,8 @@ async def test_slow_or_unconfigured_backends_are_unavailable(api: SimpleNamespac
 
 
 @pytest.mark.parametrize("provider", ["langfuse", "logfire"])
-@pytest.mark.parametrize("enabled", [False, True])
-async def test_trace_queries_honor_operator_ssrf_switch(
-    backend: Backend, monkeypatch: pytest.MonkeyPatch, provider: str, enabled: bool
+async def test_trace_queries_use_host_owned_endpoint_and_proxy(
+    backend: Backend, monkeypatch: pytest.MonkeyPatch, provider: str
 ) -> None:
     from a13n_service.providers.traces import SpanQuery
     from a13n_service.settings import Telemetry
@@ -650,7 +649,7 @@ async def test_trace_queries_honor_operator_ssrf_switch(
             "logfire_read_token": "read-test",
         }
     )
-    configured = telemetry.trace_config(ssrf_protection=enabled)
+    configured = telemetry.trace_config()
     assert configured is not None
     monkeypatch.setenv("HTTP_PROXY", backend.url)
     monkeypatch.delenv("http_proxy", raising=False)
@@ -663,11 +662,6 @@ async def test_trace_queries_honor_operator_ssrf_switch(
         started_before=datetime(2026, 9, 2, tzinfo=UTC),
         limit=10,
     )
-    if enabled:
-        with pytest.raises(ServiceError):
-            await configured.query(query)
-        assert not backend.requests
-    else:
-        page = await configured.query(query)
-        assert page.items == []
-        assert len(backend.requests) == 1
+    page = await configured.query(query)
+    assert page.items == []
+    assert len(backend.requests) == 1

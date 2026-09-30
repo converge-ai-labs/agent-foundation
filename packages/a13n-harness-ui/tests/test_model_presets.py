@@ -24,11 +24,6 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
     monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
     endpoint = "https://example.invalid/custom/v1"
     model_cfg = {} if provider.transport == "xai" else {"base_url": endpoint}
-    import ipaddress
-
-    monkeypatch.setattr(
-        "a13n_harness.providers.endpoint_policy._resolve_addresses", lambda *_: (ipaddress.ip_address("93.184.216.34"),)
-    )
     model_name = "openai/test-model" if provider.route == "openrouter" else "test-model"
     recipe = ResolvedModelRecipe(
         model_id="model-test",
@@ -323,12 +318,6 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
         return httpx.Response(200, json=body)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)):
-        import ipaddress
-
-        monkeypatch.setattr(
-            "a13n_harness.providers.endpoint_policy._resolve_addresses",
-            lambda *_: (ipaddress.ip_address("93.184.216.34"),),
-        )
 
         async def native_request(_transport, request):
             return respond(request)
@@ -458,16 +447,6 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
         return httpx.Response(200, text=content, headers={"content-type": "text/event-stream"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)):
-        import ipaddress
-
-        monkeypatch.setattr(
-            "a13n_harness.providers.endpoint_policy._resolve_addresses",
-            lambda *_: (ipaddress.ip_address("93.184.216.34"),),
-        )
-        monkeypatch.setattr(
-            "a13n_harness.providers.endpoint_policy._resolve_addresses",
-            lambda *_: (ipaddress.ip_address("93.184.216.34"),),
-        )
 
         async def native_request(_transport, request):
             return respond(request)

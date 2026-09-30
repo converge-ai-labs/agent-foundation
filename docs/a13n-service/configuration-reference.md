@@ -194,9 +194,6 @@ The complete machine-readable validation schema, including named enum/union defi
 
 | Setting                            | Environment variable                     | Type / choices  | Constraints and default                            |
 | ---------------------------------- | ---------------------------------------- | --------------- | -------------------------------------------------- |
-| `providers.ssrf_protection`        | `A13N_PROVIDERS__SSRF_PROTECTION`        | boolean         | default=true                                       |
-| `providers.private_domains`        | `A13N_PROVIDERS__PRIVATE_DOMAINS`        | array of string | default=[]                                         |
-| `providers.private_cidrs`          | `A13N_PROVIDERS__PRIVATE_CIDRS`          | array of string | default=[]                                         |
 | `providers.http_origins`           | `A13N_PROVIDERS__HTTP_ORIGINS`           | array of string | default=[]                                         |
 | `providers.require_https`          | `A13N_PROVIDERS__REQUIRE_HTTPS`          | boolean         | default=true                                       |
 | `providers.return_urls`            | `A13N_PROVIDERS__RETURN_URLS`            | array of string | default=[]                                         |

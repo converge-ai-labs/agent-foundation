@@ -9,6 +9,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
+from a13n_harness import RunConfiguration
 
 # Composition initializes the existing MCP/configuration import graph.
 from a13n_harness_ui import composition  # noqa: F401
@@ -152,13 +153,18 @@ async def test_web_https_proxy_does_not_require_destination_dns(monkeypatch: pyt
             max_stream_chunk_bytes=1024,
         )
         with pytest.raises(httpx2.ProxyError):
-            await HttpxWebClient().request(request, policy=HttpWebPolicy(ssrf_protection=guard))
+            await HttpxWebClient().request(
+                request,
+                policy=HttpWebPolicy(
+                    RunConfiguration(allowed_hosts={"proxy-only.test", "public.test"} if guard else None)
+                ),
+            )
     assert len(requests) == 1
     assert requests[0].startswith(b"CONNECT proxy-only.test:443 HTTP/1.1")
 
 
 @pytest.mark.parametrize("guard", [False, True])
-async def test_web_guard_checks_each_redirect_without_dns(monkeypatch: pytest.MonkeyPatch, guard: bool) -> None:
+async def test_web_allowed_hosts_check_each_redirect_without_dns(monkeypatch: pytest.MonkeyPatch, guard: bool) -> None:
     from a13n_harness.capabilities import WebProviderError, WebRequest
     from a13n_harness_ui.capability_runtime import HttpWebPolicy, HttpxWebClient
 
@@ -187,7 +193,7 @@ async def test_web_guard_checks_each_redirect_without_dns(monkeypatch: pytest.Mo
         max_stream_chunk_bytes=1024,
     )
     client = HttpxWebClient()
-    policy = HttpWebPolicy(ssrf_protection=guard)
+    policy = HttpWebPolicy(RunConfiguration(allowed_hosts={"proxy-only.test", "public.test"} if guard else None))
     if guard:
         with pytest.raises(WebProviderError) as error:
             await client.request(request, policy=policy)

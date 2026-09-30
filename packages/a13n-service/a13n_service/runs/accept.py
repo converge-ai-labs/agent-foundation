@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Literal
 
+from a13n_harness.configuration import RunConfiguration
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import exists, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -122,7 +123,9 @@ class Source:
             authority=ExecutionAuthority.model_validate(entry.authority),
             revision=revision,
             revision_selection="pinned" if entry.agent_revision_id else "default",
-            options=options.model_copy(update={"overrides": overrides}),
+            options=options.model_copy(
+                update={"overrides": overrides, "configuration": options.configuration or RunConfiguration()}
+            ),
             options_digest=options.digest(),
             entry=entry,
         )

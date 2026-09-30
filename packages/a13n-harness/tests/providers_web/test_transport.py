@@ -127,7 +127,7 @@ async def test_generated_query_credentials_and_jina_paths_retain_the_actual_dest
     class Policy(PublicEndpointPolicy):
         async def validate(self, endpoint):
             validated.append(endpoint)
-            return await super().validate(endpoint, resolve_dns=False)
+            return await super().validate(endpoint)
 
     # The configurable endpoint contract still rejects credential-bearing queries.
     with pytest.raises(EndpointPolicyError, match="sensitive"):

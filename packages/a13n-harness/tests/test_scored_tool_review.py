@@ -17,7 +17,7 @@ from .test_tool_review import _build
 pytestmark = pytest.mark.anyio
 
 
-async def _allow_endpoint(self, endpoint, *, resolve_dns=True):
+async def _allow_endpoint(self, endpoint):
     return endpoint
 
 
