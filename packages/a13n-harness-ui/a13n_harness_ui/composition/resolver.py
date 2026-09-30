@@ -277,6 +277,7 @@ class AgentCompositionResolver:
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
             memory_enabled=source.document.memory.enabled,
+            web_ssrf_protection=source.document.security.web_ssrf_protection,
             role=selection.role,
             coordinator_thread_id=selection.coordinator_thread_id,
             project_roots=selection.local_roots,

@@ -589,3 +589,20 @@ def test_proxy_rejects_duplicate_membership_and_copies_lists() -> None:
     proxy = AgentToolProxy.model_validate({"groups": {"knowledge": group}})
     group["mcp_servers"].clear()
     assert proxy.groups["knowledge"].mcp_servers == ("mcp-docs",)
+
+
+@pytest.mark.parametrize(
+    "setting,expected",
+    [
+        ("", False),
+        ("security:\n  web_ssrf_protection: false\n", False),
+        ("security:\n  web_ssrf_protection: true\n", True),
+    ],
+)
+async def test_web_ssrf_protection_configuration_round_trips(tmp_path: Path, setting: str, expected: bool) -> None:
+    path = _write_source_tree(tmp_path, root='schema_version: "1"\n' + setting)
+    original = path.read_bytes()
+    loaded = await load_harness_ui_configuration(path)
+    assert loaded.document.security.web_ssrf_protection is expected
+    assert type(loaded).model_validate_json(loaded.model_dump_json()) == loaded
+    assert path.read_bytes() == original

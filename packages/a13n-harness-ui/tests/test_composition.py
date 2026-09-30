@@ -1691,3 +1691,23 @@ async def test_reasoning_mode_capture_preserves_model_and_independent_children(t
     assert source.models["model-primary"].settings["openai_reasoning_mode"] == "pro"
     assert model.read_bytes() == original_bytes
     assert captured_configuration("capture", composition).agent.reasoning_mode == (mode or "pro")
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_web_ssrf_protection_is_captured_for_root_and_children(tmp_path: Path, enabled: bool) -> None:
+    path = _write_source(tmp_path)
+    with path.open("a") as stream:
+        stream.write(f"security:\n  web_ssrf_protection: {str(enabled).lower()}\n")
+    source = await load_harness_ui_configuration(path)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    captured = type(composition).model_validate_json(composition.model_dump_json())
+    assert captured.web_ssrf_protection is enabled
+    reconstructor = AgentReconstructor(_catalog())
+    root = reconstructor.reconstruct(captured, subagent_operator=_UnusedOperator())
+    child_composition = captured.model_copy(update={"root": captured.root.children[0].definition})
+    child = reconstructor.reconstruct(child_composition, subagent_operator=_UnusedOperator())
+    assert root.web_ssrf_protection is enabled
+    assert child.web_ssrf_protection is enabled
+    legacy = captured.model_dump(mode="json")
+    legacy.pop("web_ssrf_protection", None)
+    assert not type(captured).model_validate(legacy).web_ssrf_protection

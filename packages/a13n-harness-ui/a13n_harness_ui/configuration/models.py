@@ -194,6 +194,7 @@ class ShellReviewConfiguration(ConfigurationModel):
 
 class SecurityConfiguration(ConfigurationModel):
     shell_review: ShellReviewConfiguration = Field(default_factory=ShellReviewConfiguration)
+    web_ssrf_protection: bool = False
 
 
 class SidekickConfiguration(ConfigurationModel):

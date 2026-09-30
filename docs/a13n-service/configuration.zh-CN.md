@@ -110,8 +110,16 @@ Service 对 provider、远程 MCP 服务器、OAuth 服务器和 webhook 端点�
 
 - URL 使用 `http` 或 `https`，不包含用户信息、片段或类似凭据的查询参数。
 - `providers.require_https = true`（默认值）时，拒绝明文 HTTP，除非源与 `providers.http_origins` 中的条目完全一致。
-- 默认拒绝私有地址、回环和链路本地目标，除非主机匹配 `providers.private_domains`（包含子域），或解析地址位于 `providers.private_cidrs` 中。云元数据地址始终拒绝。
-- 宿主拥有的直接 HTTP 连接会在 DNS 解析后检查地址，并且只连接检查通过的地址。不跟随重定向，拒绝压缩响应，响应体受 `providers.response_bytes` 限制。
+- `providers.ssrf_protection = true`（默认值）时，拒绝私有地址、回环和链路本地目标，除非主机匹配 `providers.private_domains`（包含子域），或解析地址位于 `providers.private_cidrs` 中。云元数据地址始终拒绝。
+- 启用 SSRF 防护时，宿主拥有的直接 HTTP 连接会在 DNS 解析后检查地址，并且只连接检查通过的地址。不跟随重定向，拒绝压缩响应，响应体受 `providers.response_bytes` 限制。
+
+在可信部署中，要关闭应用层 SSRF 限制，在每个受影响的 Service 进程中设置并重启：
+
+```bash
+export A13N_PROVIDERS__SSRF_PROTECTION=false
+```
+
+等价的 TOML 设置是 `providers.ssrf_protection = false`。关闭后不再做目标 DNS 预检查、IP 限制（包括云元数据拦截）或自定义直连 IP 固定。该开关覆盖 provider 和 Web 调用、连接和资源校验、Environment 端点预检查及 trace 查询。URL 和凭据规则、`require_https`、TLS 验证、重定向凭据边界、超时和响应限制仍然有效。原生直连仍需要 HTTP 库或 SDK 在连接时解析域名。仅在部署环境或可信代理负责目标限制时关闭；租户不能控制这个开关。
 
 ### 出站代理
 
@@ -125,7 +133,7 @@ export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
 
 支持大写形式和 `ALL_PROXY`；选择及绕过匹配遵循 `httpx2`。HTTP 代理 URL 可以通过 CONNECT 转发 HTTPS 流量。模型、Remote MCP/OAuth、connector、记录型记忆、web 请求、模型目录、webhook 和宿主 HTTP 客户端的其他调用方都使用这些路由。
 
-**部署运维人员的代理属于可信出站基础设施。** 请求 URL 校验和 TLS 验证仍启用，但最终 DNS 和目标网络限制由代理负责。应用层 DNS/IP 固定和最终地址拦截仅适用于直接连接，包括 `NO_PROXY`，不适用于代理发出的连接。按需在代理上配置限制。已有端点预检查仍可能要求本地 DNS。代理请求失败不会自动回退为直连。
+**部署运维人员的代理属于可信出站基础设施。** 请求 URL 校验和 TLS 验证仍启用，但最终 DNS 和目标网络限制由代理负责。启用 SSRF 防护时，应用层 DNS/IP 固定和最终地址拦截仅适用于直接连接，包括 `NO_PROXY`，不适用于代理发出的连接。按需在代理上配置限制。启用防护时，已有端点预检查仍可能要求本地 DNS；关闭后不再有该前置要求。代理请求失败不会自动回退为直连。
 
 HTTPS Envd 挂载也使用环境代理；明文本地或 provider 私有 Envd 链接保持直连。其他 SDK 管理的环境和存储传输保持各自代理行为。这不会改变 Envd 受控出站 broker 或其执行隔离策略。
 

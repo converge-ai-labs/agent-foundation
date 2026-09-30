@@ -175,6 +175,7 @@ class ResolvedRunComposition(CompositionModel):
     memory_organization: bool = Field(default=False, exclude_if=lambda value: not value)
     # Missing in old captures means memory was not attached to that Run.
     memory_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
+    web_ssrf_protection: bool = Field(default=False, exclude_if=lambda value: not value)
     webui_sidekick: SidekickConfiguration | None = None
     role: Literal["ordinary", "coordinator", "worker"] | None = None
     coordinator_thread_id: str | None = None

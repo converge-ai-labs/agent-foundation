@@ -102,6 +102,7 @@ tools:
   interaction_timeout_seconds: 120
   enable_codeact: true
 security:
+  web_ssrf_protection: false
   shell_review:
     enable: false
     risk_threshold: null
@@ -329,6 +330,15 @@ export no_proxy=localhost,127.0.0.1,::1
 
 Uppercase forms and `ALL_PROXY` are supported. Selection and bypass matching follow `httpx2`. Host-owned Web search/scrape/fetch/download requests, remote HTTPS MCP connections and update checks honor these variables, alongside the [Model HTTP client](../a13n-harness/models.md#outbound-http-proxies). Restart the process after changing its environment. When running in a container, the proxy address must be reachable from that container.
 
-The proxy you configure is trusted outbound infrastructure. URL validation, local DNS prechecks, TLS verification, redirect checks and response limits remain in effect, but the proxy owns final DNS resolution and destination network restrictions. Web requests that connect directly, including `NO_PROXY` bypasses, retain their existing IP checks and pinning. There is no custom IP-based CONNECT protocol or fallback to direct when the proxy fails.
+The proxy you configure is trusted outbound infrastructure and owns destination DNS and network restrictions. Host Web tools use native HTTP connections and never pre-resolve destination hostnames or pin IP addresses, including on direct and `NO_PROXY` routes. This allows proxy-only hosts to work without local destination DNS. HTTP(S) URL validation, TLS verification, redirect checks, deadlines and response limits remain enabled. A failed proxy request does not fall back to direct.
+
+`security.web_ssrf_protection` defaults to `false`, allowing local and private Web destinations. To opt into a lightweight destination guard, set:
+
+```yaml
+security:
+  web_ssrf_protection: true
+```
+
+When enabled, Web tools reject `localhost`, `.localhost` names and non-public literal IP addresses in request and redirect URLs. The guard never performs DNS lookups: it does not block domains that resolve to private addresses or prevent DNS rebinding. It is not network isolation; enforce stronger restrictions in your deployment or proxy. The setting is captured for root and child Runs; edits affect later accepted Runs, not active ones. It does not change Model, MCP or Environment policies.
 
 Plaintext loopback MCP and plaintext local/provider-private Envd attachments stay direct. HTTPS Envd attachments honor proxy variables. Third-party SDK-owned transports retain their SDK's proxy behavior; daemon-initiated Envd pairing and reverse WebSocket connections are separate from the Python HTTP attachment client.

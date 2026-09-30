@@ -120,3 +120,40 @@ async def test_service_proxy_keeps_literal_address_url_restrictions(monkeypatch:
             with pytest.raises(EndpointPolicyError):
                 await client.get("http://169.254.169.254/metadata")
     assert not requests
+
+
+@pytest.mark.parametrize("proxied", [False, True])
+async def test_disabled_service_ssrf_uses_native_transport(
+    monkeypatch: pytest.MonkeyPatch, clean_environment: None, proxied: bool
+) -> None:
+    from a13n_service.settings import load_settings
+
+    monkeypatch.setenv("A13N_PROVIDERS__SSRF_PROTECTION", "false")
+    monkeypatch.setenv("A13N_PROVIDERS__REQUIRE_HTTPS", "false")
+    policy = load_settings().providers.endpoint_policy
+
+    async def unexpected_dns(*args, **kwargs):
+        pytest.fail("Disabled SSRF transport must not pre-resolve or pin destinations")
+
+    monkeypatch.setattr("a13n_service.infra.outbound.allowed_addresses", unexpected_dns)
+    async with proxy_server() as (server, requests):
+        if proxied:
+            monkeypatch.setenv("HTTP_PROXY", server)
+            url = "http://proxy-only.test/read"
+        else:
+            url = server + "/read"
+        async with open_http(policy, timeout=2, max_bytes=4) as client:
+            response = await client.get(url)
+            assert response.text == "body"
+    assert len(requests) == 1
+    if proxied:
+        assert requests[0].startswith(b"GET http://proxy-only.test/read HTTP/1.1")
+
+
+async def test_disabled_service_ssrf_keeps_response_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+    async with proxy_server() as (server, requests):
+        async with open_http(EndpointPolicy(ssrf_protection=False), timeout=2, max_bytes=3) as client:
+            with pytest.raises(ServiceError) as error:
+                await client.get(server + "/read")
+    assert error.value.code == "payload_too_large"
+    assert len(requests) == 1

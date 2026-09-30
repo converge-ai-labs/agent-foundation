@@ -1,7 +1,8 @@
 """Host-owned async HTTP clients with endpoint and response bounds.
 
-The endpoint policy checks each request URL before it is sent, and each new connection resolves its host once
-and connects only when the policy allows every answer on direct routes. Operator-configured environment
+The endpoint policy checks each request URL before it is sent. With SSRF protection enabled, each direct
+connection resolves its host once and connects only when the policy allows every answer. With protection
+disabled, native transports own DNS without application prechecks or pinning. Operator-configured environment
 proxies own final DNS and destination policy on proxy routes. The URL and TLS identity are never rewritten.
 """
 
@@ -128,8 +129,13 @@ async def open_http(
 
     # Native MCP owns entry/exit; model clients start lazily on first send.
     # The outer owner also closes clients that never reached native setup.
+    direct_transport = (
+        _PolicyTransport(policy)
+        if policy.ssrf_protection
+        else httpx2.AsyncHTTPTransport(trust_env=False, limits=_LIMITS)
+    )
     client = EnvironmentProxyClient(
-        _PolicyTransport(policy),
+        direct_transport,
         verify=httpx2.create_ssl_context(trust_env=False),
         limits=_LIMITS,
         timeout=timeout,
