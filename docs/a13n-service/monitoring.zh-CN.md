@@ -108,7 +108,7 @@ Outbox 还提供 `a13n_outbox_backlog_alert{kind}`，表示持续超过积压阈
 
 打开 **Observe → Usage** 查看当前工作空间。可选择最近 7 天、30 天，或最长 366 天的自定义范围。概览显示模型成本、token、缓存输入、缓存命中率、Run 数、请求数和平均 Run 时长。日图表可在 Spend 和 Tokens 间切换，再通过分页明细比较 Agent 或模型。
 
-![Console 中最近 30 天的成本、token、缓存命中率与每日花费](../../.github/assets/service-console.jpg)
+![Console 中最近 30 天的成本、token、缓存命中率与每日花费](../../.github/assets/service-console.webp)
 
 *图中为本地 Seed 数据生成的虚构用量历史。*
 

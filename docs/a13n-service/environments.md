@@ -26,7 +26,7 @@ Both components default off in generic Service configuration. Enable them in [Se
 
 An environment provider is the account environments run on. Create it like any other [provider](resources.md#providers), in `/api/v1/environment-providers`. `GET /api/v1/provider-types/environment` returns each type's configuration, credential and recipe schemas.
 
-![Console sandbox and environment provider catalog](../../.github/assets/console-sandbox-providers.jpg)
+![Console sandbox and environment provider catalog](../../.github/assets/console-sandbox-providers.webp)
 
 *Provider selection in a seeded workspace. Local directory is available only in development.*
 

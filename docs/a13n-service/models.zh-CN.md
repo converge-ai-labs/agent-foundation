@@ -9,7 +9,7 @@ Agent 调用一个**模型**：它对应**模型 provider** 账号下的上游�
 
 在 Console 中打开 **Models → Add model → Connect a new provider**，或在 **Workspace settings → Providers** 管理 provider。通过 API 使用时，按 [Provider](resources.md#providers)中的说明在 `/api/v1/model-providers` 创建。
 
-![Console 中的模型 provider 目录](../../.github/assets/console-model-providers.jpg)
+![Console 中的模型 provider 目录](../../.github/assets/console-model-providers.webp)
 
 | 类型                                                               | 模型 API（首项为默认值）                                                          |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |

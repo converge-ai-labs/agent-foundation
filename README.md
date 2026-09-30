@@ -51,7 +51,7 @@ Continue with the [Service quickstart](docs/a13n-service/get-started.md) for mod
 
 Build your agent stack in Console: choose model providers, web data services, execution environments, and remote MCP servers.
 
-![Console catalogs for Models, Web Data, Environments, and Connections](.github/assets/console-integrations.jpg)
+![Console catalogs for Models, Web Data, Environments, and Connections](.github/assets/console-integrations.webp)
 
 | Capability       | Explore                                                                                                                                  |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |

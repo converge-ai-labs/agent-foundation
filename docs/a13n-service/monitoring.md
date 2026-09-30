@@ -108,7 +108,7 @@ The outbox also exposes `a13n_outbox_backlog_alert{kind}` for a sustained thresh
 
 Open **Observe → Usage** to inspect the current workspace. Choose the last 7 or 30 days, or apply a custom range of up to 366 days. The overview shows model costs, tokens, cached input, cache rate, Run count, request count and average Run time. Switch the daily chart between Spend and Tokens, then compare Agents or models in the paginated breakdown.
 
-![Console showing 30-day costs, tokens, cache rate, and daily spending](../../.github/assets/service-console.jpg)
+![Console showing 30-day costs, tokens, cache rate, and daily spending](../../.github/assets/service-console.webp)
 
 *Shown with fictional usage history from the local Seed data.*
 

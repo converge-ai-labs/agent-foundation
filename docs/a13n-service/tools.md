@@ -37,7 +37,7 @@ The files and terminal tools act on the run's mounted [environments](environment
 | `brave`, `perplexity`, `serpapi`                             | search         | `api_key`  |
 | `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `tinyfish` | search, scrape | `api_key`  |
 
-![Console search and scrape provider catalog, including TinyFish](../../.github/assets/console-search-providers.jpg)
+![Console search and scrape provider catalog, including TinyFish](../../.github/assets/console-search-providers.webp)
 
 Enable each web tool explicitly; enabling the toolset alone enables none of them. Tool configuration:
 
@@ -74,7 +74,7 @@ Connections have no delete operation. `PATCH {"enabled": false}` stops all use a
 
 In Console, open **Connections → New connection** to search and browse the remote MCP server directory. Choose a listed server, or select **Custom Remote MCP** to enter your own endpoint. Connections support OAuth, bearer tokens, static headers, or no authentication, depending on the server.
 
-![Console connection directory with multiple remote MCP servers](../../.github/assets/console-mcp-connection.jpg)
+![Console connection directory with multiple remote MCP servers](../../.github/assets/console-mcp-connection.webp)
 
 ```sh
 curl -X POST "$A13N_URL/api/v1/connections" \

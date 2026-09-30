@@ -37,7 +37,7 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 | `brave`, `perplexity`, `serpapi`                             | search         | `api_key` |
 | `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `tinyfish` | search, scrape | `api_key` |
 
-![Console 中的搜索与抓取 provider 目录，包含 TinyFish](../../.github/assets/console-search-providers.jpg)
+![Console 中的搜索与抓取 provider 目录，包含 TinyFish](../../.github/assets/console-search-providers.webp)
 
 必须逐个显式启用 web 工具；仅启用工具集不会启用任何工具。工具配置如下：
 
@@ -74,7 +74,7 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 
 在 Console 中打开 **Connections → New connection**，搜索或浏览远程 MCP server 目录。选择目录中的 server，或通过 **Custom Remote MCP** 输入自己的 endpoint。根据 server 的要求，连接支持 OAuth、Bearer token、静态请求头或无需认证。
 
-![Console 连接目录中的多个远程 MCP server](../../.github/assets/console-mcp-connection.jpg)
+![Console 连接目录中的多个远程 MCP server](../../.github/assets/console-mcp-connection.webp)
 
 ```sh
 curl -X POST "$A13N_URL/api/v1/connections" \
