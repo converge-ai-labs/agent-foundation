@@ -93,6 +93,24 @@ def test_bounds_must_nest(values: dict, refused: str) -> None:
         Settings.model_validate(values)
 
 
+@pytest.mark.parametrize("style", ["auto", "virtual"])
+def test_conflicting_object_addressing_fails(style: str) -> None:
+    with pytest.raises(ValueError, match=r"objects\.path_style=true conflicts"):
+        Settings.model_validate({"objects": {"path_style": True, "addressing_style": style}})
+
+
+def test_object_addressing_environment_overrides_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_environment: None
+) -> None:
+    config = tmp_path / "service.toml"
+    config.write_text('[objects]\naddressing_style = "auto"\n')
+    monkeypatch.setenv("A13N_OBJECTS__ADDRESSING_STYLE", "virtual")
+    assert load_settings(config).objects.effective_addressing_style == "virtual"
+    monkeypatch.setenv("A13N_OBJECTS__ADDRESSING_STYLE", "unsupported")
+    with pytest.raises(ValueError, match="addressing_style"):
+        load_settings(config)
+
+
 def test_a_key_file_replaces_the_key_ring() -> None:
     with pytest.raises(ValueError, match=r"encryption\.key_file excludes"):
         Settings.model_validate({"encryption": {"key_file": "/app/var/encryption.key", "active_key_id": "k"}})

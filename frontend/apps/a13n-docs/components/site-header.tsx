@@ -1,5 +1,5 @@
 "use client";
-import { Moon, Sun, Translate } from "@phosphor-icons/react/dist/ssr";
+import { Moon, Sun } from "@phosphor-icons/react/dist/ssr";
 import Link from "fumadocs-core/link";
 import {
   FullSearchTrigger,
@@ -7,11 +7,11 @@ import {
 } from "fumadocs-ui/layouts/shared/slots/search-trigger";
 import { useTheme } from "next-themes";
 import type { ComponentProps, ReactNode } from "react";
-import { usePathname, useRouter } from "next/navigation";
 import { useLocale } from "./provider";
-import { localeUrl, messages, type Locale } from "@/lib/i18n";
+import { localeUrl, messages } from "@/lib/i18n";
 import { site } from "@/lib/site";
 import { NavTitle } from "./brand";
+import { LanguageSwitch } from "./language-switch";
 
 export interface SiteTab {
   title: ReactNode;
@@ -104,29 +104,5 @@ function ThemeToggle() {
       <Moon className="dark:hidden" />
       <Sun className="hidden dark:block" />
     </button>
-  );
-}
-
-function LanguageSwitch() {
-  const locale = useLocale();
-  const pathname = usePathname();
-  const router = useRouter();
-  return (
-    <label className="relative inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] text-fd-muted-foreground hover:bg-fd-accent hover:text-fd-foreground">
-      <Translate className="size-[18px]" aria-hidden="true" />
-      <select
-        aria-label={messages[locale].language}
-        value={locale}
-        className="cursor-pointer appearance-none bg-transparent pe-1 outline-none focus-visible:ring-2 focus-visible:ring-fd-ring"
-        onChange={(event) =>
-          router.push(
-            `${localeUrl(pathname, event.target.value as Locale)}${window.location.search}${window.location.hash}`,
-          )
-        }
-      >
-        <option value="en">English</option>
-        <option value="zh-CN">简体中文</option>
-      </select>
-    </label>
   );
 }

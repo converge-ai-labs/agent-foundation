@@ -34,6 +34,9 @@ data:
     {{- with .Values.objects.endpointUrl }}
     endpoint_url = {{ toJson . }}
     {{- end }}
+    {{- with .Values.objects.addressingStyle }}
+    addressing_style = {{ toJson . }}
+    {{- end }}
     {{- end }}
     {{- with .Values.extraConfig }}
     {{- . | nindent 4 }}

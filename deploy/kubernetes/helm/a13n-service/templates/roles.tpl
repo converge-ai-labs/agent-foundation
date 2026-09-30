@@ -37,8 +37,8 @@ spec:
         {{- end }}
     spec:
       {{- include "a13n.podSpec" . | nindent 6 }}
-      # Covers the worker's drain deadline and the server's graceful shutdown.
-      terminationGracePeriodSeconds: 60
+      # Cover the full shutdown sequence, including background work after HTTP requests finish.
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       initContainers:
         # Replicas never migrate: wait until the migration Job has brought the schema to this image's head.
         - name: wait-for-schema

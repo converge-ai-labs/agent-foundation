@@ -17,3 +17,6 @@ packages/a13n-service/a13n_service/static
 .wrangler
 local-reference
 discussion
+
+# Checkout-local deployment workflows and private environment configuration
+.internal

@@ -9,6 +9,34 @@ const json = (value) =>
     headers: { "Content-Type": "application/json" },
   });
 
+test.each([baseUrl, `${baseUrl}/service`])(
+  "administrator bootstrap works without a session at %s while protected mutations still require CSRF",
+  async (serviceUrl) => {
+    const requests = [];
+    const client = createClient({
+      baseUrl: serviceUrl,
+      auth: { type: "session" },
+      fetch: async (request) => {
+        requests.push(request);
+        return json({ principal_id: "usr_admin", csrf_token: "csrf-proof" });
+      },
+    });
+    const body = { email: "admin@example.com", password: "test-password-1234" };
+    await client.http.POST("/api/v1/auth/bootstrap", { body });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, `${serviceUrl}/api/v1/auth/bootstrap`);
+    assert.equal(requests[0].headers.get("X-CSRF-Token"), null);
+    assert.equal(requests[0].credentials, "same-origin");
+    assert.deepEqual(await requests[0].json(), body);
+    await assert.rejects(
+      client.http.PATCH("/api/v1/users/me", { body: { name: "Admin" } }),
+      /CSRF/,
+    );
+    assert.equal(requests.length, 1);
+    client.close();
+  },
+);
+
 test("session mutations require CSRF and preserve null, omission and concurrency headers", async () => {
   const requests = [];
   const client = createClient({
