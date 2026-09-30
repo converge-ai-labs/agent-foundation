@@ -97,6 +97,28 @@ it("reads reviewed bytes for inline images, reuses the expanded viewer, and rele
   expect(f.revoke).toHaveBeenCalledWith("blob:preview");
 });
 
+it.each(["https://external.test/full", link("/tmp/notes.txt")])(
+  "renders a linked thumbnail without nested anchors and retains %s",
+  async (href) => {
+    const f = fixture();
+    const view = render(
+      f.tree(`[**_![Thumbnail](${link("/tmp/photo.png")})_**](${href})`),
+    );
+    await screen.findByAltText("photo.png");
+    const original = screen.getByRole("link", { name: "Thumbnail" });
+    expect(original.getAttribute("href")).toBe(href);
+    expect(view.container.querySelector("a a, a figure, p figure")).toBeNull();
+    expect(view.container.querySelectorAll("figure")).toHaveLength(1);
+    if (href.startsWith("https://")) {
+      expect(original.getAttribute("target")).toBe("_blank");
+      expect(original.getAttribute("rel")).toBe("noopener noreferrer");
+    } else {
+      fireEvent.click(original);
+      expect(f.open).toHaveBeenCalledWith("/tmp/notes.txt");
+    }
+  },
+);
+
 it.each(["voice.wav", "clip.mp4"])(
   "renders %s with playback controls and an explicit decode fallback",
   async (name) => {

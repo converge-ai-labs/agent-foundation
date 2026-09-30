@@ -14,7 +14,11 @@ type MediaNode = {
 export function linkedMediaPreviews({ currentHref }: { currentHref: string }) {
   return (tree: MediaNode) => {
     const seen = new Set<string>();
-    const collect = (node: MediaNode, paths: Set<string>) => {
+    const collect = (
+      node: MediaNode,
+      paths: Set<string>,
+      insideAnchor = false,
+    ) => {
       if (
         !node.tagName ||
         !["a", "img", "strong", "em", "del", "span"].includes(node.tagName)
@@ -32,12 +36,14 @@ export function linkedMediaPreviews({ currentHref }: { currentHref: string }) {
           const name = String(
             node.properties?.alt || path.split(/[\\/]/).at(-1),
           );
-          node.tagName = "a";
-          node.properties = { href };
+          node.tagName = insideAnchor ? "span" : "a";
+          node.properties = insideAnchor ? {} : { href };
           node.children = [{ type: "text", value: name }];
         }
       }
-      node.children?.forEach((child) => collect(child, paths));
+      node.children?.forEach((child) =>
+        collect(child, paths, insideAnchor || node.tagName === "a"),
+      );
     };
     const previews = (paths: Set<string>): MediaNode[] =>
       [...paths].map((path) => ({

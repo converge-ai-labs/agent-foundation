@@ -87,6 +87,66 @@ it("handles image Markdown and tight lists without nesting players inside a link
   expect(items?.[0].children?.[0].value).toBe("Portrait");
 });
 
+it.each(["https://external.test/full", link("/tmp/notes.txt")])(
+  "preserves the outer destination %s when its thumbnail is Host media",
+  (href) => {
+    for (const wrappers of [[], ["strong"], ["strong", "em"]]) {
+      const thumbnail: Node = {
+        type: "element",
+        tagName: "img",
+        properties: { src: link("/tmp/a.png"), alt: "Thumbnail" },
+      };
+      const inline = wrappers.reduce<Node>(
+        (child, tagName) => ({
+          type: "element",
+          tagName,
+          children: [child],
+        }),
+        thumbnail,
+      );
+      const original = anchor(href);
+      original.children = [inline];
+      const tree = root(paragraph(original));
+      transform(tree);
+      expect(tree.children?.map((node) => node.tagName)).toEqual([
+        "p",
+        "figure",
+      ]);
+      expect(tree.children?.[0].children?.[0]).toBe(original);
+      expect(original.properties?.href).toBe(href);
+      expect(thumbnail).toEqual({
+        type: "element",
+        tagName: "span",
+        properties: {},
+        children: [{ type: "text", value: "Thumbnail" }],
+      });
+      expect(tree.children?.[1].properties?.dataHostMediaPath).toBe(
+        "/tmp/a.png",
+      );
+    }
+  },
+);
+
+it("retains standalone image navigation with the preview outside its paragraph", () => {
+  const href = link("/tmp/a.png");
+  const tree = root(
+    paragraph({
+      type: "element",
+      tagName: "img",
+      properties: { src: href, alt: "Thumbnail" },
+    }),
+  );
+  transform(tree);
+  expect(tree.children?.map((node) => node.tagName)).toEqual(["p", "figure"]);
+  expect(tree.children?.[0].children?.[0]).toEqual({
+    type: "element",
+    tagName: "a",
+    properties: { href },
+    children: [{ type: "text", value: "Thumbnail" }],
+  });
+  expect(tree.children?.[1].properties?.dataHostMediaPath).toBe("/tmp/a.png");
+});
+
 it("never requests remote, relative, active-document, or unrelated API links", () => {
   const tree = root(
     paragraph(
