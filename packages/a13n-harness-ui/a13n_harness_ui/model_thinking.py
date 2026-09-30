@@ -73,6 +73,13 @@ def _label(value: ThinkingSelection) -> str:
 def _choices(route: str) -> tuple[_Choice, ...]:
     provider, _, name = route.partition(":")
     if provider in _OPENAI_ROUTES:
+        # GPT-6.1 Sol is not recognized by the bundled SDK profile yet.
+        # Its documented efforts exclude none/minimal and include max.
+        if name == "gpt-6.1-sol":
+            return tuple(
+                _Choice(effort, "Reasoning effort", {"openai_reasoning_effort": effort})
+                for effort in ("low", "medium", "high", "xhigh", "max")
+            )
         profile = openai_model_profile(name)
         if not profile.get("supports_thinking"):
             return ()

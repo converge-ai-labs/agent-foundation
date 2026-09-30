@@ -16,13 +16,13 @@ from a13n_harness_ui.model_authoring import (
 from pydantic import ValidationError
 
 
-@pytest.mark.parametrize("model_id", ["gpt-6-sol", "gpt-6-astra", "gpt-5.6-terra"])
+@pytest.mark.parametrize("model_id", ["gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-terra", "gpt-6-sol", "gpt-5.6-sol"])
 def test_subscription_defaults_are_native_and_independent_of_api_presets(model_id: str) -> None:
     codex = prepare_model(ModelRecipeRequest(connection="codex", model_id=model_id))
     assert codex.authentication.kind == "codex_subscription"
     assert codex.route == f"openai-codex:{model_id}"
     assert codex.settings == {
-        "thinking": "high",
+        "openai_reasoning_effort" if model_id == "gpt-6.1-sol" else "thinking": "high",
         "openai_reasoning_summary": "detailed",
         "openai_store": False,
         "openai_service_tier": "priority",
@@ -36,9 +36,15 @@ def test_subscription_defaults_are_native_and_independent_of_api_presets(model_i
     assert grok.model_characteristics.context_window_tokens is None
     choices = ModelChoices()
     codex_connection = next(c for c in choices.connections if c.id == "codex")
-    assert [item.value for item in codex_connection.models] == ["gpt-6-sol", "gpt-6-astra", "gpt-5.6-terra"]
-    assert codex_connection.default_model == "gpt-6-sol"
-    assert codex_connection.models[0].label == "Codex - GPT-6 Sol"
+    assert [item.value for item in codex_connection.models] == [
+        "gpt-6.1-sol",
+        "gpt-6-astra",
+        "gpt-5.6-terra",
+        "gpt-6-sol",
+        "gpt-5.6-sol",
+    ]
+    assert codex_connection.default_model == "gpt-6.1-sol"
+    assert codex_connection.models[0].label == "Codex - GPT-6.1 Sol"
     assert next(c for c in choices.connections if c.id == "grok").authentication == "api_key"
     subscription = next(c for c in choices.connections if c.id == "grok-subscription")
     assert subscription.authentication == "grok_subscription"
@@ -77,6 +83,66 @@ async def test_codex_sol_preset_reaches_native_request(effort: str, monkeypatch:
     assert request["reasoning"] == {"effort": effort, "summary": "detailed", "context": "all_turns"}
     assert request["service_tier"] == "priority"
     assert request["store"] is False
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("connection", ["codex", "openai-responses", "openai-chat"])
+@pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh", "max"])
+async def test_sol_6_1_presets_use_native_effort(connection: str, effort: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    from typing import cast
+    from unittest.mock import AsyncMock
+
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
+    from pydantic_ai.profiles.openai_codex import openai_codex_model_profile
+    from pydantic_ai.providers.openai import OpenAIProvider
+    from pydantic_ai.settings import ModelSettings
+
+    recipe = prepare_model(
+        ModelRecipeRequest(
+            connection=connection,
+            model_id="gpt-6.1-sol",
+            preset=effort,
+            authentication=None
+            if connection == "codex"
+            else ApiKeyAuthentication(kind="api_key", env="OPENAI_API_KEY"),
+        )
+    )
+    assert recipe.settings["openai_reasoning_effort"] == effort
+    assert "thinking" not in recipe.settings
+    assert "max_tokens" not in recipe.settings
+    provider = OpenAIProvider(api_key="test-not-a-secret")
+    model = (
+        OpenAIChatModel("gpt-6.1-sol", provider=provider)
+        if connection == "openai-chat"
+        else OpenAIResponsesModel(
+            "gpt-6.1-sol",
+            provider=provider,
+            profile=openai_codex_model_profile("gpt-6.1-sol") if connection == "codex" else None,
+        )
+    )
+    send = AsyncMock(side_effect=RuntimeError("captured native request"))
+    endpoint = model.client.chat.completions if connection == "openai-chat" else model.client.responses
+    monkeypatch.setattr(endpoint, "create", send)
+    async with model.client:
+        with pytest.raises(RuntimeError, match="captured native request"):
+            async with model.request_stream(
+                [ModelRequest(parts=[UserPromptPart("Hello")])],
+                cast(ModelSettings, recipe.settings),
+                ModelRequestParameters(),
+            ):
+                pass
+    request = send.call_args.kwargs
+    assert request["model"] == "gpt-6.1-sol"
+    if connection == "openai-chat":
+        assert request["reasoning_effort"] == effort
+    else:
+        assert request["reasoning"]["effort"] == effort
+        assert request["reasoning"]["summary"] == "detailed"
+        assert request["store"] is False
+    if connection == "codex":
+        assert request["service_tier"] == "priority"
 
 
 def test_prepare_preserves_explicit_native_mappings_and_empty_capabilities() -> None:
@@ -155,14 +221,14 @@ def test_terminal_subscription_creation_uses_shared_codex_default(operation: str
         wizard.accept("new")
     wizard.accept("codex")
     assert wizard.question.key == "model"
-    assert wizard.question.choices == ("gpt-6-sol", "gpt-6-astra", "gpt-5.6-terra")
-    assert wizard.question.default == "gpt-6-sol"
+    assert wizard.question.choices == ("gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-terra", "gpt-6-sol", "gpt-5.6-sol")
+    assert wizard.question.default == "gpt-6.1-sol"
     wizard.accept("")
     while wizard.question is not None:
         wizard.accept("")
     recipe = wizard.selection("/tmp")["model"]
-    assert recipe["route"] == "openai-codex:gpt-6-sol"
-    assert recipe["settings"]["thinking"] == "high"
+    assert recipe["route"] == "openai-codex:gpt-6.1-sol"
+    assert recipe["settings"]["openai_reasoning_effort"] == "high"
     assert "max_tokens" not in recipe["settings"]
 
 

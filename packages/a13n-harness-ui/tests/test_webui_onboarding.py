@@ -105,6 +105,7 @@ async def test_first_conversation_identity_is_create_only_and_survives_restart(t
 @pytest.mark.parametrize(
     ("connection", "model_id", "authentication", "model_file"),
     [
+        ("codex", "gpt-6.1-sol", "codex_subscription", "codex"),
         ("codex", "gpt-5.6-sol", "codex_subscription", "codex"),
         ("grok-subscription", "grok-4.7", "grok_subscription", "grok"),
         ("copilot-subscription", "synthetic-chat-model", "copilot_subscription", "copilot"),
@@ -134,7 +135,18 @@ async def test_shared_model_authoring_http_contract_is_inert_and_has_one_setup_s
     ):
         choices = await client.get("/api/models/choices")
         assert choices.status_code == 200
-        assert {c["id"] for c in choices.json()["connections"]} >= {"codex", "grok-subscription", "openai-chat"}
+        connections = {c["id"]: c for c in choices.json()["connections"]}
+        assert connections.keys() >= {"codex", "grok-subscription", "openai-chat"}
+        for connection_id in ("codex", "openai-responses", "openai-chat"):
+            choice = connections[connection_id]
+            assert choice["default_model"] == "gpt-6.1-sol"
+            assert [model["value"] for model in choice["models"]][:5] == [
+                "gpt-6.1-sol",
+                "gpt-6-astra",
+                "gpt-5.6-terra",
+                "gpt-6-sol",
+                "gpt-5.6-sol",
+            ]
         catalog = await client.get("/api/models/catalog")
         assert catalog.status_code == 200 and catalog.json()["items"]
         request = {"connection": connection, "model_id": model_id}

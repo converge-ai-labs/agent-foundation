@@ -81,9 +81,9 @@ SUBSCRIPTION_CONNECTIONS = (
         account=AccountConnection(provider="codex", label="Codex", login_methods=("device", "browser")),
         models=tuple(
             ModelChoice(value=value, label=model_name("codex", value))
-            for value in ("gpt-6-sol", "gpt-6-astra", "gpt-5.6-terra")
+            for value in ("gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-terra", "gpt-6-sol", "gpt-5.6-sol")
         ),
-        default_model="gpt-6-sol",
+        default_model="gpt-6.1-sol",
     ),
     ModelConnection(
         id="grok-subscription",
@@ -272,14 +272,21 @@ def authoring_presets(connection: ModelConnection, model_id: str) -> tuple[Setti
                     "default", "Subscription defaults", "Use native settings for this model", {"openai_store": False}
                 ),
             )
+        native_effort = model_id == "gpt-6.1-sol"
         return tuple(
             SettingsPreset(
                 effort,
                 f"{effort.title()} reasoning",
                 "Codex reasoning; no API output-token cap",
-                {"thinking": effort, "openai_reasoning_summary": "detailed", "openai_store": False},
+                {
+                    "openai_reasoning_effort" if native_effort else "thinking": effort,
+                    "openai_reasoning_summary": "detailed",
+                    "openai_store": False,
+                },
             )
-            for effort in ("high", "medium", "low", "xhigh")
+            for effort in (
+                ("high", "medium", "low", "xhigh", "max") if native_effort else ("high", "medium", "low", "xhigh")
+            )
         )
     if connection.authentication in {"grok_subscription", "copilot_subscription"}:
         return (SettingsPreset("default", "Subscription defaults", "Keep native subscription behavior", {}),)
