@@ -54,7 +54,7 @@ export function SiteHeader({
               key={tab.url}
               href={tab.url}
               aria-current={tab.active ? "page" : undefined}
-              className="relative inline-flex items-center text-sm font-medium whitespace-nowrap text-fd-muted-foreground transition-colors duration-150 after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full hover:text-fd-foreground aria-[current=page]:text-fd-foreground aria-[current=page]:after:bg-fd-foreground"
+              className="relative inline-flex items-center text-sm font-medium whitespace-nowrap text-fd-muted-foreground transition-colors duration-150 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:rounded-full hover:text-fd-foreground aria-[current=page]:text-fd-foreground aria-[current=page]:after:bg-fd-foreground"
             >
               {tab.title}
             </Link>
