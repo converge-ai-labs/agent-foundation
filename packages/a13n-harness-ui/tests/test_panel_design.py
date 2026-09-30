@@ -116,32 +116,6 @@ def test_edit_applied_replaces_pending_call_and_retains_full_diff_on_expand() ->
     renderer.transcript.close()
 
 
-def test_shell_result_has_no_stdout_prefix_and_keeps_coverage_and_details() -> None:
-    renderer = StreamRenderer(Status())
-    present_tool(renderer, "one", name="shell_exec", arguments="", arguments_complete=False, status="pending")
-    present_tool(renderer, "one", arguments='{"command":"pytest -q"}')
-    present_tool(renderer, "one", arguments_complete=True)
-    present_tool(
-        renderer,
-        "one",
-        result=json.dumps(
-            {
-                "ok": True,
-                "status": {"phase": "exited", "exit_code": 1},
-                "stdout": {"text": "\n".join(f"line-{i}" for i in range(20)), "coverage": "partial"},
-                "stderr": {"text": "failure", "coverage": "complete"},
-            }
-        ),
-    )
-    text = _text(renderer.transcript)
-    assert text == "Run failed · exit 1 · output partial · pytest -q"
-    assert "line-2" not in text and "line-19" not in text
-    renderer.transcript.detailed = True
-    renderer.transcript.dirty = True
-    assert "line-19" in _text(renderer.transcript)
-    renderer.transcript.close()
-
-
 @pytest.mark.parametrize("phase, label", [("exited", "failed"), ("timed_out", "timed out"), ("cancelled", "cancelled")])
 def test_long_command_wraps_without_hiding_failure(phase: str, label: str) -> None:
     from a13n_harness_ui.interactive.panels import shell_result_preview

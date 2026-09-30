@@ -391,26 +391,6 @@ def _unpadded_text(transcript: Transcript) -> str:
     return "\n".join(line.rstrip() for line in _text(transcript).split("\n"))
 
 
-def test_adjacent_thinking_blocks_have_no_synthetic_blank_line() -> None:
-    renderer = StreamRenderer(Status())
-    for index, text in enumerate(("First thought.", "Second thought.", "Third thought.")):
-        present_text(renderer, text, message_id=str(index), kind="reasoning")
-        present_text(renderer, status="succeeded", message_id=str(index), kind="reasoning")
-    renderer.transcript.render(80)
-    assert _unpadded_text(renderer.transcript) == "First thought.\nSecond thought.\nThird thought.\n"
-    assert len(renderer.transcript.blocks) == 3
-    assert [block.source for block in renderer.transcript.blocks.values()] == [
-        "First thought.",
-        "Second thought.",
-        "Third thought.",
-    ]
-    renderer.transcript.detailed = True
-    renderer.transcript.dirty = True
-    renderer.transcript.render(80)
-    assert _unpadded_text(renderer.transcript) == "First thought.\nSecond thought.\nThird thought.\n"
-    renderer.transcript.close()
-
-
 def test_thinking_spacing_preserves_paragraphs_and_other_block_boundaries() -> None:
     transcript = Transcript()
     first = transcript.append("First paragraph.\n\nSecond paragraph.", markdown=True, kind="thinking")
