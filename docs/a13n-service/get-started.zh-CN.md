@@ -9,18 +9,28 @@ description: 使用 Docker Compose 在本地运行 Service，连接模型并获�
 > [!TIP]
 > 已经有运行中的 Service？可以[使用团队的平台](use-platform.md)，或[连接你的应用](connect-application.md)。
 
-## 使用 Docker Compose 本地试用
+## 使用 Docker Compose 启动
 
-通过 GitHub 的 **Download raw file** 按钮下载 [`a13n-service-quickstart.yaml`](https://github.com/converge-ai-labs/agent-foundation/blob/main/deploy/docker/compose/a13n-service-quickstart.yaml)。将它保存到空目录中，在该目录打开终端并启动：
+将 [`a13n-service.yaml`](https://github.com/converge-ai-labs/agent-foundation/blob/main/deploy/docker/compose/a13n-service.yaml) 下载到空目录中并启动整套服务。直接复制以下命令即可，无需克隆仓库或安装 Make：
 
 ```sh
-docker compose -f a13n-service-quickstart.yaml up -d --wait
+mkdir a13n-service
+cd a13n-service
+curl -fL https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/main/deploy/docker/compose/a13n-service.yaml -o a13n-service.yaml
+docker compose -f a13n-service.yaml up -d --wait --pull always
 ```
 
-打开 <http://127.0.0.1:8080>，使用 **`admin@example.com` / `local-public-password-123`** 登录。管理员、组织和工作空间已预先创建。继续[添加模型](#add-a-model)；要获得实际回复，需要提供你自己的模型 provider 凭据。
+Service、Console、PostgreSQL 和 Redis 会一起启动。这套配置挂载宿主机 Docker socket，并自动为工作空间准备 Docker 执行环境。服务仅发布到 <http://127.0.0.1:8080>。源码中的配置使用已发布的 `latest` 镜像；发行附件中的配置固定到对应发行版本。
 
-> [!WARNING]
-> **仅在自己的机器上试用。** 管理员密码是公开的。此配置仅绑定回环地址，不挂载宿主机 Docker socket，并在重启后保留数据和凭据。[Compose 指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#local-quickstart)详细介绍了这套服务。
+如果已经克隆仓库，在仓库根目录运行 `make compose-up` 可以启动同一套服务并输出 Console URL。
+
+## 注册管理员账号
+
+打开 <http://127.0.0.1:8080>。**首次启动时，请先注册管理员账号：** 输入邮箱，并设置至少 **8 个字符**的密码。这套配置没有默认的管理员邮箱或密码。
+
+注册会创建首个管理员、组织和工作空间，并自动登录。接下来[添加模型](#add-a-model)。之后访问时，使用注册时填写的邮箱和密码登录。重启会保留账号和数据；其他用户通过[邀请](identity.md#invitations)加入。
+
+第一个在未初始化的 Service 上注册的人会成为管理员。设置期间请保持服务仅监听回环地址；如果其他人能在你打开新部署之前访问它，请先[通过运维命令初始化](#initialize-a-shared-deployment)。[Compose 指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#single-host-deployment-with-native-docker)介绍了宿主机 Docker 访问权限和部署配置。
 
 ## 添加模型
 
@@ -44,43 +54,43 @@ docker compose -f a13n-service-quickstart.yaml up -d --wait
 
 按照[连接你的应用](connect-application.md)创建工作空间 API 密钥、选择 agent、提交消息并读取结果。各语言的集成可以选择 [Service SDK 或远程 CLI](sdks.md)。
 
-## 停止、恢复或重置试用
+## 停止、恢复或重置服务
 
-在快速入门文件所在目录运行以下命令：
+在 `a13n-service.yaml` 所在目录运行以下命令：
 
 ```sh
 # Stop containers, keeping accounts, conversations, credentials, and files.
-docker compose -f a13n-service-quickstart.yaml down
+docker compose -f a13n-service.yaml down
 
 # Resume with the same data.
-docker compose -f a13n-service-quickstart.yaml up -d --wait
+docker compose -f a13n-service.yaml up -d --wait
 ```
 
-请保持相同的 Compose 项目和数据卷。初始化可以安全重复运行；如果修改过密码，它不会恢复公开密码。
+请保持相同的 Compose 项目和数据卷。恢复运行会保留管理员账号、密码和数据。要更新镜像，在启动命令中加上 `--pull always`；升级已有部署前，请参阅 [Compose 升级指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades)。
 
-要**永久删除所有试用数据**，运行 `docker compose -f a13n-service-quickstart.yaml down --volumes`。下次启动时会重新创建公开的试用账号。
+要**永久删除整套服务的所有数据**，运行 `docker compose -f a13n-service.yaml down --volumes`。下次启动后，打开 Console 并注册新的管理员账号。
 
 ## 故障排查
 
-- **8080 端口已被占用：** 运行 `A13N_PORT=8081 docker compose -f a13n-service-quickstart.yaml up -d --wait`，然后打开 <http://127.0.0.1:8081>。恢复运行时继续使用该端口。
-- **启动无法完成：** 检查 `docker compose -f a13n-service-quickstart.yaml ps -a` 和 `docker compose -f a13n-service-quickstart.yaml logs init service`。初始化程序必须成功完成，Service 才能启动。
-- **试用密码无法登录：** 现有数据会被保留，包括修改后的密码。请使用你设置的密码登录；重启不会重置密码。
+- **8080 端口已被占用：** 运行 `A13N_PORT=8081 docker compose -f a13n-service.yaml up -d --wait`，然后打开 <http://127.0.0.1:8081>。恢复运行时继续使用该端口。
+- **启动无法完成：** 检查 `docker compose -f a13n-service.yaml ps -a` 和 `docker compose -f a13n-service.yaml logs service`。Service 必须完成数据库迁移并就绪，才能使用 Console。
+- **Console 显示登录而不是注册界面：** Service 已经有管理员。请使用注册过的账号登录；重启不会重置账号。
 - **模型无法回复：** 检查 provider 凭据、上游模型 ID 和 API 选择。目录列出的模型不代表你的 provider 账号有权使用。私有地址或 HTTP 端点还需要显式配置[出站请求设置](configuration.md#outbound-requests)。
 
 ## 部署 Service
 
-正式部署时请使用自己的管理员凭据。Service 提供 `a13n-service` Python 包、支持 `linux/amd64` 和 `linux/arm64` 的 `ghcr.io/converge-ai-labs/a13n-service` 镜像，以及 Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`。每个部署都需要 PostgreSQL、Redis 和加密密钥，参阅[配置 Service](configuration.md#required-infrastructure)。仓库维护了两份部署指南：
+本地 Compose 服务可以保留已有账号和数据，供你继续使用。共享部署应在开放访问前配置公共 URL 和访问权限，参阅下方部署指南。Service 提供 `a13n-service` Python 包、支持 `linux/amd64` 和 `linux/arm64` 的 `ghcr.io/converge-ai-labs/a13n-service` 镜像，以及 Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`。每个部署都需要 PostgreSQL、Redis 和加密密钥，参阅[配置 Service](configuration.md#required-infrastructure)。仓库维护了两份部署指南：
 
 - [使用 Docker Compose 单机部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#single-host-deployment-with-native-docker)：在一台机器上运行 Service、PostgreSQL、Redis 和 Console，Docker 环境使用宿主机的 Docker Engine。
 - [使用 Helm 部署到 Kubernetes](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes)：分别部署 control 和 worker Deployment，并使用迁移 Job；提供本地 kind 集群的 values 配置。
 
 按照任一指南操作，直到 Service 的 `/readyz` 报告就绪。
 
-## 创建首个管理员
+## 初始化共享部署
 
-此步骤适用于尚未初始化的部署，而不是上面已初始化的本地试用。通过 Service 的公共 URL 打开 Console。初始化前，Console 会要求填写首个管理员的邮箱和至少 12 个字符的密码，创建后自动登录。此操作只创建一次首个组织、工作空间和管理员；此后 Console 显示登录界面，其他用户通过[邀请](identity.md#invitations)加入。
+浏览器中的[管理员注册](#register-your-administrator-account)适用于任何尚未初始化的部署。如果其他人能在你打开 Console 之前访问新部署，请先通过运维命令 `bootstrap` 创建管理员。
 
-第一个访问未初始化 Service 的人会成为管理员。如果其他人能在你打开新部署之前访问它，请在能读取 Service 配置的环境中使用运维命令 `bootstrap` 创建管理员（上述部署中是在 Service 容器内）：
+在能读取 Service 配置的环境中运行以下命令（上述部署中是在 Service 容器内）：
 
 ```sh
 a13n-service --config /app/service.toml bootstrap --email admin@example.com

@@ -49,6 +49,8 @@ continued = await executable.run(
 
 Host 可通过 `RunBindings.usage_reporter` 绑定异步 `UsageReporter.report(snapshot: UsageSnapshot)`。每个 `usage_id` 只保存最新快照，用 `select_usage_snapshot` 验证替换，并原子提交各范围。不要累加累计快照，也不要将显示分块作为第二条录入路径。显示报告携带有上限的变更记录分块；直接交付携带完整独立状态。内联子级继承 reporter，但范围独立。报告失败会停止执行，应重试报告交付，而非重做模型任务。
 
+需要增量存储时，可改为绑定 `UsageDeltaReporter.report_delta(delta: UsageDelta)`。`delta.scope` 包含统计范围的标识、当前序列和工具调用计数；`delta.records` 只包含 `delta.after_sequence` 之后发生变化的记录的最新值。返回前，必须将这些替换记录和范围进度原子提交。提交结果不确定时，应接受重试和重叠区间，但拒绝超出已存进度、造成缺口的区间。Harness 保留未确认的变化用于重试，与显示交付相互独立。如果 reporter 同时实现两种方法，Harness 调用 `report_delta`。完整检查点和结果记录仍然可用。在使用 `resume_usage=True` 前，需确保恢复的统计序列及对应记录已经持久化到你的存储中。
+
 持久统计比所选执行检查点更新时，显式恢复统计前使用 `latest_snapshot.restore(checkpoint)`。它只覆盖统计，不移动消息历史或恢复执行权限。每个范围的写入需串行。独立 worker 尝试需不同范围，防止晚到旧 worker 覆盖新统计。快照最多 10,000 条记录、16 MiB；达到容量会失败，不静默丢弃观测。
 
 模型费用估值默认开启。`HarnessBuilder` 注入 `CatalogModelCostCapability`，为构建后的 Agent 固定当前有效的价格目录。Host 未开启更新时，使用内置 `genai-prices` 数据和 Harness 补充。`get_default_pricing_catalog()` 始终读取该内置基线；`get_current_pricing_catalog()` 还采用成功的上游更新。两者返回不可变目录，不下载。读取或导出当前快照：

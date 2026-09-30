@@ -9,7 +9,7 @@ description: 组织、工作空间、角色、授权、登录会话、API 密钥
 
 **组织** 是管理边界，包含成员和工作空间。**工作空间** 是工作边界：agent、会话、provider、模型、连接、环境和其他资源都只属于一个工作空间。
 
-新 Service 可在 Console 中或通过 `bootstrap` 命令完成[初始化](get-started.md#create-the-first-administrator)，创建首个组织、工作空间和管理员。没有创建其他组织的 API。组织管理员可以在 Console 的 **Organization settings → Workspaces** 中创建工作空间，或调用 `POST /api/v1/organizations/{organization_id}/workspaces`，请求体为 `{name}`。
+新 Service 可在 Console 中或通过 `bootstrap` 命令完成[初始化](get-started.md#register-your-administrator-account)，创建首个组织、工作空间和管理员。没有创建其他组织的 API。组织管理员可以在 Console 的 **Organization settings → Workspaces** 中创建工作空间，或调用 `POST /api/v1/organizations/{organization_id}/workspaces`，请求体为 `{name}`。
 
 管理员可以重命名组织或工作空间，并设置图标（PNG、JPEG 或 WebP）。组织和工作空间通过 ID 标识：工作空间管理路径指定工作空间 ID，其他请求则作用于凭据选定的工作空间（参阅 [HTTP 约定](http.md#workspace)）。
 
@@ -68,7 +68,7 @@ Console 使用 `POST /api/v1/auth/login` 和 `{email, password}` 登录。Servic
 账号操作需要登录会话；API 密钥不能执行。
 
 - **个人资料：** 修改名称和头像（PNG、JPEG 或 WebP）。
-- **密码：** 修改密码（`POST /api/v1/users/me/password`，提供当前密码）会结束其他登录会话。密码至少 12 个字符。
+- **密码：** 修改密码（`POST /api/v1/users/me/password`，提供当前密码）会结束其他登录会话。密码至少 8 个字符。
 - **重置密码：** 登录页的 **Forgot your password?** 会发送有效期为 `auth.link_seconds` 的一次性链接。重置会结束所有登录会话。此功能需要 SMTP。
 - **修改邮箱：** 提交新地址和当前密码；Service 向新地址发送确认链接，打开后修改生效。确认会结束所有登录会话。此功能需要 SMTP。
 - **禁用：** `POST /api/v1/users/me/disable` 提供当前密码后禁用账号，结束其他登录会话，并撤销未使用的密码重置和邮箱修改链接。授权和密钥保留，但不能再以你的身份认证；由你启动的运行会在下次权限检查时停止。只有运维人员可以重新启用。
