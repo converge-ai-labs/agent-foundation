@@ -390,11 +390,13 @@ class SessionBackend:
         if not await self.refresh():
             raise ValueError("Configure a model before selecting its service tier.")
         action = selected or ("off" if self.status.fast == "on" else "on")
-        choices = {"on": True, "off": False, "reset": None}
+        choices = {"on": True, "off": False, "ultrafast": "ultrafast", "reset": None}
         if action not in choices:
-            raise ValueError("Usage: /fast [on|off|reset]")
+            raise ValueError("Usage: /fast [on|off|ultrafast|reset]")
         if action != "reset" and (self.fast_control is None or not self.fast_control.supported):
             raise ValueError(self.fast_control.reason if self.fast_control else "Fast is unavailable.")
+        if action == "ultrafast" and self.fast_control is not None and not self.fast_control.ultrafast_supported:
+            raise ValueError(self.fast_control.ultrafast_reason or "Ultrafast is unavailable.")
         self.overrides = RunModelOverrides.model_validate(
             {**self.overrides.model_dump(), "service_tier": None, "fast": choices[action]}
         )
@@ -402,10 +404,12 @@ class SessionBackend:
         message = f"Fast · {self.status.fast.capitalize()} · " + (
             "Model configuration restored." if action == "reset" else "session only; configuration unchanged."
         )
-        if self.status.fast == "on":
+        if self.status.fast in {"on", "ultrafast"}:
             message += (
-                " Fast requested; may use more quota or cost more. Provider support and speed are not guaranteed."
+                " Speed requested; may use more quota or cost more. Provider support and speed are not guaranteed."
             )
+        if self.status.fast == "ultrafast":
+            message += " Requires Pro $500 or an eligible Enterprise/Edu plan; OpenAI checks account access."
         return message
 
     async def pro(self, selected: str | None) -> str:

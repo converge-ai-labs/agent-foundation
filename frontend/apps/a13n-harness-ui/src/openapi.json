@@ -9456,6 +9456,22 @@
               }
             ],
             "title": "Reason"
+          },
+          "ultrafast_supported": {
+            "type": "boolean",
+            "title": "Ultrafast Supported",
+            "default": false
+          },
+          "ultrafast_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ultrafast Reason"
           }
         },
         "additionalProperties": false,
@@ -9471,6 +9487,7 @@
         "enum": [
           "on",
           "off",
+          "ultrafast",
           "default"
         ]
       },
@@ -18431,6 +18448,17 @@
         "title": "ThreadMetadataMutation",
         "type": "object"
       },
+      "FastSelection": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "const": "ultrafast",
+            "type": "string"
+          }
+        ]
+      },
       "InputAttachmentReference": {
         "additionalProperties": false,
         "properties": {
@@ -18498,13 +18526,12 @@
           "fast": {
             "anyOf": [
               {
-                "type": "boolean"
+                "$ref": "#/components/schemas/FastSelection"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Fast"
+            ]
           },
           "reasoning_mode": {
             "anyOf": [

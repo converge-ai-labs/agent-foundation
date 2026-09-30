@@ -3177,9 +3177,16 @@ export interface components {
             state: components["schemas"]["FastState"];
             /** Reason */
             reason?: string | null;
+            /**
+             * Ultrafast Supported
+             * @default false
+             */
+            ultrafast_supported?: boolean;
+            /** Ultrafast Reason */
+            ultrafast_reason?: string | null;
         };
         /** @enum {string} */
-        FastState: "on" | "off" | "default";
+        FastState: "on" | "off" | "ultrafast" | "default";
         /** FileCapture */
         FileCapture: {
             attachment: components["schemas"]["ThreadAttachment"];
@@ -6466,6 +6473,7 @@ export interface components {
             expected_version: number;
             patch: components["schemas"]["ThreadMetadataPatch"];
         };
+        FastSelection: boolean | "ultrafast";
         /** InputAttachmentReference */
         InputAttachmentReference: {
             /** Attachment Id */
@@ -6485,8 +6493,7 @@ export interface components {
         /** SubmitRequest */
         SubmitRequest: {
             thinking?: components["schemas"]["ThinkingSelection"] | null;
-            /** Fast */
-            fast?: boolean | null;
+            fast?: components["schemas"]["FastSelection"] | null;
             reasoning_mode?: components["schemas"]["ReasoningMode"] | null;
             /** Parts */
             parts: (string | components["schemas"]["InputAttachmentReference"])[];

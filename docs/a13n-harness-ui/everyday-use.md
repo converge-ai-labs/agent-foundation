@@ -15,29 +15,29 @@ flowchart LR
     Running --> Result[Read result or resume saved Thread]
 ```
 
-| Action                                              | Command or key                                   |
-| --------------------------------------------------- | ------------------------------------------------ |
-| Send the draft                                      | Enter                                            |
-| Insert a newline                                    | Alt+Enter                                        |
-| Complete a slash command or supported argument      | Tab                                              |
-| Clear an idle draft; cancel active work             | Ctrl+C                                           |
-| Exit from an empty draft                            | Ctrl+D                                           |
-| Switch concise/detailed display                     | Ctrl+O or `/mode concise`, `/mode detailed`      |
-| Explain commands                                    | `/help` or `/help command`                       |
-| Start a new conversation without deleting history   | `/new`                                           |
-| Search and preview saved conversations              | `/resume`                                        |
-| Resume one saved conversation                       | `/resume session-id`                             |
-| Read saved messages and tool details                | Ctrl+T or `/history`                             |
-| List/select configured Agents                       | `/agent`, `/agent agent-codex`, `/agent default` |
-| Select temporary reasoning mode                     | `/pro`, `/pro on`, `/pro off`, `/pro reset`      |
-| Read/change reasoning                               | `/thinking`, `/thinking low`                     |
-| Toggle temporary Fast processing                    | `/fast`, `/fast on`, `/fast off`, `/fast reset`  |
-| Read/change execution permissions                   | `/environment`, `/environment sandbox`           |
-| Show current settings, usage, and pending decisions | `/status`                                        |
-| Locate configuration and explain precedence         | `/config`                                        |
-| Send additional guidance to the current Run         | Enter while running                              |
-| Cancel active work                                  | `/cancel`                                        |
-| Exit after cancelling and cleaning up active work   | `/quit` or `/exit`                               |
+| Action                                              | Command or key                                                     |
+| --------------------------------------------------- | ------------------------------------------------------------------ |
+| Send the draft                                      | Enter                                                              |
+| Insert a newline                                    | Alt+Enter                                                          |
+| Complete a slash command or supported argument      | Tab                                                                |
+| Clear an idle draft; cancel active work             | Ctrl+C                                                             |
+| Exit from an empty draft                            | Ctrl+D                                                             |
+| Switch concise/detailed display                     | Ctrl+O or `/mode concise`, `/mode detailed`                        |
+| Explain commands                                    | `/help` or `/help command`                                         |
+| Start a new conversation without deleting history   | `/new`                                                             |
+| Search and preview saved conversations              | `/resume`                                                          |
+| Resume one saved conversation                       | `/resume session-id`                                               |
+| Read saved messages and tool details                | Ctrl+T or `/history`                                               |
+| List/select configured Agents                       | `/agent`, `/agent agent-codex`, `/agent default`                   |
+| Select temporary reasoning mode                     | `/pro`, `/pro on`, `/pro off`, `/pro reset`                        |
+| Read/change reasoning                               | `/thinking`, `/thinking low`                                       |
+| Toggle temporary Fast processing                    | `/fast`, `/fast on`, `/fast off`, `/fast ultrafast`, `/fast reset` |
+| Read/change execution permissions                   | `/environment`, `/environment sandbox`                             |
+| Show current settings, usage, and pending decisions | `/status`                                                          |
+| Locate configuration and explain precedence         | `/config`                                                          |
+| Send additional guidance to the current Run         | Enter while running                                                |
+| Cancel active work                                  | `/cancel`                                                          |
+| Exit after cancelling and cleaning up active work   | `/quit` or `/exit`                                                 |
 
 `/agent` selects an Agent's instructions, tools, tool-review policy, and default model for the next turn, while preserving conversation history and execution permissions. Create another Agent with `a13n-harness-ui add agent`.
 

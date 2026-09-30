@@ -48,6 +48,10 @@ def test_command_registry_has_one_grammar_and_rejects_collisions() -> None:
     assert registry.parse("/mode detailed", busy=True).arguments == ("detailed",)
     assert registry.completions("/mo")[0][0] == "/mode"
     assert registry.completions("/mode d")[0][0] == "detailed"
+    assert registry.parse("/fast ultrafast").arguments == ("ultrafast",)
+    assert registry.completions("/fast u")[0][0] == "ultrafast"
+    with pytest.raises(ValueError, match="unavailable"):
+        registry.parse("/fast ultrafast", busy=True)
     registry.thinking_choices = (("default", "Configured native value"), ("off", "Disable thinking"))
     assert registry.completions("/thinking o") == (("off", "Disable thinking"),)
     assert registry.completions("/thinking h") == ()
@@ -1188,4 +1192,64 @@ async def test_pro_uses_model_default_and_preserves_independent_controls(tmp_pat
             renderer.transcript.close()
     assert [item["openai_reasoning_mode"] for item in observed] == ["standard", "pro"]
     assert all(item["openai_reasoning_summary"] == "detailed" for item in observed)
+    assert model_path.read_bytes() == original
+
+
+@pytest.mark.anyio
+async def test_ultrafast_session_switches_and_reset_reach_runtime_without_persisting(tmp_path, monkeypatch):
+    import a13n_harness.models.codex as runtime
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    model_path = path.parent / "models/codex.yaml"
+    document = yaml.safe_load(model_path.read_text())
+    document["route"] = "openai-codex:gpt-6-astra"
+    document["settings"]["openai_service_tier"] = "ultrafast"
+    model_path.write_text(yaml.safe_dump(document))
+    original = model_path.read_bytes()
+    observed = []
+
+    async def stream(messages, info):
+        observed.append(info.model_settings.get("openai_service_tier") or info.model_settings.get("service_tier"))
+        yield "Reply."
+
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *a, **kw: FunctionModel(stream_function=stream))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        assert backend.status.fast == "ultrafast"
+        assert "Ultrafast" in backend.status.line()
+        assert "Ultrafast" in backend.status.line(50)
+        renderer = StreamRenderer(backend.status)
+        try:
+            await backend.thinking("low")
+            for command, tier in (
+                ("on", "priority"),
+                ("ultrafast", "ultrafast"),
+                ("off", "default"),
+                ("reset", "ultrafast"),
+            ):
+                await backend.fast(command)
+                assert backend.overrides.thinking == "low"
+                assert backend.status.service_tier == tier
+                await backend.execute(renderer, prompt=f"Use {command}")
+            assert backend.overrides.fast is None
+            await backend.fast("ultrafast")
+            assert backend.overrides.fast == "ultrafast"
+            # A different model invalidates only the requested Ultrafast capability.
+            document["route"] = "openai-codex:gpt-6-sol"
+            document["settings"]["openai_service_tier"] = "priority"
+            model_path.write_text(yaml.safe_dump(document))
+            await app.reload_configuration()
+            before = backend.overrides
+            with pytest.raises(ValueError, match="Ultrafast requires"):
+                await backend.fast("ultrafast")
+            assert backend.overrides == before
+            await backend.fast("reset")
+            model_path.write_bytes(original)
+        finally:
+            renderer.transcript.close()
+    assert observed == ["priority", "ultrafast", "default", "ultrafast"]
     assert model_path.read_bytes() == original

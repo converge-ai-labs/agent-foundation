@@ -1610,13 +1610,18 @@ async def test_auxiliary_review_settings_cannot_override_managed_affinity(tmp_pa
     assert error.value.code == "model_configuration_unsupported"
 
 
-@pytest.mark.parametrize("fast", [True, False, None])
 @pytest.mark.parametrize(
-    "route,key,on,off",
+    "route,key,on,off,fast",
     [
-        ("openai:gpt-5", "service_tier", "priority", "default"),
-        ("anthropic:claude-opus-4-8", "anthropic_speed", "fast", "standard"),
-    ],
+        (route, key, on, off, fast)
+        for route, key, on, off in [
+            ("openai:gpt-5", "service_tier", "priority", "default"),
+            ("anthropic:claude-opus-4-8", "anthropic_speed", "fast", "standard"),
+            ("openai-codex:gpt-6-astra", "service_tier", "ultrafast", "default"),
+        ]
+        for fast in (True, False, None)
+    ]
+    + [("openai-codex:gpt-6-astra", "service_tier", "priority", "default", "ultrafast")],
 )
 async def test_fast_capture_preserves_resources_and_independent_children(tmp_path, fast, route, key, on, off):
     from a13n_harness_ui.configuration_inspection import captured_configuration
@@ -1628,18 +1633,31 @@ async def test_fast_capture_preserves_resources_and_independent_children(tmp_pat
         model.read_text()
         .replace("route: openai:gpt-5", f"route: {route}")
         .replace("settings: {temperature: 0}", f"settings: {{{key}: {on}}}")
+        .replace(
+            "authentication: {kind: api_key, env: OPENAI_API_KEY}",
+            "authentication: {kind: codex_subscription}"
+            if route.startswith("openai-codex:")
+            else "authentication: {kind: api_key, env: OPENAI_API_KEY}",
+        )
     )
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
     original = resolver.resolve_run(source, _selection())
     composition = resolver.resolve_run(source, _selection(), model_overrides=RunModelOverrides(fast=fast))
-    assert composition.root.model.settings[key] == (off if fast is False else on)
+    expected = (
+        "ultrafast"
+        if fast == "ultrafast"
+        else off
+        if fast is False
+        else ("priority" if route.startswith("openai-codex:") and fast is True else on)
+    )
+    assert composition.root.model.settings[key] == expected
     assert composition.root.children[0].definition.model == composition.root.model
     assert composition.root.children[1].definition.model == original.root.children[1].definition.model
     assert source.models["model-primary"].settings[key] == on
     assert resolver.resolve_run(source, _selection()).root == original.root
     view = captured_configuration("capture", composition)
-    assert view.agent.fast == ("off" if fast is False else "on")
+    assert view.agent.fast == ("ultrafast" if expected == "ultrafast" else "off" if fast is False else "on")
 
 
 @pytest.mark.parametrize("mode", [None, "standard", "pro"])

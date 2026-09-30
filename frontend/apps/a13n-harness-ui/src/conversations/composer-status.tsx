@@ -74,9 +74,11 @@ export function ComposerStatus({
       ? "On"
       : fast === "off"
         ? "Off"
-        : fast === "default"
-          ? "Default"
-          : "—";
+        : fast === "ultrafast"
+          ? "Ultrafast"
+          : fast === "default"
+            ? "Default"
+            : "—";
   const usage = useThreadUsage(threadId);
   const context = useContextUsage(threadId);
   const [now, setNow] = useState(Date.now);

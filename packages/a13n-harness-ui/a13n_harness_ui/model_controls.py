@@ -10,7 +10,7 @@ from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from a13n_harness_ui.model_fast import FastControl, apply_fast, describe_fast
+from a13n_harness_ui.model_fast import FastControl, FastSelection, apply_fast, describe_fast
 from a13n_harness_ui.model_reasoning_mode import (
     ReasoningMode,
     ReasoningModeControl,
@@ -24,7 +24,7 @@ class ModelControlSelection(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     thinking: ThinkingSelection | None = None
-    fast: bool | None = None
+    fast: FastSelection | None = None
     reasoning_mode: ReasoningMode | None = None
 
     def controls(self) -> ModelControlSelection:

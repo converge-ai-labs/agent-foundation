@@ -34,8 +34,8 @@ const catalog: Schema<"ThreadSelectorCatalog"> = {
     {
       model_id: "one",
       name: "Model One",
-      route: "custom:one",
-      fast: { supported: true, state: "off" },
+      route: "openai-codex:gpt-6-astra",
+      fast: { supported: true, state: "off", ultrafast_supported: true },
       reasoning_mode: { supported: true, state: "pro" },
       thinking: {
         status: "supported",
@@ -240,6 +240,15 @@ it.each([false, true])(
       fast: true,
       reasoning_mode: "standard",
     });
+    await user.click(
+      within(panel).getByRole("button", { name: "Ultrafast mode" }),
+    );
+    expect(draft.controls.fast).toBe("ultrafast");
+    expect(
+      within(panel)
+        .getByRole("button", { name: "Fast mode" })
+        .getAttribute("aria-pressed"),
+    ).toBe("false");
     // The same panel and selections survive desktop/sheet transitions.
     act(() => {
       mobile = !mobile;
@@ -247,6 +256,11 @@ it.each([false, true])(
     });
     panel = await screen.findByRole("dialog", { name: "Agent & Model" });
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(
+      within(panel)
+        .getByRole("button", { name: "Ultrafast mode" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(
       within(panel)
         .getByRole("button", { name: "Low" })

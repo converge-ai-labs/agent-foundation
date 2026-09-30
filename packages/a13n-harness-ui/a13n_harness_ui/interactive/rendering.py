@@ -173,8 +173,9 @@ class Status:
                 else str(total)
             )
         state = self.state.capitalize()
-        if compact and self.fast == "on":
-            state += " Fast"
+        speed_label = "Ultrafast" if self.fast == "ultrafast" else "Fast" if self.fast == "on" else None
+        if compact and speed_label is not None:
+            state += f" {speed_label}"
         if compact and self.reasoning_mode == "pro":
             state += " Pro"
         goal = self.goal
@@ -187,7 +188,7 @@ class Status:
         fields = [
             *((goal_label,) if goal_label is not None else ()),
             state,
-            *(("Fast",) if not compact and self.fast == "on" else ()),
+            *((speed_label,) if not compact and speed_label is not None else ()),
             *(("Pro",) if not compact and self.reasoning_mode == "pro" else ()),
             f"{'tok' if compact else 'tokens'} {token_count}",
             f"ctx {context}",

@@ -12,7 +12,8 @@ from pydantic_ai.profiles.anthropic import anthropic_model_profile
 
 from a13n_harness_ui.errors import CompositionError
 
-type FastState = Literal["on", "off", "default"]
+type FastSelection = bool | Literal["ultrafast"]
+type FastState = Literal["on", "off", "ultrafast", "default"]
 
 
 class FastControl(BaseModel):
@@ -21,6 +22,8 @@ class FastControl(BaseModel):
     supported: bool
     state: FastState
     reason: str | None = None
+    ultrafast_supported: bool = False
+    ultrafast_reason: str | None = None
 
 
 def _setting(route: str) -> str | None:
@@ -65,6 +68,8 @@ def fast_state(route: str, settings: Mapping[str, JsonValue]) -> FastState:
     value = settings.get(key)
     if key != "anthropic_speed" and value is None:
         value = settings.get("service_tier")
+    if value == "ultrafast":
+        return "ultrafast"
     if value in ("priority", "fast"):
         return "on"
     if value in ("default", "standard", "flex"):
@@ -78,21 +83,32 @@ def describe_fast(route: str, settings: Mapping[str, JsonValue]) -> FastControl:
         reason = "Fast controls are not available for this model connection."
     elif _conflict(settings):
         reason = "Fast is controlled by extra_body or extra_headers. Edit the Model configuration first."
-    return FastControl(supported=reason is None, state=fast_state(route, settings), reason=reason)
+    ultrafast_reason = reason
+    if ultrafast_reason is None and route != "openai-codex:gpt-6-astra":
+        ultrafast_reason = "Ultrafast requires GPT-6 Astra through a Codex subscription connection."
+    return FastControl(
+        supported=reason is None,
+        state=fast_state(route, settings),
+        reason=reason,
+        ultrafast_supported=ultrafast_reason is None,
+        ultrafast_reason=ultrafast_reason,
+    )
 
 
-def apply_fast(route: str, settings: Mapping[str, JsonValue], selected: bool | None) -> dict[str, JsonValue]:
+def apply_fast(route: str, settings: Mapping[str, JsonValue], selected: FastSelection | None) -> dict[str, JsonValue]:
     effective = dict(settings)
     if selected is None:
         return effective
     control = describe_fast(route, settings)
     if not control.supported:
         raise CompositionError(control.reason or "Fast is unavailable.", code="model_fast_unavailable")
+    if selected == "ultrafast" and not control.ultrafast_supported:
+        raise CompositionError(control.ultrafast_reason or "Ultrafast is unavailable.", code="model_fast_unavailable")
     if route.startswith("anthropic:"):
         effective["anthropic_speed"] = "fast" if selected else "standard"
     else:
         # Let the native SDK translate the generic tier, including Gemini's
         # default -> standard mapping. Remove a competing OpenAI native value.
         effective.pop("openai_service_tier", None)
-        effective["service_tier"] = "priority" if selected else "default"
+        effective["service_tier"] = "ultrafast" if selected == "ultrafast" else "priority" if selected else "default"
     return effective

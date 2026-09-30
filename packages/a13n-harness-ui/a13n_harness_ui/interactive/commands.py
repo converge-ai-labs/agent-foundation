@@ -104,10 +104,10 @@ COMMANDS = (
     ),
     Command(
         "fast",
-        "Toggle priority service for this session without saving configuration.",
-        "[on|off|reset]",
+        "Select Fast or Ultrafast for this session without saving configuration.",
+        "[on|off|ultrafast|reset]",
         maximum=1,
-        choices=("on", "off", "reset"),
+        choices=("on", "off", "ultrafast", "reset"),
     ),
     Command(
         "pro",

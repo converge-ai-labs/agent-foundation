@@ -17,7 +17,7 @@ const model: Schema<"ModelSummary"> = {
 it("toggles inherited On to explicit Off and restores inheritance", async () => {
   const user = userEvent.setup();
   function Control() {
-    const [value, setValue] = useState<boolean | null>(null);
+    const [value, setValue] = useState<Schema<"SubmitRequest">["fast"]>(null);
     return <FastPicker model={model} value={value} onChange={setValue} />;
   }
   render(<Control />);
@@ -125,4 +125,88 @@ it("locks both the toggle and default reset during submission", async () => {
     await user.click(button);
   }
   expect(change).not.toHaveBeenCalled();
+});
+
+const astra: Schema<"ModelSummary"> = {
+  ...model,
+  route: "openai-codex:gpt-6-astra",
+  fast: { supported: true, state: "ultrafast", ultrafast_supported: true },
+};
+
+it("switches exclusively between inherited Ultrafast, Fast and Off, then resets", async () => {
+  const user = userEvent.setup();
+  function Control() {
+    const [value, setValue] = useState<Schema<"SubmitRequest">["fast"]>(null);
+    return <FastPicker model={astra} value={value} onChange={setValue} />;
+  }
+  render(<Control />);
+  const fast = screen.getByRole("button", { name: "Fast mode" });
+  const ultra = screen.getByRole("button", { name: "Ultrafast mode" });
+  expect(screen.getByText("Default · Ultrafast")).toBeTruthy();
+  expect(ultra.getAttribute("aria-pressed")).toBe("true");
+  expect(fast.getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByText(/Pro \$500/)).toBeTruthy();
+  await user.click(fast);
+  expect(fast.getAttribute("aria-pressed")).toBe("true");
+  expect(ultra.getAttribute("aria-pressed")).toBe("false");
+  ultra.focus();
+  await user.keyboard("[Space]");
+  expect(ultra.getAttribute("aria-pressed")).toBe("true");
+  expect(fast.getAttribute("aria-pressed")).toBe("false");
+  await user.click(ultra);
+  expect(screen.getByText("Off")).toBeTruthy();
+  expect(ultra.getAttribute("aria-pressed")).toBe("false");
+  await user.click(
+    screen.getByRole("button", { name: "Use default Fast mode" }),
+  );
+  expect(screen.getByText("Default · Ultrafast")).toBeTruthy();
+  expect(ultra.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("disables an unsupported Ultrafast selection without misrepresenting it as Fast", async () => {
+  const user = userEvent.setup();
+  const change = vi.fn();
+  const reason =
+    "Ultrafast requires GPT-6 Astra through a Codex subscription connection.";
+  const view = render(
+    <FastPicker model={astra} value="ultrafast" onChange={change} />,
+  );
+  view.rerender(
+    <FastPicker
+      model={{
+        ...model,
+        fast: {
+          supported: true,
+          state: "off",
+          ultrafast_supported: false,
+          ultrafast_reason: reason,
+        },
+      }}
+      value="ultrafast"
+      onChange={change}
+    />,
+  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Ultrafast mode",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    screen
+      .getByRole("button", { name: "Fast mode" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+  expect(screen.getByText(reason)).toBeTruthy();
+  expect(screen.getByText("Unavailable selection — use default.")).toBeTruthy();
+  await user.click(
+    screen.getByRole("button", { name: "Use default Fast mode" }),
+  );
+  expect(change).toHaveBeenCalledWith(null);
+  view.rerender(
+    <FastPicker model={astra} value="ultrafast" disabled onChange={change} />,
+  );
+  for (const button of screen.getAllByRole("button"))
+    expect((button as HTMLButtonElement).disabled).toBe(true);
 });

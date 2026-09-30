@@ -174,6 +174,12 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.speedToggles {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .fastToggle {
   flex-shrink: 0;
   color: var(--a13n-secondary);

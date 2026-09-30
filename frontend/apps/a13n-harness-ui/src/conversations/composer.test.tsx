@@ -686,12 +686,17 @@ it("uses distinct source identities for consecutive steering of one receipt and 
   draft.doc.destroy();
 });
 
-it.each(["send", "steer"] as const)(
-  "submits captured skill references for %s and preserves later edits",
-  async (action) => {
+it.each([
+  ["send", false],
+  ["send", "ultrafast"],
+  ["steer", false],
+  ["steer", "ultrafast"],
+] as const)(
+  "submits captured skill references for %s at speed %s and preserves later edits",
+  async (action, speed) => {
     const draft = new ThreadDraft();
     draft.controls.thinking = false;
-    draft.controls.fast = false;
+    draft.controls.fast = speed;
     draft.controls.reasoning_mode = "standard";
     draft.environment = {
       environment_profile_id: "environment-sandbox",
@@ -763,7 +768,7 @@ it.each(["send", "steer"] as const)(
     if (action === "send")
       expect(POST.mock.calls[0][1].body.thinking).toBe(false);
     else expect(POST.mock.calls[0][1].body).not.toHaveProperty("thinking");
-    if (action === "send") expect(POST.mock.calls[0][1].body.fast).toBe(false);
+    if (action === "send") expect(POST.mock.calls[0][1].body.fast).toBe(speed);
     else expect(POST.mock.calls[0][1].body).not.toHaveProperty("fast");
     if (action === "send")
       expect(POST.mock.calls[0][1].body.reasoning_mode).toBe("standard");

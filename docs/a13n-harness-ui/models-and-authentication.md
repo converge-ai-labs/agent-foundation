@@ -231,16 +231,25 @@ Codex onboarding adds a **Fast / Standard** choice after the model, defaulting t
 
 In an idle TUI, these commands affect subsequent Runs without rewriting YAML or saved Thread configuration:
 
-| Command       | Requested setting                                       |
-| ------------- | ------------------------------------------------------- |
-| `/fast`       | Toggle effective priority on/off                        |
-| `/fast on`    | `service_tier: priority`                                |
-| `/fast off`   | `service_tier: default`                                 |
-| `/fast reset` | Remove the override and inherit the Model configuration |
+| Command           | Requested setting                                       |
+| ----------------- | ------------------------------------------------------- |
+| `/fast`           | Toggle effective priority on/off                        |
+| `/fast on`        | `service_tier: priority`                                |
+| `/fast off`       | `service_tier: default`                                 |
+| `/fast ultrafast` | `service_tier: ultrafast` for Codex GPT-6 Astra         |
+| `/fast reset`     | Remove the override and inherit the Model configuration |
 
 **Off is not reset:** if your Model is configured for priority, `/fast off` requests standard service, while `/fast reset` returns to Fast. The override lasts for this TUI process, including `/new` and `/resume`. Selecting a Model or Agent clears it; restarting does not restore a tier override from history. `/thinking` changes reasoning independently and preserves the tier.
 
 This is a generic Model setting, not a Codex-only command. It applies to the root Model and Markdown children that inherit it, not explicitly configured child or auxiliary Models. **Fast** in the status bar and the requested service tier in `/status` describe the effective request, not proof that the provider fulfilled priority. Provider/model/account support varies; priority may consume more quota or cost more, and speed is not guaranteed. Unsupported settings retain the native integration's behavior; Harness UI does not silently retry at another tier.
+
+### Ultrafast for Codex GPT-6 Astra
+
+Select a Model with route `openai-codex:gpt-6-astra`. In the WebUI, open **Agent & Model settings** and select **Ultrafast** beside **Fast**. The two buttons are mutually exclusive; clicking the selected button requests standard processing. **Use default** restores the Model's configured tier. The HTTP operation field is `fast: "ultrafast"`; existing `true`, `false`, and null values retain their meaning. The TUI equivalent is `/fast ultrafast`.
+
+OpenAI currently requires Pro $500 or an eligible Enterprise/Edu workspace for Codex Ultrafast. Buying extra credits on another personal plan does not unlock it. GPT-6 Astra Ultrafast uses included subscription limits at 8x the Standard rate, and purchased credits at 6x; these are usage multipliers, not end-to-end speed guarantees. See [Codex speed and eligibility](https://developers.openai.com/codex/agent-configuration/speed) for current availability and workspace restrictions. Harness UI checks the Model connection locally, not your account entitlement; OpenAI remains responsible for granting access. Other models, including Sol, do not receive an Ultrafast override through this control.
+
+Fast, Off, and Ultrafast replace the effective request tier without changing thinking or reasoning mode. The status display records **Ultrafast** as requested, separately from model defaults and actual provider fulfillment. To make it the Astra Model default instead, set `settings.openai_service_tier: ultrafast` in its YAML.
 
 ### Permanent: edit the Model
 
