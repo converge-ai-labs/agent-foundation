@@ -221,7 +221,13 @@ async def test_unreadable_resume_input_leaves_waiting_head_unchanged(service, sc
 
 
 async def test_resume_input_survives_model_checkpoint_crash_once(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
-    _, waiting = await mixed_wait(service, scripted_model, runs_kit)
+    from urllib.parse import urlsplit
+
+    configuration = {
+        "allowed_hosts": [urlsplit(scripted_model.url).hostname],
+        "extensions": {"example.reader": {"images": True}},
+    }
+    _, waiting = await mixed_wait(service, scripted_model, runs_kit, options={"configuration": configuration})
     body = {**results(), "input": {"content": [{"type": "text", "text": "Durable clarification"}]}}
     response = await service.client.post(
         f"{service.api}/runs/{waiting['id']}/resume", json=body, headers=runs_kit.fresh_key()
@@ -245,7 +251,9 @@ async def test_resume_input_survives_model_checkpoint_crash_once(service, script
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
     scripted_model.say("Recovered")
     await (await runs_kit.attempt(service))
-    assert (await runs_kit.get_run(service, run_id))["status"] == "completed"
+    recovered = await runs_kit.get_run(service, run_id)
+    assert recovered["status"] == "completed"
+    assert recovered["options"]["configuration"] == waiting["options"]["configuration"] == configuration
     request = await scripted_model.request()
     assert str(request["messages"]).count("Durable clarification") == 1
     assert len([m for m in request["messages"] if m["role"] == "tool"]) == 3

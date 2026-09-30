@@ -438,6 +438,7 @@ class RootRunExecutor:
             )
             bindings = RunBindings(
                 instance=instance,
+                configuration=reconstructed.run_configuration,
                 environment=None if environment is None else environment.runtime,
                 tool_result_directory=None if environment is None else environment.tool_result_directory,
                 model_resolver=reconstructed.model_resolver,
@@ -452,7 +453,6 @@ class RootRunExecutor:
             bindings = production_run_bindings(
                 bindings,
                 reconstructed.definition_capability_ids,
-                web_ssrf_protection=reconstructed.web_ssrf_protection,
             )
             record_phase_result(
                 preparation_span,

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from a13n_harness import RunConfiguration
 from a13n_harness.environment import (
     EnvironmentRunExtensionFactoryContext,
     EnvironmentRunExtensionFactoryRegistration,
@@ -247,6 +248,7 @@ class AgentCompositionResolver:
         *,
         parent_node: ResolvedAgentNode | None = None,
         model_overrides: RunModelOverrides | None = None,
+        run_configuration: RunConfiguration | None = None,
     ) -> ResolvedRunComposition:
         """Resolve one exact Thread head against one accepted source generation."""
         root = self.resolve_agent(source, selection, parent_node=parent_node, model_overrides=model_overrides)
@@ -277,7 +279,7 @@ class AgentCompositionResolver:
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
             memory_enabled=source.document.memory.enabled,
-            web_ssrf_protection=source.document.security.web_ssrf_protection,
+            run_configuration=run_configuration or source.document.run_configuration,
             role=selection.role,
             coordinator_thread_id=selection.coordinator_thread_id,
             project_roots=selection.local_roots,
@@ -525,6 +527,7 @@ class AgentCompositionResolver:
             thread_configuration_version=thread.configuration.version,
             project_id=thread.configuration.project_id,
             memory_organization=True,
+            run_configuration=source.document.run_configuration,
             root=ResolvedAgentNode(
                 source_kind="memory",
                 source_id="memory",

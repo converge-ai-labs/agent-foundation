@@ -11,7 +11,7 @@ Select the file with `a13n-service --config service.toml ...` or the `A13N_SETTI
 
 Unknown settings stop startup rather than falling back to defaults. Validation errors avoid printing secret values.
 
-Every field that takes a list, a map or a nested section, such as `server.trusted_proxies`, the `providers` lists (`private_domains`, `private_cidrs`, `http_origins`, `return_urls`, `mcp_servers`), `encryption.keys`, `plugins.keys` or the nested `auth.mail` section, takes JSON as an environment variable, for example `A13N_PLUGINS__KEYS='["notes"]'` or `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`.
+Every field that takes a list, a map or a nested section, such as `server.trusted_proxies`, the `providers` lists (`http_origins`, `return_urls`, `mcp_servers`), `encryption.keys`, `plugins.keys` or the nested `auth.mail` section, takes JSON as an environment variable, for example `A13N_PLUGINS__KEYS='["notes"]'` or `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`.
 
 ```toml
 [server]
@@ -114,16 +114,22 @@ Every request the Service makes to a provider, a remote MCP server, an OAuth ser
 
 - URLs use `http` or `https` and carry no user information, fragment or credential-like query parameter.
 - With `providers.require_https = true` (the default), plain HTTP is refused except for the exact origins listed in `providers.http_origins`.
-- With `providers.ssrf_protection = true` (the default), private, loopback and link-local destinations are refused unless the host matches `providers.private_domains` (subdomains included) or the resolved address is in `providers.private_cidrs`. Cloud metadata addresses are always refused.
-- With SSRF protection enabled, on direct host-owned HTTP connections, addresses are checked after DNS resolution and only checked addresses are dialed. Redirects are not followed, compressed responses are refused, and response bodies are bounded by `providers.response_bytes`.
+- Host provider clients do not follow redirects, refuse compressed responses and bound response bodies with `providers.response_bytes`. TLS verification, credential rules and deadlines remain enabled.
 
-To disable application-level SSRF restrictions on a trusted deployment, set this on every affected Service process and restart it:
+Run messages accept `options.configuration`, separately from Agent overrides:
 
-```bash
-export A13N_PROVIDERS__SSRF_PROTECTION=false
+```json
+{
+  "configuration": {
+    "allowed_hosts": ["api.example.com", "regex:(api|docs)\\.example\\.com"],
+    "extensions": {}
+  }
+}
 ```
 
-The equivalent TOML setting is `providers.ssrf_protection = false`. Disabled means no destination DNS prechecks, IP restrictions (including cloud metadata blocking), or custom direct-route IP pinning. This applies to provider and Web calls, connection/resource validation, Environment endpoint prechecks and trace queries. URL and credential rules, `require_https`, TLS verification, redirect credential boundaries, deadlines and response bounds remain enforced. Native direct connections still need DNS when the HTTP library or SDK connects. Only disable the checks when your deployment or trusted proxy owns destination restrictions; this is not a tenant-controlled option.
+Include every required Model, Web, connection and remote Environment hostname. A null `allowed_hosts` is unrestricted; an empty array denies all; ordinary entries match exact normalized hostnames/IPs, while `regex:<pattern>` entries use Python full-string matching against the normalized hostname. The JSON example uses doubled backslashes for literal dots and allows only `api.example.com` or `docs.example.com`, not arbitrary subdomains or suffixes. Invalid/empty patterns are rejected at acceptance. See [host rules and regular expressions](../a13n-harness/context.md#host-rules-and-regular-expressions) for normalization, subdomain patterns and escaping. Globs, ports and CIDRs are not host rules. Acceptance freezes this snapshot for input URL reads, execution, recovery, resume and children. Steering can omit configuration or name the identical value; changing it on an active Run fails with `run_configuration_immutable`. Submit `delivery: "next_run"` to select a new snapshot. Namespaced JSON extensions are read only by consumers that explicitly support them. Console controls are tracked separately in #823; the API accepts this configuration now.
+
+Authorization checks declared URL hostnames without DNS prechecks, address classification or IP pinning. Management operations outside a Run retain process URL/HTTPS policy, not a Run's configuration. Enforce network restrictions for arbitrary shell, third-party plugin and opaque SDK traffic at the deployment or Environment boundary.
 
 ### Outbound proxies
 
@@ -137,7 +143,7 @@ export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
 
 Uppercase forms and `ALL_PROXY` are supported; selection and bypass matching follow `httpx2`. An HTTP proxy URL can carry HTTPS traffic through CONNECT. Models, Remote MCP/OAuth, connectors, record memory, web requests, model catalogs, webhooks and other callers of the host HTTP client use these routes.
 
-**The deployment operator's proxy is trusted outbound infrastructure.** Request URL validation and TLS verification remain enabled, but the proxy owns final DNS and destination network restrictions. With SSRF protection enabled, application-level DNS/IP pinning and final-address blocking apply to direct connections, including `NO_PROXY`, not to the proxy's outgoing connection. Configure restrictions on the proxy when needed. With protection enabled, existing endpoint prechecks can still require local DNS; disabling it removes that requirement. A failed proxy request does not silently fall back to direct.
+**The deployment operator's proxy is trusted outbound infrastructure.** Declared-host authorization and TLS verification apply independently of routing. The proxy owns final DNS and destination network restrictions; direct and `NO_PROXY` routes also use native transport DNS without application-level IP pinning. A failed proxy request never silently falls back to direct.
 
 HTTPS Envd attachments also use environment proxies; plaintext local/provider-private Envd links remain direct. Other SDK-owned environment and storage transports retain their own proxy behavior. This does not change the Envd controlled-egress broker or its execution isolation policy.
 
@@ -147,7 +153,6 @@ For example, to use a model server on the Docker host:
 
 ```toml
 [providers]
-private_domains = ["host.docker.internal"]
 http_origins = ["http://host.docker.internal:11434"]
 ```
 

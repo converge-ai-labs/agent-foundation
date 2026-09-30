@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
+from a13n_harness import RunConfiguration
 from a13n_harness.capabilities import ToolProxyConfig
 from a13n_harness.providers.environment.remote_envd.configuration import (
     HttpEnvdConnectionConfiguration,
@@ -194,7 +195,6 @@ class ShellReviewConfiguration(ConfigurationModel):
 
 class SecurityConfiguration(ConfigurationModel):
     shell_review: ShellReviewConfiguration = Field(default_factory=ShellReviewConfiguration)
-    web_ssrf_protection: bool = False
 
 
 class SidekickConfiguration(ConfigurationModel):
@@ -294,6 +294,7 @@ class HarnessUiDocument(ConfigurationModel):
     display: TerminalDisplayConfiguration = Field(default_factory=TerminalDisplayConfiguration)
     tools: ToolsConfiguration = Field(default_factory=ToolsConfiguration)
     security: SecurityConfiguration = Field(default_factory=SecurityConfiguration)
+    run_configuration: RunConfiguration = Field(default_factory=RunConfiguration)
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
     webui: WebUiConfiguration = Field(default_factory=WebUiConfiguration)
     media_understanding: MediaUnderstandingConfiguration = Field(

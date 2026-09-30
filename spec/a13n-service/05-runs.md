@@ -30,6 +30,14 @@ At execution, accepted input distinguishes message content from a deferred-resul
 - An **attempt** executes a run under a renewable lease. Recovery and handoff replace the attempt; the run and its assigned inputs stay.
 - A **checkpoint** is resumable Harness state, committed by moving the run's pointer to an immutable object. The display committed with it is what viewers see ([07](07-facts-and-delivery.md#checkpoints-and-display)). A checkpoint never rolls back external effects.
 
+## Run configuration
+
+Message `options.configuration` accepts the shared [Harness Run configuration](../a13n-harness/06-execution-context-and-lifecycle.md#run-configuration), independently of Agent revision overrides. Omission or null selects the default for a new Run and retains the snapshot when steering. An explicit object selects its entire value; `{allowed_hosts: null}` explicitly clears a hostname restriction for a new Run, while `{allowed_hosts: []}` denies every destination.
+
+Acceptance normalizes and freezes the configuration in `Run.options` alongside the resolved selection. Worker recovery, handoff, resume successors and child-result continuations retain it. Inline and async child Runs inherit the parent's configuration; their usage ceilings remain independently narrowed. Input URL materialization uses the accepted snapshot before entering Harness, including steering, recovered inputs and resume input.
+
+A `steer` submission or pending-entry edit against an active Run may omit configuration or explicitly match the frozen value. An explicit different value fails with conflict reason `run_configuration_immutable`; it never silently becomes a later Run. `next_run` selects a new snapshot without modifying the active one. Canonical request idempotency includes normalized configuration; the other-options steering digest excludes it and steering compares configuration separately.
+
 ## Tables
 
 The tenant foreign-key rules in [03](03-tenancy.md#tenant-integrity) apply throughout. Payloads, outputs and options are bounded inline JSON; files a message refers to are assets ([04](04-resources.md)).

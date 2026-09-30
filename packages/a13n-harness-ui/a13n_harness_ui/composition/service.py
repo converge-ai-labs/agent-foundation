@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from a13n_harness import RunConfiguration
 from a13n_logging import get_logger
 from anyio import Lock, to_thread
 from pydantic import BaseModel
@@ -140,8 +141,15 @@ class RunCompositionService:
         *,
         parent_node: ResolvedAgentNode | None = None,
         model_overrides: RunModelOverrides | None = None,
+        run_configuration: RunConfiguration | None = None,
     ) -> PublishedRunComposition:
-        value = self._resolver.resolve_run(source, selection, parent_node=parent_node, model_overrides=model_overrides)
+        value = self._resolver.resolve_run(
+            source,
+            selection,
+            parent_node=parent_node,
+            model_overrides=model_overrides,
+            run_configuration=run_configuration,
+        )
         envelope = await self._store.objects.publish_model(
             object_kind=ObjectKind.run_composition,
             value=value,

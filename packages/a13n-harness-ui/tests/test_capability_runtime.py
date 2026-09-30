@@ -4,7 +4,7 @@ import socket
 from io import BytesIO
 
 import pytest
-from a13n_harness import RunBindings
+from a13n_harness import RunBindings, RunConfiguration
 from a13n_harness.capabilities import (
     DocumentConversionRequest,
     WebBinding,
@@ -32,8 +32,8 @@ pytestmark = pytest.mark.anyio
         "http://app.localhost/",
     ],
 )
-async def test_web_literal_destination_guard_is_opt_in(url: str, enabled: bool) -> None:
-    policy = HttpWebPolicy(ssrf_protection=enabled)
+async def test_web_host_authorization_is_run_scoped(url: str, enabled: bool) -> None:
+    policy = HttpWebPolicy(RunConfiguration(allowed_hosts={"proxy-only.test", "93.184.216.34"} if enabled else None))
     if enabled:
         with pytest.raises(WebProviderError) as denied:
             await policy.authorize(url, purpose="fetch")
@@ -48,8 +48,12 @@ async def test_web_policy_never_resolves_hostnames(monkeypatch: pytest.MonkeyPat
         pytest.fail("URL authorization must not depend on local DNS")
 
     monkeypatch.setattr(socket, "getaddrinfo", unexpected_dns)
-    await HttpWebPolicy(ssrf_protection=enabled).authorize("https://proxy-only.test/page", purpose="fetch")
-    await HttpWebPolicy(ssrf_protection=enabled).authorize("https://93.184.216.34/page", purpose="fetch")
+    await HttpWebPolicy(
+        RunConfiguration(allowed_hosts={"proxy-only.test", "93.184.216.34"} if enabled else None)
+    ).authorize("https://proxy-only.test/page", purpose="fetch")
+    await HttpWebPolicy(
+        RunConfiguration(allowed_hosts={"proxy-only.test", "93.184.216.34"} if enabled else None)
+    ).authorize("https://93.184.216.34/page", purpose="fetch")
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -59,7 +63,9 @@ async def test_web_policy_never_resolves_hostnames(monkeypatch: pytest.MonkeyPat
 )
 async def test_web_url_validation_remains_enabled(url: str, enabled: bool) -> None:
     with pytest.raises(WebProviderError) as invalid:
-        await HttpWebPolicy(ssrf_protection=enabled).authorize(url, purpose="fetch")
+        await HttpWebPolicy(
+            RunConfiguration(allowed_hosts={"proxy-only.test", "93.184.216.34"} if enabled else None)
+        ).authorize(url, purpose="fetch")
     assert invalid.value.code == "web_url_invalid"
 
 
@@ -101,10 +107,13 @@ def test_production_capabilities_bind_only_required_fresh_collaborators() -> Non
     assert isinstance(documents.document_converter, LocalDocumentConverter) and documents.web is None
     assert web.web is not production_run_bindings(baseline, frozenset({"a13n.web"})).web
     assert web.instance is baseline.instance and documents.instance is baseline.instance
-    assert isinstance(web.web.policy, HttpWebPolicy) and not web.web.policy.ssrf_protection
-    guarded = production_run_bindings(baseline, frozenset({"a13n.web"}), web_ssrf_protection=True)
+    assert isinstance(web.web.policy, HttpWebPolicy) and web.web.policy.configuration == baseline.configuration
+    restricted = RunBindings.embedded(configuration=RunConfiguration(allowed_hosts={"allowed.test"}))
+    guarded = production_run_bindings(restricted, frozenset({"a13n.web"}))
     assert guarded.web is not None
-    assert isinstance(guarded.web.policy, HttpWebPolicy) and guarded.web.policy.ssrf_protection
+    assert (
+        isinstance(guarded.web.policy, HttpWebPolicy) and guarded.web.policy.configuration == restricted.configuration
+    )
 
 
 async def test_existing_web_yaml_runs_host_scrape_with_search_off(monkeypatch: pytest.MonkeyPatch) -> None:

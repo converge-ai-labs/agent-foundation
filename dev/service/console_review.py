@@ -91,7 +91,6 @@ active_key_id = "fixture"
 [encryption.keys]
 fixture = {json.dumps(encryption_key)}
 [providers]
-private_cidrs = ["127.0.0.0/8"]
 http_origins = {json.dumps([*origins, console])}
 return_urls = [{json.dumps(f"{console}/workspace/{workspace_id}/connections")}]
 [worker]

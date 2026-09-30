@@ -19,6 +19,49 @@ An agent needs relevant input now and enough state to continue later. Harness ke
 
 A model context budget does not enable tools by itself. Select the corresponding Capability, then configure its thresholds. For continuation serialization and human decisions, use [State and Resume](state-and-resume.md).
 
+## Run configuration
+
+Use `RunConfiguration` for immutable caller-selected values shared by one Run's consumers, not mutable working state or Capability constructor settings:
+
+```python
+from a13n_harness import RunBindings, RunConfiguration
+
+configuration = RunConfiguration(
+    allowed_hosts={"api.example.com", "docs.example.com"},
+    extensions={"example.reader": {"images": True}},
+)
+bindings = RunBindings.embedded(configuration=configuration)
+# Pass bindings to executable.run(..., bindings=bindings).
+```
+
+Plugins and tools read `AgentContext.configuration` (`ctx.deps.configuration` in native tool context). A consumer explicitly validates its namespaced extension, for example `context.configuration.extensions.get("example.reader")`; nested values are detached, so editing them cannot mutate the accepted snapshot. Harness does not automatically merge extensions into Capabilities or register extension schemas.
+
+`allowed_hosts=None` is unrestricted; an empty set denies all. Ordinary entries match exact normalized hostnames/IPs; use an explicit `regex:` entry for a group of hosts, as described below. Ports and CIDRs are not host rules. Call `configuration.authorize_url(url)` before each owned HTTP(S) request and redirect hop; it checks the declared hostname without DNS resolution or IP pinning. First-party Host transports opt in explicitly. Restrictive configuration uses Host Web tools rather than native search, avoids direct video URL forwarding and rejects opaque native Model/MCP routes. Native Model media URLs, including history and tool returns, are refused under restriction before SDK downloading or provider forwarding; materialize authorized content as `BinaryContent` instead. An injected Model resolver or media reader must enforce the snapshot for its own requests. Arbitrary shell and plugin networking requires deployment or Environment isolation. Hosts capture this value for durable recovery and async children; Harness reuses it across internal recovery and inline children.
+
+### Host rules and regular expressions
+
+Exact hosts and `regex:<pattern>` rules can coexist; matching any entry allows the destination. Patterns use Python regular-expression syntax and match the **entire normalized hostname** (`re.fullmatch`), so `^` and `$` are optional. They never inspect the scheme, credentials, port, path or query. Normalization lowercases DNS names, removes trailing dots, converts internationalized names to ASCII IDNA, and canonicalizes IP literals before matching. Write lowercase/ASCII patterns or use an explicit inline flag such as `(?i)`; the pattern itself is not lowercased or IDNA-converted.
+
+```python
+configuration = RunConfiguration(
+    allowed_hosts={
+        "api.vendor.example",                         # Exact host only.
+        r"regex:(api|docs)\.example\.com",            # Two named subdomains.
+        r"regex:(?:[a-z0-9-]+\.)*assets\.example\.com", # Base and all subdomain levels.
+    },
+)
+```
+
+| Rule                                  | Allows                              | Does not allow                            |
+| ------------------------------------- | ----------------------------------- | ----------------------------------------- |
+| `example.com`                         | `example.com`                       | `api.example.com`                         |
+| `regex:[a-z0-9-]+\.example\.com`      | `api.example.com`                   | `example.com`, `eu.api.example.com`       |
+| `regex:(?:[a-z0-9-]+\.)*example\.com` | `example.com`, `eu.api.example.com` | `notexample.com`, `example.com.evil.test` |
+
+Escape literal dots as `\.`; an unescaped `.` matches any character. `*.example.com` is not a supported glob. A bare `regex:example` does not match `example.com` because matching is not a substring search. Empty or invalid patterns reject the configuration before execution. Patterns are trusted caller-authored settings: keep them simple, avoid ambiguous nested repetitions, and do not accept model-generated expressions. A broad pattern such as `regex:.*` allows every valid hostname, but the Run is still considered restrictive and retains the native-transport restrictions above. Each redirect destination must independently match a rule.
+
+When writing YAML, use single quotes to preserve backslashes, for example `'regex:(api|docs)\.example\.com'`. JSON requires doubled backslashes: `"regex:(api|docs)\\.example\\.com"`. Python raw strings, as shown above, avoid extra escaping.
+
 ## Context Composition
 
 Harness context features use one model-context coordinator, so each owner contributes a bounded block without directly rewriting another owner's messages.

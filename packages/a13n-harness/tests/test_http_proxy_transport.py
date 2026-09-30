@@ -219,17 +219,11 @@ async def test_direct_transport_closed_alongside_proxy(monkeypatch: pytest.Monke
 async def test_default_provider_clients_honor_proxy_without_adding_retries(
     monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
-    import ipaddress
     from dataclasses import replace
 
     from a13n_harness.providers.connector.builtins import COMPOSIO
     from a13n_harness.providers.memory import MEM0_PLATFORM
     from a13n_harness.providers.web.transport import provider_client
-
-    monkeypatch.setattr(
-        "a13n_harness.providers.endpoint_policy._resolve_addresses",
-        lambda host, port: (ipaddress.ip_address("93.184.216.34"),),
-    )
 
     @asynccontextmanager
     async def connector(configuration, credential, http):

@@ -825,6 +825,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             run_id=self.run_id,
             thread_id=self._previous_state.thread_id,
             instance=bindings.instance,
+            configuration=bindings.configuration,
             state=context_state,
             environment=environment,
             model_resolver=bindings.model_resolver,

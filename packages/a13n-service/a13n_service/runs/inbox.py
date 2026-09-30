@@ -302,11 +302,15 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
         # The origin must be this run or already in its history; a later failure never revives it.
         return origin is not None and (origin.id == run.id or origin.status in {"completed", "waiting"})
     options = RunOptions.model_validate(entry.options)
+    configuration = RunOptions.model_validate(run.options).configuration
     return (
         entry.delivery == "steer"
         and entry.agent_id == run.agent_id
         and entry.agent_revision_id in {None, run.agent_revision_id}
-        and (options == RunOptions() or options.digest() == run.options_digest)
+        and (options.configuration is None or options.configuration == configuration)
+        and (
+            options.model_copy(update={"configuration": None}) == RunOptions() or options.digest() == run.options_digest
+        )
     )
 
 

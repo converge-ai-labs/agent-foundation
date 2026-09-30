@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib.util
-import ipaddress
 import json
 from pathlib import Path
 
@@ -20,9 +19,6 @@ def smoke(monkeypatch):
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    monkeypatch.setattr(
-        "a13n_harness.providers.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("8.8.8.8")]
-    )
     args = argparse.Namespace(
         provider="composio",
         command="walkthrough",

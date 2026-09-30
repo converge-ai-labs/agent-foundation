@@ -65,13 +65,10 @@ def test_declared_routes_own_their_provider_api_and_endpoint(name, provider_type
 
 
 class _AllowEndpoint:
-    @classmethod
-    def from_operator_allowlist(cls, **kwargs: object) -> _AllowEndpoint:
+    def __init__(self, **kwargs: object) -> None:
         del kwargs
-        return cls()
 
-    async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str:
-        del resolve_dns
+    async def validate(self, endpoint: str) -> str:
         return endpoint
 
 

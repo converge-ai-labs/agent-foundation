@@ -28,6 +28,7 @@ from a13n_harness import (
     HarnessState,
     HarnessStreamEvent,
     RunBindings,
+    RunConfiguration,
     RunError,
     RunModelResolver,
     RunPreparationContext,
@@ -94,6 +95,7 @@ class _Plan:
     """What an attempt runs and where it continues from, read and restored before anything is delivered."""
 
     session_id: str
+    configuration: RunConfiguration
     source_entry_id: str | None
     mounts: tuple[EnvironmentMount, ...]
     memory_cursors: dict[str, str | None]
@@ -246,6 +248,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         resume = replace(resume, recovery=True).remaining(state.message_history) if resume is not None else None
     return _Plan(
         session_id=session_id,
+        configuration=options.configuration or RunConfiguration(),
         source_entry_id=source_entry_id,
         mounts=mounts,
         memory_cursors=memory_cursors,
@@ -365,9 +368,11 @@ class _Attempt:
         if prepared is None:
             return None
         async with AsyncExitStack() as stack:
-            environments = await stack.enter_async_context(open_mounts(runtime, prepared))
+            environments = await stack.enter_async_context(
+                open_mounts(runtime, prepared, configuration=self.plan.configuration)
+            )
             root = self.plan.agent
-            models = await agent.open_models(stack, runtime, root)
+            models = await agent.open_models(stack, runtime, root, configuration=self.plan.configuration)
             host = await stack.enter_async_context(
                 open_host(
                     runtime,
@@ -378,6 +383,7 @@ class _Attempt:
                     principal=self.plan.principal,
                     authority=self.plan.authority,
                     cursors=self.cursors,
+                    configuration=self.plan.configuration,
                 )
             )
             executable = agent.build(
@@ -581,7 +587,12 @@ class _Attempt:
             # Unlike a steer, refusal of this frozen initial input fails the whole run.
             parts.extend(
                 await inputs.content(
-                    self.runtime, self.plan.principal, self.recipient, context.environment, self.plan.resume_input
+                    self.runtime,
+                    self.plan.principal,
+                    self.recipient,
+                    context.environment,
+                    self.plan.resume_input,
+                    configuration=self.plan.configuration,
                 )
             )
         for entry in self.plan.assigned:
@@ -596,7 +607,14 @@ class _Attempt:
         whether offered at a boundary or again by a recovered attempt: it fails alone and the run goes on without
         it. The run's own source entry is what it runs on, so a refusal to read that one fails the run."""
         try:
-            return await inputs.content(self.runtime, self.plan.principal, self.recipient, environment, entry)
+            return await inputs.content(
+                self.runtime,
+                self.plan.principal,
+                self.recipient,
+                environment,
+                entry,
+                configuration=self.plan.configuration,
+            )
         except ServiceError as error:
             if error.code == "unavailable" or entry.id == self.plan.source_entry_id:
                 raise
@@ -725,6 +743,7 @@ class _Attempt:
     def _bindings(self, resolver: RunModelResolver) -> RunBindings:
         lease = self.lease
         return RunBindings(
+            configuration=self.plan.configuration,
             instance=AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-service", subject=self.plan.principal.id),
                 agent_instance_id=lease.run_id,

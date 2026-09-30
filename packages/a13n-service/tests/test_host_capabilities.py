@@ -20,6 +20,7 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessRunResult,
     RunBindings,
+    RunConfiguration,
     RunError,
 )
 from a13n_harness.capabilities.web import WebCapability, WebSearchRequest, WebSearchResponse, WebSearchResult
@@ -221,7 +222,7 @@ async def test_a_refused_web_search_never_reaches_its_provider(runtime, tenant) 
 
     async def search(call_id: str, check: CallCheck) -> tuple[HarnessRunResult[str], Script]:
         script = Script([("search", {"query": "agents"}, call_id), "done"])
-        async with open_web(web, check, runtime=runtime) as binding:
+        async with open_web(web, check, runtime=runtime, configuration=RunConfiguration()) as binding:
             return await run(script, [WebCapability(web_configuration(tools))], web=binding), script
 
     # The refusal ends the Harness run; the attempt seals the refusal its check recorded.
@@ -254,28 +255,28 @@ def pages() -> FastAPI:
     return app
 
 
-async def test_fetch_follows_redirects_and_refuses_private_addresses(runtime, tenant, listen) -> None:  # type: ignore[no-untyped-def]
+async def test_fetch_follows_redirects_and_enforces_run_hosts(runtime, tenant, listen) -> None:  # type: ignore[no-untyped-def]
     tools = WebTools(search=None, scrape=None, fetch=FetchConfiguration(), download=None)
     web = ResolvedWeb(None, None)
 
-    async def fetch(runtime: Any, url: str) -> Any:
+    async def fetch(runtime: Any, url: str, configuration: RunConfiguration | None = None) -> Any:
         script = Script([("fetch", {"url": url}, "call_fetch"), "done"])
-        async with open_web(web, call_check(runtime, tenant), runtime=runtime) as binding:
+        async with open_web(
+            web, call_check(runtime, tenant), runtime=runtime, configuration=configuration or RunConfiguration()
+        ) as binding:
             result = await run(script, [WebCapability(web_configuration(tools))], web=binding)
         assert result.output == "done"
         return script.results[0]
 
     async with listen(pages()) as url:
-        # The test deployment allowlists loopback addresses; redirects are followed hop by hop.
+        # Native routing reaches loopback; redirects are authorized hop by hop.
         fetched = await fetch(runtime, f"{url}/start")
         assert fetched["ok"] and fetched["content"] == "the page" and fetched["final_url"] == f"{url}/page"
 
-        providers = runtime.settings.providers.model_copy(update={"private_cidrs": ()})
-        strict = replace(runtime, settings=runtime.settings.model_copy(update={"providers": providers}))
-        literal = await fetch(strict, f"{url}/page")
+        denied = RunConfiguration(allowed_hosts={"other.test"})
+        literal = await fetch(runtime, f"{url}/page", denied)
         assert literal["error"]["code"] == "web_destination_denied"
-        # A name is refused where the transport connects, for every address it resolves to.
-        named = await fetch(strict, f"{url.replace('127.0.0.1', 'localhost')}/page")
+        named = await fetch(runtime, f"{url.replace('127.0.0.1', 'localhost')}/page", denied)
         assert named["error"]["code"] == "web_destination_denied"
 
 

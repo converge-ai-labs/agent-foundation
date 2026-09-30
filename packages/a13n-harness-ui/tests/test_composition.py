@@ -1703,24 +1703,23 @@ async def test_reasoning_mode_capture_preserves_model_and_independent_children(t
     assert captured_configuration("capture", composition).agent.reasoning_mode == (mode or "pro")
 
 
-@pytest.mark.parametrize("enabled", [False, True])
-async def test_web_ssrf_protection_is_captured_for_root_and_children(tmp_path: Path, enabled: bool) -> None:
+async def test_run_configuration_is_captured_for_root_and_children(tmp_path: Path) -> None:
     path = _write_source(tmp_path)
     with path.open("a") as stream:
-        stream.write(f"security:\n  web_ssrf_protection: {str(enabled).lower()}\n")
+        stream.write(
+            "run_configuration:\n  allowed_hosts: [EXAMPLE.com.]\n  extensions:\n    example.filter: {image: keep}\n"
+        )
     source = await load_harness_ui_configuration(path)
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
     captured = type(composition).model_validate_json(composition.model_dump_json())
-    assert captured.web_ssrf_protection is enabled
+    assert captured.run_configuration.allowed_hosts == {"example.com"}
     reconstructor = AgentReconstructor(_catalog())
     root = reconstructor.reconstruct(captured, subagent_operator=_UnusedOperator())
     child_composition = captured.model_copy(update={"root": captured.root.children[0].definition})
     child = reconstructor.reconstruct(child_composition, subagent_operator=_UnusedOperator())
-    assert root.web_ssrf_protection is enabled
-    assert child.web_ssrf_protection is enabled
-    legacy = captured.model_dump(mode="json")
-    legacy.pop("web_ssrf_protection", None)
-    assert not type(captured).model_validate(legacy).web_ssrf_protection
+    assert root.run_configuration == captured.run_configuration
+    assert child.run_configuration == captured.run_configuration
+    assert root.model_resolver.configuration == child.model_resolver.configuration == captured.run_configuration
 
 
 @pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 3}])

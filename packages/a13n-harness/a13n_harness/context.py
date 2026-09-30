@@ -15,6 +15,7 @@ from pydantic import JsonValue
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.input import ModelInputState
@@ -140,6 +141,7 @@ class RunBindings:
     """Fresh trusted authority and optional advanced integrations supplied by the caller."""
 
     instance: AgentInstanceContext
+    configuration: RunConfiguration = field(default_factory=RunConfiguration)
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None
@@ -172,6 +174,8 @@ class RunBindings:
             raise TypeError("RunBindings.usage_reporter must implement UsageReporter or UsageDeltaReporter")
         if self.model_call_check is not None and not isinstance(self.model_call_check, ModelCallCheck):
             raise TypeError("RunBindings.model_call_check must implement ModelCallCheck")
+        if not isinstance(self.configuration, RunConfiguration):
+            raise TypeError("RunBindings.configuration must be a RunConfiguration")
         if not isinstance(self.deferred_tools_supported, bool):
             raise TypeError("deferred_tools_supported must be a boolean")
         if self.tool_result_directory is not None:
@@ -216,6 +220,7 @@ class RunBindings:
         cls,
         *,
         identity: AgentIdentityRef | None = None,
+        configuration: RunConfiguration | None = None,
         environment: EnvironmentRuntime | None = None,
         model_resolver: RunModelResolver | None = None,
         toolset_instructions: bool | None = None,
@@ -243,6 +248,7 @@ class RunBindings:
                 identity=identity or AgentIdentityRef(issuer="local", subject="embedded"),
                 agent_instance_id=instance_id,
             ),
+            configuration=configuration or RunConfiguration(),
             environment=environment,
             model_resolver=model_resolver,
             toolset_instructions=toolset_instructions,
@@ -379,6 +385,7 @@ class AgentContext:
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
+    configuration: RunConfiguration = field(default_factory=RunConfiguration)
     deferred_tools_supported: bool = True
     _deferred_input: DeferredInputState | None = field(default=None, repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)

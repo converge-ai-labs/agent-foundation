@@ -108,7 +108,7 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         try:
             with fail_after(_PROBE_TIMEOUT_SECONDS):
                 request = self.connection_probe(connection)
-                await (endpoint_policy or EndpointPolicy()).validate(request.url, resolve_dns=True)
+                await (endpoint_policy or EndpointPolicy()).validate(request.url)
                 async with http_client.stream(
                     "GET",
                     request.url,
@@ -137,21 +137,30 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
         endpoint_policy: EndpointValidator | None = None,
     ) -> Model[Any]:
         """Return a native Model. The caller owns the supplied HTTP client and enters the Model."""
+        from ...models.configuration import configured_model
+
         api = model_api or self.supported_model_apis[0]
         if api not in self.supported_model_apis:
             raise ValueError("the Model API is not supported by this Provider")
         connection = self.bind(configuration, credential, extra_headers=extra_headers)
         policy = endpoint_policy or EndpointPolicy()
+        if (
+            api == "bedrock.converse"
+            and isinstance(policy, EndpointPolicy)
+            and policy.configuration.allowed_hosts is not None
+        ):
+            raise ValueError("Bedrock Converse SDK transport cannot enforce Run allowed hosts")
         if connection.endpoint is not None:
-            await policy.validate(connection.endpoint, resolve_dns=True)
+            await policy.validate(connection.endpoint)
         for name in self.additional_endpoint_fields:
             endpoint = getattr(connection.configuration, name)
             if endpoint is not None:
-                await policy.validate(endpoint, resolve_dns=True)
+                await policy.validate(endpoint)
         native = await to_thread.run_sync(self.build_provider, connection, http_client, api)
         try:
-            await policy.validate(str(native.base_url), resolve_dns=True)
-            return MODEL_APIS[api].build(model_name, native)
+            await policy.validate(str(native.base_url))
+            model = MODEL_APIS[api].build(model_name, native)
+            return configured_model(model, policy.configuration) if isinstance(policy, EndpointPolicy) else model
         except BaseException as error:
             with move_on_after(5, shield=True):
                 await native.__aenter__()

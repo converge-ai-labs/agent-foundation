@@ -27,6 +27,7 @@ A Host may map one logical Harness run to one durable execution attempt. It does
 @dataclass(frozen=True, slots=True)
 class RunBindings:
     instance: AgentInstanceContext
+    configuration: RunConfiguration = RunConfiguration()
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     capabilities: tuple[
@@ -53,6 +54,16 @@ The same context and entered Environment facade are reused by every internal `Mo
 The logical Run receives one `run_id`, and each internal `ModelAttempt` receives a transient model-attempt ID, but they do not define the provider model session or prompt-cache scope. All attempts read the same State-owned `AgentContext.thread_id`. A later continuation creates a new Harness run and fresh bindings while restoring that ID from the selected State; a new root or child State and an explicit `HarnessState.fork()` use distinct IDs. No `RunBindings`, metadata, or invocation argument can override it. [Input, Model, and Output Boundaries](16-input-model-and-output.md#thread-affinity) owns the provider mapping contract.
 
 `RunBindings.embedded()` creates a process-local Agent instance and accepts an optional model resolver, model-context middleware, Capabilities, metadata, and bounded Host references. When neither adapter inputs nor an explicit `RunBindings.environment` runtime are supplied, Harness creates an empty bound facade. It never discovers a Provider or hidden provider configuration.
+
+## Run Configuration
+
+`RunConfiguration` is one immutable caller-owned value shared through `RunBindings.configuration` and `AgentContext.configuration`. It is independent of Agent definitions, Capability constructor configuration, mutable state and metadata. Embedded bindings default to an unrestricted empty configuration. One logical Run and all its internal `ModelAttempt` values use the same snapshot; inline child bindings inherit it and cannot replace it through their factory. Hosts own durable capture, async-child inheritance and continuation reconstruction.
+
+- `allowed_hosts: frozenset[str] | None` uses `None` for unrestricted destinations and an empty set for deny-all. An entry without the literal `regex:` prefix matches an exact normalized URL hostname or IP literal, not implicit subdomains, wildcards, ports or CIDRs. A `regex:<pattern>` entry uses Python regular-expression syntax and full-string matching against the same normalized hostname, never the URL, path or port. Any matching entry allows the host. Hostnames are lowercased, trailing dots removed, IDNA names canonicalized, and IP literals use canonical spelling before matching. Regular expressions retain their authored case and escapes; invalid or empty patterns reject configuration at acceptance. Only surrounding entry whitespace is stripped. Patterns are trusted caller-authored configuration, not model-generated input. The wire representation is a sorted unique string array or null.
+- `extensions: Mapping[str, JsonValue]` holds namespaced consumer-specific JSON values. The snapshot isolates nested input values and returns detached values on lookup. Consumers explicitly read and validate the namespaces they support. Harness does not merge extensions into Capability configuration or maintain a global extension registry.
+- `authorize_url()` validates an HTTP(S) URL and its declared hostname without resolving DNS, classifying resolved addresses, inspecting proxies or pinning connections. Consumers call it before each owned request and redirect hop; their existing URL, credential, TLS, timeout and response-bound policies remain independent.
+
+First-party Model clients with an owned HTTP transport, Host Web, contextual remote MCP and media readers consume this value explicitly. Restrictive configurations disable native Web search in favor of Host tools and direct media URL forwarding; opaque inferred Model routes, Bedrock Converse and provider-native contextual MCP reject restrictive configuration rather than bypass it. Native Model media URL inputs, including retained history and tool returns, also fail closed under restriction because SDK-owned downloading or provider forwarding cannot enforce each hop; Hosts materialize authorized content as native binary input instead. Hosts must supply it to their own Model resolvers and transports, including input materialization that precedes `AgentContext` creation. Third-party plugins and Providers opt in through the context or an explicit configuration argument and own enforcement for their requests. This is not a global network interceptor: shell execution, arbitrary trusted code and SDK-owned opaque traffic require Environment or deployment network isolation.
 
 ## Usage Limits and Native Retries
 

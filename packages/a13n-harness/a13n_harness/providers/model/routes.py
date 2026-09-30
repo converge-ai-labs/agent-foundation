@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Any, cast
-from urllib.parse import urlsplit
 
 import httpx2
 from anyio import move_on_after
 
+from ...configuration import RunConfiguration
+from ...models.configuration import configured_model
 from ...models.inference import ROUTE_ALIASES as ROUTE_ALIASES
 from ...models.transport import create_model_http_client
 from ..endpoint_policy import EndpointPolicy
@@ -54,31 +56,45 @@ ROUTES = {
 _OPENAI_CLIENT_ROUTES = frozenset({"together", "fireworks"})
 
 
-async def build_api_key_model(route: str, credential: ApiKeyCredential, *, base_url: str | None = None) -> Model:
+async def build_api_key_model(
+    route: str,
+    credential: ApiKeyCredential,
+    *,
+    base_url: str | None = None,
+    configuration: RunConfiguration | None = None,
+) -> Model:
     """Build a native route with explicit credentials and host-selected endpoint access.
 
     The returned native Model owns its HTTP client, built with the shared model
-    transport timeouts and retries. A custom URL is deliberately allowed to
-    resolve to private addresses for local embedding applications.
-    Service uses definitions with its deployment policy instead.
+    transport timeouts, retries and accepted Run hostname authorization.
+    Service uses definitions with its own Host client instead.
     """
+    configuration = configuration or RunConfiguration()
     provider_name, separator, model_name = route.partition(":")
     if not separator:
         raise ValueError("an API-key Model route must include a provider")
     provider_name = ROUTE_ALIASES.get(provider_name, provider_name)
     selected = ROUTES.get(provider_name)
     if selected is None:
+        if configuration.allowed_hosts is not None:
+            raise ValueError("This native Model route cannot enforce Run allowed hosts")
         return await build_inferred_route(f"{provider_name}:{model_name}", credential, base_url=base_url)
-    return await _build_declared_route(selected, model_name, credential, base_url or selected.default_base_url)
+    return await _build_declared_route(
+        selected, model_name, credential, base_url or selected.default_base_url, configuration
+    )
 
 
 async def _build_declared_route(
-    route: RouteSpec, model_name: str, credential: ApiKeyCredential, base_url: str | None
+    route: RouteSpec,
+    model_name: str,
+    credential: ApiKeyCredential,
+    base_url: str | None,
+    configuration: RunConfiguration,
 ) -> Model:
     definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == route.provider_type)
-    hostname = urlsplit(base_url).hostname if base_url else None
-    policy = EndpointPolicy.from_operator_allowlist(private_domains=[hostname] if hostname else [])
-    client = create_model_http_client()
+    policy = EndpointPolicy(configuration=configuration)
+    client_factory = partial(create_model_http_client, configuration=configuration)
+    client = client_factory()
     try:
         model = await definition.build(
             model_name,
@@ -91,8 +107,10 @@ async def _build_declared_route(
         # Native Provider context management also supports later re-entry.
         assert model.provider is not None
         model.provider._own_http_client = client
-        model.provider._http_client_factory = create_model_http_client
-        return route.post_construct(model_name, model) if route.post_construct is not None else model
+        model.provider._http_client_factory = client_factory
+        if route.post_construct is not None:
+            model = route.post_construct(model_name, model)
+        return configured_model(model, configuration)
     except BaseException:
         with move_on_after(5, shield=True):
             await client.aclose()

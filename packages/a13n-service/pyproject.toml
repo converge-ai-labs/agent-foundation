@@ -19,7 +19,6 @@ dependencies = [
     "click>=8.2,<9",
     "cryptography>=50,<51",
     "fastapi>=0.116,<1",
-    "httpcore2>=2.12,<3",
     "httpx2>=2.5,<3",
     "jsonschema>=4.25,<5",
     "mcp>=2.2,<3",

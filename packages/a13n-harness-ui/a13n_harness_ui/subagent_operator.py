@@ -414,6 +414,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             source,
             selection,
             parent_node=scope.composition.root,
+            run_configuration=scope.composition.run_configuration,
         )
         if published.value.root != edge.definition:
             raise RunCoordinationError(
@@ -838,6 +839,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             source,
             _selection(thread.thread_id, thread.configuration),
             parent_node=scope.composition.root,
+            run_configuration=scope.composition.run_configuration,
         )
         pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
         reconstructed = self._agents.reconstruct(
@@ -1031,6 +1033,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         resume_usage: bool = False,
     ) -> HarnessRunStream[Any]:
         bindings = RunBindings(
+            configuration=reconstructed.run_configuration,
             instance=AgentInstanceContext(
                 identity=identity,
                 agent_instance_id=agent_instance_id,
@@ -1049,7 +1052,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
         bindings = production_run_bindings(
             bindings,
             reconstructed.definition_capability_ids,
-            web_ssrf_protection=reconstructed.web_ssrf_protection,
         )
         return reconstructed.executable.stream(
             input if deferred_resume is None or deferred_resume.recovery else None,

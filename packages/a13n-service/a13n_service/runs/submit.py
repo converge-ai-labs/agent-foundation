@@ -7,6 +7,7 @@ everything it created, including a tentative thread or session, then replays the
 
 from collections.abc import Awaitable, Callable
 
+from a13n_harness.configuration import RunConfiguration
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +25,7 @@ from a13n_service.runs.inbox import Request, append_message, check_replay, find_
 from a13n_service.runs.memories.mounts import mount_memories, shared_memory_mounts
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import EntryView, Fork, Message, NewThread, Submitted, ThreadView
+from a13n_service.runs.schemas import EntryView, Fork, Message, NewThread, RunOptions, Submitted, ThreadView
 from a13n_service.runs.sessions import find_session, new_session
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread, new_thread, refresh_version, require_open
@@ -54,6 +55,12 @@ async def validate_message(
     freezes; an acceptance in a later transaction validates the overrides again too, under the authority current
     then.
     """
+    if message.delivery == "steer" and thread.current_run_id is not None and message.options.configuration is not None:
+        current = await session.get(RunRow, thread.current_run_id)
+        assert current is not None
+        accepted = RunOptions.model_validate(current.options).configuration or RunConfiguration()
+        if message.options.configuration != accepted:
+            raise conflict("run", current.id, "run_configuration_immutable")
     revision, overrides = await run_revision(
         session,
         runtime,

@@ -11,7 +11,7 @@ MAX_RETRY_AFTER_SECONDS = 3600.0
 
 
 class EndpointValidator(Protocol):
-    async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str: ...
+    async def validate(self, endpoint: str) -> str: ...
 
 
 class ProviderHttpError(Exception):

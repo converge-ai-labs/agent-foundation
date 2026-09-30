@@ -16,6 +16,7 @@ from a13n_harness._urls import (
 from a13n_harness._urls import (
     require_http_url as _require_http_url,
 )
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.toolsets.media import MediaToolset
@@ -38,6 +39,7 @@ class MediaReadRequest(BaseModel):
     max_video_bytes: int = Field(gt=0)
     max_audio_bytes: int = Field(gt=0)
     allow_direct_video_url: bool
+    configuration: RunConfiguration = Field(default_factory=RunConfiguration)
 
     def limit_for(self, kind: MediaKind) -> int:
         if kind == "image":

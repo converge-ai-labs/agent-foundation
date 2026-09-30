@@ -153,7 +153,10 @@ class ChildRuns(SubagentOperator):
                 payload=payload,
                 agent_id=edge.selection.agent_id,
                 agent_revision_id=edge.revision_id,
-                options=RunOptions(max_usage=UsageLimit(requests=limit) if limit is not None else None),
+                options=RunOptions(
+                    max_usage=UsageLimit(requests=limit) if limit is not None else None,
+                    configuration=RunOptions.model_validate(run.options).configuration,
+                ),
             )
             entry = await inbox.append_message(
                 session,

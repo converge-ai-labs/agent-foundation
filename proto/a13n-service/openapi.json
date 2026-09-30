@@ -9174,6 +9174,67 @@
         "title": "RevokedConnection",
         "type": "object"
       },
+      "RunConfiguration-Input": {
+        "additionalProperties": false,
+        "description": "An accepted snapshot, independent of Agent definitions and Capability configuration.\n\nConsumers explicitly opt into namespaced extensions and own their validation.\nExtension lookups return detached values, not mutable shared state.",
+        "properties": {
+          "allowed_hosts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.",
+            "title": "Allowed Hosts"
+          },
+          "extensions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Extensions",
+            "type": "object"
+          }
+        },
+        "title": "RunConfiguration",
+        "type": "object"
+      },
+      "RunConfiguration-Output": {
+        "additionalProperties": false,
+        "description": "An accepted snapshot, independent of Agent definitions and Capability configuration.\n\nConsumers explicitly opt into namespaced extensions and own their validation.\nExtension lookups return detached values, not mutable shared state.",
+        "properties": {
+          "allowed_hosts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.",
+            "title": "Allowed Hosts"
+          },
+          "extensions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Extensions",
+            "type": "object"
+          }
+        },
+        "title": "RunConfiguration",
+        "type": "object"
+      },
       "RunItems": {
         "description": "A run's committed display with the run it describes. Live output continues after `position`.",
         "properties": {
@@ -9280,6 +9341,16 @@
         "additionalProperties": false,
         "description": "What a message may choose for the run it starts. A steer joins a run with the defaults or equal options.",
         "properties": {
+          "configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunConfiguration-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "labels": {
             "additionalProperties": {
               "maxLength": 128,
@@ -9321,6 +9392,16 @@
         "additionalProperties": false,
         "description": "What a message may choose for the run it starts. A steer joins a run with the defaults or equal options.",
         "properties": {
+          "configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunConfiguration-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "labels": {
             "additionalProperties": {
               "maxLength": 128,

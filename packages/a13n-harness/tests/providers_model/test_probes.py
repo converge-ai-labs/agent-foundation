@@ -14,7 +14,7 @@ def definition(kind):
 
 
 class _AllowEndpoints:
-    async def validate(self, endpoint: str, *, resolve_dns: bool) -> str:
+    async def validate(self, endpoint: str) -> str:
         return endpoint
 
 
@@ -124,7 +124,7 @@ async def test_probe_refuses_redirects_even_when_injected_client_follows_them():
     validated = []
 
     class Policy:
-        async def validate(self, endpoint, *, resolve_dns):
+        async def validate(self, endpoint):
             validated.append(endpoint)
             return endpoint
 
@@ -164,7 +164,7 @@ async def test_probe_total_deadline_covers_policy_and_slow_drip_stream(monkeypat
     stream = Stream()
 
     class Policy:
-        async def validate(self, endpoint, *, resolve_dns):
+        async def validate(self, endpoint):
             if slow_policy:
                 await sleep(10)
             return endpoint

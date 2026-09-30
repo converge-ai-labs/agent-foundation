@@ -1338,7 +1338,9 @@ async def test_inline_delegation_uses_standard_result_policy() -> None:
     assert result.output_or_raise() == "done"
 
 
-@pytest.mark.parametrize("change", ["result_type", "instance", "environment", "policy", "shared_tasks", "deferred"])
+@pytest.mark.parametrize(
+    "change", ["result_type", "instance", "environment", "configuration", "policy", "shared_tasks", "deferred"]
+)
 async def test_inline_child_binding_factory_preserves_owned_boundaries(change: str) -> None:
     from a13n_harness.capabilities import EmbeddedTaskStateCell, TaskStateBinding
 
@@ -1374,6 +1376,10 @@ async def test_inline_child_binding_factory_preserves_owned_boundaries(change: s
             return replace(baseline, instance=_bindings_factory().instance)
         if change == "environment":
             return replace(baseline, environment=EmptyEnvironmentRuntime())
+        if change == "configuration":
+            from a13n_harness import RunConfiguration
+
+            return replace(baseline, configuration=RunConfiguration(allowed_hosts=[]))
         if change == "policy":
             return replace(baseline, capabilities=())
         return replace(baseline, task_state=TaskStateBinding(source="embedded_borrowed", cell=EmbeddedTaskStateCell()))
@@ -1502,3 +1508,36 @@ async def test_summary_delegation_reads_the_context_summary_not_replayed_input(
     else:
         assert summary in payload["parent_history_summary"]
         assert "Original user request" not in payload["parent_history_summary"]
+
+
+async def test_inline_child_bindings_inherit_the_exact_run_configuration():
+    from a13n_harness import RunConfiguration
+
+    observed = []
+    configuration = RunConfiguration(allowed_hosts={"allowed.test"}, extensions={"example.filter": {"image": "keep"}})
+
+    def capture(bindings):
+        observed.append(bindings.configuration)
+        return bindings
+
+    async def parent_stream(messages, info):
+        if not _returns_after_latest_user(messages):
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "inspect"}),
+                    tool_call_id="delegate-config",
+                )
+            }
+        else:
+            yield "parent-done"
+
+    parent = _parent_definition(_child_definition(), FunctionModel(stream_function=parent_stream))
+    parent = replace(parent, subagents=(replace(parent.subagents[0], run_bindings_factory=capture),))
+    result = (
+        await HarnessBuilder()
+        .build(parent)
+        .run("delegate", bindings=replace(_bindings_factory(), configuration=configuration))
+    )
+    assert result.output_or_raise() == "parent-done"
+    assert observed == [configuration]
