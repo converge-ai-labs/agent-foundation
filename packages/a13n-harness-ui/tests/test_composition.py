@@ -1721,3 +1721,69 @@ async def test_web_ssrf_protection_is_captured_for_root_and_children(tmp_path: P
     legacy = captured.model_dump(mode="json")
     legacy.pop("web_ssrf_protection", None)
     assert not type(captured).model_validate(legacy).web_ssrf_protection
+
+
+@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 3}])
+async def test_image_input_policy_is_captured_per_model_and_reconstructed(tmp_path, policy):
+    import yaml
+    from a13n_harness import ImageInputPolicy
+    from a13n_harness_ui.composition.models import ResolvedRunComposition
+
+    root = _write_source(tmp_path)
+    path = tmp_path / "models/primary.yaml"
+    document = yaml.safe_load(path.read_text())
+    document["model_characteristics"] = {"image_input": policy}
+    path.write_text(yaml.safe_dump(document))
+    document["id"] = "model-child"
+    document["model_characteristics"] = {"image_input": {"max_images": 0}}
+    (tmp_path / "models/child.yaml").write_text(yaml.safe_dump(document))
+    child = tmp_path / "agents/reviewer.yaml"
+    child.write_text(child.read_text().replace("model-primary", "model-child"))
+    source = await load_harness_ui_configuration(root)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    encoded = composition.model_dump_json()
+    restored = ResolvedRunComposition.model_validate_json(encoded)
+    expected = None if policy is None else ImageInputPolicy.model_validate(policy)
+    assert restored.root.model.model_characteristics.image_input == expected
+    source.models["model-primary"] = source.models["model-child"]
+    rebuilt = AgentReconstructor(_catalog(), instrumentation=None).reconstruct(
+        restored, subagent_operator=_UnusedOperator()
+    )
+    assert rebuilt.executable.definition.agent.model_characteristics.image_input == expected
+    children = {child.name: child for child in rebuilt.executable.definition.subagents}
+    assert children["explorer"].agent.agent.model_characteristics.image_input == expected
+    assert children["agent-reviewer"].agent.agent.model_characteristics.image_input == ImageInputPolicy(max_images=0)
+    assert restored.model_dump_json() == encoded
+
+
+def test_legacy_model_recipe_retains_canonical_bytes_and_identity():
+    import hashlib
+    import json
+
+    from a13n_harness import ImageInputPolicy
+    from a13n_harness_ui.composition.models import ResolvedModelRecipe
+    from a13n_harness_ui.model_runtime import model_recipe_id
+
+    legacy = {
+        "model_id": "model-primary",
+        "route": "openai:gpt-5",
+        "authentication": {"kind": "api_key", "env": "OPENAI_API_KEY", "credential_ref": None},
+        "settings": {},
+        "model_configuration": {},
+        "model_characteristics": {
+            "capabilities": ["image_understanding"],
+            "context_window_tokens": 32000,
+            "proactive_context_management_threshold": 0.8,
+            "compact_threshold": 0.9,
+        },
+    }
+    encoded = json.dumps(legacy, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
+    recipe = ResolvedModelRecipe.model_validate_json(encoded)
+    assert recipe.model_characteristics.image_input == ImageInputPolicy()
+    assert recipe.model_dump(mode="json") == legacy
+    assert model_recipe_id(recipe) == f"a13n-harness-ui:model-{hashlib.sha256(encoded.encode()).hexdigest()[:24]}"
+    explicit = recipe.model_copy(
+        update={"model_characteristics": recipe.model_characteristics.model_copy(update={"image_input": None})}
+    )
+    assert explicit.model_dump(mode="json")["model_characteristics"]["image_input"] is None
+    assert model_recipe_id(explicit) != model_recipe_id(recipe)

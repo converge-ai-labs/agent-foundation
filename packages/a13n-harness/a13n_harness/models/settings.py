@@ -291,7 +291,9 @@ def resolve_model_characteristics(
         if resolved is None:
             return _copy_characteristics(overrides)
         values = resolved.model_dump()
-        values.update(deepcopy(overrides.model_dump(exclude_unset=True)))
+        # Authoring overrides are field selections, not canonical serialization:
+        # an explicitly selected default must still replace an alias's policy.
+        values.update({name: deepcopy(getattr(overrides, name)) for name in overrides.model_fields_set})
         resolved = HarnessModelCharacteristics.model_validate(values)
     return resolved
 

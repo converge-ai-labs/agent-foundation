@@ -192,6 +192,12 @@ A model is one upstream model served by one model provider of its workspace, add
 
 Execution selects every model of an agent graph by its key, and every call keeps that selection: the agents' own requests and their compaction, the tool reviewer and media understanding alike. Each model call is therefore admitted as, attributed to and priced by the model that selected it, even when another model of the graph names the same upstream model or the provider answers under another model name; its usage record carries the model and a price snapshot ([07](07-facts-and-delivery.md#usage-records)) and keeps the reported names only as information. A call that names no model of the graph is refused, failing the run with `model_call_unknown`.
 
+### Image input policy
+
+`config.characteristics.image_input` uses the shared Harness [image input policy](../a13n-harness/16-input-model-and-output.md#request-and-history-filters). Omission enables default image preparation, an object customizes it, and explicit null disables automatic preparation. This is a Model characteristic, not a native request setting or Agent context policy. Each root, independent child and image-understanding Model uses its own policy; auxiliary image calls do not inherit the primary, audio or video Model's policy.
+
+An attempt binds its resolved Model configuration. Later attempts, including recovery, resolve the current Model under the existing live-default lifecycle; image policy adds no separate checkpoint or resource snapshot. This differs from Harness UI's immutable per-Run Model recipe capture.
+
 ### Request overrides
 
 Effective settings layer Service defaults, Model defaults, then Agent/reviewer settings. For `openai.responses`, the Service default is `openai_store: false`, including existing Models with no authored settings and every primary, compaction, reviewer, child and media-understanding call. It does not apply to other calling APIs merely because they share a settings type. Explicit `true`, `false` or `null` remain authoritative; `null` delegates storage behavior to the upstream. No reasoning effort, summary, service tier or output budget is forced. The baseline is evaluated at execution and does not rewrite saved Models or Agent revisions.

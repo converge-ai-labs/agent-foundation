@@ -171,6 +171,22 @@ spec = AgentSpec(
 
 选择 `HandoffCapability()` 时，它在 65% 处触发总结提醒。`CompactionCapability()` 每次请求根据原生 `RunContext.model.context_window` 和 `RunContext.context_window_used` 检查 90% 阈值，原生值不可用时回退到 Harness 特性和捕获的 provider 用量。显式 Capability token 阈值优先。模型特性本身不会启用任何 Capability。Host 可从自身预设目录、Harness 官方模型目录或特性别名解析这些值；`HarnessBuilder` 绝不从模型名称推断。无需该扩展时，仍可使用原生 Pydantic AI `AgentSpec`。
 
+### 图片输入策略
+
+`HarnessModelCharacteristics.image_input` 使用共享且冻结的 `ImageInputPolicy`，可从 `a13n_harness` 导入。它控制所选模型的请求预处理，独立于父模型、上下文预算及原生 `ModelSettings`。省略时启用默认策略，部分对象为未指定成员采用默认值，显式 `null` 禁用自动预处理。显式 `ImageFilterCapability` 保留自己的策略，不会重复安装自动实例。
+
+| 参数                     | 默认值    | 含义                                                 |
+| ------------------------ | --------- | ---------------------------------------------------- |
+| `support_gif`            | `true`    | 允许二进制 GIF；`false` 时替换为说明文字。           |
+| `max_images`             | `20`      | 保留请求中最新的图片；`0` 移除所有图片。             |
+| `max_image_bytes`        | `5242880` | **每张图片**的 base64 编码字节限制；`0` 禁用该限制。 |
+| `max_image_dimension`    | `8000`    | 单边像素限制；`0` 禁用该限制。                       |
+| `split_large_images`     | `true`    | 压缩前将较高的静态图片切成完整宽度的分段。           |
+| `image_split_max_height` | `4096`    | 正整数分段高度，单位像素。                           |
+| `image_split_overlap`    | `50`      | 非负重叠像素，必须小于分段高度。                     |
+
+默认字节限制是 5 MiB（`5 * 1024 * 1024`），不是原始文件大小或整个请求预算。即使表单以 MiB 显示，Host 也存储精确字节。不会从模型名称猜测 GIF 支持或限制。默认值策略在序列化时省略，以保持旧模型捕获的 canonical bytes；显式 `null` 始终保留。变换和历史保留行为见[请求级图片预处理](context.md#filters)。
+
 ## 自动模型请求亲和性
 
 网关亲和性需要**主动启用**。配置**请求头名称** ，不要配置固定会话值：

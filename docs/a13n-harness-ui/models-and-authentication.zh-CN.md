@@ -341,6 +341,22 @@ Harness UI 在配置和已保存快照中接受旧名称 `context_window`。新�
 
 这些值指导 Harness 行为，不能让模型获得其本身缺少的模态或 token 权限。Agent 级显式上下文能力阈值仍优先。改变通用示例前，检查所选提供方支持的设置。
 
+### 图片输入预处理
+
+模型文件支持 `model_characteristics.image_input`，它独立于上下文阈值与 capabilities。省略时使用默认预处理，提供对象可自定义，设为 `null` 则关闭自动预处理：
+
+```yaml
+model_characteristics:
+  image_input:
+    support_gif: false
+    max_images: 10
+    max_image_bytes: 5242880
+```
+
+完整的七个字段及默认值见共享的[图片输入策略参考](../a13n-harness/models.md#image-input-policy)，包括尺寸与切分控制。字节预算按**单张图片的 Base64 编码大小**计算，不是原始文件大小或整个请求的大小。对象中省略的字段保留原生默认值。GIF 支持是显式声明的策略，不会自动探测模型。
+
+主模型、独立子 agent 的模型与图片理解模型各自使用自己的策略。Run 捕获会冻结完整策略；即使之后修改模型文件，恢复仍使用捕获的值。旧捕获保留原有序列化结果，不会被改写。
+
 ### 账户存储位置
 
 Codex 在 `CODEX_HOME`（默认 `~/.codex`）下共享受支持的文件存储。Harness UI 遵循上游凭据存储策略，对不支持存储报告错误，不替换。Grok 优先使用 `GROK_AUTH_PATH`，再用 `GROK_HOME` 或默认文件；内联 `GROK_AUTH` 不是共享可写登录模式。账户检查不登录或刷新凭据。Codex 模型请求使用显式共享存储凭据来源。provider 在自身生命周期内缓存凭据，并在刷新前重读存储，不是每次请求都读。新 Run 或账户操作获得新 provider。刷新凭据无法保存时，请求失败，但 provider 在内存保留轮换凭据；应解决存储冲突并启动新 Run，不要假定轮换已持久化。Grok 保留由 Harness 负责的刷新生命周期。
