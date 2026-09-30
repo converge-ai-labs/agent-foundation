@@ -135,10 +135,10 @@ These uses do not require an Environment-specific file browser, terminal, debug 
 ## Invariants
 
 1. Native human operations are enabled only by the instance's computer-sharing selection.
-1. Host access and Agent Environment policy are distinct authorities and locations.
-1. Browser navigation cannot silently retarget an existing terminal or switch a repository.
-1. File conflicts preserve unsaved user content rather than silently discarding it.
-1. Git views distinguish index, working tree, and repository identity and make no unsupported per-Run attribution.
-1. Terminal observation does not grant simultaneous uncontrolled keyboard input.
-1. Browser disconnect and server shutdown have different terminal lifecycle effects.
-1. Neither Git refresh nor terminal reconnect replays user mutations.
+2. Host access and Agent Environment policy are distinct authorities and locations.
+3. Browser navigation cannot silently retarget an existing terminal or switch a repository.
+4. File conflicts preserve unsaved user content rather than silently discarding it.
+5. Git views distinguish index, working tree, and repository identity and make no unsupported per-Run attribution.
+6. Terminal observation does not grant simultaneous uncontrolled keyboard input.
+7. Browser disconnect and server shutdown have different terminal lifecycle effects.
+8. Neither Git refresh nor terminal reconnect replays user mutations.
