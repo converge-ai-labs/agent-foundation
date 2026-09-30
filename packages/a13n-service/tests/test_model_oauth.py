@@ -1,5 +1,6 @@
 """Workspace Model Provider grants: encrypted state, one-shot login and cross-worker rotation."""
 
+import asyncio
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -14,10 +15,35 @@ from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.providers import oauth
 from a13n_service.resources.providers.tables import ModelProviderOAuthRow
+from sqlalchemy import event
 
 from .test_providers import add_workspace, create, principal
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.fixture
+def no_task_connection(service):
+    """Track this task's borrowed connections, not the shared background-worker pool."""
+    owners = {}
+    pool = service.runtime.storage.engine.sync_engine.pool
+
+    def checkout(connection, record, proxy):
+        owners[id(record)] = asyncio.current_task()
+
+    def checkin(connection, record):
+        owners.pop(id(record), None)
+
+    def assert_released():
+        assert asyncio.current_task() not in owners.values()
+
+    event.listen(pool, "checkout", checkout)
+    event.listen(pool, "checkin", checkin)
+    try:
+        yield assert_released
+    finally:
+        event.remove(pool, "checkout", checkout)
+        event.remove(pool, "checkin", checkin)
 
 
 def grant(host):
@@ -34,7 +60,7 @@ def grant(host):
     )
 
 
-async def connect(service, monkeypatch):
+async def connect(service, monkeypatch, no_task_connection):
     provider = await create(service, "model", {"type": "openai_chatgpt", "name": "ChatGPT"})
     path = f"{service.api}/model-providers/{provider['id']}"
     started = await service.client.post(path + "/authorize", json={})
@@ -57,7 +83,7 @@ async def connect(service, monkeypatch):
     async def exchange(self, callback):
         self.validate_callback(callback)
         # The code is consumed durably, and the network boundary holds no connection.
-        assert service.runtime.storage.engine.pool.checkedout() == 0
+        no_task_connection()
         async with short_session(service.runtime.storage) as session:
             row = await session.get(ModelProviderOAuthRow, provider["id"])
             assert row.pending is None and row.login_claim == start["attempt_id"]
@@ -82,8 +108,10 @@ async def connect(service, monkeypatch):
     return provider, path, source
 
 
-async def test_provider_login_is_shared_encrypted_and_does_not_change_resource_version(service, monkeypatch):
-    provider, path, source = await connect(service, monkeypatch)
+async def test_provider_login_is_shared_encrypted_and_does_not_change_resource_version(
+    service, monkeypatch, no_task_connection
+):
+    provider, path, source = await connect(service, monkeypatch, no_task_connection)
     assert (await service.client.get(path)).json()["version"] == provider["version"]
     async with short_session(service.runtime.storage) as session:
         row = await session.get(ModelProviderOAuthRow, provider["id"])
@@ -117,13 +145,15 @@ async def test_provider_login_is_shared_encrypted_and_does_not_change_resource_v
     assert (await source.load()).subject == "subject-test"
 
 
-async def test_logout_clears_tokens_before_revocation_and_retains_registration(service, monkeypatch):
-    _, path, source = await connect(service, monkeypatch)
+async def test_logout_clears_tokens_before_revocation_and_retains_registration(
+    service, monkeypatch, no_task_connection
+):
+    _, path, source = await connect(service, monkeypatch, no_task_connection)
     current = await source.load()
 
     async def revoke(credentials, **kwargs):
         assert credentials == current
-        assert service.runtime.storage.engine.pool.checkedout() == 0
+        no_task_connection()
         with pytest.raises(ModelAuthenticationError):
             await source.load()
         raise OSError("revocation unavailable")
@@ -139,8 +169,10 @@ async def test_logout_clears_tokens_before_revocation_and_retains_registration(s
     assert parse_qs(urlsplit(fresh["authorization_url"]).query)["client_id"] == ["dynamic_agent_client"]
 
 
-async def test_cross_worker_rotation_exchanges_once_and_fresh_load_adopts_publication(service, monkeypatch):
-    provider, _, source = await connect(service, monkeypatch)
+async def test_cross_worker_rotation_exchanges_once_and_fresh_load_adopts_publication(
+    service, monkeypatch, no_task_connection
+):
+    provider, _, source = await connect(service, monkeypatch, no_task_connection)
     expected = await source.load()
     calls, results = [], []
 
@@ -163,12 +195,12 @@ async def test_cross_worker_rotation_exchanges_once_and_fresh_load_adopts_public
 
 
 @pytest.mark.parametrize("dispatched", [False, True])
-async def test_refresh_failure_blocks_only_dispatched_grants(service, monkeypatch, dispatched):
-    _, _, source = await connect(service, monkeypatch)
+async def test_refresh_failure_blocks_only_dispatched_grants(service, monkeypatch, no_task_connection, dispatched):
+    _, _, source = await connect(service, monkeypatch, no_task_connection)
     expected = await source.load()
 
     async def exchange(current):
-        assert service.runtime.storage.engine.pool.checkedout() == 0
+        no_task_connection()
         if dispatched:
             raise OSError("unknown response")
         raise RefreshNotDispatched("openai-chatgpt", "not sent")
@@ -182,8 +214,10 @@ async def test_refresh_failure_blocks_only_dispatched_grants(service, monkeypatc
         assert await source.load() == expected
 
 
-async def test_disconnect_fences_an_inflight_refresh_and_interrupted_claim_is_visible(service, monkeypatch):
-    provider, path, source = await connect(service, monkeypatch)
+async def test_disconnect_fences_an_inflight_refresh_and_interrupted_claim_is_visible(
+    service, monkeypatch, no_task_connection
+):
+    provider, path, source = await connect(service, monkeypatch, no_task_connection)
     expected = await source.load()
 
     async def revoke(*args, **kwargs):
@@ -210,7 +244,9 @@ async def test_disconnect_fences_an_inflight_refresh_and_interrupted_claim_is_vi
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_service_runtime_uses_provider_owned_source_and_native_required_stream(service, monkeypatch, streaming):
+async def test_service_runtime_uses_provider_owned_source_and_native_required_stream(
+    service, monkeypatch, no_task_connection, streaming
+):
     from contextlib import asynccontextmanager
 
     import httpx2
@@ -221,7 +257,7 @@ async def test_service_runtime_uses_provider_owned_source_and_native_required_st
     from pydantic_ai.messages import ModelRequest, UserPromptPart
     from pydantic_ai.models import ModelRequestParameters
 
-    provider, _, source = await connect(service, monkeypatch)
+    provider, _, source = await connect(service, monkeypatch, no_task_connection)
     created = await service.client.post(
         service.api + "/models",
         json={
@@ -259,7 +295,7 @@ async def test_service_runtime_uses_provider_owned_source_and_native_required_st
     requests = []
 
     def respond(request):
-        assert service.runtime.storage.engine.pool.checkedout() == 0
+        no_task_connection()
         assert request.headers["authorization"] == "Bearer synthetic-access"
         requests.append(json.loads(request.content))
         return httpx2.Response(

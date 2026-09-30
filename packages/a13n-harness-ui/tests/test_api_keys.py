@@ -76,3 +76,60 @@ async def test_api_key_malformed_known_fields_raise_safe_errors_without_overwrit
             await operation()
         assert "private-material" not in str(caught.value)
     assert store.path.read_text() == original
+
+
+async def test_api_keys_and_oauth_updates_are_serialized_across_processes(tmp_path: Path) -> None:
+    import json
+    import sys
+
+    path = tmp_path / "auth.json"
+    path.write_text(json.dumps({"version": 1, "keys": {}, "extension": {"retained": True}}))
+    script = """
+import sys
+from pathlib import Path
+import anyio
+from pydantic import SecretStr
+from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStore
+from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
+
+async def main():
+    path, role = Path(sys.argv[1]), sys.argv[2]
+    path.with_name("ready-" + role).touch()
+    with anyio.fail_after(20):
+        while not path.with_name("start").exists():
+            await anyio.sleep(0.01)
+    for index in range(20):
+        if role == "oauth":
+            await ChatGPTAccountStore(path).set_blocked(f"grant-{index}", True)
+        else:
+            await ApiKeyStore(path).put(ApiKeyInput(
+                credential_ref=f"key-{role}-{index}", key=SecretStr("synthetic-key")))
+
+anyio.run(main)
+"""
+    finished = set()
+
+    async def write(role: str) -> None:
+        await anyio.run_process([sys.executable, "-c", script, str(path), role])
+        finished.add(role)
+
+    roles = ("first", "second", "oauth")
+    with anyio.fail_after(30):
+        async with anyio.create_task_group() as tasks:
+            for role in roles:
+                tasks.start_soon(write, role)
+            while not all((tmp_path / ("ready-" + role)).exists() for role in roles):
+                await anyio.sleep(0.01)
+            (tmp_path / "start").touch()
+            # Lock-free readers must always see a complete document during publication.
+            while len(finished) < len(roles):
+                document = json.loads(path.read_text())
+                assert document["extension"] == {"retained": True}
+                await anyio.sleep(0.01)
+    store = ApiKeyStore(path)
+    assert {key.credential_ref for key in await store.list()} == {
+        f"key-{role}-{index}" for role in roles[:2] for index in range(20)
+    }
+    document = json.loads(path.read_text())
+    assert set(document["openai_chatgpt"]["blocked_grants"]) == {f"grant-{index}" for index in range(20)}
+    assert document["extension"] == {"retained": True}
