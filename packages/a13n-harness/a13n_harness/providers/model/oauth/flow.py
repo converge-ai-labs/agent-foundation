@@ -20,6 +20,8 @@ import anyio.to_thread
 import httpx2
 from pydantic_ai.exceptions import UserError
 
+from a13n_harness.http import outbound_tls_verify
+
 from .models import CredentialRefreshError
 
 TIMEOUT = httpx2.Timeout(timeout=30, connect=5)
@@ -127,7 +129,7 @@ async def oauth_request(
     json_data: Mapping[str, str] | None = None,
 ) -> httpx2.Response:
     if http_client is None:
-        async with httpx2.AsyncClient(timeout=TIMEOUT, follow_redirects=False) as client:
+        async with httpx2.AsyncClient(verify=outbound_tls_verify(), timeout=TIMEOUT, follow_redirects=False) as client:
             return await client.request(method, url, data=data, json=json_data, headers={"Accept": "application/json"})
     return await http_client.request(
         method,
@@ -203,7 +205,7 @@ async def post_token(
     http_client: httpx2.AsyncClient | None = None,
 ) -> dict[str, object]:
     if http_client is None:
-        async with httpx2.AsyncClient(timeout=TIMEOUT, follow_redirects=False) as client:
+        async with httpx2.AsyncClient(verify=outbound_tls_verify(), timeout=TIMEOUT, follow_redirects=False) as client:
             response = await client.post(url, data=dict(form), headers={"Accept": "application/json"})
     else:
         response = await http_client.post(

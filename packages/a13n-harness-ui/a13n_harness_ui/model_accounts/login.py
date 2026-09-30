@@ -101,6 +101,7 @@ async def authorize_copilot(
     request: CopilotLoginRequest, method: str, present: Callable[..., None]
 ) -> CopilotCredentials:
     import httpx2
+    from a13n_harness.http import outbound_tls_verify
     from a13n_harness.providers.model.oauth.copilot import copilot_account_id
     from pydantic_ai.providers.github_copilot import GitHubCopilotOAuthFlow
 
@@ -108,7 +109,7 @@ async def authorize_copilot(
         raise HarnessUiError("Copilot supports device authorization only.", code="login_method_unsupported")
     # This is the directly verified CLI device-flow scope baseline, not a claim
     # of minimal permissions. The authorization page shows the requested access.
-    async with httpx2.AsyncClient(follow_redirects=False) as client:
+    async with httpx2.AsyncClient(verify=outbound_tls_verify(), follow_redirects=False) as client:
         flow = GitHubCopilotOAuthFlow(
             client_id=request.client_id, scope="read:user,read:org,repo,gist", http_client=client
         )

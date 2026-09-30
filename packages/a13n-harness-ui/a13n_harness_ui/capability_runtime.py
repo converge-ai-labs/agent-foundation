@@ -34,6 +34,7 @@ from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID
 from a13n_harness.configuration import HostNotAllowedError, RunConfiguration
 from a13n_harness.context import AgentContext, RunBindings
+from a13n_harness.http import outbound_tls_verify
 from anyio import to_thread
 from pydantic_ai import RunContext
 from pydantic_ai.messages import FilePart
@@ -67,6 +68,7 @@ class HttpxWebClient:
 
     async def request(self, request: WebRequest, *, policy: WebPolicy) -> WebResponse:
         client = httpx2.AsyncClient(
+            verify=outbound_tls_verify(),
             follow_redirects=False,
             timeout=httpx2.Timeout(request.deadline_seconds),
             headers={"User-Agent": _USER_AGENT},

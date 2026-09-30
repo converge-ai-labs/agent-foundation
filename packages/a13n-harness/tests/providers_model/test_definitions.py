@@ -128,3 +128,36 @@ def test_authentication_condition_uses_public_configuration_alias():
     )
     authentication.validate_configuration_model(AliasedConfiguration)
     assert authentication.resolve(AliasedConfiguration()) is CredentialMode.forbidden
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("value,expected", [(None, None), ("true", None), ("false", False)])
+async def test_owned_bedrock_client_respects_operator_tls_without_overriding_default_ca_selection(
+    monkeypatch, value, expected
+):
+    from botocore.session import Session
+
+    monkeypatch.delenv("A13N_OUTBOUND_TLS_VERIFY", raising=False)
+    if value is not None:
+        monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", value)
+    definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == "aws_bedrock")
+    original = Session.create_client
+    captured = []
+
+    def create(session, *args, **kwargs):
+        captured.append(kwargs["verify"])
+        return original(session, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "create_client", create)
+    async with httpx2.AsyncClient() as client:
+        model = await definition.build(
+            "fixture-model",
+            configuration={"region": "us-east-1"},
+            credential={"aws_access_key_id": "fixture", "aws_secret_access_key": "fixture"},
+            model_api="bedrock.converse",
+            http_client=client,
+            endpoint_policy=AllowEndpoints(),
+        )
+        async with model:
+            assert isinstance(model, BedrockConverseModel)
+    assert captured == [expected]

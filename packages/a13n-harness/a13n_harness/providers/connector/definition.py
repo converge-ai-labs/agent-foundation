@@ -12,6 +12,8 @@ from a13n_logging import get_logger
 from anyio import move_on_after
 from pydantic import BaseModel
 
+from a13n_harness.http import outbound_tls_verify
+
 from ..definition import ProviderDefinition
 from ..endpoint_policy import EndpointPolicy
 from .contracts import ConnectorProviderRuntime, JsonObject
@@ -44,7 +46,7 @@ class ConnectorProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition
             async with self.open_provider(parsed, secret, http) as provider:
                 yield provider
             return
-        client = httpx2.AsyncClient(timeout=30, follow_redirects=False)
+        client = httpx2.AsyncClient(verify=outbound_tls_verify(), timeout=30, follow_redirects=False)
         try:
             transport = ConnectorHttpClient(
                 client, EndpointPolicy(require_https=True), response_max_bytes=8 * 1024 * 1024

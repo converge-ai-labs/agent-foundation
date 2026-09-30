@@ -317,6 +317,8 @@ Agent 可通过仅支持文件的 `configuration` 挂载读写选中的配置目
 
 仍接受旧输入键 `tools.ask_user_question_timeout_seconds`。保存配置使用 `tools.interaction_timeout_seconds`。编辑响应不重启 Host 计时器；到期会拒绝，不会批准或虚构结果。
 
+只有在明确接受未验证的目标证书时，才在启动前设置 `A13N_OUTBOUND_TLS_VERIFY=false`。未设置或设为 `true` 会保留验证。这个共享进程变量不是 YAML 字段；适用范围、例外及风险见[出站 TLS 验证](../a13n-harness/models.md#outbound-tls-verification)。
+
 ## 出站 HTTP 代理
 
 启动 Harness UI 前设置标准环境变量；无须 YAML 代理设置：
@@ -329,7 +331,7 @@ export no_proxy=localhost,127.0.0.1,::1
 
 支持大写形式和 `ALL_PROXY`。选择和绕过匹配遵循 `httpx2`。Host 所有的 Web 搜索/抓取/获取/下载请求、远程 HTTPS MCP 连接和更新检查，以及 [Model HTTP 客户端](../a13n-harness/models.md#outbound-http-proxies)均遵循这些变量。改变环境后重启进程。容器运行时，代理地址必须能从容器访问。
 
-配置的代理是可信出站基础设施，负责目标 DNS 解析和网络限制。Host Web 工具使用原生 HTTP 连接，不预解析目标域名或固定 IP，直连和 `NO_PROXY` 路径也一样。只通过代理访问外网的机器不再需要本地目标 DNS。HTTP(S) URL 校验、TLS 验证、重定向检查、超时和响应限制仍启用。代理请求失败不会回退为直连。
+配置的代理是可信出站基础设施，负责目标 DNS 解析和网络限制。Host Web 工具使用原生 HTTP 连接，不预解析目标域名或固定 IP，直连和 `NO_PROXY` 路径也一样。只通过代理访问外网的机器不再需要本地目标 DNS。HTTP(S) URL 校验、重定向检查、超时和响应限制仍启用。TLS 验证默认启用；只有运维人员可通过[出站 TLS 开关](../a13n-harness/models.md#outbound-tls-verification)对自有客户端显式关闭验证。代理请求失败不会回退为直连。
 
 `run_configuration` 为每次接受的根 Run 及其子 Run 选择同一不可变配置：
 

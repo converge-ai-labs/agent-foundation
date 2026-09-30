@@ -15,6 +15,7 @@ from typing import IO
 from uuid import uuid4
 
 import httpx2
+from a13n_harness.http import outbound_tls_verify
 from anyio import Lock, open_file, to_thread
 
 from a13n_harness_ui.errors import RuntimeResolutionError
@@ -181,6 +182,7 @@ async def _download_archive(*, url: str, destination: Path, timeout_seconds: flo
     size = 0
     try:
         async with httpx2.AsyncClient(
+            verify=outbound_tls_verify(),
             follow_redirects=True,
             timeout=httpx2.Timeout(timeout_seconds),
             headers={"User-Agent": "a13n-harness-ui-a13n-envd-runtime"},

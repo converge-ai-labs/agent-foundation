@@ -15,6 +15,7 @@ import anyio.to_thread
 import httpx2
 import jwt
 
+from a13n_harness.http import outbound_tls_verify
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 
 from ._jwt import jwt_payload
@@ -310,7 +311,7 @@ async def refresh_grok_credentials(
         name="issuer",
         allow_insecure_loopback=False,
     )
-    client = http_client or httpx2.AsyncClient(timeout=TIMEOUT, follow_redirects=False)
+    client = http_client or httpx2.AsyncClient(verify=outbound_tls_verify(), timeout=TIMEOUT, follow_redirects=False)
     owned = http_client is None
     try:
         try:

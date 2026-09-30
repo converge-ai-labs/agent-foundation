@@ -12,6 +12,8 @@ from a13n_logging import get_logger
 from anyio import move_on_after
 from pydantic import BaseModel
 
+from a13n_harness.http import outbound_tls_verify
+
 from ..definition import ProviderDefinition
 from ..endpoint_policy import EndpointPolicy
 from .contracts import RecordStore
@@ -64,7 +66,9 @@ class MemoryProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition[C,
         async def check_request(request: httpx2.Request) -> None:
             await policy.validate(str(request.url))
 
-        client = httpx2.AsyncClient(timeout=30, follow_redirects=False, event_hooks={"request": [check_request]})
+        client = httpx2.AsyncClient(
+            verify=outbound_tls_verify(), timeout=30, follow_redirects=False, event_hooks={"request": [check_request]}
+        )
         try:
             async with self.open_store(parsed, secret, namespace, client) as store:
                 yield store

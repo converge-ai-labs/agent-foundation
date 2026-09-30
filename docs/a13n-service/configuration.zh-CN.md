@@ -11,6 +11,8 @@ Service 在启动时从可选 TOML 文件和环境变量读取一次设置。修
 
 未知设置会阻止启动，不会退回默认值。验证错误不会输出密钥值。
 
+共享进程变量 `A13N_OUTBOUND_TLS_VERIFY` 也受支持，不属于节字段覆盖机制。未设置或设为 `true` 会验证目标证书；`false` 会显式关闭自有 HTTP 客户端的验证。其他值会阻止启动。它没有 TOML 字段。请分别在每个 control/worker 进程中设置，修改后重启；具体范围、例外及被拦截风险见[出站 TLS 验证](../a13n-harness/models.md#outbound-tls-verification)。
+
 接受列表、映射或嵌套节的字段，在环境变量中使用 JSON，例如 `server.trusted_proxies`、`providers` 列表（`http_origins`、`return_urls`、`mcp_servers`）、`encryption.keys`、`plugins.keys` 或嵌套 `auth.mail` 节。例如 `A13N_PLUGINS__KEYS='["notes"]'` 或 `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`。
 
 ```toml

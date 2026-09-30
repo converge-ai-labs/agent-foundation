@@ -119,6 +119,16 @@ Trusted definition composition selects Web behavior; `RunBindings.web` supplies 
 
 Search results, remote pages, media, converted documents, and skill resources are untrusted content with provenance. They cannot contribute Identity, policy, credentials, tool authority, or an Environment adapter. Live clients, response handles, temporary native paths, and raw credential-bearing URLs are excluded from model projections and portable state. Optional parser and provider packages remain inert until trusted code explicitly composes their owning Capability.
 
+## Operator-controlled Outbound TLS
+
+Application-owned outbound HTTP clients verify destination certificate chains and hostnames by default. The trusted operator can set `A13N_OUTBOUND_TLS_VERIFY=false` in the Host process environment to disable those checks. Unset or `true` keeps verification enabled; values are case-insensitive with surrounding whitespace ignored, and any other value fails client construction without echoing the value. Service also validates this shared process input at startup rather than treating it as a section setting.
+
+The setting is read when constructing an owned client, including a replacement after close; HTTP Envd selects its runtime default when that runtime is constructed. Existing clients and HTTP Envd runtimes keep their TLS policy. It is not an Agent, Model, Provider, Run configuration, API request or portable-state field. Explicitly supplied clients, transports and CA contexts retain their caller-owned policy. Default CA selection remains specific to the owning transport; the switch does not install a global TLS monkeypatch.
+
+Coverage includes owned Model HTTP clients, Bedrock Converse clients constructed by the adapter, Web/media/MCP clients, owned OAuth exchanges, native HTTP Environment operations, HTTP Envd attachments, and Harness UI/Service management HTTP requests. Opaque clients constructed internally by dependencies, database/object-store/telemetry SDK transports, HTTPS proxy-hop TLS, and separate Envd daemon/broker processes are not controlled by this setting.
+
+Opting out retains TLS encryption but removes server authentication, exposing credentials and content to interception. It is an explicit deployment trust choice, not an authorization grant: authentication, declared-host allowlists, credential audience checks, HTTPS requirements, redirect policy, time/byte bounds and retry rules remain unchanged. A proxy failure never falls back to direct. Prefer trusted CA configuration for production deployments.
+
 ## Credential Boundary
 
 Credentials and current credential resolvers are absent from `AgentDefinition`, instructions, model input, plugin metadata, events, results, and `HarnessState`. A fresh model resolver, managed invocation policy, or provider adapter requests action- and audience-scoped credentials under current Identity and policy.

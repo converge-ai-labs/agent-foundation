@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 
 import anyio
 import httpx2
+from a13n_harness.http import outbound_tls_verify
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.http_transport import EnvironmentProxyClient
 
@@ -64,10 +65,11 @@ async def open_http(
 
     # Native MCP owns entry/exit; model clients start lazily on first send.
     # The outer owner also closes clients that never reached native setup.
-    direct_transport = httpx2.AsyncHTTPTransport(trust_env=False, limits=_LIMITS)
+    verify = httpx2.create_ssl_context(verify=outbound_tls_verify(), trust_env=False)
+    direct_transport = httpx2.AsyncHTTPTransport(verify=verify, trust_env=False, limits=_LIMITS)
     client = EnvironmentProxyClient(
         direct_transport,
-        verify=httpx2.create_ssl_context(trust_env=False),
+        verify=verify,
         limits=_LIMITS,
         timeout=timeout,
         follow_redirects=False,

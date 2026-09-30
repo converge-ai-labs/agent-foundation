@@ -21,6 +21,7 @@ from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource, Open
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
+from a13n_harness.http import outbound_tls_verify
 from a13n_harness.model_affinity import derive_model_affinity_id
 
 _CODEX_ROUTING_HINT_HEADER = "x-codex-routing-hint"
@@ -146,7 +147,7 @@ class CodexRequestModel(WrapperModel):
         self._credential_source = credential_source
         self._request_headers = _CodexRequestHeaders(model_name)
         self._owns_client = http_client is None
-        self._client = http_client or httpx2.AsyncClient(follow_redirects=False)
+        self._client = http_client or httpx2.AsyncClient(verify=outbound_tls_verify(), follow_redirects=False)
         self._entries = 0
         self._entry_lock = Lock()
         super().__init__(self._create_model())
@@ -174,7 +175,7 @@ class CodexRequestModel(WrapperModel):
     async def __aenter__(self) -> Self:
         async with self._entry_lock:
             if self._owns_client and self._client.is_closed:
-                self._client = httpx2.AsyncClient(follow_redirects=False)
+                self._client = httpx2.AsyncClient(verify=outbound_tls_verify(), follow_redirects=False)
                 self.wrapped = self._create_model()
             await self.wrapped.__aenter__()
             self._entries += 1

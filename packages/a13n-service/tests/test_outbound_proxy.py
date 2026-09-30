@@ -139,3 +139,27 @@ async def test_service_direct_transport_keeps_response_bounds(monkeypatch: pytes
                 await client.get(server + "/read")
     assert error.value.code == "payload_too_large"
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    "value,verify_mode", [(None, "CERT_REQUIRED"), ("true", "CERT_REQUIRED"), ("false", "CERT_NONE")]
+)
+async def test_service_applies_operator_tls_to_both_direct_and_proxy_pools(
+    monkeypatch: pytest.MonkeyPatch, value: str | None, verify_mode: str
+) -> None:
+    import ssl
+
+    monkeypatch.delenv("A13N_OUTBOUND_TLS_VERIFY", raising=False)
+    if value is not None:
+        monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", value)
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.test:8080")
+    # Service deliberately ignores ambient CA bundle paths.
+    monkeypatch.setenv("SSL_CERT_FILE", "/missing/ambient-ca.pem")
+    async with open_http(EndpointPolicy(), timeout=2, max_bytes=10) as client:
+        direct = client._transport_for_url(httpx2.URL("http://direct.test"))
+        proxy = client._transport_for_url(httpx2.URL("https://target.test"))
+        assert direct is not proxy
+        for transport in (direct, proxy):
+            context = transport._pool._ssl_context
+            assert context.verify_mode == getattr(ssl, verify_mode)
+            assert context.check_hostname is (verify_mode == "CERT_REQUIRED")

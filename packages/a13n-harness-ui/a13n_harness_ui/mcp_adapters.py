@@ -11,6 +11,7 @@ import httpx2
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
+from a13n_harness.http import outbound_tls_verify
 from anyio import to_thread
 from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai import RunContext
@@ -181,6 +182,7 @@ def _no_redirect_client(
         configuration.authorize_url(str(request.url))
 
     return httpx2.AsyncClient(
+        verify=outbound_tls_verify(),
         headers=headers,
         timeout=timeout,
         auth=auth,

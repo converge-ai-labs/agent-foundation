@@ -153,3 +153,23 @@ def test_https_policy_environment_overrides_file(tmp_path, monkeypatch, clean_en
     config.write_text(f"[providers]\nrequire_https = {str(not enabled).lower()}\n")
     monkeypatch.setenv("A13N_PROVIDERS__REQUIRE_HTTPS", str(enabled).lower())
     assert load_settings(config).providers.endpoint_policy.require_https is enabled
+
+
+@pytest.mark.parametrize("value", ["true", "false", " FALSE "])
+def test_operator_tls_environment_is_recognized_without_a_service_schema_field(
+    monkeypatch: pytest.MonkeyPatch, clean_environment: None, value: str
+) -> None:
+    monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", value)
+    assert load_settings().providers.require_https is True
+    monkeypatch.setenv("A13N_OUTBOUND_TLS_VERFY", "false")
+    with pytest.raises(ValueError, match="Unknown Service setting"):
+        load_settings()
+
+
+@pytest.mark.parametrize("value", ["", "0", "off", "invalid"])
+def test_invalid_operator_tls_environment_is_rejected_at_service_startup(
+    monkeypatch: pytest.MonkeyPatch, clean_environment: None, value: str
+) -> None:
+    monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", value)
+    with pytest.raises(ValueError, match=r"^A13N_OUTBOUND_TLS_VERIFY must be true or false$"):
+        load_settings()

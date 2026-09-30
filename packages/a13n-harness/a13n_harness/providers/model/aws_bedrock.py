@@ -8,6 +8,8 @@ import httpx2
 from anyio import move_on_after, to_thread
 from pydantic import Field, StringConstraints
 
+from a13n_harness.http import outbound_tls_verify
+
 from .credentials import AwsCredentials
 from .definition import ModelProviderDefinition
 from .types import ModelConnection, ProviderConfiguration
@@ -37,6 +39,8 @@ def _build_provider(
         client = get_session().create_client(
             "bedrock-runtime",
             region_name=region,
+            # None preserves the SDK's normal CA-bundle selection.
+            verify=None if outbound_tls_verify() else False,
             endpoint_url=provider.endpoint or f"https://bedrock-runtime.{region}.{suffix}",
             config=ClientConfig(retries={"total_max_attempts": 1}, connect_timeout=5, read_timeout=600),
             **credentials.native_values(),

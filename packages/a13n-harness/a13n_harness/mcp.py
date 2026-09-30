@@ -18,6 +18,7 @@ from pydantic_ai.mcp import MCPToolset
 from a13n_harness._json import dump_json_text
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
+from a13n_harness.http import outbound_tls_verify
 
 
 class MCPHeadersFactory(Protocol):
@@ -226,7 +227,9 @@ class ContextualMCP(MCP[AgentContext]):
             async def authorize(request: httpx2.Request) -> None:
                 ctx.deps.configuration.authorize_url(str(request.url))
 
-            client = httpx2.AsyncClient(follow_redirects=False, event_hooks={"request": [authorize]})
+            client = httpx2.AsyncClient(
+                verify=outbound_tls_verify(), follow_redirects=False, event_hooks={"request": [authorize]}
+            )
             local_headers = dict(merged_headers)
             if self._recipe.authorization_token:
                 local_headers["Authorization"] = self._recipe.authorization_token

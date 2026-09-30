@@ -11,6 +11,7 @@ from pydantic_ai.retries import AsyncHTTPX2TenacityTransport, RetryConfig, wait_
 from tenacity import retry_if_exception, stop_after_attempt, wait_exponential
 
 from a13n_harness.configuration import RunConfiguration
+from a13n_harness.http import outbound_tls_verify
 
 DEFAULT_MODEL_HTTP_RETRY_STATUS_CODES = frozenset({429, 502, 503, 504})
 
@@ -97,7 +98,9 @@ class _ModelHttpClient(httpx2.AsyncClient):
         async def authorize(request: httpx2.Request) -> None:
             configuration.authorize_url(str(request.url))
 
-        super().__init__(timeout=timeout, transport=transport, event_hooks={"request": [authorize]})
+        super().__init__(
+            verify=outbound_tls_verify(), timeout=timeout, transport=transport, event_hooks={"request": [authorize]}
+        )
 
     # Keep the dependency's private construction hooks localized here. Delegating
     # all arguments preserves its TLS, proxy and pool defaults without copying
