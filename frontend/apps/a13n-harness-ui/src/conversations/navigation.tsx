@@ -267,6 +267,7 @@ function ProjectGroup({
 }) {
   const navigate = useNavigate();
   const results = useResults();
+  const [markingRead, setMarkingRead] = useState(false);
   const projects = useProjects();
   const belongs = (thread: Schema<"ThreadSummary">) => {
     const project = thread.configuration.project_id;
@@ -410,6 +411,19 @@ function ProjectGroup({
       Number(!!b.thread.starred) - Number(!!a.thread.starred) || byTouch(a, b),
   );
   const rows = [...activeRows, ...unreadRows, ...recentRows];
+  const markAllRead = async () => {
+    if (!results.tracker || markingRead) return;
+    // Capture the displayed group's versions before storage writes can yield.
+    const unread = [...observed.values()]
+      .filter(({ thread }) => !thread.archived)
+      .map(({ thread }) => thread);
+    setMarkingRead(true);
+    try {
+      await results.tracker.acknowledgeAll(unread);
+    } finally {
+      setMarkingRead(false);
+    }
+  };
   return (
     <section
       hidden={hidden}
@@ -529,9 +543,21 @@ function ProjectGroup({
                 </small>
               )}
               {unreadRows.length > 0 && index === activeRows.length && (
-                <small className={styles.emptyGroup}>
-                  New results · {unreadRows.length}
-                </small>
+                <div className={styles.resultHeading}>
+                  <small className={styles.emptyGroup}>
+                    New results · {unreadRows.length}
+                  </small>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    loading={markingRead}
+                    aria-label={`Mark all results read in ${group.name}`}
+                    title="Mark all current results in this group as read"
+                    onClick={() => void markAllRead()}
+                  >
+                    Mark all read
+                  </Button>
+                </div>
               )}
               {recentRows.length > 0 &&
                 (activeRows.length > 0 || unreadRows.length > 0) &&

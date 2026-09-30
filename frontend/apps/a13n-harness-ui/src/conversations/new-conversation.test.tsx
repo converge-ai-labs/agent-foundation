@@ -452,6 +452,9 @@ async function fill() {
       screen.getByLabelText(/^Agent: Writer\. Model:/).textContent,
     ).toContain("Writer"),
   );
+  expect(
+    screen.getByRole("combobox", { name: "Project" }).textContent,
+  ).toContain("Example project");
   act(() => drafts.get(id)!.doc.getText("text").insert(0, "Build this"));
 }
 

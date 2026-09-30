@@ -1014,13 +1014,25 @@
   line-height: 1.75;
 }
 
+.resultHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.resultHeading > button {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+
 /* Attachment identities live in the editor text; widgets are their presentation. */
 .inlineAttachment {
   display: inline-flex;
   align-items: center;
   vertical-align: middle;
   max-width: min(280px, 100%);
-  margin: 2px 3px;
+  margin: 0 3px;
   border: 1px solid var(--a13n-border);
   border-radius: 9px;
   background: var(--a13n-surface);
@@ -1039,12 +1051,12 @@
   color: inherit;
   font: inherit;
   cursor: pointer;
-  padding: 4px 7px;
+  padding: 0 6px;
   min-width: 0;
 }
 .inlineAttachmentOpen img {
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
   object-fit: cover;
   border-radius: 4px;
   flex-shrink: 0;

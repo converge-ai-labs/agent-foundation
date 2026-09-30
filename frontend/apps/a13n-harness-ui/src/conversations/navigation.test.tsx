@@ -1009,6 +1009,13 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
     archived: true,
     completion,
   } as Schema<"ThreadSummary">;
+  activeThreads = [
+    {
+      ...thread("Running result"),
+      ...{ completion },
+      root_activity: { state: "running" },
+    },
+  ];
   for (const item of [unread, running, archived]) {
     await results.follow({ ...item, completion: null });
     results.observe(item);
@@ -1036,15 +1043,31 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   ).toHaveLength(1);
   expect(activity).toHaveLength(1);
   expect(activity[0].searchParams.get("cursor")).toBeNull();
+  const otherProject = {
+    ...thread("Other project result"),
+    configuration: { project_id: "project-two" },
+    completion,
+  } as Schema<"ThreadSummary">;
   await act(async () => {
-    await results.acknowledge(unread.thread_id, 1);
+    await results.follow({ ...otherProject, completion: null });
+    results.observe(otherProject);
   });
+  fireEvent.click(
+    within(group).getByRole("button", { name: "Mark all results read in One" }),
+  );
+  await waitFor(() => expect(results.isUnread(unread.thread_id)).toBe(false));
+  expect(results.isUnread(running.thread_id)).toBe(false);
+  expect(results.isUnread(archived.thread_id)).toBe(true);
+  expect(results.isUnread(otherProject.thread_id)).toBe(true);
   expect(
     within(group).queryByRole("link", { name: /Off-page result/ }),
   ).toBeNull();
   expect(
-    within(group).getByLabelText("1 conversations with new results"),
-  ).toBeTruthy();
+    within(group).queryByLabelText(/conversations with new results/),
+  ).toBeNull();
+  expect(within(group).queryByText(/New results/)).toBeNull();
+  expect(within(group).getByText("Running · 1")).toBeTruthy();
+  expect(writes).toEqual([]);
   vi.restoreAllMocks();
 });
 
