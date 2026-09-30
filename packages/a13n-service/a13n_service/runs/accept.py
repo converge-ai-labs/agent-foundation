@@ -10,7 +10,7 @@ from functools import partial
 from typing import Literal
 
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import exists, func, select, update
+from sqlalchemy import exists, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import after_commit, now, transaction
@@ -404,20 +404,31 @@ class ThreadAdvancer:
         self.after = ""
 
     async def __call__(self) -> None:
+        pending = (
+            select(InboxEntryRow.thread_id)
+            .where(InboxEntryRow.status == "pending", InboxEntryRow.thread_id > self.after)
+            .distinct(InboxEntryRow.thread_id)
+            .order_by(InboxEntryRow.thread_id, InboxEntryRow.position)
+            .subquery()
+        )
+        # Keep eligibility as a per-candidate lookup: LIMIT prevents PostgreSQL from flattening
+        # the join into a scan of historical idle threads. The batch limit belongs after this filter.
+        eligible = (
+            select(ThreadRow.id)
+            .where(
+                ThreadRow.id == pending.c.thread_id,
+                ThreadRow.current_run_id.is_(None),
+                ~exists().where(RunRow.id == ThreadRow.head_run_id, RunRow.status == "waiting"),
+                ThreadRow.archived_at.is_(None),
+                ThreadRow.last_run_id.is_not_distinct_from(ThreadRow.head_run_id),
+            )
+            .limit(1)
+            .lateral()
+        )
         async with transaction(self.runtime.storage) as session:
             ids = (
                 await session.scalars(
-                    select(ThreadRow.id)
-                    .where(
-                        ThreadRow.current_run_id.is_(None),
-                        ~exists().where(RunRow.id == ThreadRow.head_run_id, RunRow.status == "waiting"),
-                        ThreadRow.archived_at.is_(None),
-                        ThreadRow.last_run_id.is_not_distinct_from(ThreadRow.head_run_id),
-                        ThreadRow.id > self.after,
-                        exists().where(InboxEntryRow.thread_id == ThreadRow.id, InboxEntryRow.status == "pending"),
-                    )
-                    .order_by(ThreadRow.id)
-                    .limit(self.batch)
+                    select(pending.c.thread_id).join(eligible, true()).order_by(pending.c.thread_id).limit(self.batch)
                 )
             ).all()
         self.after = ids[-1] if len(ids) == self.batch else ""

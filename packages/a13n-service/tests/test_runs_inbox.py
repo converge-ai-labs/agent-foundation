@@ -7,9 +7,11 @@ import pytest
 from a13n_service.infra.db import lock, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
+from a13n_service.runs import accept as acceptance
 from a13n_service.runs import inbox
 from a13n_service.runs.accept import ThreadAdvancer, advance
 from a13n_service.runs.tables import RunRow, ThreadRow
+from sqlalchemy import event
 
 pytestmark = pytest.mark.anyio
 
@@ -110,6 +112,103 @@ async def test_the_advance_sweep_passes_a_thread_that_breaks(service, scripted_m
     await ThreadAdvancer(runtime, batch=10)()
     assert (await runs_kit.get_thread(service, broken))["current_run_id"] is None
     assert (await runs_kit.get_thread(service, healthy))["current_run_id"] is not None
+
+
+async def test_advance_batches_distinct_threads_and_wraps_after_failures(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    policy = _Breaking()
+    runtime = replace(service.runtime, admission=policy)
+    for text in ("one", "two", "three"):
+        thread_id = (await runs_kit.start_thread(service, agent, text))["thread"]["id"]
+        for queued in ("next", "later", "last"):
+            await _queue(service, runs_kit, thread_id, agent, queued)
+        policy.threads.add(thread_id)
+    for _ in range(3):
+        scripted_model.say("Done")
+        await (await runs_kit.attempt(service, runtime=runtime))
+
+    visited: list[str] = []
+    statements: list[str] = []
+    owner = asyncio.current_task()
+
+    def record(connection, cursor, statement, parameters, context, executemany) -> None:  # type: ignore[no-untyped-def]
+        if asyncio.current_task() is owner:
+            statements.append(statement)
+
+    async def visit(runtime, thread_id, *, skip_locked=False) -> None:  # type: ignore[no-untyped-def]
+        # Only candidate discovery has run before the first acceptance transaction starts.
+        if not visited:
+            assert len(statements) == 1
+            assert statements[0].startswith("SELECT ")
+        visited.append(thread_id)
+        await advance(runtime, thread_id, skip_locked=skip_locked)
+
+    monkeypatch.setattr(acceptance, "advance", visit)
+    engine = runtime.storage.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", record)
+    sweep = ThreadAdvancer(runtime, batch=2)
+    ordered = sorted(policy.threads)
+    try:
+        await sweep()
+        assert visited == ordered[:2]
+        assert sweep.after == ordered[1]
+        await sweep()
+        assert visited == ordered
+        assert sweep.after == ""
+        # The failing low-ID threads are retried only after the rest of the pass.
+        await sweep()
+        assert visited == [*ordered, *ordered[:2]]
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+
+@pytest.mark.parametrize("race", ["locked", "accepted", "withdrawn", "archived"])
+async def test_advance_rechecks_a_candidate_after_discovery(
+    service, scripted_model, runs_kit, monkeypatch, race
+) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    thread_id = (await runs_kit.start_thread(service, agent, "first"))["thread"]["id"]
+    queued = await _queue(service, runs_kit, thread_id, agent, "next")
+    policy = _Breaking()
+    policy.threads.add(thread_id)
+    scripted_model.say("Done")
+    await (await runs_kit.attempt(service, runtime=replace(service.runtime, admission=policy)))
+
+    async def raced(runtime, candidate, *, skip_locked=False) -> None:  # type: ignore[no-untyped-def]
+        assert candidate == thread_id and skip_locked
+        if race == "locked":
+            async with transaction(runtime.storage) as session:
+                await lock(session, ThreadRow, thread_id)
+                await asyncio.wait_for(advance(runtime, candidate, skip_locked=skip_locked), timeout=2)
+            return
+        if race == "accepted":
+            # Another sweeper accepts this same candidate before ours gets its lock.
+            await advance(runtime, candidate, skip_locked=True)
+        else:
+            thread = await runs_kit.get_thread(service, thread_id)
+            if race == "withdrawn":
+                response = await service.client.delete(
+                    f"{service.api}/threads/{thread_id}/inbox/{queued['id']}",
+                    headers=runs_kit.if_match(thread),
+                )
+            else:
+                response = await service.client.post(
+                    f"{service.api}/threads/{thread_id}/archive", headers=runs_kit.if_match(thread)
+                )
+            assert response.status_code == 200, response.text
+        await advance(runtime, candidate, skip_locked=skip_locked)
+
+    monkeypatch.setattr(acceptance, "advance", raced)
+    await ThreadAdvancer(service.runtime, batch=1)()
+    entries = await runs_kit.inbox(service, thread_id)
+    expected = {"locked": "pending", "accepted": "assigned", "withdrawn": "withdrawn", "archived": "withdrawn"}
+    assert entries[1]["status"] == expected[race]
+    thread = await runs_kit.get_thread(service, thread_id)
+    assert thread["current_run_id"] == (entries[1]["assigned_run_id"] if race == "accepted" else None)
 
 
 async def test_only_the_submitter_edits_a_pending_entry(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
