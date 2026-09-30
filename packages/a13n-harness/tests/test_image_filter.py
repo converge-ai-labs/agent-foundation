@@ -181,6 +181,82 @@ async def test_count_policy_keeps_latest_across_user_and_tool_parts_without_coun
     assert history[0].parts[0].content == [old]
 
 
+@pytest.mark.parametrize("corruption", ["png-crc", "jpeg-truncated"])
+@pytest.mark.parametrize("surface", ["user", "tool-scalar", "tool-list"])
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_corrupt_images_do_not_consume_count_or_mutate_canonical_history(
+    corruption: str, surface: str, streaming: bool
+) -> None:
+    if corruption == "png-crc":
+        damaged = bytearray(_png((32, 32)))
+        damaged[damaged.index(b"IDAT") + 4] ^= 1
+        data = bytes(damaged)
+        media_type = "image/png"
+        with Image.open(io.BytesIO(data)) as source, pytest.raises(SyntaxError):
+            source.verify()
+    else:
+        buffer = io.BytesIO()
+        with Image.new("RGB", (32, 32), "red") as source:
+            source.save(buffer, format="JPEG")
+        data = buffer.getvalue()[:-2]
+        media_type = "image/jpeg"
+        with Image.open(io.BytesIO(data)) as source:
+            source.verify()
+        with Image.open(io.BytesIO(data)) as source, pytest.raises(OSError):
+            source.load()
+    native = BinaryImage(data, media_type=media_type, identifier="corrupt", vendor_metadata={"source": "retained"})
+    old = ImageUrl("https://example.com/valid-old.png")
+    history: list[ModelMessage] = [
+        ModelRequest(parts=[UserPromptPart([old])]),
+        ModelResponse(parts=[TextPart("previous")]),
+    ]
+    if surface == "user":
+        history.append(ModelRequest(parts=[UserPromptPart([native])]))
+    else:
+        history.extend(
+            [
+                ModelResponse(parts=[ToolCallPart("view", {}, tool_call_id="view-1")]),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart("view", native if surface == "tool-scalar" else [native], tool_call_id="view-1")
+                    ]
+                ),
+            ]
+        )
+    original = deepcopy(history)
+    previous = HarnessState.new(message_history=tuple(history))
+    seen: list[list[ModelMessage]] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        seen.append(deepcopy(messages))
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(image_filter=ImageFilterConfiguration(max_images=1)),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+    )
+    if streaming:
+        async with executable.stream("Inspect", previous_state=previous, bindings=RunBindings.embedded()) as run:
+            async for _ in run:
+                pass
+            result = run.result
+            assert result is not None
+    else:
+        result = await executable.run("Inspect", previous_state=previous, bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"
+    assert _images(seen[0]) == [old]
+    assert "broken or corrupted" in str(seen[0])
+    assert "max_images=1" not in str(seen[0])
+    assert result.state is not None
+    assert _images(result.state.message_history) == [old, native]
+    assert _images(result.all_messages()) == [old, native]
+    assert previous.message_history == tuple(original)
+    assert history == original
+    assert native.data == data and native.vendor_metadata == {"source": "retained"}
+
+
 @pytest.mark.parametrize("size", [(8100, 81), (81, 8100)])
 async def test_dimension_only_compression_is_proportional_and_preserves_identity(size: tuple[int, int]) -> None:
     native = BinaryImage(_png(size), media_type="image/png", identifier="same", vendor_metadata={"detail": "low"})
@@ -267,9 +343,23 @@ async def test_gif_policy_applies_after_counting_and_preserves_other_images() ->
     assert _images(retained) == [native, url]
 
 
-async def test_processing_pixel_limit_rejects_before_decoding_large_image() -> None:
+@pytest.mark.parametrize(
+    "policy",
+    [
+        ImageFilterConfiguration(),
+        ImageFilterConfiguration(split_large_images=False, max_image_bytes=0, max_image_dimension=0),
+    ],
+)
+async def test_processing_pixel_limit_rejects_before_decoding_large_image(
+    policy: ImageFilterConfiguration, monkeypatch: pytest.MonkeyPatch
+) -> None:
     native = BinaryContent(_png((9000, 9000), mode="1", color=0), media_type="image/png")
-    seen, retained = await _project([ModelRequest(parts=[UserPromptPart([native])])], ImageFilterConfiguration())
+
+    def fail_load(*args, **kwargs):
+        pytest.fail("source pixels must not be decoded above the processing bound")
+
+    monkeypatch.setattr(Image.Image, "load", fail_load)
+    seen, retained = await _project([ModelRequest(parts=[UserPromptPart([native])])], policy)
     assert _images(seen) == []
     assert "could not be prepared" in str(seen[0].parts[0].content)
     assert _images(retained) == [native]

@@ -196,7 +196,7 @@ def _prepare_binary_image(item: BinaryContent, configuration: ImageFilterConfigu
     try:
         with Image.open(io.BytesIO(item.data)) as source:
             source.verify()
-    except (OSError, ValueError, Image.DecompressionBombError):
+    except (OSError, ValueError, SyntaxError, Image.DecompressionBombError):
         return [_REMOVED_INVALID]
     try:
         with Image.open(io.BytesIO(item.data)) as source:
@@ -207,13 +207,19 @@ def _prepare_binary_image(item: BinaryContent, configuration: ImageFilterConfigu
             oversized = (raw_limit is not None and len(item.data) > raw_limit) or (
                 configuration.max_image_dimension > 0 and max(source.size) > configuration.max_image_dimension
             )
-            if not animated and (split or oversized) and source.width * source.height > _MAX_PROCESSING_PIXELS:
+            if not animated and source.width * source.height > _MAX_PROCESSING_PIXELS:
                 return [_REMOVED_LIMIT]
             if animated:
                 if oversized:
                     return [_REMOVED_LIMIT]
                 # Segmentation and JPEG encoding must not discard animation.
                 return [_replace_image(item, item.data, media_type)]
+            try:
+                # Header verification does not detect truncated JPEG pixel data.
+                # Validate static decoding before an image can consume the quota.
+                source.load()
+            except (OSError, ValueError, SyntaxError):
+                return [_REMOVED_INVALID]
             if split:
                 segments: list[BinaryContent | str] = []
                 top = 0
