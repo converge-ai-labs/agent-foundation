@@ -48,6 +48,7 @@ from a13n_harness.environment.advanced import (
 from a13n_harness.environment.providers import (
     EnvironmentRuntimeMount,
 )
+from a13n_harness.events import InputTextEvent
 from a13n_harness.model_context import (
     ModelContextBlock,
     ModelContextInputOrigin,
@@ -55,7 +56,6 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
-    ModelInputEvent,
     _commit_projection,
     _requires_exact_history,
     user_prompt_content,
@@ -457,11 +457,9 @@ async def test_handoff_replays_delivered_multimodal_steering_in_order() -> None:
     assert "Do not deploy; follow this image" in _user_text(list(result.state.message_history))
     # Restoring history is not another input delivery, even when it retains steering.
     fresh = [
-        content.value.content if isinstance(content.value, TextContent) else content.value
+        item.event.content
         for item in events
-        if isinstance(item.event, ModelInputEvent)
-        for content in item.event.content
-        if content.metadata.display and isinstance(content.value, str | TextContent)
+        if isinstance(item.event, InputTextEvent) and item.event.source == "user" and item.event.metadata.display
     ]
     assert fresh == ["Initial current task"]
     from pydantic_ai.messages import EnqueuedMessagesEvent
@@ -795,11 +793,9 @@ async def test_compaction_retains_only_applied_inputs_from_the_current_logical_r
     async with executable.stream("Next request", bindings=RunBindings.embedded(), previous_state=previous) as run:
         result = await _consume_run(run, events)
     fresh = [
-        content.value.content if isinstance(content.value, TextContent) else content.value
+        item.event.content
         for item in events
-        if isinstance(item.event, ModelInputEvent)
-        for content in item.event.content
-        if content.metadata.display and isinstance(content.value, str | TextContent)
+        if isinstance(item.event, InputTextEvent) and item.event.source == "user" and item.event.metadata.display
     ]
     assert fresh == ["Next request"]
 

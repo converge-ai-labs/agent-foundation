@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from typing import Literal
 
 from pydantic import JsonValue
 from pydantic_ai.messages import UserContent
@@ -15,6 +16,28 @@ from a13n_harness.identity import AgentInstanceContext
 
 NativeRunInput = str | Sequence[UserContent]
 RunInputValue = str | Sequence[UserContent | ContentItem]
+
+
+@dataclass(slots=True)
+class ModelInputState:
+    """Run-local input state reset at each primary attempt boundary."""
+
+    attempt_id: str | None = None
+    content: tuple[ContentItem, ...] | None = None
+    source: Literal["user", "recovery"] = "user"
+    annotated: bool = False
+    observed: bool = False
+
+    def begin(self, attempt_id: str, content: tuple[ContentItem, ...] | None, *, recovery: bool) -> None:
+        self.attempt_id = attempt_id
+        self.content = (
+            tuple(ContentItem(item.value, item.metadata.model_copy(update={"display": False})) for item in content)
+            if recovery and content is not None
+            else content
+        )
+        self.source = "recovery" if recovery else "user"
+        self.annotated = False
+        self.observed = False
 
 
 @dataclass(frozen=True, slots=True)

@@ -376,9 +376,10 @@ async def test_mount_changes_refresh_the_environment_tool_surface_between_model_
         for item in user_prompt_content(part)
         if isinstance(item, TextContent) and (item.metadata or {}).get("source_id") == "a13n.environment"
     ]
-    assert notices
-    assert all(item.metadata["display"] is False for item in notices)
-    assert any("mounts changed" in item.content for item in notices)
+    assert notices == []
+    assert "The Environment mounts changed" not in str(result.state.message_history)
+    # The next request's tool surface is refreshed directly; no queued user
+    # prompt is needed to announce the lifecycle change.
 
 
 @pytest.mark.parametrize(
@@ -2269,19 +2270,25 @@ async def test_environment_change_event_adapter_survives_model_recovery_boundary
         ),
     )
     async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
-        pending = asyncio.create_task(run.__anext__())
-        await prompt_started.wait()
+        observed = []
+        change_seen = asyncio.Event()
+
+        async def consume():
+            async for item in run:
+                observed.append(item)
+                if _environment_change_events([item]):
+                    change_seen.set()
+
+        pending = asyncio.create_task(consume())
+        await asyncio.wait_for(prompt_started.wait(), timeout=2)
         await aggregate.mount("local", _local_mount(tmp_path), make_default=True)
-        observed = [await asyncio.wait_for(pending, timeout=2)]
-        while not _environment_change_events(observed):
-            observed.append(await asyncio.wait_for(run.__anext__(), timeout=2))
-        change_event = _environment_change_events(observed)[0]
-        assert _environment_change_events([change_event]) == [change_event]
+        await asyncio.wait_for(change_seen.wait(), timeout=2)
         release_prompt.set()
-        remaining = [item async for item in run]
+        await asyncio.wait_for(pending, timeout=2)
 
     assert calls == 2
-    assert remaining[-1].result.output_or_raise() == "done"
+    assert len(_environment_change_events(observed)) == 1
+    assert observed[-1].result.output_or_raise() == "done"
 
 
 async def test_mount_from_result_middleware_drains_before_terminal_result(tmp_path: Path) -> None:

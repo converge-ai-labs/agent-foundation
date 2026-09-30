@@ -45,6 +45,7 @@ from a13n_harness.content import (
     native_content,
     normalize_request_history,
     replace_request_parts,
+    request_input_content,
     request_parts,
 )
 from a13n_harness.context import (
@@ -65,14 +66,17 @@ from a13n_harness.errors import (
 )
 from a13n_harness.events import (
     AgentStreamEventProtocol,
+    EnvironmentChangedPayload,
     HarnessEvent,
     HarnessEventEmitter,
     HarnessExtensionEvent,
     HarnessRunResultEvent,
     HarnessStreamEvent,
+    InputSource,
     ModelRetryScheduledPayload,
     _ChildEventForwarder,
     _RunEventEmitter,
+    input_events,
 )
 from a13n_harness.input import (
     RunInputFactory,
@@ -247,15 +251,14 @@ async def _emit_environment_change_events(
 
 
 def _environment_change_event(change: EnvironmentChange) -> HarnessExtensionEvent:
-    payload: dict[str, JsonValue] = {
-        "type": "environment_changed",
-        "sequence": change.sequence,
-        "kind": change.kind,
-        "name": change.name,
-        "previous_default": change.previous_default,
-        "current_default": change.current_default,
-    }
-    return HarnessExtensionEvent(kind="context", payload=payload)
+    payload = EnvironmentChangedPayload(
+        sequence=change.sequence,
+        kind=change.kind,
+        name=change.name,
+        previous_default=change.previous_default,
+        current_default=change.current_default,
+    )
+    return HarnessExtensionEvent(kind="context", payload=payload.model_dump(mode="json"))
 
 
 def _normalize_toolset_instructions(agent: AgentSpec) -> bool:
@@ -1645,8 +1648,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             await exchange.context._steering.resolve_delivered(current_history)
             retry_error: BaseException | None = None
             recovery.attempt_id = f"model-attempt-{uuid4().hex}"
-            exchange.context._steering.attempt_content = (
-                content_items(current_input.value) if current_input.value is not None else None
+            exchange.context._model_input.begin(
+                recovery.attempt_id,
+                tuple(content_items(current_input.value)) if current_input.value is not None else None,
+                recovery=attempt_index > 0,
             )
             recovery.request_error = None
             response_tracker = InterruptedResponseTracker()
@@ -1687,6 +1692,22 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 yield self._record_inner_candidate(candidate)
                                 return
                             yield self._adapt_event(cast(AgentStreamEvent, event))
+                            if isinstance(event, EnqueuedMessagesEvent):
+                                for message in event.messages:
+                                    if not isinstance(message, ModelRequest):
+                                        continue
+                                    notification = (message.metadata or {}).get("a13n.steering-source")
+                                    source: InputSource = (
+                                        notification
+                                        if notification in {"async_subagent", "background_process"}
+                                        else "steering"
+                                    )
+                                    for observed in input_events(
+                                        request_input_content(message),
+                                        source=source,
+                                        input_id=event.enqueue_id,
+                                    ):
+                                        yield self._adapt_event(observed)
                     except RunCancelled as exc:
                         if exc.run_id is None:
                             # Native execution has not started; its empty history cannot

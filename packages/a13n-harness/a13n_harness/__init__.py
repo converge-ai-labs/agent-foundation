@@ -42,6 +42,8 @@ if TYPE_CHECKING:
         HarnessExtensionEvent,
         HarnessRunResultEvent,
         HarnessStreamEvent,
+        InputMediaEvent,
+        InputTextEvent,
     )
     from a13n_harness.execution import ExecutableAgent, HarnessRunStream
     from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext, AgentInstanceRef
@@ -91,6 +93,8 @@ _EXPORTS = {
         "AgentStreamEventProtocol",
         "HarnessEvent",
         "HarnessExtensionEvent",
+        "InputMediaEvent",
+        "InputTextEvent",
         "HarnessRunResultEvent",
         "HarnessStreamEvent",
     ),

@@ -11,9 +11,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 from pydantic_ai import _agent_graph
 from pydantic_ai.messages import (
+    BinaryContent,
+    CachePoint,
+    FileUrl,
     ModelMessage,
     ModelRequest,
     ModelRequestPart,
@@ -21,6 +24,7 @@ from pydantic_ai.messages import (
     RetryPromptPart,
     TextContent,
     ToolReturnPart,
+    UploadedFile,
     UserContent,
     UserPromptPart,
 )
@@ -59,6 +63,38 @@ def content_items(content: str | Sequence[UserContent | ContentItem]) -> list[Co
         )
         for item in items
     ]
+
+
+def project_input_content(item: UserContent | ContentItem) -> tuple[str | dict[str, JsonValue], ContentMetadata] | None:
+    """Describe an input without transporting native media payloads."""
+    metadata = ContentMetadata()
+    if isinstance(item, ContentItem):
+        metadata = item.metadata
+        item = item.value
+    elif isinstance(item, TextContent):
+        metadata = ContentMetadata.from_native(item.metadata)
+    if isinstance(item, str):
+        return item, metadata
+    if isinstance(item, TextContent):
+        return item.content, metadata
+    if isinstance(item, CachePoint):
+        return None
+    metadata = metadata.model_copy(update={"media": True})
+    media: dict[str, JsonValue] = {"kind": item.kind}
+    if isinstance(item, BinaryContent):
+        media.update(media_type=item.media_type, size_bytes=len(item.data), payload_omitted=True)
+    elif isinstance(item, FileUrl):
+        if item.url.startswith(("https://", "http://")):
+            media["url"] = item.url
+        else:
+            media["payload_omitted"] = True
+        try:
+            media["media_type"] = item.media_type
+        except ValueError:
+            pass  # Native URLs need not carry a MIME hint.
+    elif isinstance(item, UploadedFile):
+        media.update(file_id=item.file_id, provider_name=item.provider_name, media_type=item.media_type)
+    return media, metadata
 
 
 def native_content(content: str | Sequence[UserContent | ContentItem]) -> str | list[UserContent]:

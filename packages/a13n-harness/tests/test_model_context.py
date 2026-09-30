@@ -709,7 +709,7 @@ def test_overlay_commit_preserves_user_content_and_request_metadata() -> None:
 
 async def test_input_events_do_not_replay_restored_history_or_change_provider_prefix() -> None:
     from a13n_harness import HarnessEvent, HarnessState
-    from a13n_harness.model_context import ModelInputEvent
+    from a13n_harness.events import InputTextEvent
     from pydantic_ai.models.openai import OpenAIResponsesModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -732,11 +732,11 @@ async def test_input_events_do_not_replay_restored_history_or_change_provider_pr
     prompt = [TextContent("current input", metadata={"source_id": "input-current"})]
     async with executable.stream(prompt, previous_state=previous, bindings=RunBindings.embedded()) as stream:
         async for event in stream:
-            if isinstance(event, HarnessEvent) and isinstance(event.event, ModelInputEvent):
-                observed.extend(item for item in event.event.content if item.metadata.display)
+            if isinstance(event, HarnessEvent) and isinstance(event.event, InputTextEvent):
+                if event.event.source == "user" and event.event.metadata.display:
+                    observed.append(event.event)
     assert len(observed) == 1
-    assert isinstance(observed[0].value, TextContent)
-    assert observed[0].value.content == "current input"
+    assert observed[0].content == "current input"
     assert observed[0].metadata.source_id == "input-current"
     assert previous.model_dump_json() == before
     assert ModelMessagesTypeAdapter.dump_json(seen[: len(history)]) == ModelMessagesTypeAdapter.dump_json(history)

@@ -358,3 +358,26 @@ it("recognizes content the display omitted over its limit", () => {
   expect(isOmitted({ omitted: true, text: "kept" })).toBe(false);
   expect(isOmitted({})).toBe(false);
 });
+
+it.each(["user", "steering"])(
+  "folds %s custom input as one completed user message without duplicate observation",
+  (source) => {
+    const event = {
+      type: "CUSTOM",
+      name: `a13n.input.${source}`,
+      message_id: "run:input:1",
+      metadata: { source_id: "inbox_one", display: true },
+      value: { event: { input_id: "input_one", source, content: "Question" } },
+    };
+    const items = fold([delta(1, event, message("completed"))]);
+    expect(items.size).toBe(1);
+    expect(items.get("itm_message")?.content).toEqual({
+      messageId: "run:input:1",
+      role: "user",
+      text: "Question",
+      metadata: event.metadata,
+    });
+    applyDelta(items, delta(1, event, message("completed")));
+    expect(items.size).toBe(1);
+  },
+);

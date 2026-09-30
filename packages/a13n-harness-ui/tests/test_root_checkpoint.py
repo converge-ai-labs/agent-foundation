@@ -13,7 +13,8 @@ from a13n_harness.capabilities import (
     RuntimeContextCapability,
 )
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
-from a13n_harness.model_context import ModelInputEvent, user_prompt_content
+from a13n_harness.events import InputTextEvent
+from a13n_harness.model_context import user_prompt_content
 from a13n_harness_ui.conversation import ConversationExcerpt, checkpoint_excerpt
 from a13n_harness_ui.root_checkpoint import RootCheckpointCapability, ThreadCheckpointEvent
 from pydantic_ai.agent.spec import AgentSpec
@@ -115,7 +116,9 @@ async def test_checkpoint_exports_committed_handoff_and_context_not_provider_mer
     assert checkpoint.message_history == result.state.message_history[:-1]
     markers = [event.event.continuation_id for event in events if isinstance(event.event, ThreadCheckpointEvent)]
     assert markers == ["checkpoint-1", "checkpoint-2"]
-    first_input = next(i for i, event in enumerate(events) if isinstance(event.event, ModelInputEvent))
+    first_input = next(
+        i for i, event in enumerate(events) if isinstance(event.event, InputTextEvent) and event.event.source == "user"
+    )
     first_marker = next(i for i, event in enumerate(events) if isinstance(event.event, ThreadCheckpointEvent))
     assert first_input < first_marker
 

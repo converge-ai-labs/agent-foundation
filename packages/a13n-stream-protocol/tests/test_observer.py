@@ -909,7 +909,8 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
 
 
 def test_input_projection_preserves_visibility_without_media_payloads() -> None:
-    from a13n_harness.model_context import ModelInputEvent, user_prompt_content
+    from a13n_harness.events import input_events
+    from a13n_harness.model_context import user_prompt_content
     from pydantic_ai.messages import BinaryContent, TextContent
 
     prompt = UserPromptPart(
@@ -921,18 +922,18 @@ def test_input_projection_preserves_visibility_without_media_payloads() -> None:
             BinaryContent(data=b"x" * (2 * 1024 * 1024), media_type="image/png"),
         ]
     )
-    source = ModelInputEvent(content=user_prompt_content(prompt))
+    sources = input_events(user_prompt_content(prompt), source="user", input_id="input-one")
     observer = HarnessAguiObserver()
-    events = observer.observe(_event(0, source))
-    assert len(events) == 7
+    events = tuple(event for index, source in enumerate(sources) for event in observer.observe(_event(index, source)))
+    assert len(events) == 3
     bodies = [event.model_dump(mode="json") for event in events]
     for index, body in enumerate(bodies):
         assert body["role"] == "user"
-        assert body["metadata"]["display"] is (index // 3 != 1)
-    assert bodies[4]["metadata"]["private"] == "omit"
-    assert bodies[4]["delta"] == "private guidance"
-    assert bodies[6]["name"] == "a13n.input.media"
-    assert bodies[6]["value"]["event"]["content"] == {
+        assert body["metadata"]["display"] is (index != 1)
+    assert bodies[1]["metadata"]["private"] == "omit"
+    assert bodies[1]["value"]["event"]["content"] == "private guidance"
+    assert bodies[2]["name"] == "a13n.input.media"
+    assert bodies[2]["value"]["event"]["content"] == {
         "kind": "binary",
         "media_type": "image/png",
         "size_bytes": 2 * 1024 * 1024,
@@ -942,16 +943,17 @@ def test_input_projection_preserves_visibility_without_media_payloads() -> None:
     assert observer.snapshot() == events
 
     def show_hidden(_source, event):
-        if isinstance(event, TextMessageContentEvent):
+        if isinstance(event, CustomEvent):
             event.model_extra["metadata"]["display"] = True
         return event
 
     with pytest.raises(AguiObservationError):
-        HarnessAguiObserver(processor=show_hidden).observe(_event(0, source))
+        HarnessAguiObserver(processor=show_hidden).observe(_event(0, sources[1]))
 
 
 def test_input_image_links_are_presented_without_inline_data_or_fetching() -> None:
-    from a13n_harness.model_context import ModelInputEvent, user_prompt_content
+    from a13n_harness.events import input_events
+    from a13n_harness.model_context import user_prompt_content
     from pydantic_ai.messages import ImageUrl, ModelMessagesTypeAdapter
 
     prompt = UserPromptPart(
@@ -962,7 +964,12 @@ def test_input_image_links_are_presented_without_inline_data_or_fetching() -> No
     )
     request = ModelRequest(parts=[prompt])
     before = ModelMessagesTypeAdapter.dump_json([request])
-    events = HarnessAguiObserver().observe(_event(0, ModelInputEvent(content=user_prompt_content(prompt))))
+    observer = HarnessAguiObserver()
+    events = tuple(
+        event
+        for index, source in enumerate(input_events(user_prompt_content(prompt), source="user", input_id="input-one"))
+        for event in observer.observe(_event(index, source))
+    )
     bodies = [event.model_dump(mode="json") for event in events]
     assert bodies[0]["value"]["event"]["content"]["url"] == "https://example.test/image.png"
     encoded = TypeAdapter(list[Event]).dump_json(list(events))
@@ -975,7 +982,7 @@ def test_input_image_links_are_presented_without_inline_data_or_fetching() -> No
 def test_native_input_types_preserve_caller_metadata_without_binary_transport(delivered: bool) -> None:
     from a13n_harness import ContentItem, ContentMetadata
     from a13n_harness.content import input_request
-    from a13n_harness.model_context import ModelInputEvent
+    from a13n_harness.events import input_events
     from pydantic_ai.messages import (
         AudioUrl,
         BinaryContent,
@@ -1008,12 +1015,11 @@ def test_native_input_types_preserve_caller_metadata_without_binary_transport(de
     ]
     request = input_request(content)
     before = ModelMessagesTypeAdapter.dump_json([request])
-    source = (
-        EnqueuedMessagesEvent(enqueue_id="input-one", messages=(request,))
-        if delivered
-        else ModelInputEvent(content=content)
-    )
-    events = HarnessAguiObserver().observe(_event(0, source))
+    sources = input_events(content, source="steering" if delivered else "user", input_id="input-one")
+    if delivered:
+        sources.insert(0, EnqueuedMessagesEvent(enqueue_id="input-one", messages=(request,)))
+    observer = HarnessAguiObserver()
+    events = tuple(event for index, source in enumerate(sources) for event in observer.observe(_event(index, source)))
     bodies = [event.model_dump(mode="json") for event in events]
     media = [body for body in bodies if body.get("name") == "a13n.input.media"]
     assert [body["value"]["event"]["content"]["kind"] for body in media] == [
@@ -1027,8 +1033,8 @@ def test_native_input_types_preserve_caller_metadata_without_binary_transport(de
     for body in media:
         assert body["metadata"]["image_object_id"] == "image-original"
         assert body["metadata"]["client"] == {"selection": [1, 2]}
-    assert any(body.get("delta") == "plain input" for body in bodies)
-    annotated = next(body for body in bodies if body.get("delta") == "annotated")
+    assert any(body.get("value", {}).get("event", {}).get("content") == "plain input" for body in bodies)
+    annotated = next(body for body in bodies if body.get("value", {}).get("event", {}).get("content") == "annotated")
     assert annotated["metadata"]["image_object_id"] == "image-original"
     encoded = TypeAdapter(list[Event]).dump_json(list(events))
     import base64
@@ -1041,27 +1047,18 @@ def test_native_input_types_preserve_caller_metadata_without_binary_transport(de
     assert ModelMessagesTypeAdapter.dump_json([request]) == before
 
 
-@pytest.mark.anyio
-async def test_cache_only_input_is_a_noop_that_preserves_observer_correlation() -> None:
-    from dataclasses import replace
-
-    from a13n_harness.model_context import ModelInputEvent
+@pytest.mark.parametrize("source", ["user", "steering", "context", "recovery", "async_subagent", "background_process"])
+def test_input_sources_are_custom_text_events_and_cache_points_are_omitted(source) -> None:
+    from a13n_harness.events import input_events
     from pydantic_ai.messages import CachePoint
 
-    source = _event(0, ModelInputEvent(content=[CachePoint()]))
-    observer = HarnessAguiObserver()
-    assert observer.observe(source) == ()
-    assert observer.snapshot() == ()
-    with pytest.raises(AguiObservationError, match="correlation"):
-        observer.observe(replace(source, thread_id="another-thread"))
-
-    async def history():
-        yield source
-
-    restored = HarnessAguiObserver()
-    await restored.resume(history())
-    assert restored.snapshot() == ()
-    assert restored.observe(_event(1, ModelInputEvent(content=["visible input"])))
+    assert input_events([CachePoint()], source=source, input_id="input-one") == []
+    native = input_events(["source text", CachePoint()], source=source, input_id="input-one")
+    events = HarnessAguiObserver().observe(_event(0, native[0]))
+    assert len(events) == 1 and isinstance(events[0], CustomEvent)
+    assert events[0].name == f"a13n.input.{source}"
+    assert events[0].value["event"] == {"input_id": "input-one", "source": source, "content": "source text"}
+    assert events[0].model_extra["role"] == ("user" if source in {"user", "steering"} else "system")
 
 
 def test_snapshot_ranges_are_detached_and_keep_a_fixed_boundary() -> None:

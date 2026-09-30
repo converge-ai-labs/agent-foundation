@@ -26,7 +26,8 @@ export function applyObservation(
   if (typeof name !== "string") return current;
   if (
     [
-      "a13n.context.model_input",
+      "a13n.input.user",
+      "a13n.input.steering",
       "a13n.input.media",
       "a13n.pydantic_ai.enqueued_messages",
     ].includes(name)

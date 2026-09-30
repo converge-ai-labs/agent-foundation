@@ -395,7 +395,7 @@ A completed output may legitimately be `None` when the output contract permits i
 
 ## Events
 
-`a13n_harness.model_context` exports native `ModelInputEvent` and `user_prompt_content` for metadata-preserving, media-payload-free presentation. `a13n_harness.capabilities` exports native `CompactionSummaryEvent`. `a13n_harness.toolsets.events` exports native `FileEditAppliedEvent`, `HandoffSummaryEvent`, and `ShellStatusEvent`. [Events and Usage](12-events-observability-and-usage.md) owns their content and lifecycle contracts.
+`a13n_harness.events` exports `InputTextEvent`, `InputMediaEvent`, and the annotation-preserving `input_events` projection; the event payloads contain strings or payload-free media descriptors rather than native provider-content objects. `a13n_harness` re-exports both input event classes. `a13n_harness.model_context` exports `user_prompt_content` for native prompt inspection. `a13n_harness.capabilities` exports native `CompactionSummaryEvent`. `a13n_harness.toolsets.events` exports native `FileEditAppliedEvent`, `HandoffSummaryEvent`, and `ShellStatusEvent`. [Events and Usage](12-events-observability-and-usage.md) owns their content and lifecycle contracts.
 
 ```python
 class HarnessEvent(BaseModel):

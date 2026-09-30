@@ -15,9 +15,7 @@ from a13n_harness import (
     HarnessRunResultEvent,
     HarnessStreamEvent,
 )
-from a13n_harness.content import ContentItem, request_input_content
-from a13n_harness.events import ToolExtraEventPayload
-from a13n_harness.model_context import ModelInputEvent
+from a13n_harness.events import InputMediaEvent, InputTextEvent, ToolExtraEventPayload
 from a13n_harness.tools._output import tool_execution_value
 from ag_ui.core import Event
 from ag_ui.core.events import (
@@ -45,7 +43,6 @@ from pydantic_ai.messages import (
     DeferredToolResultsEvent,
     EnqueuedMessagesEvent,
     FunctionToolResultEvent,
-    ModelRequest,
     OutputToolResultEvent,
     PartDeltaEvent,
     PartEndEvent,
@@ -58,12 +55,10 @@ from pydantic_ai.messages import (
     ToolCallPartDelta,
     ToolReturnPart,
     UnknownCapabilityEvent,
-    UserContent,
 )
 from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_stream_protocol.fragments import fragment_custom_event
-from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 
 _AGUI_EVENT_ADAPTER = TypeAdapter(Event)
 _ANY_ADAPTER = TypeAdapter(Any)
@@ -218,24 +213,17 @@ class HarnessAguiObserver:
         if isinstance(source, HarnessExtensionEvent):
             _observe_request_lifecycle(source, state)
             return [_custom_harness_event(item, source)]
-        if isinstance(source, ModelInputEvent):
-            return _convert_input(item, source.content)
+        if isinstance(source, InputTextEvent | InputMediaEvent):
+            return [_convert_input(item, source)]
         elif isinstance(source, EnqueuedMessagesEvent):
             # Native delivery is authoritative. Never send its raw messages
             # through the generic serializer: they may contain binary payloads.
-            content = [
-                content
-                for message in source.messages
-                if isinstance(message, ModelRequest)
-                for content in request_input_content(message)
-            ]
             return [
                 CustomEvent(
                     timestamp=_timestamp_ms(item),
                     name="a13n.pydantic_ai.enqueued_messages",
                     value=_source_value(item, {"event_kind": source.event_kind, "enqueue_id": source.enqueue_id}),
                 ),
-                *_convert_input(item, content),
             ]
         elif isinstance(source, DeferredToolResultsEvent):
             # Each resolved value is emitted separately as a readable tool result.
@@ -361,54 +349,21 @@ class HarnessAguiObserver:
         return replacement.model_copy(deep=True)
 
 
-def _convert_input(item: HarnessEvent, content: Sequence[UserContent | ContentItem]) -> list[Event]:
-    events: list[Event] = []
-    for index, native in enumerate(content):
-        projected = project_input_content(native)
-        if projected is None:
-            continue
-        value, metadata = projected
-        message_id = f"{item.run_id}:input:{item.sequence}:{index}"
-        if isinstance(value, str):
-            events.extend(
-                _text_message_events(item, message_id=message_id, content=value, role="user", metadata=metadata)
-            )
-        else:
-            events.append(
-                CustomEvent.model_validate(
-                    {
-                        "type": "CUSTOM",
-                        "timestamp": _timestamp_ms(item),
-                        "name": "a13n.input.media",
-                        "message_id": message_id,
-                        "role": "user",
-                        "metadata": metadata.model_dump(mode="json"),
-                        "value": _source_value(item, {"content": value}),
-                    }
-                )
-            )
-    return events
-
-
-def _text_message_events(
-    item: HarnessEvent, *, message_id: str, content: str, role: Literal["user", "assistant"], metadata: ContentMetadata
-) -> list[Event]:
-    # Every chunk is independently attributable and below typical transport limits,
-    # even when JSON escaping expands a code point to six bytes.
-    fields = {
-        "message_id": message_id,
-        "timestamp": _timestamp_ms(item),
-        "role": role,
-        "metadata": metadata.model_dump(mode="json"),
-    }
-    return [
-        TextMessageStartEvent.model_validate(fields),
-        *(
-            TextMessageContentEvent.model_validate({**fields, "delta": content[offset : offset + 8192]})
-            for offset in range(0, len(content), 8192)
-        ),
-        TextMessageEndEvent.model_validate(fields),
-    ]
+def _convert_input(item: HarnessEvent, source: InputTextEvent | InputMediaEvent) -> Event:
+    return CustomEvent.model_validate(
+        {
+            "type": "CUSTOM",
+            "timestamp": _timestamp_ms(item),
+            "name": "a13n.input.media" if isinstance(source, InputMediaEvent) else f"a13n.input.{source.source}",
+            "message_id": f"{item.run_id}:input:{item.sequence}",
+            "role": "user" if source.source in {"user", "steering"} else "system",
+            "metadata": source.metadata.model_dump(mode="json"),
+            "value": _source_value(
+                item,
+                {"input_id": source.input_id, "source": source.source, "content": source.content},
+            ),
+        }
+    )
 
 
 def _convert_part_start(item: HarnessEvent, event: PartStartEvent, state: _ObserverState) -> list[Event]:

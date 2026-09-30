@@ -105,7 +105,11 @@ export function applyDelta(
   // A tool result the Harness did not present fails its call: the Service
   // keeps the observation and names only the call in the delta, so the
   // observation is held under its position until the display replaces it.
-  if (event.type === "CUSTOM" && ref.kind !== "observation")
+  if (
+    event.type === "CUSTOM" &&
+    ref.kind !== "observation" &&
+    !inputText(event)
+  )
     put(
       items,
       { id: position, kind: "observation", state: "completed" },
@@ -147,6 +151,17 @@ function content(
   previous: Schema["Item"]["content"] = {},
 ): Schema["Item"]["content"] {
   if (event.type === "CUSTOM") {
+    const input = inputText(event);
+    if (kind === "text_message" && input) {
+      const text = input.content.slice(0, 262144);
+      return {
+        messageId: event.message_id,
+        role: "user",
+        text,
+        ...(isRecord(event.metadata) ? { metadata: event.metadata } : {}),
+        ...(input.content.length > text.length ? { truncated: true } : {}),
+      };
+    }
     // The observation that failed a tool call leaves the call's content as it was.
     if (kind !== "observation") return previous;
     if (!("name" in previous)) return { name: event.name, value: event.value };
@@ -175,6 +190,20 @@ function content(
   if (event.type === "TOOL_CALL_RESULT")
     next.result = String(event.content ?? "");
   return next;
+}
+
+/** Authored input text, distinct from lifecycle and generated input observations. */
+function inputText(event: ThreadDelta["event"]) {
+  if (
+    event.type !== "CUSTOM" ||
+    (event.name !== "a13n.input.user" &&
+      event.name !== "a13n.input.steering") ||
+    !isRecord(event.value) ||
+    !isRecord(event.value.event) ||
+    typeof event.value.event.content !== "string"
+  )
+    return null;
+  return event.value.event as Record<string, unknown> & { content: string };
 }
 
 /** A streamed tool-call argument observation and the text it holds so far. */

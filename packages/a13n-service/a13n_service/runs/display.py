@@ -10,9 +10,10 @@ consecutive argument deltas of one streamed tool-call part share one.
 import copy
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from a13n_harness import HarnessEvent, HarnessStreamEvent
 from a13n_stream_protocol import HarnessAguiObserver
@@ -175,7 +176,7 @@ def item_id(run_id: str, kind: ItemKind, source_id: str) -> str:
     return "itm_" + hashlib.sha256(f"{run_id}\0{kind}\0{source_id}".encode()).hexdigest()[:32]
 
 
-def _occurred(payload: dict[str, Any]) -> datetime:
+def _occurred(payload: Mapping[str, object]) -> datetime:
     """The event's own time in epoch milliseconds, or the worker's clock for an event that carries none."""
     timestamp = payload.get("timestamp")
     return datetime.fromtimestamp(timestamp / 1000, UTC) if isinstance(timestamp, int) else datetime.now(UTC)
@@ -218,7 +219,9 @@ class DisplayFold:
         self.changed: set[str] = set(self.items)
         self.sequence = 0
         self.observer = HarnessAguiObserver(processor=_bound_payloads)
-        self.assembler = CustomEventAssembler(max_bytes=max_bytes)
+        # Assembly precedes display truncation; a small saved-display budget
+        # must not erase the existence of a valid fragmented input message.
+        self.assembler = CustomEventAssembler()
         self.arguments: _Arguments | None = None
 
     @property
@@ -310,6 +313,15 @@ class DisplayFold:
         if assembled is None:
             return None
         value: JsonValue = assembled.get("value")  # type: ignore[assignment]
+        if assembled.get("name") in {"a13n.input.user", "a13n.input.steering"}:
+            assert isinstance(value, dict) and isinstance(value["event"], dict)
+            message_id = str(assembled["message_id"])
+            content: dict[str, JsonValue] = {"messageId": message_id, "role": "user"}
+            if "metadata" in assembled:
+                content["metadata"] = cast(JsonValue, assembled["metadata"])
+            _bounded(content, "text", str(value["event"]["content"]))
+            key = item_id(self.run_id, "text_message", message_id)
+            return self._put(key, "text_message", "completed", content, at=_occurred(assembled))
         if _json_size(value) > MAX_OBSERVATION_BYTES:
             value = _OMITTED
         key = item_id(self.run_id, "observation", f"{self.attempt}:{self.sequence}")

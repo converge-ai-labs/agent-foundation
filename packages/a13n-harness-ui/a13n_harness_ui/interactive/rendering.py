@@ -661,8 +661,12 @@ class StreamRenderer:
             if state is not None and index in state[1]:
                 return
             media = event_type == "CUSTOM" and payload.get("name") == "a13n.input.media"
-            if event_type == "TEXT_MESSAGE_CONTENT" or media:
-                text = f"[{label}]" if label else str(payload.get("delta") or "")
+            input_text = event_type == "CUSTOM" and payload.get("name") in {"a13n.input.user", "a13n.input.steering"}
+            if event_type == "TEXT_MESSAGE_CONTENT" or media or input_text:
+                value = payload.get("value")
+                source = value.get("event") if isinstance(value, dict) else None
+                content = source.get("content") if input_text and isinstance(source, dict) else payload.get("delta")
+                text = f"[{label}]" if label else str(content or "")
                 if not text:
                     return
                 self.finish()
@@ -672,8 +676,10 @@ class StreamRenderer:
                     self._composer_inputs[key] = state
                     while len(self._composer_inputs) > 128:
                         self._composer_inputs.pop(next(iter(self._composer_inputs)))
-                if label or media:
+                if label or media or input_text:
                     state[1].add(index)
+                if input_text or media:
+                    self.transcript.complete(state[0])
                 self.append(text, display=False)
             elif event_type == "TEXT_MESSAGE_END" and state is not None:
                 state[1].add(index)
@@ -1016,7 +1022,25 @@ class StreamRenderer:
                             label = f" · {identity}" if child else ""
                             self.append(f"[System{label}] Retrying model request…\n", kind="notice")
                     return
+                if name in {"a13n.input.user", "a13n.input.steering"}:
+                    content = event.get("content")
+                    if isinstance(content, str) and (not child or detailed):
+                        self.finish()
+                        prefix = f"> Subagent {terminal_text(identity)} · " if child else "> "
+                        block_id = self.transcript.append(prefix + terminal_text(content), kind="user")
+                        self.transcript.complete(block_id)
+                        self.append(content, display=False)
+                    return
+                if name in {
+                    "a13n.input.context",
+                    "a13n.input.recovery",
+                    "a13n.input.async_subagent",
+                    "a13n.input.background_process",
+                }:
+                    return
                 if name == "a13n.input.media":
+                    if event.get("source") not in {"user", "steering"}:
+                        return
                     media = event.get("content")
                     if isinstance(media, dict) and (not child or detailed):
                         label = str(media.get("media_type") or media.get("kind") or "media")
@@ -1145,6 +1169,6 @@ class StreamRenderer:
                     if kind == "task_changed" and not child:
                         self.tasks.ingest(mutation)
                 if name == "a13n.pydantic_ai.enqueued_messages" and event.get("event_kind") == "enqueued_messages":
-                    # ModelInputEvent owns applied input. Acceptance is a local
+                    # Typed input observations own applied input. Acceptance is a local
                     # notification; queue/delivery facts must not echo it again.
                     return

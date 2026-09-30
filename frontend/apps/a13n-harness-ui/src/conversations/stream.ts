@@ -736,7 +736,20 @@ export class FocusDisplay {
         return;
       }
     }
+    if (name === "a13n.input.user" || name === "a13n.input.steering") {
+      const key = `${this.runId}:${string(event.message_id)}`;
+      this.blocks.set(key, {
+        id: key,
+        kind: "user",
+        text: string(source.content),
+        done: true,
+        metadata: object(event.metadata) ? event.metadata : undefined,
+      });
+      return;
+    }
+    if (name.startsWith("a13n.input.") && name !== "a13n.input.media") return;
     if (name === "a13n.input.media") {
+      if (source.source !== "user" && source.source !== "steering") return;
       const key = `${this.runId}:${string(event.message_id)}`;
       this.blocks.set(key, {
         id: key,

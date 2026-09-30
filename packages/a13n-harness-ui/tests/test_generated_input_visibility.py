@@ -135,10 +135,10 @@ async def test_supplemental_content_never_becomes_authored_input(runner: bool, s
     assert result is not None
     assert result.output_or_raise() == "done"
     assert [
-        event["delta"]
+        event["value"]["event"]["content"]
         for event in events
-        if event["type"] == "TEXT_MESSAGE_CONTENT"
-        and event.get("role") == "user"
+        if event["type"] == "CUSTOM"
+        and event.get("name") in {"a13n.input.user", "a13n.input.steering"}
         and event.get("metadata", {}).get("display", True)
     ] == ["same", "same"]
 

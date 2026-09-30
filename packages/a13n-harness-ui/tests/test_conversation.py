@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 from a13n_harness import ContentItem, ContentMetadata, HarnessEvent
-from a13n_harness.model_context import ModelInputEvent
+from a13n_harness.events import InputTextEvent, input_events
 from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector, excerpt_text, input_excerpt
 from pydantic_ai.messages import (
     BinaryContent,
@@ -79,26 +79,20 @@ def test_collector_preserves_first_input_and_pairs_delivered_steering():
         first_input="Original task", latest_input="Older question", latest_reply="Older answer", reply_kind="final"
     )
     collector = ExcerptCollector(previous, run_id="run-root")
-    collector.observe(event(ModelInputEvent(content=["New question"])))
+    collector.observe(event(InputTextEvent(input_id="input-new", source="user", content="New question")))
     assert collector.value.first_input == "Original task"
     assert collector.value.latest_input == "New question"
     assert collector.value.latest_reply == ""
     collector.observe(event(PartEndEvent(index=0, part=TextPart("Working on it"))))
     assert collector.value.reply_kind == "progress"
-    collector.observe(event(ModelInputEvent(content=["child task"]), run_id="run-child"))
     collector.observe(
-        event(
-            ModelInputEvent(
-                content=[TextContent("tool finished", metadata={"a13n.steering-source": "background_process"})]
-            )
-        )
+        event(InputTextEvent(input_id="input-child", source="user", content="child task"), run_id="run-child")
     )
     collector.observe(
-        event(
-            ModelInputEvent(
-                content=[TextContent("child finished", metadata={"a13n.steering-source": "async_subagent"})]
-            )
-        )
+        event(InputTextEvent(input_id="notification-one", source="background_process", content="tool finished"))
+    )
+    collector.observe(
+        event(InputTextEvent(input_id="notification-two", source="async_subagent", content="child finished"))
     )
     assert collector.value.latest_input == "New question"
     collector.observe(
@@ -108,6 +102,8 @@ def test_collector_preserves_first_input_and_pairs_delivered_steering():
             )
         )
     )
+    assert collector.value.latest_input == "New question"
+    collector.observe(event(InputTextEvent(input_id="input-1", source="steering", content="Actually, do this")))
     assert collector.value.latest_input == "Actually, do this"
     assert collector.value.latest_reply == ""
     assert collector.value.reply_kind == "none"
@@ -119,6 +115,36 @@ def test_context_only_events_do_not_replace_compacted_conversation_excerpts():
         first_input="Original task", latest_input="Recent question", latest_reply="Saved answer", reply_kind="final"
     )
     collector = ExcerptCollector(previous, run_id="run-root")
-    collector.observe(event(ModelInputEvent(content=[TextContent("compacted context", metadata={"display": False})])))
+    collector.observe(event(InputTextEvent(input_id="context-one", source="context", content="compacted context")))
     assert collector.finish(None) == previous
     assert not collector.changed
+
+
+@pytest.mark.parametrize("source", ["context", "recovery", "async_subagent", "background_process"])
+def test_generated_input_never_changes_authored_excerpts(source):
+    previous = ConversationExcerpt(
+        first_input="Question", latest_input="Question", latest_reply="Answer", reply_kind="final"
+    )
+    collector = ExcerptCollector(previous, run_id="run-root")
+    collector.observe(event(InputTextEvent(input_id="generated", source=source, content="Generated but displayable")))
+    assert collector.finish(None) == previous
+    assert not collector.changed
+
+
+def test_multipart_input_groups_match_checkpoint_excerpt_and_text_wins_over_attachments():
+    content = [
+        ContentItem(
+            BinaryContent(b"private", media_type="image/png"),
+            ContentMetadata(harness_ui={"attachment": {"name": "diagram.png"}}),
+        ),
+        "Explain",
+        "this image",
+    ]
+    collector = ExcerptCollector(ConversationExcerpt(), run_id="run-root")
+    for observation in input_events(content, source="user", input_id="multipart"):
+        collector.observe(event(observation))
+    assert collector.value.first_input == collector.value.latest_input == input_excerpt(content) == "Explain this image"
+    for observation in input_events(["Next", "question"], source="steering", input_id="next"):
+        collector.observe(event(observation))
+    assert collector.value.first_input == "Explain this image"
+    assert collector.value.latest_input == "Next question"

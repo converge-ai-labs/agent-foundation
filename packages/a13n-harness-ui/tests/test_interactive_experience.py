@@ -257,7 +257,7 @@ async def test_ctrl_c_feedback_edit_disarms_exit_and_f2_toggles() -> None:
 
 def test_terminal_is_one_consumer_of_structured_media_input() -> None:
     from a13n_harness import ContentItem, ContentMetadata, HarnessEvent
-    from a13n_harness.model_context import ModelInputEvent
+    from a13n_harness.events import input_events
     from a13n_stream_protocol import HarnessAguiObserver
     from pydantic_ai.messages import BinaryContent, ImageUrl
 
@@ -268,15 +268,17 @@ def test_terminal_is_one_consumer_of_structured_media_input() -> None:
         ),
         ImageUrl("https://example.test/picture.png"),
     ]
-    event = HarnessEvent(
-        thread_id="thread-one",
-        run_id="run-one",
-        sequence=1,
-        occurred_at=datetime.now(UTC),
-        event=ModelInputEvent(content=content),
-    )
     renderer = StreamRenderer(Status())
-    observed = HarnessAguiObserver().observe(event)
+    observer = HarnessAguiObserver()
+    observed = tuple(
+        item
+        for sequence, event in enumerate(input_events(content, source="user", input_id="input-one"))
+        for item in observer.observe(
+            HarnessEvent(
+                thread_id="thread-one", run_id="run-one", sequence=sequence, occurred_at=datetime.now(UTC), event=event
+            )
+        )
+    )
     for item in observed:
         renderer.ingest(item.type.value, item.model_dump(mode="json"))
     assert "image/png · 14 bytes" in _text(renderer)
