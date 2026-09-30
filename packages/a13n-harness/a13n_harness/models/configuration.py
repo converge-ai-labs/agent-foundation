@@ -8,6 +8,7 @@ from pydantic_ai.models import Model, ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext
+from pydantic_ai.usage import RequestUsage
 
 from ..configuration import RunConfiguration
 from ..errors import RunError
@@ -42,6 +43,15 @@ class _ConfiguredModel(WrapperModel):
                                 "Restricted Runs require materialized media, not native media URLs.",
                                 code="model_media_url_unsupported",
                             )
+
+    async def count_tokens(
+        self,
+        messages: list[ModelMessage],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> RequestUsage:
+        self._validate(messages)
+        return await super().count_tokens(messages, model_settings, model_request_parameters)
 
     async def request(
         self,

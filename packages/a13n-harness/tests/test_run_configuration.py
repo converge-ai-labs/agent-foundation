@@ -51,6 +51,80 @@ def test_none_empty_and_exact_hostname_semantics():
             config.authorize_url(url)
 
 
+@pytest.mark.parametrize("rule", ["regex:", "regex:[", "regex:*example", "regex:(?unknown)example"])
+def test_allowed_hosts_reject_invalid_regex_at_acceptance(rule):
+    with pytest.raises(ValidationError):
+        RunConfiguration(allowed_hosts={rule})
+
+
+def test_regex_rules_preserve_patterns_and_roundtrip_with_exact_hosts():
+    pattern = r"regex:(?:[a-z0-9-]+\.)*example\.com"
+    config = RunConfiguration(allowed_hosts={f" {pattern} ", "EXACT.test."})
+    assert config.allowed_hosts == {pattern, "exact.test"}
+    assert RunConfiguration.model_validate_json(config.model_dump_json()) == config
+    assert deepcopy(config) == config
+    for url in (
+        "https://example.com",
+        "https://API.EXAMPLE.COM.:8443/path",
+        "https://eu.api.example.com",
+        "https://exact.test",
+    ):
+        config.authorize_url(url)
+    for url in (
+        "https://example.com.evil.test",
+        "https://notexample.com",
+        "https://evil.test/example.com",
+        "https://example.com@evil.test",
+        "https://sub.exact.test",
+    ):
+        with pytest.raises(HostNotAllowedError):
+            config.authorize_url(url)
+
+
+@pytest.mark.parametrize(
+    ("pattern", "allowed", "denied"),
+    [
+        (r"regex:example", "https://example", "https://example.com"),
+        (r"regex:(api|docs)\.example\.com", "https://api.example.com", "https://example.com"),
+        (r"regex:xn--bcher-kva\.de", "https://BÜCHER.de.", "https://sub.bücher.de"),
+        (r"regex:2001:db8::[12]", "http://[2001:0db8::1]:8080", "http://[2001:db8::3]"),
+        (r"regex:EXAMPLE\.COM", None, "https://EXAMPLE.com"),
+        (r"regex:(?i)EXAMPLE\.COM", "https://example.com", "https://example.net"),
+    ],
+)
+def test_regex_fullmatch_uses_normalized_host_and_python_pattern_semantics(pattern, allowed, denied):
+    config = RunConfiguration(allowed_hosts={pattern})
+    if allowed is not None:
+        config.authorize_url(allowed)
+    with pytest.raises(HostNotAllowedError):
+        config.authorize_url(denied)
+
+
+@pytest.mark.anyio
+async def test_regex_rules_check_each_redirect_and_transport_request():
+    config = RunConfiguration(allowed_hosts={r"regex:(api|docs)\.example\.com"})
+    policy = EndpointPolicy(configuration=config)
+    assert await policy.validate_redirect("https://api.example.com", "https://docs.example.com") == (
+        "https://docs.example.com",
+        False,
+    )
+    with pytest.raises(EndpointPolicyError):
+        await policy.validate_redirect("https://api.example.com", "https://docs.example.com.evil.test")
+    sent = []
+
+    async def respond(request):
+        sent.append(str(request.url))
+        return httpx2.Response(200)
+
+    async with create_model_http_client(
+        transport=httpx2.MockTransport(respond), retry=None, configuration=config
+    ) as client:
+        await client.get("https://api.example.com")
+        with pytest.raises(HostNotAllowedError):
+            await client.get("https://api.example.com.evil.test")
+    assert sent == ["https://api.example.com"]
+
+
 @pytest.mark.anyio
 async def test_endpoint_policy_has_no_dns_precheck_and_checks_redirect(monkeypatch):
     def unexpected(*args, **kwargs):
@@ -133,20 +207,24 @@ async def test_restricted_web_run_does_not_expose_provider_native_navigation():
 @pytest.mark.anyio
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("host", ["allowed.test", "denied.test"])
-async def test_native_media_urls_are_rejected_before_sdk_download(monkeypatch, stream, host):
+@pytest.mark.parametrize("precount", [False, True])
+async def test_native_media_urls_are_rejected_before_sdk_download(monkeypatch, stream, host, precount):
     from a13n_harness.errors import RunError
+    from a13n_harness.filters.image import ImageFilterCapability
     from a13n_harness.providers.model.credentials import ApiKeyCredential
     from a13n_harness.providers.model.routes import build_api_key_model
     from pydantic_ai import Agent
     from pydantic_ai.messages import ImageUrl
+    from pydantic_ai.usage import UsageLimits
 
     async def unexpected(*args, **kwargs):
         pytest.fail("restricted media must never reach native download or HTTP")
 
     monkeypatch.setattr("pydantic_ai.models.openai.download_item", unexpected)
+    monkeypatch.setattr("pydantic_ai.models.anthropic.download_item", unexpected)
     monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", unexpected)
     model = await build_api_key_model(
-        "openai-chat:fixture",
+        "anthropic:fixture" if precount else "openai-chat:fixture",
         ApiKeyCredential(api_key="fixture"),
         base_url="https://allowed.test/v1",
         configuration=RunConfiguration(allowed_hosts={"allowed.test"}),
@@ -154,11 +232,12 @@ async def test_native_media_urls_are_rejected_before_sdk_download(monkeypatch, s
     async with model:
         error = RunError if host == "allowed.test" else HostNotAllowedError
         with pytest.raises(error):
-            agent = Agent(model)
+            agent = Agent(model, capabilities=[ImageFilterCapability()])
+            limits = UsageLimits(count_tokens_before_request=precount)
             prompt = [ImageUrl(f"https://{host}/image.png", force_download=True)]
             if stream:
-                async with agent.run_stream_events(prompt) as events:
+                async with agent.run_stream_events(prompt, usage_limits=limits) as events:
                     async for _ in events:
                         pass
             else:
-                await agent.run(prompt)
+                await agent.run(prompt, usage_limits=limits)

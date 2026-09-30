@@ -115,10 +115,15 @@ Service 对 provider、远程 MCP 服务器、OAuth 服务器和 webhook 端点�
 Run 消息通过 `options.configuration` 接受配置，与 Agent overrides 分开：
 
 ```json
-{"configuration": {"allowed_hosts": ["api.example.com", "docs.example.com"], "extensions": {}}}
+{
+  "configuration": {
+    "allowed_hosts": ["api.example.com", "regex:(api|docs)\\.example\\.com"],
+    "extensions": {}
+  }
+}
 ```
 
-请包含所需 Model、Web、connection 和远程 Environment 的全部域名。`allowed_hosts` 为 null 表示不限制，空数组拒绝全部目标；非空数组精确匹配规范化的主机名或 IP 字面值，不支持子域匹配、通配符、端口或 CIDR。接受时冻结快照，供输入 URL 读取、执行、故障恢复、resume 和子 Run 使用。Steering 可省略配置或指定完全相同的值；活跃 Run 的不同配置会以 `run_configuration_immutable` 拒绝。使用 `delivery: "next_run"` 选择新的快照。带命名空间的 JSON extensions 仅由显式支持它们的消费者读取。Console 控件由 #823 单独跟进；API 已支持此配置。
+请包含所需 Model、Web、connection 和远程 Environment 的全部域名。`allowed_hosts` 为 null 表示不限制，空数组拒绝全部目标；普通条目精确匹配规范化后的主机名/IP，`regex:<pattern>` 条目则使用 Python 正则匹配完整的规范化主机名。JSON 示例使用双反斜杠表示字面量的点，仅放行 `api.example.com` 或 `docs.example.com`，不放行任意子域或后缀。无效或空表达式会在接受时被拒绝。规范化、子域表达式和转义详见[主机规则与正则表达式](../a13n-harness/context.md#host-rules-and-regular-expressions)。glob、端口和 CIDR 不是主机规则。接受时冻结快照，供输入 URL 读取、执行、故障恢复、resume 和子 Run 使用。Steering 可省略配置或指定完全相同的值；活跃 Run 的不同配置会以 `run_configuration_immutable` 拒绝。使用 `delivery: "next_run"` 选择新的快照。带命名空间的 JSON extensions 仅由显式支持它们的消费者读取。Console 控件由 #823 单独跟进；API 已支持此配置。
 
 授权只检查 URL 声明的域名，不预解析 DNS、不分类地址，也不固定 IP。Run 之外的管理操作保留进程的 URL/HTTPS 策略，不借用 Run 配置。任意 shell、第三方插件和不透明 SDK 流量的网络限制应在部署或 Environment 边界实施。
 

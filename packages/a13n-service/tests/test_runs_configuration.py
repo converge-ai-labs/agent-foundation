@@ -1,6 +1,7 @@
 """Accepted Run configuration is durable, independent of Agent revisions and immutable under steering."""
 
 import asyncio
+import re
 from urllib.parse import urlsplit
 
 import pytest
@@ -21,10 +22,12 @@ def test_configuration_has_canonical_idempotency_digest():
     assert Request.of("key", "message", "thread", first).digest != Request.of("key", "message", "thread", denied).digest
 
 
-async def test_steering_retains_or_matches_the_accepted_configuration(service, scripted_model, runs_kit):
+@pytest.mark.parametrize("use_regex", [False, True])
+async def test_steering_retains_or_matches_the_accepted_configuration(service, scripted_model, runs_kit, use_regex):
     agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"enabled": True}})
     host = urlsplit(scripted_model.url).hostname
-    configuration = {"allowed_hosts": [host], "extensions": {"example.filter": {"images": ["keep"]}}}
+    rule = f"regex:{re.escape(host)}" if use_regex else host
+    configuration = {"allowed_hosts": [rule], "extensions": {"example.filter": {"images": ["keep"]}}}
     gate = asyncio.Event()
     scripted_model.call("find_resources", {"kind": "model"}, call_id="call_find", gate=gate)
     scripted_model.say("Done")

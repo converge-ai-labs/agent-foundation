@@ -9191,6 +9191,7 @@
                 "type": "null"
               }
             ],
+            "description": "Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.",
             "title": "Allowed Hosts"
           },
           "extensions": {
@@ -9220,6 +9221,7 @@
                 "type": "null"
               }
             ],
+            "description": "Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.",
             "title": "Allowed Hosts"
           },
           "extensions": {

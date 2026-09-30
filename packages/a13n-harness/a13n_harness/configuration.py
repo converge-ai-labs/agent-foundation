@@ -45,7 +45,13 @@ class RunConfiguration(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", validate_default=True)
 
-    allowed_hosts: frozenset[str] | None = None
+    allowed_hosts: frozenset[str] | None = Field(
+        default=None,
+        description=(
+            "Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire "
+            "normalized hostname. Null is unrestricted; an empty array denies all."
+        ),
+    )
     extensions: Mapping[str, JsonValue] = Field(default_factory=dict)
 
     @field_validator("allowed_hosts", mode="before")
@@ -61,7 +67,7 @@ class RunConfiguration(BaseModel):
     @field_validator("allowed_hosts")
     @classmethod
     def _normalize_hosts(cls, value: frozenset[str] | None) -> frozenset[str] | None:
-        return None if value is None else frozenset(normalize_host(host) for host in value)
+        return None if value is None else frozenset(_normalize_host_rule(host) for host in value)
 
     @field_validator("extensions")
     @classmethod
@@ -94,8 +100,25 @@ class RunConfiguration(BaseModel):
             host = normalize_host(hostname)
         except ValueError as error:
             raise HostNotAllowedError("URL has an invalid hostname") from error
-        if self.allowed_hosts is not None and host not in self.allowed_hosts:
+        if self.allowed_hosts is not None and not any(
+            re.fullmatch(rule.removeprefix("regex:"), host) is not None if rule.startswith("regex:") else host == rule
+            for rule in self.allowed_hosts
+        ):
             raise HostNotAllowedError(f"URL hostname {host!r} is not allowed for this Run")
+
+
+def _normalize_host_rule(value: str) -> str:
+    rule = value.strip()
+    if not rule.startswith("regex:"):
+        return normalize_host(rule)
+    pattern = rule.removeprefix("regex:")
+    if not pattern:
+        raise ValueError("allowed host regex patterns must not be empty")
+    try:
+        re.compile(pattern)
+    except re.error as error:
+        raise ValueError(f"invalid allowed host regex: {error}") from error
+    return rule
 
 
 def normalize_host(value: str) -> str:

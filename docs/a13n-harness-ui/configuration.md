@@ -335,11 +335,13 @@ The proxy you configure is trusted outbound infrastructure and owns destination 
 
 ```yaml
 run_configuration:
-  allowed_hosts: [api.example.com, docs.example.com]
+  allowed_hosts:
+    - api.example.com
+    - 'regex:(?:[a-z0-9-]+\.)*docs\.example\.com'
   extensions:
     example.reader: {images: true}
 ```
 
-Omit `allowed_hosts` or set it to null for unrestricted destinations; `[]` denies all. Entries match exact normalized hostnames or IP literals, without wildcards, subdomain matching, ports or CIDRs. Include every required Model, Web and MCP hostname. The check uses declared URL hostnames on direct and proxy routes, including owned redirect hops; it never resolves DNS or pins IPs. Root and child compositions retain the snapshot; edits affect later root Runs, not active or reconstructed ones. API-key Model clients and Host Web/MCP support it; opaque subscription Model transports reject restrictive configurations. Extensions are namespaced JSON values for explicitly opting-in consumers, not automatic Capability constructor settings. Arbitrary shell and trusted plugin traffic require deployment or Environment network isolation.
+Omit `allowed_hosts` or set it to null for unrestricted destinations; `[]` denies all. Ordinary entries match exact normalized hostnames or IP literals; entries prefixed with `regex:` use Python regular expressions to match the entire normalized hostname. The example allows `docs.example.com` and its subdomains, not `docs.example.com.evil.test`. Use `\.` for literal dots and YAML single quotes to preserve backslashes. Invalid/empty patterns fail configuration validation. Patterns see lowercased ASCII IDNA hostnames or canonical IPs, never URLs, paths or ports; keep them simple and caller-authored. See [host rules and regular expressions](../a13n-harness/context.md#host-rules-and-regular-expressions) for examples, matching boundaries and Python/JSON escaping. Globs and CIDRs are not supported. Include every required Model, Web and MCP hostname. The check uses declared URL hostnames on direct and proxy routes, including owned redirect hops; it never resolves DNS or pins IPs. Root and child compositions retain the snapshot; edits affect later root Runs, not active or reconstructed ones. API-key Model clients and Host Web/MCP support it; opaque subscription Model transports reject restrictive configurations. Extensions are namespaced JSON values for explicitly opting-in consumers, not automatic Capability constructor settings. Arbitrary shell and trusted plugin traffic require deployment or Environment network isolation.
 
 Plaintext loopback MCP and plaintext local/provider-private Envd attachments stay direct. HTTPS Envd attachments honor proxy variables. Third-party SDK-owned transports retain their SDK's proxy behavior; daemon-initiated Envd pairing and reverse WebSocket connections are separate from the Python HTTP attachment client.

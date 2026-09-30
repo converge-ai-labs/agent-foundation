@@ -598,6 +598,10 @@ def test_proxy_rejects_duplicate_membership_and_copies_lists() -> None:
         ("run_configuration:\n  allowed_hosts: null\n", None),
         ("run_configuration:\n  allowed_hosts: []\n", frozenset()),
         ("run_configuration:\n  allowed_hosts: [EXAMPLE.com.]\n", frozenset({"example.com"})),
+        (
+            "run_configuration:\n  allowed_hosts: ['regex:(api|docs)\\.example\\.com']\n",
+            frozenset({r"regex:(api|docs)\.example\.com"}),
+        ),
     ],
 )
 async def test_run_configuration_round_trips(tmp_path: Path, setting: str, expected) -> None:

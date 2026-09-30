@@ -119,10 +119,15 @@ Every request the Service makes to a provider, a remote MCP server, an OAuth ser
 Run messages accept `options.configuration`, separately from Agent overrides:
 
 ```json
-{"configuration": {"allowed_hosts": ["api.example.com", "docs.example.com"], "extensions": {}}}
+{
+  "configuration": {
+    "allowed_hosts": ["api.example.com", "regex:(api|docs)\\.example\\.com"],
+    "extensions": {}
+  }
+}
 ```
 
-Include every required Model, Web, connection and remote Environment hostname. A null `allowed_hosts` is unrestricted; an empty array denies all; non-empty arrays match exact normalized hostnames or IP literals, not subdomains, wildcards, ports or CIDRs. Acceptance freezes this snapshot for input URL reads, execution, recovery, resume and children. Steering can omit configuration or name the identical value; changing it on an active Run fails with `run_configuration_immutable`. Submit `delivery: "next_run"` to select a new snapshot. Namespaced JSON extensions are read only by consumers that explicitly support them. Console controls are tracked separately in #823; the API accepts this configuration now.
+Include every required Model, Web, connection and remote Environment hostname. A null `allowed_hosts` is unrestricted; an empty array denies all; ordinary entries match exact normalized hostnames/IPs, while `regex:<pattern>` entries use Python full-string matching against the normalized hostname. The JSON example uses doubled backslashes for literal dots and allows only `api.example.com` or `docs.example.com`, not arbitrary subdomains or suffixes. Invalid/empty patterns are rejected at acceptance. See [host rules and regular expressions](../a13n-harness/context.md#host-rules-and-regular-expressions) for normalization, subdomain patterns and escaping. Globs, ports and CIDRs are not host rules. Acceptance freezes this snapshot for input URL reads, execution, recovery, resume and children. Steering can omit configuration or name the identical value; changing it on an active Run fails with `run_configuration_immutable`. Submit `delivery: "next_run"` to select a new snapshot. Namespaced JSON extensions are read only by consumers that explicitly support them. Console controls are tracked separately in #823; the API accepts this configuration now.
 
 Authorization checks declared URL hostnames without DNS prechecks, address classification or IP pinning. Management operations outside a Run retain process URL/HTTPS policy, not a Run's configuration. Enforce network restrictions for arbitrary shell, third-party plugin and opaque SDK traffic at the deployment or Environment boundary.
 

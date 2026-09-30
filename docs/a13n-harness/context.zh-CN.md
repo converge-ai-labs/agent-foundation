@@ -36,7 +36,31 @@ bindings = RunBindings.embedded(configuration=configuration)
 
 插件和工具通过 `AgentContext.configuration` 读取配置（原生工具上下文中为 `ctx.deps.configuration`）。消费者显式验证自己的命名空间扩展，例如 `context.configuration.extensions.get("example.reader")`；嵌套值是独立副本，修改它们不会改变接受的快照。Harness 不会自动将 extensions 合并到 Capabilities，也不注册扩展 schema。
 
-`allowed_hosts=None` 不限制目标，空集合拒绝全部目标。域名/IP 规范化后精确匹配，不支持通配符、端口、CIDR 或子域匹配。在每个自有 HTTP(S) 请求及重定向跳转前调用 `configuration.authorize_url(url)`；它检查声明的主机名，不解析 DNS，也不固定 IP。第一方 Host 传输显式接入。限制性配置使用 Host Web 工具代替原生搜索，避免直接转发视频 URL，并拒绝无法检查的原生 Model/MCP 路由。限制性配置还会在 SDK 下载或 provider 转发前拒绝原生 Model 的媒体 URL，包括历史和工具返回中的 URL；请将已授权的内容物化为 `BinaryContent`。注入的 Model resolver 或媒体 reader 必须为自身请求执行该快照。任意 shell 和插件的网络流量仍需部署或 Environment 隔离。Host 为持久恢复和异步子 Run 捕获配置；Harness 在内部恢复及内联子 Run 中复用它。
+`allowed_hosts=None` 不限制目标，空集合拒绝全部目标。普通条目精确匹配规范化后的域名/IP；需要匹配一组主机时，使用下文说明的显式 `regex:` 条目。端口和 CIDR 不是主机规则。在每个自有 HTTP(S) 请求及重定向跳转前调用 `configuration.authorize_url(url)`；它检查声明的主机名，不解析 DNS，也不固定 IP。第一方 Host 传输显式接入。限制性配置使用 Host Web 工具代替原生搜索，避免直接转发视频 URL，并拒绝无法检查的原生 Model/MCP 路由。限制性配置还会在 SDK 下载或 provider 转发前拒绝原生 Model 的媒体 URL，包括历史和工具返回中的 URL；请将已授权的内容物化为 `BinaryContent`。注入的 Model resolver 或媒体 reader 必须为自身请求执行该快照。任意 shell 和插件的网络流量仍需部署或 Environment 隔离。Host 为持久恢复和异步子 Run 捕获配置；Harness 在内部恢复及内联子 Run 中复用它。
+
+### 主机规则与正则表达式
+
+精确主机与 `regex:<pattern>` 规则可以混用，任一条目匹配即可放行。正则采用 Python 正则表达式语法，对 **完整的规范化主机名** 执行匹配（`re.fullmatch`），因此 `^` 和 `$` 可省略。它不匹配协议、凭据、端口、路径或查询参数。匹配前会将域名转为小写、移除末尾的点、将国际化域名转为 ASCII IDNA，并规范化 IP 字面值。请使用小写/ASCII 表达式，或显式添加 `(?i)` 等内联标志；正则本身不会被转为小写或 IDNA。
+
+```python
+configuration = RunConfiguration(
+    allowed_hosts={
+        "api.vendor.example",                         # Exact host only.
+        r"regex:(api|docs)\.example\.com",            # Two named subdomains.
+        r"regex:(?:[a-z0-9-]+\.)*assets\.example\.com", # Base and all subdomain levels.
+    },
+)
+```
+
+| 规则                                  | 放行                                | 不放行                                    |
+| ------------------------------------- | ----------------------------------- | ----------------------------------------- |
+| `example.com`                         | `example.com`                       | `api.example.com`                         |
+| `regex:[a-z0-9-]+\.example\.com`      | `api.example.com`                   | `example.com`、`eu.api.example.com`       |
+| `regex:(?:[a-z0-9-]+\.)*example\.com` | `example.com`、`eu.api.example.com` | `notexample.com`、`example.com.evil.test` |
+
+字面量的点应写成 `\.`；未转义的 `.` 会匹配任意字符。`*.example.com` 不是受支持的 glob。单独的 `regex:example` 不会匹配 `example.com`，因为这里不是子串搜索。空表达式或无效表达式会在执行前使配置验证失败。正则属于可信调用方编写的配置：保持简单，避免有歧义的嵌套重复，不要接受模型生成的表达式。`regex:.*` 这样的宽泛规则放行所有有效主机名，但该 Run 仍被视为限制性配置，保留上文的原生传输限制。每个重定向目标都必须独立匹配规则。
+
+YAML 中使用单引号保留反斜杠，例如 `'regex:(api|docs)\.example\.com'`。JSON 需要双反斜杠：`"regex:(api|docs)\\.example\\.com"`。上面的 Python 原始字符串可避免额外转义。
 
 ## 组合上下文
 

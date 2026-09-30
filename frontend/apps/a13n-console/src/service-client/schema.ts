@@ -5943,7 +5943,10 @@ export interface components {
      *     Extension lookups return detached values, not mutable shared state.
      */
     "RunConfiguration-Input": {
-      /** Allowed Hosts */
+      /**
+       * Allowed Hosts
+       * @description Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.
+       */
       allowed_hosts?: string[] | null;
       /** Extensions */
       extensions?: {
@@ -5958,7 +5961,10 @@ export interface components {
      *     Extension lookups return detached values, not mutable shared state.
      */
     "RunConfiguration-Output": {
-      /** Allowed Hosts */
+      /**
+       * Allowed Hosts
+       * @description Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.
+       */
       allowed_hosts?: string[] | null;
       /** Extensions */
       extensions?: {

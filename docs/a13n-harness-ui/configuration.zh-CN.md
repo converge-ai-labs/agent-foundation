@@ -335,11 +335,13 @@ export no_proxy=localhost,127.0.0.1,::1
 
 ```yaml
 run_configuration:
-  allowed_hosts: [api.example.com, docs.example.com]
+  allowed_hosts:
+    - api.example.com
+    - 'regex:(?:[a-z0-9-]+\.)*docs\.example\.com'
   extensions:
     example.reader: {images: true}
 ```
 
-省略 `allowed_hosts` 或设为 null 表示不限制目标；`[]` 拒绝全部目标。条目精确匹配规范化的域名或 IP 字面值，不支持通配符、子域匹配、端口或 CIDR。请包含所需 Model、Web 和 MCP 的全部域名。检查针对直连和代理请求 URL 声明的主机名，包括宿主拥有的重定向跳转；不解析 DNS，也不固定 IP。根与子 Run 的组合保留该快照，修改仅影响后续根 Run，不改变活跃或重建的 Run。API-key Model 客户端及 Host Web/MCP 支持此配置；无法检查内部传输的订阅 Model 会拒绝限制性配置。Extensions 是供显式接入的消费者使用的带命名空间 JSON 值，不会自动变成 Capability 构造参数。任意 shell 和可信插件的网络流量仍需部署或 Environment 网络隔离。
+省略 `allowed_hosts` 或设为 null 表示不限制目标；`[]` 拒绝全部目标。普通条目精确匹配规范化的域名或 IP 字面值；以 `regex:` 开头的条目使用 Python 正则匹配完整的规范化主机名。示例放行 `docs.example.com` 及其子域，但不放行 `docs.example.com.evil.test`。字面量的点写成 `\.`，YAML 使用单引号保留反斜杠。无效或空表达式会使配置验证失败。正则看到的是小写 ASCII IDNA 域名或规范化 IP，不是 URL、路径或端口；请保持简单，并由可信调用方编写。更多示例、匹配边界和 Python/JSON 转义见[主机规则与正则表达式](../a13n-harness/context.md#host-rules-and-regular-expressions)。不支持 glob 和 CIDR。请包含所需 Model、Web 和 MCP 的全部域名。检查针对直连和代理请求 URL 声明的主机名，包括宿主拥有的重定向跳转；不解析 DNS，也不固定 IP。根与子 Run 的组合保留该快照，修改仅影响后续根 Run，不改变活跃或重建的 Run。API-key Model 客户端及 Host Web/MCP 支持此配置；无法检查内部传输的订阅 Model 会拒绝限制性配置。Extensions 是供显式接入的消费者使用的带命名空间 JSON 值，不会自动变成 Capability 构造参数。任意 shell 和可信插件的网络流量仍需部署或 Environment 网络隔离。
 
 明文回环 MCP 和明文本地/provider 私有 Envd 附加仍直连。HTTPS Envd 附加遵循代理变量。第三方 SDK 所有的传输保留 SDK 代理行为；守护进程发起的 Envd 配对和反向 WebSocket 连接，与 Python HTTP 附加客户端相互独立。
