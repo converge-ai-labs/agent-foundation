@@ -32,7 +32,7 @@ The current mandatory build contribution is deliberately narrow:
 | Model context coordinator | Mandatory `ModelContextCoordinatorCapability`                   | Preserve historical overlays, resolve the typed Host/Capability/terminal projection chain, and commit one validated current request overlay          | [Context and Working State](09-context-and-memory.md)      |
 | Continuation coordinator  | `AgentContextState` typed methods                               | Provide detached versioned JSON namespaces without a second Capability registry                                                                      | [Harness State and Resume](10-snapshot-and-resume.md)      |
 
-Model self-healing remains optional. `SelfHealingModelCapability` installs the `SelfHealingModel` wrapper at the final effective request-Model boundary; the wrapper owns repair and replay behavior. Interrupted-stream semantic recovery is owned by `HarnessRunStream`, not a Capability. Plugin input/result middleware remains outside the Agent loop.
+Model self-healing is installed by default, with an explicit builder opt-out. `SelfHealingModelCapability` installs the `SelfHealingModel` wrapper at the final effective request-Model boundary; the wrapper owns repair and replay behavior. Interrupted-stream semantic recovery is owned by `HarnessRunStream`, not a Capability. Plugin input/result middleware remains outside the Agent loop.
 
 ## Optional Capability Roles
 
@@ -88,7 +88,7 @@ flowchart LR
     Boundary[Mandatory tool execution boundary] --> PAI
     ToolReview[Optional tool risk review] --> PAI
     Integrity[Mandatory message integrity Filter] --> PAI
-    SelfHealing[Optional model self-healing] --> PAI
+    SelfHealing[Default-on model self-healing] --> PAI
     PAI --> Agent[Pydantic AI Agent loop]
 ```
 
@@ -110,7 +110,7 @@ A Host that requires a particular run Capability constructs and retains the type
 
 ## Provider Compatibility and Recovery
 
-Stable model/provider/adapter compatibility belongs to the native Model profile and adapter. Transport retries belong to the provider/client configuration. The optional `SelfHealingModelCapability` installs `SelfHealingModel` around the final effective request Model; `SelfHealingModel` owns exact one-shot history repairs. `HarnessRunStream` owns bounded `ModelAttempt` recovery after model interruption.
+Stable model/provider/adapter compatibility belongs to the native Model profile and adapter. Transport retries belong to the provider/client configuration. The default-on `SelfHealingModelCapability` installs `SelfHealingModel` around the final effective request Model; `SelfHealingModel` owns exact one-shot history repairs. `HarnessRunStream` owns bounded `ModelAttempt` recovery after model interruption.
 
 A Capability is appropriate only for actual Agent/run behavior exposed through public Pydantic hooks. It may install focused request behavior such as self-healing, but it is not the default place for provider profile facts, stream reconstruction, or retry orchestration.
 

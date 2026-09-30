@@ -10,6 +10,7 @@ import pytest
 from a13n_harness import AgentContext, HarnessState, RunBindings
 from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.model_affinity import derive_model_affinity_id
+from a13n_harness.models import SelfHealingModelCapability
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.openai import DEFINITION
@@ -263,6 +264,9 @@ async def test_service_composition_binds_affinity_per_thread_without_mutating_cl
             executable = build(
                 root, capabilities=lambda _: [], plugins=HarnessPluginFactoryCatalog([]), instrumentation=None
             )
+            leaves = []
+            executable._agent.root_capability.apply(leaves.append)
+            assert sum(isinstance(capability, SelfHealingModelCapability) for capability in leaves) == 1
             bindings = RunBindings.embedded(model_resolver=model_resolver(root, {model.key: native}))
 
             async def run(thread: str) -> None:

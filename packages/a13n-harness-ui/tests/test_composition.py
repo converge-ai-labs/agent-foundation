@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from a13n_harness.capabilities import SubagentOperator
 from a13n_harness.capabilities.skills import SkillsCapability
+from a13n_harness.models import SelfHealingModelCapability
 from a13n_harness.plugin_factories import HarnessPluginFactory, HarnessPluginFactoryContext
 from a13n_harness.plugins import AbstractHarnessPlugin
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
@@ -509,6 +510,15 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
         subagent_operator=_UnusedOperator(),
     )
 
+    for executable in (
+        reconstructed.executable,
+        *(child.executable for child in reconstructed.executable.subagents.values()),
+    ):
+        leaves = []
+        executable._agent.root_capability.apply(leaves.append)
+        assert sum(isinstance(capability, SelfHealingModelCapability) for capability in leaves) == 1
+    # Builder defaults are execution behavior, not authored capture selections.
+    assert "a13n.model.self-healing" not in reconstructed.definition_capability_ids
     assert reconstructed.executable.definition.definition_id == "a13n-harness-ui:agent:agent-assistant"
     assert tuple(reconstructed.executable.subagents) == ("explorer", "agent-reviewer")
     assert reconstructed.executable.definition.agent.model.startswith("a13n-harness-ui:model-")

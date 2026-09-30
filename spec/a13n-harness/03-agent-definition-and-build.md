@@ -147,6 +147,7 @@ class HarnessBuilder:
         configured_plugins_enabled: bool | None = None,
         instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
         gateway_provider_factory: GatewayModelProviderFactory | None = None,
+        self_healing_enabled: bool = True,
     ) -> None: ...
 
     @overload
