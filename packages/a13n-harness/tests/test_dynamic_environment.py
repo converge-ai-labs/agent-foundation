@@ -1069,8 +1069,8 @@ async def test_cross_mount_copy_overwrite_truth_table_with_copy_only_permissions
     assert list(second.iterdir()) == [second / "destination"]
 
 
-async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -> None:
-    (tmp_path / "image.png").write_bytes(b"\x89PNG")
+async def test_view_attaches_common_environment_media_natively(tmp_path: Path, png_image_bytes: bytes) -> None:
+    (tmp_path / "image.png").write_bytes(png_image_bytes)
     seen: list[list[ModelMessage]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -1126,7 +1126,8 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -
         if isinstance(item, BinaryContent)
     ]
     assert len(binaries) == 1
-    assert binaries[0].data == b"\x89PNG"
+    assert binaries[0].data == png_image_bytes
+    assert (tmp_path / "image.png").read_bytes() == png_image_bytes
     assert binaries[0].media_type == "image/png"
     assert binaries[0].vendor_metadata == {"display": False}
 
@@ -1208,8 +1209,9 @@ async def test_view_uses_run_scoped_understanding_when_active_model_lacks_native
 async def test_view_uses_environment_configured_default_understanding_agent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    png_image_bytes: bytes,
 ) -> None:
-    (tmp_path / "image.png").write_bytes(b"\x89PNG")
+    (tmp_path / "image.png").write_bytes(png_image_bytes)
     understanding_calls: list[list[ModelMessage]] = []
     tool_returns: list[ToolReturnPart] = []
 
@@ -1287,7 +1289,8 @@ async def test_view_uses_environment_configured_default_understanding_agent(
         for item in part.content
         if isinstance(item, BinaryContent)
     )
-    assert binary.data == b"\x89PNG"
+    assert binary.data == png_image_bytes
+    assert (tmp_path / "image.png").read_bytes() == png_image_bytes
     assert binary.media_type == "image/png"
     assert tool_returns[0].content == "Environment agent detected: hello"
     media = [

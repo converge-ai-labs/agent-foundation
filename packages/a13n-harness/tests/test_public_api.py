@@ -235,6 +235,8 @@ def test_feature_facades_export_documented_families() -> None:
         "ColdStartFilterConfiguration",
         "ContentFilterCapability",
         "ContentFilterConfiguration",
+        "ImageFilterCapability",
+        "ImageFilterConfiguration",
         "MediaFamily",
         "MessageIntegrityFilterCapability",
     }
