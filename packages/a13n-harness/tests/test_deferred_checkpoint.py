@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, replace
 
 import pytest
 from a13n_harness import DeferredToolResume, HarnessBuilder, HarnessEvent, HarnessState
+from a13n_harness.model_context import user_prompt_content
 from a13n_harness.tools.client import (
     ClientToolDefinition,
     ClientToolsCapability,
@@ -13,7 +14,7 @@ from a13n_harness.tools.client import (
     ClientToolsSpec,
 )
 from a13n_harness.tools.metadata import RECOVERY_RETRY_SAFE_METADATA_KEY
-from pydantic_ai import Tool, ToolApproved, ToolFailed, ToolReturn
+from pydantic_ai import TextContent, Tool, ToolApproved, ToolFailed, ToolReturn
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
@@ -177,13 +178,16 @@ async def test_mixed_checkpoint_preserves_client_fact_without_replaying_unsafe_a
     if supplied == "return":
         assert client[0].metadata == {"source": "client"}
         content = [
-            part.content
+            item
             for message in result.state.message_history
             if isinstance(message, ModelRequest)
             for part in message.parts
             if isinstance(part, UserPromptPart)
+            for item in user_prompt_content(part)
+            if isinstance(item, TextContent) and item.content == "external explanation"
         ]
-        assert content.count("external explanation") == 1
+        assert len(content) == 1
+        assert content[0].metadata == {"display": False, "source_id": "a13n.tool"}
     local = [part for part in returns if part.tool_call_id == "call_change"]
     assert len(local) == 1 and local[0].outcome == ("denied" if safe and mode == "declared" else "failed")
     assert "provided" in json.dumps(result.state.model_dump(mode="json"))

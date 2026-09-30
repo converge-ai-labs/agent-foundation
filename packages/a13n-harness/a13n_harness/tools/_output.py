@@ -6,12 +6,13 @@ import asyncio
 import hashlib
 import json
 from collections.abc import AsyncIterator, Iterator, Mapping
-from copy import deepcopy
+from copy import copy, deepcopy
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from pydantic import JsonValue, ValidationError
-from pydantic_ai import TextContent, ToolReturn
+from pydantic_ai import AudioUrl, BinaryContent, DocumentUrl, ImageUrl, TextContent, ToolReturn, UploadedFile, VideoUrl
 from pydantic_ai.exceptions import ToolFailed
 
 from a13n_harness._json import (
@@ -193,16 +194,53 @@ async def _apply_native_tool_return_policy(
             if result.tools is None
             else [await _apply_text_result_policy(item, policy, context=context) for item in result.tools]
         )
-        return ToolReturn(
-            return_value=return_value,
-            content=content,
-            metadata=projected_metadata,
-            tools=tools,
+        return _model_only_tool_return(
+            ToolReturn(
+                return_value=return_value,
+                content=content,
+                metadata=projected_metadata,
+                tools=tools,
+            )
         )
     except ToolFailed:
         raise
     except (RecursionError, TypeError, ValueError, ValidationError) as exc:
         raise ToolFailed("Tool returned invalid native content.") from exc
+
+
+def _model_only_tool_return(result: ToolReturn) -> ToolReturn:
+    """Keep supplemental model content out of authored-input presentation.
+
+    Pydantic AI appends this content as a UserPromptPart, not a ToolReturnPart.
+    Mark detached native items before that conversion; never infer provenance
+    later from the request's role, neighboring tool parts, or matching text.
+    """
+    if result.content is None:
+        return result
+    items = [result.content] if isinstance(result.content, str) else result.content
+    projected: list[Any] = []
+    for item in items:
+        if isinstance(item, str):
+            projected.append(TextContent(item, metadata={"display": False, "source_id": "a13n.tool"}))
+        elif isinstance(item, TextContent):
+            projected.append(
+                TextContent(
+                    item.content,
+                    metadata={"source_id": "a13n.tool", **(item.metadata or {}), "display": False},
+                )
+            )
+        elif isinstance(item, BinaryContent | ImageUrl | AudioUrl | VideoUrl | DocumentUrl | UploadedFile):
+            detached = copy(item)
+            detached.vendor_metadata = {
+                "source_id": "a13n.tool",
+                **(item.vendor_metadata or {}),
+                "display": False,
+            }
+            projected.append(detached)
+        else:
+            projected.append(item)
+    content = tuple(projected) if isinstance(result.content, tuple) else projected
+    return replace(result, content=content)
 
 
 async def _apply_optional_json_result_policy(

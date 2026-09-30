@@ -86,7 +86,7 @@ from a13n_harness.toolsets.files import FileToolset
 from a13n_harness.toolsets.process_manager import _fit_stream_prefixes
 from a13n_harness.toolsets.shell import ShellToolset
 from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord
-from pydantic_ai import BinaryContent
+from pydantic_ai import BinaryContent, TextContent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import (
@@ -367,6 +367,18 @@ async def test_mount_changes_refresh_the_environment_tool_surface_between_model_
     assert observed_environment_tools[0] == set()
     assert {"view", "write", "shell_exec"} <= observed_environment_tools[1]
     assert observed_environment_tools[2] == set()
+    notices = [
+        item
+        for message in result.state.message_history
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+        for item in user_prompt_content(part)
+        if isinstance(item, TextContent) and (item.metadata or {}).get("source_id") == "a13n.environment"
+    ]
+    assert notices
+    assert all(item.metadata["display"] is False for item in notices)
+    assert any("mounts changed" in item.content for item in notices)
 
 
 @pytest.mark.parametrize(
@@ -1128,7 +1140,7 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -
     assert len(binaries) == 1
     assert binaries[0].data == b"\x89PNG"
     assert binaries[0].media_type == "image/png"
-    assert binaries[0].vendor_metadata == {"display": False}
+    assert binaries[0].vendor_metadata == {"display": False, "source_id": "a13n.tool"}
 
 
 async def test_view_uses_run_scoped_understanding_when_active_model_lacks_native_media(

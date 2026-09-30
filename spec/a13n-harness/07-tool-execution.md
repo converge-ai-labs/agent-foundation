@@ -383,6 +383,8 @@ When no fresh `InvocationPolicyCapability` is supplied, managed invocations use 
 
 Current arguments, policy, and resources are evaluated again on resume. Credentials resolve only after validation, authorization, and approval, immediately before dispatch. Live deny and cancellation are checked at that boundary.
 
+Supplemental `ToolReturn.content` is model context, not authored input, even though Pydantic AI integrates it as a `UserPromptPart`. The local result boundary and accepted `DeferredToolResume` results mark detached text and media with application-only `display: false`, preserving existing source references and adding `a13n.tool` when absent. Raw supplemental strings become native `TextContent`; media payloads, cache markers, ordinary `return_value`, and genuine steering remain unchanged. This also applies to local results replaced by Capability after-execution hooks and CodeAct aggregation. Native inline deferred handlers bypass local execution and own the visibility metadata of their supplied supplemental content. Renderers do not infer provenance from user role, neighboring tool returns, or equal text. These metadata changes require no stored-history migration; previously unmarked imported content is not guessed or rewritten.
+
 ## Authorization and Grants
 
 In-process tools are trusted code. The wrapper governs metadata-aware calls made through the assembled tool surface but cannot prevent installed code, including an unmanaged native tool, from using Python libraries, local files, or captured clients directly.

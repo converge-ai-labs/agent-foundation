@@ -21,7 +21,7 @@ from pydantic import Field, JsonValue, ValidationError
 from pydantic_ai import FunctionToolset, RunContext, Tool, ToolDefinition, ToolReturn
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed, UsageLimitExceeded, UserError
 from pydantic_ai.function_signature import FunctionSignature
-from pydantic_ai.messages import InstructionPart, ToolCallPart, UserContent
+from pydantic_ai.messages import InstructionPart, TextContent, ToolCallPart, UserContent
 from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, PrefixedToolset, ToolsetTool, WrapperToolset
 from pydantic_ai.usage import RunUsage
@@ -796,8 +796,14 @@ async def _unwrap_tool_return(result: Any, *, ordinal: int, budget: _ExecutionBu
     return result.return_value
 
 
-def _bounded_content_size(value: Any, limit: int) -> int:
-    return bounded_json_size(value, limit, allow_binary=True)
+def _bounded_content_size(value: Sequence[UserContent], limit: int) -> int:
+    # TextContent is a native application-metadata carrier, not a value exposed
+    # to the sandbox. Budget its text and metadata without discarding either.
+    projected = [
+        {"content": item.content, "metadata": item.metadata} if isinstance(item, TextContent) else item
+        for item in value
+    ]
+    return bounded_json_size(projected, limit, allow_binary=True)
 
 
 def _format_validation_error(exc: ValidationError) -> str:

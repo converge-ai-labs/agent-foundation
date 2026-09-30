@@ -470,13 +470,23 @@ async def test_native_tool_return_policy_bounds_text_and_preserves_multimodal_va
     assert isinstance(projected, ToolReturn)
     assert projected.return_value == {"authorization": "[REDACTED]"}
     assert isinstance(projected.content, list)
-    assert projected.content[0] == "Bearer [REDACTED]"
+    assert projected.content[0] == TextContent(
+        "Bearer [REDACTED]", metadata={"display": False, "source_id": "a13n.tool"}
+    )
     text = projected.content[1]
     assert isinstance(text, TextContent)
     assert text.content == "Bearer [REDACTED]"
-    assert text.metadata == {"api_key": "[REDACTED]"}
-    assert projected.content[2:] == native_items
-    assert all(projected.content[index + 2] is item for index, item in enumerate(native_items))
+    assert text.metadata == {"api_key": "[REDACTED]", "display": False, "source_id": "a13n.tool"}
+    for original, detached in zip(native_items[:-1], projected.content[2:-1], strict=True):
+        assert detached is not original
+        assert detached.vendor_metadata == {
+            "source_id": "a13n.tool",
+            **(original.vendor_metadata or {}),
+            "display": False,
+        }
+    assert projected.content[-1] is native_items[-1]
+    assert projected.content[2].data is binary.data
+    assert projected.content[3].url == image.url
     assert binary._identifier == "Bearer binary-secret"
     assert image.url.endswith("api_key=unchanged")
     assert uploaded.vendor_metadata == {"authorization": "Bearer uploaded-secret"}
@@ -501,7 +511,9 @@ async def test_native_tool_return_text_overflow_is_explicit_without_filtering_me
 
     assert isinstance(projected, ToolReturn)
     assert isinstance(projected.content, list)
-    assert projected.content[0] is image
+    assert projected.content[0] is not image
+    assert projected.content[0].url == image.url
+    assert projected.content[0].vendor_metadata == {"display": False, "source_id": "a13n.tool"}
     assert projected.tools is not None
     assert len(projected.tools[0].encode("utf-8")) <= 512
     assert "tool result truncated" in projected.tools[0]

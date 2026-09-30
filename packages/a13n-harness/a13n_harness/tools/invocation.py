@@ -35,6 +35,7 @@ from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.tools._output import (
     _apply_result_policy,
+    _model_only_tool_return,
 )
 from a13n_harness.tools.approval import (
     APPROVAL_PRESENTATION_KEY,
@@ -218,6 +219,19 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
             if tool_def.kind == "external":
                 raise CallDeferred()
         return args
+
+    async def after_tool_execute(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: ValidatedToolArgs,
+        result: Any,
+    ) -> Any:
+        # Outermost after hooks run last, including content replaced by other
+        # Capabilities after Toolset dispatch. Only supplemental content is hidden.
+        return _model_only_tool_return(result) if isinstance(result, ToolReturn) else result
 
     async def handle_deferred_tool_calls(
         self,

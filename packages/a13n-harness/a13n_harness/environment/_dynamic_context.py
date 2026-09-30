@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic_ai import RunContext
+from pydantic_ai import RunContext, TextContent
 
 from a13n_harness.context import AgentContext
 
@@ -34,7 +34,10 @@ class _DynamicEnvironmentContext:
         if sequence <= self._observed_sequence:
             return
         ctx.enqueue(
-            "The Environment mounts changed. A fresh bounded mount snapshot is attached to this request.",
+            TextContent(
+                "The Environment mounts changed. A fresh bounded mount snapshot is attached to this request.",
+                metadata={"display": False, "source_id": "a13n.environment"},
+            ),
             priority="asap",
         )
         self._observed_sequence = sequence
