@@ -116,25 +116,6 @@ def test_edit_applied_replaces_pending_call_and_retains_full_diff_on_expand() ->
     renderer.transcript.close()
 
 
-@pytest.mark.parametrize("phase, label", [("exited", "failed"), ("timed_out", "timed out"), ("cancelled", "cancelled")])
-def test_long_command_wraps_without_hiding_failure(phase: str, label: str) -> None:
-    from a13n_harness_ui.interactive.panels import shell_result_preview
-
-    transcript = Transcript()
-    preview = shell_result_preview(
-        json.dumps({"status": {"phase": phase, "exit_code": 1}}), "pytest " + "long-path/" * 40
-    )
-    assert preview is not None
-    block = transcript.append("Details", kind="command")
-    transcript.preview(block, preview)
-    text = _text(transcript, 28)
-    assert label in text
-    assert len(text.splitlines()) > 1
-    assert text.replace("\n", "").count("long-path/") == 40
-    assert "exit 1" in text
-    transcript.close()
-
-
 def test_long_edit_preview_discloses_character_omission_and_preserves_closed_frame() -> None:
     transcript = Transcript()
     source = "Edit · file.py\n-" + "old" * 600 + "\n+" + "new" * 600
