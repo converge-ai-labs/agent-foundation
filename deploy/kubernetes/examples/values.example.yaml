@@ -1,0 +1,73 @@
+# Copy outside the checkout and customize for your cluster.
+# Use with a published chart pinned by --version; see ../README.md.
+image:
+  repository: replace_with_your_image_repository
+  # Empty uses the published chart's matching image version. For a checkout
+  # chart or private registry, set an explicit tag or immutable digest.
+  tag: ""
+  digest: ""
+# For a private registry, list existing Secrets: [{name: registry-credentials}].
+imagePullSecrets: []
+
+# Create this Secret from service.env.example in the release namespace.
+# Set the external A13N_DATABASE__URL and A13N_REDIS__URL, encryption key ring,
+# and object-store credentials unless the Pod's identity provides them.
+existingSecret: a13n-service-secrets
+postgresql:
+  enabled: false
+redis:
+  enabled: false
+
+# The API and Console share this browser-facing URL.
+publicUrl: https://agents.example.com
+# Set to the actual front-proxy addresses/CIDRs; empty trusts no proxies.
+trustedProxies: []
+
+# Provision the bucket separately. This example needs no shared filesystem.
+objects:
+  backend: s3
+  bucket: replace-with-your-bucket
+  prefix: a13n/
+  region: "REPLACE_REGION"
+  # Empty uses the AWS regional endpoint; set an HTTPS URL for another provider.
+  endpointUrl: ""
+  # auto, path or virtual, according to the provider's addressing requirements.
+  addressingStyle: auto
+
+serviceAccount:
+  create: true
+  name: ""
+  # Set provider-specific annotations here when using workload identity.
+  annotations: {}
+
+service:
+  type: ClusterIP
+  labels: {}
+  annotations: {}
+ingress:
+  enabled: true
+  # Set your installed IngressClass, or leave empty to use the cluster default.
+  className: ""
+  annotations: {}
+  host: agents.example.com
+  paths: [/]
+  # Provision this TLS Secret and DNS separately; match the host and publicUrl.
+  tls:
+    - secretName: a13n-service-tls
+      hosts: [agents.example.com]
+
+# Starting capacity only; adjust to your workload and cluster limits.
+roles:
+  control:
+    replicaCount: 1
+  worker:
+    replicaCount: 1
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+# Increase with Service shutdown_timeout or worker drain_seconds settings.
+terminationGracePeriodSeconds: 60

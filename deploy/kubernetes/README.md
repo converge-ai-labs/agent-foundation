@@ -4,8 +4,6 @@
 
 Each Service release publishes a Helm chart at `oci://ghcr.io/converge-ai-labs/charts/a13n-service` that selects the matching image. The checkout chart selects `ghcr.io/converge-ai-labs/a13n-service:dev` unless you override it. `make dev` uses a separate local stack.
 
-For an Alibaba Cloud ACS cluster, start with the [values example](examples/values-acs.example.yaml) and [Service settings example](examples/service-acs.env.example). The workload Chart is shared with other clusters; the kind values and launcher are local-only.
-
 ## Topology
 
 | Input              | Local kind cluster                     | Other clusters                                      |
@@ -135,7 +133,7 @@ The local values run development-only PostgreSQL and Redis. Redis has no authent
 
 ## Other clusters
 
-Write a values file outside the repository, starting from `helm/a13n-service/values.yaml`, and prepare:
+Copy [examples/values.example.yaml](examples/values.example.yaml) to a values file outside the repository. It uses external PostgreSQL and Redis, S3-compatible object storage, and an HTTPS Ingress on any compatible Kubernetes cluster. Customize the bucket, region, provider endpoint if needed, domain, Ingress class, TLS Secret, and proxy addresses; supply credentials and connection URLs through `existingSecret` as described above. See `helm/a13n-service/values.yaml` for all available options, and prepare:
 
 - A cluster with sufficient capacity, network access to its dependencies and image-pull access. Validate the cluster's admission and resource policies.
 - PostgreSQL and a reachable Redis endpoint. The bundled ones (`postgresql.enabled`, `redis.enabled`) are for development only.
