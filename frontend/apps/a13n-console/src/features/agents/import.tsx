@@ -1,6 +1,7 @@
 import {
   CaretDownIcon,
   FileArrowUpIcon,
+  PlusIcon,
   RocketLaunchIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -63,6 +64,7 @@ export function AgentCreationMenu() {
         )}
         <div className={styles.splitButton}>
           <Button variant="outline" onClick={() => navigate("new")}>
+            <PlusIcon size={15} aria-hidden="true" />
             {t("Create manually")}
           </Button>
           <Menu>
