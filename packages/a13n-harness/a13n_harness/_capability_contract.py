@@ -27,6 +27,7 @@ from a13n_harness.capabilities.context import (
     _FileContextRunCapability,
 )
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID, DocumentsCapability
+from a13n_harness.capabilities.input import INPUT_CAPABILITY_ID, InputCapability
 from a13n_harness.capabilities.interaction import USER_INTERACTION_CAPABILITY_ID, UserInteractionCapability
 from a13n_harness.capabilities.lifecycle import (
     LIFECYCLE_EVENT_CAPABILITY_ID,
@@ -104,6 +105,7 @@ _BUILT_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], str]] = {
     MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID: (MessageIntegrityFilterCapability, "message-integrity Filter"),
     LIFECYCLE_EVENT_CAPABILITY_ID: (LifecycleEventCapability, "lifecycle event"),
     STEERING_CAPABILITY_ID: (SteeringCapability, "steering"),
+    INPUT_CAPABILITY_ID: (InputCapability, "input"),
     MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID: (ModelContextCoordinatorCapability, "model context coordinator"),
     MODEL_REQUEST_HEADERS_CAPABILITY_ID: (ModelRequestHeadersCapability, "model request headers"),
     STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID: (

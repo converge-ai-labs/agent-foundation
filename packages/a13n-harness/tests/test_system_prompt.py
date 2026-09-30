@@ -147,7 +147,10 @@ def test_reconciliation_preserves_request_fields_and_skips_provider_suspension()
     assert reconciled_first.instructions == "keep instructions"
     assert reconciled_first.run_id == "run-original"
     assert reconciled_first.conversation_id == "thread-original"
-    assert reconciled_first.metadata == {"owner": "test"}
+    assert reconciled_first.metadata == {
+        "owner": "test",
+        "a13n.content": {"2": [{"display": True, "source_id": None, "media": False}]},
+    }
     assert isinstance(reconciled[1], ModelResponse)
 
     suspended = ModelResponse(parts=[TextPart("partial")], state="suspended")

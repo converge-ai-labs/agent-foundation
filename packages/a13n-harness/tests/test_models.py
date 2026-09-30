@@ -43,6 +43,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    TextContent,
     TextPart,
     ThinkingPart,
     ToolCallPart,
@@ -928,6 +929,27 @@ async def test_self_healing_replaces_inline_images_after_oversized_payload_rejec
     assert isinstance(tool_result, ToolReturnPart)
     assert isinstance(tool_result.content[0], str)
     assert "image was removed" in tool_result.content[0]
+
+
+@pytest.mark.parametrize("sequence", [False, True])
+async def test_image_recovery_marks_synthetic_user_content_as_hidden(sequence: bool) -> None:
+    wrapped = FailingModel(ModelHTTPError(status_code=413, model_name="failing", body="payload too large"))
+    image = BinaryContent(data=b"image", media_type="image/png")
+    part = UserPromptPart(content=["Actual user text", image] if sequence else [image])
+    history: list[ModelMessage] = [ModelRequest(parts=[part])]
+
+    await SelfHealingModel(wrapped).request(history, None, ModelRequestParameters())
+
+    assert wrapped.calls == 2
+    assert isinstance(part.content, list)
+    reminder = part.content[-1]
+    assert isinstance(reminder, TextContent)
+    assert "image was removed" in reminder.content
+    assert "View it again if you still need it." in reminder.content
+    assert "smaller" not in reminder.content
+    assert reminder.metadata == {"display": False, "source_id": "a13n.model.self-healing"}
+    if sequence:
+        assert part.content[0] == "Actual user text"
 
 
 async def test_self_healing_preserves_an_explicit_empty_rule_set() -> None:

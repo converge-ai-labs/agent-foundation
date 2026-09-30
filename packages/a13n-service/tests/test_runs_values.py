@@ -123,3 +123,70 @@ def test_public_pending_preserves_approval_details_without_exposing_call_metadat
     assert public.calls[0].arguments == {"invoice": 7}
     assert "internal" not in public.model_dump_json() and "tool/private" not in public.model_dump_json()
     assert native.metadata["review"]["internal"] == {"retained": True}
+
+
+@pytest.mark.parametrize("source", ["user", "steering", "context", "recovery", "async_subagent", "background_process"])
+@pytest.mark.parametrize("length", [20, 80000, 300000])
+def test_source_typed_input_folds_to_authored_message_or_generated_observation(source, length):
+    from a13n_harness import HarnessEvent
+    from a13n_harness.content import ContentMetadata
+    from a13n_harness.events import InputTextEvent
+
+    text = "x" * length
+    fold = DisplayFold("run_test", Display(), attempt=1, max_bytes=2 * 1024 * 1024)
+    event = HarnessEvent(
+        thread_id="thread_test",
+        run_id="run_test",
+        sequence=1,
+        occurred_at=datetime.now(UTC),
+        event=InputTextEvent(
+            input_id="input_one",
+            source=source,
+            content=text,
+            metadata=ContentMetadata(source_id="inbox_one", display=source in {"user", "steering"}),
+        ),
+    )
+    payloads = fold.events(event)
+    observed = fold.fold(payloads)
+    if length > 48000:
+        assert all(item.item is None for item in observed[:-1])
+    display = fold.snapshot()
+    assert len(display.items) == 1
+    item = display.items[0]
+    assert item.state == "completed"
+    assert item.last_stream_id == f"1-{len(payloads)}"
+    if source in {"user", "steering"}:
+        assert item.kind == "text_message"
+        assert item.content["role"] == "user"
+        assert item.content["text"] == text[:262144]
+        assert item.content["metadata"]["source_id"] == "inbox_one"
+        assert item.content.get("truncated", False) is (length > 262144)
+    else:
+        assert item.kind == "observation"
+        assert item.content["name"] == f"a13n.input.{source}"
+    assert Display.model_validate_json(display.model_dump_json()) == display
+
+
+def test_small_display_budget_omits_long_multibyte_input_content_not_the_message_item():
+    from a13n_harness import HarnessEvent, InputTextEvent
+
+    fold = DisplayFold("run_test", Display(), attempt=1, max_bytes=65536)
+    source = HarnessEvent(
+        thread_id="thread_test",
+        run_id="run_test",
+        sequence=1,
+        occurred_at=datetime.now(UTC),
+        event=InputTextEvent(input_id="input_one", source="user", content="汉" * 30000),
+    )
+    events = fold.events(source)
+    assert len(events) > 1
+    observed = fold.fold(events)
+    assert observed[-1].item is not None
+    assert observed[-1].item.kind == "text_message"
+    assert not fold.assembler.gap
+    snapshot = fold.snapshot()
+    assert len(snapshot.items) == 1
+    assert snapshot.items[0].content == {"omitted": True}
+    assert snapshot.items[0].state == "completed"
+    assert snapshot.items[0].last_stream_id == f"1-{len(events)}"
+    assert len(snapshot.model_dump_json().encode()) <= 65536

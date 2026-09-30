@@ -230,7 +230,7 @@ async def test_child_display_does_not_treat_input_or_compaction_as_an_answer() -
 
     from a13n_harness import HarnessEvent
     from a13n_harness.capabilities import CompactionSummaryEvent
-    from a13n_harness.model_context import ModelInputEvent
+    from a13n_harness.events import input_events
     from a13n_harness_ui.subagent_operator import CompactChildDisplay, _DisplayCompactor
     from a13n_stream_protocol import HarnessAguiObserver
     from pydantic_ai.messages import PartEndEvent, PartStartEvent, TextContent, TextPart
@@ -239,8 +239,10 @@ async def test_child_display_does_not_treat_input_or_compaction_as_an_answer() -
     display = _DisplayCompactor(CompactChildDisplay())
     for sequence, event in enumerate(
         [
-            ModelInputEvent(
-                content=[TextContent("visible question"), TextContent("hidden guidance", metadata={"display": False})]
+            *input_events(
+                [TextContent("visible question"), TextContent("hidden guidance", metadata={"display": False})],
+                source="user",
+                input_id="input-one",
             ),
             CompactionSummaryEvent(operation_id="compact-1", summary="summary content"),
             PartStartEvent(index=0, part=TextPart("actual answer")),

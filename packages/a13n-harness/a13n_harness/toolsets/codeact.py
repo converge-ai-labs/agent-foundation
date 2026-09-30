@@ -21,7 +21,7 @@ from pydantic import Field, JsonValue, ValidationError
 from pydantic_ai import FunctionToolset, RunContext, Tool, ToolDefinition, ToolReturn
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed, UsageLimitExceeded, UserError
 from pydantic_ai.function_signature import FunctionSignature
-from pydantic_ai.messages import InstructionPart, ToolCallPart, UserContent
+from pydantic_ai.messages import CachePoint, InstructionPart, TextContent, ToolCallPart, UserContent
 from pydantic_ai.tools import ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, PrefixedToolset, ToolsetTool, WrapperToolset
 from pydantic_ai.usage import RunUsage
@@ -470,7 +470,10 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 )
                 nested_started = time.monotonic()
 
+            from a13n_harness.tools._output import _NESTED_TOOL_EXECUTION
+
             denial: ToolDenied | None = None
+            nested_token = _NESTED_TOOL_EXECUTION.set(True)
             try:
                 result = await manager.handle_call(
                     call,
@@ -504,6 +507,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                 record.error_type = type(exc).__name__
                 raise RuntimeError(f"Nested tool {canonical_name!r} failed with {type(exc).__name__}") from None
             finally:
+                _NESTED_TOOL_EXECUTION.reset(nested_token)
                 if nested_started is not None:
                     record.duration_ms = max(0, round((time.monotonic() - nested_started) * 1000))
                     await _emit(
@@ -796,8 +800,18 @@ async def _unwrap_tool_return(result: Any, *, ordinal: int, budget: _ExecutionBu
     return result.return_value
 
 
-def _bounded_content_size(value: Any, limit: int) -> int:
-    return bounded_json_size(value, limit, allow_binary=True)
+def _bounded_content_size(value: Sequence[UserContent], limit: int) -> int:
+    # Native text metadata and request-control markers need bounded JSON
+    # budget representations; their original values stay outside the sandbox.
+    projected = [
+        {"content": item.content, "metadata": item.metadata}
+        if isinstance(item, TextContent)
+        else {"kind": item.kind, "ttl": item.ttl}
+        if isinstance(item, CachePoint)
+        else item
+        for item in value
+    ]
+    return bounded_json_size(projected, limit, allow_binary=True)
 
 
 def _format_validation_error(exc: ValidationError) -> str:

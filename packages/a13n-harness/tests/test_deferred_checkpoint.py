@@ -6,6 +6,8 @@ from dataclasses import dataclass, field, replace
 
 import pytest
 from a13n_harness import DeferredToolResume, HarnessBuilder, HarnessEvent, HarnessState
+from a13n_harness.model_context import user_prompt_content
+from a13n_harness.tools._output import TOOL_CONTENT_METADATA_KEY, tool_execution_value
 from a13n_harness.tools.client import (
     ClientToolDefinition,
     ClientToolsCapability,
@@ -13,7 +15,7 @@ from a13n_harness.tools.client import (
     ClientToolsSpec,
 )
 from a13n_harness.tools.metadata import RECOVERY_RETRY_SAFE_METADATA_KEY
-from pydantic_ai import Tool, ToolApproved, ToolFailed, ToolReturn
+from pydantic_ai import TextContent, Tool, ToolApproved, ToolFailed, ToolReturn
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import AbstractCapability, Capability
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
@@ -173,17 +175,20 @@ async def test_mixed_checkpoint_preserves_client_fact_without_replaying_unsafe_a
     if supplied == "failed":
         assert client[0].content == "provided failure once" and client[0].outcome == "failed"
     else:
-        assert client[0].content == {"review": "provided once"} and client[0].outcome == "success"
+        assert tool_execution_value(client[0].content, client[0].metadata) == {"review": "provided once"}
+        assert client[0].outcome == "success"
     if supplied == "return":
-        assert client[0].metadata == {"source": "client"}
-        content = [
-            part.content
+        assert client[0].metadata["source"] == "client"
+        assert client[0].content == [{"review": "provided once"}, "external explanation"]
+        assert client[0].metadata[TOOL_CONTENT_METADATA_KEY]["items"][0]["display"] is False
+        assert not any(
+            item == "external explanation" or (isinstance(item, TextContent) and item.content == "external explanation")
             for message in result.state.message_history
             if isinstance(message, ModelRequest)
             for part in message.parts
             if isinstance(part, UserPromptPart)
-        ]
-        assert content.count("external explanation") == 1
+            for item in user_prompt_content(part)
+        )
     local = [part for part in returns if part.tool_call_id == "call_change"]
     assert len(local) == 1 and local[0].outcome == ("denied" if safe and mode == "declared" else "failed")
     assert "provided" in json.dumps(result.state.model_dump(mode="json"))

@@ -6,13 +6,16 @@ import asyncio
 import hashlib
 import json
 from collections.abc import AsyncIterator, Iterator, Mapping
+from contextvars import ContextVar
 from copy import deepcopy
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from pydantic import JsonValue, ValidationError
 from pydantic_ai import TextContent, ToolReturn
 from pydantic_ai.exceptions import ToolFailed
+from pydantic_ai.messages import CachePoint
 
 from a13n_harness._json import (
     dump_json_bytes,
@@ -22,6 +25,7 @@ from a13n_harness._json import (
     redact_json,
     require_finite_json,
 )
+from a13n_harness.content import content_items
 
 if TYPE_CHECKING:
     from a13n_harness.context import AgentContext
@@ -30,6 +34,10 @@ if TYPE_CHECKING:
 
 DEFAULT_TOOL_OUTPUT_CHARS = 12_000
 FINAL_TOOL_OUTPUT_HARD_CHARS = 20_000
+
+# Nested CodeAct calls retain their execution value until the outer runner settles.
+_NESTED_TOOL_EXECUTION: ContextVar[bool] = ContextVar("a13n_nested_tool_execution", default=False)
+TOOL_CONTENT_METADATA_KEY = "a13n.tool-content"
 
 
 class AcknowledgedToolOutput(dict[str, JsonValue]):
@@ -203,6 +211,47 @@ async def _apply_native_tool_return_policy(
         raise
     except (RecursionError, TypeError, ValueError, ValidationError) as exc:
         raise ToolFailed("Tool returned invalid native content.") from exc
+
+
+def _render_tool_return(result: ToolReturn) -> ToolReturn:
+    """Lower supplemental values to native multimodal tool content at settlement.
+
+    The first item remains the structured execution result. Presentation uses
+    that explicit boundary, while native adapters render the complete tool part.
+    CodeAct's nested calls defer lowering until the outer runner settles.
+    """
+    if result.content is None or _NESTED_TOOL_EXECUTION.get() or TOOL_CONTENT_METADATA_KEY in (result.metadata or {}):
+        return result
+    supplement = [result.content] if isinstance(result.content, str) else result.content
+    # CachePoint is native request control, not tool data. Keep those markers
+    # in the native supplemental field so adapters apply their cache semantics.
+    cache_points = [item for item in supplement if isinstance(item, CachePoint)]
+    items = [item for item in supplement if not isinstance(item, CachePoint)]
+    projected = [item.content if isinstance(item, TextContent) else item for item in items]
+    return replace(
+        result,
+        return_value=[result.return_value, *projected],
+        content=cache_points or None,
+        metadata={
+            **(result.metadata or {}),
+            TOOL_CONTENT_METADATA_KEY: {
+                "result_index": 0,
+                "items": [
+                    item.metadata.model_copy(
+                        update={"display": False, "source_id": item.metadata.source_id or "a13n.tool"}
+                    ).model_dump(mode="json")
+                    for item in content_items(items)
+                ],
+            },
+        },
+    )
+
+
+def tool_execution_value(content: Any, metadata: dict[str, Any] | None) -> Any:
+    """Project a settled tool result without leaking native media payloads."""
+    if metadata is not None and TOOL_CONTENT_METADATA_KEY in metadata:
+        return content[metadata[TOOL_CONTENT_METADATA_KEY]["result_index"]]
+    return content
 
 
 async def _apply_optional_json_result_policy(

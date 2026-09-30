@@ -11,12 +11,12 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
+from pydantic_ai.messages import ModelRequest, UserPromptPart
 
+from a13n_harness.content import ContentItem, ContentMetadata, input_request
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.events import HarnessEventEmitter, SteeringInputEnqueuedPayload, emit_harness_event
 from a13n_harness.input import RunInputValue, SemanticRunInput, normalize_input
-from a13n_harness.model_context import ModelInputEvent, user_prompt_content
 from a13n_harness.state import AgentContextState
 
 if TYPE_CHECKING:
@@ -148,10 +148,8 @@ class SteeringBridge:
         active = self._active_context
         if active is None:
             return None
-        request = ModelRequest(
-            parts=[
-                UserPromptPart(content=[TextContent(message, metadata={_NOTIFICATION_SOURCE_METADATA_KEY: source})])
-            ],
+        request = input_request(
+            [ContentItem(message, ContentMetadata(display=False, source_id=f"a13n.{source}"))],
             metadata={
                 _SOURCE_RUN_METADATA_KEY: self._run_id,
                 _NOTIFICATION_SOURCE_METADATA_KEY: source,
@@ -262,7 +260,9 @@ def steering_input_ids(messages: Sequence[ModelMessage]) -> tuple[str, ...]:
         input_id
         for message in messages
         if isinstance(message, ModelRequest) and message.metadata is not None
-        if isinstance(input_id := message.metadata.get(_INPUT_ID_METADATA_KEY), str)
+        for value in [message.metadata.get(_INPUT_ID_METADATA_KEY)]
+        for input_id in (value if isinstance(value, list) else [value])
+        if isinstance(input_id, str)
     )
 
 
@@ -275,10 +275,7 @@ def _request_for_input(
     metadata = {_SOURCE_RUN_METADATA_KEY: source_run_id}
     if input_id is not None:
         metadata[_INPUT_ID_METADATA_KEY] = input_id
-    return ModelRequest(
-        parts=[UserPromptPart(content=deepcopy(input))],
-        metadata=metadata,
-    )
+    return input_request(deepcopy(input), metadata=metadata)
 
 
 @dataclass(init=False)
@@ -286,7 +283,6 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
     """Bind the public Harness stream to one active Pydantic RunContext."""
 
     id = STEERING_CAPABILITY_ID
-    _input_observed: bool = False
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost")
@@ -312,10 +308,6 @@ class SteeringCapability(AbstractCapability["AgentContext"]):
     ) -> Any:
         owned = await ctx.deps._steering.bind(ctx)
         try:
-            if owned and not self._input_observed:
-                self._input_observed = True
-                if ctx.prompt is not None:
-                    await ctx.emit(ModelInputEvent(content=user_prompt_content(UserPromptPart(ctx.prompt))))
             return await handler()
         finally:
             ctx.deps._steering.unbind(ctx, owned=owned)

@@ -47,6 +47,27 @@ def test_restore_preserves_roles_and_omits_internal_guidance() -> None:
     renderer.transcript.close()
 
 
+@pytest.mark.parametrize("source", ["background_process", "async_subagent"])
+def test_restored_lifecycle_notifications_are_activity_not_authored_input(source: str) -> None:
+    renderer = StreamRenderer(Status())
+    restore_transcript(
+        renderer,
+        _page(
+            TranscriptPart(kind="user", text="process exited"),
+            TranscriptPart(
+                kind="user",
+                text="process exited",
+                metadata=ContentMetadata.model_validate({"a13n.steering-source": source}),
+            ),
+        ),
+    )
+    blocks = list(renderer.transcript.blocks.values())
+    assert [block.kind for block in blocks] == ["user", "tool"]
+    assert blocks[0].source == "> process exited"
+    assert blocks[1].source == "Activity · process exited"
+    renderer.transcript.close()
+
+
 @pytest.mark.parametrize("large", [False, True])
 def test_recent_history_limits_parts_bytes_and_marks_omissions(large: bool) -> None:
     renderer = StreamRenderer(Status())

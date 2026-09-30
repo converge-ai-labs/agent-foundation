@@ -450,7 +450,21 @@ it("records a scheduled model retry and keeps other observations outside the cou
   const state = fold(
     retry,
     observation("plugin.progress", "working"),
-    custom("a13n.context.model_input", { content: ["internal context"] }),
+    custom("a13n.input.context", {
+      input_id: "context-one",
+      source: "context",
+      content: "internal context",
+    }),
+    custom("a13n.input.user", {
+      input_id: "input-one",
+      source: "user",
+      content: "authored input",
+    }),
+    custom("a13n.input.steering", {
+      input_id: "steering-one",
+      source: "steering",
+      content: "authored steering",
+    }),
   );
   expect(state.steps).toEqual([]);
   expect(state.retries).toEqual([
@@ -465,6 +479,7 @@ it("records a scheduled model retry and keeps other observations outside the cou
   ]);
   expect(state.observations.map((entry) => entry.name)).toEqual([
     "plugin.progress",
+    "a13n.input.context",
   ]);
 });
 

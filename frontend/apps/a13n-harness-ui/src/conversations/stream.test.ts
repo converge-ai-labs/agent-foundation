@@ -279,7 +279,11 @@ it("dispatches native custom payloads and folds task/context operations without 
   const events = [
     custom(
       "a13n.input.media",
-      { content: { kind: "binary", size_bytes: 20 } },
+      {
+        source: "user",
+        input_id: "input-one",
+        content: { kind: "binary", size_bytes: 20 },
+      },
       { message_id: "run-one:input:1:0", metadata: { media: true } },
     ),
     custom("a13n.harness.state", {
@@ -1320,4 +1324,66 @@ it("preserves screenshot attachments through native tool result folding and stre
     name: "computer_observe",
   });
   expect(display.blocks.get("run-one:capture")?.result).toContain("obs-one");
+});
+
+it("renders only authored custom input as user text in live and replay views", () => {
+  const events = [
+    "user",
+    "steering",
+    "context",
+    "recovery",
+    "async_subagent",
+    "background_process",
+  ].map((source, index) => ({
+    event_type: "CUSTOM",
+    payload: {
+      name: `a13n.input.${source}`,
+      message_id: `run-one:input:${index}`,
+      role: source === "user" || source === "steering" ? "user" : "system",
+      metadata: { display: true, source_id: "input-one" },
+      value: {
+        event: { input_id: "input-one", source, content: `${source} text` },
+      },
+    },
+    payload_omitted: false,
+  }));
+  const replay = new FocusDisplay();
+  replay.accept(snapshot(events.length));
+  replay.accept(
+    focusFrame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: events.map((event, index) => ({ index, ...event })),
+      next_index: events.length,
+      complete: true,
+    }),
+  );
+  const live = new FocusDisplay();
+  live.accept(snapshot(0));
+  live.accept(focusFrame({ kind: "ready", resume_cursor: "cursor-ready" }));
+  for (const [index, input] of events.entries()) {
+    const sequence = index + 101;
+    live.accept(
+      focusFrame({
+        kind: "event",
+        resume_cursor: `cursor-${sequence}`,
+        event: {
+          sequence,
+          epoch: "epoch-one",
+          run_kind: "root",
+          thread_id: "thread-one",
+          root_thread_id: "thread-one",
+          run_id: "run-one",
+          ...input,
+        },
+      }),
+    );
+  }
+  expect([...live.blocks.values()]).toEqual([...replay.blocks.values()]);
+  expect(
+    [...live.blocks.values()].map((block) => [block.kind, block.text]),
+  ).toEqual([
+    ["user", "user text"],
+    ["user", "steering text"],
+  ]);
 });
