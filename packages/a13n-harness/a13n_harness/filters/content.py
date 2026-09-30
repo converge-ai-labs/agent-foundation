@@ -106,7 +106,7 @@ class ContentFilterCapability(AbstractCapability[AgentContext]):
                     ):
                         text = _filtered_message(family, unsafe=unsafe_url)
                         filtered.append(
-                            TextContent(text, metadata=deepcopy(item.vendor_metadata))
+                            TextContent(text, metadata=item.vendor_metadata)
                             if isinstance(part, UserPromptPart)
                             else text
                         )
