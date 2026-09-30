@@ -222,7 +222,7 @@ async def test_view_native_first_with_configured_auxiliary_in_root_and_child(tmp
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from a13n_harness_ui.surfaces import RootOperationStatus
     from pydantic_ai import BinaryContent
-    from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
     path = write_configuration(tmp_path, {"image": "model-vision"})
@@ -291,7 +291,7 @@ async def test_view_native_first_with_configured_auxiliary_in_root_and_child(tmp
             if isinstance(message, ModelRequest):
                 returns.extend(part for part in message.parts if isinstance(part, ToolReturnPart))
                 for part in message.parts:
-                    if isinstance(part, UserPromptPart) and isinstance(part.content, list):
+                    if isinstance(part, ToolReturnPart) and isinstance(part.content, list):
                         binaries.extend(item for item in part.content if isinstance(item, BinaryContent))
         if not returns:
             yield {

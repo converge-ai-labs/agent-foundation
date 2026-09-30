@@ -86,7 +86,7 @@ from a13n_harness.toolsets.files import FileToolset
 from a13n_harness.toolsets.process_manager import _fit_stream_prefixes
 from a13n_harness.toolsets.shell import ShellToolset
 from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord
-from pydantic_ai import BinaryContent
+from pydantic_ai import BinaryContent, TextContent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import (
@@ -367,6 +367,19 @@ async def test_mount_changes_refresh_the_environment_tool_surface_between_model_
     assert observed_environment_tools[0] == set()
     assert {"view", "write", "shell_exec"} <= observed_environment_tools[1]
     assert observed_environment_tools[2] == set()
+    notices = [
+        item
+        for message in result.state.message_history
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+        for item in user_prompt_content(part)
+        if isinstance(item, TextContent) and (item.metadata or {}).get("source_id") == "a13n.environment"
+    ]
+    assert notices == []
+    assert "The Environment mounts changed" not in str(result.state.message_history)
+    # The next request's tool surface is refreshed directly; no queued user
+    # prompt is needed to announce the lifecycle change.
 
 
 @pytest.mark.parametrize(
@@ -1121,7 +1134,7 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path, p
         for message in call
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, UserPromptPart) and isinstance(part.content, list)
+        if isinstance(part, ToolReturnPart) and isinstance(part.content, list)
         for item in part.content
         if isinstance(item, BinaryContent)
     ]
@@ -1129,7 +1142,7 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path, p
     assert binaries[0].data == png_image_bytes
     assert (tmp_path / "image.png").read_bytes() == png_image_bytes
     assert binaries[0].media_type == "image/png"
-    assert binaries[0].vendor_metadata == {"display": False}
+    assert binaries[0].vendor_metadata is None
 
 
 async def test_view_uses_run_scoped_understanding_when_active_model_lacks_native_media(
@@ -2260,19 +2273,25 @@ async def test_environment_change_event_adapter_survives_model_recovery_boundary
         ),
     )
     async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
-        pending = asyncio.create_task(run.__anext__())
-        await prompt_started.wait()
+        observed = []
+        change_seen = asyncio.Event()
+
+        async def consume():
+            async for item in run:
+                observed.append(item)
+                if _environment_change_events([item]):
+                    change_seen.set()
+
+        pending = asyncio.create_task(consume())
+        await asyncio.wait_for(prompt_started.wait(), timeout=2)
         await aggregate.mount("local", _local_mount(tmp_path), make_default=True)
-        observed = [await asyncio.wait_for(pending, timeout=2)]
-        while not _environment_change_events(observed):
-            observed.append(await asyncio.wait_for(run.__anext__(), timeout=2))
-        change_event = _environment_change_events(observed)[0]
-        assert _environment_change_events([change_event]) == [change_event]
+        await asyncio.wait_for(change_seen.wait(), timeout=2)
         release_prompt.set()
-        remaining = [item async for item in run]
+        await asyncio.wait_for(pending, timeout=2)
 
     assert calls == 2
-    assert remaining[-1].result.output_or_raise() == "done"
+    assert len(_environment_change_events(observed)) == 1
+    assert observed[-1].result.output_or_raise() == "done"
 
 
 async def test_mount_from_result_middleware_drains_before_terminal_result(tmp_path: Path) -> None:

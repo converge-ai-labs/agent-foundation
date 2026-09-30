@@ -13,6 +13,7 @@ from a13n_service.runs.admission import CallContext
 from a13n_service.runs.seal import expire_leases
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, UsageRecordRow
 from a13n_service.tenancy.tables import GrantRow
+from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES
 from sqlalchemy import delete, select, update
 
 pytestmark = pytest.mark.anyio
@@ -230,7 +231,13 @@ async def test_the_thread_stream_carries_live_output_and_resumes(executing, scri
         async with runs_kit.frames(url, headers) as stream:
             before = await runs_kit.until(stream, lambda frame: frame[0] == "boundary")
             # The input the run was offered streams before the checkpoint that consumed it.
-            inputs = [data["event"].get("delta") for event, _, data in before if event == "delta"]
+            inputs = [
+                data["event"]["value"]["event"]["content"]
+                for event, _, data in before
+                if event == "delta"
+                and data["event"]["type"] == "CUSTOM"
+                and data["event"].get("name") in AUTHORED_INPUT_EVENT_NAMES
+            ]
             assert "stream this" in inputs
             first_delta = next(entry_id for event, entry_id, _ in before if event == "delta")
             gate.set()

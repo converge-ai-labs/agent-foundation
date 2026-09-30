@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.input import RunInputValue, normalize_input
 from a13n_harness.providers.environment.models import EnvironmentAction
@@ -78,7 +79,7 @@ class RootInputFiles:
     async def prepare(self, prompt: RunInputValue, environment: BoundEnvironment) -> RunInputValue:
         prompt = detach_input(prompt)
         threshold = self.configuration.long_text_threshold_chars
-        parts: list[UserContent] = [prompt] if isinstance(prompt, str) else list(prompt)
+        parts: list[UserContent | ContentItem] = [prompt] if isinstance(prompt, str) else list(prompt)
         candidates = [
             (index, text)
             for index, part in enumerate(parts)
@@ -129,7 +130,13 @@ class RootInputFiles:
                 "Read further sections as needed; no part of the original text is included inline."
             )
             original = parts[index]
-            metadata = deepcopy(original.metadata or {}) if isinstance(original, TextContent) else {}
+            metadata = (
+                original.metadata.model_dump(mode="json")
+                if isinstance(original, ContentItem)
+                else deepcopy(original.metadata or {})
+                if isinstance(original, TextContent)
+                else {}
+            )
             namespace = metadata.get("harness_ui")
             metadata["harness_ui"] = {
                 **(namespace if isinstance(namespace, dict) else {}),
@@ -140,14 +147,23 @@ class RootInputFiles:
                 "characters": len(text),
             }
             parts[index] = (
-                replace(original, content=reference, metadata=metadata)
+                ContentItem(reference, ContentMetadata.model_validate(metadata))
+                if isinstance(original, ContentItem)
+                else replace(original, content=reference, metadata=metadata)
                 if isinstance(original, TextContent)
                 else TextContent(reference, metadata=metadata)
             )
         return tuple(parts)
 
 
-def _authored_text(part: UserContent) -> str | None:
+def _authored_text(part: UserContent | ContentItem) -> str | None:
+    if isinstance(part, ContentItem):
+        namespace = (part.metadata.model_extra or {}).get("harness_ui")
+        if not part.metadata.display or (
+            isinstance(namespace, dict) and ("attachment" in namespace or namespace.get("long_text_skipped"))
+        ):
+            return None
+        return _authored_text(part.value)
     if isinstance(part, str):
         return part
     if not isinstance(part, TextContent):
@@ -161,12 +177,15 @@ def _authored_text(part: UserContent) -> str | None:
     return part.content
 
 
-def _attachment_sizes(parts: list[UserContent]) -> dict[str, int]:
+def _attachment_sizes(parts: list[UserContent | ContentItem]) -> dict[str, int]:
     attachments: dict[str, int] = {}
     for part in parts:
-        if not isinstance(part, TextContent):
+        if isinstance(part, ContentItem):
+            namespace = (part.metadata.model_extra or {}).get("harness_ui")
+        elif isinstance(part, TextContent):
+            namespace = (part.metadata or {}).get("harness_ui")
+        else:
             continue
-        namespace = (part.metadata or {}).get("harness_ui")
         attachment = namespace.get("attachment") if isinstance(namespace, dict) else None
         if isinstance(attachment, dict):
             identifier, size = attachment.get("attachment_id"), attachment.get("size")

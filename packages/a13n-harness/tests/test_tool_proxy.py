@@ -464,8 +464,11 @@ async def test_proxy_retains_multimodal_tool_return_content(codeact: bool) -> No
         call = ("run_code", {"code": "await call_proxy_tool(group='crm', tool='rich', arguments={})"})
     result, returns = await _run(caps, [call])
     assert result.output_or_raise() == "done"
-    assert returns[-1].content == {"value": 1}
-    assert any(
+    from a13n_harness.tools._output import tool_execution_value
+
+    assert tool_execution_value(returns[-1].content, returns[-1].metadata) == {"value": 1}
+    assert returns[-1].content == [{"value": 1}, "supplemental evidence"]
+    assert not any(
         "supplemental evidence" in str(part.content)
         for message in result.all_messages()
         if isinstance(message, ModelRequest)

@@ -10,7 +10,9 @@ from datetime import datetime
 from typing import Literal
 
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, Task, TaskState, WorkingState
+from a13n_harness.content import ContentItem, prompt_content, request_input_content
 from a13n_harness.model_context import user_prompt_content
+from a13n_harness.tools._output import tool_execution_value
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from anyio import Lock, to_thread
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
@@ -747,9 +749,7 @@ def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
             continue
         visible = [
             projected[1]
-            for part in message.parts
-            if isinstance(part, UserPromptPart)
-            for item in user_prompt_content(part)
+            for item in request_input_content(message)
             if (projected := project_input_content(item)) is not None
             and projected[1].display
             and (projected[1].model_extra or {}).get("a13n.steering-source")
@@ -779,9 +779,7 @@ def _transcript_turns(
         metadata = message.metadata or {}
         if not isinstance(message, ModelRequest) or "a13n.steering-run" in metadata or metadata.get("a13n.context"):
             continue
-        content = [
-            item for part in message.parts if isinstance(part, UserPromptPart) for item in user_prompt_content(part)
-        ]
+        content = request_input_content(message)
         preview = input_excerpt(content)
         if not preview:
             continue
@@ -901,7 +899,13 @@ def _decode_cursor[CursorT: BaseModel](
 
 def _message_entry(position: int, message: ModelMessage, *, thread: Thread | None = None) -> TranscriptEntry:
     if isinstance(message, ModelRequest):
-        parts = tuple(part for source in message.parts for part in _request_parts(source))
+        parts = tuple(
+            part
+            for index, source in enumerate(message.parts)
+            for part in _request_parts(
+                source, prompt_content(message, index) if isinstance(source, UserPromptPart) else None
+            )
+        )
         if (message.metadata or {}).get("a13n.context") == "handoff":
             # The owned handoff request contains the summary first, followed by
             # internal restoration instructions. Retained user requests are separate.
@@ -983,7 +987,7 @@ def _message_entry(position: int, message: ModelMessage, *, thread: Thread | Non
     raise ThreadError("Thread history contains an unsupported message.", code="thread_history_invalid")
 
 
-def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
+def _request_parts(part: object, content_items: list[ContentItem] | None = None) -> tuple[TranscriptPart, ...]:
     if isinstance(part, SystemPromptPart):
         return (TranscriptPart(kind="system", text=_bounded_text(part.content)),)
     if isinstance(part, UserPromptPart):
@@ -995,12 +999,12 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
                 else _bounded_text(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)),
                 metadata=metadata.model_copy(deep=True),
             )
-            for item in user_prompt_content(part)
+            for item in (content_items if content_items is not None else user_prompt_content(part))
             if (projected := project_input_content(item)) is not None
             for content, metadata in (projected,)
         )
     if isinstance(part, ToolReturnPart):
-        value, omitted = _bounded_json(part.content)
+        value, omitted = _bounded_json(tool_execution_value(part.content, part.metadata))
         return (
             TranscriptPart(
                 kind="tool_result",

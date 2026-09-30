@@ -7,7 +7,7 @@ from io import BytesIO
 
 import pytest
 from a13n_harness import HarnessEvent
-from a13n_harness.model_context import ModelInputEvent
+from a13n_harness.events import input_events
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.history import restore_transcript
 from a13n_harness_ui.interactive.inline_attachments import AttachmentBuffer, AttachmentProcessor, InlineAttachments
@@ -209,26 +209,34 @@ def test_live_and_history_combine_parts_without_internal_details_or_duplicate_ec
             "harness_ui": {"composer": {"index": index, "label": label}, "attachment": {"name": name}},
         }
 
+    from a13n_harness import ContentItem, ContentMetadata
+
     content = [
         TextContent("before " + "x" * 17000, metadata=metadata(0)),
         TextContent("internal path", metadata={**metadata(1), "display": False}),
-        BinaryContent(
-            b"private pixels", media_type="image/png", vendor_metadata=metadata(1, "image#1", "clipboard.png")
+        ContentItem(
+            BinaryContent(b"private pixels", media_type="image/png"),
+            ContentMetadata.model_validate(metadata(1, "image#1", "clipboard.png")),
         ),
         TextContent(" using ", metadata=metadata(2)),
         TextContent("internal file path and metadata", metadata=metadata(3, "file#2", "requirements.md")),
         TextContent(" after", metadata=metadata(4)),
     ]
-    event = HarnessEvent(
-        thread_id="thread-inline",
-        run_id="run-inline",
-        sequence=1,
-        occurred_at=datetime.now(UTC),
-        event=ModelInputEvent(content=content),
-    )
     observer = HarnessAguiObserver()
     renderer = StreamRenderer(Status())
-    events = observer.observe(event)
+    events = tuple(
+        item
+        for sequence, event in enumerate(input_events(content, source="user", input_id="input-inline"))
+        for item in observer.observe(
+            HarnessEvent(
+                thread_id="thread-inline",
+                run_id="run-inline",
+                sequence=sequence,
+                occurred_at=datetime.now(UTC),
+                event=event,
+            )
+        )
+    )
     for item in events:
         renderer.ingest(item.type.value, item.model_dump(mode="json"))
     expected = "> before " + "x" * 17000 + "[image#1] using [file#2: requirements.md] after"

@@ -66,3 +66,39 @@ async def test_tool_image_retention_failure_does_not_fail_model_result(tmp_path:
     assert not await collector.observe(screenshot_event(run_id="other"))
     assert not await collector.observe(screenshot_event(exposed=False))
     await files.close()
+
+
+async def test_lowered_native_screenshot_is_retained_and_projects_original_value(tmp_path: Path):
+    from a13n_harness.tools._output import _render_tool_return
+    from pydantic_ai import ToolReturn
+
+    original = screenshot_event()
+    rendered = _render_tool_return(
+        ToolReturn(
+            original.event.part.content,
+            content=original.event.content,
+            metadata=original.event.part.metadata,
+        )
+    )
+    part = ToolReturnPart("computer_observe", rendered.return_value, "call-one", metadata=rendered.metadata)
+    item = HarnessEvent(
+        thread_id="thread-one",
+        run_id="run-one",
+        sequence=1,
+        occurred_at=datetime.now(UTC),
+        event=FunctionToolResultEvent(part),
+    )
+    files = ThreadFiles(tmp_path)
+    try:
+        events = await ToolImageCollector(run_id="run-one", thread_id="thread-one", files=files).observe(item)
+        assert events
+        (image,) = tool_images(part)
+        assert (await files.read("thread-one", image.attachment.attachment_id))[1] == original.event.content[0].data
+        restored = ModelMessagesTypeAdapter.validate_json(
+            ModelMessagesTypeAdapter.dump_json([ModelRequest(parts=[part])])
+        )[0].parts[0]
+        projected = _request_parts(restored)[0]
+        assert projected.value == {"ok": True, "observation_id": "obs-one"}
+        assert projected.tool_images == (image,)
+    finally:
+        await files.close()

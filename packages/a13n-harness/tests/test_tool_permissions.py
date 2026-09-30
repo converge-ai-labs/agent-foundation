@@ -8,13 +8,14 @@ import pytest
 from a13n_harness import AgentContext, AgentSpec, DeferredToolResume, HarnessBuilder, RunBindings
 from a13n_harness.capabilities import ToolReviewAssessment, ToolReviewRequest, ToolReviewResult
 from a13n_harness.capabilities.tool_review import ToolReviewPolicy
+from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.tools import ToolIdentity, ToolPermissions, ToolPermissionsCapability, source_tool_id
 from a13n_harness.tools.approval import ApprovalPresentation, approval_presentation
 from pydantic import ValidationError
 from pydantic_ai import RunContext, ToolApproved
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ApprovalRequired
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, TextContent, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.tools import DeferredToolResults, Tool
 from pydantic_ai.toolsets import FunctionToolset
@@ -137,7 +138,8 @@ async def test_native_approval_satisfies_permission_and_tool() -> None:
     assert executed == [True]
 
 
-async def test_review_allow_is_not_human_approval_and_runs_before_validator() -> None:
+@pytest.mark.parametrize("multipart", [False, True])
+async def test_review_allow_is_not_human_approval_and_runs_before_validator(multipart: bool) -> None:
     reviewer = _Reviewer()
     executed = []
 
@@ -162,11 +164,20 @@ async def test_review_allow_is_not_human_approval_and_runs_before_validator() ->
             ),
         ),
     )
-    result = await executable.run("do this", bindings=RunBindings.embedded())
+    content = (
+        [
+            ContentItem("generated context", ContentMetadata(display=False, source_id="test.context")),
+            "do",
+            TextContent("this"),
+        ]
+        if multipart
+        else "do this"
+    )
+    result = await executable.run(content, bindings=RunBindings.embedded())
     assert result.status == "completed"
     assert executed == ["hello"]
     assert len(reviewer.requests) == 1
-    assert reviewer.requests[0].task == "do this"
+    assert reviewer.requests[0].task == ("do\nthis" if multipart else "do this")
 
 
 async def test_renaming_does_not_change_permission_identity() -> None:

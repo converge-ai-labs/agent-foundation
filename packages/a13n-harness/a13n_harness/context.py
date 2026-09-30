@@ -18,6 +18,7 @@ from pydantic_ai.messages import ModelMessage
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.input import ModelInputState
 from a13n_harness.model_calls import ModelCallCheck
 from a13n_harness.observation import HarnessObservationContext
 from a13n_harness.recovery import ModelRecoveryState
@@ -389,6 +390,7 @@ class AgentContext:
     _deferred_input: DeferredInputState | None = field(default=None, repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
     _model_recovery: ModelRecoveryState = field(default_factory=ModelRecoveryState, repr=False, compare=False)
+    _model_input: ModelInputState = field(default_factory=ModelInputState, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None
     model_call_check: ModelCallCheck | None = None
     usage_reporter: UsageReporter | UsageDeltaReporter | None = None

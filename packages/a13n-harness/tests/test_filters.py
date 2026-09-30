@@ -310,7 +310,7 @@ async def test_filters_copy_only_changed_history_and_detach_all_nested_values(ki
     from unittest.mock import Mock
 
     from a13n_harness.filters import cold_start, content, integrity
-    from pydantic_ai import ImageUrl
+    from pydantic_ai import ImageUrl, TextContent
 
     modules = {"integrity": integrity, "cold_start": cold_start, "content": content}
     capabilities = {
@@ -323,12 +323,19 @@ async def test_filters_copy_only_changed_history_and_detach_all_nested_values(ki
         tool_call_id="orphan" if changed and kind == "integrity" else "call-1",
         content={"value": "x" * 3000 if changed and kind == "cold_start" else "short"},
     )
-    image = ImageUrl("https://example.com/image.png" + ("?api_key=secret" if changed and kind == "content" else ""))
+    from a13n_harness.content import ContentItem, ContentMetadata, annotate_prompt, prompt_content
+
+    media_metadata = {"display": False, "source_id": "test.input", "nested": {"values": [1]}}
+    image = ImageUrl(
+        "https://example.com/image.png" + ("?api_key=secret" if changed and kind == "content" else ""),
+        vendor_metadata={"detail": "high"},
+    )
     messages = [
         ModelResponse(parts=[ToolCallPart("lookup", {"nested": [1]}, tool_call_id="call-1")]),
         ModelRequest(parts=[part, UserPromptPart([image])]),
         ModelResponse(parts=[TextPart("consumed")], timestamp=datetime.now(UTC) - timedelta(hours=2)),
     ]
+    messages[1] = annotate_prompt(messages[1], 1, [ContentItem(image, ContentMetadata.model_validate(media_metadata))])
     original = deepcopy(messages)
     request = _request_context(messages)
     copy_spy = Mock(wraps=deepcopy)
@@ -345,3 +352,13 @@ async def test_filters_copy_only_changed_history_and_detach_all_nested_values(ki
     # Even unchanged nested values in a changed request remain detached.
     filtered.messages[0].parts[0].args["nested"].append(2)
     assert messages[0].parts[0].args == {"nested": [1]}
+    if kind == "content":
+        replacement = filtered.messages[1].parts[-1].content[0]
+        assert isinstance(replacement, TextContent)
+        annotation = prompt_content(filtered.messages[1], len(filtered.messages[1].parts) - 1)[0].metadata
+        assert annotation.model_dump(exclude_defaults=True) == ContentMetadata.model_validate(
+            media_metadata
+        ).model_dump(exclude_defaults=True)
+        annotation.model_extra["nested"]["values"].append(2)
+        assert prompt_content(messages[1], 1)[0].metadata.model_extra["nested"] == {"values": [1]}
+        assert image.vendor_metadata == {"detail": "high"}

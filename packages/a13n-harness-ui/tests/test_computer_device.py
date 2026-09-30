@@ -21,7 +21,7 @@ from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus
 from PIL import Image
 from pydantic_ai import BinaryContent
-from pydantic_ai.messages import ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from websockets.asyncio.client import connect
 
@@ -203,6 +203,8 @@ async def desktop_peer(ws, image):
 
 
 async def test_reverse_desktop_image_reaches_model_live_history_and_browser(tmp_path, monkeypatch):
+    from a13n_harness.tools._output import tool_execution_value
+
     monkeypatch.setenv("DEVICE_TOKEN", TOKEN)
     buffer = BytesIO()
     Image.new("RGB", (320, 200), "navy").save(buffer, format="PNG")
@@ -222,20 +224,19 @@ async def test_reverse_desktop_image_reaches_model_live_history_and_browser(tmp_
             assert {"computer_observe", "computer_click"} <= {tool.name for tool in info.function_tools}
             name, args = "computer_observe", {"alias": "desktop"}
         elif steps == 1:
-            assert returns[-1].content["ok"], returns[-1].content
+            observation = tool_execution_value(returns[-1].content, returns[-1].metadata)
+            assert observation["ok"], observation
             binaries = [
-                part
-                for message in messages
-                if message.kind == "request"
-                for prompt in message.parts
-                if isinstance(prompt, UserPromptPart) and not isinstance(prompt.content, str)
-                for part in prompt.content
-                if isinstance(part, BinaryContent)
+                item
+                for part in returns
+                if isinstance(part.content, list)
+                for item in part.content
+                if isinstance(item, BinaryContent)
             ]
             assert any(part.data == image for part in binaries)
             name, args = (
                 "computer_click",
-                {"observation_id": returns[-1].content["observation_id"], "point": {"x": 42, "y": 24}},
+                {"observation_id": observation["observation_id"], "point": {"x": 42, "y": 24}},
             )
         else:
             assert returns[-1].content["effect"] == "executed", returns[-1].content

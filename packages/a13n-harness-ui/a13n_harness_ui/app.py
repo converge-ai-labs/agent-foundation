@@ -17,6 +17,7 @@ import httpx2
 from a13n_envd_client.eip.v1 import DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
 from a13n_harness import HarnessInstrumentation
+from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.input import RunInputValue
 from a13n_harness.plugin_factories import HarnessPluginFactory
@@ -1865,7 +1866,7 @@ class HarnessUiApp:
             > MAX_INPUT_BYTES
         ):
             raise ValueError("An input supports up to 20 MiB of attachments.")
-        parts: list[UserContent] = []
+        parts: list[UserContent | ContentItem] = []
         if isinstance(prompt, ComposerInput):
             if not prompt.text.strip() and not uploads and not resolved and not attachments:
                 raise ValueError("A root message must not be blank.")
@@ -1909,7 +1910,7 @@ class HarnessUiApp:
         source_id: str | None = None,
         index: int = 0,
         label: str | None = None,
-    ) -> list[UserContent]:
+    ) -> list[UserContent | ContentItem]:
         # Retain before admission, so accepted input never references draft scratch.
         await self._thread_files.retain(thread_id, item.attachment_id)
         path = f"attachments/{item.attachment_id}/content"
@@ -1929,7 +1930,7 @@ class HarnessUiApp:
         # cannot teach the model what the user's 'image#2' refers to.
         name = f"{label} ({item.name!r})" if label else repr(item.name)
         description_metadata = {**metadata, "display": False} if source_id and is_image else metadata
-        parts: list[UserContent] = [
+        parts: list[UserContent | ContentItem] = [
             TextContent(
                 f"Attachment {name} ({item.media_type}): {path} on the thread-files Environment mount.{source_description}",
                 metadata=description_metadata,
@@ -1942,7 +1943,11 @@ class HarnessUiApp:
                     TextContent(captured_text, metadata={**metadata, "display": False} if source_id else metadata)
                 )
         if is_image:
-            parts.append(BinaryContent(data=data, media_type=item.media_type, vendor_metadata=metadata))
+            parts.append(
+                ContentItem(
+                    BinaryContent(data=data, media_type=item.media_type), ContentMetadata.model_validate(metadata)
+                )
+            )
         return parts
 
     async def submit_thread(

@@ -35,6 +35,7 @@ from a13n_harness._output_contract import (
 from a13n_harness.capabilities.context import (
     HandoffCapability,
 )
+from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import (
     LifecycleEventCapability,
 )
@@ -685,6 +686,7 @@ class HarnessBuilder:
                 MessageIntegrityFilterCapability(),
                 LifecycleEventCapability(),
                 SteeringCapability(),
+                InputCapability(),
                 ModelContextCoordinatorCapability(),
                 ResolveModelId(resolve_model),
                 *_cold_start_capabilities(construction_spec),

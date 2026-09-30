@@ -37,6 +37,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
+from a13n_harness.content import request_input_content
 from a13n_harness.environment.advanced import (
     EmptyEnvironmentRuntime,
 )
@@ -83,9 +84,9 @@ def _latest_user_text(messages: list[ModelMessage]) -> str | None:
     for message in reversed(messages):
         if not isinstance(message, ModelRequest):
             continue
-        for part in reversed(message.parts):
-            if isinstance(part, UserPromptPart) and isinstance(part.content, str):
-                return part.content
+        for item in reversed(request_input_content(message)):
+            if item.metadata.display and isinstance(item.value, str):
+                return item.value
     return None
 
 
@@ -95,7 +96,7 @@ def _returns_after_latest_user(messages: list[ModelMessage]) -> list[ToolReturnP
             index
             for index, message in enumerate(messages)
             if isinstance(message, ModelRequest)
-            and any(isinstance(part, UserPromptPart) and isinstance(part.content, str) for part in message.parts)
+            and any(item.metadata.display for item in request_input_content(message))
         ),
         default=-1,
     )

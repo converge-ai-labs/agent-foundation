@@ -41,6 +41,7 @@ from a13n_harness._handoff import (
 )
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.capabilities.lifecycle import active_model_request_index
+from a13n_harness.content import CONTENT_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import (
@@ -868,8 +869,11 @@ def _build_compacted_history(
         )
     system_parts = _first_system_parts(messages)
     metadata = deepcopy(template.metadata) if template.metadata is not None else {}
-    # The replacement contains no old parts; legacy overlay indexes do not apply.
+    # Replacement parts have their own annotations; retained requests carry
+    # their own content annotations and delivered steering identities.
     metadata.pop("a13n.model-context-overlay", None)
+    metadata.pop(CONTENT_METADATA_KEY, None)
+    metadata.pop("a13n.steering-input", None)
     metadata[_HANDOFF_METADATA_KEY] = "compaction"
     synthetic = replace(
         deepcopy(template),
@@ -1029,8 +1033,11 @@ def _build_restored_history(
         )
     )
     metadata = deepcopy(template.metadata) if template.metadata is not None else {}
-    # The replacement contains no old parts; legacy overlay indexes do not apply.
+    # Replacement parts have their own annotations; retained requests carry
+    # their own content annotations and delivered steering identities.
     metadata.pop("a13n.model-context-overlay", None)
+    metadata.pop(CONTENT_METADATA_KEY, None)
+    metadata.pop("a13n.steering-input", None)
     metadata[_HANDOFF_METADATA_KEY] = "handoff"
     metadata[_RESTORED_BOUNDARY_METADATA_KEY] = _RESTORED_BOUNDARY_VERSION
     restored = replace(

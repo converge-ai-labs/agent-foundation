@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         derive_child_identity,
     )
     from a13n_harness.configuration import RunConfiguration
+    from a13n_harness.content import ContentItem, ContentMetadata
     from a13n_harness.context import AgentContext, RunBindings
     from a13n_harness.environment import (
         Environment,
@@ -42,6 +43,8 @@ if TYPE_CHECKING:
         HarnessExtensionEvent,
         HarnessRunResultEvent,
         HarnessStreamEvent,
+        InputMediaEvent,
+        InputTextEvent,
     )
     from a13n_harness.execution import ExecutableAgent, HarnessRunStream
     from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext, AgentInstanceRef
@@ -71,6 +74,7 @@ _EXPORTS = {
         "AgentContext",
         "RunBindings",
     ),
+    "a13n_harness.content": ("ContentItem", "ContentMetadata"),
     "a13n_harness.environment": (
         "Environment",
         "EnvironmentEntry",
@@ -91,6 +95,8 @@ _EXPORTS = {
         "AgentStreamEventProtocol",
         "HarnessEvent",
         "HarnessExtensionEvent",
+        "InputMediaEvent",
+        "InputTextEvent",
         "HarnessRunResultEvent",
         "HarnessStreamEvent",
     ),

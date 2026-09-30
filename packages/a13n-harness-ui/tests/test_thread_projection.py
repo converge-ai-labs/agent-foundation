@@ -94,21 +94,25 @@ def test_owned_context_summaries_are_not_authored_user_messages() -> None:
 
 
 def test_tool_attachment_visibility_survives_history_roundtrip_without_hiding_user_media() -> None:
+    from a13n_harness.content import ContentItem, ContentMetadata, annotate_prompt
     from a13n_harness_ui.thread_projection import _message_entry
     from pydantic_ai.messages import BinaryContent, ModelMessagesTypeAdapter, ModelRequest, UserPromptPart
 
+    image = BinaryContent(data=b"\x89PNG", media_type="image/png")
     messages = ModelMessagesTypeAdapter.validate_json(
         ModelMessagesTypeAdapter.dump_json(
             [
-                ModelRequest(
-                    parts=[
-                        ToolReturnPart(tool_name="view", tool_call_id="call-image", content="Image attached."),
-                        UserPromptPart(
-                            [BinaryContent(data=b"\x89PNG", media_type="image/png", vendor_metadata={"display": False})]
-                        ),
-                        # Even in a mixed request, genuine user/steering media stays visible.
-                        UserPromptPart([BinaryContent(data=b"\x89PNG", media_type="image/png")]),
-                    ]
+                annotate_prompt(
+                    ModelRequest(
+                        parts=[
+                            ToolReturnPart(tool_name="view", tool_call_id="call-image", content="Image attached."),
+                            UserPromptPart([image]),
+                            # Even in a mixed request, genuine user/steering media stays visible.
+                            UserPromptPart([image]),
+                        ]
+                    ),
+                    1,
+                    [ContentItem(image, ContentMetadata(display=False))],
                 )
             ]
         )

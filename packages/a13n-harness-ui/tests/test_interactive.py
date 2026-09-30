@@ -538,7 +538,7 @@ async def test_setup_model_view_uses_declared_media_without_an_external_provider
     import yaml
     from PIL import Image
     from pydantic_ai import BinaryContent
-    from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
 
     path = await _seed(tmp_path, monkeypatch)
@@ -583,7 +583,7 @@ async def test_setup_model_view_uses_declared_media_without_an_external_provider
         for message in observed
         if isinstance(message, ModelRequest)
         for part in message.parts
-        if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
+        if isinstance(part, ToolReturnPart) and isinstance(part.content, list)
         for item in part.content
         if isinstance(item, BinaryContent)
     ]
@@ -734,10 +734,10 @@ async def test_active_guidance_reaches_native_model_in_order_without_another_roo
 @pytest.mark.parametrize("count", [1, 2])
 async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> None:
     from a13n_harness import AgentContext, AgentSpec, HarnessBuilder, HarnessEvent, RunBindings
-    from a13n_harness.model_context import ModelInputEvent
-    from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
+    from a13n_harness.events import InputTextEvent
+    from a13n_stream_protocol import HarnessAguiObserver
     from pydantic_ai.capabilities import AbstractCapability
-    from pydantic_ai.messages import EnqueuedMessagesEvent, TextContent
+    from pydantic_ai.messages import EnqueuedMessagesEvent
 
     queued = [f"ENQUEUE_BODY_{index}" for index in range(count)]
 
@@ -767,15 +767,8 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
         async with executable.stream("INITIAL_BODY", bindings=RunBindings.embedded()) as stream:
             async for source in stream:
                 if isinstance(source, HarnessEvent):
-                    if isinstance(source.event, ModelInputEvent):
-                        batches.append(
-                            [
-                                item.content if isinstance(item, TextContent) else item
-                                for item in source.event.content
-                                if not isinstance(item, TextContent)
-                                or ContentMetadata.from_native(item.metadata).display
-                            ]
-                        )
+                    if isinstance(source.event, InputTextEvent) and source.event.source == "user":
+                        batches.append([source.event.content])
                     elif isinstance(source.event, EnqueuedMessagesEvent):
                         deliveries.append(source.event.enqueue_id)
                 for event in observer.observe(source):

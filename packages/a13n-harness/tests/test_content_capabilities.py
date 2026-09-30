@@ -60,7 +60,7 @@ from a13n_harness.usage import (
 )
 from pydantic_ai import BinaryContent
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 from .environment_helpers import DirectLocalEnvironmentProviderBinding
@@ -240,7 +240,7 @@ def _native_binary(messages: list[list[ModelMessage]]) -> list[BinaryContent]:
             if not isinstance(message, ModelRequest):
                 continue
             for part in message.parts:
-                if not isinstance(part, UserPromptPart) or not isinstance(part.content, list):
+                if not isinstance(part, ToolReturnPart) or not isinstance(part.content, list):
                     continue
                 output.extend(item for item in part.content if isinstance(item, BinaryContent))
     return output
@@ -296,7 +296,7 @@ async def test_media_capability_returns_native_binary_with_run_scoped_reader(png
     assert len(binaries) == 1
     assert binaries[0].data == png_image_bytes
     assert binaries[0].media_type == "image/png"
-    assert binaries[0].vendor_metadata == {"display": False}
+    assert binaries[0].vendor_metadata is None
     provider_record = next(record for record in result.usage_records if isinstance(record, ProviderUsageRecord))
     assert provider_record.source == "media.reader"
     assert provider_record.usage.usage_id == "media-1"

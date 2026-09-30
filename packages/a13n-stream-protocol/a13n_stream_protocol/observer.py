@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterable, Callable, Sequence
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast
 
 from a13n_harness import (
@@ -15,8 +15,8 @@ from a13n_harness import (
     HarnessRunResultEvent,
     HarnessStreamEvent,
 )
-from a13n_harness.events import ToolExtraEventPayload
-from a13n_harness.model_context import ModelInputEvent, user_prompt_content
+from a13n_harness.events import InputMediaEvent, InputTextEvent, ToolExtraEventPayload
+from a13n_harness.tools._output import tool_execution_value
 from ag_ui.core import Event
 from ag_ui.core.events import (
     BaseEvent,
@@ -40,9 +40,9 @@ from ag_ui.core.events import (
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     CapabilityEvent,
+    DeferredToolResultsEvent,
     EnqueuedMessagesEvent,
     FunctionToolResultEvent,
-    ModelRequest,
     OutputToolResultEvent,
     PartDeltaEvent,
     PartEndEvent,
@@ -55,13 +55,10 @@ from pydantic_ai.messages import (
     ToolCallPartDelta,
     ToolReturnPart,
     UnknownCapabilityEvent,
-    UserContent,
-    UserPromptPart,
 )
 from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_stream_protocol.fragments import fragment_custom_event
-from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 
 _AGUI_EVENT_ADAPTER = TypeAdapter(Event)
 _ANY_ADAPTER = TypeAdapter(Any)
@@ -216,26 +213,34 @@ class HarnessAguiObserver:
         if isinstance(source, HarnessExtensionEvent):
             _observe_request_lifecycle(source, state)
             return [_custom_harness_event(item, source)]
-        if isinstance(source, ModelInputEvent):
-            return _convert_input(item, source.content)
+        if isinstance(source, InputTextEvent | InputMediaEvent):
+            return [_convert_input(item, source)]
         elif isinstance(source, EnqueuedMessagesEvent):
             # Native delivery is authoritative. Never send its raw messages
             # through the generic serializer: they may contain binary payloads.
-            content = [
-                content
-                for message in source.messages
-                if isinstance(message, ModelRequest)
-                for part in message.parts
-                if isinstance(part, UserPromptPart)
-                for content in user_prompt_content(part)
-            ]
             return [
                 CustomEvent(
                     timestamp=_timestamp_ms(item),
                     name="a13n.pydantic_ai.enqueued_messages",
                     value=_source_value(item, {"event_kind": source.event_kind, "enqueue_id": source.enqueue_id}),
                 ),
-                *_convert_input(item, content),
+            ]
+        elif isinstance(source, DeferredToolResultsEvent):
+            # Each resolved value is emitted separately as a readable tool result.
+            # The batch lifecycle event must never serialize supplemental media.
+            return [
+                CustomEvent(
+                    timestamp=_timestamp_ms(item),
+                    name="a13n.pydantic_ai.deferred_tool_results",
+                    value=_source_value(
+                        item,
+                        {
+                            "event_kind": source.event_kind,
+                            "call_ids": list(source.results.calls),
+                            "approval_ids": list(source.results.approvals),
+                        },
+                    ),
+                )
             ]
         elif isinstance(source, CapabilityEvent):
             # Preserve the native kind and payload, including user-defined capabilities.
@@ -344,54 +349,21 @@ class HarnessAguiObserver:
         return replacement.model_copy(deep=True)
 
 
-def _convert_input(item: HarnessEvent, content: Sequence[UserContent]) -> list[Event]:
-    events: list[Event] = []
-    for index, native in enumerate(content):
-        projected = project_input_content(native)
-        if projected is None:
-            continue
-        value, metadata = projected
-        message_id = f"{item.run_id}:input:{item.sequence}:{index}"
-        if isinstance(value, str):
-            events.extend(
-                _text_message_events(item, message_id=message_id, content=value, role="user", metadata=metadata)
-            )
-        else:
-            events.append(
-                CustomEvent.model_validate(
-                    {
-                        "type": "CUSTOM",
-                        "timestamp": _timestamp_ms(item),
-                        "name": "a13n.input.media",
-                        "message_id": message_id,
-                        "role": "user",
-                        "metadata": metadata.model_dump(mode="json"),
-                        "value": _source_value(item, {"content": value}),
-                    }
-                )
-            )
-    return events
-
-
-def _text_message_events(
-    item: HarnessEvent, *, message_id: str, content: str, role: Literal["user", "assistant"], metadata: ContentMetadata
-) -> list[Event]:
-    # Every chunk is independently attributable and below typical transport limits,
-    # even when JSON escaping expands a code point to six bytes.
-    fields = {
-        "message_id": message_id,
-        "timestamp": _timestamp_ms(item),
-        "role": role,
-        "metadata": metadata.model_dump(mode="json"),
-    }
-    return [
-        TextMessageStartEvent.model_validate(fields),
-        *(
-            TextMessageContentEvent.model_validate({**fields, "delta": content[offset : offset + 8192]})
-            for offset in range(0, len(content), 8192)
-        ),
-        TextMessageEndEvent.model_validate(fields),
-    ]
+def _convert_input(item: HarnessEvent, source: InputTextEvent | InputMediaEvent) -> Event:
+    return CustomEvent.model_validate(
+        {
+            "type": "CUSTOM",
+            "timestamp": _timestamp_ms(item),
+            "name": "a13n.input.media" if isinstance(source, InputMediaEvent) else f"a13n.input.{source.source}",
+            "message_id": f"{item.run_id}:input:{item.sequence}",
+            "role": "user" if source.source in {"user", "steering"} else "system",
+            "metadata": source.metadata.model_dump(mode="json"),
+            "value": _source_value(
+                item,
+                {"input_id": source.input_id, "source": source.source, "content": source.content},
+            ),
+        }
+    )
 
 
 def _convert_part_start(item: HarnessEvent, event: PartStartEvent, state: _ObserverState) -> list[Event]:
@@ -547,15 +519,24 @@ def _convert_tool_result(
 ) -> list[Event]:
     part = event.part
     if not isinstance(part, ToolReturnPart) or part.outcome != "success":
-        return []
-    # Supplemental tool content is model-only input (and may contain binary
-    # media). It must not replace the readable return value in presentation.
+        # Preserve native failure/retry correlation, but not model-only media.
+        projected_part = (
+            replace(part, content=tool_execution_value(part.content, part.metadata))
+            if isinstance(part, ToolReturnPart)
+            else part
+        )
+        projected = replace(event, part=projected_part)
+        if isinstance(projected, FunctionToolResultEvent):
+            projected = replace(projected, content=None)
+        return [_custom_pydantic_event(item, projected)]
+    # Supplemental native tool content can contain binary media. Only the
+    # explicitly marked execution value is readable presentation content.
     return [
         ToolCallResultEvent(
             timestamp=_timestamp_ms(item),
             message_id=f"{part.tool_call_id}:result",
             tool_call_id=part.tool_call_id,
-            content=_tool_result_text(part.content),
+            content=_tool_result_text(tool_execution_value(part.content, part.metadata)),
             role="tool",
         )
     ]

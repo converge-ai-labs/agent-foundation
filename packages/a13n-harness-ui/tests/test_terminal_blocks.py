@@ -331,26 +331,32 @@ def test_input_events_hide_context_without_marking_user_as_assistant() -> None:
     from datetime import UTC, datetime
 
     from a13n_harness import HarnessEvent
-    from a13n_harness.model_context import ModelInputEvent
+    from a13n_harness.events import input_events
     from a13n_stream_protocol import HarnessAguiObserver
     from pydantic_ai.messages import TextContent
 
     renderer = StreamRenderer(Status(state="running", mode="detailed"))
-    source = HarnessEvent(
-        thread_id="thread-input",
-        run_id="run-input",
-        sequence=0,
-        occurred_at=datetime.now(UTC),
-        event=ModelInputEvent(
-            content=[
+    observer = HarnessAguiObserver()
+    for sequence, observation in enumerate(
+        input_events(
+            [
                 TextContent("AGENTS.md user question"),
                 TextContent("HIDDEN GUIDANCE", metadata={"display": False, "source_id": "test"}),
-            ]
-        ),
-    )
-    for event in HarnessAguiObserver().observe(source):
-        payload = event.model_dump(mode="json")
-        renderer.ingest(payload["type"], payload, run_id="run-input")
+            ],
+            source="user",
+            input_id="input-one",
+        )
+    ):
+        source = HarnessEvent(
+            thread_id="thread-input",
+            run_id="run-input",
+            sequence=sequence,
+            occurred_at=datetime.now(UTC),
+            event=observation,
+        )
+        for event in observer.observe(source):
+            payload = event.model_dump(mode="json")
+            renderer.ingest(payload["type"], payload, run_id="run-input")
     assert _source(renderer) == "> AGENTS.md user question"
     assert "HIDDEN" not in renderer.drain()
     assert not renderer.assistant_seen

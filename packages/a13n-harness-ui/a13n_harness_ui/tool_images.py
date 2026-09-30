@@ -32,7 +32,9 @@ class ToolImageCollector:
             return ()
         images: list[ToolImageView] = []
         unavailable = False
-        content = event.content
+        # Screenshots now live in the native tool result, not supplemental
+        # user input. The marker authorizes this explicit Host presentation.
+        content = part.content if isinstance(part.content, list | tuple) else event.content
         if content is not None and not isinstance(content, str):
             for media in content:
                 if not isinstance(media, BinaryContent) or media.media_type not in {"image/jpeg", "image/png"}:
