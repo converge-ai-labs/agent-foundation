@@ -10,7 +10,7 @@ Closes #
 
 ## Validation
 
-<!-- List the exact commands and outcomes. Include image or migration checks when relevant. -->
+<!-- Briefly explain how the change was verified and identify material gaps or known failures, following CONTRIBUTING.md#writing-issues-and-pull-requests. Do not repeat routine CI or hook results; include exact commands only when needed for reproduction or review. -->
 
 ## Checklist
 
