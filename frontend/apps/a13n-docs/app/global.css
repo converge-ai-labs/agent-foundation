@@ -6,6 +6,8 @@
 @import "fumadocs-ui/css/preset.css";
 @import "fumadocs-openapi/css/preset.css";
 
+@source "../../../packages/a13n-ui/src/components/menu.tsx";
+
 /*
  * The docs follow the a13n-ui design system (spec/frontend/design-system.md):
  * the system font, neutral surfaces instead of outlines, weights 400 and 500,

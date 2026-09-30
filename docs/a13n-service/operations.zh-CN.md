@@ -61,14 +61,14 @@ Control 进程通过有界扫描维护排队任务和投递。失败的扫描记
 
 ## 运维命令
 
-| 命令                                                      | 用途                                                                                                                                                      |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `a13n-service bootstrap --email EMAIL [--password-stdin]` | 创建首个组织、工作空间和管理员。提示输入至少 12 个字符的密码，或读取标准输入首行。以 JSON 输出新 ID；已初始化时不做修改，退出码为 `3`；输入无效时为 `1`。 |
-| `a13n-service user disable --email EMAIL`                 | 禁用用户账号；参阅[运维账号控制](identity.md#operator-account-control)。                                                                                  |
-| `a13n-service user enable --email EMAIL`                  | 恢复账号原有的授权和密钥。                                                                                                                                |
-| `a13n-service migrate [--check]`                          | 迁移或检查数据库 schema。                                                                                                                                 |
-| `a13n-service run [--role ROLE]`                          | 运行一个进程。                                                                                                                                            |
-| `a13n-service --version`                                  | 输出已安装版本。                                                                                                                                          |
+| 命令                                                      | 用途                                                                                                                                                     |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `a13n-service bootstrap --email EMAIL [--password-stdin]` | 创建首个组织、工作空间和管理员。提示输入至少 8 个字符的密码，或读取标准输入首行。以 JSON 输出新 ID；已初始化时不做修改，退出码为 `3`；输入无效时为 `1`。 |
+| `a13n-service user disable --email EMAIL`                 | 禁用用户账号；参阅[运维账号控制](identity.md#operator-account-control)。                                                                                 |
+| `a13n-service user enable --email EMAIL`                  | 恢复账号原有的授权和密钥。                                                                                                                               |
+| `a13n-service migrate [--check]`                          | 迁移或检查数据库 schema。                                                                                                                                |
+| `a13n-service run [--role ROLE]`                          | 运行一个进程。                                                                                                                                           |
+| `a13n-service --version`                                  | 输出已安装版本。                                                                                                                                         |
 
 `--config` 放在命令名之前。数据库 schema 与构建不匹配时，`bootstrap`、`user` 和 `run` 拒绝执行。
 
