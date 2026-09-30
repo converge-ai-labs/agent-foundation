@@ -283,7 +283,7 @@ Run acceptance, ModelAttempt completion, Harness terminal delivery, Host Run com
 07. Never infer rollback or exactly-once tool execution from a missing checkpoint; tools that require cross-crash reconciliation own idempotency or a durable provider lifecycle.
 08. Use optional typed packages and protocols instead of a universal extension framework.
 09. Use the same Harness API in embedded and hosted modes.
-10. Add enterprise behavior through the same boundaries rather than forks.
+10. Support deployment-specific requirements through the same boundaries rather than forks.
 
 ## Specification Set
 
