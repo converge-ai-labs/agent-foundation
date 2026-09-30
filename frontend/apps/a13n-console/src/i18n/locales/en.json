@@ -592,6 +592,7 @@
   "Try a different range or fewer filters. Traces may be absent due to sampling, export, or retention.": "Try a different range or fewer filters. Traces may be absent due to sampling, export, or retention.",
   "Try again": "Try again",
   "Try agent": "Try agent",
+  "View sessions": "View sessions",
   "Try another search or check the server's authorization.": "Try another search or check the server's authorization.",
   "Unarchive": "Unarchive",
   "Unarchive agent": "Unarchive agent",

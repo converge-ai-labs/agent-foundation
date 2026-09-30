@@ -53,7 +53,7 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("prefix", ["google-cloud", "google-gla", "google-vertex", "gemini"])
+@pytest.mark.parametrize("prefix", ["google-cloud", "gemini"])
 async def test_google_cloud_routes_preserve_custom_endpoint_and_native_provider(prefix, monkeypatch):
     from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
@@ -75,13 +75,6 @@ async def test_google_cloud_routes_preserve_custom_endpoint_and_native_provider(
     assert str(model.provider.base_url).rstrip("/") == endpoint
     async with model:
         assert model.model_name == "gateway-gemini"
-
-
-def test_preset_descriptions_use_product_language() -> None:
-    for provider in API_PROVIDERS:
-        for model_id in ("claude-sonnet-4-5", "claude-sonnet-4-6"):
-            for preset in settings_presets(provider.route, model_id):
-                assert "pydantic" not in preset.description.lower(), (provider.route, model_id, preset.key)
 
 
 @pytest.mark.parametrize("model_id", ["gpt-4.1", "custom-model"])

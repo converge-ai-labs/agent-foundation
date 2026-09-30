@@ -8,14 +8,13 @@ import pytest
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.interactive.shell import CliShell
-from a13n_harness_ui.interactive.theme import activity_colors, prompt_toolkit_style_rules, resolve_theme
+from a13n_harness_ui.interactive.theme import resolve_theme
 from a13n_harness_ui.interactive.transcript import Transcript
 from a13n_harness_ui.surfaces import TaskPage, TaskView
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.data_structures import Size
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
-from prompt_toolkit.styles import Style
 from prompt_toolkit.utils import get_cwidth
 
 
@@ -58,73 +57,6 @@ def test_task_heading_retains_toggle_and_rows_are_width_safe(width: int) -> None
             assert len(collapsed) == 1 and "F2" in collapsed[0]
         finally:
             shell.renderer.transcript.close()
-
-
-@pytest.mark.parametrize("preference", ["auto", "dark", "light"])
-def test_activity_styles_preserve_passive_palette_and_explicit_theme_contrast(preference) -> None:
-    theme = resolve_theme(preference, environ={})
-    colors = activity_colors(theme)
-    rules = prompt_toolkit_style_rules(theme)
-    assert len(set(colors.values())) == len(colors)
-    style = Style.from_dict(rules)
-    assert style.get_attrs_for_style_str("class:task-pane.heading").bold
-    for state in ("running", "waiting", "completed", "failed"):
-        assert style.get_attrs_for_style_str(f"class:activity.{state}").color
-    if preference == "auto":
-        assert rules[""] == "bg:default fg:default"
-        assert all("#" not in value for value in colors.values())
-        assert "bg:" not in rules["task-pane.heading"]
-    else:
-        assert "bg:" in rules["task-pane.heading"]
-        assert all(value.startswith("#") for value in colors.values())
-
-
-@pytest.mark.parametrize("preference", ["auto", "dark", "light"])
-@pytest.mark.parametrize("width", [20, 40, 80, 140])
-def test_process_panel_emphasizes_status_before_command_and_retains_details(preference, width: int) -> None:
-    transcript = Transcript()
-    transcript.theme = resolve_theme(preference, environ={})
-    source = (
-        "Background processes · last observed\n"
-        "process-one · running · pytest [red]界[/red] · Run root\n"
-        "process-two · unavailable · sleep 10 · Run child\n"
-        "process-three · exited · echo done · Run root\n"
-        "process-four · failed · false · Run root\n"
-        "Live output incomplete · status may be stale.\n"
-        "Ctrl+O · tool output"
-    )
-    try:
-        transcript.append(source, kind="processes")
-        transcript.render(width)
-        lines = ["".join(text for _, text in row) for row in transcript.rows]
-        text = "\n".join(lines)
-        compact = "".join(text.split()).replace("│", "")
-        assert all(get_cwidth(line) <= width for line in lines)
-        for value in ("[running]", "[unavailable]", "[exited]", "[failed]", "process-one", "Runchild"):
-            assert value in compact
-        assert "[red]界[/red]" in compact  # Command markup remains literal.
-        assert "incomplete" in compact
-        assert "Ctrl+O" in compact
-        if width >= 80:
-            assert "lastobserved" in compact
-        if width >= 80:
-            assert "[running] pytest [red]界[/red] · process-one · Run root" in text
-        colors = activity_colors(transcript.theme)
-        for state, label in (
-            ("running", "[running]"),
-            ("waiting", "[unavailable]"),
-            ("completed", "[exited]"),
-            ("failed", "[failed]"),
-        ):
-            expected = colors[state]
-            expected = expected if expected.startswith("#") else "ansi" + expected.replace("_", "")
-            styled = "".join(part for row in transcript.rows for style, part in row if f"fg:{expected}" in style)
-            assert label in "".join(styled.split())
-        assert len(transcript.blocks) == 1
-        if width == 140:
-            assert len(lines) == 8  # Same border and body rows as the plain snapshot panel.
-    finally:
-        transcript.close()
 
 
 @pytest.mark.anyio

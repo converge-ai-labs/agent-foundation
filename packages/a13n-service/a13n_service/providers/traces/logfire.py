@@ -50,14 +50,21 @@ class Logfire:
     write_token: str = field(repr=False)
     read_token: str = field(repr=False)
     timeout: float  # bounds each query
+    ssrf_protection: bool = True
 
     @classmethod
     def configure(
-        cls, url: str | None, write_token: SecretStr | None, read_token: SecretStr | None, *, timeout: float
+        cls,
+        url: str | None,
+        write_token: SecretStr | None,
+        read_token: SecretStr | None,
+        *,
+        timeout: float,
+        ssrf_protection: bool = True,
     ) -> Self:
         if url is None or write_token is None or read_token is None:
             raise ValueError("telemetry: Logfire needs trace_url, logfire_write_token and logfire_read_token")
-        return cls(url, write_token.get_secret_value(), read_token.get_secret_value(), timeout)
+        return cls(url, write_token.get_secret_value(), read_token.get_secret_value(), timeout, ssrf_protection)
 
     @property
     def otlp_endpoint(self) -> str:
@@ -93,6 +100,7 @@ class Logfire:
             timeout=self.timeout,
             headers={"Authorization": self.read_token, "Accept": "application/json"},
             body=body,
+            ssrf_protection=self.ssrf_protection,
         )
         try:
             rows = _Rows.model_validate(response).data

@@ -15,7 +15,6 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessModelCharacteristics,
 )
-from a13n_harness.models import SelfHealingModelCapability
 
 executable = HarnessBuilder().build(
     AgentSpec(
@@ -24,7 +23,7 @@ executable = HarnessBuilder().build(
     ),
     output_type=str,
     model=model,
-    capabilities=(SelfHealingModelCapability(), *capabilities),
+    capabilities=capabilities,
     plugins=plugins,
     subagents=subagents,
 )
@@ -47,7 +46,7 @@ agent_definition = AgentDefinition(
 executable = HarnessBuilder().build(agent_definition)
 ```
 
-两个重载走相同的验证和构建路径。构建同步执行，不对模型、环境或外部 provider 进行 I/O。自修复可选，不会隐式启用；生产 agent 需要已知的一次性 provider 历史修复时，建议选择 `SelfHealingModelCapability()`。
+两个重载走相同的验证和构建路径。构建同步执行，不对模型、环境或外部 provider 进行 I/O。已知的一次性 provider 历史修复默认启用。设置 `HarnessBuilder(self_healing_enabled=False)` 可关闭自动安装。显式选择的 `SelfHealingModelCapability` 会保留其配置规则，即使关闭此 flag 仍然生效；它会替代默认能力，而不是重复安装。
 
 ### 构建时确定的值
 
@@ -59,7 +58,7 @@ executable = HarnessBuilder().build(agent_definition)
 - 定义选择的 Capabilities；
 - 可信 Harness 中间件插件；
 - 有限的内联子定义；
-- 自修复与有界模型恢复策略；
+- 显式选择的自修复规则与有界模型恢复策略；
 - 一个构建时默认启用的模型成本策略。
 
 输出契约不能逐次执行改变。通过 `output_type` 传入 Python 输出类型或 Pydantic AI `OutputSpec`，或使用 `AgentSpec.output_schema`；不要同时设置两者。
@@ -332,14 +331,14 @@ async with executable.stream("Do the work", bindings=bindings) as stream:
 
 恢复由各自明确的负责方处理：
 
-| 失败类别                         | 负责方                                                  |
-| -------------------------------- | ------------------------------------------------------- |
-| provider 传输重试                | 模型 provider/客户端及原生 Pydantic AI 重试配置         |
-| 精确的 provider 历史不兼容       | 所选 `SelfHealingModelCapability` 和 `SelfHealingModel` |
-| 同一活跃逻辑执行内的模型尝试中断 | `ModelRecoveryPolicy` 和 `HarnessRunStream`             |
-| worker/进程丢失、持久重放或交付  | 嵌入 Host                                               |
+| 失败类别                         | 负责方                                                        |
+| -------------------------------- | ------------------------------------------------------------- |
+| provider 传输重试                | 模型 provider/客户端及原生 Pydantic AI 重试配置               |
+| 精确的 provider 历史不兼容       | 默认启用的 `SelfHealingModelCapability` 和 `SelfHealingModel` |
+| 同一活跃逻辑执行内的模型尝试中断 | `ModelRecoveryPolicy` 和 `HarnessRunStream`                   |
+| worker/进程丢失、持久重放或交付  | 嵌入 Host                                                     |
 
-自修复通过 `SelfHealingModelCapability` 主动启用，只围绕最终生效模型执行支持的一次性历史修复，包括具体模型、执行时解析模型或原生推断模型。它不重试任意模型或工具异常。语义模型恢复默认禁用；应用允许继续已中断模型尝试时，在定义上选择有界 `ModelRecoveryPolicy`。
+自修复默认启用，只围绕最终生效模型执行支持的一次性历史修复，包括具体模型、执行时解析模型或原生推断模型。`HarnessBuilder(self_healing_enabled=False)` 可为根 agent 和 inline 子 agent 恢复原先的 opt-in 行为，同一 Agent 的 compaction 请求也遵循该设置。重新构建旧定义或 Host capture 会启用这些修复，但不会改变其已保存的 schema。独立的原生工具审核和媒体理解 Agent 不继承主 Agent 的请求 Capability。它不重试任意模型或工具异常。语义模型恢复默认禁用；应用允许继续已中断模型尝试时，在定义上选择有界 `ModelRecoveryPolicy`。
 
 中断尝试保留已发出文本，即使后续工具调用中流才停止。下一次尝试将该部分响应作为中断历史接收，不视为已完成输出。未完成思考和工具参数会排除；无效 provider 原生调用/返回组会移除，不抹掉周围可恢复文本。失败或取消的执行导出相同过滤历史，供 Host 后续选择续接。
 

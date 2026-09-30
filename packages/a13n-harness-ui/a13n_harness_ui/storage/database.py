@@ -76,8 +76,6 @@ async def open_database(path: Path, settings: StorageSettings) -> AsyncGenerator
         )
         try:
             await check_database(database)
-        except StoreIntegrityError:
-            raise
         except (DatabaseSchemaError, OSError, SQLAlchemyError, TimeoutError) as exc:
             raise StoreIntegrityError(
                 "Harness UI metadata database is unavailable or incompatible.",
@@ -124,17 +122,12 @@ async def transaction(factory: DatabaseSessions) -> AsyncGenerator[AsyncSession]
             await session.commit()
 
 
-async def check_database(database: Database, *, timeout_seconds: float = 3.0) -> None:
-    """Verify basic access, schema compatibility, and SQLite integrity."""
+async def check_database(database: Database, *, timeout_seconds: float = 20.0) -> None:
+    """Verify basic access and schema compatibility without scanning stored data."""
 
     with fail_after(timeout_seconds):
         async with database.engine.connect() as connection:
-            result = await connection.execute(text("PRAGMA quick_check"))
-            if result.scalar_one() != "ok":
-                raise StoreIntegrityError(
-                    "Harness UI metadata database failed its integrity check.",
-                    code="database_integrity_failed",
-                )
+            await connection.execute(text("SELECT 1"))
     await to_thread.run_sync(DatabaseMigrator(database.engine.url.database or "").verify_current)
 
 

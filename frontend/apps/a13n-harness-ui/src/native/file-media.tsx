@@ -4,22 +4,20 @@ import { useTransport } from "../transport/context";
 import { ImagePreview } from "../shell/image-preview";
 import { ErrorNotice } from "../shell/ui";
 import { basename } from "./buffer";
+import type { MediaKind } from "./media-kind";
 import styles from "./file-image.module.css";
 
-// Extensions select preview candidates, not trusted MIME types. Bytes are only
-// decoded in an img, never embedded as an active document.
-export const isImagePath = (path: string) =>
-  /\.(?:png|jpe?g|webp|gif)$/i.test(path);
-
 /** The parent keys this view by requested path, reviewed revision and refresh. */
-export function FileImage({
+export function FileMedia({
   path,
   revision,
   retry,
+  kind,
 }: {
   path: string;
   revision: string;
   retry: () => void;
+  kind: MediaKind;
 }) {
   const transport = useTransport();
   const [src, setSrc] = useState<string>();
@@ -47,36 +45,60 @@ export function FileImage({
     };
   }, [transport, path, revision]);
   const name = basename(path);
+  const label = `${kind[0].toUpperCase()}${kind.slice(1)}`;
+  const decodeError = () =>
+    setError(
+      new Error(
+        `This ${kind} cannot be previewed. Download the original to inspect it.`,
+      ),
+    );
   return (
-    <section className={styles.preview} aria-label="Image preview">
-      {!dimensions && !error && <p role="status">Loading image…</p>}
+    <section className={styles.preview} aria-label={`${label} preview`}>
+      {(!src || (kind === "image" && !dimensions)) && !error && (
+        <p role="status">Loading {kind}…</p>
+      )}
       <ErrorNotice error={error} retry={retry} />
       {src && !error && (
         <>
-          <button
-            type="button"
-            className={styles.canvas}
-            aria-label={`Expand image: ${name}`}
-            disabled={!dimensions}
-            onClick={() => setExpanded(true)}
-          >
-            <img
+          {kind === "image" ? (
+            <button
+              type="button"
+              className={styles.canvas}
+              aria-label={`Expand image: ${name}`}
+              disabled={!dimensions}
+              onClick={() => setExpanded(true)}
+            >
+              <img
+                src={src}
+                alt={name}
+                hidden={!dimensions}
+                onLoad={(event) => {
+                  const image = event.currentTarget;
+                  setDimensions(
+                    `${image.naturalWidth} × ${image.naturalHeight}`,
+                  );
+                }}
+                onError={decodeError}
+              />
+            </button>
+          ) : kind === "audio" ? (
+            <audio
               src={src}
-              alt={name}
-              hidden={!dimensions}
-              onLoad={(event) => {
-                const image = event.currentTarget;
-                setDimensions(`${image.naturalWidth} × ${image.naturalHeight}`);
-              }}
-              onError={() =>
-                setError(
-                  new Error(
-                    "This image cannot be previewed. Download the original to inspect it.",
-                  ),
-                )
-              }
+              controls
+              preload="metadata"
+              aria-label={`Audio preview: ${name}`}
+              onError={decodeError}
             />
-          </button>
+          ) : (
+            <video
+              src={src}
+              controls
+              preload="metadata"
+              playsInline
+              aria-label={`Video preview: ${name}`}
+              onError={decodeError}
+            />
+          )}
           {dimensions && (
             <div className={styles.caption}>
               <span>{dimensions}</span>

@@ -10,6 +10,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.models.wrapper import WrapperModel
 
 from a13n_harness.context import AgentContext
 from a13n_harness.models.self_healing import (
@@ -41,8 +42,11 @@ class SelfHealingModelCapability(AbstractCapability[AgentContext]):
         handler: Callable[[ModelRequestContext], Awaitable[ModelResponse]],
     ) -> ModelResponse:
         del ctx
-        if isinstance(request_context.model, SelfHealingModel):
-            return await handler(request_context)
+        model = request_context.model
+        while isinstance(model, WrapperModel):
+            if isinstance(model, SelfHealingModel):
+                return await handler(request_context)
+            model = model.wrapped
         updated = copy(request_context)
         updated.model = SelfHealingModel(request_context.model, rules=self.rules)
         return await handler(updated)

@@ -9,16 +9,19 @@ from pathlib import Path
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.filters import ImageFilterCapability, ImageFilterConfiguration
+from a13n_harness.models import SelfHealingModelCapability
 from a13n_harness.toolsets.file_media import AgentMediaUnderstandingProvider, MediaUnderstandingRequest
 from PIL import Image
 from pydantic_ai import Agent, BinaryContent, BinaryImage, ImageUrl, ToolReturn
 from pydantic_ai.agent.spec import AgentSpec as NativeAgentSpec
 from pydantic_ai.capabilities import Capability
+from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -588,3 +591,44 @@ async def test_detected_binary_format_drives_gif_policy_without_rewriting_origin
     assert "does not support GIF" in str(seen[0].parts[0].content)
     assert _images(retained) == [native]
     assert native.media_type == "image/png" and native.vendor_metadata == {"custom": "source"}
+
+
+async def test_default_image_filter_and_self_healing_compose_once_without_changing_history() -> None:
+    native = BinaryImage(_png((12, 5000)), media_type="image/png", identifier="original")
+    reasoning = ThinkingPart(content="retained reasoning", id="rs_old")
+    history = (
+        ModelRequest(parts=[UserPromptPart([native])]),
+        ModelResponse(parts=[reasoning, TextPart("previous")]),
+    )
+    original = deepcopy(history)
+    previous = HarnessState.new(message_history=history)
+    seen: list[list[ModelMessage]] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        seen.append(deepcopy(messages))
+        if len(seen) == 1:
+            raise ModelHTTPError(
+                status_code=404,
+                model_name="image-test",
+                body={"code": 5008, "message": "Item with id 'rs_old' not found."},
+            )
+        yield "recovered"
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond))
+    leaves = []
+    executable._agent.root_capability.apply(leaves.append)
+    assert sum(isinstance(capability, ImageFilterCapability) for capability in leaves) == 1
+    assert sum(isinstance(capability, SelfHealingModelCapability) for capability in leaves) == 1
+    result = await executable.run("Continue", previous_state=previous, bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "recovered"
+    assert len(seen) == 2
+    for messages in seen:
+        assert [image.identifier for image in _images(messages)] == ["original-segment-1", "original-segment-2"]
+    assert any(isinstance(part, ThinkingPart) for message in seen[0] for part in message.parts)
+    assert not any(isinstance(part, ThinkingPart) for message in seen[1] for part in message.parts)
+    assert result.usage.requests == 2
+    assert result.state is not None
+    assert _images(result.state.message_history) == [native]
+    assert result.state.message_history[:2] == original
+    assert previous.message_history == original and history == original

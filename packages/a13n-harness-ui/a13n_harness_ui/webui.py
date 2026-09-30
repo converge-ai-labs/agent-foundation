@@ -1893,7 +1893,8 @@ def create_webui(
             headers={
                 "Cache-Control": "no-cache",
                 "Content-Security-Policy": (
-                    "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+                    "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
+                    "style-src 'self' 'unsafe-inline'; "
                     "script-src 'self'; frame-ancestors 'none'; base-uri 'none'; frame-src "
                     + (origin(sandbox_url.removesuffix("/sandbox.html")) if sandbox_url is not None else "'none'")
                 ),

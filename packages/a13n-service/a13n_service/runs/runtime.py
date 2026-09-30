@@ -45,13 +45,7 @@ class Runtime:
     @property
     def endpoint_policy(self) -> EndpointPolicy:
         """Which provider and connection endpoints outbound requests may reach."""
-        providers = self.settings.providers
-        return EndpointPolicy.from_operator_allowlist(
-            private_domains=providers.private_domains,
-            private_cidrs=providers.private_cidrs,
-            http_origins=providers.http_origins,
-            require_https=providers.require_https,
-        )
+        return self.settings.providers.endpoint_policy
 
     def wake_workers(self, session: AsyncSession) -> None:
         """After commit, tell idle workers to scan now; the periodic scan covers a lost wakeup."""

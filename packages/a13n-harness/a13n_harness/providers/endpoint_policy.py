@@ -46,6 +46,7 @@ class EndpointPolicy:
     allowed_private_networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = ()
     require_https: bool = False
     allowed_http_origins: frozenset[str] = frozenset()
+    ssrf_protection: bool = True
 
     @classmethod
     def from_operator_allowlist(
@@ -55,6 +56,7 @@ class EndpointPolicy:
         private_cidrs: Iterable[str] = (),
         require_https: bool = False,
         http_origins: Iterable[str] = (),
+        ssrf_protection: bool = True,
     ) -> EndpointPolicy:
         domains = frozenset(_normalize_domain(value) for value in private_domains)
         networks = tuple(ipaddress.ip_network(value, strict=True) for value in private_cidrs)
@@ -64,12 +66,15 @@ class EndpointPolicy:
             allowed_private_networks=networks,
             require_https=require_https,
             allowed_http_origins=origins,
+            ssrf_protection=ssrf_protection,
         )
 
     async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str:
         """Normalize and validate an endpoint, including its current DNS answers."""
 
         normalized, hostname, port = self.validate_syntax(endpoint)
+        if not self.ssrf_protection:
+            return normalized
         try:
             literal_address = ipaddress.ip_address(hostname)
         except ValueError:
@@ -133,6 +138,8 @@ class EndpointPolicy:
         return normalized, hostname, effective_port
 
     def validate_address(self, hostname: str, address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None:
+        if not self.ssrf_protection:
+            return
         if address in _CLOUD_METADATA_ADDRESSES:
             raise EndpointPolicyError("cloud metadata destinations are denied")
         if (

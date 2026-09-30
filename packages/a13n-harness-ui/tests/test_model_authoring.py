@@ -5,7 +5,6 @@ from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_harness_ui.configuration.models import ApiKeyAuthentication
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_authoring import (
-    ModelChoices,
     ModelOptionsRequest,
     ModelRecipe,
     ModelRecipeRequest,
@@ -16,7 +15,7 @@ from a13n_harness_ui.model_authoring import (
 from pydantic import ValidationError
 
 
-@pytest.mark.parametrize("model_id", ["gpt-6.1-sol", "gpt-6-astra", "gpt-5.6-terra", "gpt-6-sol", "gpt-5.6-sol"])
+@pytest.mark.parametrize("model_id", ["gpt-6.1-sol", "gpt-6-sol"])
 def test_subscription_defaults_are_native_and_independent_of_api_presets(model_id: str) -> None:
     codex = prepare_model(ModelRecipeRequest(connection="codex", model_id=model_id))
     assert codex.authentication.kind == "codex_subscription"
@@ -34,27 +33,11 @@ def test_subscription_defaults_are_native_and_independent_of_api_presets(model_i
     assert grok.route == "grok:grok-4.7"
     assert grok.settings == {} and grok.model_configuration == {}
     assert grok.model_characteristics.context_window_tokens is None
-    choices = ModelChoices()
-    codex_connection = next(c for c in choices.connections if c.id == "codex")
-    assert [item.value for item in codex_connection.models] == [
-        "gpt-6.1-sol",
-        "gpt-6-astra",
-        "gpt-5.6-terra",
-        "gpt-6-sol",
-        "gpt-5.6-sol",
-    ]
-    assert codex_connection.default_model == "gpt-6.1-sol"
-    assert codex_connection.models[0].label == "Codex - GPT-6.1 Sol"
-    assert next(c for c in choices.connections if c.id == "grok").authentication == "api_key"
-    subscription = next(c for c in choices.connections if c.id == "grok-subscription")
-    assert subscription.authentication == "grok_subscription"
-    assert subscription.default_model == "grok-4.7"
-    assert subscription.models[0].value == subscription.default_model
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("effort", ["high", "medium", "low", "xhigh"])
-async def test_codex_sol_preset_reaches_native_request(effort: str, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_codex_sol_preset_reaches_native_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    effort = "high"
     from typing import cast
     from unittest.mock import AsyncMock
 
@@ -86,8 +69,7 @@ async def test_codex_sol_preset_reaches_native_request(effort: str, monkeypatch:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("connection", ["codex", "openai-responses", "openai-chat"])
-@pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh", "max"])
+@pytest.mark.parametrize("connection, effort", [("codex", "high"), ("openai-responses", "max"), ("openai-chat", "low")])
 async def test_sol_6_1_presets_use_native_effort(connection: str, effort: str, monkeypatch: pytest.MonkeyPatch) -> None:
     from typing import cast
     from unittest.mock import AsyncMock

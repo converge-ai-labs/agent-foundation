@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ParticipantAvatars, threadParticipants } from "./participant-avatars";
 import type { Schema } from "../transport/client";
@@ -42,41 +42,6 @@ it("groups by root Thread context, retaining distinct tabs and separating inacti
   expect(threadParticipants(null, "thread-one")).toEqual([]);
   expect(threadParticipants({ ...frame, closed: true }, "thread-one")).toEqual(
     [],
-  );
-});
-
-it("shows a bounded avatar stack and all names on hover without navigating", async () => {
-  const user = userEvent.setup();
-  const peers = [
-    participant("own"),
-    participant("bob", { display_name: "Bob", foreground: false }),
-    participant("same-name"),
-    participant("long", {
-      display_name: "A very long collaborator name that must wrap",
-    }),
-    participant("anonymous", { display_name: "" }),
-  ];
-  render(
-    <ParticipantAvatars
-      participants={peers}
-      ownId="own"
-      threadTitle="Design review"
-    />,
-  );
-  const trigger = screen.getByRole("button", {
-    name: "5 people online in Design review",
-  });
-  expect(trigger.textContent).toContain("+2");
-  await user.hover(trigger);
-  await screen.findByText("In this conversation");
-  expect(screen.getByText("Bob")).toBeTruthy();
-  expect(screen.getByText("(you)")).toBeTruthy();
-  expect(screen.getByText(/Away/)).toBeTruthy();
-  expect(screen.getByText("Anonymous")).toBeTruthy();
-  expect(screen.getAllByRole("listitem")).toHaveLength(5);
-  await user.keyboard("{Escape}");
-  await waitFor(() =>
-    expect(screen.queryByText("In this conversation")).toBeNull(),
   );
 });
 

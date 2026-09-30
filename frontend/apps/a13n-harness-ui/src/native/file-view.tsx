@@ -23,7 +23,8 @@ import {
   type LineRange,
 } from "./buffer";
 import { CaptureContext, downloadBlob } from "./capture";
-import { FileImage, isImagePath } from "./file-image";
+import { FileMedia } from "./file-media";
+import { mediaKind, MAX_MEDIA_BYTES } from "./media-kind";
 import styles from "./native.module.css";
 
 export function FileView({
@@ -153,8 +154,9 @@ export function FileView({
   };
   const editable = buffer.base.presentation === "text";
   const markdown = editable && /\.(?:md|markdown)$/i.test(path);
-  const image =
-    !editable && (isImagePath(path) || isImagePath(buffer.base.resolved_path));
+  const media = !editable
+    ? (mediaKind(path) ?? mediaKind(buffer.base.resolved_path))
+    : null;
   const refreshContent = async () => {
     const revision = buffer.base.entry.revision;
     const next = await read.refetch();
@@ -172,7 +174,7 @@ export function FileView({
         </strong>
         <span>
           {buffer.base.entry.size.toLocaleString()} bytes ·{" "}
-          {image ? "image" : buffer.base.presentation.replace("_", " ")}
+          {media ?? buffer.base.presentation.replace("_", " ")}
         </span>
       </header>
       <div className={styles.path}>{path}</div>
@@ -420,19 +422,22 @@ export function FileView({
             />
           </div>
         )
-      ) : image ? (
-        buffer.base.entry.size <= 10 * 1024 * 1024 ? (
-          <FileImage
+      ) : media ? (
+        buffer.base.entry.size <= MAX_MEDIA_BYTES ? (
+          <FileMedia
             key={`${path}:${buffer.base.entry.revision}:${imageAttempt}`}
             path={path}
             revision={buffer.base.entry.revision}
             retry={() => void refreshContent()}
+            kind={media}
           />
         ) : (
           <div className={styles.empty}>
-            <h3>Image exceeds the preview limit</h3>
+            <h3>
+              {media === "image" ? "Image" : "Media"} exceeds the preview limit
+            </h3>
             <p>
-              Image previews and downloads support up to 10 MiB. Use another
+              Media previews and downloads support up to 10 MiB. Use another
               native workflow for larger files.
             </p>
           </div>

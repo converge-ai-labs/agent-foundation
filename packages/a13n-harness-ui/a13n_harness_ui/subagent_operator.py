@@ -1046,7 +1046,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
             usage_reporter=self._store.usage.reporter(state.thread_id),
             file_media_understanding=reconstructed.file_media_understanding(state.thread_id),
         )
-        bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
+        bindings = production_run_bindings(
+            bindings,
+            reconstructed.definition_capability_ids,
+            web_ssrf_protection=reconstructed.web_ssrf_protection,
+        )
         return reconstructed.executable.stream(
             input if deferred_resume is None or deferred_resume.recovery else None,
             bindings=bindings,

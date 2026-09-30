@@ -592,6 +592,7 @@
   "Try a different range or fewer filters. Traces may be absent due to sampling, export, or retention.": "尝试其他时间范围或减少筛选条件。采样、导出或保留期限可能导致 Trace 缺失。",
   "Try again": "重试",
   "Try agent": "试用 Agent",
+  "View sessions": "查看会话",
   "Try another search or check the server's authorization.": "尝试其他搜索词，或检查服务端授权。",
   "Unarchive": "取消归档",
   "Unarchive agent": "取消归档 Agent",

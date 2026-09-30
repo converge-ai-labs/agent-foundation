@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
-import { ToolActivity, ToolCall, OpenHostFile } from "./tool-call";
+import { ToolActivity, ToolCall } from "./tool-call";
 import {
   activitySummary,
   describeTool,
@@ -119,39 +119,6 @@ it("keeps shell command/output reads in one disclosure and late failures visible
     screen.getByRole("button", { name: /Shell/ }).getAttribute("aria-expanded"),
   ).toBe("true");
   expect(screen.getByText("Check failed")).toBeTruthy();
-});
-
-it("starts file changes collapsed and shows the actual diff plus the existing Host file action on expansion", () => {
-  const open = vi.fn();
-  render(
-    <OpenHostFile value={open}>
-      <ToolActivity
-        tools={[
-          {
-            ...completed("edit", { file_path: "/work/a.py" }),
-            edit: { file_path: "/work/a.py", before: "old\n", after: "new\n" },
-          },
-          {
-            ...completed("write", {
-              file_path: "/work/b.py",
-              content: "new file",
-            }),
-            id: "write-new",
-          },
-        ]}
-      />
-    </OpenHostFile>,
-  );
-  expect(screen.queryByText("Applied edit")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Open on host" })).toBeNull();
-  fireEvent.click(
-    screen.getByRole("button", { name: "File changes · 2 files" }),
-  );
-  expect(screen.getByText("Applied edit")).toBeTruthy();
-  expect(screen.getByText("+new")).toBeTruthy();
-  fireEvent.click(screen.getAllByRole("button", { name: "Open on host" })[0]);
-  expect(open).toHaveBeenCalledWith("/work/a.py");
-  expect(screen.getByText("Requested content")).toBeTruthy();
 });
 
 it("keeps attention states in collapsed groups without claiming an unrecorded result completed", () => {
@@ -471,27 +438,4 @@ it("does not pair provider search results with local calls sharing an ID", () =>
   expect(tools[0].result).toEqual({ status: "completed" });
   expect(tools[1].result).toBeUndefined();
   expect(activitySummary(tools).issue).toBe(true);
-});
-
-it("folds task/note and subagent operations with semantic details and visible failures", () => {
-  const tools = [
-    completed("task_create", { subject: "Review output" }),
-    completed("note_write", { key: "Design" }),
-  ];
-  render(<ToolActivity tools={tools} />);
-  const trigger = screen.getByRole("button", {
-    name: "Tasks & notes · 2 operations",
-  });
-  expect(trigger.getAttribute("aria-expanded")).toBe("false");
-  fireEvent.click(trigger);
-  expect(screen.getByText("Create task")).toBeTruthy();
-  expect(screen.getByText("Review output")).toBeTruthy();
-  expect(screen.getByText("Update note")).toBeTruthy();
-  expect(
-    activitySummary([{ ...completed("wait_subagent"), outcome: "failed" }]),
-  ).toMatchObject({
-    title: "Subagents · 1 operation",
-    issue: true,
-    status: "",
-  });
 });

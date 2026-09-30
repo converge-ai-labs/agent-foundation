@@ -301,8 +301,8 @@ function NewConversation({
   );
   const openConversation = () => {
     // Admission and page observation are independent. Open the retained identity
-    // immediately so detail, history, focused output and the shared editor can
-    // initialize together behind the destination's first-observation gate.
+    // immediately. Confirmed local input keeps the destination readable while
+    // detail, history, focused output and the shared editor initialize.
     if (!active.current) return;
     navigate(`/threads/${encodeURIComponent(threadId)}?compose=1`, {
       replace: true,

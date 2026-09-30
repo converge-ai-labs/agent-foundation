@@ -685,7 +685,7 @@ it("distinguishes inherited choices and sends an independent model without chang
   });
 });
 
-it("reveals the new conversation together after detail, history and editor initialize", async () => {
+it("keeps accepted input and the next prompt visible while the new conversation loads", async () => {
   let resume!: () => void;
   let resumeHistory!: () => void;
   readPaused = focusPaused = new Promise<void>((resolve) => {
@@ -707,13 +707,21 @@ it("reveals the new conversation together after detail, history and editor initi
   const editor = view.container.querySelector('[role="textbox"]')!;
   const input = screen.getByText("Build this");
   expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
-  expect(screen.queryByRole("textbox", { name: "Shared prompt" })).toBeNull();
-  expect(screen.getByText("Opening conversation…")).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(input.closest("[inert]")).toBeNull();
+  expect(screen.queryByText("Opening conversation…")).toBeNull();
+  expect(
+    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(document.activeElement).toBe(editor);
   expect(writes).toHaveLength(2);
   await act(async () => resume());
   await waitFor(() => expect(reads).toContain(`/api/threads/${id}/transcript`));
   expect(drafts.get(id)!.status).toBe("Connected");
-  expect(screen.queryByRole("textbox", { name: "Shared prompt" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(screen.getByText("Build this")).toBe(input);
+  expect(screen.queryByText("Opening conversation…")).toBeNull();
   await act(async () => resumeHistory());
   expect(await screen.findByRole("textbox", { name: "Shared prompt" })).toBe(
     editor,

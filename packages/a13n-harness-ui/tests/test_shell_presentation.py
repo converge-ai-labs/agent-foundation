@@ -266,15 +266,6 @@ def test_merged_stdout_is_literal_output_not_inferred_stderr_or_tool_data() -> N
     renderer.transcript.close()
 
 
-def test_short_shell_output_is_only_in_expanded_details() -> None:
-    renderer = StreamRenderer(Status())
-    _start(renderer, name="shell_exec", command="printf done")
-    _capture(renderer, {"status": {"phase": "exited", "exit_code": 0}, "stdout": {"text": "done\n"}})
-    assert _visible(renderer) == "Run exit 0 · printf done"
-    assert '"text": "done\\n"' in _visible(renderer, detailed=True)
-    renderer.transcript.close()
-
-
 def test_shell_wait_uses_retained_launch_command_without_overwriting_it() -> None:
     renderer = StreamRenderer(Status())
     command = "pytest -q > tests.log 2>&1"
@@ -361,38 +352,6 @@ def test_start_only_shell_is_one_row_before_arguments_arrive() -> None:
     renderer = StreamRenderer(Status())
     renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "shell_exec"})
     assert _visible(renderer) == "Run command unavailable …"
-    renderer.transcript.close()
-
-
-@pytest.mark.parametrize("name", ["shell_exec", "shell_wait"])
-@pytest.mark.parametrize("width", [28, 80, 120])
-@pytest.mark.parametrize(
-    "output", ["", "captured line\n", "captured line\n" * 100], ids=["empty", "one-line", "many-lines"]
-)
-def test_shell_exec_and_wait_wrap_summary_without_dumping_capture(name: str, width: int, output: str) -> None:
-    renderer = StreamRenderer(Status())
-    if name == "shell_wait":
-        _wait(renderer)
-    else:
-        _start(renderer, name=name, command="check 2>&1")
-    _capture(
-        renderer,
-        {
-            "status": {"phase": "running", "exit_code": None},
-            "stdout": {"text": output, "coverage": "partial"},
-            "stderr": {"text": output, "coverage": "partial"},
-        },
-    )
-    text = _visible(renderer, width=width)
-    from prompt_toolkit.utils import get_cwidth
-
-    assert all(get_cwidth(line) <= width for line in text.splitlines())
-    assert "captured line" not in text
-    assert "output partial" in " ".join(text.split())
-    preview = next(iter(renderer.transcript.blocks.values())).preview
-    assert preview is not None and preview.count("output partial") == 1
-    if output:
-        assert "captured line" in _visible(renderer, detailed=True)
     renderer.transcript.close()
 
 

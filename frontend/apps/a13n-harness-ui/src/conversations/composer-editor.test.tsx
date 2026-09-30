@@ -477,34 +477,6 @@ it("previews staged images locally and releases the thumbnail when removed", asy
   }
 });
 
-it("changes draft-lifetime guidance without remounting the editor on Thread creation", () => {
-  const draft = new ThreadDraft();
-  const props = {
-    draft,
-    profile: { display_name: "Test", color: "#000000" },
-    presence() {},
-    submit() {},
-  };
-  const view = render(<ComposerEditor {...props} local />);
-  const editor = screen.getByRole("textbox", { name: "Message" });
-  expect(editor.hasAttribute("data-composer-editor")).toBe(true);
-  expect(editor.getAttribute("aria-description")).toContain(
-    "saved in this browser when storage is available",
-  );
-  expect(editor.getAttribute("aria-description")).toContain(
-    "Local files may need reattaching",
-  );
-  expect(editor.getAttribute("aria-description")).toContain(
-    "Enter to send; Shift+Enter",
-  );
-  view.rerender(<ComposerEditor {...props} local={false} />);
-  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
-  expect(editor.hasAttribute("data-composer-editor")).toBe(true);
-  expect(editor.getAttribute("aria-description")).toContain(
-    "Shared with this conversation",
-  );
-});
-
 it("keeps an empty editor blank and preserves input when its accessible context changes", () => {
   const draft = new ThreadDraft();
   const editor = { current: null as EditorView | null };

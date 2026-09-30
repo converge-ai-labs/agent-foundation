@@ -13,6 +13,7 @@ from types import MappingProxyType
 from typing import Annotated, Any, Literal, get_args, get_origin
 from urllib.parse import urlsplit
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_logging import LogFile, LogFormat
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
@@ -394,6 +395,7 @@ class Composer(Section):
 class Providers(Section):
     """Outbound network policy, call bounds and browser authorization flows for every provider and connection."""
 
+    ssrf_protection: bool = True
     private_domains: tuple[str, ...] = ()
     private_cidrs: tuple[str, ...] = ()
     http_origins: tuple[str, ...] = ()
@@ -414,6 +416,16 @@ class Providers(Section):
     # Per-read timeout of one model exchange; reasoning models can stay silent for minutes.
     model_timeout: float = Field(default=300, gt=0, le=3600)
     response_bytes: int = Field(default=16777216, ge=65536, le=268435456)
+
+    @property
+    def endpoint_policy(self) -> EndpointPolicy:
+        return EndpointPolicy.from_operator_allowlist(
+            private_domains=self.private_domains,
+            private_cidrs=self.private_cidrs,
+            http_origins=self.http_origins,
+            require_https=self.require_https,
+            ssrf_protection=self.ssrf_protection,
+        )
 
 
 class Telemetry(Section):
@@ -454,7 +466,7 @@ class Telemetry(Section):
             return None
         return LogFile(path=self.log_file, max_bytes=self.log_file_max_mb * 1024 * 1024, backups=self.log_file_backups)
 
-    def trace_config(self) -> TraceProvider | None:
+    def trace_config(self, *, ssrf_protection: bool = True) -> TraceProvider | None:
         """The selected backend, for export and query; None when disabled. Each backend checks its own keys."""
         url = self.trace_url.rstrip("/") if self.trace_url else None
         timeout = self.trace_query_timeout
@@ -462,9 +474,21 @@ class Telemetry(Section):
             case "none":
                 return None
             case "langfuse":
-                return Langfuse.configure(url, self.langfuse_public_key, self.langfuse_secret_key, timeout=timeout)
+                return Langfuse.configure(
+                    url,
+                    self.langfuse_public_key,
+                    self.langfuse_secret_key,
+                    timeout=timeout,
+                    ssrf_protection=ssrf_protection,
+                )
             case "logfire":
-                return Logfire.configure(url, self.logfire_write_token, self.logfire_read_token, timeout=timeout)
+                return Logfire.configure(
+                    url,
+                    self.logfire_write_token,
+                    self.logfire_read_token,
+                    timeout=timeout,
+                    ssrf_protection=ssrf_protection,
+                )
 
 
 class Settings(Section):

@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import socket
 from io import BytesIO
-from typing import Any, cast
 
-import httpcore2
 import pytest
 from a13n_harness import RunBindings
 from a13n_harness.capabilities import (
@@ -12,9 +11,8 @@ from a13n_harness.capabilities import (
     WebProviderError,
 )
 from a13n_harness_ui.capability_runtime import (
+    HttpWebPolicy,
     LocalDocumentConverter,
-    PublicWebPolicy,
-    _PinnedNetworkBackend,
     production_run_bindings,
 )
 from openpyxl import Workbook
@@ -22,31 +20,47 @@ from openpyxl import Workbook
 pytestmark = pytest.mark.anyio
 
 
-async def test_public_web_policy_rejects_loopback_destinations() -> None:
-    policy = PublicWebPolicy()
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/private",
+        "https://[::1]/",
+        "http://10.0.0.8/",
+        "http://169.254.169.254/",
+        "http://localhost./",
+        "http://app.localhost/",
+    ],
+)
+async def test_web_literal_destination_guard_is_opt_in(url: str, enabled: bool) -> None:
+    policy = HttpWebPolicy(ssrf_protection=enabled)
+    if enabled:
+        with pytest.raises(WebProviderError) as denied:
+            await policy.authorize(url, purpose="fetch")
+        assert denied.value.code == "web_destination_denied"
+    else:
+        await policy.authorize(url, purpose="fetch")
 
-    with pytest.raises(WebProviderError) as denied:
-        await policy.authorize("http://127.0.0.1/private", purpose="fetch")
 
-    assert denied.value.code == "web_destination_denied"
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_web_policy_never_resolves_hostnames(monkeypatch: pytest.MonkeyPatch, enabled: bool) -> None:
+    def unexpected_dns(*args, **kwargs):
+        pytest.fail("URL authorization must not depend on local DNS")
+
+    monkeypatch.setattr(socket, "getaddrinfo", unexpected_dns)
+    await HttpWebPolicy(ssrf_protection=enabled).authorize("https://proxy-only.test/page", purpose="fetch")
+    await HttpWebPolicy(ssrf_protection=enabled).authorize("https://93.184.216.34/page", purpose="fetch")
 
 
-async def test_authorized_dns_result_is_pinned_for_the_actual_connection() -> None:
-    connected: list[str] = []
-
-    class _Backend:
-        async def connect_tcp(self, host: str, port: int, **kwargs: Any):
-            del port, kwargs
-            connected.append(host)
-            return cast(httpcore2.AsyncNetworkStream, object())
-
-    backend = _PinnedNetworkBackend()
-    backend._delegate = cast(httpcore2.AsyncNetworkBackend, _Backend())
-    backend.pin("public.example", 443, ("93.184.216.34",))
-
-    await backend.connect_tcp("public.example", 443)
-
-    assert connected == ["93.184.216.34"]
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize(
+    "url",
+    ["file:///etc/passwd", "https:///page", "https://example.com:65536", "https://[bad]/", "http://example.com:0/"],
+)
+async def test_web_url_validation_remains_enabled(url: str, enabled: bool) -> None:
+    with pytest.raises(WebProviderError) as invalid:
+        await HttpWebPolicy(ssrf_protection=enabled).authorize(url, purpose="fetch")
+    assert invalid.value.code == "web_url_invalid"
 
 
 async def test_local_document_converter_converts_a_real_workbook() -> None:
@@ -87,6 +101,10 @@ def test_production_capabilities_bind_only_required_fresh_collaborators() -> Non
     assert isinstance(documents.document_converter, LocalDocumentConverter) and documents.web is None
     assert web.web is not production_run_bindings(baseline, frozenset({"a13n.web"})).web
     assert web.instance is baseline.instance and documents.instance is baseline.instance
+    assert isinstance(web.web.policy, HttpWebPolicy) and not web.web.policy.ssrf_protection
+    guarded = production_run_bindings(baseline, frozenset({"a13n.web"}), web_ssrf_protection=True)
+    assert guarded.web is not None
+    assert isinstance(guarded.web.policy, HttpWebPolicy) and guarded.web.policy.ssrf_protection
 
 
 async def test_existing_web_yaml_runs_host_scrape_with_search_off(monkeypatch: pytest.MonkeyPatch) -> None:

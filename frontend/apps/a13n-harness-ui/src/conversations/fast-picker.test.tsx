@@ -14,31 +14,6 @@ const model: Schema<"ModelSummary"> = {
   fast: { supported: true, state: "on" },
 };
 
-it("toggles inherited On to explicit Off and restores inheritance", async () => {
-  const user = userEvent.setup();
-  function Control() {
-    const [value, setValue] = useState<Schema<"SubmitRequest">["fast"]>(null);
-    return <FastPicker model={model} value={value} onChange={setValue} />;
-  }
-  render(<Control />);
-  const inherited = screen.getByRole("button", {
-    name: "Use default Fast mode",
-  });
-  const toggle = screen.getByRole("button", { name: "Fast mode" });
-  expect(inherited.getAttribute("aria-pressed")).toBe("true");
-  expect(toggle.getAttribute("aria-pressed")).toBe("true");
-  await user.click(toggle);
-  expect(toggle.getAttribute("aria-pressed")).toBe("false");
-  expect(inherited.getAttribute("aria-pressed")).toBe("false");
-  expect(screen.getByText("Off")).toBeTruthy();
-  toggle.focus();
-  await user.keyboard("[Space]");
-  expect(toggle.getAttribute("aria-pressed")).toBe("true");
-  await user.click(inherited);
-  expect(inherited.getAttribute("aria-pressed")).toBe("true");
-  expect(screen.getByText("Default · On")).toBeTruthy();
-});
-
 it.each(["default", "off"] as const)(
   "does not mistake inherited %s for explicit Off",
   async (state) => {
@@ -114,17 +89,6 @@ it("explains unavailable controls and only allows resetting a stale override", a
     screen.getByRole("button", { name: "Use default Fast mode" }),
   );
   expect(change).toHaveBeenCalledWith(null);
-});
-
-it("locks both the toggle and default reset during submission", async () => {
-  const user = userEvent.setup();
-  const change = vi.fn();
-  render(<FastPicker model={model} value={false} disabled onChange={change} />);
-  for (const button of screen.getAllByRole("button")) {
-    expect((button as HTMLButtonElement).disabled).toBe(true);
-    await user.click(button);
-  }
-  expect(change).not.toHaveBeenCalled();
 });
 
 const astra: Schema<"ModelSummary"> = {

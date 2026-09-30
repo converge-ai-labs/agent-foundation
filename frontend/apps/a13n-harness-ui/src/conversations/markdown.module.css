@@ -16,6 +16,18 @@
   line-height: inherit;
   color: inherit;
 }
+.linkedPreview {
+  margin: 12px 0 18px;
+  max-width: 640px;
+  padding: 12px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+  background: var(--a13n-surface);
+}
+.linkedPreview img,
+.linkedPreview video {
+  max-height: 360px;
+}
 .markdown ul,
 .markdown ol {
   padding-left: 24px;

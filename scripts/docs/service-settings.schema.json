@@ -1009,6 +1009,11 @@
       "additionalProperties": false,
       "description": "Outbound network policy, call bounds and browser authorization flows for every provider and connection.",
       "properties": {
+        "ssrf_protection": {
+          "default": true,
+          "title": "Ssrf Protection",
+          "type": "boolean"
+        },
         "private_domains": {
           "default": [],
           "items": {

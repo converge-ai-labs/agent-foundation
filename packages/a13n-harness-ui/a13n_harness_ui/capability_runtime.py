@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import ipaddress
-import socket
-import ssl
-from collections.abc import AsyncIterable, AsyncIterator, Collection, Iterable
+from collections.abc import AsyncIterator, Collection
 from dataclasses import replace
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, cast
 from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 from uuid import uuid4
 
-import httpcore2
 import httpx2
 from a13n_harness.capabilities import (
     DocumentConversionError,
@@ -37,8 +33,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID
 from a13n_harness.context import AgentContext, RunBindings
-from a13n_harness.providers.http_transport import EnvironmentProxyClient
-from anyio import getaddrinfo, to_thread
+from anyio import to_thread
 from pydantic_ai import RunContext
 from pydantic_ai.messages import FilePart
 
@@ -47,140 +42,40 @@ _USER_AGENT = "a13n-harness-ui/0 web tools"
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
-class PublicWebPolicy(WebPolicy):
-    """Allow public HTTP(S) destinations and return the exact authorized addresses."""
+class HttpWebPolicy(WebPolicy):
+    """Validate HTTP(S) URLs with an optional, DNS-free literal destination guard."""
+
+    def __init__(self, *, ssrf_protection: bool = False) -> None:
+        self.ssrf_protection = ssrf_protection
 
     async def authorize(self, url: str, *, purpose: str) -> None:
-        await self.resolve(url, purpose=purpose)
-
-    async def resolve(self, url: str, *, purpose: str) -> tuple[str, ...]:
         del purpose
-        parsed = urlsplit(url)
-        hostname = parsed.hostname
-        if parsed.scheme not in {"http", "https"} or hostname is None:
-            raise WebProviderError("web_url_invalid")
-        if hostname.casefold() == "localhost" or hostname.casefold().endswith(".localhost"):
-            raise WebProviderError("web_destination_denied")
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
         try:
-            resolved = await getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
-        except OSError as exc:
-            raise WebProviderError("web_dns_failed") from exc
-        addresses = tuple(dict.fromkeys(item[4][0] for item in resolved))
-        if not addresses:
-            raise WebProviderError("web_dns_failed")
-        if any(not ipaddress.ip_address(address).is_global for address in addresses):
+            parsed = urlsplit(url)
+            hostname = parsed.hostname
+            port = parsed.port
+        except ValueError as exc:
+            raise WebProviderError("web_url_invalid") from exc
+        if parsed.scheme not in {"http", "https"} or not hostname or port == 0:
+            raise WebProviderError("web_url_invalid")
+        if not self.ssrf_protection:
+            return
+        hostname = hostname.rstrip(".").casefold()
+        if hostname == "localhost" or hostname.endswith(".localhost"):
             raise WebProviderError("web_destination_denied")
-        return addresses
-
-
-class _PinnedNetworkBackend(httpcore2.AsyncNetworkBackend):
-    """Connect original HTTP origins only through policy-authorized IP addresses."""
-
-    def __init__(self) -> None:
-        self._delegate = cast(httpcore2.AsyncNetworkBackend, httpcore2.AnyIOBackend())
-        self._pins: dict[tuple[str, int], tuple[str, ...]] = {}
-
-    def pin(self, host: str, port: int, addresses: tuple[str, ...]) -> None:
-        self._pins[(host.casefold(), port)] = addresses
-
-    async def connect_tcp(
-        self,
-        host: str,
-        port: int,
-        timeout: float | None = None,
-        local_address: str | None = None,
-        socket_options: Iterable[tuple[Any, ...]] | None = None,
-    ) -> httpcore2.AsyncNetworkStream:
-        addresses = self._pins.get((host.casefold(), port))
-        if addresses is None:
-            raise WebProviderError("web_destination_not_authorized")
-        last_error: OSError | None = None
-        for address in addresses:
-            try:
-                return await self._delegate.connect_tcp(
-                    address,
-                    port,
-                    timeout=timeout,
-                    local_address=local_address,
-                    socket_options=socket_options,
-                )
-            except OSError as exc:
-                last_error = exc
-        raise WebProviderError("web_connect_failed") from last_error
-
-    async def connect_unix_socket(
-        self,
-        path: str,
-        timeout: float | None = None,
-        socket_options: Iterable[tuple[Any, ...]] | None = None,
-    ) -> httpcore2.AsyncNetworkStream:
-        del path, timeout, socket_options
-        raise WebProviderError("web_destination_denied")
-
-    async def sleep(self, seconds: float) -> None:
-        await self._delegate.sleep(seconds)
-
-
-class _CoreResponseStream(httpx2.AsyncByteStream):
-    def __init__(self, stream: AsyncIterable[bytes]) -> None:
-        self._stream = stream
-
-    async def __aiter__(self) -> AsyncIterator[bytes]:
-        async for chunk in self._stream:
-            yield chunk
-
-    async def aclose(self) -> None:
-        close = getattr(self._stream, "aclose", None)
-        if close is not None:
-            await close()
-
-
-class _PinnedTransport(httpx2.AsyncBaseTransport):
-    def __init__(self, backend: _PinnedNetworkBackend) -> None:
-        self._pool = httpcore2.AsyncConnectionPool(
-            ssl_context=ssl.create_default_context(),
-            network_backend=backend,
-        )
-
-    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
-        response = await self._pool.handle_async_request(
-            httpcore2.Request(
-                method=request.method,
-                url=httpcore2.URL(
-                    scheme=request.url.raw_scheme,
-                    host=request.url.raw_host,
-                    port=request.url.port,
-                    target=request.url.raw_path,
-                ),
-                headers=request.headers.raw,
-                content=request.stream,
-                extensions=request.extensions,
-            )
-        )
-        if not isinstance(response.stream, AsyncIterable):
-            raise WebProviderError("web_response_stream_invalid")
-        return httpx2.Response(
-            status_code=response.status,
-            headers=response.headers,
-            stream=_CoreResponseStream(response.stream),
-            extensions=response.extensions,
-        )
-
-    async def aclose(self) -> None:
-        await self._pool.aclose()
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError:
+            return
+        if not address.is_global:
+            raise WebProviderError("web_destination_denied")
 
 
 class HttpxWebClient:
     """Bounded async HTTP transport with explicit per-hop policy checks."""
 
     async def request(self, request: WebRequest, *, policy: WebPolicy) -> WebResponse:
-        if not isinstance(policy, PublicWebPolicy):
-            raise WebProviderError("web_policy_unsupported")
-        backend = _PinnedNetworkBackend()
-        client = EnvironmentProxyClient(
-            _PinnedTransport(backend),
-            verify=ssl.create_default_context(),
+        client = httpx2.AsyncClient(
             follow_redirects=False,
             timeout=httpx2.Timeout(request.deadline_seconds),
             headers={"User-Agent": _USER_AGENT},
@@ -190,13 +85,7 @@ class HttpxWebClient:
         redirects = 0
         try:
             while True:
-                parsed = urlsplit(current_url)
-                hostname = parsed.hostname
-                if hostname is None:
-                    raise WebProviderError("web_url_invalid")
-                port = parsed.port or (443 if parsed.scheme == "https" else 80)
-                addresses = await policy.resolve(current_url, purpose=request.purpose)
-                backend.pin(hostname, port, addresses)
+                await policy.authorize(current_url, purpose=request.purpose)
                 response = await client.send(
                     client.build_request(request.method, current_url),
                     stream=True,
@@ -252,7 +141,7 @@ class HttpxWebClient:
 class DuckDuckGoSearchProvider:
     """Keyless bounded Host search through DuckDuckGo's HTML endpoint."""
 
-    def __init__(self, client: HttpxWebClient, policy: PublicWebPolicy) -> None:
+    def __init__(self, client: HttpxWebClient, policy: HttpWebPolicy) -> None:
         self._client = client
         self._policy = policy
 
@@ -334,12 +223,14 @@ class LocalDocumentConverter:
 def production_run_bindings(
     bindings: RunBindings,
     owner_capability_ids: Collection[str],
+    *,
+    web_ssrf_protection: bool = False,
 ) -> RunBindings:
     """Supply fresh Host collaborators required by one logical Harness Run."""
 
     if WEB_CAPABILITY_ID in owner_capability_ids:
         client = HttpxWebClient()
-        policy = PublicWebPolicy()
+        policy = HttpWebPolicy(ssrf_protection=web_ssrf_protection)
         bindings = replace(
             bindings,
             web=WebBinding(
@@ -569,8 +460,8 @@ def _table_cell(value: str) -> str:
 __all__ = [
     "DuckDuckGoSearchProvider",
     "HtmlScrapeProvider",
+    "HttpWebPolicy",
     "HttpxWebClient",
     "LocalDocumentConverter",
-    "PublicWebPolicy",
     "production_run_bindings",
 ]

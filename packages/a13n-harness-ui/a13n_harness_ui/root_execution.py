@@ -449,7 +449,11 @@ class RootRunExecutor:
                     else None
                 ),
             )
-            bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
+            bindings = production_run_bindings(
+                bindings,
+                reconstructed.definition_capability_ids,
+                web_ssrf_protection=reconstructed.web_ssrf_protection,
+            )
             record_phase_result(
                 preparation_span,
                 status="completed",

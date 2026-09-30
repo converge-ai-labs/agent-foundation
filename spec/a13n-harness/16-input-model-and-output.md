@@ -9,7 +9,7 @@ The Harness preserves native Pydantic AI input, Model, settings, profile, messag
 3. input-only convenience layers that immediately materialize selected model-characteristics and model-settings aliases;
 4. optional fresh run-scoped resolution of a logical model ID;
 5. one automatic request-correlation header derived from the active Thread;
-6. optional exact one-shot provider-history self-healing;
+6. default-on exact one-shot provider-history self-healing with an explicit build-time opt-out;
 7. bounded logical-run recovery after a recoverable model interruption;
 8. optional native image generation with Host-owned saving.
 
@@ -340,27 +340,29 @@ The tool execution boundary does not duplicate Filter behavior. It preserves nat
 
 Former global history processors resolve to one current owner:
 
-| Behavior                                                                      | Owner                                                        |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Orphan and duplicate ordinary tool results                                    | Mandatory `MessageIntegrityFilterCapability`                 |
-| Unsupported, unsafe, or over-limit request media                              | Optional `ContentFilterCapability`                           |
-| Request-only image splitting, compression, newest-first count, and GIF policy | AgentSpec-configured `ImageFilterCapability`                 |
-| Cold-cache reduction of already-consumed tool-result strings                  | AgentSpec-configured `ColdStartFilterCapability`             |
-| Current tool-return redaction, bounds, and spill                              | `ToolExecutionBoundaryCapability`                            |
-| Runtime, file, Environment, handoff, working-state, and process notices       | Their focused context or Environment Capabilities            |
-| Accepted live user or Agent messages                                          | Native enqueue plus Host delivery acceptance                 |
-| Other media acquisition, transformation, or upload                            | Optional Media Capability/provider integration               |
-| System instructions and provider request rendering                            | `AgentSpec`, native Model profile, and provider adapter      |
-| Exact provider-history rejection repair                                       | Selected `SelfHealingModelCapability` and `SelfHealingModel` |
-| Interrupted-history normalization and `ModelAttempt` recovery                 | Harness state recovery and `HarnessRunStream`                |
+| Behavior                                                                      | Owner                                                          |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Orphan and duplicate ordinary tool results                                    | Mandatory `MessageIntegrityFilterCapability`                   |
+| Unsupported, unsafe, or over-limit request media                              | Optional `ContentFilterCapability`                             |
+| Request-only image splitting, compression, newest-first count, and GIF policy | AgentSpec-configured `ImageFilterCapability`                   |
+| Cold-cache reduction of already-consumed tool-result strings                  | AgentSpec-configured `ColdStartFilterCapability`               |
+| Current tool-return redaction, bounds, and spill                              | `ToolExecutionBoundaryCapability`                              |
+| Runtime, file, Environment, handoff, working-state, and process notices       | Their focused context or Environment Capabilities              |
+| Accepted live user or Agent messages                                          | Native enqueue plus Host delivery acceptance                   |
+| Other media acquisition, transformation, or upload                            | Optional Media Capability/provider integration                 |
+| System instructions and provider request rendering                            | `AgentSpec`, native Model profile, and provider adapter        |
+| Exact provider-history rejection repair                                       | Default-on `SelfHealingModelCapability` and `SelfHealingModel` |
+| Interrupted-history normalization and `ModelAttempt` recovery                 | Harness state recovery and `HarnessRunStream`                  |
 
-Malformed current tool arguments, ordinary provider reasoning projection, and transport retry remain upstream Model/adapter/client concerns rather than generic Filters. An exact residual provider incompatibility uses an explicitly selected `SelfHealingModelCapability` or another narrowly scoped compatibility Capability only when the native profile lacks the required public behavior.
+Malformed current tool arguments, ordinary provider reasoning projection, and transport retry remain upstream Model/adapter/client concerns rather than generic Filters. An exact residual provider incompatibility uses `SelfHealingModelCapability` or another narrowly scoped compatibility Capability only when the native profile lacks the required public behavior.
 
 ## Narrow Self-Healing
 
-`SelfHealingModelCapability` is an optional code-first Capability with stable ID `a13n.model.self-healing`. It is not installed by default. Applications that need the supported repairs should select it explicitly through an Agent definition, native Agent spec, run binding, or trusted plugin contribution.
+`SelfHealingModelCapability` is a code-first Capability with stable ID `a13n.model.self-healing`. `HarnessBuilder` installs it by default for every built Agent, including inline children. `HarnessBuilder(self_healing_enabled=False)` disables automatic installation without removing an explicitly selected Capability or an explicitly wrapped `SelfHealingModel`. A Capability selected through the definition, a Host-authorized native Agent spec, or a trusted plugin contribution takes precedence over the automatic default, preserving its configured rules without installing a duplicate. Run bindings remain restricted to their documented runtime policy and MCP types.
 
-The Capability runs at the innermost model-request wrapper boundary. After logical resolution and native model inference have selected the effective request Model, it copies the request context and wraps that Model exactly once in `SelfHealingModel`. This preserves the native resolver chain, covers concrete, run-resolved, and natively inferred Models uniformly, and leaves the original request context unchanged. An already wrapped Model is reused.
+The default also applies to compaction's nested request through the same Agent. Independent native auxiliary Agents for tool review and media understanding inherit Run observation and usage accounting, not the primary Agent's Capability tree; this builder option does not install self-healing on those Agents.
+
+The Capability runs at the innermost model-request wrapper boundary. After logical resolution and native model inference have selected the effective request Model, it copies the request context and wraps that Model exactly once in `SelfHealingModel`. This preserves the native resolver chain, covers concrete, run-resolved, and natively inferred Models uniformly, and leaves the original request context unchanged. An existing `SelfHealingModel` anywhere in the native `WrapperModel.wrapped` chain is reused without replacing its rules or removing outer profile and usage wrappers.
 
 `SelfHealingModelCapability` accepts an optional sequence of `ModelRecoveryRule` values. `None` selects the built-in rules; an explicit empty sequence selects no rules. `SelfHealingModel` has the same rule semantics and preserves the native Model interface and profile.
 
@@ -386,7 +388,7 @@ Default rules are narrow tested provider repairs:
 
 The wrapper does not retry generic transport, rate-limit, tool, output-validation, or cancellation failures. Provider/client `RetryConfig` owns transport retry.
 
-Custom `ModelRecoveryRule` values contain one exact matcher and one history repair function. Their safety is the caller's responsibility; the wrapper still permits at most one replay per request. Selecting the Capability is recommended for production Agents that need these known provider-history repairs; direct `SelfHealingModel` construction remains available for callers that already own one concrete Model.
+Custom `ModelRecoveryRule` values contain one exact matcher and one history repair function. Their safety is the caller's responsibility; the wrapper still permits at most one replay per request. Direct `SelfHealingModel` construction remains available for callers that already own one concrete Model. Applications that require the former opt-in behavior set `self_healing_enabled=False`; existing definitions and Host captures need no schema rewrite, but rebuilding them with the default builder enables these repairs. This is a behavioral compatibility change, not a new general retry policy.
 
 ## ModelAttempt Recovery
 

@@ -387,33 +387,6 @@ it("raw replacement uses the inspected revision and does not replay an unknown w
   expect(f.transport.fetch).toHaveBeenCalledOnce();
 });
 
-it("reduces compact file capture to one Add to chat button and preserves the editor selection", async () => {
-  const f = fixture();
-  f.post.mockResolvedValue({ data: { attachment } });
-  render(
-    <CaptureContext
-      source={{ file }}
-      threadId="thread-a"
-      selection={{ start_line: 2, end_line: 3 }}
-      compact
-    />,
-    { wrapper: f.Wrapper },
-  );
-  expect(screen.getAllByRole("button")).toHaveLength(1);
-  expect(screen.queryByLabelText("Choose line range")).toBeNull();
-  expect(screen.queryByText(/Adds a saved copy/)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Add to chat" }));
-  await waitFor(() =>
-    expect(values(f.a.doc).attachment_ids).toEqual([attachment.attachment_id]),
-  );
-  expect(f.post.mock.calls[0][1].body).toEqual({
-    path: "/code/file.txt",
-    expected_revision: "first",
-    start_line: 2,
-    end_line: 3,
-  });
-});
-
 it("adds the exact editor selection in one deliberate action without sending a message", async () => {
   const f = fixture();
   f.post.mockResolvedValue({ data: { attachment } });

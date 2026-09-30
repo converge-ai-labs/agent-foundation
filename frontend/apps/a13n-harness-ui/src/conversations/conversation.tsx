@@ -152,6 +152,9 @@ function ConversationContent({
   const [showAvailable, setShowAvailable] = useState(false);
   const pageReady = useInitialReady(
     showAvailable ||
+      // A confirmed Send already has readable input. Keep it and the next
+      // prompt visible while the destination observes detail and saved history.
+      draft.localInputs.some((input) => input.state === "accepted") ||
       detail.isError ||
       !!detail.data?.thread.parent_thread_id ||
       (!!detail.data && (!!history.data || history.isError)),

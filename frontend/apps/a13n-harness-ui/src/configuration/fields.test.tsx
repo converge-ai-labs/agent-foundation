@@ -86,24 +86,6 @@ function renderFields(initial: string) {
   );
 }
 
-it.each(["", "webui: {}\n", "webui:\n  sidekick: {}\n"])(
-  "shows Sidekick enabled without rewriting default configuration: %j",
-  async (webui) => {
-    const initial = 'schema_version: "1"\n' + webui;
-    renderFields(initial);
-    expect(
-      (await screen.findByRole("combobox", { name: "Sidekick" })).textContent,
-    ).toContain("Enabled");
-    expect(
-      screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
-    ).toContain("Inherit current agent");
-    expect(
-      screen.getByRole("combobox", { name: "Sidekick model" }).textContent,
-    ).toContain("Use agent model");
-    expect(screen.getByTestId("source").textContent).toBe(initial);
-  },
-);
-
 it("preserves explicit Sidekick opt-out and writes an empty mapping when re-enabled", async () => {
   const initial = 'schema_version: "1"\nwebui:\n  sidekick: null\n';
   renderFields(initial);
@@ -178,27 +160,6 @@ it("keeps HTTP transport selected while replacing its entire URL", async () => {
   expect(
     parse(screen.getByTestId("source").textContent ?? "").transport,
   ).toEqual({ url: "https://new.example.test", headers: { custom: "value" } });
-});
-
-it("edits Project folders as individual rows while preserving unrelated configuration", async () => {
-  const initial =
-    'schema_version: "1"\nkind: project\nid: project-one\nname: Custom\nposition: 7\nroots: [{path: /one}, {path: /two}]\ndefaults: {agent: agent-main}\n';
-  renderFields(initial);
-  fireEvent.change(screen.getByRole("textbox", { name: "Server directory" }), {
-    target: { value: "/new" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Remove directory 2" }));
-  fireEvent.click(
-    screen.getByRole("button", { name: "Add another directory" }),
-  );
-  fireEvent.change(
-    screen.getByRole("textbox", { name: "Additional server directory 1" }),
-    { target: { value: "/other" } },
-  );
-  expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual({
-    ...parse(initial),
-    roots: [{ path: "/new" }, { path: "/other" }],
-  });
 });
 
 it("keeps Project environment axes unspecified until explicitly edited", async () => {

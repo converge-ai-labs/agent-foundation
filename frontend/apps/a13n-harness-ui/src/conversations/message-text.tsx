@@ -6,6 +6,8 @@ import styles from "./markdown.module.css";
 import { linkedHostFile } from "../shell/page-links";
 import { OpenHostFile } from "./tool-call";
 import { syntaxHighlight } from "./syntax-code";
+import { linkedMediaPreviews } from "./linked-media";
+import { LinkedMediaPreview } from "./linked-media-preview";
 
 function MarkdownLink({
   href,
@@ -46,6 +48,14 @@ const components: Components = {
   img: ({ alt }) => <span>[Image: {alt || "attachment"}]</span>,
   pre: MarkdownPre,
   table: MarkdownTable,
+  figure: ({ node, children, ...props }) => {
+    const path = node?.properties.dataHostMediaPath;
+    return typeof path === "string" ? (
+      <LinkedMediaPreview path={path} />
+    ) : (
+      <figure {...props}>{children}</figure>
+    );
+  },
 };
 
 export const MessageText = memo(function MessageText({
@@ -58,7 +68,10 @@ export const MessageText = memo(function MessageText({
       <div className={styles.markdown}>
         <Markdown
           remarkPlugins={[remarkGfm]}
-          rehypePlugins={[syntaxHighlight]}
+          rehypePlugins={[
+            syntaxHighlight,
+            [linkedMediaPreviews, { currentHref: window.location.href }],
+          ]}
           skipHtml
           components={components}
         >
