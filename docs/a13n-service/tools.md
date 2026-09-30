@@ -37,6 +37,8 @@ The files and terminal tools act on the run's mounted [environments](environment
 | `brave`, `perplexity`, `serpapi`                             | search         | `api_key`  |
 | `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `tinyfish` | search, scrape | `api_key`  |
 
+![Console search and scrape provider catalog, including TinyFish](../../.github/assets/console-search-providers.jpg)
+
 Enable each web tool explicitly; enabling the toolset alone enables none of them. Tool configuration:
 
 ```json
@@ -69,6 +71,10 @@ A connection's `status` is `pending` until it has a usable credential, `ready`, 
 Connections have no delete operation. `PATCH {"enabled": false}` stops all use at once, including calls of running agents; `{"enabled": true}` restores it. `POST …/revoke` clears the credential at once and, as a best effort, asks the provider to revoke it remotely, reporting the outcome in `remote_revocation` (`revoked`, `failed`, or `skipped` when there was nothing to revoke remotely). `PATCH` and `revoke` take the connection's `If-Match`; re-read it before changing it, because authorizations and token refreshes change its version. Revoke also works on a connection that is already disabled, or whose workspace is archived: dropping a credential is offboarding, not a change.
 
 ### Remote MCP servers
+
+In Console, open **Connections → New connection** to search and browse the remote MCP server directory. Choose a listed server, or select **Custom Remote MCP** to enter your own endpoint. Connections support OAuth, bearer tokens, static headers, or no authentication, depending on the server.
+
+![Console connection directory with multiple remote MCP servers](../../.github/assets/console-mcp-connection.jpg)
 
 ```sh
 curl -X POST "$A13N_URL/api/v1/connections" \

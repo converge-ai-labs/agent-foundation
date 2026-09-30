@@ -26,6 +26,10 @@ Console 的 **Environments → Templates** 管理模板，**Environments → Ins
 
 环境 provider 是运行环境所用的账号。像其他 [provider](resources.md#providers) 一样，在 `/api/v1/environment-providers` 中创建。`GET /api/v1/provider-types/environment` 返回各类型的配置、凭据和 recipe schema。
 
+![Console 中的 Sandbox 与环境 provider 目录](../../.github/assets/console-sandbox-providers.jpg)
+
+*图中使用 Seed 示例工作空间；Local directory 仅在开发环境中可用。*
+
 | 类型      | 环境                              | 账号                                                                                                            | 停止行为                   |
 | --------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------- |
 | `docker`  | 容器                              | `docker_host`，可指定出站端点策略允许的远程 `tcp://host:port` 或 `https://host:port` Engine。无需凭据。         | 停止容器                   |

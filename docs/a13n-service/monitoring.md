@@ -108,6 +108,10 @@ The outbox also exposes `a13n_outbox_backlog_alert{kind}` for a sustained thresh
 
 Open **Observe → Usage** to inspect the current workspace. Choose the last 7 or 30 days, or apply a custom range of up to 366 days. The overview shows model costs, tokens, cached input, cache rate, Run count, request count and average Run time. Switch the daily chart between Spend and Tokens, then compare Agents or models in the paginated breakdown.
 
+![Console showing 30-day costs, tokens, cache rate, and daily spending](../../.github/assets/service-console.jpg)
+
+*Shown with fictional usage history from the local Seed data.*
+
 Spend includes recorded model costs in USD. Requests without a price are counted separately: a partial subtotal is not the full cost, and entirely unknown costs display as unavailable. Cached input is already included in input tokens. Cache rate divides the summed cached input by summed input, rather than averaging request percentages.
 
 Usage dates follow ingestion time; Run counts follow start time. Average Run time covers started Runs that have sealed, measured from start to seal, including intervening execution waits. A waiting Run seals before human approval; a resumed successor is a separate Run. Late usage can update an earlier day's totals. The chart follows your browser's displayed timezone.

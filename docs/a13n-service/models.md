@@ -9,6 +9,8 @@ An agent calls a **model**: an upstream model of a **model provider** account, w
 
 In Console, open **Models → Add model → Connect a new provider**, or manage providers under **Workspace settings → Providers**. Through the API, create a provider in `/api/v1/model-providers` as described in [Providers](resources.md#providers).
 
+![Console model provider catalog](../../.github/assets/console-model-providers.jpg)
+
 | Type                                                               | Model APIs (default first)                                                        |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
 | `openai`                                                           | `openai.responses`, `openai.chat_completions`                                     |
