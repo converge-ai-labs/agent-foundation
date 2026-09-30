@@ -215,7 +215,7 @@ Harness 默认在 `extra_high` 风险时触发 `deny`；配置 `on_flagged: appr
 
 当前 `RunBindings.deferred_tools_supported` 启用时，`UserInteractionCapability` 为根和子 agent 提供 `ask_user_question`。等待用户时，调用不会让 Harness 执行一直打开。它返回 `status="suspended"`，携带原生请求和可移植状态。Host 随后提供新绑定、之前状态和关联的 `DeferredToolResume`。[内置内联子 agent](delegation-and-codeact.md#host-managed-feedback)显式禁用延后工具；Host 管理的子 agent 使用原生恢复边界。不支持的执行既不提供工具，也不提供其指导。
 
-参见[状态与恢复](state-and-resume.md)。
+请求与答案载荷、应用自定义类型和关联恢复示例见[人机协作工具](human-in-the-loop.md)。[状态与恢复](state-and-resume.md)介绍通用的继续执行生命周期。
 
 ## 媒体、文档与 Web
 

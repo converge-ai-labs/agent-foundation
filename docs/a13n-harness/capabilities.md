@@ -215,7 +215,7 @@ See [Context and working state](context.md#working-state) for configuration, exa
 
 `UserInteractionCapability` exposes `ask_user_question` when current `RunBindings.deferred_tools_supported` is enabled, for both roots and children. The call does not hold an open Harness run while waiting for a person. It produces `status="suspended"` with native requests and portable state. A Host later supplies fresh bindings, previous state, and a correlated `DeferredToolResume`. [Built-in inline children](delegation-and-codeact.md#host-managed-feedback) explicitly disable deferred tools; Host-managed children use the native resume boundary. Unsupported Runs receive neither the tool nor its guidance.
 
-See [State and Resume](state-and-resume.md).
+See [Human-in-the-loop tools](human-in-the-loop.md) for request and answer payloads, application-owned types, and correlated resume examples. [State and Resume](state-and-resume.md) covers the general continuation lifecycle.
 
 ## Media, Documents, and Web
 
