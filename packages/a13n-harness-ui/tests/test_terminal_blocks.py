@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.panels import capability_panel
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
@@ -16,6 +17,7 @@ from prompt_toolkit.data_structures import Point
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.output import DummyOutput
+from prompt_toolkit.styles import Style, default_ui_style, merge_styles
 
 
 def _source(renderer: StreamRenderer) -> str:
@@ -258,6 +260,21 @@ def test_native_theme_and_context_percentage_are_truthful() -> None:
     assert "ctx 0 (0%)" in Status(context_window=100, context_tokens=0).line()
     assert "ctx 38 (38%)" in Status(context_window=100, context_tokens=38).line()
     assert "Cancelling" in Status(state="cancelling").line(20)
+
+
+@pytest.mark.parametrize("environ", [{}, {"COLORFGBG": "15;0"}, {"COLORFGBG": "0;15"}])
+@pytest.mark.parametrize("selected", [False, True])
+def test_native_completion_help_uses_terminal_colors(environ: dict[str, str], selected: bool) -> None:
+    # Application merges our rules with prompt_toolkit's colored menu defaults.
+    style = merge_styles(
+        [default_ui_style(), Style.from_dict(prompt_toolkit_style_rules(resolve_theme("auto", environ=environ)))]
+    )
+    suffix = ".current" if selected else ""
+    command = style.get_attrs_for_style_str(f"class:completion-menu.completion{suffix}")
+    help_text = style.get_attrs_for_style_str(f"class:completion-menu.meta.completion{suffix}")
+    assert command.color == help_text.color == "default"
+    assert command.bgcolor == help_text.bgcolor == "default"
+    assert command.reverse == help_text.reverse == selected
 
 
 def test_multiline_option_text_remains_one_click_target_row() -> None:
