@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness.content import request_input_content
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from a13n_harness.environment.advanced import create_empty_environment_runtime, create_environment_runtime
 from a13n_harness.environment.providers import EnvironmentRuntimeMount
@@ -224,6 +225,14 @@ async def test_routing_guide_tracks_empty_single_multiple_and_default_changes(tm
         bindings=RunBindings.embedded(environment=runtime, toolset_instructions=instructions),
     )
     assert result.output_or_raise() == "done"
+    assert [
+        item.value
+        for message in result.all_messages()
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
+        if item.metadata.display
+    ] == ["Inspect changing environments."]
+    assert "The Environment mounts changed" not in str(result.all_messages())
     expected = [
         (0, None, False),
         (1, "workspace", False),

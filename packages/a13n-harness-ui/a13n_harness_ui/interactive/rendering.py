@@ -637,7 +637,7 @@ class StreamRenderer:
         run_id: str = "root",
         execution_id: str | None = None,
     ) -> None:
-        from a13n_stream_protocol import ContentMetadata
+        from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, ContentMetadata
 
         if payload is None:
             self.gap = True
@@ -661,7 +661,7 @@ class StreamRenderer:
             if state is not None and index in state[1]:
                 return
             media = event_type == "CUSTOM" and payload.get("name") == "a13n.input.media"
-            input_text = event_type == "CUSTOM" and payload.get("name") in {"a13n.input.user", "a13n.input.steering"}
+            input_text = event_type == "CUSTOM" and payload.get("name") in AUTHORED_INPUT_EVENT_NAMES
             if event_type == "TEXT_MESSAGE_CONTENT" or media or input_text:
                 value = payload.get("value")
                 source = value.get("event") if isinstance(value, dict) else None
@@ -1022,7 +1022,7 @@ class StreamRenderer:
                             label = f" · {identity}" if child else ""
                             self.append(f"[System{label}] Retrying model request…\n", kind="notice")
                     return
-                if name in {"a13n.input.user", "a13n.input.steering"}:
+                if name in AUTHORED_INPUT_EVENT_NAMES:
                     content = event.get("content")
                     if isinstance(content, str) and (not child or detailed):
                         self.finish()

@@ -945,8 +945,8 @@ async def test_image_recovery_marks_synthetic_user_content_as_hidden(sequence: b
     reminder = part.content[-1]
     assert isinstance(reminder, TextContent)
     assert "image was removed" in reminder.content
-    assert "original file is unchanged" in reminder.content
-    assert "smaller preview" in reminder.content
+    assert "View it again if you still need it." in reminder.content
+    assert "smaller" not in reminder.content
     assert reminder.metadata == {"display": False, "source_id": "a13n.model.self-healing"}
     if sequence:
         assert part.content[0] == "Actual user text"

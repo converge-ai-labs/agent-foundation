@@ -1,6 +1,11 @@
 import { isRecord, type Client, type ThreadDelta } from "../../service-client";
 import { data, type Schema } from "../../shared/api";
 
+export const AUTHORED_INPUT_EVENT_NAMES: ReadonlySet<string> = new Set([
+  "a13n.input.user",
+  "a13n.input.steering",
+]);
+
 /**
  * One item of a Run's display: a committed item as the Service returned it, or
  * one the thread stream changed since. A live event that carried no time
@@ -196,8 +201,8 @@ function content(
 function inputText(event: ThreadDelta["event"]) {
   if (
     event.type !== "CUSTOM" ||
-    (event.name !== "a13n.input.user" &&
-      event.name !== "a13n.input.steering") ||
+    typeof event.name !== "string" ||
+    !AUTHORED_INPUT_EVENT_NAMES.has(event.name) ||
     !isRecord(event.value) ||
     !isRecord(event.value.event) ||
     typeof event.value.event.content !== "string"

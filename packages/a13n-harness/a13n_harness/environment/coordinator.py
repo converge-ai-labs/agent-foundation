@@ -191,8 +191,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
             ModelContextRequestKind,
         )
 
-        if request.kind is not ModelContextRequestKind.INPUT:
-            return ModelContextProjection()
         snapshot = self.snapshot
         selected = snapshot.mounts[:_MAX_MODEL_CONTEXT_BINDINGS]
         mounts: list[dict[str, JsonValue]] = []
@@ -236,7 +234,11 @@ class CompositeBoundEnvironment(BoundEnvironment):
             blocks=(
                 ModelContextBlock(
                     source_id="a13n.environment-mounts",
-                    placement=ModelContextPlacement.INPUT_PREAMBLE,
+                    placement=(
+                        ModelContextPlacement.INPUT_PREAMBLE
+                        if request.kind is ModelContextRequestKind.INPUT
+                        else ModelContextPlacement.REQUEST_EPILOGUE
+                    ),
                     content=content,
                 ),
             )

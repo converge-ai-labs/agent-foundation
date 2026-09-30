@@ -1205,13 +1205,20 @@ async def test_skill_file_views_survive_cold_resume_without_current_skill_catalo
 
 @pytest.mark.parametrize("native", [False, True])
 async def test_skill_media_views_mark_only_successful_results(tmp_path: Path, native: bool) -> None:
+    import io
+
     from a13n_harness.tools._output import TOOL_CONTENT_METADATA_KEY
+    from PIL import Image
     from pydantic_ai import BinaryContent
 
+    buffer = io.BytesIO()
+    with Image.new("RGB", (1, 1), "red") as image:
+        image.save(buffer, format="PNG")
+    image_bytes = buffer.getvalue()
     skill = tmp_path / "external-skill"
     skill.mkdir()
     for path in (skill / "image.png", tmp_path / "image.png"):
-        path.write_bytes(b"\x89PNG")
+        path.write_bytes(image_bytes)
     paths = ["external-skill/image.png", "image.png", "external-skill/missing.png", "external-skill/manual.pdf"]
     observed: list[ToolReturnPart] = []
     understanding_calls = []
@@ -1274,7 +1281,7 @@ async def test_skill_media_views_mark_only_successful_results(tmp_path: Path, na
         assert {key: value for key, value in metadata.items() if key != TOOL_CONTENT_METADATA_KEY} == expected
         if native:
             assert metadata[TOOL_CONTENT_METADATA_KEY]["items"][0]["display"] is False
-            assert any(isinstance(item, BinaryContent) and item.data == b"\x89PNG" for item in by_id[call_id].content)
+            assert any(isinstance(item, BinaryContent) and item.data == image_bytes for item in by_id[call_id].content)
         else:
             assert TOOL_CONTENT_METADATA_KEY not in metadata
     for call_id in ("media-2", "media-3"):

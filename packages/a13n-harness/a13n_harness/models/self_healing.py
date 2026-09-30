@@ -262,8 +262,7 @@ _OVERSIZED_PAYLOAD_MARKERS = (
 )
 _OVERSIZED_IMAGE_REMINDER = (
     "<system-reminder>An image was removed because the request exceeded the "
-    "provider's size limit. The original file is unchanged. If you still need to inspect it, "
-    "create and view a smaller preview instead of attaching the same original again.</system-reminder>"
+    "provider's size limit. View it again if you still need it.</system-reminder>"
 )
 
 

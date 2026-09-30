@@ -1,5 +1,5 @@
 import { isRecord } from "../../service-client";
-import type { DisplayItem } from "./display";
+import { AUTHORED_INPUT_EVENT_NAMES, type DisplayItem } from "./display";
 import type { PresentedItem } from "./projection";
 import {
   addStep,
@@ -25,12 +25,9 @@ export function applyObservation(
   const { name, value } = content;
   if (typeof name !== "string") return current;
   if (
-    [
-      "a13n.input.user",
-      "a13n.input.steering",
-      "a13n.input.media",
-      "a13n.pydantic_ai.enqueued_messages",
-    ].includes(name)
+    AUTHORED_INPUT_EVENT_NAMES.has(name) ||
+    name === "a13n.input.media" ||
+    name === "a13n.pydantic_ai.enqueued_messages"
   )
     return current;
   const source = isRecord(value) ? (value.event ?? value) : value;

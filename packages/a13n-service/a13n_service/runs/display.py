@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 from a13n_harness import HarnessEvent, HarnessStreamEvent
-from a13n_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiObserver
 from a13n_stream_protocol.fragments import CustomEventAssembler
 from ag_ui.core import Event, ToolCallArgsEvent, ToolCallResultEvent
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -313,7 +313,7 @@ class DisplayFold:
         if assembled is None:
             return None
         value: JsonValue = assembled.get("value")  # type: ignore[assignment]
-        if assembled.get("name") in {"a13n.input.user", "a13n.input.steering"}:
+        if assembled.get("name") in AUTHORED_INPUT_EVENT_NAMES:
             assert isinstance(value, dict) and isinstance(value["event"], dict)
             message_id = str(assembled["message_id"])
             content: dict[str, JsonValue] = {"messageId": message_id, "role": "user"}

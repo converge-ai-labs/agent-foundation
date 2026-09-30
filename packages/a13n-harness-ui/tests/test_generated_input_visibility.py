@@ -18,7 +18,7 @@ from a13n_harness.toolsets.codeact import CodeActPolicyToolset, CodeActToolPolic
 from a13n_harness_ui.conversation import ConversationExcerpt, checkpoint_excerpt
 from a13n_harness_ui.display_history import DisplayHistoryCollector, saved_display_history, with_display_history
 from a13n_harness_ui.thread_projection import _message_entry, _transcript_turns
-from a13n_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiObserver
 from PIL import Image
 from pydantic_ai import BinaryContent, RunContext, TextContent, ToolReturn
 from pydantic_ai.agent.spec import AgentSpec
@@ -148,7 +148,7 @@ async def test_supplemental_content_never_becomes_authored_input(runner: bool, s
         event["value"]["event"]["content"]
         for event in events
         if event["type"] == "CUSTOM"
-        and event.get("name") in {"a13n.input.user", "a13n.input.steering"}
+        and event.get("name") in AUTHORED_INPUT_EVENT_NAMES
         and event.get("metadata", {}).get("display", True)
     ] == ["same", "same"]
 
