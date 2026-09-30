@@ -63,7 +63,7 @@ if TYPE_CHECKING:
     from a13n_harness.plugins import AbstractHarnessPlugin, PluginOrdering
     from a13n_harness.recovery import ModelRecoveryPolicy, ToolRecoveryMode
     from a13n_harness.result import HarnessRunResult, SafeFailure
-    from a13n_harness.spec import AgentSpec, HarnessModelCharacteristics, ModelCapability
+    from a13n_harness.spec import AgentSpec, HarnessModelCharacteristics, ImageInputPolicy, ModelCapability
     from a13n_harness.state import HarnessState
     from a13n_harness.tools.deferred import DeferredToolResume
 
@@ -146,6 +146,7 @@ _EXPORTS = {
     "a13n_harness.spec": (
         "AgentSpec",
         "HarnessModelCharacteristics",
+        "ImageInputPolicy",
         "ModelCapability",
     ),
     "a13n_harness.state": ("HarnessState",),

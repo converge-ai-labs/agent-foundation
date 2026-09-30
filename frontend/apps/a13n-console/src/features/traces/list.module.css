@@ -4,7 +4,7 @@
   align-items: center;
   gap: 4px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-weight: 400;
 }
 .providerChip img {
@@ -83,7 +83,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--a13n-text);
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -98,7 +98,8 @@
   gap: 2px;
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-2xs);
 }
 @media (hover: hover) {
   .traceMeta button {
@@ -120,7 +121,8 @@
   max-width: 100%;
   overflow: hidden;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-family: var(--a13n-mono);
+  font-size: var(--a13n-text-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: middle;
@@ -165,13 +167,13 @@
 }
 .popoverTitle {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 .popoverHint {
   margin: 3px 0 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .presets {
@@ -196,12 +198,12 @@
 }
 .rangeFields [data-slot="field-label"] {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .popoverError {
   margin: 0;
   color: var(--destructive-foreground);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .popoverFooter {
@@ -212,7 +214,7 @@
   padding-top: 12px;
   border-top: 1px solid var(--a13n-border-soft);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .chipLabel {
   color: var(--a13n-secondary);

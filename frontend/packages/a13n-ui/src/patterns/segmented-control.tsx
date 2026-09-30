@@ -53,9 +53,10 @@ export function SegmentedControl({
           disabled={option.disabled}
           className={cn(
             "min-w-0 rounded-[6px] border-transparent bg-transparent font-medium text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground data-pressed:bg-card data-pressed:text-foreground data-pressed:shadow-xs/10 dark:data-pressed:bg-card",
+            // The toggle's responsive sizes must be overridden at every breakpoint.
             size === "sm"
-              ? "h-[26px] px-2.5 text-[12px]"
-              : "h-8 px-3 text-[13px]",
+              ? "h-6 min-w-0 px-2.5 text-xs sm:h-6 sm:min-w-0 sm:text-xs"
+              : "h-7 min-w-0 px-3 text-sm sm:h-7 sm:min-w-0 sm:text-sm",
           )}
         >
           {option.label}

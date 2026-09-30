@@ -35,10 +35,10 @@ it("does not silently round tiny costs to zero or coerce malformed values", () =
   expect(observationCost([cost("a", "1e-12"), cost("b", "2e-12")]).total).toBe(
     "3e-12",
   );
-  expect(formatCost("3e-12")).toBe("$3e-12");
-  expect(formatCost("0")).toBe("$0");
+  expect(formatCost("3e-12")).toBe("$0.000000000003");
+  expect(formatCost("0")).toBe("$0.00");
   expect(formatCost(null)).toBe(UNKNOWN);
-  expect(formatCost("0.30000000000000000001")).toBe("$0.3");
+  expect(formatCost("0.30000000000000000001")).toBe("$0.30");
   for (const value of ["NaN", "Infinity", "", "unavailable"]) {
     expect(observationCost([cost("a", value)])).toEqual({
       total: null,

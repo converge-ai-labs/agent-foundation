@@ -1,4 +1,8 @@
 @layer base {
+  /* Pages keep one content width whether or not they scroll. */
+  html {
+    scrollbar-gutter: stable;
+  }
   .a13n-root {
     --a13n-page-gutter-mobile: 18px;
   }
@@ -54,12 +58,12 @@
   max-width: 40rem;
 }
 [data-a13n-modal] [data-slot="dialog-title"] {
-  font-size: 18px;
+  font-size: var(--a13n-text-xl);
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 [data-a13n-modal] [data-slot="dialog-description"] {
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   line-height: 1.65;
 }
 [data-a13n-modal] form {
@@ -72,7 +76,7 @@
 [data-a13n-modal] [data-slot="disclosure-surface"] > button {
   min-height: 34px;
   padding: 7px 12px;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 [data-a13n-modal]
   :is([data-a13n-form-actions], [data-slot="dialog-footer"])

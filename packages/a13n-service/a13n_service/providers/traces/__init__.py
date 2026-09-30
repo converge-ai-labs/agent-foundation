@@ -141,10 +141,13 @@ async def read_json(
     headers: Mapping[str, str],
     params: Mapping[str, str] | None = None,
     body: JsonValue = None,
+    ssrf_protection: bool = True,
 ) -> JsonValue:
     """Send one read under a deadline and the response bound, returning the decoded JSON body."""
-    # The operator configured this backend, so its own host may be private; metadata addresses stay refused.
-    policy = EndpointPolicy.from_operator_allowlist(private_domains=[urlsplit(url).hostname or ""])
+    # The operator configured this backend, so its own host may be private.
+    policy = EndpointPolicy.from_operator_allowlist(
+        private_domains=[urlsplit(url).hostname or ""], ssrf_protection=ssrf_protection
+    )
     try:
         with anyio.fail_after(timeout):
             async with open_http(policy, timeout=timeout, max_bytes=MAX_RESPONSE_BYTES) as client:

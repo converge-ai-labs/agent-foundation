@@ -24,6 +24,7 @@ import {
   Archive,
   Brain,
   House,
+  SidebarSimple,
   Moon,
   Sun,
   List,
@@ -46,6 +47,7 @@ import { ProjectsPage, ProjectPage } from "../configuration/projects";
 import { ErrorNotice, Panel, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
 import { SharedPointers } from "./shared-pointers";
+import { ParticipantAvatars } from "./participant-avatars";
 import styles from "./workbench.module.css";
 import { ArchivedPage } from "../conversations/archived";
 import { ConversationNavigation } from "../conversations/navigation";
@@ -110,6 +112,11 @@ function WorkbenchContent({
   const statusQuery = useStatus();
   const status = statusQuery.data ?? initialStatus;
   const [theme, setTheme] = useState(() => readPreference("theme", "light"));
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => readPreference("sidebar", "expanded") === "collapsed",
+  );
+  const collapseButton = useRef<HTMLButtonElement>(null);
+  const expandButton = useRef<HTMLButtonElement>(null);
   const [profile, setProfile] = useState<Profile>(() => ({
     display_name:
       readPreference("display-name", "").trim() ||
@@ -168,9 +175,14 @@ function WorkbenchContent({
     writePreference("display-name", profile.display_name);
     writePreference("color", profile.color);
   }, [profile]);
+  useEffect(() => {
+    writePreference("sidebar", sidebarCollapsed ? "collapsed" : "expanded");
+  }, [sidebarCollapsed]);
   const updateProfile = (next: Profile) => setProfile(next);
   const links = [
-    { to: "/", label: "Home", icon: House },
+    ...(memoryMode && memoryEnabled
+      ? [{ to: "/", label: "Home", icon: House }]
+      : []),
     { to: "/archived", label: "Archived", icon: Archive },
     ...(memoryEnabled ? [{ to: "/memory", label: "Memory", icon: Brain }] : []),
     { to: "/settings", label: "Settings", icon: Gear },
@@ -198,9 +210,9 @@ function WorkbenchContent({
           }
         />
       ) : (
-        <ConversationNavigation presence={live.presence} />
+        <ConversationNavigation />
       )}
-      <nav>
+      <nav aria-label="Workbench shortcuts" className={styles.supportingNav}>
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -225,6 +237,7 @@ function WorkbenchContent({
                 : `${live.presence?.participants.length ?? 0} online`}
             </span>
           </Button>
+          {themeToggle}
           <Button variant="ghost" onClick={forget}>
             Log out
           </Button>
@@ -245,13 +258,28 @@ function WorkbenchContent({
       <a className={styles.skipLink} href="#main-content">
         Skip to content
       </a>
-      <aside className={styles.sidebar} aria-label="Workbench navigation">
+      <aside
+        className={`${styles.sidebar} ${sidebarCollapsed ? styles.sidebarCollapsed : ""}`}
+        aria-label="Workbench navigation"
+      >
         <header className={styles.sidebarHeader}>
           <Link to="/" className={styles.brand} aria-label="Harness UI home">
             <Logo alt="" width={28} height={28} />
             <Wordmark />
           </Link>
-          {themeToggle}
+          <Button
+            ref={collapseButton}
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Collapse navigation"
+            title="Collapse navigation"
+            onClick={() => {
+              setSidebarCollapsed(true);
+              requestAnimationFrame(() => expandButton.current?.focus());
+            }}
+          >
+            <SidebarSimple />
+          </Button>
         </header>
         {navigation}
       </aside>
@@ -275,7 +303,6 @@ function WorkbenchContent({
         >
           <header className={styles.mobileNavigationHeader}>
             <SheetTitle>Harness UI</SheetTitle>
-            {themeToggle}
           </header>
           {navigation}
         </SheetPopup>
@@ -317,43 +344,78 @@ function WorkbenchContent({
           />
           <NativeWorkspace
             profile={
-              <Button
-                variant="ghost"
-                size="sm"
-                className={styles.profileButton}
-                title={`${profile.display_name} · Edit collaboration name`}
-                aria-label={`Your collaboration name: ${profile.display_name}`}
-                onClick={openPeople}
-              >
-                <span
-                  className={styles.profileAvatar}
-                  style={{ backgroundColor: profile.color }}
-                  aria-hidden="true"
+              <>
+                <ParticipantAvatars
+                  participants={(live.presence?.participants ?? []).filter(
+                    (participant) =>
+                      !live.presence?.closed &&
+                      participant.participant_id !==
+                        live.presence?.participant_id &&
+                      live.presence?.same_page_participant_ids?.includes(
+                        participant.participant_id,
+                      ),
+                  )}
+                  ownId={live.presence?.participant_id}
+                  threadTitle="this page"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={styles.profileButton}
+                  title={`${profile.display_name} · Edit collaboration name`}
+                  aria-label={`Your collaboration name: ${profile.display_name}`}
+                  onClick={openPeople}
                 >
-                  {Array.from(profile.display_name)[0]?.toUpperCase()}
-                </span>
-                <span className={styles.profileName}>
-                  {profile.display_name}
-                </span>
-              </Button>
+                  <span
+                    className={styles.profileAvatar}
+                    style={{ backgroundColor: profile.color }}
+                    aria-hidden="true"
+                  >
+                    {Array.from(profile.display_name)[0]?.toUpperCase()}
+                  </span>
+                  <span className={styles.profileName}>
+                    {profile.display_name}
+                  </span>
+                </Button>
+              </>
             }
             navigation={
-              <Button
-                ref={mobileMenuButton}
-                variant="ghost"
-                size="icon"
-                className={styles.mobileMenu}
-                aria-label="Open navigation"
-                aria-haspopup="dialog"
-                aria-expanded={menu}
-                aria-controls={menu ? "workbench-navigation" : undefined}
-                onClick={() => {
-                  menuLocation.current = location.key;
-                  setMenu(true);
-                }}
-              >
-                <List />
-              </Button>
+              <>
+                {sidebarCollapsed && (
+                  <Button
+                    ref={expandButton}
+                    variant="ghost"
+                    size="icon"
+                    className={styles.expandNavigation}
+                    aria-label="Expand navigation"
+                    title="Expand navigation"
+                    onClick={() => {
+                      setSidebarCollapsed(false);
+                      requestAnimationFrame(() =>
+                        collapseButton.current?.focus(),
+                      );
+                    }}
+                  >
+                    <SidebarSimple />
+                  </Button>
+                )}
+                <Button
+                  ref={mobileMenuButton}
+                  variant="ghost"
+                  size="icon"
+                  className={styles.mobileMenu}
+                  aria-label="Open navigation"
+                  aria-haspopup="dialog"
+                  aria-expanded={menu}
+                  aria-controls={menu ? "workbench-navigation" : undefined}
+                  onClick={() => {
+                    menuLocation.current = location.key;
+                    setMenu(true);
+                  }}
+                >
+                  <List />
+                </Button>
+              </>
             }
             onFocus={setNativeFocus}
             unauthorized={unauthorized}

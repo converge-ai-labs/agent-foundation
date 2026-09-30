@@ -3,7 +3,7 @@ import {
   BrainIcon,
   ChartBarIcon,
   PulseIcon,
-  HeartIcon,
+  HeadCircuitIcon,
   CubeIcon,
   ChatsIcon,
   MonitorIcon,
@@ -17,7 +17,7 @@ export const navigationGroups: {
   {
     label: "",
     entries: [
-      ["agents", "Agents", HeartIcon],
+      ["agents", "Agents", HeadCircuitIcon],
       ["sessions", "Sessions", ChatsIcon],
     ],
   },

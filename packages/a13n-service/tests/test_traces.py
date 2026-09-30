@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from types import SimpleNamespace
+from urllib.parse import urljoin
 
 import httpx2
 import pytest
@@ -67,7 +68,9 @@ class Backend:
     def respond(self, handler: BaseHTTPRequestHandler) -> None:
         body = handler.rfile.read(int(handler.headers.get("content-length", "0")))
         self.requests.append(
-            httpx2.Request(handler.command, self.url + handler.path, headers=handler.headers.items(), content=body)
+            httpx2.Request(
+                handler.command, urljoin(self.url, handler.path), headers=handler.headers.items(), content=body
+            )
         )
         answer = self.answers.pop(0) if self.answers else httpx2.Response(200)
         if answer == DROP:
@@ -627,3 +630,44 @@ async def test_slow_or_unconfigured_backends_are_unavailable(api: SimpleNamespac
 
     response = await api.client.get(f"{api.api}/traces")
     assert (response.status_code, response.json()["error"]["details"]) == (503, {"dependency": "trace"})
+
+
+@pytest.mark.parametrize("provider", ["langfuse", "logfire"])
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_trace_queries_honor_operator_ssrf_switch(
+    backend: Backend, monkeypatch: pytest.MonkeyPatch, provider: str, enabled: bool
+) -> None:
+    from a13n_service.providers.traces import SpanQuery
+    from a13n_service.settings import Telemetry
+
+    telemetry = Telemetry.model_validate(
+        {
+            "trace_backend": provider,
+            "trace_url": "http://169.254.169.254",
+            "langfuse_public_key": "pk-test",
+            "langfuse_secret_key": "sk-test",
+            "logfire_write_token": "write-test",
+            "logfire_read_token": "read-test",
+        }
+    )
+    configured = telemetry.trace_config(ssrf_protection=enabled)
+    assert configured is not None
+    monkeypatch.setenv("HTTP_PROXY", backend.url)
+    monkeypatch.delenv("http_proxy", raising=False)
+    monkeypatch.setenv("NO_PROXY", "")
+    monkeypatch.setenv("no_proxy", "")
+    backend.answer(httpx2.Response(200, json={"data": [], "meta": {}}))
+    query = SpanQuery(
+        attributes={},
+        started_after=datetime(2026, 9, 1, tzinfo=UTC),
+        started_before=datetime(2026, 9, 2, tzinfo=UTC),
+        limit=10,
+    )
+    if enabled:
+        with pytest.raises(ServiceError):
+            await configured.query(query)
+        assert not backend.requests
+    else:
+        page = await configured.query(query)
+        assert page.items == []
+        assert len(backend.requests) == 1

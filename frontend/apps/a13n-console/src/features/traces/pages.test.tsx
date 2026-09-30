@@ -523,7 +523,7 @@ it("shows a loaded cost subtotal until pagination succeeds, without counting the
     });
   });
   mount(<TraceDetail traceId="trace-1" />);
-  await screen.findByText("$0.3");
+  await screen.findByText("$0.30");
   expect(screen.getByText("Loaded cost")).toBeTruthy();
   expect(screen.queryByText("Cost")).toBeNull();
   await user.click(
@@ -531,7 +531,7 @@ it("shows a loaded cost subtotal until pagination succeeds, without counting the
   );
   await screen.findByText("Cost page failed");
   expect(screen.getByText("Loaded cost")).toBeTruthy();
-  expect(screen.getByText("$0.3")).toBeTruthy();
+  expect(screen.getByText("$0.30")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Reload" }));
   await screen.findByText("Cost");
   expect(screen.getByText("$0.35")).toBeTruthy();
@@ -608,7 +608,7 @@ it("does not expose root-only or partial list costs when a later page fails or r
   const cache = mount(<TracesPage />);
   await screen.findByRole("columnheader", { name: "Trace" });
   await waitFor(() => expect(cache.isFetching()).toBe(0));
-  expect(screen.queryByText("$9")).toBeNull();
+  expect(screen.queryByText("$9.00")).toBeNull();
   for (const row of screen.getAllByRole("row").slice(1)) {
     const cells = within(row).getAllByRole("cell");
     expect(cells[3].textContent).toBe(UNKNOWN);
@@ -767,7 +767,7 @@ it("sorts aggregate costs rather than root costs and keeps the order after pagin
     });
   });
   mount(<TracesPage />);
-  await screen.findByText("$11");
+  await screen.findByText("$11.00");
   const names = () =>
     screen
       .getAllByRole("row")
@@ -778,7 +778,7 @@ it("sorts aggregate costs rather than root costs and keeps the order after pagin
   await user.click(screen.getByRole("button", { name: "Cost" }));
   expect(names()).toEqual(["high-root", "low-root", "unknown"]);
   await user.click(screen.getByRole("button", { name: "Next" }));
-  await screen.findByText("$2");
+  await screen.findByText("$2.00");
   expect(names()).toEqual(["next-low", "next-high"]);
   expect(
     screen

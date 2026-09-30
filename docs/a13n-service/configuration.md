@@ -114,8 +114,16 @@ Every request the Service makes to a provider, a remote MCP server, an OAuth ser
 
 - URLs use `http` or `https` and carry no user information, fragment or credential-like query parameter.
 - With `providers.require_https = true` (the default), plain HTTP is refused except for the exact origins listed in `providers.http_origins`.
-- Private, loopback and link-local destinations are refused unless the host matches `providers.private_domains` (subdomains included) or the resolved address is in `providers.private_cidrs`. Cloud metadata addresses are always refused.
-- On direct host-owned HTTP connections, addresses are checked after DNS resolution and only checked addresses are dialed. Redirects are not followed, compressed responses are refused, and response bodies are bounded by `providers.response_bytes`.
+- With `providers.ssrf_protection = true` (the default), private, loopback and link-local destinations are refused unless the host matches `providers.private_domains` (subdomains included) or the resolved address is in `providers.private_cidrs`. Cloud metadata addresses are always refused.
+- With SSRF protection enabled, on direct host-owned HTTP connections, addresses are checked after DNS resolution and only checked addresses are dialed. Redirects are not followed, compressed responses are refused, and response bodies are bounded by `providers.response_bytes`.
+
+To disable application-level SSRF restrictions on a trusted deployment, set this on every affected Service process and restart it:
+
+```bash
+export A13N_PROVIDERS__SSRF_PROTECTION=false
+```
+
+The equivalent TOML setting is `providers.ssrf_protection = false`. Disabled means no destination DNS prechecks, IP restrictions (including cloud metadata blocking), or custom direct-route IP pinning. This applies to provider and Web calls, connection/resource validation, Environment endpoint prechecks and trace queries. URL and credential rules, `require_https`, TLS verification, redirect credential boundaries, deadlines and response bounds remain enforced. Native direct connections still need DNS when the HTTP library or SDK connects. Only disable the checks when your deployment or trusted proxy owns destination restrictions; this is not a tenant-controlled option.
 
 ### Outbound proxies
 
@@ -129,7 +137,7 @@ export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
 
 Uppercase forms and `ALL_PROXY` are supported; selection and bypass matching follow `httpx2`. An HTTP proxy URL can carry HTTPS traffic through CONNECT. Models, Remote MCP/OAuth, connectors, record memory, web requests, model catalogs, webhooks and other callers of the host HTTP client use these routes.
 
-**The deployment operator's proxy is trusted outbound infrastructure.** Request URL validation and TLS verification remain enabled, but the proxy owns final DNS and destination network restrictions. Application-level DNS/IP pinning and final-address blocking apply to direct connections, including `NO_PROXY`, not to the proxy's outgoing connection. Configure restrictions on the proxy when needed. Existing endpoint prechecks can still require local DNS. A failed proxy request does not silently fall back to direct.
+**The deployment operator's proxy is trusted outbound infrastructure.** Request URL validation and TLS verification remain enabled, but the proxy owns final DNS and destination network restrictions. With SSRF protection enabled, application-level DNS/IP pinning and final-address blocking apply to direct connections, including `NO_PROXY`, not to the proxy's outgoing connection. Configure restrictions on the proxy when needed. With protection enabled, existing endpoint prechecks can still require local DNS; disabling it removes that requirement. A failed proxy request does not silently fall back to direct.
 
 HTTPS Envd attachments also use environment proxies; plaintext local/provider-private Envd links remain direct. Other SDK-owned environment and storage transports retain their own proxy behavior. This does not change the Envd controlled-egress broker or its execution isolation policy.
 

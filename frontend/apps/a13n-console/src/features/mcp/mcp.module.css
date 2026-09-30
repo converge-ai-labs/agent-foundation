@@ -13,7 +13,7 @@
 .toolsHeader p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }
 .toolList {
@@ -52,13 +52,13 @@
   min-width: 0;
 }
 .toolCopy strong {
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
   overflow-wrap: anywhere;
 }
 .toolCopy small {
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .toolDetail {
@@ -69,7 +69,7 @@
 .toolSchema h4 {
   margin: 0 0 6px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
 
@@ -87,12 +87,12 @@
   padding: 12px 14px;
   border-radius: var(--a13n-radius-group);
   background: var(--a13n-surface);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .hint {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }
 .copyField {
@@ -104,7 +104,7 @@
 .copyField input {
   flex: 1;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
 }
 .authorizationActions {
   display: flex;
@@ -114,6 +114,6 @@
 }
 .authorizationTitle {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }

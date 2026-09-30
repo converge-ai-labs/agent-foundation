@@ -9,10 +9,11 @@ import { data } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { DateTimeField } from "../../shared/forms";
 import { Page } from "../../shared/page";
-import { formatCost } from "../../shared/cost";
+import { exactCost, formatCost } from "../../shared/cost";
 import { Breakdown } from "./breakdown";
 import { UsageChart } from "./chart";
 import {
+  compactNumber,
   customWindow,
   duration,
   localWindow,
@@ -48,16 +49,38 @@ function UsageBrowser() {
       ),
   });
   const number = (value: number) => value.toLocaleString(i18n.resolvedLanguage);
+  const compact = (value: number) =>
+    compactNumber(value, i18n.resolvedLanguage);
   const overview = query.data;
-  const cards = overview
+  const metrics: [string, string, string?][] = overview
     ? [
-        [t("Spend"), formatCost(overview.usage.cost)],
+        [
+          t("Spend"),
+          formatCost(overview.usage.cost),
+          exactCost(overview.usage.cost),
+        ],
         [t("Runs"), number(overview.runs.runs)],
         [t("Model requests"), number(overview.usage.requests)],
         [t("Avg. run time"), duration(overview.runs.average_duration_seconds)],
-        [t("Input tokens"), number(overview.usage.input_tokens)],
-        [t("Output tokens"), number(overview.usage.output_tokens)],
-        [t("Cached input tokens"), number(overview.usage.cache_read_tokens)],
+      ]
+    : [];
+  const tokens: [string, string, string?][] = overview
+    ? [
+        [
+          t("Input tokens"),
+          compact(overview.usage.input_tokens),
+          number(overview.usage.input_tokens),
+        ],
+        [
+          t("Output tokens"),
+          compact(overview.usage.output_tokens),
+          number(overview.usage.output_tokens),
+        ],
+        [
+          t("Cached input tokens"),
+          compact(overview.usage.cache_read_tokens),
+          number(overview.usage.cache_read_tokens),
+        ],
         [t("Cache rate"), percent(overview.usage.cache_hit_rate)],
       ]
     : [];
@@ -68,7 +91,6 @@ function UsageBrowser() {
       actions={
         <Button
           variant="outline"
-          size="sm"
           disabled={query.isFetching}
           onClick={() => {
             if (preset !== "custom") {
@@ -144,10 +166,18 @@ function UsageBrowser() {
         overview && (
           <>
             <dl className={styles.metrics}>
-              {cards.map(([name, value]) => (
+              {metrics.map(([name, value, exact]) => (
                 <div key={name}>
                   <dt>{name}</dt>
-                  <dd>{value}</dd>
+                  <dd title={exact}>{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <dl className={styles.tokens}>
+              {tokens.map(([name, value, exact]) => (
+                <div key={name}>
+                  <dt>{name}</dt>
+                  <dd title={exact}>{value}</dd>
                 </div>
               ))}
             </dl>

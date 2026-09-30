@@ -1,25 +1,57 @@
+/* The one screen before the product: a card on a quiet field, lit from above in the brand colour. */
 .screen {
+  position: relative;
+  isolation: isolate;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 44px;
+  gap: 28px;
   padding: 48px 24px;
-  background: var(--a13n-canvas);
+  background:
+    radial-gradient(
+      ellipse 70% 55% at 50% -8%,
+      color-mix(in srgb, var(--a13n-signal) 13%, transparent),
+      transparent 70%
+    ),
+    var(--sidebar);
+  overflow: hidden;
+}
+.screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--a13n-text) 9%, transparent) 1px,
+    transparent 1.5px
+  );
+  background-size: 24px 24px;
+  mask-image: radial-gradient(
+    ellipse 60% 50% at 50% 30%,
+    #000,
+    transparent 75%
+  );
+  pointer-events: none;
 }
 
 .column {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
+  padding: 36px 36px 32px;
+  border-radius: 16px;
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow-floating);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 9px;
-  margin-bottom: 34px;
-  font-size: 21px;
+  margin-bottom: 32px;
+  font-size: var(--a13n-text-2xl);
   color: var(--a13n-text);
 }
 .brand img {
@@ -29,14 +61,14 @@
 
 .title {
   margin: 0;
-  font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
+  font-size: var(--a13n-text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--a13n-tracking-title);
   color: var(--a13n-text);
 }
 .description {
   margin: 6px 0 0;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   line-height: 1.5;
   color: var(--a13n-secondary);
 }
@@ -70,7 +102,7 @@
   gap: 5px;
   border-radius: 4px;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   text-decoration: none;
 }
 .link:hover {
@@ -95,13 +127,13 @@
 }
 .success h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--a13n-text-lg);
   font-weight: 500;
   color: var(--a13n-text);
 }
 .success p {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
   color: var(--a13n-secondary);
 }
@@ -111,16 +143,20 @@
 
 .tagline {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   margin: 0;
-  font-size: 12px;
-  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  color: var(--a13n-tertiary);
+  text-align: center;
 }
 
 @media (max-width: 480px) {
   .screen {
     justify-content: flex-start;
-    gap: 32px;
-    padding: 56px 20px 32px;
+    gap: 24px;
+    padding: 40px 16px 32px;
+  }
+  .column {
+    padding: 28px 22px 24px;
   }
 }

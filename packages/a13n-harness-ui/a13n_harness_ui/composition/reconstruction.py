@@ -63,6 +63,7 @@ class ReconstructedAgent:
     executable: ExecutableAgent[str]
     model_resolver: HarnessUiModelResolver
     definition_capability_ids: frozenset[str]
+    web_ssrf_protection: bool = False
     media_models: Mapping[NativeInputMediaKind, ResolvedModelRecipe] = field(default_factory=dict)
     memory_cursors: MemoryCursors = field(default_factory=MemoryCursors)
 
@@ -269,6 +270,7 @@ class AgentReconstructor:
                 code="run_composition_reconstruction_failed",
             ) from exc
         return ReconstructedAgent(
+            web_ssrf_protection=composition.web_ssrf_protection,
             memory_cursors=cursors,
             executable=cast(ExecutableAgent[str], executable),
             model_resolver=HarnessUiModelResolver(

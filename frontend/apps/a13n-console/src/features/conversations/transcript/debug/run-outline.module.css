@@ -30,7 +30,7 @@
   min-width: 0;
 }
 .menuRow {
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
 }
 .menuRow[data-current] {
   background: var(--a13n-selected);
@@ -44,7 +44,7 @@
   background: none;
   color: inherit;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   text-align: left;
   cursor: pointer;
 }
@@ -92,7 +92,7 @@
 }
 .meta {
   color: var(--a13n-secondary);
-  font-size: 11.5px;
+  font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -110,6 +110,6 @@
 .groupLabel {
   padding: 4px 8px 2px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }

@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 /**
  * How a resource without an image presents itself: one stable hue per
  * identity, and initials that tell similar names apart.
@@ -17,12 +19,22 @@ const colors = [
   "#1d4ed8",
 ];
 
-/** The same identity always reads the same colour, before and after a rename. */
-export function avatarColor(seed: string): string {
+/**
+ * The same identity always reads the same hue, before and after a rename. The
+ * hue tints the tile rather than filling it, so a list of identities stays
+ * calmer than the states beside them; mixing toward the text colour darkens
+ * the initials in light mode and lightens them in dark mode.
+ */
+export function avatarTint(seed: string): CSSProperties {
   let hash = 2166136261;
   for (const character of seed)
     hash = Math.imul(hash ^ character.codePointAt(0)!, 16777619) >>> 0;
-  return colors[hash % colors.length]!;
+  const hue = colors[hash % colors.length]!;
+  return {
+    backgroundColor: `color-mix(in srgb, ${hue} 14%, var(--a13n-canvas))`,
+    color: `color-mix(in srgb, ${hue} 78%, var(--a13n-text))`,
+    boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${hue} 16%, transparent)`,
+  };
 }
 
 /**

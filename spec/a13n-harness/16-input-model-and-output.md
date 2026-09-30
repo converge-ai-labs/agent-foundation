@@ -9,7 +9,7 @@ The Harness preserves native Pydantic AI input, Model, settings, profile, messag
 3. input-only convenience layers that immediately materialize selected model-characteristics and model-settings aliases;
 4. optional fresh run-scoped resolution of a logical model ID;
 5. one automatic request-correlation header derived from the active Thread;
-6. optional exact one-shot provider-history self-healing;
+6. default-on exact one-shot provider-history self-healing with an explicit build-time opt-out;
 7. bounded logical-run recovery after a recoverable model interruption;
 8. optional native image generation with Host-owned saving.
 
@@ -325,6 +325,29 @@ The Content Filter preserves accepted native Pydantic values. It classifies `Bin
 
 Provider adapters receive only native content and provider-specific media options. Presentation annotations remain in Harness-owned canonical request metadata, outside media `vendor_metadata`; Google requests, streams, and request-time token counting use the native adapter without a Harness metadata sanitizer.
 
+`ImageFilterCapability` is installed by default through the selected model's `HarnessModelCharacteristics.image_input`. It projects image input only through `wrap_model_request`, after committed model-context preparation. The projection reaches concrete, run-resolved, and inferred Models on ordinary and streaming requests without changing canonical messages, original input objects, retained file bytes, or application provenance metadata. It does not write through `RunContext.messages`, acquire files, or fetch URLs.
+
+```python
+class ImageInputPolicy(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    split_large_images: bool = True
+    image_split_max_height: int = 4096
+    image_split_overlap: int = 50
+    max_image_bytes: int = 5 * 1024 * 1024
+    max_image_dimension: int = 8000
+    max_images: int = 20
+    support_gif: bool = True
+```
+
+The image policy first validates binary images, splits tall static images into ordered full-width vertical segments with the configured overlap, and compresses each image or segment when its encoded-byte or per-axis dimension limit is exceeded. Splitting preserves spatial coverage rather than selecting or discarding a semantic region. Segment identities are distinct; one-to-one transformations preserve the native image subtype, identity, and vendor metadata. Compression resizes proportionally and produces JPEG, compositing transparent pixels onto white. The byte limit applies to base64-encoded payload bytes, with a raw budget of `(max_image_bytes // 4) * 3`; zero disables that limit, and `max_image_dimension=0` independently disables dimension-based resizing. Compression cannot flatten animation, and animated images bypass segmentation. Corrupt images and images that cannot satisfy the configured limits are replaced by explanatory text. Static images must pass pixel decoding before they consume the image count, even when no split or compression is needed. Static pixel decoding and pixel-changing processing are bounded to 80 million source pixels and run off the event loop.
+
+The policy then keeps the newest `max_images` images across request messages, parts, and content items, replacing older images with explanatory text. Segments count as individual images; corrupted or unpreparable inputs do not consume the count. `max_images=0` removes all image input. Finally, `support_gif=False` replaces binary GIFs with a compatibility explanation. Native `ImageUrl` values participate in counting but are not fetched, decoded, split, compressed, or classified by URL suffix. Other media and Model response files remain unchanged.
+
+Both native user-content sequences and ordinary tool-return scalar or top-level list media participate in this image projection. Arbitrary nested tool JSON and tuple-valued tool data are not reinterpreted as provider image files. Scalar tool content becomes a list only for a one-to-many split; existing user list/tuple and tool list shapes are otherwise retained. The image policy is trusted target-model configuration rather than inferred provider characteristics or a new profile schema. It has no shared total-request byte budget and cannot guarantee acceptance by every gateway.
+
+`AgentMediaUnderstandingProvider` selects the same default policy independently for its image target through its typed `image_input` constructor argument; a configuration replaces that policy and `None` disables it. It does not inherit the parent Agent's policy, and audio/video targets do not receive the image filter.
+
 `ColdStartFilterCapability` is installed by default through [AgentSpec cold-start configuration](03-agent-definition-and-build.md#agentdefinition). It can be configured or disabled there. After its configured idle interval since the latest `ModelResponse`, it shortens oversized string leaves in ordinary tool results strictly before that latest response. Those results have already been consumed by the model; the latest response and every later request, including pending tool results, remain exact. Structured dictionaries, lists, and tuples retain their shape and short hint fields; native media and non-string values remain unchanged. The filter does not spill content or replace explicit compaction.
 
 A tool result with native `ToolReturnPart.metadata` containing `"a13n.cold-start": "preserve"` is exempt from this cold-start reduction. The marker is application metadata, not model-visible content or execution authority, and native history serialization preserves it across runs without consulting current mounts or skill selection. [Skill file views](09-context-and-memory.md#skills-and-discovery) produce this marker after successful reads. Untagged history retains ordinary trimming behavior; old results are not inferred or backfilled. The exemption neither bypasses the tool execution boundary's initial output limits and redaction nor prevents compaction or handoff from replacing history.
@@ -333,26 +356,29 @@ The tool execution boundary does not duplicate Filter behavior. It preserves nat
 
 Former global history processors resolve to one current owner:
 
-| Behavior                                                                | Owner                                                        |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Orphan and duplicate ordinary tool results                              | Mandatory `MessageIntegrityFilterCapability`                 |
-| Unsupported, unsafe, or over-limit request media                        | Optional `ContentFilterCapability`                           |
-| Cold-cache reduction of already-consumed tool-result strings            | AgentSpec-configured `ColdStartFilterCapability`             |
-| Current tool-return redaction, bounds, and spill                        | `ToolExecutionBoundaryCapability`                            |
-| Runtime, file, Environment, handoff, working-state, and process notices | Their focused context or Environment Capabilities            |
-| Accepted live user or Agent messages                                    | Native enqueue plus Host delivery acceptance                 |
-| Media acquisition, transformation, or upload                            | Optional Media Capability/provider integration               |
-| System instructions and provider request rendering                      | `AgentSpec`, native Model profile, and provider adapter      |
-| Exact provider-history rejection repair                                 | Selected `SelfHealingModelCapability` and `SelfHealingModel` |
-| Interrupted-history normalization and `ModelAttempt` recovery           | Harness state recovery and `HarnessRunStream`                |
+| Behavior                                                                      | Owner                                                          |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Orphan and duplicate ordinary tool results                                    | Mandatory `MessageIntegrityFilterCapability`                   |
+| Unsupported, unsafe, or over-limit request media                              | Optional `ContentFilterCapability`                             |
+| Request-only image splitting, compression, newest-first count, and GIF policy | Model-characteristics-configured `ImageFilterCapability`       |
+| Cold-cache reduction of already-consumed tool-result strings                  | AgentSpec-configured `ColdStartFilterCapability`               |
+| Current tool-return redaction, bounds, and spill                              | `ToolExecutionBoundaryCapability`                              |
+| Runtime, file, Environment, handoff, working-state, and process notices       | Their focused context or Environment Capabilities              |
+| Accepted live user or Agent messages                                          | Native enqueue plus Host delivery acceptance                   |
+| Other media acquisition, transformation, or upload                            | Optional Media Capability/provider integration                 |
+| System instructions and provider request rendering                            | `AgentSpec`, native Model profile, and provider adapter        |
+| Exact provider-history rejection repair                                       | Default-on `SelfHealingModelCapability` and `SelfHealingModel` |
+| Interrupted-history normalization and `ModelAttempt` recovery                 | Harness state recovery and `HarnessRunStream`                  |
 
-Malformed current tool arguments, ordinary provider reasoning projection, and transport retry remain upstream Model/adapter/client concerns rather than generic Filters. An exact residual provider incompatibility uses an explicitly selected `SelfHealingModelCapability` or another narrowly scoped compatibility Capability only when the native profile lacks the required public behavior.
+Malformed current tool arguments, ordinary provider reasoning projection, and transport retry remain upstream Model/adapter/client concerns rather than generic Filters. An exact residual provider incompatibility uses `SelfHealingModelCapability` or another narrowly scoped compatibility Capability only when the native profile lacks the required public behavior.
 
 ## Narrow Self-Healing
 
-`SelfHealingModelCapability` is an optional code-first Capability with stable ID `a13n.model.self-healing`. It is not installed by default. Applications that need the supported repairs should select it explicitly through an Agent definition, native Agent spec, run binding, or trusted plugin contribution.
+`SelfHealingModelCapability` is a code-first Capability with stable ID `a13n.model.self-healing`. `HarnessBuilder` installs it by default for every built Agent, including inline children. `HarnessBuilder(self_healing_enabled=False)` disables automatic installation without removing an explicitly selected Capability or an explicitly wrapped `SelfHealingModel`. A Capability selected through the definition, a Host-authorized native Agent spec, or a trusted plugin contribution takes precedence over the automatic default, preserving its configured rules without installing a duplicate. Run bindings remain restricted to their documented runtime policy and MCP types.
 
-The Capability runs at the innermost model-request wrapper boundary. After logical resolution and native model inference have selected the effective request Model, it copies the request context and wraps that Model exactly once in `SelfHealingModel`. This preserves the native resolver chain, covers concrete, run-resolved, and natively inferred Models uniformly, and leaves the original request context unchanged. An already wrapped Model is reused.
+The default also applies to compaction's nested request through the same Agent. Independent native auxiliary Agents for tool review and media understanding inherit Run observation and usage accounting, not the primary Agent's Capability tree; this builder option does not install self-healing on those Agents.
+
+The Capability runs at the innermost model-request wrapper boundary. After logical resolution and native model inference have selected the effective request Model, it copies the request context and wraps that Model exactly once in `SelfHealingModel`. This preserves the native resolver chain, covers concrete, run-resolved, and natively inferred Models uniformly, and leaves the original request context unchanged. An existing `SelfHealingModel` anywhere in the native `WrapperModel.wrapped` chain is reused without replacing its rules or removing outer profile and usage wrappers.
 
 `SelfHealingModelCapability` accepts an optional sequence of `ModelRecoveryRule` values. `None` selects the built-in rules; an explicit empty sequence selects no rules. `SelfHealingModel` has the same rule semantics and preserves the native Model interface and profile.
 
@@ -380,7 +406,7 @@ Oversized-image reminders inserted into native user-prompt parts are `TextConten
 
 The wrapper does not retry generic transport, rate-limit, tool, output-validation, or cancellation failures. Provider/client `RetryConfig` owns transport retry.
 
-Custom `ModelRecoveryRule` values contain one exact matcher and one history repair function. Their safety is the caller's responsibility; the wrapper still permits at most one replay per request. Selecting the Capability is recommended for production Agents that need these known provider-history repairs; direct `SelfHealingModel` construction remains available for callers that already own one concrete Model.
+Custom `ModelRecoveryRule` values contain one exact matcher and one history repair function. Their safety is the caller's responsibility; the wrapper still permits at most one replay per request. Direct `SelfHealingModel` construction remains available for callers that already own one concrete Model. Applications that require the former opt-in behavior set `self_healing_enabled=False`; existing definitions and Host captures need no schema rewrite, but rebuilding them with the default builder enables these repairs. This is a behavioral compatibility change, not a new general retry policy.
 
 ## ModelAttempt Recovery
 

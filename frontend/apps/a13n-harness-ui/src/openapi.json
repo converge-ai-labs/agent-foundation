@@ -1385,6 +1385,65 @@
         }
       }
     },
+    "/api/host/files/info": {
+      "get": {
+        "summary": "Host File Info",
+        "operationId": "host_file_info_api_host_files_info_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/host/files/text": {
       "get": {
         "summary": "Host File Text",
@@ -1622,38 +1681,85 @@
             }
           }
         }
-      },
-      "get": {
-        "summary": "Download Host File",
-        "operationId": "download_host_file_api_host_files_content_get",
+      }
+    },
+    "/api/host/files/transfers": {
+      "post": {
+        "summary": "Host File Transfer",
+        "operationId": "host_file_transfer_api_host_files_transfers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileTransferAccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/files/transfer": {
+      "head": {
+        "summary": "Transfer Host File",
+        "operationId": "transfer_host_file_api_host_files_transfer_head",
         "parameters": [
           {
-            "name": "path",
+            "name": "token",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 4096,
-              "title": "Path"
+              "maxLength": 32768,
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
             }
           },
-          {
-            "name": "expected_revision",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                {
-                  "type": "null"
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
-              ],
-              "title": "Expected Revision"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Transfer Host File",
+        "operationId": "transfer_host_file_api_host_files_transfer_get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32768,
+              "title": "Token"
             }
           }
         ],
@@ -9657,6 +9763,31 @@
         ],
         "title": "FileEntry"
       },
+      "FileInfo": {
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/FileEntry"
+          },
+          "resolved_path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Resolved Path"
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entry",
+          "resolved_path",
+          "media_type"
+        ],
+        "title": "FileInfo"
+      },
       "FilePage": {
         "additionalProperties": false,
         "properties": {
@@ -9719,6 +9850,25 @@
           "presentation"
         ],
         "title": "FileText"
+      },
+      "FileTransferAccess": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "expires_at": {
+            "type": "integer",
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "FileTransferAccess"
       },
       "GitChange": {
         "properties": {
@@ -10245,6 +10395,17 @@
             "uniqueItems": true,
             "title": "Capabilities"
           },
+          "image_input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageInputPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Image preparation policy; omitted uses native defaults, null disables automatic preparation."
+          },
           "context_window_tokens": {
             "anyOf": [
               {
@@ -10283,6 +10444,57 @@
         "type": "object",
         "title": "HarnessModelCharacteristics",
         "description": "Resolved Harness characteristics of the active Agent model."
+      },
+      "ImageInputPolicy": {
+        "properties": {
+          "split_large_images": {
+            "type": "boolean",
+            "title": "Split Large Images",
+            "default": true
+          },
+          "image_split_max_height": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Image Split Max Height",
+            "default": 4096
+          },
+          "image_split_overlap": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Image Split Overlap",
+            "default": 50
+          },
+          "max_image_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Image Bytes",
+            "description": "Maximum base64-encoded bytes per image; zero disables this byte limit.",
+            "default": 5242880
+          },
+          "max_image_dimension": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Image Dimension",
+            "description": "Maximum image axis; zero disables this limit.",
+            "default": 8000
+          },
+          "max_images": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Images",
+            "description": "Keep the newest images; zero removes all image input.",
+            "default": 20
+          },
+          "support_gif": {
+            "type": "boolean",
+            "title": "Support Gif",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ImageInputPolicy",
+        "description": "Preparation limits for one model's image input, not native ModelSettings."
       },
       "JsonValue": {},
       "ListenerFeatures": {
@@ -17276,6 +17488,38 @@
           "expected_revision"
         ],
         "title": "FileDeleteRequest"
+      },
+      "FileTransferRequest": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "expected_revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Expected Revision"
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "attachment",
+              "inline"
+            ],
+            "title": "Disposition",
+            "default": "attachment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "expected_revision"
+        ],
+        "title": "FileTransferRequest"
       },
       "FileCaptureRequest": {
         "additionalProperties": false,

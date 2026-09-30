@@ -48,7 +48,6 @@
 }
 .selected {
   background: var(--a13n-elevated);
-  font-weight: 500;
 }
 .hint {
   margin: 24px 10px;

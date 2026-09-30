@@ -14,7 +14,7 @@
 }
 
 .advanced {
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .advancedBody {
   display: grid;
@@ -45,14 +45,14 @@
 }
 .chosenProviderCopy strong {
   overflow: hidden;
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .chosenProviderCopy small {
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
 }
 .chosenProviderIdentity {
   display: flex;
@@ -71,7 +71,7 @@
 }
 .panelTitle strong {
   overflow: hidden;
-  font-size: 15px;
+  font-size: var(--a13n-text-lg);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -91,7 +91,7 @@
 .factGroup h3 {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
 
@@ -115,7 +115,7 @@
 .fact dt {
   flex: none;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .fact dd {
   display: flex;
@@ -124,7 +124,7 @@
   gap: 6px;
   min-width: 0;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   text-align: right;
   overflow-wrap: anywhere;
 }
@@ -132,7 +132,7 @@
 .panelNote {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }
 .panelNotes {

@@ -4229,6 +4229,17 @@
             ],
             "title": "Context Window Tokens"
           },
+          "image_input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageInputPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Image preparation policy; omitted uses native defaults, null disables automatic preparation."
+          },
           "proactive_context_management_threshold": {
             "anyOf": [
               {
@@ -4276,6 +4287,17 @@
               }
             ],
             "title": "Context Window Tokens"
+          },
+          "image_input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageInputPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Image preparation policy; omitted uses native defaults, null disables automatic preparation."
           },
           "proactive_context_management_threshold": {
             "anyOf": [
@@ -4327,6 +4349,57 @@
           "purged"
         ],
         "title": "HistoryPurge",
+        "type": "object"
+      },
+      "ImageInputPolicy": {
+        "additionalProperties": false,
+        "description": "Preparation limits for one model's image input, not native ModelSettings.",
+        "properties": {
+          "image_split_max_height": {
+            "default": 4096,
+            "exclusiveMinimum": 0.0,
+            "title": "Image Split Max Height",
+            "type": "integer"
+          },
+          "image_split_overlap": {
+            "default": 50,
+            "minimum": 0.0,
+            "title": "Image Split Overlap",
+            "type": "integer"
+          },
+          "max_image_bytes": {
+            "default": 5242880,
+            "description": "Maximum base64-encoded bytes per image; zero disables this byte limit.",
+            "minimum": 0.0,
+            "title": "Max Image Bytes",
+            "type": "integer"
+          },
+          "max_image_dimension": {
+            "default": 8000,
+            "description": "Maximum image axis; zero disables this limit.",
+            "minimum": 0.0,
+            "title": "Max Image Dimension",
+            "type": "integer"
+          },
+          "max_images": {
+            "default": 20,
+            "description": "Keep the newest images; zero removes all image input.",
+            "minimum": 0.0,
+            "title": "Max Images",
+            "type": "integer"
+          },
+          "split_large_images": {
+            "default": true,
+            "title": "Split Large Images",
+            "type": "boolean"
+          },
+          "support_gif": {
+            "default": true,
+            "title": "Support Gif",
+            "type": "boolean"
+          }
+        },
+        "title": "ImageInputPolicy",
         "type": "object"
       },
       "InboxOrder": {

@@ -8,7 +8,7 @@
   border-radius: var(--a13n-radius-group);
   background: var(--a13n-surface);
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }
 /* The connect step: one column of fields, then the notices and the actions. */
@@ -65,11 +65,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .factMono {
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   color: var(--a13n-secondary);
 }
 
@@ -83,7 +83,7 @@
 }
 .credentialNote,
 .credentialWarning {
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   white-space: nowrap;
 }
 .credentialNote {
@@ -107,7 +107,7 @@
   background: none;
   color: var(--a13n-secondary);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -133,7 +133,7 @@
 }
 .checkNote {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .checkResult {
   display: grid;
@@ -143,7 +143,7 @@
 .checkMessage {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
   display: -webkit-box;
   -webkit-box-orient: vertical;

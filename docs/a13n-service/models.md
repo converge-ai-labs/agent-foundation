@@ -65,6 +65,14 @@ A model spends its provider's credential, so creating a model or changing its `c
 
 Change a model with `PATCH /api/v1/models/{key}` (`name`, `description`, `config`, `pricing`, `catalog_ref`, `enabled`) and its `If-Match`, `"{key}:{version}"`. Disable it with `{"enabled": false}`; models have no delete operation. Model-API-specific settings, such as reasoning effort, can be shared Model defaults (`config.settings`) or Agent revision overrides (`model_settings`). Both are validated against the provider type's `settings_schemas`. These schemas leave out operator timeouts, upstream model selection and provider-account conversation state (such as `openai_previous_response_id`, `bedrock_inference_profile`, `openrouter_models` or auxiliary `openai_moderation` models), and server-side tools such as `openai_native_tools`, which `max_usage` cannot fully account for.
 
+### Image input preparation
+
+In Model **Advanced**, **Image input** defaults to **Prepare images** on, **Support GIF** on, **Max images** 20 and **Max image size (MiB)** 5. Binary GIFs are removed from model requests when Support GIF is off; image URLs are not fetched or classified. Max images zero removes all images; size zero disables the byte limit. The size budget measures **base64-encoded bytes per image**; 1 MiB is 1,048,576 bytes, not a decimal MB or the original file size.
+
+The API field is `config.characteristics.image_input`, not `config.settings`. Omission enables default preparation, an object customizes it, and explicit `null` disables automatic preparation. All seven fields are available through the API; see the [shared policy reference](../a13n-harness/models.md#image-input-policy). Console preserves unexposed dimension and splitting fields and exact byte budgets when you edit other controls.
+
+Each primary, independent child and image-understanding Model owns its policy. An attempt uses its resolved Model configuration; later attempts, including recovery, resolve the current Model just like other live Model defaults. Unlike Harness UI, Service does not freeze a Model recipe across attempts.
+
 ### Advanced request settings
 
 A Model's **Advanced** section offers Thinking effort and Max output tokens, plus Reasoning summary and Store response for OpenAI Responses. These fields edit the same draft as **Settings JSON**, where other native parameters remain available. Leaving a field at its default does not force a reasoning effort or output budget; choose values supported by your upstream model. Model defaults apply to agents using that Model, including reviewers and media understanding using their own selected Models.

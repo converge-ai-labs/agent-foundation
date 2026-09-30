@@ -1,121 +1,116 @@
-/* coss neutral theme, from the revision recorded in coss-source.json. */
+/* a13n theme on the coss token names. Cool neutrals, one indigo signal colour, and elevation
+   that separates the canvas, grouping surfaces, and floating layers. */
 @custom-variant dark (&:where(.dark, .dark *));
 :root {
-  --accent: --alpha(var(--color-black) / 4%);
-  --accent-foreground: var(--color-neutral-800);
-  --background: var(--color-white);
-  --border: --alpha(var(--color-black) / 8%);
-  --card: var(--color-white);
-  --card-foreground: var(--color-neutral-800);
+  --signal: #4f46e5;
+  --accent: rgb(22 24 32 / 4%);
+  --accent-foreground: #16171a;
+  --background: #ffffff;
+  --border: rgb(22 24 32 / 8%);
+  --card: #ffffff;
+  --card-foreground: #16171a;
   --destructive: var(--color-red-500);
   --destructive-foreground: var(--color-red-700);
-  --foreground: var(--color-neutral-800);
+  --foreground: #16171a;
   --info: var(--color-blue-500);
   --info-foreground: var(--color-blue-700);
-  --input: --alpha(var(--color-black) / 7%);
-  --muted: --alpha(var(--color-black) / 4%);
-  --muted-foreground: color-mix(
-    in srgb,
-    var(--color-neutral-500) 90%,
-    var(--color-black)
-  );
-  --popover: var(--color-white);
-  --popover-foreground: var(--color-neutral-800);
-  --primary: var(--color-neutral-800);
-  --primary-foreground: var(--color-neutral-50);
-  --ring: var(--color-neutral-400);
-  --secondary: --alpha(var(--color-black) / 4%);
-  --secondary-foreground: var(--color-neutral-800);
+  --input: rgb(22 24 32 / 11%);
+  --muted: rgb(22 24 32 / 3.5%);
+  --muted-foreground: #696c74;
+  --popover: #ffffff;
+  --popover-foreground: #16171a;
+  --primary: #16171a;
+  --primary-foreground: #fafafa;
+  --ring: var(--signal);
+  --secondary: rgb(22 24 32 / 4%);
+  --secondary-foreground: #16171a;
   --success: var(--color-emerald-500);
   --success-foreground: var(--color-emerald-700);
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-700);
-  --chart-1: var(--color-orange-600);
-  --chart-2: var(--color-teal-600);
-  --chart-3: var(--color-cyan-900);
-  --chart-4: var(--color-amber-400);
-  --chart-5: var(--color-amber-500);
-  --code: var(--color-white);
+  --chart-1: var(--signal);
+  --chart-2: var(--color-sky-500);
+  --chart-3: var(--color-emerald-500);
+  --chart-4: var(--color-amber-500);
+  --chart-5: var(--color-rose-500);
+  --code: #ffffff;
   --code-foreground: var(--foreground);
-  --code-highlight: --alpha(var(--color-black) / 4%);
-  --radius: 0.625rem;
-  --sidebar: var(--color-neutral-50);
-  --sidebar-accent: --alpha(var(--color-black) / 7%);
-  --sidebar-accent-foreground: var(--color-neutral-800);
-  --sidebar-hover: --alpha(var(--color-black) / 3%);
-  --sidebar-border: --alpha(var(--color-black) / 6%);
-  --sidebar-foreground: color-mix(
-    in srgb,
-    var(--color-neutral-800) 64%,
-    var(--sidebar)
-  );
-  --sidebar-primary: var(--color-neutral-800);
-  --sidebar-primary-foreground: var(--color-neutral-50);
-  --sidebar-ring: var(--color-neutral-400);
+  --code-highlight: rgb(22 24 32 / 4%);
+  --radius: 0.5rem;
+  --sidebar: #f7f7f8;
+  --sidebar-accent: rgb(22 24 32 / 6.5%);
+  --sidebar-accent-foreground: #16171a;
+  --sidebar-hover: rgb(22 24 32 / 3.5%);
+  --sidebar-border: rgb(22 24 32 / 6%);
+  --sidebar-foreground: #5b5e66;
+  --sidebar-primary: #16171a;
+  --sidebar-primary-foreground: #fafafa;
+  --sidebar-ring: var(--signal);
+  --elevation-raised:
+    0 0 0 1px rgb(22 24 32 / 6%), 0 1px 2px rgb(22 24 32 / 6%);
+  --elevation-overlay:
+    0 0 0 1px rgb(22 24 32 / 6%), 0 2px 4px rgb(22 24 32 / 4%),
+    0 12px 32px -6px rgb(22 24 32 / 16%);
+  --elevation-floating:
+    0 0 0 1px rgb(22 24 32 / 6%), 0 4px 12px -2px rgb(22 24 32 / 6%),
+    0 24px 56px -12px rgb(22 24 32 / 20%);
 }
 .dark {
-  --accent: --alpha(var(--color-white) / 4%);
-  --accent-foreground: var(--color-neutral-100);
-  --background: color-mix(
-    in srgb,
-    var(--color-neutral-950) 95%,
-    var(--color-white)
-  );
-  --border: --alpha(var(--color-white) / 6%);
-  --card: color-mix(in srgb, var(--background) 98%, var(--color-white));
-  --card-foreground: var(--color-neutral-100);
+  --signal: #8b93ff;
+  --accent: rgb(255 255 255 / 5%);
+  --accent-foreground: #ececee;
+  --background: #111214;
+  --border: rgb(255 255 255 / 7%);
+  --card: #17181b;
+  --card-foreground: #ececee;
   --destructive: color-mix(
     in srgb,
     var(--color-red-500) 90%,
     var(--color-white)
   );
   --destructive-foreground: var(--color-red-400);
-  --foreground: var(--color-neutral-100);
+  --foreground: #ececee;
   --info: var(--color-blue-500);
   --info-foreground: var(--color-blue-400);
-  --input: --alpha(var(--color-white) / 8%);
-  --muted: --alpha(var(--color-white) / 4%);
-  --muted-foreground: color-mix(
-    in srgb,
-    var(--color-neutral-500) 85%,
-    var(--color-white)
-  );
-  --popover: color-mix(in srgb, var(--background) 98%, var(--color-white));
-  --popover-foreground: var(--color-neutral-100);
-  --primary: var(--color-neutral-100);
-  --primary-foreground: var(--color-neutral-800);
-  --ring: var(--color-neutral-500);
-  --secondary: --alpha(var(--color-white) / 4%);
-  --secondary-foreground: var(--color-neutral-100);
+  --input: rgb(255 255 255 / 10%);
+  --muted: rgb(255 255 255 / 4%);
+  --muted-foreground: #979aa2;
+  --popover: #1b1c1f;
+  --popover-foreground: #ececee;
+  --primary: #ececee;
+  --primary-foreground: #16171a;
+  --ring: var(--signal);
+  --secondary: rgb(255 255 255 / 5%);
+  --secondary-foreground: #ececee;
   --success: var(--color-emerald-500);
   --success-foreground: var(--color-emerald-400);
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-400);
-  --chart-1: var(--color-blue-700);
-  --chart-2: var(--color-emerald-500);
-  --chart-3: var(--color-amber-500);
-  --chart-4: var(--color-purple-500);
-  --chart-5: var(--color-rose-500);
-  --code: color-mix(in srgb, var(--background) 98%, var(--color-white));
+  --chart-1: var(--signal);
+  --chart-2: var(--color-sky-400);
+  --chart-3: var(--color-emerald-400);
+  --chart-4: var(--color-amber-400);
+  --chart-5: var(--color-rose-400);
+  --code: #17181b;
   --code-foreground: var(--foreground);
-  --code-highlight: --alpha(var(--color-white) / 4%);
-  --sidebar: color-mix(
-    in srgb,
-    var(--color-neutral-950) 97%,
-    var(--color-white)
-  );
-  --sidebar-accent: --alpha(var(--color-white) / 8%);
-  --sidebar-accent-foreground: var(--color-neutral-100);
-  --sidebar-hover: --alpha(var(--color-white) / 3%);
-  --sidebar-border: --alpha(var(--color-white) / 5%);
-  --sidebar-foreground: color-mix(
-    in srgb,
-    var(--color-neutral-100) 64%,
-    var(--sidebar)
-  );
-  --sidebar-primary: var(--color-neutral-100);
-  --sidebar-primary-foreground: var(--color-neutral-800);
-  --sidebar-ring: var(--color-neutral-400);
+  --code-highlight: rgb(255 255 255 / 5%);
+  --sidebar: #0c0d0f;
+  --sidebar-accent: rgb(255 255 255 / 7%);
+  --sidebar-accent-foreground: #ececee;
+  --sidebar-hover: rgb(255 255 255 / 4%);
+  --sidebar-border: rgb(255 255 255 / 6%);
+  --sidebar-foreground: #8e9199;
+  --sidebar-primary: #ececee;
+  --sidebar-primary-foreground: #16171a;
+  --sidebar-ring: var(--signal);
+  --elevation-raised:
+    inset 0 0 0 1px rgb(255 255 255 / 6%), 0 1px 2px rgb(0 0 0 / 40%);
+  --elevation-overlay:
+    inset 0 0 0 1px rgb(255 255 255 / 8%), 0 2px 4px rgb(0 0 0 / 30%),
+    0 16px 40px -8px rgb(0 0 0 / 60%);
+  --elevation-floating:
+    inset 0 0 0 1px rgb(255 255 255 / 8%), 0 4px 12px -2px rgb(0 0 0 / 35%),
+    0 28px 64px -12px rgb(0 0 0 / 70%);
 }
 @theme inline {
   --animate-skeleton: skeleton 2s -1s infinite linear;
@@ -124,6 +119,7 @@
       background-position: -200% 0;
     }
   }
+  --color-signal: var(--signal);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-background: var(--background);
@@ -166,9 +162,16 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-sans: var(--a13n-font);
   --font-heading: var(--font-sans);
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-mono: var(--a13n-mono);
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --shadow-raised: var(--elevation-raised);
+  --shadow-overlay: var(--elevation-overlay);
+  --shadow-floating: var(--elevation-floating);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

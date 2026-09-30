@@ -77,8 +77,12 @@ function mount({
   coordinator = false,
   starred = false,
   worker = false,
+  waiting = false,
+  failed = false,
 } = {}) {
   const row = {
+    pending_decision: waiting ? { decision_id: "decision-one" } : null,
+    latest_operation: failed ? { status: "failed" } : null,
     thread: {
       thread_id: "thread-one",
       title: "Example",
@@ -97,7 +101,7 @@ function mount({
           initialEntries={[selected ? "/threads/thread-one" : "/settings"]}
         >
           <NewConversationDrafts value={newDrafts}>
-            <ThreadRow row={row} presence={null} />
+            <ThreadRow row={row} />
           </NewConversationDrafts>
           <Location />
         </MemoryRouter>
@@ -212,16 +216,40 @@ it.each([false, true])(
   },
 );
 
+it.each([
+  { waiting: true, failed: false, label: "Needs your answer" },
+  { waiting: false, failed: true, label: "Failed" },
+])(
+  "retains an explicit $label state in a compact row",
+  ({ waiting, failed, label }) => {
+    mount({ waiting, failed });
+    const state = screen.getByText(label);
+    expect(state.className).toContain("attentionState");
+    expect(
+      screen.getByRole("link", { name: new RegExp(`Example.*${label}`) }),
+    ).toBeTruthy();
+  },
+);
+
 it.each([false, true])(
   "toggles a shared star while running without navigation (starred=%s)",
   async (starred) => {
     mount({ starred, running: true });
-    const button = screen.getByRole("button", {
-      name: `${starred ? "Unstar" : "Star"} conversation: Example`,
-    });
-    expect(button.getAttribute("aria-pressed")).toBe(String(starred));
+    expect(
+      screen.queryByRole("button", { name: /Star conversation:/ }),
+    ).toBeNull();
+    expect(
+      !!screen.queryByRole("img", { name: "Starred conversation: Example" }),
+    ).toBe(starred);
     expect(screen.getByText("Running")).toBeTruthy();
-    await userEvent.click(button);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Actions for Example" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: `${starred ? "Unstar" : "Star"} conversation`,
+      }),
+    );
     await waitFor(() => expect(requests).toHaveLength(1));
     expect(await requests[0].json()).toEqual({
       expected_version: 3,
@@ -233,7 +261,7 @@ it.each([false, true])(
   },
 );
 
-it("offers the same star action in the menu and keeps failed changes explicit", async () => {
+it("keeps failed star changes explicit without showing an optimistic star", async () => {
   fail = true;
   mount();
   await userEvent.click(
@@ -245,10 +273,14 @@ it("offers the same star action in the menu and keeps failed changes explicit", 
   await screen.findByText("Conversation changed. Try again after refreshing.");
   expect(requests).toHaveLength(1);
   expect(
-    screen
-      .getByRole("button", { name: "Star conversation: Example" })
-      .getAttribute("aria-pressed"),
-  ).toBe("false");
+    screen.queryByRole("img", { name: "Starred conversation: Example" }),
+  ).toBeNull();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  expect(
+    await screen.findByRole("menuitem", { name: "Star conversation" }),
+  ).toBeTruthy();
 });
 
 it("does not offer stars for coordinator workers", async () => {

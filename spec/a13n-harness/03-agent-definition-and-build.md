@@ -81,6 +81,7 @@ class ModelCapability(StrEnum):
 
 class HarnessModelCharacteristics(BaseModel):
     capabilities: frozenset[ModelCapability] = frozenset()
+    image_input: ImageInputPolicy | None = ImageInputPolicy()
     context_window_tokens: int | None = None
     proactive_context_management_threshold: float | None = 0.65
     compact_threshold: float = 0.90
@@ -96,6 +97,8 @@ class AgentSpec(PydanticAgentSpec):
 The Harness `AgentSpec.usage_limits` uses Pydantic AI's native `UsageLimits` value directly. Its default sets only `request_limit=1000`; every token, tool-call, and cost ceiling remains disabled unless explicitly authored, and `count_tokens_before_request` remains false. This replaces Pydantic AI's 50-request fallback with a definition-owned long-task default without introducing another limit model. A plain native Pydantic AI `AgentSpec`, which cannot carry this Harness field, receives the same Harness default when executed. `UsageLimits(request_limit=None)` explicitly removes the request-count ceiling. Per-run precedence and delegation narrowing are owned by [Execution Context and Lifecycle](06-execution-context-and-lifecycle.md#usage-limits-and-native-retries) and [Delegation and Subagents](11-delegation-and-subagents.md#child-usage-limits).
 
 `AgentSpec.cold_start_filter` configures cold compression of already-consumed tool results. Omission enables `ColdStartFilterConfiguration()` with a one-hour idle interval; `None` disables automatic installation. Plain native Pydantic AI specs receive the same default. An explicitly supplied `ColdStartFilterCapability` retains its authored policy instead of receiving a second automatic instance. The idle interval is a deliberate retention policy, not a provider-cache guarantee or adaptive cache-duration detector. Each child definition selects its own policy. [Input, Model, and Output Boundaries](16-input-model-and-output.md#request-and-history-filters) owns the exact filtering semantics.
+
+`HarnessModelCharacteristics.image_input` owns request-only image preparation for the selected model. Omission enables the frozen `ImageInputPolicy()` defaults; a partial object validates with defaults for unspecified members, and explicit `None` disables automatic installation. Default-valued policies are omitted from serialization to preserve canonical bytes and content digests of legacy characteristics; explicit `None` is retained. An absent characteristics object and plain native Pydantic AI specs receive the same default-on behavior. An explicitly supplied `ImageFilterCapability` remains functional independently and suppresses the automatic duplicate. Each root, independently selected child, and image-understanding target uses its own selected model policy, not the parent's policy. This is neither native `ModelSettings` nor an Agent-wide/global configuration plane. The configuration and exact projection semantics belong to [Input, Model, and Output Boundaries](16-input-model-and-output.md#request-and-history-filters).
 
 Native `AgentSpec.retries` passes unchanged to Pydantic AI. `None` retains Pydantic AI's default of one function-tool retry and one output-validation retry; an integer selects both budgets, while an `AgentRetries` mapping can select `tools` and `output` independently. These are retries inside one Pydantic Agent loop. They do not enable Harness `ModelRecoveryPolicy`, retry a `UsageLimitExceeded` failure, or configure provider transport retries.
 
@@ -147,6 +150,7 @@ class HarnessBuilder:
         configured_plugins_enabled: bool | None = None,
         instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
         gateway_provider_factory: GatewayModelProviderFactory | None = None,
+        self_healing_enabled: bool = True,
     ) -> None: ...
 
     @overload

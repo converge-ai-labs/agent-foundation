@@ -88,7 +88,7 @@ export function DialogPopup({
       >
         <DialogPrimitive.Popup
           className={cn(
-            "group/dialog relative grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] min-h-0 w-full min-w-0 max-w-[32.5rem] origin-center overflow-hidden rounded-[12px] border-0 bg-popover not-dark:bg-clip-padding text-popover-foreground opacity-[calc(1-var(--nested-dialogs))] shadow-[0_18px_48px_--theme(--color-black/16%),0_2px_8px_--theme(--color-black/8%)] outline-none transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-ending-style:opacity-0 data-starting-style:opacity-0 sm:scale-[calc(1-0.1*var(--nested-dialogs))] sm:data-ending-style:scale-98 sm:data-starting-style:scale-98 dark:shadow-[0_18px_48px_--theme(--color-black/56%),0_0_0_1px_--theme(--color-white/6%)]",
+            "group/dialog relative grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] min-h-0 w-full min-w-0 max-w-[32.5rem] origin-center overflow-hidden rounded-[12px] border-0 bg-popover not-dark:bg-clip-padding text-popover-foreground opacity-[calc(1-var(--nested-dialogs))] shadow-floating outline-none transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-ending-style:opacity-0 data-starting-style:opacity-0 sm:scale-[calc(1-0.1*var(--nested-dialogs))] sm:data-ending-style:scale-98 sm:data-starting-style:scale-98",
             bottomStickOnMobile &&
               "max-sm:max-w-none max-sm:max-h-[calc(100dvh-3rem)] max-sm:origin-bottom max-sm:rounded-none max-sm:data-ending-style:translate-y-4 max-sm:data-starting-style:translate-y-4",
             placement === "top" &&
@@ -169,7 +169,7 @@ export function DialogTitle({
   return (
     <DialogPrimitive.Title
       className={cn(
-        "font-heading font-medium text-[18px] leading-tight tracking-tight",
+        "font-heading font-semibold text-[17px] leading-tight tracking-[-0.011em]",
         className,
       )}
       data-slot="dialog-title"

@@ -52,27 +52,6 @@ def _recipe(authentication: CodexSubscriptionAuthentication | GrokSubscriptionAu
     )
 
 
-async def test_codex_subscription_resolution_uses_official_provider_and_affinity() -> None:
-    from a13n_harness.models.codex import CodexRequestModel
-    from pydantic_ai.models.openai import OpenAIResponsesModel
-    from pydantic_ai.providers.openai_codex import OpenAICodexProvider
-
-    recipe = _recipe(CodexSubscriptionAuthentication(kind="codex_subscription"))
-    resolver = HarnessUiModelResolver(
-        {recipe.model_id: recipe},
-        subscription_sources={"codex_subscription": CodexSubscriptionSource(source=_CodexSource())},
-    )
-    resolved = await resolver(_CONTEXT, recipe.model_id)
-    assert isinstance(resolved, CodexRequestModel)
-    assert isinstance(resolved.wrapped, OpenAIResponsesModel)
-    assert isinstance(resolved.provider, OpenAICodexProvider)
-    assert resolved._affinity_settings(None)["extra_headers"] == {
-        name: derive_model_affinity_id("thread-current") for name in ("session-id", "thread-id", "x-client-request-id")
-    }
-    async with resolved:
-        assert resolved.model_name == "model-name"
-
-
 async def test_grok_subscription_resolution_delegates_to_harness_builder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -119,20 +98,31 @@ async def test_subscription_resolution_requires_compatible_host_wiring() -> None
     assert incompatible.value.code == "model_account_integration_invalid"
 
 
-async def test_fresh_resolver_keeps_sources_without_touching_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("fresh", [False, True])
+async def test_codex_resolution_passes_current_thread_and_bound_source_without_loading_credentials(
+    monkeypatch: pytest.MonkeyPatch, fresh: bool
+) -> None:
+    from a13n_harness_ui.model_accounts.codex import BoundCodexCredentialSource
+
     recipe = _recipe(CodexSubscriptionAuthentication(kind="codex_subscription"))
     source = _CodexSource()
     expected = object()
-
-    monkeypatch.setattr("a13n_harness.models.codex.CodexRequestModel", lambda *args, **kwargs: expected)
+    build = Mock(return_value=expected)
+    bind = Mock(wraps=BoundCodexCredentialSource)
+    monkeypatch.setattr("a13n_harness.models.codex.CodexRequestModel", build)
+    monkeypatch.setattr("a13n_harness_ui.model_accounts.codex.BoundCodexCredentialSource", bind)
     resolver = HarnessUiModelResolver(
         {recipe.model_id: recipe},
         subscription_sources={"codex_subscription": CodexSubscriptionSource(source=source)},
     )
 
-    resolved = await resolver.fresh()(_CONTEXT, recipe.model_id)
+    resolved = await (resolver.fresh() if fresh else resolver)(_CONTEXT, recipe.model_id)
 
     assert resolved is expected
+    bind.assert_called_once_with(source)
+    bound = build.call_args.kwargs["credential_source"]
+    assert isinstance(bound, BoundCodexCredentialSource)
+    build.assert_called_once_with("model-name", credential_source=bound, thread_id="thread-current")
 
 
 @pytest.mark.parametrize("header", [None, "x-session-id", "x-custom-affinity"])

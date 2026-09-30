@@ -41,6 +41,7 @@ async def test_workbench_deep_links_and_api_not_found_remain_distinct(tmp_path: 
             assert response.headers["cache-control"] == "no-cache"
             assert "script-src 'self'" in response.headers["content-security-policy"]
             assert "img-src 'self' data: blob:;" in response.headers["content-security-policy"]
+            assert "media-src 'self' blob:;" in response.headers["content-security-policy"]
         for path in (
             "/new/draft-demo",
             "/unknown",

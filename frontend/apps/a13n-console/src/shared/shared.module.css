@@ -17,7 +17,7 @@
 .form > h3 {
   margin: 8px 0 0;
   padding-top: 16px;
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 .twoColumns {
@@ -64,9 +64,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 4px 0;
+  padding: 14px 16px 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .collectionFooter p,
 .collectionFooter > div {

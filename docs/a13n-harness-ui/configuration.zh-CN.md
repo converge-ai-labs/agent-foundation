@@ -102,6 +102,7 @@ tools:
   interaction_timeout_seconds: 120
   enable_codeact: true
 security:
+  web_ssrf_protection: false
   shell_review:
     enable: false
     risk_threshold: null
@@ -329,6 +330,15 @@ export no_proxy=localhost,127.0.0.1,::1
 
 支持大写形式和 `ALL_PROXY`。选择和绕过匹配遵循 `httpx2`。Host 所有的 Web 搜索/抓取/获取/下载请求、远程 HTTPS MCP 连接和更新检查，以及 [Model HTTP 客户端](../a13n-harness/models.md#outbound-http-proxies)均遵循这些变量。改变环境后重启进程。容器运行时，代理地址必须能从容器访问。
 
-配置的代理是可信出站基础设施。URL 验证、本地 DNS 预检查、TLS 验证、重定向检查和响应限制仍适用，但最终 DNS 解析和目的网络限制由代理负责。直接连接的 Web 请求（包括 `NO_PROXY` 绕过）保留已有 IP 检查和固定机制。没有自定义 IP CONNECT 协议，代理失败也不会回退为直连。
+配置的代理是可信出站基础设施，负责目标 DNS 解析和网络限制。Host Web 工具使用原生 HTTP 连接，不预解析目标域名或固定 IP，直连和 `NO_PROXY` 路径也一样。只通过代理访问外网的机器不再需要本地目标 DNS。HTTP(S) URL 校验、TLS 验证、重定向检查、超时和响应限制仍启用。代理请求失败不会回退为直连。
+
+`security.web_ssrf_protection` 默认为 `false`，允许 Web 工具访问本地和内网目标。要启用轻量目标检查，设置：
+
+```yaml
+security:
+  web_ssrf_protection: true
+```
+
+启用后，Web 工具拒绝请求和重定向 URL 中的 `localhost`、`.localhost` 名称以及非公网 IP 字面量。检查不做 DNS 查询，因此不能阻止域名解析到内网地址或 DNS 重绑定。这不是网络隔离；更强的限制应由部署环境或代理实施。该设置随 root 和 child Run 捕获，修改只影响后续接受的 Run，不改变活动 Run。它不改变 Model、MCP 或 Environment 策略。
 
 明文回环 MCP 和明文本地/provider 私有 Envd 附加仍直连。HTTPS Envd 附加遵循代理变量。第三方 SDK 所有的传输保留 SDK 代理行为；守护进程发起的 Envd 配对和反向 WebSocket 连接，与 Python HTTP 附加客户端相互独立。

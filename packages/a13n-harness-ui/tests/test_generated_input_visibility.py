@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import io
 import json
 from collections.abc import AsyncIterator
 from dataclasses import replace
@@ -17,6 +19,7 @@ from a13n_harness_ui.conversation import ConversationExcerpt, checkpoint_excerpt
 from a13n_harness_ui.display_history import DisplayHistoryCollector, saved_display_history, with_display_history
 from a13n_harness_ui.thread_projection import _message_entry, _transcript_turns
 from a13n_stream_protocol import HarnessAguiObserver
+from PIL import Image
 from pydantic_ai import BinaryContent, RunContext, TextContent, ToolReturn
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability, Hooks
@@ -27,12 +30,19 @@ from pydantic_ai.toolsets import FunctionToolset
 pytestmark = pytest.mark.anyio
 
 
+def _png() -> bytes:
+    buffer = io.BytesIO()
+    with Image.new("RGB", (1, 1), "red") as image:
+        image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
 @pytest.mark.parametrize("runner", [False, True], ids=["direct", "codeact"])
 @pytest.mark.parametrize("shape", ["scalar", "list", "tuple", "media", "filtered", "cache"])
 async def test_supplemental_content_never_becomes_authored_input(runner: bool, shape: str) -> None:
     # Identical authored and injected text must remain distinguishable by origin.
     original_text = TextContent("same", metadata={"source_id": "attachment", "custom": "keep", "display": True})
-    original_media = BinaryContent(b"1234", media_type="image/png", vendor_metadata={"detail": "high"})
+    original_media = BinaryContent(_png(), media_type="image/png", vendor_metadata={"detail": "high"})
     supplemental = (
         "same"
         if shape == "scalar"
@@ -215,8 +225,9 @@ async def test_inline_deferred_media_preserves_structured_execution_and_safe_obs
     def attach() -> dict:
         raise CallDeferred()
 
+    image_bytes = _png()
     supplied = ToolReturn(
-        {"values": [2, 3]}, content=[BinaryContent(b"\xff\x00binary", media_type="image/png"), "supplement"]
+        {"values": [2, 3]}, content=[BinaryContent(image_bytes, media_type="image/png"), "supplement"]
     )
 
     async def handle(ctx, requests):
@@ -280,7 +291,7 @@ async def test_inline_deferred_media_preserves_structured_execution_and_safe_obs
             events.extend(event.model_dump(mode="json") for event in observer.observe(item))
     assert run.result is not None and run.result.output_or_raise() == "done"
     encoded = json.dumps(events)
-    assert "binary" not in encoded
+    assert base64.b64encode(image_bytes).decode() not in encoded
     assert "supplement" not in encoded
     assert supplied.return_value == {"values": [2, 3]}
     assert supplied.content is not None

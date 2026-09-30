@@ -31,12 +31,37 @@
   gap: 8px;
   padding-inline: 8px 2px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-top: 8px;
 }
 .navigationHeading > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.shortcuts {
+  display: grid;
+  gap: 2px;
+}
+.homeLink {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  min-height: 32px;
+  border-radius: 8px;
+  color: var(--a13n-text-supporting);
+  text-decoration: none;
+  font-size: 13px;
+}
+.homeLink:hover {
+  background: var(--a13n-hover);
+}
+.homeLink.selected {
+  background: var(--a13n-elevated);
 }
 .draftsTrigger {
   width: 100%;
@@ -134,13 +159,15 @@
     opacity: 1;
   }
 }
+.projectGroup {
+  margin-bottom: 20px;
+}
 .groupHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  margin-top: 6px;
-  color: var(--a13n-text-supporting);
+  color: var(--a13n-text);
   font-size: 13px;
 }
 .groupHeading:not(:has(.projectDrag)) {
@@ -156,7 +183,7 @@
   gap: 6px;
   flex: 1;
   min-width: 0;
-  padding: 8px 0;
+  padding: 6px 0;
   border: 0;
   background: transparent;
   color: inherit;
@@ -169,7 +196,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-weight: 500;
+  font-weight: 600;
 }
 .groupToggle > svg {
   flex-shrink: 0;
@@ -230,9 +257,6 @@
   background: var(--a13n-elevated);
   box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
 }
-.threadRow:has(.selected) strong {
-  font-weight: 500;
-}
 .threadActions {
   flex-shrink: 0;
   margin-inline-end: 4px;
@@ -240,31 +264,23 @@
   background: transparent;
 }
 .threadStar {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
+  margin-inline: 4px;
   color: var(--a13n-secondary);
 }
-.threadStar[aria-pressed="true"] {
-  color: var(--warning-foreground);
-}
-.threadStar[aria-busy="true"] {
-  opacity: 0.5;
-  cursor: wait;
-}
 @media (hover: hover) and (pointer: fine) {
-  .threadStar:not([aria-pressed="true"]):not([aria-busy="true"]),
   .threadActions,
   .groupActions {
     opacity: 0;
   }
-  .threadRow:hover .threadStar:not([aria-busy="true"]),
-  .threadRow:focus-within .threadStar:not([aria-busy="true"]),
-  .threadRow:has(.selected) .threadStar:not([aria-busy="true"]),
   .threadRow:hover .threadActions,
   .threadRow:focus-within .threadActions,
-  .threadRow:has(.selected) .threadActions,
   .threadActions[data-popup-open],
   .groupHeading:hover .groupActions,
-  .groupHeading:focus-within .groupActions {
+  .groupHeading:focus-within .groupActions,
+  .groupActions:has([data-popup-open]) {
     opacity: 1;
   }
 }
@@ -279,7 +295,7 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 8px;
+  padding: 6px 8px;
   border-radius: 6px;
   color: var(--a13n-text);
   text-decoration: none;
@@ -299,6 +315,13 @@
 }
 .threadLink > span {
   min-width: 0;
+}
+.threadLink > span:first-of-type {
+  flex: 1;
+}
+.threadLink .attentionState {
+  color: var(--a13n-text-supporting);
+  font-size: 12px;
 }
 .threadLink strong {
   display: block;
@@ -1017,13 +1040,40 @@
   line-height: 1.75;
 }
 
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  margin-block: 12px 2px;
+  padding-inline: 8px 4px;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+.sectionHeading small {
+  color: var(--a13n-tertiary);
+  font-variant-numeric: tabular-nums;
+  font-size: inherit;
+}
+.sectionHeading > button {
+  margin-inline-start: auto;
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.showMore {
+  margin: 4px 0 0 8px;
+  color: var(--a13n-secondary);
+}
+
 /* Attachment identities live in the editor text; widgets are their presentation. */
 .inlineAttachment {
   display: inline-flex;
   align-items: center;
   vertical-align: middle;
   max-width: min(280px, 100%);
-  margin: 2px 3px;
+  margin: 0 3px;
   border: 1px solid var(--a13n-border);
   border-radius: 9px;
   background: var(--a13n-surface);
@@ -1042,12 +1092,12 @@
   color: inherit;
   font: inherit;
   cursor: pointer;
-  padding: 4px 7px;
+  padding: 0 6px;
   min-width: 0;
 }
 .inlineAttachmentOpen img {
-  width: 24px;
-  height: 24px;
+  width: 16px;
+  height: 16px;
   object-fit: cover;
   border-radius: 4px;
   flex-shrink: 0;

@@ -1,6 +1,7 @@
 /*
  * The contextual settings shell: a tinted 240px navigation column that lists
- * every scope the reader can reach, and one 760px content column.
+ * every scope the reader can reach, and one content column whose left edge
+ * never moves between sections.
  */
 .layout {
   display: grid;
@@ -27,7 +28,7 @@
   padding: 0 8px;
   border-radius: var(--a13n-radius-row);
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   text-decoration: none;
 }
 .back:hover {
@@ -37,7 +38,7 @@
 .search input {
   min-height: 32px;
   height: 32px;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   background: var(--a13n-surface);
   border-color: transparent;
 }
@@ -60,7 +61,7 @@
   align-items: baseline;
   gap: 6px;
   margin: 0 8px 6px;
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
   line-height: 16px;
   color: var(--a13n-secondary);
@@ -85,7 +86,7 @@
   line-height: 18px;
   color: var(--a13n-secondary);
   text-decoration: none;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .outline nav a svg {
   flex-shrink: 0;
@@ -97,11 +98,10 @@
 .outline nav a[aria-current] {
   background: var(--a13n-selected);
   color: var(--a13n-text);
-  font-weight: 500;
 }
 .noResults {
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   padding: 0 8px;
   margin: 0;
 }
@@ -109,33 +109,33 @@
   min-width: 0;
 }
 .content {
-  padding: 48px 40px 96px;
+  padding: 36px 48px 96px;
   width: 100%;
-  max-width: 760px;
+  max-width: 1040px;
   min-width: 0;
   margin: 0 auto;
 }
-/* A section that lists resources needs more room than one that edits fields. */
-.content[data-content="collection"] {
-  max-width: 1040px;
+/* A section that edits fields keeps a reading measure; one that lists resources uses the column. */
+.content:not([data-content="collection"]) > * {
+  max-width: 680px;
 }
 .heading {
-  margin-bottom: 32px;
+  margin-bottom: 28px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
 }
 .heading h1 {
-  font-size: 22px;
-  line-height: 30px;
-  letter-spacing: -0.4px;
-  font-weight: 500;
+  font-size: var(--a13n-text-2xl);
+  line-height: 1.2;
+  letter-spacing: var(--a13n-tracking-title);
+  font-weight: 600;
   margin: 0;
 }
 .heading p {
   color: var(--a13n-secondary);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   line-height: 20px;
   margin: 6px 0 0;
 }
@@ -157,7 +157,7 @@
 }
 .note {
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   margin: 0;
 }
 .nameControl {
@@ -177,12 +177,12 @@
   min-width: 0;
 }
 .detailIdentity strong {
-  font-size: 18px;
-  font-weight: 500;
+  font-size: var(--a13n-text-xl);
+  font-weight: 600;
   line-height: 26px;
 }
 .detailIdentity span {
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   color: var(--a13n-secondary);
 }
 .detailActions {
@@ -206,13 +206,13 @@
   gap: 2px;
 }
 .facts dt {
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
   color: var(--a13n-secondary);
 }
 .facts dd {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -241,7 +241,7 @@
     gap: 12px;
     padding: 8px 12px;
     background: var(--sidebar);
-    font-size: 12.5px;
+    font-size: var(--a13n-text-xs);
     color: var(--a13n-secondary);
   }
   .mobileNavigation button[aria-expanded="true"] svg {
@@ -291,10 +291,10 @@
   align-items: center;
   max-width: 100%;
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: var(--a13n-radius-chip);
   background: var(--a13n-surface);
   color: var(--a13n-text-supporting);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-weight: 500;
   line-height: 16px;
   white-space: nowrap;
@@ -306,7 +306,7 @@
   align-items: center;
   gap: 6px;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   text-decoration: none;
   width: fit-content;
 }
@@ -321,10 +321,10 @@
   min-width: 0;
 }
 .stacked > span {
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
 }
 .stacked > small,
 .stacked > span + * {
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   color: var(--a13n-secondary);
 }

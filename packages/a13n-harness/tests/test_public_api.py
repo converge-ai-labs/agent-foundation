@@ -49,6 +49,7 @@ def test_root_facade_is_the_exact_primary_code_first_api() -> None:
         "HarnessStreamEvent",
         "HarnessTraceContent",
         "IdentityError",
+        "ImageInputPolicy",
         "InputError",
         "InputMediaEvent",
         "InputTextEvent",
@@ -239,6 +240,7 @@ def test_feature_facades_export_documented_families() -> None:
         "ColdStartFilterConfiguration",
         "ContentFilterCapability",
         "ContentFilterConfiguration",
+        "ImageFilterCapability",
         "MediaFamily",
         "MessageIntegrityFilterCapability",
     }

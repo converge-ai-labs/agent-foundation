@@ -216,7 +216,7 @@ function MultiFilter({
 }) {
   return (
     <Menu>
-      <MenuTrigger render={<Button variant="outline" size="sm" />}>
+      <MenuTrigger render={<Button variant="outline" />}>
         <span className={styles.filterLabel}>{label}</span>
         {values.length > 0 && (
           <span className={styles.filterCount}>{values.length}</span>
@@ -280,7 +280,7 @@ function UpdatedFilter({
         setOpen(value);
       }}
     >
-      <PopoverTrigger render={<Button variant="outline" size="sm" />}>
+      <PopoverTrigger render={<Button variant="outline" />}>
         <span className={styles.filterLabel}>{t("Updated")}</span>
         {(after || before) && (
           <span className={styles.filterDot} aria-label={t("Filter active")} />

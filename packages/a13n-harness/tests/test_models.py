@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from copy import copy
+from dataclasses import dataclass
 from typing import Any, cast
 
 import a13n_harness.builder as builder_module
 import pytest
 from a13n_harness import (
+    AbstractHarnessPlugin,
     AgentContext,
     AgentDefinition,
     DefinitionError,
@@ -19,6 +21,8 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness import AgentSpec as HarnessAgentSpec
+from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
+from a13n_harness.capability_types import CapabilityTypeCatalog, CapabilityTypeRegistration
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models import (
     MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
@@ -26,7 +30,13 @@ from a13n_harness.models import (
     SelfHealingModelCapability,
 )
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ResolveModelId, WrapModelRequestHandler
+from pydantic_ai.capabilities import (
+    AbstractCapability,
+    CapabilityOrdering,
+    CombinedCapability,
+    ResolveModelId,
+    WrapModelRequestHandler,
+)
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import (
     BinaryContent,
@@ -523,9 +533,9 @@ def _recovering_function_model() -> tuple[FunctionModel, list[int]]:
     return FunctionModel(stream_function=stream), calls
 
 
-async def test_self_healing_is_not_installed_implicitly() -> None:
+async def test_self_healing_can_be_disabled_explicitly() -> None:
     model, calls = _recovering_function_model()
-    executable = HarnessBuilder().build(
+    executable = HarnessBuilder(self_healing_enabled=False).build(
         AgentSpec(),
         output_type=str,
         model=model,
@@ -541,13 +551,14 @@ async def test_self_healing_is_not_installed_implicitly() -> None:
     assert calls == [1]
 
 
-async def test_self_healing_capability_wraps_a_concrete_model() -> None:
+@pytest.mark.parametrize("explicit", [False, True])
+async def test_self_healing_wraps_a_concrete_model(explicit: bool) -> None:
     model, calls = _recovering_function_model()
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=model,
-        capabilities=(SelfHealingModelCapability(),),
+        capabilities=(SelfHealingModelCapability(),) if explicit else (),
     )
 
     result = await executable.run(
@@ -562,13 +573,13 @@ async def test_self_healing_capability_wraps_a_concrete_model() -> None:
     assert len(result.usage_records) == 2
 
 
-async def test_self_healing_capability_wraps_a_run_resolved_model() -> None:
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_self_healing_wraps_a_run_resolved_model(enabled: bool) -> None:
     model, calls = _recovering_function_model()
     binding = RecordingModelResolver(model)
-    executable = HarnessBuilder().build(
+    executable = HarnessBuilder(self_healing_enabled=enabled).build(
         AgentSpec(model="logical:primary"),
         output_type=str,
-        capabilities=(SelfHealingModelCapability(),),
     )
 
     result = await executable.run(
@@ -577,13 +588,15 @@ async def test_self_healing_capability_wraps_a_run_resolved_model() -> None:
         previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
     )
 
-    assert result.output_or_raise() == "recovered"
-    assert calls == [1, 2]
+    assert result.status == ("completed" if enabled else "failed")
+    assert calls == ([1, 2] if enabled else [1])
     assert len(binding.calls) == 1
 
 
-async def test_self_healing_capability_wraps_a_natively_inferred_model(
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_self_healing_wraps_a_natively_inferred_model(
     monkeypatch: pytest.MonkeyPatch,
+    enabled: bool,
 ) -> None:
     model, calls = _recovering_function_model()
 
@@ -593,10 +606,9 @@ async def test_self_healing_capability_wraps_a_natively_inferred_model(
         return model
 
     monkeypatch.setattr("a13n_harness.models.inference._pydantic_infer_model", infer_model)
-    executable = HarnessBuilder().build(
+    executable = HarnessBuilder(self_healing_enabled=enabled).build(
         AgentSpec(model="native:test"),
         output_type=str,
-        capabilities=(SelfHealingModelCapability(),),
     )
 
     result = await executable.run(
@@ -605,8 +617,191 @@ async def test_self_healing_capability_wraps_a_natively_inferred_model(
         previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
     )
 
+    assert result.status == ("completed" if enabled else "failed")
+    assert calls == ([1, 2] if enabled else [1])
+
+
+@dataclass
+class _NoRepairCapability(SelfHealingModelCapability):
+    def __post_init__(self) -> None:
+        super().__init__(rules=())
+
+
+class _SelfHealingPlugin(AbstractHarnessPlugin):
+    plugin_id = "custom-self-healing"
+
+    def __init__(self, capability: SelfHealingModelCapability) -> None:
+        self.capability = capability
+
+    def get_capabilities(self):
+        return (self.capability,)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("source", ["definition", "combined", "declarative", "plugin"])
+async def test_explicit_self_healing_rules_take_precedence(source: str, enabled: bool) -> None:
+    model, calls = _recovering_function_model()
+    authored = SelfHealingModelCapability(rules=())
+    catalog = CapabilityTypeCatalog((CapabilityTypeRegistration("_NoRepairCapability", _NoRepairCapability),))
+    spec = AgentSpec(
+        capabilities=[{"name": "_NoRepairCapability", "arguments": None}] if source == "declarative" else [],
+    )
+    executable = HarnessBuilder(self_healing_enabled=enabled, capability_type_catalog=catalog).build(
+        AgentDefinition(
+            agent=spec,
+            output_type=str,
+            model=model,
+            capabilities=(authored,)
+            if source == "definition"
+            else (CombinedCapability([authored]),)
+            if source == "combined"
+            else (),
+            plugins=(_SelfHealingPlugin(authored),) if source == "plugin" else (),
+        )
+    )
+    leaves: list[AbstractCapability[AgentContext]] = []
+    executable._agent.root_capability.apply(leaves.append)
+    healing = [capability for capability in leaves if isinstance(capability, SelfHealingModelCapability)]
+    assert len(healing) == 1
+    assert healing[0].rules == ()
+    result = await executable.run(
+        "continue",
+        bindings=RunBindings.embedded(),
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+    assert result.status == "failed"
+    assert calls == [1]
+
+
+async def test_explicit_self_healing_still_works_with_automatic_installation_disabled() -> None:
+    model, calls = _recovering_function_model()
+    executable = HarnessBuilder(self_healing_enabled=False).build(
+        AgentSpec(), output_type=str, model=model, capabilities=(SelfHealingModelCapability(),)
+    )
+    result = await executable.run(
+        "continue",
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
     assert result.output_or_raise() == "recovered"
     assert calls == [1, 2]
+
+
+@pytest.mark.parametrize("model_source", ["concrete", "resolver"])
+@pytest.mark.parametrize("context_window", [None, 2_000])
+async def test_default_self_healing_preserves_an_already_wrapped_model(
+    model_source: str,
+    context_window: int | None,
+) -> None:
+    model, calls = _recovering_function_model()
+    wrapped = SelfHealingModel(model, rules=())
+    observed: list[tuple[int | None, float | None, bool]] = []
+    executable = HarnessBuilder().build(
+        HarnessAgentSpec(
+            model="logical:primary" if model_source == "resolver" else None,
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=context_window),
+        ),
+        output_type=str,
+        model=wrapped if model_source == "concrete" else None,
+        capabilities=(_ModelProfileObserver(observed),),
+    )
+    result = await executable.run(
+        "continue",
+        bindings=RunBindings.embedded(
+            model_resolver=RecordingModelResolver(wrapped) if model_source == "resolver" else None,
+        ),
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+    assert result.status == "failed"
+    assert calls == [1]
+    assert observed[0][0] == context_window
+
+
+@pytest.mark.parametrize("exact_match", [False, True])
+async def test_default_self_healing_does_not_generalize_or_repeat_recovery(exact_match: bool) -> None:
+    calls: list[int] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        calls.append(1)
+        raise ModelHTTPError(
+            status_code=404 if exact_match else 503,
+            model_name="failing",
+            body={"code": 5008, "message": "Item with id 'rs_old' not found."} if exact_match else "unavailable",
+        )
+        yield "unreachable"
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=stream))
+    result = await executable.run(
+        "continue",
+        previous_state=HarnessState.new(message_history=_stale_reasoning_history()),
+    )
+    assert result.status == "failed"
+    assert len(calls) == (2 if exact_match else 1)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_self_healing_selection_applies_to_inline_child_definitions(enabled: bool) -> None:
+    executable = HarnessBuilder(self_healing_enabled=enabled).build(
+        AgentSpec(),
+        output_type=str,
+        model=_recovering_function_model()[0],
+        subagents=(
+            SubagentDefinition(
+                name="child",
+                description="child",
+                agent=AgentDefinition(
+                    agent=AgentSpec(),
+                    output_type=str,
+                    model=_recovering_function_model()[0],
+                ),
+            ),
+        ),
+    )
+    child = executable.subagents["child"].executable
+    leaves: list[AbstractCapability[AgentContext]] = []
+    child._agent.root_capability.apply(leaves.append)
+    assert sum(isinstance(capability, SelfHealingModelCapability) for capability in leaves) == int(enabled)
+
+
+@pytest.mark.parametrize("invalid", [None, 0, 1, "false"])
+def test_self_healing_flag_requires_a_boolean(invalid: Any) -> None:
+    with pytest.raises(TypeError, match="self_healing_enabled must be a boolean"):
+        HarnessBuilder(self_healing_enabled=invalid)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_self_healing_default_is_shared_with_compaction_requests(enabled: bool) -> None:
+    calls: list[str] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        is_compaction = any(
+            isinstance(part, UserPromptPart) and isinstance(part.content, str) and "compact" in part.content.lower()
+            for message in messages
+            for part in message.parts
+        )
+        calls.append("compaction" if is_compaction else "primary")
+        if len(calls) == 1:
+            raise ModelHTTPError(
+                status_code=404,
+                model_name="failing",
+                body={"code": 5008, "message": "Item with id 'rs_old' not found."},
+            )
+        yield "summary" if is_compaction else "done"
+
+    history = _stale_reasoning_history()
+    history[-1].usage = RequestUsage(input_tokens=2100)
+    executable = HarnessBuilder(self_healing_enabled=enabled).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(CompactionPolicy(trigger_tokens=2000)),),
+    )
+    result = await executable.run("continue", previous_state=HarnessState.new(message_history=history))
+    assert result.output_or_raise() == "done"
+    # Compaction failure is best-effort; only the enabled path repairs and replays the nested request.
+    assert calls == (["compaction", "compaction", "primary"] if enabled else ["compaction", "primary"])
+    assert result.usage.requests == (3 if enabled else 2)
 
 
 async def test_self_healing_retries_once_after_an_exact_history_repair() -> None:

@@ -148,6 +148,15 @@ export class ResultTracker {
         this.acknowledgements.delete(threadId);
     }
   };
+  acknowledgeAll = async (threads: readonly Schema<"ThreadSummary">[]) => {
+    await Promise.all(
+      threads
+        .filter((thread) => this.isUnread(thread.thread_id))
+        .map((thread) =>
+          this.acknowledge(thread.thread_id, thread.completion?.version ?? 0),
+        ),
+    );
+  };
   isUnread(threadId: string) {
     const acknowledged = this.snapshot.followed.get(threadId);
     return (

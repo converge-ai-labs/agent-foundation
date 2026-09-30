@@ -171,6 +171,22 @@ spec = AgentSpec(
 
 When selected, `HandoffCapability()` derives its summarize reminder at 65%. `CompactionCapability()` evaluates its 90% threshold at each request from native `RunContext.model.context_window` and `RunContext.context_window_used`, then falls back to Harness characteristics and captured provider usage when the native values are unavailable. An explicit Capability token threshold takes precedence. Model characteristics never enable either Capability by themselves. A Host may resolve these values from its own preset catalog, the Harness official model catalog, or characteristics aliases; `HarnessBuilder` never infers one from the model name. Native Pydantic AI `AgentSpec` remains accepted when this extension is not needed.
 
+### Image input policy
+
+`HarnessModelCharacteristics.image_input` uses the shared frozen `ImageInputPolicy`, available from `a13n_harness`. It controls request preparation for that selected model, independently of the parent's model, context budgets, and native `ModelSettings`. Omission enables the default policy; a partial object uses defaults for unspecified members; explicit `null` disables automatic preparation. An explicit `ImageFilterCapability` keeps its authored policy without a duplicate automatic instance.
+
+| Parameter                | Default   | Meaning                                                               |
+| ------------------------ | --------- | --------------------------------------------------------------------- |
+| `support_gif`            | `true`    | Allow binary GIF input; `false` replaces it with explanatory text.    |
+| `max_images`             | `20`      | Keep the newest images across the request; `0` removes all images.    |
+| `max_image_bytes`        | `5242880` | Base64-encoded bytes **per image**; `0` disables this byte limit.     |
+| `max_image_dimension`    | `8000`    | Maximum image axis in pixels; `0` disables this dimension limit.      |
+| `split_large_images`     | `true`    | Split tall static images into full-width segments before compression. |
+| `image_split_max_height` | `4096`    | Positive segment height in pixels.                                    |
+| `image_split_overlap`    | `50`      | Nonnegative overlap, strictly smaller than the segment height.        |
+
+The default byte limit is 5 MiB (`5 * 1024 * 1024`), not original-file size or a total request budget. Hosts store exact bytes even when an authoring form displays MiB. No model-name guessing selects GIF support or limits. Default-valued policies are omitted from serialization so legacy model captures retain their canonical bytes; explicit `null` is retained. See [request-only image preparation](context.md#filters) for transformation and history-preservation behavior.
+
 ## Automatic model request affinity
 
 Gateway affinity is **opt-in**. Configure the **header name**, not a fixed session value:

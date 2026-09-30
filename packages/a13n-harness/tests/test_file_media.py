@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 from collections.abc import Mapping
 
 import a13n_harness.toolsets.file_media as file_media_module
@@ -15,6 +16,7 @@ from a13n_harness.toolsets import (
     MediaUnderstandingError,
     MediaUnderstandingRequest,
 )
+from PIL import Image
 from pydantic_ai import BinaryContent
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -61,12 +63,18 @@ async def test_environment_provider_runs_default_agent_for_each_media_kind(
     provider = AgentMediaUnderstandingProvider.from_environment({model_environment: f"test:{kind}-model"})
 
     assert provider is not None
+    source_bytes = b"media-bytes"
+    if kind == "image":
+        with Image.new("RGB", (16, 16), "red") as image:
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            source_bytes = buffer.getvalue()
     result = await provider.understand(
         MediaUnderstandingRequest(
             kind=kind,
             media_type=media_type,
             source_name=f"sample.{kind}",
-            source_bytes=b"media-bytes",
+            source_bytes=source_bytes,
         )
     )
 
@@ -81,7 +89,7 @@ async def test_environment_provider_runs_default_agent_for_each_media_kind(
         "output_audio_tokens": 4,
     }
     binary = _binary_content(calls[0])
-    assert binary.data == b"media-bytes"
+    assert binary.data == source_bytes
     assert binary.media_type == media_type
     system_prompt = next(
         part.content

@@ -512,6 +512,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/host/files/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Host File Info */
+        get: operations["host_file_info_api_host_files_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/host/files/text": {
         parameters: {
             query?: never;
@@ -588,14 +605,48 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Host File */
-        get: operations["download_host_file_api_host_files_content_get"];
+        get?: never;
         /** Upload Host File */
         put: operations["upload_host_file_api_host_files_content_put"];
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/host/files/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Host File Transfer */
+        post: operations["host_file_transfer_api_host_files_transfers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/host/files/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transfer Host File */
+        get: operations["transfer_host_file_api_host_files_transfer_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /** Transfer Host File */
+        head: operations["transfer_host_file_api_host_files_transfer_head"];
         patch?: never;
         trace?: never;
     };
@@ -3236,6 +3287,14 @@ export interface components {
             /** Link Target */
             link_target?: string | null;
         };
+        /** FileInfo */
+        FileInfo: {
+            entry: components["schemas"]["FileEntry"];
+            /** Resolved Path */
+            resolved_path: string;
+            /** Media Type */
+            media_type: string;
+        };
         /** FilePage */
         FilePage: {
             /**
@@ -3258,6 +3317,13 @@ export interface components {
             presentation: "text" | "binary" | "too_large";
             /** Text */
             text?: string | null;
+        };
+        /** FileTransferAccess */
+        FileTransferAccess: {
+            /** Url */
+            url: string;
+            /** Expires At */
+            expires_at: number;
         };
         /** GitChange */
         GitChange: {
@@ -3460,6 +3526,8 @@ export interface components {
         HarnessModelCharacteristics: {
             /** Capabilities */
             capabilities?: components["schemas"]["ModelCapability"][];
+            /** @description Image preparation policy; omitted uses native defaults, null disables automatic preparation. */
+            image_input?: components["schemas"]["ImageInputPolicy"] | null;
             /** Context Window Tokens */
             context_window_tokens?: number | null;
             /**
@@ -3472,6 +3540,50 @@ export interface components {
              * @default 0.9
              */
             compact_threshold?: number;
+        };
+        /**
+         * ImageInputPolicy
+         * @description Preparation limits for one model's image input, not native ModelSettings.
+         */
+        ImageInputPolicy: {
+            /**
+             * Split Large Images
+             * @default true
+             */
+            split_large_images?: boolean;
+            /**
+             * Image Split Max Height
+             * @default 4096
+             */
+            image_split_max_height?: number;
+            /**
+             * Image Split Overlap
+             * @default 50
+             */
+            image_split_overlap?: number;
+            /**
+             * Max Image Bytes
+             * @description Maximum base64-encoded bytes per image; zero disables this byte limit.
+             * @default 5242880
+             */
+            max_image_bytes?: number;
+            /**
+             * Max Image Dimension
+             * @description Maximum image axis; zero disables this limit.
+             * @default 8000
+             */
+            max_image_dimension?: number;
+            /**
+             * Max Images
+             * @description Keep the newest images; zero removes all image input.
+             * @default 20
+             */
+            max_images?: number;
+            /**
+             * Support Gif
+             * @default true
+             */
+            support_gif?: boolean;
         };
         JsonValue: unknown;
         /**
@@ -6148,6 +6260,19 @@ export interface components {
              */
             recursive?: boolean;
         };
+        /** FileTransferRequest */
+        FileTransferRequest: {
+            /** Path */
+            path: string;
+            /** Expected Revision */
+            expected_revision: string;
+            /**
+             * Disposition
+             * @default attachment
+             * @enum {string}
+             */
+            disposition?: "attachment" | "inline";
+        };
         /** FileCaptureRequest */
         FileCaptureRequest: {
             /** Path */
@@ -7512,6 +7637,38 @@ export interface operations {
             };
         };
     };
+    host_file_info_api_host_files_info_get: {
+        parameters: {
+            query: {
+                path: string;
+                expected_revision?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     host_file_text_api_host_files_text_get: {
         parameters: {
             query: {
@@ -7640,11 +7797,70 @@ export interface operations {
             };
         };
     };
-    download_host_file_api_host_files_content_get: {
+    upload_host_file_api_host_files_content_put: {
         parameters: {
             query: {
                 path: string;
                 expected_revision?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    host_file_transfer_api_host_files_transfers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FileTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileTransferAccess"];
+                };
+            };
+        };
+    };
+    transfer_host_file_api_host_files_transfer_get: {
+        parameters: {
+            query: {
+                token: string;
             };
             header?: never;
             path?: never;
@@ -7672,21 +7888,16 @@ export interface operations {
             };
         };
     };
-    upload_host_file_api_host_files_content_put: {
+    transfer_host_file_api_host_files_transfer_head: {
         parameters: {
             query: {
-                path: string;
-                expected_revision?: string | null;
+                token: string;
             };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/octet-stream": string;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -7694,7 +7905,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileEntry"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

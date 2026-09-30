@@ -532,8 +532,11 @@ def test_resume_with_explicit_permissions_is_rejected_before_any_app_start(monke
 async def test_setup_model_view_uses_declared_media_without_an_external_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, disable_media: bool
 ) -> None:
+    from io import BytesIO
+
     import a13n_harness.models.codex as runtime
     import yaml
+    from PIL import Image
     from pydantic_ai import BinaryContent
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
@@ -545,7 +548,9 @@ async def test_setup_model_view_uses_declared_media_without_an_external_provider
     if disable_media:
         document["model_characteristics"]["capabilities"] = []
         model_path.write_text(yaml.safe_dump(document), encoding="utf-8")
-    data = b"\x89PNG"
+    stream = BytesIO()
+    Image.new("RGB", (2, 2), "white").save(stream, format="PNG")
+    data = stream.getvalue()
     (tmp_path / "image.png").write_bytes(data)
     observed = []
     returns = []

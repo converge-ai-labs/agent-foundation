@@ -8,13 +8,13 @@
   justify-content: space-between;
   gap: 12px;
   color: var(--a13n-secondary);
-  font-size: 11.5px;
+  font-size: var(--a13n-text-xs);
 }
 .rowSelect {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .rowSelect select {
   height: 28px;
@@ -24,7 +24,7 @@
   background: var(--a13n-elevated);
   box-shadow: var(--a13n-shadow-subtle);
   color: var(--a13n-text);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .identityGrid {
   display: grid;

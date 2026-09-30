@@ -89,7 +89,7 @@ Text files addressed by path, such as a skill package or a memory.
 How a resource presents itself.
 
 - `IconTile` — the 32 / 36 / 44px surface tile that frames an icon, avatar, or brand mark.
-- `avatarColor`, `nameInitials` — the fallback identity for a resource with no image: a hue hashed from its identifier and initials from the first and last word of its name.
+- `avatarTint`, `nameInitials` — the fallback identity for a resource with no image: a tint of a hue hashed from its identifier and initials from the first and last word of its name.
 - `ResourceIdentity` — name, tile, and secondary line; see `shared/collection`.
 - `ResourceReference` — the hash affordance that reveals the ID, key, and any related identifiers, each with a copy button.
 - `ResourceKeyChip` — the key chip beside a detail-page title.

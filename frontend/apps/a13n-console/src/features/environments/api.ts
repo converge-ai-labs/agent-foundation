@@ -12,11 +12,12 @@ export function environmentTemplates(
   workspaceId: string,
   signal: AbortSignal,
   cursor?: string,
+  limit?: number,
 ) {
   return client
     .workspace(workspaceId)
     .GET("/api/v1/environment-templates", {
-      params: { query: { cursor } },
+      params: { query: { cursor, limit } },
       signal,
     })
     .then(data);

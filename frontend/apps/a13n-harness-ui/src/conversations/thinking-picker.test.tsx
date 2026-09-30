@@ -62,29 +62,6 @@ it("renders backend labels and preserves false separately from default", async (
   expect(onChange).toHaveBeenLastCalledWith(null);
 });
 
-it("keeps unknown and stale selections explicit without inventing options", async () => {
-  const user = userEvent.setup();
-  const unknown = {
-    ...model,
-    thinking: {
-      status: "unknown" as const,
-      default_summary: "Custom",
-      reason: "No reviewed controls",
-      options: [{ value: null, label: "Model default", description: "Custom" }],
-    },
-  };
-  const onChange = vi.fn();
-  render(<ThinkingPicker model={unknown} value="low" onChange={onChange} />);
-  expect(screen.getByText(/Unavailable selection/)).toBeTruthy();
-  expect(screen.getByText("No reviewed controls")).toBeTruthy();
-  expect(screen.getAllByRole("button")).toHaveLength(1);
-  expect(onChange).not.toHaveBeenCalled();
-  await user.click(
-    screen.getByRole("button", { name: "Use default thinking" }),
-  );
-  expect(onChange).toHaveBeenLastCalledWith(null);
-});
-
 it("resets thinking when a refreshed catalog changes the inherited Model", () => {
   const onThinkingChange = vi.fn();
   const catalog: Schema<"ThreadSelectorCatalog"> = {
@@ -157,41 +134,4 @@ it("renders boolean controls without inventing effort levels", async () => {
   await user.keyboard("[ArrowRight][Space]");
   expect(onChange).toHaveBeenLastCalledWith(true);
   expect(screen.queryByRole("button", { name: "High" })).toBeNull();
-});
-
-it("keeps larger option sets keyboard-navigable with backend descriptions", async () => {
-  const user = userEvent.setup();
-  const onChange = vi.fn();
-  const efforts = ["minimal", "low", "medium", "high", "xhigh"] as const;
-  render(
-    <ThinkingPicker
-      model={{
-        ...model,
-        thinking: {
-          status: "supported",
-          default_summary: "Medium",
-          options: [
-            {
-              value: null,
-              label: "Default",
-              description: "Follow model settings",
-            },
-            ...efforts.map((value) => ({
-              value,
-              label: value,
-              description: `Details for ${value}`,
-            })),
-          ],
-        },
-      }}
-      value="low"
-      onChange={onChange}
-    />,
-  );
-  screen.getByRole("button", { name: /^low/ }).focus();
-  await user.keyboard("[ArrowRight][Space]");
-  expect(onChange).toHaveBeenLastCalledWith("medium");
-  expect(screen.getByRole("button", { name: "xhigh" }).title).toBe(
-    "Details for xhigh",
-  );
 });

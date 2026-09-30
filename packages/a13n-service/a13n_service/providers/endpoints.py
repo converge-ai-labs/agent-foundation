@@ -47,10 +47,12 @@ def dialed_endpoint(configuration: BaseModel) -> str | None:
 
 
 async def check_endpoint(type_: str, endpoint: str, policy: EndpointPolicy) -> None:
-    """Refuse, before any dial, an endpoint the operator's policy denies. The host is resolved once for the check:
-    a name that does not resolve now is unavailable, not denied, since resolution failures are transient."""
+    """Refuse an endpoint the operator's policy denies before dialing. When SSRF protection is enabled,
+    resolve the host once; resolution failures are transient unavailability, not policy denials."""
     try:
         _, hostname, port = policy.validate_syntax(endpoint)
+        if not policy.ssrf_protection:
+            return
         try:
             await allowed_addresses(policy, hostname, port)
         except OSError:

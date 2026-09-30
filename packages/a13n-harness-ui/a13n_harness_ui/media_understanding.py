@@ -6,6 +6,7 @@ import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, cast
 
+from a13n_harness import ImageInputPolicy
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.toolsets.file_media import (
@@ -64,6 +65,11 @@ class FileMediaUnderstanding:
                 provider = AgentMediaUnderstandingProvider(
                     models={request.kind: model},
                     model_settings={request.kind: cast(ModelSettings, dict(recipe.settings))},
+                    image_input=(
+                        recipe.model_characteristics.image_input
+                        if recipe.model_characteristics is not None
+                        else ImageInputPolicy()
+                    ),
                 )
             except (ModelResolutionError, TypeError, ValueError) as exc:
                 # Do not substitute an ambient Model after a configured Model fails.

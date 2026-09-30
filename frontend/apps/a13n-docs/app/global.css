@@ -200,6 +200,7 @@ figure.shiki > div.absolute {
   padding-block: 6px;
   border-radius: 8px;
   font-size: 14px;
+  font-weight: 400;
   line-height: 20px;
   color: var(--color-fd-foreground);
   transition: background-color 100ms;
@@ -216,8 +217,6 @@ figure.shiki > div.absolute {
   > [role="presentation"]
   a[data-active="true"] {
   background: var(--sidebar-accent);
-  color: var(--sidebar-accent-foreground);
-  font-weight: 500;
 }
 
 :is(#nd-sidebar, #nd-sidebar-mobile) > [role="presentation"] :is(a, button) {

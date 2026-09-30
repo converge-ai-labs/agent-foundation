@@ -156,6 +156,47 @@ it("retains unseen success through later running work, stale observations, and l
   expect(item.isUnread("one")).toBe(false);
 });
 
+it("marks only supplied result versions read and preserves later completions", async () => {
+  const item = tracker();
+  for (const id of ["one", "two", "other-project"])
+    await item.follow(thread(id));
+  for (const id of ["one", "two", "other-project", "not-followed"])
+    item.observe(thread(id, 1));
+  const selected = [
+    thread("one", 1),
+    thread("two", 1),
+    thread("not-followed", 1),
+  ];
+  const pending = item.acknowledgeAll(selected);
+  item.observe(thread("one", 2));
+  await pending;
+  expect(item.isUnread("one")).toBe(true);
+  expect(item.isUnread("two")).toBe(false);
+  expect(item.isUnread("other-project")).toBe(true);
+  expect(await new ResultStore().read()).not.toContainEqual({
+    threadId: "not-followed",
+    acknowledged: 1,
+  });
+});
+
+it("retains failed bulk acknowledgements for the existing storage retry", async () => {
+  const store = new ResultStore();
+  const item = tracker(store);
+  await item.follow(thread("one"));
+  item.observe(thread("one", 1));
+  const update = vi
+    .spyOn(store, "update")
+    .mockRejectedValue(new Error("Quota"));
+  await item.acknowledgeAll([thread("one", 1)]);
+  expect(item.isUnread("one")).toBe(true);
+  expect(item.getSnapshot().storageError).toContain("could not be saved");
+  update.mockRestore();
+  threads.set("one", thread("one", 2));
+  await item.refresh();
+  expect(item.getSnapshot().followed.get("one")).toBe(1);
+  expect(item.isUnread("one")).toBe(true);
+});
+
 it("rereads committed tab state and keeps more than 256 followed roots in bounded batches", async () => {
   const store = new ResultStore();
   await Promise.all(

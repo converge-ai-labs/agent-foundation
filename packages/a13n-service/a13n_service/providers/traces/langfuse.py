@@ -45,14 +45,21 @@ class Langfuse:
     public_key: str
     secret_key: str = field(repr=False)
     timeout: float  # bounds each query
+    ssrf_protection: bool = True
 
     @classmethod
     def configure(
-        cls, url: str | None, public_key: str | None, secret_key: SecretStr | None, *, timeout: float
+        cls,
+        url: str | None,
+        public_key: str | None,
+        secret_key: SecretStr | None,
+        *,
+        timeout: float,
+        ssrf_protection: bool = True,
     ) -> Self:
         if url is None or public_key is None or secret_key is None:
             raise ValueError("telemetry: Langfuse needs trace_url, langfuse_public_key and langfuse_secret_key")
-        return cls(url, public_key, secret_key.get_secret_value(), timeout)
+        return cls(url, public_key, secret_key.get_secret_value(), timeout, ssrf_protection)
 
     @property
     def otlp_endpoint(self) -> str:
@@ -93,7 +100,13 @@ class Langfuse:
             params["cursor"] = query.cursor
         # The key pair that ingests spans also reads them.
         body = await read_json(
-            self.type, "GET", self.url + _OBSERVATIONS, timeout=self.timeout, headers=self.otlp_headers, params=params
+            self.type,
+            "GET",
+            self.url + _OBSERVATIONS,
+            timeout=self.timeout,
+            headers=self.otlp_headers,
+            params=params,
+            ssrf_protection=self.ssrf_protection,
         )
         try:
             page = _Page.model_validate(body)

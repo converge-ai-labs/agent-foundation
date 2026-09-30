@@ -2,7 +2,7 @@ import { Input } from "a13n-ui";
 import type { ReactNode } from "react";
 import styles from "./collection.module.css";
 
-/** Search at 300px, then filters, then secondary actions at the right. */
+/** Search up to 300px, then filters, then secondary actions at the right. */
 export function Toolbar({
   search,
   onSearchChange,
@@ -26,7 +26,6 @@ export function Toolbar({
       {onSearchChange && (
         <Input
           type="search"
-          size="sm"
           className={styles.toolbarSearch}
           aria-label={searchLabel}
           placeholder={searchPlaceholder ?? searchLabel}

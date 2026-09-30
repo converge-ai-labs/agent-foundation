@@ -6,6 +6,11 @@
   color: var(--a13n-text);
   background: var(--a13n-canvas);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+.a13n-root ::selection {
+  background: color-mix(in srgb, var(--a13n-signal) 22%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

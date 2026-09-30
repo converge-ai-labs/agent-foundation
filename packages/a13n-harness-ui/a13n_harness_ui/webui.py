@@ -53,6 +53,13 @@ from a13n_harness_ui.devices import DeviceInfo, DeviceSummary
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.extensions import CatalogReference
+from a13n_harness_ui.host_file_transfers import (
+    TRANSFER_PATH,
+    FileTransferAccess,
+    FileTransferRequest,
+    FileTransfers,
+    stream_response,
+)
 from a13n_harness_ui.host_files import (
     DirectoryCreateRequest,
     DirectoryPage,
@@ -61,6 +68,7 @@ from a13n_harness_ui.host_files import (
     FileDeleteRequest,
     FileDeletion,
     FileEntry,
+    FileInfo,
     FileMoveRequest,
     FileReadRequest,
     FileText,
@@ -389,11 +397,13 @@ class AccessBoundary:
         api_key: str | None,
         allowed_hosts: frozenset[str],
         allowed_origins: Callable[[], frozenset[str]],
+        file_transfers: FileTransfers | None = None,
     ) -> None:
         self.app = app
         self.api_key = api_key
         self.allowed_hosts = allowed_hosts
         self.allowed_origins = allowed_origins
+        self.file_transfers = file_transfers
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in {"http", "websocket"}:
@@ -444,6 +454,7 @@ class AccessBoundary:
                 not interactive
                 and not (scope["path"] == PAIRING_PATH and scope["method"] == "POST")
                 and self.api_key is not None
+                and not (self.file_transfers is not None and self.file_transfers.admits(request))
                 and not hmac.compare_digest(authorization.encode(), f"Bearer {self.api_key}".encode())
             ):
                 await _error("authentication_required", "Enter the API key printed by this server.", 401)(
@@ -493,6 +504,7 @@ def create_webui(
     sandbox_url: str | None = None
     sandbox_error: str | None = None
     stopping = stopping if stopping is not None else Event()
+    file_transfers = FileTransfers()
 
     @asynccontextmanager
     async def lifespan(_server: FastAPI) -> AsyncIterator[None]:
@@ -529,7 +541,13 @@ def create_webui(
     ipaddress.ip_address(host)
     # Wildcard binds accept IP literals, never arbitrary DNS names.
     hosts = frozenset({host, "localhost", "127.0.0.1", "::1"})
-    server.add_middleware(AccessBoundary, api_key=api_key, allowed_hosts=hosts, allowed_origins=lambda: allowed_origins)
+    server.add_middleware(
+        AccessBoundary,
+        api_key=api_key,
+        allowed_hosts=hosts,
+        allowed_origins=lambda: allowed_origins,
+        file_transfers=file_transfers,
+    )
     server.add_middleware(RequestLog)
 
     @server.middleware("http")
@@ -550,6 +568,7 @@ def create_webui(
         elif code in {
             "host_files_disabled",
             "host_files_permission_denied",
+            "host_files_transfer_expired",
             "host_git_disabled",
             "host_terminal_disabled",
             "host_git_permission_denied",
@@ -1002,6 +1021,10 @@ def create_webui(
     ) -> DirectoryPage:
         return await app().browse_host_files(path, offset=offset, limit=limit, revision=revision)
 
+    @server.get("/api/host/files/info", response_model=FileInfo)
+    async def host_file_info(path: NativePath, expected_revision: Revision | None = None) -> FileInfo:
+        return await app().host_file_info(FileReadRequest(path=path, expected_revision=expected_revision))
+
     @server.get("/api/host/files/text", response_model=FileText)
     async def host_file_text(path: NativePath, expected_revision: Revision | None = None) -> FileText:
         return await app().read_host_file(FileReadRequest(path=path, expected_revision=expected_revision))
@@ -1047,17 +1070,33 @@ def create_webui(
             data.extend(chunk)
         return await app().upload_host_file(path, bytes(data), expected_revision=expected_revision)
 
-    @server.get("/api/host/files/content")
-    async def download_host_file(path: NativePath, expected_revision: Revision | None = None) -> Response:
-        snapshot = await app().download_host_file(FileReadRequest(path=path, expected_revision=expected_revision))
-        return Response(
-            snapshot.data,
-            media_type="application/octet-stream",
-            headers={
-                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(Path(path).name, safe='')}",
-                "Content-Security-Policy": "sandbox; default-src 'none'",
-                "ETag": f'"{snapshot.entry.revision}"',
-            },
+    @server.post(
+        "/api/host/files/transfers", response_model=FileTransferAccess, openapi_extra=_body(FileTransferRequest)
+    )
+    async def host_file_transfer(request: Request) -> FileTransferAccess:
+        selected = await _document(request, FileTransferRequest)
+        opened = await app().open_host_file_stream(
+            FileReadRequest(path=selected.path, expected_revision=selected.expected_revision)
+        )
+        try:
+            return file_transfers.issue(selected, opened.resolved_path)
+        finally:
+            await opened.close()
+
+    @server.get(TRANSFER_PATH)
+    @server.head(TRANSFER_PATH)
+    async def transfer_host_file(request: Request, token: Annotated[str, Query(max_length=32768)]) -> Response:
+        selected = file_transfers.verify(token)
+        opened = await app().open_host_file_stream(
+            FileReadRequest(path=selected.path, expected_revision=selected.expected_revision)
+        )
+        return await stream_response(
+            request,
+            opened,
+            app().read_host_file_stream,
+            filename=Path(selected.path).name,
+            media_type=selected.media_type,
+            inline=selected.disposition == "inline",
         )
 
     @server.post(
@@ -1893,7 +1932,8 @@ def create_webui(
             headers={
                 "Cache-Control": "no-cache",
                 "Content-Security-Policy": (
-                    "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+                    "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
+                    "style-src 'self' 'unsafe-inline'; "
                     "script-src 'self'; frame-ancestors 'none'; base-uri 'none'; frame-src "
                     + (origin(sandbox_url.removesuffix("/sandbox.html")) if sandbox_url is not None else "'none'")
                 ),

@@ -65,6 +65,14 @@ curl "$A13N_URL/api/v1/model-catalog" -H "Authorization: Bearer $A13N_API_KEY"
 
 使用 `PATCH /api/v1/models/{key}`（`name`、`description`、`config`、`pricing`、`catalog_ref`、`enabled`）和 `If-Match` 值 `"{key}:{version}"` 修改模型。`{"enabled": false}` 可禁用；模型没有删除操作。推理强度等模型 API 专属设置可以作为共享模型默认值（`config.settings`），或作为 Agent 修订版本覆盖值（`model_settings`）。两者都按 provider 类型的 `settings_schemas` 校验。这些 schema 不包含运维超时、上游模型选择、provider 账号对话状态（例如 `openai_previous_response_id`、`bedrock_inference_profile`、`openrouter_models` 或辅助 `openai_moderation` 模型），以及 `max_usage` 无法完整计量的服务端工具，例如 `openai_native_tools`。
 
+### 图片输入预处理
+
+模型的**高级**设置中，**图片输入**默认开启**预处理图片**与**支持 GIF**，**最多图片数**为 20，**单张图片大小上限（MiB）**为 5。关闭 GIF 支持后，模型请求中会移除二进制 GIF；不会下载图片 URL 或据此判断格式。图片数量设为 0 会移除全部图片；大小设为 0 不限制字节数。大小预算按**单张图片的 Base64 编码字节数**计算；1 MiB 为 1,048,576 字节，不是十进制 MB 或原始文件大小。
+
+API 字段是 `config.characteristics.image_input`，不是 `config.settings`。省略时启用默认预处理，提供对象可自定义，显式 `null` 则关闭自动预处理。全部七个字段均可通过 API 配置，见[共享策略参考](../a13n-harness/models.md#image-input-policy)。编辑其他控件时，Console 保留未展示的尺寸与切分字段，以及精确的字节预算。
+
+主模型、独立子 agent 的模型与图片理解模型各自拥有自己的策略。每次 attempt 使用当次解析出的模型配置；后续 attempt（包括恢复）与其他实时模型默认值一样，重新解析当前模型。与 Harness UI 不同，Service 不会跨 attempt 冻结模型 recipe。
+
 ### 高级请求设置
 
 模型的 **Advanced** 区域提供 Thinking effort 和 Max output tokens，OpenAI Responses 还提供 Reasoning summary 和 Store response。这些字段与 **Settings JSON** 编辑同一份草稿，其他原生参数仍可在 JSON 中设置。保留默认值不会强制设置推理强度或输出额度；请使用上游模型支持的值。模型默认值应用于使用该模型的 agent，也应用于使用各自选定模型的 reviewer 和媒体理解调用。
