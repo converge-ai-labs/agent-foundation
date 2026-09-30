@@ -14,6 +14,7 @@ from pydantic_ai.usage import UsageLimits
 
 from a13n_harness.capability_types import first_party_declarative_capability_types
 from a13n_harness.filters.cold_start import ColdStartFilterConfiguration
+from a13n_harness.filters.image import ImageFilterConfiguration
 
 
 class ModelCapability(StrEnum):
@@ -61,6 +62,7 @@ class AgentSpec(PydanticAgentSpec):
     system_prompt: str | list[str] | None = None
     toolset_instructions: bool = True
     cold_start_filter: ColdStartFilterConfiguration | None = Field(default_factory=ColdStartFilterConfiguration)
+    image_filter: ImageFilterConfiguration | None = Field(default_factory=ImageFilterConfiguration)
     usage_limits: UsageLimits = Field(default_factory=_default_usage_limits)
     model_characteristics: HarnessModelCharacteristics | None = None
 
@@ -132,6 +134,14 @@ class AgentSpec(PydanticAgentSpec):
                 {"type": "null"},
             ],
             "default": ColdStartFilterConfiguration().model_dump(mode="json"),
+        }
+        definitions["ImageFilterConfiguration"] = ImageFilterConfiguration.model_json_schema()
+        schema["properties"]["image_filter"] = {
+            "anyOf": [
+                {"$ref": "#/$defs/ImageFilterConfiguration"},
+                {"type": "null"},
+            ],
+            "default": ImageFilterConfiguration().model_dump(mode="json"),
         }
         usage_limits_schema = TypeAdapter(UsageLimits).json_schema()
         usage_limits_schema["default"] = TypeAdapter(UsageLimits).dump_python(

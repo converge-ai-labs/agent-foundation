@@ -29,7 +29,9 @@ Pass a native model directly through `HarnessBuilder.build(model=...)`, or selec
 
 ## Execution boundary and filters
 
-Each built Agent includes the tool execution boundary and message integrity filter. Add Capabilities for policy, context, memory, delegation, or model recovery. Toolsets are available from `a13n_harness.toolsets`, and managed tool contracts from `a13n_harness.tools`.
+Each built Agent includes the tool execution boundary, message integrity filter, and request-only image preparation. Image preparation splits tall static images, compresses images to encoded-byte and dimension limits, and retains the newest images without changing saved history or original files. Configure it through `AgentSpec.image_filter`, or set that field to `None` to disable the default. See [Context](../../docs/a13n-harness/context.md#filters).
+
+Add Capabilities for policy, context, memory, delegation, or model recovery. Toolsets are available from `a13n_harness.toolsets`, and managed tool contracts from `a13n_harness.tools`.
 
 A completed Run returns a `HarnessState` with a stable `thread_id`. Pass it as `previous_state` to continue the Thread; each new Run receives a fresh `run_id`. The Host persists accepted state and reconstructs credentials and other current authority on resume. [State and resume](../../docs/a13n-harness/state-and-resume.md) covers serialization and interrupted calls.
 

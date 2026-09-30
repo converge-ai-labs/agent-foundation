@@ -97,6 +97,17 @@ without_cold_compression = spec.with_updates(cold_start_filter=None)
 
 Use content filtering only for provider/model multimodal compatibility. Cold-start filtering shortens old, already-consumed tool-result strings after the configured interval since the latest model response. It leaves user input, thinking, native media, and pending tool results unchanged. One hour is an intentional retention policy, not a promise about a provider's cache expiry. An explicitly composed `ColdStartFilterCapability` keeps its own policy and suppresses the automatic instance. Neither filter is transport retry or semantic recovery.
 
+Image preparation is also enabled by default. Before each model request, `ImageFilterCapability` splits tall static images into full-width segments (4096 pixels high with 50 pixels of overlap), compresses individual images or segments to 5 MiB of base64-encoded bytes and an 8000-pixel maximum axis, and keeps the newest 20 images. Corrupted or unpreparable images and older excess images become explanatory text in that request only. Saved history and original files retain their pixels and metadata.
+
+```python
+from a13n_harness.filters import ImageFilterConfiguration
+
+spec = AgentSpec(image_filter=ImageFilterConfiguration(max_images=10, split_large_images=False))
+without_image_preparation = spec.with_updates(image_filter=None)
+```
+
+Set `max_image_bytes=0` or `max_image_dimension=0` to disable that compression limit independently, and `support_gif=False` to remove binary GIF input. Animated images are not split or flattened into JPEG. The policy covers native user sequences and ordinary tool-return scalar or top-level list images; nested tool JSON is not reinterpreted as an image input. Image URLs count toward the quota but are not fetched or transformed. The policy does not impose a total request-byte budget or guarantee acceptance by every gateway. `AgentMediaUnderstandingProvider` selects its image target's policy independently through its own `image_filter` argument; it never inherits the parent's limits.
+
 ## Handoff versus automatic compaction
 
 Both handoff and compaction ask the Agent to carry forward the `SKILL.md` paths, brief roles, and immediately needed supporting file paths for skills actually used and still relevant. On resume, the Agent is reminded to reread those instructions before dependent work unless the full content is already available. This is guidance, not an automatic reload or tool gate; merely inspected skills are not promoted to active workflows, and complete reads still in context can be reused.

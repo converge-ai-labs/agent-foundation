@@ -36,7 +36,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | `a13n_harness.environment.advanced`  | Explicit Run-local runtime construction over the same Environment mount inputs               |
 | `a13n_harness.environment.providers` | Advanced Host binding scopes, exact runtime mount ceilings, and entered aggregate contracts  |
 | `a13n_harness.events`                | Event emission helpers and typed first-party payloads                                        |
-| `a13n_harness.filters`               | First-party content and integrity filters                                                    |
+| `a13n_harness.filters`               | First-party content, image, cold-start, and integrity filters                                |
 | `a13n_harness.mcp`                   | MCP context-header integration                                                               |
 | `a13n_harness.providers.memory`      | Memory store contracts, file format, local directory store, and Memory Provider definitions  |
 | `a13n_harness.providers.model.oauth` | Codex login supplements and Grok OAuth sources, flows, lifecycle, and Model construction     |
