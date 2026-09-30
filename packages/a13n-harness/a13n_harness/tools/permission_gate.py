@@ -10,7 +10,7 @@ from typing import Any, cast
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ApprovalRequired, ToolFailed
-from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.messages import ModelRequest, TextContent
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import ToolsetTool
 
@@ -26,6 +26,7 @@ from a13n_harness.capabilities.tool_review import (
     ToolReviewRequest,
     ToolReviewResultPayload,
 )
+from a13n_harness.content import request_input_content
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
@@ -278,9 +279,9 @@ async def _review_request(
     for message in reversed(ctx.messages):
         if isinstance(message, ModelRequest):
             text = [
-                part.content
-                for part in message.parts
-                if isinstance(part, UserPromptPart) and isinstance(part.content, str)
+                item.value if isinstance(item.value, str) else item.value.content
+                for item in request_input_content(message)
+                if item.metadata.display and isinstance(item.value, str | TextContent)
             ]
             if text:
                 task_text = "\n".join(text)

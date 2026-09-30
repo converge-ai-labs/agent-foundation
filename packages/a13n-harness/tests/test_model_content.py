@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from typing import Any
 
 import httpx2
@@ -13,6 +14,7 @@ from a13n_harness.models import SelfHealingModelCapability, create_model_http_cl
 from a13n_harness.models.inference import RequestHeadersModel
 from a13n_harness.tools._output import _render_tool_return
 from google.genai import types
+from PIL import Image
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
     BinaryContent,
@@ -142,7 +144,9 @@ async def test_harness_native_google_request_with_optional_history_repair(repair
 
     client = create_model_http_client(transport=httpx2.MockTransport(handle))
     native = GoogleModel("gemini-2.5-flash", provider=GoogleProvider(api_key="test-key", http_client=client))
-    media = BinaryContent(b"image", media_type="image/png")
+    image = BytesIO()
+    Image.new("RGB", (1, 1)).save(image, format="PNG")
+    media = BinaryContent(image.getvalue(), media_type="image/png")
     try:
         executable = HarnessBuilder().build(
             AgentSpec(),
@@ -159,6 +163,11 @@ async def test_harness_native_google_request_with_optional_history_repair(repair
         await client.aclose()
     assert result.output_or_raise() == "done"
     assert len(requests) == (2 if repair else 1)
+    payloads = [json.loads(request.content) for request in requests]
+    assert any("inlineData" in part for part in payloads[0]["contents"][-1]["parts"])
+    if repair:
+        assert not any("inlineData" in part for part in payloads[1]["contents"][-1]["parts"])
+        assert "View it again if you still need it." in json.dumps(payloads[1])
     content = [
         item
         for message in result.state.message_history
