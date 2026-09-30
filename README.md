@@ -20,9 +20,9 @@ Agent Foundation is an open-source library and platform for building and running
 
 You need **Docker with Docker Compose** and a model provider API key. The stack includes Service, Console, PostgreSQL, Redis, and access to your host Docker Engine for agent execution. No repository clone, Make, Python, Node.js, or source build is needed.
 
-![Service Console showing workspace usage, daily spending, and a per-agent breakdown](.github/assets/service-console.png)
+![Service Console: build agents, try runs, inspect execution traces, and monitor usage](.github/assets/console-workflow.webp)
 
-*Service Console — Monitor agent usage, token consumption, and cost across your workspace. Shown with fictional demo data.*
+*Service Console — Build agents, try runs, inspect execution traces, and monitor usage. Shown with fictional demo data.*
 
 Download the [Compose file](deploy/docker/compose/a13n-service.yaml) and start the stack:
 
@@ -46,6 +46,21 @@ The first account created on an uninitialized Service is its administrator. On l
 The stack binds to loopback and mounts the host Docker socket for Docker execution environments. The source Compose file uses the published `latest` image; release assets pin a release version. See the [deployment guide](deploy/docker/compose/README.md) before exposing Service to other machines.
 
 Continue with the [Service quickstart](docs/a13n-service/get-started.md) for model setup, API usage, stop/resume, and troubleshooting.
+
+## Choose your agent stack
+
+Build your agent stack in Console: choose model providers, web data services, execution environments, and remote MCP servers.
+
+![Console catalogs for Models, Web Data, Environments, and Connections](.github/assets/console-integrations.webp)
+
+| Capability       | Explore                                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Models**       | [14 provider types](docs/a13n-service/models.md#model-providers), including cloud APIs, gateways, and local Ollama endpoints.            |
+| **Web Data**     | [10 search and scrape providers](docs/a13n-service/tools.md#web-tools), including Brave, Exa, Tavily, and TinyFish.                      |
+| **Environments** | [Docker and hosted sandboxes](docs/a13n-service/environments.md#providers), including E2B, Daytona, Modal, Runloop, Sprites, and Vercel. |
+| **Connections**  | [Browse remote MCP servers](docs/a13n-service/tools.md#remote-mcp-servers) or connect your own compatible endpoint.                      |
+
+*Explore the full-size screenshots in the linked guides. The Local directory environment is available only in development.*
 
 ## Use Harness UI
 

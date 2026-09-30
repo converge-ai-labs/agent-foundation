@@ -9,7 +9,7 @@ All paths below are under `/api/v1` and act in the request's [workspace](http.md
 
 ## Agents
 
-In Console, open **Agents → Create agent**. Each save creates an immutable **version** (a revision in the API); **Versions** lists them and **Set as default** chooses the one new conversations use. **Import from YAML** and **Export agent** copy an agent between workspaces, matching each referenced resource to one in the target workspace.
+In Console, open **Agents → Create manually**. Each save creates an immutable **version** (a revision in the API); **Versions** lists them and **Set as default** chooses the one new conversations use. **Import from YAML** and **Export agent** copy an agent between workspaces, matching each referenced resource to one in the target workspace.
 
 Through the API:
 
@@ -31,6 +31,8 @@ The response's `id` (`ap_…`) identifies the agent in paths and references; age
 The built-in [Agent Composer](agent-composer.md) is an agent too, the workspace's one with `source: "builtin"`; it cannot be changed or archived.
 
 ### Agent configuration
+
+In the manual editor, expand a toolset under **Tools** to select individual tools and choose **Allow**, **Ask**, or **Deny** for each action. The permission controls use a check mark, a hand, and a blocked symbol, respectively.
 
 A revision's `config` holds:
 
@@ -160,7 +162,6 @@ OpenAPI and generated clients represent this field as JSON objects rather than d
 ```python
 import json
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
-
 
 def history_json(messages: list[ModelMessage]) -> list[dict]:
     return json.loads(ModelMessagesTypeAdapter.dump_json(messages))
