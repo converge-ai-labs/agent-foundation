@@ -52,9 +52,33 @@ def test_subscription_defaults_are_native_and_independent_of_api_presets(model_i
     assert subscription.models[0].value == subscription.default_model
 
 
-@pytest.mark.anyio
+@pytest.mark.parametrize("connection", ["openai-responses", "openai-chat"])
+def test_api_openai_choices_keep_the_release_menu_and_default(connection: str) -> None:
+    choice = next(c for c in ModelChoices().connections if c.id == connection)
+    assert choice.default_model == "gpt-6.1-sol"
+    assert [item.value for item in choice.models][:5] == [
+        "gpt-6.1-sol",
+        "gpt-6-astra",
+        "gpt-5.6-terra",
+        "gpt-6-sol",
+        "gpt-5.6-sol",
+    ]
+
+
 @pytest.mark.parametrize("effort", ["high", "medium", "low", "xhigh"])
-async def test_codex_sol_preset_reaches_native_request(effort: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_codex_sol_presets_use_generic_thinking_without_output_token_caps(effort: str) -> None:
+    recipe = prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-6-sol", preset=effort))
+    assert recipe.settings == {
+        "thinking": effort,
+        "openai_reasoning_summary": "detailed",
+        "openai_store": False,
+        "openai_service_tier": "priority",
+    }
+
+
+@pytest.mark.anyio
+async def test_codex_sol_preset_reaches_native_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    effort = "high"
     from typing import cast
     from unittest.mock import AsyncMock
 
@@ -85,10 +109,34 @@ async def test_codex_sol_preset_reaches_native_request(effort: str, monkeypatch:
     assert request["store"] is False
 
 
-@pytest.mark.anyio
 @pytest.mark.parametrize("connection", ["codex", "openai-responses", "openai-chat"])
 @pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh", "max"])
-async def test_sol_6_1_presets_use_native_effort(connection: str, effort: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sol_6_1_presets_use_native_effort(connection: str, effort: str) -> None:
+    recipe = prepare_model(
+        ModelRecipeRequest(
+            connection=connection,
+            model_id="gpt-6.1-sol",
+            preset=effort,
+            authentication=None
+            if connection == "codex"
+            else ApiKeyAuthentication(kind="api_key", env="OPENAI_API_KEY"),
+        )
+    )
+    expected = {"openai_reasoning_effort": effort}
+    if connection != "openai-chat":
+        expected.update(openai_reasoning_summary="detailed", openai_store=False)
+    if connection == "codex":
+        expected["openai_service_tier"] = "priority"
+    assert recipe.settings == expected
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("connection", "effort"), [("codex", "max"), ("openai-responses", "high"), ("openai-chat", "low")]
+)
+async def test_sol_6_1_presets_reach_native_endpoints(
+    connection: str, effort: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from typing import cast
     from unittest.mock import AsyncMock
 
@@ -109,9 +157,6 @@ async def test_sol_6_1_presets_use_native_effort(connection: str, effort: str, m
             else ApiKeyAuthentication(kind="api_key", env="OPENAI_API_KEY"),
         )
     )
-    assert recipe.settings["openai_reasoning_effort"] == effort
-    assert "thinking" not in recipe.settings
-    assert "max_tokens" not in recipe.settings
     provider = OpenAIProvider(api_key="test-not-a-secret")
     model = (
         OpenAIChatModel("gpt-6.1-sol", provider=provider)

@@ -1682,241 +1682,305 @@ it.each(["new", "existing"])(
   },
 );
 
-it.each(["desktop", "mobile"])(
-  "loads complete %s turns automatically, reconciling steering and retrying failures",
-  async (layout) => {
-    if (layout === "mobile")
-      vi.stubGlobal("matchMedia", (query: string) => ({
-        matches: query === "(max-width: 700px)",
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      }));
-    const requests: string[] = [];
-    const steeringParts = previewInput("steer-one", ["Please use plan B"]);
-    let failSteps = true;
-    const original = vi.mocked(fetch).getMockImplementation()!;
-    vi.mocked(fetch).mockImplementation(async (request) => {
-      const url = new URL((request as Request).url);
-      if (!url.pathname.endsWith("/transcript")) return original(request);
-      const cursor = url.searchParams.get("cursor");
-      const execution = url.searchParams.get("turn_id") === "current";
-      requests.push(
-        execution
-          ? `execution:${cursor ?? "latest"}`
-          : `conversation:${cursor ?? "latest"}`,
+it("loads complete turns automatically, reconciling steering and retrying failures", async () => {
+  const requests: string[] = [];
+  const steeringParts = previewInput("steer-one", ["Please use plan B"]);
+  let failSteps = true;
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    const url = new URL((request as Request).url);
+    if (!url.pathname.endsWith("/transcript")) return original(request);
+    const cursor = url.searchParams.get("cursor");
+    const execution = url.searchParams.get("turn_id") === "current";
+    requests.push(
+      execution
+        ? `execution:${cursor ?? "latest"}`
+        : `conversation:${cursor ?? "latest"}`,
+    );
+    if (execution && cursor === "steps" && failSteps) {
+      failSteps = false;
+      return json(
+        { error: { message: "Execution temporarily unavailable" } },
+        503,
       );
-      if (execution && cursor === "steps" && failSteps) {
-        failSteps = false;
-        return json(
-          { error: { message: "Execution temporarily unavailable" } },
-          503,
-        );
-      }
-      const earlier = cursor === "previous-turn";
-      return json({
-        continuation_id: "initial:one",
-        entries: earlier
+    }
+    const earlier = cursor === "previous-turn";
+    return json({
+      continuation_id: "initial:one",
+      entries: earlier
+        ? [
+            {
+              position: 0,
+              message_kind: "request",
+              parts: [{ kind: "user", text: "Previous prompt" }],
+            },
+            {
+              position: 1,
+              message_kind: "response",
+              parts: [{ kind: "assistant", text: "Previous answer" }],
+            },
+          ]
+        : execution && cursor === "steps"
           ? [
-              {
-                position: 0,
-                message_kind: "request",
-                parts: [{ kind: "user", text: "Previous prompt" }],
-              },
-              {
-                position: 1,
-                message_kind: "response",
-                parts: [{ kind: "assistant", text: "Previous answer" }],
-              },
-            ]
-          : execution && cursor === "steps"
-            ? [
-                {
-                  position: 2,
-                  message_kind: "request",
-                  parts: [{ kind: "user", text: "Current prompt" }],
-                },
-                {
-                  position: 3,
-                  message_kind: "response",
-                  parts: [{ kind: "thinking", text: "Earlier execution work" }],
-                },
-                { position: 4, message_kind: "request", parts: steeringParts },
-                ...Array.from({ length: 75 }, (_, index) => ({
-                  position: index + 5,
-                  message_kind: "response",
-                  parts:
-                    index === 0
-                      ? [{ kind: "assistant", text: "Earlier progress text" }]
-                      : [],
-                })),
-              ]
-            : [
-                {
-                  position: 80,
-                  message_kind: "response",
-                  parts: [{ kind: "thinking", text: "Recent execution work" }],
-                },
-                {
-                  position: 102,
-                  message_kind: "response",
-                  parts: [{ kind: "assistant", text: "Current answer" }],
-                },
-                ...Array.from({ length: 21 }, (_, index) => ({
-                  position: index + 81,
-                  message_kind: "request",
-                  parts: [],
-                })),
-              ],
-        boundary_entries: earlier
-          ? []
-          : [
               {
                 position: 2,
                 message_kind: "request",
                 parts: [{ kind: "user", text: "Current prompt" }],
               },
-            ],
-        turns: [
-          {
-            turn_id: earlier ? "previous" : "current",
-            input_position: earlier ? 0 : 2,
-            end_position: earlier ? 2 : 103,
-            final_position: earlier ? 1 : 102,
-            preview: earlier ? "Previous prompt" : "Current prompt",
-          },
-        ],
-        next_cursor: earlier || cursor === "steps" ? null : "steps",
-        earlier_turns_cursor: earlier ? null : "previous-turn",
-        later_turns_cursor: null,
-      });
-    });
-    const view = mount(`/threads/${id}`);
-    const reader = view.container.querySelector(
-      '[class*="reading"]',
-    )! as HTMLElement;
-    let top = 800;
-    let liveGrowth = 0;
-    Object.defineProperties(reader, {
-      clientHeight: { get: () => 600 },
-      scrollHeight: {
-        get: () =>
-          1400 +
-          liveGrowth +
-          (reader.textContent?.includes("Previous answer") ? 900 : 0),
-      },
-      scrollTop: {
-        get: () => top,
-        set: (value: number) => {
-          top = value;
-        },
-      },
-    });
-    const retry = await screen.findByRole("button", {
-      name: "Retry loading turn",
-    });
-    expect(requests).toEqual([
-      "conversation:latest",
-      "execution:latest",
-      "execution:steps",
-    ]);
-    expect(
-      screen.getByText("Current answer").closest("[data-execution-reader]"),
-    ).toBeNull();
-    // A failed complete-turn read cannot reveal a partial execution segment.
-    expect(
-      screen.queryByRole("button", { name: /Execution details/ }),
-    ).toBeNull();
-    await act(async () => {
-      const draft = drafts.get(id)!;
-      draft.localInputs = [
-        {
-          id: "steer-one",
-          action: "steer",
-          state: "accepted",
-          parts: steeringParts,
-        },
-      ];
-      draft.notify();
-    });
-    expect(screen.getAllByText("Please use plan B")).toHaveLength(1);
-    // The outer gesture loads the previous prompt, not the incomplete turn's cursor.
-    fireEvent.wheel(reader, { deltaY: -100 });
-    reader.scrollTop = 40;
-    fireEvent.scroll(reader);
-    await screen.findByText("Previous answer");
-    expect(requests.at(-1)).toBe("conversation:previous-turn");
-    expect(screen.queryByText("Earlier execution work")).toBeNull();
-    // One retry completes the turn without exposing transport-page controls.
-    fireEvent.click(retry);
-    await screen.findByText("Earlier progress text");
-    expect(drafts.get(id)!.localInputs).toHaveLength(0);
-    for (const text of [
-      "Please use plan B",
-      "Earlier progress text",
-      "Current prompt",
-      "Current answer",
-    ]) {
-      expect(screen.getAllByText(text)).toHaveLength(1);
-      expect(
-        screen.getByText(text).closest("[data-execution-reader]"),
-      ).toBeNull();
-      expect(screen.getByText(text).closest("[hidden]")).toBeNull();
-    }
-    expect(
-      screen.queryByRole("button", {
-        name: "Load earlier messages in this turn",
-      }),
-    ).toBeNull();
-    expect(
-      screen.queryByRole("region", { name: "Execution details" }),
-    ).toBeNull();
-    expect(requests).toEqual([
-      "conversation:latest",
-      "execution:latest",
-      "execution:steps",
-      "conversation:previous-turn",
-      "execution:latest",
-      "execution:steps",
-    ]);
-    const segments = screen.getAllByRole("button", {
-      name: /Execution details/,
-    });
-    expect(segments).toHaveLength(2);
-    fireEvent.click(segments[0]);
-    const execution = await screen.findByRole("region", {
-      name: "Execution details",
-    });
-    expect(within(execution).getByText("Earlier execution work")).toBeTruthy();
-    expect(within(execution).queryByText("Recent execution work")).toBeNull();
-    if (layout === "mobile") {
-      const inspectionTop = reader.scrollTop;
-      liveGrowth = 100;
-      await act(async () => {
-        queries.setQueriesData<{ pages: Schema<"TranscriptPage">[] }>(
-          { queryKey: ["thread", id, "history"] },
-          (current) =>
-            current && {
-              ...current,
-              pages: current.pages.map((page) => ({
-                ...page,
-                completion_version: (page.completion_version ?? 0) + 1,
+              {
+                position: 3,
+                message_kind: "response",
+                parts: [{ kind: "thinking", text: "Earlier execution work" }],
+              },
+              { position: 4, message_kind: "request", parts: steeringParts },
+              ...Array.from({ length: 75 }, (_, index) => ({
+                position: index + 5,
+                message_kind: "response",
+                parts:
+                  index === 0
+                    ? [{ kind: "assistant", text: "Earlier progress text" }]
+                    : [],
               })),
+            ]
+          : [
+              {
+                position: 80,
+                message_kind: "response",
+                parts: [{ kind: "thinking", text: "Recent execution work" }],
+              },
+              {
+                position: 102,
+                message_kind: "response",
+                parts: [{ kind: "assistant", text: "Current answer" }],
+              },
+              ...Array.from({ length: 21 }, (_, index) => ({
+                position: index + 81,
+                message_kind: "request",
+                parts: [],
+              })),
+            ],
+      boundary_entries: earlier
+        ? []
+        : [
+            {
+              position: 2,
+              message_kind: "request",
+              parts: [{ kind: "user", text: "Current prompt" }],
             },
-        );
-      });
-      expect(reader.scrollTop).toBe(inspectionTop);
-      fireEvent.click(
-        screen.getByRole("button", { name: "Back to conversation" }),
-      );
-      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    } else fireEvent.click(segments[0]);
-    fireEvent.click(segments[0]);
+          ],
+      turns: [
+        {
+          turn_id: earlier ? "previous" : "current",
+          input_position: earlier ? 0 : 2,
+          end_position: earlier ? 2 : 103,
+          final_position: earlier ? 1 : 102,
+          preview: earlier ? "Previous prompt" : "Current prompt",
+        },
+      ],
+      next_cursor: earlier || cursor === "steps" ? null : "steps",
+      earlier_turns_cursor: earlier ? null : "previous-turn",
+      later_turns_cursor: null,
+    });
+  });
+  const view = mount(`/threads/${id}`);
+  const reader = view.container.querySelector(
+    '[class*="reading"]',
+  )! as HTMLElement;
+  let top = 800;
+  Object.defineProperties(reader, {
+    clientHeight: { get: () => 600 },
+    scrollHeight: {
+      get: () =>
+        1400 + (reader.textContent?.includes("Previous answer") ? 900 : 0),
+    },
+    scrollTop: {
+      get: () => top,
+      set: (value: number) => {
+        top = value;
+      },
+    },
+  });
+  const retry = await screen.findByRole("button", {
+    name: "Retry loading turn",
+  });
+  expect(requests).toEqual([
+    "conversation:latest",
+    "execution:latest",
+    "execution:steps",
+  ]);
+  expect(
+    screen.getByText("Current answer").closest("[data-execution-reader]"),
+  ).toBeNull();
+  // A failed complete-turn read cannot reveal a partial execution segment.
+  expect(
+    screen.queryByRole("button", { name: /Execution details/ }),
+  ).toBeNull();
+  await act(async () => {
+    const draft = drafts.get(id)!;
+    draft.localInputs = [
+      {
+        id: "steer-one",
+        action: "steer",
+        state: "accepted",
+        parts: steeringParts,
+      },
+    ];
+    draft.notify();
+  });
+  expect(screen.getAllByText("Please use plan B")).toHaveLength(1);
+  // The outer gesture loads the previous prompt, not the incomplete turn's cursor.
+  fireEvent.wheel(reader, { deltaY: -100 });
+  reader.scrollTop = 40;
+  fireEvent.scroll(reader);
+  await screen.findByText("Previous answer");
+  expect(requests.at(-1)).toBe("conversation:previous-turn");
+  expect(screen.queryByText("Earlier execution work")).toBeNull();
+  // One retry completes the turn without exposing transport-page controls.
+  fireEvent.click(retry);
+  await screen.findByText("Earlier progress text");
+  expect(drafts.get(id)!.localInputs).toHaveLength(0);
+  for (const text of [
+    "Please use plan B",
+    "Earlier progress text",
+    "Current prompt",
+    "Current answer",
+  ]) {
+    expect(screen.getAllByText(text)).toHaveLength(1);
     expect(
-      await screen.findByRole("region", { name: "Execution details" }),
-    ).toBe(execution);
-    expect(requests).toHaveLength(6);
-  },
-);
+      screen.getByText(text).closest("[data-execution-reader]"),
+    ).toBeNull();
+    expect(screen.getByText(text).closest("[hidden]")).toBeNull();
+  }
+  expect(
+    screen.queryByRole("button", {
+      name: "Load earlier messages in this turn",
+    }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("region", { name: "Execution details" }),
+  ).toBeNull();
+  expect(requests).toEqual([
+    "conversation:latest",
+    "execution:latest",
+    "execution:steps",
+    "conversation:previous-turn",
+    "execution:latest",
+    "execution:steps",
+  ]);
+  const segments = screen.getAllByRole("button", {
+    name: /Execution details/,
+  });
+  expect(segments).toHaveLength(2);
+  fireEvent.click(segments[0]);
+  const execution = await screen.findByRole("region", {
+    name: "Execution details",
+  });
+  expect(within(execution).getByText("Earlier execution work")).toBeTruthy();
+  expect(within(execution).queryByText("Recent execution work")).toBeNull();
+  fireEvent.click(segments[0]);
+  fireEvent.click(segments[0]);
+  expect(await screen.findByRole("region", { name: "Execution details" })).toBe(
+    execution,
+  );
+  expect(requests).toHaveLength(6);
+});
+
+it("keeps mobile inspection and its conversation anchor through background growth and repeat visits", async () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === "(max-width: 700px)",
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+  const requests: string[] = [];
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    const url = new URL((request as Request).url);
+    if (!url.pathname.endsWith("/transcript")) return original(request);
+    requests.push(url.search);
+    return json({
+      continuation_id: "initial:one",
+      entries: [
+        {
+          position: 0,
+          message_kind: "request",
+          parts: [{ kind: "user", text: "Current prompt" }],
+        },
+        {
+          position: 1,
+          message_kind: "response",
+          parts: [{ kind: "thinking", text: "Execution work" }],
+        },
+        {
+          position: 2,
+          message_kind: "response",
+          parts: [{ kind: "assistant", text: "Current answer" }],
+        },
+      ],
+      turns: [
+        {
+          turn_id: "current",
+          input_position: 0,
+          end_position: 3,
+          final_position: 2,
+          preview: "Current prompt",
+        },
+      ],
+      next_cursor: null,
+      earlier_turns_cursor: null,
+      later_turns_cursor: null,
+    });
+  });
+  const view = mount(`/threads/${id}`);
+  const reader = view.container.querySelector(
+    '[class*="reading"]',
+  )! as HTMLElement;
+  let top = 800;
+  let liveGrowth = 0;
+  Object.defineProperties(reader, {
+    clientHeight: { get: () => 600 },
+    scrollHeight: { get: () => 1400 + liveGrowth },
+    scrollTop: {
+      get: () => top,
+      set: (value: number) => {
+        top = value;
+      },
+    },
+  });
+  await screen.findByText("Current answer");
+  const segment = await screen.findByRole("button", {
+    name: /Execution details/,
+  });
+  const completeRequests = requests.slice();
+  fireEvent.click(segment);
+  const execution = await screen.findByRole("region", {
+    name: "Execution details",
+  });
+  expect(within(execution).getByText("Execution work")).toBeTruthy();
+  const inspectionTop = reader.scrollTop;
+  liveGrowth = 100;
+  await act(async () => {
+    queries.setQueriesData<{ pages: Schema<"TranscriptPage">[] }>(
+      { queryKey: ["thread", id, "history"] },
+      (current) =>
+        current && {
+          ...current,
+          pages: current.pages.map((page) => ({
+            ...page,
+            completion_version: (page.completion_version ?? 0) + 1,
+          })),
+        },
+    );
+  });
+  expect(reader.scrollTop).toBe(inspectionTop);
+  fireEvent.click(screen.getByRole("button", { name: "Back to conversation" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(reader.scrollTop).toBe(inspectionTop);
+  fireEvent.click(segment);
+  expect(await screen.findByRole("region", { name: "Execution details" })).toBe(
+    execution,
+  );
+  expect(requests).toEqual(completeRequests);
+});
 
 it("keeps readable messages and an open execution reader through a multi-page checkpoint replacement", async () => {
   const input = {

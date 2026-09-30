@@ -241,8 +241,6 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
         shell.renderer.transcript.close()
 
 
-@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
-@pytest.mark.parametrize("kind", ["tool", "command"])
 @pytest.mark.parametrize(
     "state, tone",
     [
@@ -259,7 +257,27 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
         ("status unavailable", "muted"),
     ],
 )
-def test_tool_rows_use_status_colors_without_bold_or_payload_markup(theme, kind, state, tone) -> None:
+def test_tool_row_maps_status_tones_and_leaves_payload_literal(state, tone) -> None:
+    from a13n_harness_ui.interactive.theme import activity_colors
+    from a13n_harness_ui.interactive.transcript import _tool_row
+
+    theme = resolve_theme("dark")
+    colors = activity_colors(theme)
+    payload = "cat [bold]file[/bold] | grep 'failed · result'"
+    row = _tool_row(f"tool_name | {state} | {payload}", theme)
+    assert row.plain == f"tool_name | {state} | {payload}"
+    status_span = next(span for span in row.spans if row.plain[span.start : span.end] == state)
+    payload_span = next(span for span in row.spans if row.plain[span.start : span.end] == payload)
+    assert status_span.style == colors[tone]
+    assert payload_span.style == colors["muted"]
+    assert all("bold" not in str(style).split() for style in [row.style, *(span.style for span in row.spans)])
+
+
+@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
+@pytest.mark.parametrize(
+    ("kind", "state", "tone"), [("tool", "failed", "muted"), ("command", "completed", "completed")]
+)
+def test_transcript_renders_status_colors_and_literal_payloads(theme, kind, state, tone) -> None:
     from a13n_harness_ui.interactive.theme import activity_colors
 
     transcript = Transcript()

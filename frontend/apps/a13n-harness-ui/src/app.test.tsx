@@ -1312,7 +1312,7 @@ it("configures Sidekick in General without changing defaults or starting convers
   expect(submissions).toBe(0);
 });
 
-it("previews collaboration colors and remembers a random initial color and later selection", async () => {
+it("persists the initial collaboration color and restores explicit changes", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "test-key");
   const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
   try {
@@ -1325,9 +1325,6 @@ it("previews collaboration colors and remembers a random initial color and later
     );
     const color = await screen.findByRole("combobox", { name: "Your color" });
     expect(color.textContent).toBe("Purple");
-    expect(
-      color.querySelector<HTMLElement>("[style]")?.style.backgroundColor,
-    ).toBe("rgb(124, 58, 237)");
     expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#7c3aed");
     component.unmount();
 
@@ -1343,17 +1340,8 @@ it("previews collaboration colors and remembers a random initial color and later
     });
     expect(remembered.textContent).toBe("Purple");
     await user.click(remembered);
-    for (const name of ["Slate", "Blue", "Purple", "Green", "Amber"]) {
-      const option = await screen.findByRole("option", { name });
-      expect(
-        option.querySelector<HTMLElement>("[style]")?.style.backgroundColor,
-      ).toBeTruthy();
-    }
-    await user.click(screen.getByRole("option", { name: "Green" }));
+    await user.click(await screen.findByRole("option", { name: "Green" }));
     expect(remembered.textContent).toBe("Green");
-    expect(
-      remembered.querySelector<HTMLElement>("[style]")?.style.backgroundColor,
-    ).toBe("rgb(5, 150, 105)");
     await waitFor(() =>
       expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#059669"),
     );

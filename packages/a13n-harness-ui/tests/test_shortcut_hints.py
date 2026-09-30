@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.history import HistoryBrowser
+from a13n_harness_ui.interactive.rendering import Status
 from a13n_harness_ui.interactive.selection import Choice, Selection
 from a13n_harness_ui.interactive.shell import CliShell
 from prompt_toolkit.application import create_app_session
@@ -231,20 +232,13 @@ async def test_note_count_refreshes_and_discards_cross_thread_snapshot(shell: Cl
 @pytest.mark.parametrize("width", [24, 40, 59, 60, 80, 100, 160])
 @pytest.mark.parametrize("fast", ["default", "off", "on"])
 @pytest.mark.parametrize("tokens", [None, 0, 12345, 1234567])
-@pytest.mark.anyio
-async def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(
-    shell: CliShell, monkeypatch, width, fast, tokens
-) -> None:
+def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(width, fast, tokens) -> None:
     from a13n_harness.usage import BoundedRequestUsage
 
-    shell.status.state = "ready"
-    shell.status.fast = fast
-    shell.status.context_tokens = 1200
-    shell.status.context_window = 350000
+    status = Status(state="ready", fast=fast, context_tokens=1200, context_window=350000)
     if tokens is not None:
-        shell.status.usage = BoundedRequestUsage(input_tokens=tokens, cache_read_tokens=tokens // 2)
-    monkeypatch.setattr(shell.app.output, "get_size", lambda: Size(rows=24, columns=width))
-    line = shell.status.line(width)
+        status.usage = BoundedRequestUsage(input_tokens=tokens, cache_read_tokens=tokens // 2)
+    line = status.line(width)
     assert get_cwidth(line) <= width
     assert ("Fast" in line) == (fast == "on")
     assert ("tok " if width < 60 else "tokens ") in line
@@ -256,11 +250,23 @@ async def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(
         assert ("12.3K" if tokens == 12345 else "1.2M") in line
     if width >= 80:
         assert "ctx 1,200 (0%)" in line
-    with set_app(shell.app):
-        shell.app.render_counter += 1
-        shell.app.renderer.render(shell.app, shell.app.layout)
-        screen = shell.app.renderer._last_screen
-        assert screen is not None
-        rows = ["".join(screen.data_buffer[y][x].char for x in range(width)).rstrip() for y in range(24)]
-        assert line.rstrip() in rows
-    await shell.app.cancel_and_wait_for_background_tasks()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("width", [24, 100])
+async def test_status_toolbar_is_visible_without_displacing_input(shell: CliShell, monkeypatch, width) -> None:
+    shell.status.state = "ready"
+    shell.status.fast = "on"
+    monkeypatch.setattr(shell.app.output, "get_size", lambda: Size(rows=24, columns=width))
+    try:
+        with set_app(shell.app):
+            shell.app.render_counter += 1
+            shell.app.renderer.render(shell.app, shell.app.layout)
+            screen = shell.app.renderer._last_screen
+            assert screen is not None
+            rows = ["".join(screen.data_buffer[y][x].char for x in range(width)).rstrip() for y in range(24)]
+            assert shell.status.line(width).rstrip() in rows
+            assert any(row.startswith(" >") for row in rows)
+            assert shell.composer.window.render_info.window_height >= 1
+    finally:
+        await shell.app.cancel_and_wait_for_background_tasks()

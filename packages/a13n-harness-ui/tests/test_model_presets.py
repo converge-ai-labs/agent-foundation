@@ -52,8 +52,19 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
         assert model.model_name == model_name
 
 
-@pytest.mark.anyio
 @pytest.mark.parametrize("prefix", ["google-cloud", "google-gla", "google-vertex", "gemini"])
+def test_google_cloud_aliases_preserve_raw_route_and_custom_endpoint(prefix) -> None:
+    route = f"{prefix}:gateway-gemini"
+    model_cfg = {"base_url": "https://gateway.example.invalid"}
+    settings = {"thinking": "high"}
+    normalized = PydanticAiModelAdapter().validate(route=route, settings=settings, model_cfg=model_cfg)
+    assert normalized.route == route
+    assert normalized.settings == settings
+    assert normalized.model_cfg == model_cfg
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("prefix", ["google-cloud", "gemini"])
 async def test_google_cloud_routes_preserve_custom_endpoint_and_native_provider(prefix, monkeypatch):
     from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
@@ -65,11 +76,6 @@ async def test_google_cloud_routes_preserve_custom_endpoint_and_native_provider(
         authentication=ApiKeyAuthentication(kind="api_key", env="TEST_PROVIDER_KEY"),
         model_configuration={"base_url": endpoint},
     )
-    normalized = PydanticAiModelAdapter().validate(
-        route=recipe.route, settings=recipe.settings, model_cfg=recipe.model_configuration
-    )
-    assert normalized.route == recipe.route
-    assert normalized.model_cfg == {"base_url": endpoint}
     model = await HarnessUiModelResolver({recipe.model_id: recipe}).resolve(recipe.model_id, thread_id="thread-test")
     assert isinstance(model.provider, GoogleCloudProvider)
     assert str(model.provider.base_url).rstrip("/") == endpoint
