@@ -15,6 +15,7 @@ from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolReturnPart, UserPromptPart
 from pydantic_ai.models import ModelRequestContext
 
+from a13n_harness.content import ContentItem, annotate_prompt, prompt_content
 from a13n_harness.context import AgentContext
 from a13n_harness.image_input import ImageInputPolicy
 
@@ -75,15 +76,24 @@ def _project_images(messages: list[ModelMessage], configuration: ImageInputPolic
             if items is None:
                 continue
             assert isinstance(part, (UserPromptPart, ToolReturnPart))
+            annotated = prompt_content(message, index) if isinstance(part, UserPromptPart) else None
             prepared: list[Any] = []
-            for item in items:
+            prepared_annotations: list[ContentItem] = []
+            for item_index, item in enumerate(items):
                 if isinstance(item, BinaryContent) and item.is_image:
                     replacements = _prepare_binary_image(item, configuration)
-                    prepared.extend(replacements)
                     changed = changed or len(replacements) != 1 or replacements[0] is not item
                 else:
-                    prepared.append(item)
+                    replacements = [item]
+                prepared.extend(replacements)
+                if annotated is not None:
+                    prepared_annotations.extend(
+                        ContentItem(replacement, annotated[item_index].metadata) for replacement in replacements
+                    )
             parts[index] = replace(part, content=_restore_shape(part.content, prepared))
+            if annotated is not None and len(prepared) != len(items):
+                # Splitting changes request-local slots, not canonical provenance.
+                message.metadata = annotate_prompt(message, index, prepared_annotations).metadata
         message.parts = parts
 
     count = 0
