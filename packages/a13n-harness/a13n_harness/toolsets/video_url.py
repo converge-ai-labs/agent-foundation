@@ -11,6 +11,7 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness._urls import require_audience_safe_url
 from a13n_harness._video_urls import download_video, video_url_error
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.context import AgentContext
 from a13n_harness.http import ProviderHttpError
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
@@ -27,20 +28,24 @@ if TYPE_CHECKING:
 class VideoUrlToolset:
     """URL acquisition tool; local media remains the file view tool's concern."""
 
-    def get_toolset(self, characteristics: HarnessModelCharacteristics) -> FunctionToolset[AgentContext]:
+    def get_toolset(
+        self, characteristics: HarnessModelCharacteristics, configuration: RunConfiguration
+    ) -> FunctionToolset[AgentContext]:
         from a13n_harness.spec import ModelCapability
 
         kinds = []
-        if VideoUrlType.YOUTUBE in characteristics.url_input.video:
+        sections = []
+        if VideoUrlType.YOUTUBE in characteristics.url_input.video and configuration.allowed_hosts is None:
             kinds.append("native YouTube links")
+            sections.append("read_video_url_youtube")
         if ModelCapability.VIDEO_UNDERSTANDING in characteristics.capabilities:
             kinds.append("bounded direct HTTP(S) video downloads")
+            sections.append("read_video_url_inline")
         tool = HarnessTool(
             self.read_video_url,
             name="read_video_url",
             description=(
                 f"Attach video input for the current model. Supported types: {', '.join(kinds)}. "
-                "Direct resources are downloaded within the Base64 video byte budget. "
                 "Use instructions for focused analysis."
             ),
             harness_metadata=HarnessToolMetadata(
@@ -57,7 +62,7 @@ class VideoUrlToolset:
             ),
         )
         return InstructionFunctionToolset(
-            tools=[tool], id="a13n-video-url-functions", instructions=tool_instruction("read_video_url")
+            tools=[tool], id="a13n-video-url-functions", instructions=tool_instruction("read_video_url", *sections)
         )
 
     async def read_video_url(
@@ -116,7 +121,7 @@ class VideoUrlToolset:
                 "The resource cannot be attached within the video byte budget or has an invalid video response.",
                 retry_hint="request_change",
             )
-        except httpx2.TimeoutException:
+        except (TimeoutError, httpx2.TimeoutException):
             return tool_failure("video_download_timeout", "The video download timed out.")
         except httpx2.HTTPStatusError as error:
             return tool_failure(

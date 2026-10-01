@@ -33,10 +33,10 @@ class VideoUrlCapability(AbstractCapability[AgentContext]):
         return DynamicToolset(self._toolset_for_run, per_run_step=False, id="a13n-video-url-tools")
 
     async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext] | None:
-        if not supports_video_urls(ctx.deps.model_characteristics):
+        if not supports_video_urls(ctx.deps.model_characteristics, ctx.deps.configuration):
             return None
         assert ctx.deps.model_characteristics is not None
-        return VideoUrlToolset().get_toolset(ctx.deps.model_characteristics)
+        return VideoUrlToolset().get_toolset(ctx.deps.model_characteristics, ctx.deps.configuration)
 
     async def wrap_model_request(
         self,

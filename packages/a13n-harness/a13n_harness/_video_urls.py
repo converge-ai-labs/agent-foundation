@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
@@ -9,6 +10,7 @@ import httpx2
 from pydantic_ai import BinaryContent, VideoUrl
 
 from a13n_harness._urls import require_audience_safe_url
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.http import ProviderHttpError, bounded_response_body, outbound_tls_verify
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.video_input import VideoInputPolicy, VideoUrlType
@@ -17,11 +19,12 @@ if TYPE_CHECKING:
     from a13n_harness.spec import HarnessModelCharacteristics
 
 
-def supports_video_urls(characteristics: HarnessModelCharacteristics | None) -> bool:
+def supports_video_urls(characteristics: HarnessModelCharacteristics | None, configuration: RunConfiguration) -> bool:
     from a13n_harness.spec import ModelCapability
 
     return characteristics is not None and (
-        ModelCapability.VIDEO_UNDERSTANDING in characteristics.capabilities or bool(characteristics.url_input.video)
+        ModelCapability.VIDEO_UNDERSTANDING in characteristics.capabilities
+        or (bool(characteristics.url_input.video) and configuration.allowed_hosts is None)
     )
 
 
@@ -47,8 +50,11 @@ async def download_video(
 ) -> BinaryContent:
     """Materialize a direct resource with bounded bytes and validated redirect hops."""
     require_audience_safe_url(url)
-    endpoint = await policy.validate(url)
-    async with httpx2.AsyncClient(verify=outbound_tls_verify(), timeout=30.0, follow_redirects=False) as client:
+    async with (
+        asyncio.timeout(120.0),
+        httpx2.AsyncClient(verify=outbound_tls_verify(), timeout=30.0, follow_redirects=False) as client,
+    ):
+        endpoint = await policy.validate(url)
         for hop in range(6):
             async with client.stream("GET", endpoint) as response:
                 if response.status_code in {301, 302, 303, 307, 308}:

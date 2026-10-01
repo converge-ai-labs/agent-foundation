@@ -82,8 +82,14 @@ def test_video_urls_cannot_request_a_download(force_download) -> None:
     )
 
 
-@pytest.mark.parametrize("capabilities", [(), ("video_understanding",), ("youtube",), ("video_understanding",)])
-async def test_default_tool_visibility_follows_model_traits(capabilities) -> None:
+@pytest.mark.parametrize(
+    "capabilities", [(), ("video_understanding",), ("youtube",), ("video_understanding", "youtube")]
+)
+@pytest.mark.parametrize("allowed_hosts", [None, frozenset(), frozenset({"youtube.com"})])
+@pytest.mark.parametrize("instructions_enabled", [True, False])
+async def test_default_tool_visibility_and_guidance_follow_effective_run_support(
+    capabilities, allowed_hosts, instructions_enabled
+) -> None:
     seen = []
 
     async def respond(messages, info):
@@ -95,12 +101,27 @@ async def test_default_tool_visibility_follows_model_traits(capabilities) -> Non
         output_type=str,
         model=FunctionModel(stream_function=respond),
     )
-    assert (await agent.run("Inspect the video")).output_or_raise() == "done"
-    names = {tool.name for tool in seen[0][1].function_tools}
-    expected = bool(set(capabilities) & {"youtube", "video_understanding"})
-    assert ("read_video_url" in names) is expected
+    result = await agent.run(
+        "Inspect the video",
+        bindings=RunBindings.embedded(
+            configuration=RunConfiguration(allowed_hosts=allowed_hosts), toolset_instructions=instructions_enabled
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    definitions = {tool.name: tool for tool in seen[0][1].function_tools}
+    native_youtube = "youtube" in capabilities and allowed_hosts is None
+    inline_video = "video_understanding" in capabilities
+    expected = native_youtube or inline_video
+    assert ("read_video_url" in definitions) is expected
     guidance = repr(seen[0][0]) + str(seen[0][1].instructions)
-    assert ('<tool-instruction name="read_video_url">' in guidance) is expected
+    assert ('<tool-instruction name="read_video_url">' in guidance) is (expected and instructions_enabled)
+    assert ("YouTube links are attached as native" in guidance) is (native_youtube and instructions_enabled)
+    assert ("Direct HTTP(S) video resources are downloaded" in guidance) is (inline_video and instructions_enabled)
+    assert "read_video_url_youtube" not in guidance and "read_video_url_inline" not in guidance
+    if expected:
+        description = definitions["read_video_url"].description
+        assert ("native YouTube links" in description) is native_youtube
+        assert ("bounded direct HTTP(S) video downloads" in description) is inline_video
 
 
 @pytest.mark.parametrize(("url", "media_type", "error"), [(YOUTUBE, None, None)])
@@ -295,7 +316,9 @@ async def test_non_streaming_request_filters_urls_without_rewriting_history() ->
     agent = Agent(FunctionModel(respond), capabilities=[VideoUrlCapability()])
     result = await agent.run(
         ["Inspect", VideoUrl(YOUTUBE)],
-        deps=SimpleNamespace(model_characteristics=_characteristics(), toolset_instructions=True),
+        deps=SimpleNamespace(
+            model_characteristics=_characteristics(), configuration=RunConfiguration(), toolset_instructions=True
+        ),
     )
     assert result.output == "done"
     assert not _videos(seen[0])

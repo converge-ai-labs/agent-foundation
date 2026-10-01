@@ -303,6 +303,64 @@ async def test_download_timeout_is_structured(monkeypatch):
     assert "video_download_timeout" in repr(await read_url())
 
 
+@pytest.mark.parametrize("phase", ["request", "body"])
+async def test_download_operation_deadline_is_structured_and_closes_resources(monkeypatch, phase):
+    import asyncio
+    from contextlib import asynccontextmanager
+
+    import a13n_harness._video_urls as acquisition
+
+    timeout = asyncio.timeout
+    deadlines = []
+    closed = []
+
+    def shortened_timeout(seconds):
+        deadlines.append(seconds)
+        return timeout(0)
+
+    class Stream(httpx2.AsyncByteStream):
+        async def __aiter__(self):
+            await asyncio.Future()
+            yield b"never"
+
+        async def aclose(self):
+            closed.append("response")
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            closed.append("client")
+
+        @asynccontextmanager
+        async def stream(self, method, url):
+            if phase == "request":
+                await asyncio.Future()
+            response = httpx2.Response(
+                200, headers={"content-type": "video/mp4"}, stream=Stream(), request=httpx2.Request(method, url)
+            )
+            try:
+                yield response
+            finally:
+                await response.aclose()
+
+    monkeypatch.setattr(acquisition.asyncio, "timeout", shortened_timeout)
+    monkeypatch.setattr(acquisition.httpx2, "AsyncClient", lambda **kwargs: Client())
+    assert "video_download_timeout" in repr(await read_url())
+    assert deadlines == [120.0]
+    assert closed == (["client"] if phase == "request" else ["response", "client"])
+
+
+@pytest.mark.parametrize("allowed_hosts", [frozenset(), frozenset({"other.example"})])
+async def test_initial_destination_denied_before_network(monkeypatch, allowed_hosts):
+    def no_network(request):
+        raise AssertionError("Denied destination must not be requested")
+
+    mock_download(monkeypatch, no_network)
+    assert "video_download_denied" in repr(await read_url(configuration=RunConfiguration(allowed_hosts=allowed_hosts)))
+
+
 @pytest.mark.parametrize("preflight", [False, True])
 async def test_oversized_download_stops_reading_and_closes_stream(monkeypatch, preflight):
     consumed = []
