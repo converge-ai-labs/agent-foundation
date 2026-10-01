@@ -12,18 +12,18 @@ The package does not expose a serialized Agent-definition language, compiler, or
 
 The package root is a closed primary code-first facade. It exports only the values needed to define, build, run, observe, continue, and compose an Agent through the ordinary path:
 
-| Group                         | Root exports                                                                                                                                                                                                                                  |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Version                       | `__version__`                                                                                                                                                                                                                                 |
-| Definition and build          | `AgentSpec`, `ModelCapability`, `HarnessModelCharacteristics`, `ImageInputPolicy`, `AgentDefinition`, `HarnessBuilder`, `ExecutableAgent`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, `derive_child_identity` |
-| Context and identity          | `RunBindings`, `AgentContext`, `AgentIdentityRef`, `AgentInstanceRef`, `AgentInstanceContext`                                                                                                                                                 |
-| Input                         | `NativeRunInput`, `RunInputValue`, `SemanticRunInput`, `ContentItem`, `ContentMetadata`, `RunInputFactory`, `RunPreparationContext`, `DeferredToolResume`                                                                                     |
-| Environment selection         | `Environment`, `EnvironmentEntry`, `EnvironmentMount`                                                                                                                                                                                         |
-| Direct plugins                | `AbstractHarnessPlugin`, `PluginOrdering`                                                                                                                                                                                                     |
-| Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`, `ToolRecoveryMode`                                                                                                                                                                  |
-| Observation                   | `HarnessInstrumentation`, `HarnessObservationContext`, `HarnessTraceContent`, `InputTextEvent`, `InputMediaEvent`                                                                                                                             |
-| State, execution, and results | `HarnessState`, `HarnessRunStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                                     |
-| Errors                        | `HarnessError`, `DefinitionError`, `IdentityError`, `InputError`, `ModelResolutionError`, `PluginError`, `RunCleanupError`, `RunError`, `StateError`                                                                                          |
+| Group                         | Root exports                                                                                                                                                                                                                                                                                         |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Version                       | `__version__`                                                                                                                                                                                                                                                                                        |
+| Definition and build          | `AgentSpec`, `ModelCapability`, `HarnessModelCharacteristics`, `ImageInputPolicy`, `UrlInputSupport`, `VideoInputPolicy`, `VideoUrlType`, `AgentDefinition`, `HarnessBuilder`, `ExecutableAgent`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, `derive_child_identity` |
+| Context and identity          | `RunBindings`, `AgentContext`, `AgentIdentityRef`, `AgentInstanceRef`, `AgentInstanceContext`                                                                                                                                                                                                        |
+| Input                         | `NativeRunInput`, `RunInputValue`, `SemanticRunInput`, `ContentItem`, `ContentMetadata`, `RunInputFactory`, `RunPreparationContext`, `DeferredToolResume`                                                                                                                                            |
+| Environment selection         | `Environment`, `EnvironmentEntry`, `EnvironmentMount`                                                                                                                                                                                                                                                |
+| Direct plugins                | `AbstractHarnessPlugin`, `PluginOrdering`                                                                                                                                                                                                                                                            |
+| Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`, `ToolRecoveryMode`                                                                                                                                                                                                                         |
+| Observation                   | `HarnessInstrumentation`, `HarnessObservationContext`, `HarnessTraceContent`, `InputTextEvent`, `InputMediaEvent`                                                                                                                                                                                    |
+| State, execution, and results | `HarnessState`, `HarnessRunStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                                                                                            |
+| Errors                        | `HarnessError`, `DefinitionError`, `IdentityError`, `InputError`, `ModelResolutionError`, `PluginError`, `RunCleanupError`, `RunError`, `StateError`                                                                                                                                                 |
 
 `a13n_harness.__all__` is exactly this table. Feature-family APIs remain public through their owning stable modules rather than being duplicated at the package root. Important routes include:
 
@@ -166,7 +166,6 @@ class RunBindings:
         AbstractCapability[AgentContext], ...
     ] = ()
     web: WebBinding | None = None
-    media_reader: MediaReader | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
@@ -193,7 +192,6 @@ class RunBindings:
             AbstractCapability[AgentContext]
         ] = (),
         web: WebBinding | None = None,
-        media_reader: MediaReader | None = None,
         document_converter: DocumentConverter | None = None,
         file_media_understanding: MediaUnderstandingProvider | None = None,
         skill_selection: frozenset[str] | None = None,

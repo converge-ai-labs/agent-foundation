@@ -16,7 +16,11 @@ from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 
 IMAGE = frozenset({ModelCapability.IMAGE_UNDERSTANDING})
 MEDIA = frozenset(
-    {ModelCapability.IMAGE_UNDERSTANDING, ModelCapability.AUDIO_UNDERSTANDING, ModelCapability.VIDEO_UNDERSTANDING}
+    {
+        ModelCapability.IMAGE_UNDERSTANDING,
+        ModelCapability.AUDIO_UNDERSTANDING,
+        ModelCapability.VIDEO_UNDERSTANDING,
+    }
 )
 
 
@@ -48,6 +52,22 @@ MEDIA = frozenset(
 )
 def test_known_media_uses_exact_catalog_identity_and_transport(route, expected) -> None:
     assert known_model_capabilities(route) == expected
+
+
+def test_native_google_starter_never_infers_arbitrary_video_url_support(monkeypatch) -> None:
+    from a13n_harness import model_catalog
+
+    entry = model_catalog.OfficialModelEntry(
+        model="google-gla:gemini-fixture",
+        characteristics=HarnessModelCharacteristics(capabilities=frozenset(ModelCapability)),
+        source_url="https://example.com/model",
+    )
+    monkeypatch.setattr(
+        model_catalog, "get_official_model_catalog", lambda: model_catalog.OfficialModelCatalog({entry.key: entry})
+    )
+    expected = frozenset(ModelCapability)
+    assert known_model_capabilities("google:gemini-fixture") == expected
+    assert known_model_capabilities("openrouter:google/gemini-fixture") == IMAGE
 
 
 def test_context_only_catalog_entry_is_not_a_text_only_claim(monkeypatch) -> None:
@@ -122,7 +142,12 @@ async def test_programmatic_setup_without_characteristics_seeds_stable_media_lis
     preview = await preview_setup(tmp_path / "config.yaml", selection, validate_candidate=validate)
     characteristics = yaml.safe_load(preview.files["models/api-key.yaml"])["model_characteristics"]
     assert characteristics == {
-        "capabilities": ["audio_understanding", "image_understanding", "video_understanding"],
+        "capabilities": [
+            "audio_understanding",
+            "image_understanding",
+            "video_understanding",
+        ],
+        "url_input": {"video": ["youtube"]},
         "context_window_tokens": None,
         "proactive_context_management_threshold": 0.65,
         "compact_threshold": 0.90,
@@ -210,3 +235,34 @@ def test_wizard_backtracking_recomputes_media_notice_without_stale_hints() -> No
     for answer in ("google", "https://proxy.example/v1", "new", "env:TEST_KEY", "gemini-2.5-pro", "", ""):
         wizard.accept(answer)
     assert "Native media input: audio, image, video." in wizard.notice()
+
+
+@pytest.mark.parametrize("authored", [None, {"url_input": {"video": []}}, {"url_input": {"video": ["youtube"]}}])
+def test_creation_persists_structural_url_defaults_and_explicit_empty_override(authored):
+    from a13n_harness_ui.configuration.models import ApiKeyAuthentication
+    from a13n_harness_ui.model_authoring import ModelRecipe, ModelRecipeRequest, prepare_model, recipe_document
+
+    recipe = prepare_model(
+        ModelRecipeRequest(
+            connection="google",
+            model_id="gemini-2.5-pro",
+            authentication=ApiKeyAuthentication(kind="api_key", env="TEST_KEY"),
+            model_characteristics=HarnessModelCharacteristics.model_validate(authored)
+            if authored is not None
+            else None,
+        )
+    )
+    document = recipe_document(recipe)
+    expected = [] if authored == {"url_input": {"video": []}} else ["youtube"]
+    assert document["model_characteristics"]["url_input"] == {"video": expected}
+    restored = ModelRecipe.model_validate(document)
+    assert recipe_document(restored) == document
+    assert restored.model_characteristics.url_input.video == frozenset(expected)
+
+
+@pytest.mark.parametrize("route", ["openrouter:google/gemini-2.5-pro", "google:custom-model"])
+def test_compatible_and_unknown_routes_never_inherit_native_youtube(route):
+    from a13n_harness_ui.model_presets import known_model_characteristics
+
+    inputs = known_model_characteristics(route)
+    assert inputs is None or not inputs.url_input.video
