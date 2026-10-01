@@ -343,7 +343,7 @@ An execution is not `succeeded` until step 4 commits. A checkpoint failure never
 
 ### Compact Child Display
 
-The display includes bounded closed assistant text, non-encrypted thinking, completed Tool summaries, failure, and completion metadata. It excludes open content, running Tool calls, encrypted reasoning, unrelated custom events, and duplicate terminal output. It is inspection authority only and cannot reconstruct `HarnessState`.
+The display includes bounded closed assistant text, non-encrypted thinking, completed Tool summaries, failure, and completion metadata. It excludes open content, running Tool calls, encrypted reasoning, unrelated custom events, and duplicate terminal output. It is inspection authority only and cannot reconstruct `HarnessState`. Optional child attribution and ordered AG-UI 1.0 tool content parts survive saved display and surface projection within the same bounds. Missing historical child display remains unavailable: model history is not a substitute for retained display. These additive display fields neither reset continuation storage nor erase usage ledgers.
 
 ## Environment State
 

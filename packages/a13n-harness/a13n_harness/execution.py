@@ -74,6 +74,7 @@ from a13n_harness.events import (
     HarnessStreamEvent,
     InputSource,
     ModelRetryScheduledPayload,
+    RunStartedPayload,
     _ChildEventForwarder,
     _RunEventEmitter,
     input_events,
@@ -993,7 +994,15 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     async def _next_item(self) -> HarnessStreamEvent[OutputT]:
         assert self._response is not None
         try:
-            self._start_logical_event_mux()
+            if not self._logical_events_started:
+                self._start_logical_event_mux()
+                return HarnessEvent(
+                    thread_id=self.thread_id,
+                    run_id=self.run_id,
+                    sequence=self._next_public_sequence(),
+                    occurred_at=datetime.now(UTC),
+                    event=HarnessExtensionEvent(kind="lifecycle", payload=RunStartedPayload().model_dump()),
+                )
             if self._pending_result is None:
                 if self._response_next_task is None:
                     self._response_next_task = asyncio.create_task(self._response_queue.get())
@@ -1223,6 +1232,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             raise PluginError("Plugin emitted an invalid stream item.", code="plugin_event_invalid")
         event = item.event
         if isinstance(event, HarnessExtensionEvent):
+            if (
+                item.run_id == self.run_id
+                and event.kind == "lifecycle"
+                and isinstance(event.payload, dict)
+                and event.payload.get("type") == "run_started"
+            ):
+                raise PluginError("Run start is owned by Harness.", code="plugin_event_invalid")
             try:
                 event = _EXTENSION_EVENT_ADAPTER.validate_python(event.model_dump(), strict=True)
             except ValidationError as exc:

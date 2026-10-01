@@ -82,6 +82,7 @@ const COPIED = [
   "toolCallName",
   "parentMessageId",
   "metadata",
+  "subagentRunId",
 ];
 /** Events that append their `delta` to one content field. */
 const ACCUMULATED: Record<string, string | undefined> = {
@@ -155,12 +156,14 @@ function content(
   event: ThreadDelta["event"],
   previous: Schema["Item"]["content"] = {},
 ): Schema["Item"]["content"] {
+  if (event.type === "RUN_FINISHED" && kind === "observation")
+    return { ...event };
   if (event.type === "CUSTOM") {
     const input = inputText(event);
     if (kind === "text_message" && input) {
       const text = input.content.slice(0, 262144);
       return {
-        messageId: event.message_id,
+        messageId: input.message_id,
         role: "user",
         text,
         ...(isRecord(event.metadata) ? { metadata: event.metadata } : {}),
@@ -169,7 +172,14 @@ function content(
     }
     // The observation that failed a tool call leaves the call's content as it was.
     if (kind !== "observation") return previous;
-    if (!("name" in previous)) return { name: event.name, value: event.value };
+    if (!("name" in previous))
+      return {
+        name: event.name,
+        value: event.value,
+        ...(typeof event.subagentRunId === "string"
+          ? { subagentRunId: event.subagentRunId }
+          : {}),
+      };
     // A repeated observation continues its streamed tool-call arguments.
     const held = argumentStream(previous.value);
     const next = argumentStream(event.value);
@@ -192,8 +202,10 @@ function content(
     next[accumulated] = String(next[accumulated] ?? "") + String(event.delta);
   if (event.type === "REASONING_ENCRYPTED_VALUE")
     next.encrypted_value = event.encryptedValue;
-  if (event.type === "TOOL_CALL_RESULT")
-    next.result = String(event.content ?? "");
+  if (event.type === "TOOL_CALL_RESULT") {
+    if (Array.isArray(event.content)) next.result_parts = event.content;
+    else next.result = String(event.content ?? "");
+  }
   return next;
 }
 

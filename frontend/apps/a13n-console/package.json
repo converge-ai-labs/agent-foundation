@@ -28,7 +28,7 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
-    "openapi-fetch": "0.17.0",
+    "@ag-ui/core": "1.0.1",
     "@daypicker/react": "^10.0.1",
     "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-query": "^5.102.8",
@@ -39,6 +39,7 @@
     "diff": "8.0.4",
     "fflate": "^0.8.3",
     "i18next": "^25.0.0",
+    "openapi-fetch": "0.17.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-i18next": "^15.5.0",

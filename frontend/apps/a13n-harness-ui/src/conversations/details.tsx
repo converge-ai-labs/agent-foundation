@@ -1,7 +1,7 @@
 import { useThreadWork, workCaption } from "./work";
 import { useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
-import { Button, ChoiceField } from "a13n-ui";
+import { Button, ChoiceField, readContentParts } from "a13n-ui";
 import { ApiError, result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
@@ -445,6 +445,8 @@ function ChildPresentation({
         name: tool.tool_name,
         text: sourceText(tool.arguments),
         result: tool.result == null ? undefined : sourceText(tool.result),
+        resultParts: readContentParts(tool.content_parts),
+        subagentRunId: tool.subagent_run_id ?? undefined,
         done: tool.status !== "running",
         outcome: tool.status === "running" ? undefined : tool.status,
         stopped: child.persisted_status !== "running",

@@ -197,7 +197,7 @@ requires-dist = [
     { name = "a13n-harness", extras = ["docker", "e2b", "modal"], editable = "packages/a13n-harness" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
-    { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
+    { name = "ag-ui-protocol", specifier = ">=1.0.0,<2" },
     { name = "aiosqlite", specifier = ">=0.21,<1" },
     { name = "alembic", specifier = ">=1.17.1,<2" },
     { name = "anyio", specifier = ">=4,<5" },
@@ -300,7 +300,7 @@ requires-dist = [
     { name = "a13n-harness", extras = ["docker", "e2b", "modal"], editable = "packages/a13n-harness" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
-    { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
+    { name = "ag-ui-protocol", specifier = ">=1.0.0,<2" },
     { name = "aiobotocore", extras = ["httpx2"], specifier = ">=3.9,<4" },
     { name = "alembic", specifier = ">=1.17.1,<2" },
     { name = "anyio", specifier = ">=4,<5" },
@@ -344,19 +344,23 @@ dependencies = [
 
 [package.dev-dependencies]
 test = [
+    { name = "jsonschema" },
     { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "a13n-harness", editable = "packages/a13n-harness" },
-    { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
+    { name = "ag-ui-protocol", specifier = ">=1.0.0,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.51.0,<3" },
 ]
 
 [package.metadata.requires-dev]
-test = [{ name = "pytest", specifier = ">=9,<10" }]
+test = [
+    { name = "jsonschema", specifier = ">=4.23,<5" },
+    { name = "pytest", specifier = ">=9,<10" },
+]
 
 [[package]]
 name = "a13n-workspace"
@@ -419,14 +423,14 @@ dev = [
 
 [[package]]
 name = "ag-ui-protocol"
-version = "0.1.20"
+version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e4/7a/0db4c6233ccf39654e45af0e532efa87abc0eb7828b16f9e63014881e75f/ag_ui_protocol-0.1.20.tar.gz", hash = "sha256:fadc9600f492a9dde8b2b027171bb471a899430e53291a0b882a09d3f5416145", size = 11977, upload-time = "2026-08-14T22:34:36.694Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/57/92/d88fdc7f4648dc38d3d54c595066bb3e63a4c091884ffb2f98272c33eef8/ag_ui_protocol-1.0.0.tar.gz", hash = "sha256:cfebecef2e7bc942cc8a52d908a4ea86a98f631d2ffdc6ec5812bb843eac74fb", size = 30759, upload-time = "2026-09-17T18:31:19.448Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/06/57/55a4a74a5580ef74d2e326f455be45256d4f11260b493174ae0a81626be4/ag_ui_protocol-0.1.20-py3-none-any.whl", hash = "sha256:a15cced52603327b0ba32e95a8aca87e9067f3e69281addfc3fecdaa16a1d485", size = 15142, upload-time = "2026-08-14T22:34:35.607Z" },
+    { url = "https://files.pythonhosted.org/packages/82/b0/850be4576e6443dc575daa54188d8136ae2b2eca3f19e098e7a088fc9ebc/ag_ui_protocol-1.0.0-py3-none-any.whl", hash = "sha256:0058eaf0522201089d444e430fc35180bc8ad0222cae39e8568b313e8105d9e6", size = 36842, upload-time = "2026-09-17T18:31:18.471Z" },
 ]
 
 [[package]]

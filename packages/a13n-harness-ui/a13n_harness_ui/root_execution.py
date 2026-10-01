@@ -29,7 +29,7 @@ from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot
 from a13n_logging import get_logger
-from a13n_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol import HarnessAguiStreamObserver
 from anyio import CancelScope, get_cancelled_exc_class, to_thread
 from opentelemetry.trace import StatusCode
 from pydantic_ai import ToolDenied, ToolFailed
@@ -481,7 +481,7 @@ class RootRunExecutor:
             tool_images = ToolImageCollector(run_id=stream.run_id, thread_id=thread.thread_id, files=self._thread_files)
             if on_stream is not None:
                 await on_stream(stream, input_files)
-            observer = HarnessAguiObserver()
+            observer = HarnessAguiStreamObserver()
             async with self._bind_subagent_parent(
                 thread_id=thread.thread_id,
                 run_id=stream.run_id,
@@ -837,7 +837,7 @@ class RootRunExecutor:
         thread_id: str,
         run_id: str,
         events: tuple[Any, ...],
-        observer: HarnessAguiObserver,
+        observer: HarnessAguiStreamObserver,
         base_continuation_id: str | None,
         supplements: tuple[Any, ...] = (),
     ) -> None:

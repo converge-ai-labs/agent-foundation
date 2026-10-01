@@ -14,6 +14,7 @@ from a13n_harness import (
     HarnessEvent,
     HarnessExtensionEvent,
     HarnessRunResult,
+    HarnessRunResultEvent,
     PluginError,
     PluginOrdering,
     RunBindings,
@@ -194,7 +195,14 @@ async def test_plugin_can_short_circuit_without_starting_pydantic() -> None:
         plugins=(ShortCircuitPlugin(calls),),
     )
 
-    result = await executable.run("hello", bindings=RunBindings.embedded())
+    async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
+        items = [item async for item in stream]
+    assert len(items) == 2
+    assert isinstance(items[0], HarnessEvent)
+    assert isinstance(items[0].event, HarnessExtensionEvent)
+    assert items[0].event.payload == {"type": "run_started"}
+    assert isinstance(items[1], HarnessRunResultEvent)
+    result = items[1].result
 
     assert result.output == "cached"
     assert calls == ["short-circuit"]
@@ -370,7 +378,10 @@ class ExternalPluginEvent:
 
 
 class EventTransformPlugin(AbstractHarnessPlugin):
-    def __init__(self, *, invalid: bool = False, external: bool = False, foreign_run: bool = False) -> None:
+    def __init__(
+        self, *, invalid: bool = False, external: bool = False, foreign_run: bool = False, forge_start: bool = False
+    ) -> None:
+        self.forge_start = forge_start
         self.invalid = invalid
         self.external = external
         self.foreign_run = foreign_run
@@ -392,6 +403,8 @@ class EventTransformPlugin(AbstractHarnessPlugin):
                         event = cast(Any, object())
                     elif self.external:
                         event = ExternalPluginEvent()
+                    elif self.forge_start:
+                        event = HarnessExtensionEvent(kind="lifecycle", payload={"type": "run_started"})
                     yield replace(
                         item,
                         run_id="forged-child" if self.foreign_run else item.run_id,
@@ -430,7 +443,11 @@ async def test_plugin_can_emit_an_extended_agent_stream_event() -> None:
     async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
         items = [item async for item in stream]
 
-    events = [item.event for item in items if isinstance(item, HarnessEvent)]
+    assert isinstance(items[0], HarnessEvent)
+    assert isinstance(items[0].event, HarnessExtensionEvent)
+    assert items[0].event.kind == "lifecycle"
+    assert items[0].event.payload == {"type": "run_started"}
+    events = [item.event for item in items[1:] if isinstance(item, HarnessEvent)]
     assert events
     assert all(isinstance(event, ExternalPluginEvent) for event in events)
 
@@ -470,7 +487,9 @@ async def test_plugin_extension_event_is_revalidated_and_redacted() -> None:
         items = [item async for item in stream]
 
     extensions = [
-        item.event for item in items if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent)
+        item.event
+        for item in items[1:]
+        if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent)
     ]
     assert extensions
     assert all(event.payload == {"token": "[REDACTED]"} for event in extensions)
@@ -501,6 +520,15 @@ async def test_plugin_cannot_emit_an_event_without_event_kind() -> None:
     with pytest.raises(PluginError) as exc_info:
         await executable.run("hello", bindings=RunBindings.embedded())
 
+    assert exc_info.value.code == "plugin_event_invalid"
+
+
+async def test_plugin_cannot_forge_the_reserved_run_start() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=_model([]), plugins=(EventTransformPlugin(forge_start=True),)
+    )
+    with pytest.raises(PluginError) as exc_info:
+        await executable.run("hello", bindings=RunBindings.embedded())
     assert exc_info.value.code == "plugin_event_invalid"
 
 
@@ -682,6 +710,8 @@ async def test_normal_cleanup_stays_in_the_task_that_entered_the_plugin_iterator
         response = cast(Any, stream)._response
         first = await stream.__anext__()
         assert isinstance(first, HarnessEvent)
+        # The reserved start precedes middleware entry; consume a body event.
+        await stream.__anext__()
 
     assert response._item_validator is None
 
@@ -916,9 +946,11 @@ async def test_cleanup_cannot_suppress_external_cancellation() -> None:
     await stream.__aenter__()
     first = await stream.__anext__()
     assert isinstance(first, HarnessEvent)
+    # Establish middleware entry before testing its cleanup.
+    await stream.__anext__()
 
     close_task = asyncio.create_task(stream.__aexit__(None, None, None))
-    await cleanup_started.wait()
+    await asyncio.wait_for(cleanup_started.wait(), timeout=2)
     close_task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
@@ -942,7 +974,7 @@ async def test_cancellation_during_terminal_pump_cleanup_stays_primary() -> None
     )
 
     run_task = asyncio.create_task(executable.run("hello", bindings=RunBindings.embedded()))
-    await cleanup_started.wait()
+    await asyncio.wait_for(cleanup_started.wait(), timeout=2)
     run_task.cancel()
     release_cleanup.set()
 
@@ -1021,9 +1053,11 @@ async def test_early_close_installs_mount_mutation_fence_before_plugin_cleanup()
     await stream.__aenter__()
     first = await stream.__anext__()
     assert isinstance(first, HarnessEvent)
+    # Establish middleware entry before testing its cleanup.
+    await stream.__anext__()
 
     close_task = asyncio.create_task(stream.__aexit__(None, None, None))
-    await cleanup_started.wait()
+    await asyncio.wait_for(cleanup_started.wait(), timeout=2)
     with pytest.raises(EnvironmentError) as exc_info:
         await environment.set_default(None)
     assert exc_info.value.code == "run_not_active"
@@ -1081,6 +1115,7 @@ async def test_internal_pump_cancellation_cannot_publish_into_an_unconsumed_full
     await stream.__aenter__()
     first = await stream.__anext__()
     assert isinstance(first, HarnessEvent)
+    await stream.__anext__()
     await asyncio.wait_for(close_started.wait(), timeout=2)
 
     await asyncio.wait_for(stream.__aexit__(None, None, None), timeout=2)
@@ -1141,9 +1176,11 @@ async def test_repeated_external_cancellation_attempts_remaining_cleanup_and_sta
     await stream.__aenter__()
     first = await stream.__anext__()
     assert isinstance(first, HarnessEvent)
+    # Establish middleware entry before testing its cleanup.
+    await stream.__anext__()
 
     close_task = asyncio.create_task(stream.__aexit__(None, None, None))
-    await cleanup_started.wait()
+    await asyncio.wait_for(cleanup_started.wait(), timeout=2)
     close_task.cancel()
     release_cleanup.set()
 

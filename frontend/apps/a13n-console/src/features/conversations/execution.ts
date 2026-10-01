@@ -17,8 +17,9 @@ export interface StepEdit {
 
 export interface ExecutionStep {
   id: string;
-  /** The attempt that ran the step; request and call IDs are unique only within it. */
+  /** Attempt and inline Harness run; native IDs are local to this scope. */
   scope: string;
+  subagentRunId?: string;
   kind: ExecutionKind;
   name?: string;
   state: string;
@@ -105,6 +106,7 @@ export interface Occurrence {
   position: string;
   occurredAt: string | null;
   scope: string;
+  subagentRunId?: string;
 }
 
 /** An action is settled once a terminal fact fixed its outcome. */
@@ -150,6 +152,7 @@ export function addStep(
   if (execution.steps.findLastIndex((existing) => existing.id === step.id) < 0)
     execution.steps.push({
       ...step,
+      subagentRunId: at.subagentRunId,
       position: at.position,
       startedAt: at.occurredAt,
       endedAt: null,
@@ -194,14 +197,58 @@ function occurrence(
   id: string,
   position: string,
   occurredAt: string | null,
+  subagentRunId?: string,
 ): Occurrence {
-  return { id, position, occurredAt, scope: attemptOf(position) };
+  const attempt = attemptOf(position);
+  return {
+    id,
+    position,
+    occurredAt,
+    subagentRunId,
+    scope: subagentRunId ? `${attempt}/child/${subagentRunId}` : attempt,
+  };
 }
 
 function facts(items: readonly DisplayItem[]): Fact[] {
   const list: Fact[] = [];
+  const children = new Set<string>();
+  const payloadOf = (content: DisplayItem["content"]) => {
+    const value = isRecord(content.value) ? content.value : {};
+    const event = isRecord(value.event) ? value.event : {};
+    return isRecord(event.payload) ? event.payload : {};
+  };
   for (const item of items) {
-    const opened = occurrence(item.id, item.first_stream_id, item.started_at);
+    const child = item.content.subagentRunId;
+    const delegated = payloadOf(item.content).child_run_id;
+    const attempt = attemptOf(item.first_stream_id);
+    if (typeof child === "string") children.add(`${attempt}/${child}`);
+    if (
+      item.content.name === "a13n.harness.delegation" &&
+      typeof delegated === "string"
+    )
+      children.add(`${attempt}/${delegated}`);
+  }
+  for (const item of items) {
+    const { content } = item;
+    const payload = payloadOf(content);
+    const value = isRecord(content.value) ? content.value : {};
+    const delegation =
+      content.name === "a13n.harness.delegation" &&
+      payload.type === "inline_delegation";
+    const source = delegation
+      ? payload.parent_run_id
+      : (content.subagentRunId ?? value.run_id);
+    const subagentRunId =
+      typeof source === "string" &&
+      children.has(`${attemptOf(item.first_stream_id)}/${source}`)
+        ? source
+        : undefined;
+    const opened = occurrence(
+      item.id,
+      item.first_stream_id,
+      item.started_at,
+      subagentRunId,
+    );
     if (item.kind === "observation") {
       list.push({ kind: "observation", at: opened, content: item.content });
       continue;
@@ -220,7 +267,12 @@ function facts(items: readonly DisplayItem[]): Fact[] {
     )
       list.push({
         kind: "finished",
-        at: occurrence(item.id, item.last_stream_id, item.ended_at ?? null),
+        at: occurrence(
+          item.id,
+          item.last_stream_id,
+          item.ended_at ?? null,
+          subagentRunId,
+        ),
         item: presented,
       });
   }

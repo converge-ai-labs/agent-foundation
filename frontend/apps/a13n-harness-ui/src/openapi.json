@@ -7851,6 +7851,28 @@
       },
       "ChildToolCallView": {
         "properties": {
+          "subagent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subagent Run Id"
+          },
+          "content_parts": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Content Parts",
+            "default": []
+          },
           "tool_call_id": {
             "type": "string",
             "maxLength": 256,
@@ -15865,6 +15887,17 @@
             "type": "boolean",
             "title": "Tool Image Unavailable",
             "default": false
+          },
+          "content_parts": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Content Parts",
+            "default": []
           },
           "value": {
             "anyOf": [

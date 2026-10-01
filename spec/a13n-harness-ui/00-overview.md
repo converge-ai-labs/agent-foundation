@@ -68,7 +68,7 @@ The core concepts are:
 | Local root grouping and path layout    | Harness UI Project and selected profile       | Supplies ordered roots and Host-path-preserving or virtual aggregate paths captured at Run admission                |
 | Current Environment state              | Harness UI                                    | Stores and publishes Host-authoritative state under a complete Thread/configuration/root key                        |
 | Async child admission and persistence  | `HarnessUiSubagentOperator`                   | Creates child Threads and runs the complete Harness Host-operator boundary                                          |
-| AG-UI conversion                       | Agent Stream Protocol                         | Uses one observer per root or child Harness Run                                                                     |
+| AG-UI conversion                       | Agent Stream Protocol                         | Uses one stream observer per root or asynchronous child Run, preserving inline-child attribution                    |
 | Local persistence                      | Harness UI                                    | Uses SQLite for compact mutable heads and immutable files for compositions and checkpoints                          |
 | Presentation                           | CLI, WebUI, and embedding adapters            | Consume detached App projections, exact process-local receipts, root-lineage live events, and summary invalidations |
 | Durable distributed execution          | a13n Service                                  | Not emulated by Harness UI                                                                                          |

@@ -1,3 +1,5 @@
+import { readContentParts } from "a13n-ui";
+import type { ContentPart } from "@ag-ui/core";
 import { isRecord } from "../../service-client";
 import { inDisplayOrder, type DisplayItem } from "./display";
 
@@ -20,6 +22,8 @@ export interface PresentedItem {
   toolName: string;
   arguments: string;
   result?: unknown;
+  resultParts?: ContentPart[];
+  subagentRunId?: string;
   failure?: unknown;
   protectedReasoning: boolean;
   display?: boolean;
@@ -46,6 +50,8 @@ export function presentItem(item: DisplayItem): PresentedItem {
     toolName: text(content.toolCallName),
     arguments: text(content.arguments),
     result: content.result,
+    resultParts: readContentParts(content.result_parts),
+    subagentRunId: text(content.subagentRunId) || undefined,
     failure: content.failure,
     protectedReasoning: "encrypted_value" in content,
     ...(typeof metadata.display === "boolean"

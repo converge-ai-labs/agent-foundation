@@ -29,11 +29,11 @@ export function transcriptBlocks(
 ): TranscriptBlock[] {
   const blocks: TranscriptBlock[] = [];
   for (const entry of flatten(entries)) {
-    if (entry.kind === "reply") {
+    if (entry.kind === "reply" && !entry.subagentRunId) {
       blocks.push({ kind: "message", id: entry.id, entry });
       continue;
     }
-    if (entry.kind === "guidance") {
+    if (entry.kind === "guidance" && !entry.subagentRunId) {
       blocks.push({ kind: "guidance", id: entry.id, entry });
       continue;
     }
@@ -67,22 +67,23 @@ const instant = (value: string | null) => {
 
 function workEntry(entry: TimelineEntry, runState?: string): WorkEntry | null {
   const included =
-    entry.kind === "reasoning" ? entry : "arguments" in entry ? entry : null;
+    entry.kind === "reasoning" || ("text" in entry && entry.subagentRunId)
+      ? entry
+      : "arguments" in entry
+        ? entry
+        : null;
   if (!included) return null;
   return {
     id: included.id,
     entry: included,
-    state:
-      included.kind === "reasoning"
-        ? "done"
-        : workState(included.state, runState),
+    state: "text" in included ? "done" : workState(included.state, runState),
     startedMs: instant(included.startedAt),
     endedMs: instant(included.endedAt),
   };
 }
 
 /** Reasoning counts toward the work line but never names it. */
-const isStep = (work: WorkEntry) => work.entry.kind !== "reasoning";
+const isStep = (work: WorkEntry) => "arguments" in work.entry;
 
 export interface WorkSummary {
   /** The steps the line names, in observation order. */

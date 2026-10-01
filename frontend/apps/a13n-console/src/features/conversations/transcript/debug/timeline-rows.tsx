@@ -53,7 +53,8 @@ function TimelineRow({
   entry: TimelineEntry;
   scope: RunScope;
 }) {
-  if (entry.kind === "reply") return <ReplyBlock entry={entry} />;
+  if (entry.kind === "reply" && !entry.subagentRunId)
+    return <ReplyBlock entry={entry} />;
   if (entry.kind === "event") return <EventRow entry={entry} scope={scope} />;
   return <ExpandableRow entry={entry} scope={scope} />;
 }
@@ -70,12 +71,15 @@ function ExpandableRow({
   const Glyph = entryGlyph(entry);
   // Reasoning is something the agent said, not something it did: it carries no
   // outcome, no duration and no place on the time bar.
-  const content = entry.kind === "reasoning";
+  const content = "text" in entry;
   const children = "children" in entry ? entry.children : [];
   // A reply is the answer, not a step: it leaves the indent and reads as prose.
-  const nested = children.filter((child) => child.kind !== "reply");
+  const nested = children.filter(
+    (child) => child.kind !== "reply" || child.subagentRunId,
+  );
   const replies = children.filter(
-    (child): child is ContentEntry => child.kind === "reply",
+    (child): child is ContentEntry =>
+      child.kind === "reply" && !child.subagentRunId,
   );
   const state = workState(entry.state, scope.run.status);
   const childPath =

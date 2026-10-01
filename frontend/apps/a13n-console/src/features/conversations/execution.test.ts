@@ -6,6 +6,7 @@ import {
   display,
   finish,
   lifecycle,
+  item,
   message,
   observation,
   TIME,
@@ -251,10 +252,17 @@ it("keeps deferred external execution distinct from human questions and approval
     tool("external", "external"),
     tool("ask_user_question", "question"),
     tool("shell", "approval"),
-    custom("a13n.harness.run_result", {
-      deferred: {
-        calls: [{ tool_call_id: "external" }, { tool_call_id: "question" }],
-        approvals: [{ tool_call_id: "approval" }],
+    item("interrupt", "observation", {
+      type: "RUN_FINISHED",
+      runId: "run-one",
+      threadId: "thread-one",
+      outcome: {
+        type: "interrupt",
+        interrupts: [
+          { id: "external", toolCallId: "external", reason: "external" },
+          { id: "question", toolCallId: "question", reason: "external" },
+          { id: "approval", toolCallId: "approval", reason: "approval" },
+        ],
       },
     }),
   );
@@ -542,4 +550,75 @@ it("identifies an asynchronous delegation from its returned execution without in
       childExecutionId: "execution",
     }),
   ]);
+});
+
+it("isolates inline model, edit, usage and interrupt facts when native IDs repeat", () => {
+  const child = (entry: ReturnType<typeof lifecycle>, id = "child-a") => ({
+    ...entry,
+    content: { ...entry.content, subagentRunId: id },
+  });
+  const root = tool("edit", "root-call", { toolCallId: "same" });
+  const a = child(tool("edit", "a-call", { toolCallId: "same" }));
+  const b = child(tool("edit", "b-call", { toolCallId: "same" }), "child-b");
+  const state = fold(
+    lifecycle("model_request_started"),
+    root,
+    child(lifecycle("model_request_started")),
+    a,
+    child(lifecycle("model_request_started"), "child-b"),
+    b,
+    child(
+      custom("a13n.harness.lifecycle", {
+        type: "context_snapshot",
+        request_index: 0,
+        request_tokens: 42,
+      }),
+    ),
+    child(
+      capability("a13n.filesystem.edit_applied", {
+        tool_call_id: "same",
+        file_path: "/app",
+        before: "a",
+        after: "b",
+      }),
+    ),
+    child(lifecycle("model_request_completed")),
+    child(usageReport([modelRecord("child-record", 0)])),
+    message("root-reply", "assistant"),
+    child(message("child-reply", "assistant")),
+    item("interrupt", "observation", {
+      type: "RUN_FINISHED",
+      outcome: {
+        type: "interrupt",
+        interrupts: [{ id: "same", toolCallId: "same", reason: "external" }],
+      },
+    }),
+  );
+  expect(
+    state.steps
+      .filter((step) => step.kind === "llm")
+      .map((step) => [step.scope, step.state, step.items]),
+  ).toEqual([
+    ["1", "running", ["root-call", "root-reply"]],
+    ["1/child/child-a", "completed", ["a-call", "child-reply"]],
+    ["1/child/child-b", "running", ["b-call"]],
+  ]);
+  expect(state.steps.find((step) => step.id === "a-call")?.edit?.after).toBe(
+    "b",
+  );
+  expect(state.steps.find((step) => step.id === "root-call")?.state).toBe(
+    "waiting",
+  );
+  expect(
+    state.steps.find((step) => step.id === "root-call")?.edit,
+  ).toBeUndefined();
+  expect(state.steps.find((step) => step.id === "b-call")?.state).toBe(
+    "running",
+  );
+  expect(
+    state.steps.find((step) => step.id === "1/child/child-a/model-request-1"),
+  ).toMatchObject({ contextTokens: 42, usage: { inputTokens: 100 } });
+  expect(
+    state.steps.find((step) => step.id === "1/model-request-1")?.usage,
+  ).toBeUndefined();
 });

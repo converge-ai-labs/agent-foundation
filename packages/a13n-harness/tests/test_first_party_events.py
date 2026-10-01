@@ -141,14 +141,15 @@ async def test_model_request_lifecycle_events_are_ordered_and_fail_safely() -> N
 
     assert terminal.result.status == "completed"
     lifecycle = _payloads(events, "lifecycle")
-    assert [event["type"] for event in lifecycle] == ["model_request_started", "model_request_completed"]
-    assert lifecycle[0] == {
+    assert [event["type"] for event in lifecycle] == ["run_started", "model_request_started", "model_request_completed"]
+    assert lifecycle[0] == {"type": "run_started"}
+    assert lifecycle[1] == {
         "type": "model_request_started",
         "request_id": "model-request-1",
         "request_index": 0,
         "message_count": 1,
     }
-    assert lifecycle[1] == {
+    assert lifecycle[2] == {
         "type": "model_request_completed",
         "request_id": "model-request-1",
         "request_index": 0,
@@ -168,7 +169,7 @@ async def test_model_request_lifecycle_events_are_ordered_and_fail_safely() -> N
 
     assert terminal.result.status == "failed"
     lifecycle = _payloads(events, "lifecycle")
-    assert [event["type"] for event in lifecycle] == ["model_request_started", "model_request_failed"]
+    assert [event["type"] for event in lifecycle] == ["run_started", "model_request_started", "model_request_failed"]
     assert lifecycle[-1] == {
         "type": "model_request_failed",
         "request_id": "model-request-1",

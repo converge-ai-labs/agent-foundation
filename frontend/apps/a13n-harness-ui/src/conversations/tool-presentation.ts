@@ -1,12 +1,16 @@
+import type { ContentPart } from "@ag-ui/core";
+import { readContentParts } from "a13n-ui";
 import type { Schema } from "../transport/client";
 
 export type AppliedEdit = { file_path: string; before: string; after: string };
 export type ToolView = {
   id: string;
   toolCallId?: string;
+  subagentRunId?: string;
   name: string;
   input?: unknown;
   result?: unknown;
+  resultParts?: ContentPart[];
   inputComplete?: boolean;
   inputOmitted?: boolean;
   resultOmitted?: boolean;
@@ -65,7 +69,10 @@ export function describeTool(tool: ToolView) {
         ["failed", "signaled", "timed_out", "cancelled"].includes(
           text(status.phase),
         )));
-  const hasResult = tool.result !== undefined || tool.resultOmitted;
+  const hasResult =
+    tool.result !== undefined ||
+    tool.resultParts !== undefined ||
+    tool.resultOmitted;
   let phase = tool.retry
     ? "Retry requested"
     : tool.outcome === "interrupted"
@@ -458,6 +465,9 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
           }),
           toolCallId: part.tool_call_id ?? undefined,
           result: part.kind === "retry" ? part.text : part.value,
+          resultParts: part.content_parts?.length
+            ? readContentParts(part.content_parts)
+            : undefined,
           resultOmitted: part.value_omitted,
           outcome: part.outcome ?? undefined,
           provider: part.provider ?? view?.provider,
@@ -578,6 +588,7 @@ export function activitySummary(tools: ToolView[]) {
   const pending = tools.filter(
     (tool) =>
       tool.result === undefined &&
+      tool.resultParts === undefined &&
       !tool.resultOmitted &&
       !tool.stopped &&
       !tool.failure &&

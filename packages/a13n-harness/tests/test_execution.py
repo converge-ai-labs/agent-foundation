@@ -745,6 +745,10 @@ async def test_prestart_cancellation_never_calls_the_model_or_counts_budget_base
         usage=supplied_usage,
     ) as stream:
         stream.cancel()
+        started = await stream.__anext__()
+        assert isinstance(started, HarnessEvent)
+        assert isinstance(started.event, HarnessExtensionEvent)
+        assert started.event.payload["type"] == "run_started"
         terminal = await stream.__anext__()
 
     assert isinstance(terminal, HarnessRunResultEvent)
@@ -827,10 +831,11 @@ async def test_concurrent_next_is_rejected_without_closing_the_active_stream() -
     executable = _build(FunctionModel(stream_function=blocking_stream))
 
     async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
-        lifecycle = await stream.__anext__()
-        assert isinstance(lifecycle, HarnessEvent)
-        assert isinstance(lifecycle.event, HarnessExtensionEvent)
-        assert lifecycle.event.payload["type"] == "model_request_started"
+        for expected_type in ("run_started", "model_request_started"):
+            lifecycle = await stream.__anext__()
+            assert isinstance(lifecycle, HarnessEvent)
+            assert isinstance(lifecycle.event, HarnessExtensionEvent)
+            assert lifecycle.event.payload["type"] == expected_type
 
         from a13n_harness.events import InputTextEvent
 
