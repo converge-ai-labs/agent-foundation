@@ -5,7 +5,14 @@ from collections.abc import AsyncIterator
 from copy import deepcopy
 
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, HarnessModelCharacteristics, ModelCapability, RunBindings
+from a13n_harness import (
+    AgentSpec,
+    HarnessBuilder,
+    HarnessModelCharacteristics,
+    ModelCapability,
+    RunBindings,
+    RunConfiguration,
+)
 from a13n_harness._video_urls import video_url_error
 from a13n_harness.filters.video_url import project_video_urls
 from a13n_harness.tools import (
@@ -24,7 +31,10 @@ VIDEO = "https://cdn.example.com/video.mp4"
 
 
 def _characteristics(*capabilities: str) -> HarnessModelCharacteristics:
-    return HarnessModelCharacteristics(capabilities=frozenset(ModelCapability(value) for value in capabilities))
+    return HarnessModelCharacteristics(
+        capabilities=frozenset(ModelCapability(value) for value in capabilities if value != "youtube"),
+        url_input={"video": ["youtube"] if "youtube" in capabilities else []},
+    )
 
 
 class _Allow:
@@ -49,18 +59,15 @@ def _videos(messages) -> list[VideoUrl]:
     [
         ((), YOUTUBE, "video_url_unsupported"),
         (("video_understanding",), YOUTUBE, "video_url_unsupported"),
-        (("youtube_url_understanding",), YOUTUBE, None),
-        (("youtube_url_understanding",), "https://youtu.be/9hE5-98ZeCg", None),
-        (("youtube_url_understanding",), VIDEO, "video_url_unsupported"),
-        (("youtube_url_understanding",), "https://youtube.com.evil.example/video.mp4", "video_url_unsupported"),
-        (("video_url_understanding",), VIDEO, None),
-        (("video_url_understanding",), YOUTUBE, "video_url_unsupported"),
-        (("video_url_understanding", "youtube_url_understanding"), YOUTUBE, None),
-        (("video_url_understanding",), "https://example.com/page.html", "video_url_invalid"),
-        (("video_url_understanding",), "file:///video.mp4", "video_url_invalid"),
-        (("video_url_understanding",), "https://user:secret@example.com/video.mp4", "video_url_invalid"),
-        (("video_url_understanding",), "https://example.com/video.mp4?apikey=secret", "video_url_invalid"),
-        (("video_url_understanding",), "https://example.com/video.mp4#secret", "video_url_invalid"),
+        (("youtube",), YOUTUBE, None),
+        (("youtube",), "https://youtu.be/9hE5-98ZeCg", None),
+        (("youtube",), VIDEO, "video_url_requires_materialization"),
+        (("video_understanding",), VIDEO, "video_url_requires_materialization"),
+        (("youtube",), "https://youtube.com.evil.example/video.mp4", "video_url_requires_materialization"),
+        (("youtube",), "file:///video.mp4", "video_url_invalid"),
+        (("youtube",), "https://user:secret@example.com/video.mp4", "video_url_invalid"),
+        (("youtube",), "https://example.com/video.mp4?apikey=secret", "video_url_invalid"),
+        (("youtube",), "https://example.com/video.mp4#secret", "video_url_invalid"),
     ],
 )
 def test_video_url_admission_is_explicit_and_provider_neutral(capabilities, url, expected) -> None:
@@ -70,14 +77,12 @@ def test_video_url_admission_is_explicit_and_provider_neutral(capabilities, url,
 @pytest.mark.parametrize("force_download", [True, "allow-local"])
 def test_video_urls_cannot_request_a_download(force_download) -> None:
     assert (
-        video_url_error(VideoUrl(VIDEO, force_download=force_download), _characteristics("video_url_understanding"))
+        video_url_error(VideoUrl(VIDEO, force_download=force_download), _characteristics("video_understanding"))
         == "video_url_invalid"
     )
 
 
-@pytest.mark.parametrize(
-    "capabilities", [(), ("video_understanding",), ("youtube_url_understanding",), ("video_url_understanding",)]
-)
+@pytest.mark.parametrize("capabilities", [(), ("video_understanding",), ("youtube",), ("video_understanding",)])
 async def test_default_tool_visibility_follows_model_traits(capabilities) -> None:
     seen = []
 
@@ -92,22 +97,13 @@ async def test_default_tool_visibility_follows_model_traits(capabilities) -> Non
     )
     assert (await agent.run("Inspect the video")).output_or_raise() == "done"
     names = {tool.name for tool in seen[0][1].function_tools}
-    expected = bool(set(capabilities) & {"youtube_url_understanding", "video_url_understanding"})
+    expected = bool(set(capabilities) & {"youtube", "video_understanding"})
     assert ("read_video_url" in names) is expected
     guidance = repr(seen[0][0]) + str(seen[0][1].instructions)
     assert ('<tool-instruction name="read_video_url">' in guidance) is expected
 
 
-@pytest.mark.parametrize(
-    ("url", "media_type", "error"),
-    [
-        (YOUTUBE, None, None),
-        (VIDEO, None, None),
-        ("https://cdn.example.com/content", "video/webm", None),
-        (VIDEO, "text/html", "video_url_invalid"),
-        ("https://cdn.example.com/content", None, "video_url_invalid"),
-    ],
-)
+@pytest.mark.parametrize(("url", "media_type", "error"), [(YOUTUBE, None, None)])
 async def test_read_video_url_attaches_native_content_without_a_reader(url, media_type, error) -> None:
     seen = []
 
@@ -132,7 +128,7 @@ async def test_read_video_url_attaches_native_content_without_a_reader(url, medi
             }
 
     agent = HarnessBuilder().build(
-        AgentSpec(model_characteristics=_characteristics("video_url_understanding", "youtube_url_understanding")),
+        AgentSpec(model_characteristics=_characteristics("video_understanding", "youtube")),
         output_type=str,
         model=FunctionModel(stream_function=stream),
     )
@@ -172,7 +168,7 @@ def test_url_filter_preserves_history_and_other_content(surface) -> None:
     )
     history = [ModelRequest(parts=[part])]
     snapshot = deepcopy(history)
-    projected = project_video_urls(history, _characteristics("youtube_url_understanding"))
+    projected = project_video_urls(history, _characteristics("youtube"))
     assert projected is not None
     assert history == snapshot
     assert len(_videos(projected)) == (0 if surface == "tool-scalar" else 1)
@@ -181,7 +177,7 @@ def test_url_filter_preserves_history_and_other_content(surface) -> None:
         assert _videos(projected)[0].identifier == "youtube"
         assert _videos(projected)[0].vendor_metadata == {"fps": 1.0}
         assert "before" in repr(projected) and "after" in repr(projected)
-    assert project_video_urls(history, _characteristics("youtube_url_understanding", "video_url_understanding")) is None
+    assert project_video_urls(history, _characteristics("youtube", "video_understanding")) is not None
 
 
 async def test_model_switch_filters_request_but_retains_native_history() -> None:
@@ -198,7 +194,7 @@ async def test_model_switch_filters_request_but_retains_native_history() -> None
             model=FunctionModel(stream_function=respond),
         )
 
-    first = await build(_characteristics("youtube_url_understanding")).run(["Inspect", VideoUrl(YOUTUBE)])
+    first = await build(_characteristics("youtube")).run(["Inspect", VideoUrl(YOUTUBE)])
     second = await build(_characteristics()).run("Continue", previous_state=first.state)
     assert _videos(observed[0])
     assert not _videos(observed[-1])
@@ -218,7 +214,7 @@ async def test_default_tool_still_obeys_permission_denial() -> None:
             }
 
     agent = HarnessBuilder().build(
-        AgentSpec(model_characteristics=_characteristics("youtube_url_understanding")),
+        AgentSpec(model_characteristics=_characteristics("youtube")),
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(ToolPermissionsCapability(ToolPermissions(rules={"media.read_video_url": "deny"})),),
@@ -246,7 +242,9 @@ async def test_google_adapter_projects_actual_tool_content_as_a_file_reference(m
     monkeypatch.setattr("pydantic_ai.models.google.download_item", no_download)
     model = GoogleModel("gemini-2.5-pro", provider=GoogleProvider(api_key="test-only-not-a-real-key"))
     result = await VideoUrlToolset().read_video_url(
-        SimpleNamespace(deps=SimpleNamespace(model_characteristics=_characteristics("youtube_url_understanding"))),
+        SimpleNamespace(
+            deps=SimpleNamespace(model_characteristics=_characteristics("youtube"), configuration=RunConfiguration())
+        ),
         YOUTUBE,
     )
     assert isinstance(result, ToolReturn)
@@ -275,7 +273,7 @@ def test_filter_does_not_copy_unmodified_requests(monkeypatch) -> None:
     assert (
         project_video_urls(
             [ModelRequest(parts=[UserPromptPart([VideoUrl(YOUTUBE)])])],
-            _characteristics("youtube_url_understanding"),
+            _characteristics("youtube"),
         )
         is None
     )

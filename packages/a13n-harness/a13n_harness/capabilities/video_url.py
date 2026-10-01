@@ -1,4 +1,4 @@
-"""Default native video URL tools and request compatibility filtering."""
+"""Default bounded video URL acquisition and request video filtering."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ VIDEO_URL_CAPABILITY_ID = "a13n.video_url"
 
 @dataclass(init=False)
 class VideoUrlCapability(AbstractCapability[AgentContext]):
-    """Builder-owned native URL support gated by captured model characteristics."""
+    """Builder-owned video input support gated by captured model characteristics."""
 
     id = VIDEO_URL_CAPABILITY_ID
 

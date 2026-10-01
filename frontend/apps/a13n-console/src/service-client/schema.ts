@@ -4457,6 +4457,8 @@ export interface components {
        * @default 0.65
        */
       proactive_context_management_threshold?: number | null;
+      url_input?: components["schemas"]["UrlInputSupport-Input"];
+      video_input?: components["schemas"]["VideoInputPolicy"];
     };
     /**
      * HarnessModelCharacteristics
@@ -4479,6 +4481,8 @@ export interface components {
        * @default 0.65
        */
       proactive_context_management_threshold?: number | null;
+      url_input?: components["schemas"]["UrlInputSupport-Output"];
+      video_input?: components["schemas"]["VideoInputPolicy"];
     };
     /** HeadersCredential */
     HeadersCredential: {
@@ -5249,8 +5253,6 @@ export interface components {
     ModelCapability:
       | "image_understanding"
       | "video_understanding"
-      | "video_url_understanding"
-      | "youtube_url_understanding"
       | "audio_understanding"
       | "document_understanding";
     /**
@@ -7208,6 +7210,22 @@ export interface components {
       /** Upload Id */
       upload_id: string;
     };
+    /**
+     * UrlInputSupport
+     * @description URL subtypes consumed natively by the selected transport.
+     */
+    "UrlInputSupport-Input": {
+      /** Video */
+      video?: components["schemas"]["VideoUrlType"][];
+    };
+    /**
+     * UrlInputSupport
+     * @description URL subtypes consumed natively by the selected transport.
+     */
+    "UrlInputSupport-Output": {
+      /** Video */
+      video?: string[];
+    };
     /** UrlPart */
     UrlPart: {
       /**
@@ -7312,6 +7330,23 @@ export interface components {
     };
     /** @enum {string} */
     Verb: "read" | "run" | "write" | "admin";
+    /**
+     * VideoInputPolicy
+     * @description Base64-after byte budget for both one video and all inline videos in a request.
+     */
+    VideoInputPolicy: {
+      /**
+       * Max Video Bytes
+       * @description Maximum Base64-encoded bytes per video and in aggregate per model request.
+       * @default 10485760
+       */
+      max_video_bytes?: number;
+    };
+    /**
+     * VideoUrlType
+     * @enum {string}
+     */
+    VideoUrlType: "youtube";
     /** @enum {string} */
     WaitReason: "approval" | "call" | "multiple";
     /** @enum {string} */

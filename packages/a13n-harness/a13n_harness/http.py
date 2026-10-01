@@ -52,9 +52,9 @@ async def bounded_response_body(response: httpx2.Response, *, max_bytes: int) ->
             raise ProviderHttpError("response_too_large")
     body = bytearray()
     async for chunk in response.aiter_bytes():
-        body.extend(chunk)
-        if len(body) > max_bytes:
+        if len(body) + len(chunk) > max_bytes:
             raise ProviderHttpError("response_too_large")
+        body.extend(chunk)
     return bytes(body)
 
 

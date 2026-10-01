@@ -10473,6 +10473,12 @@
             ],
             "description": "Image preparation policy; omitted uses native defaults, null disables automatic preparation."
           },
+          "url_input": {
+            "$ref": "#/components/schemas/UrlInputSupport"
+          },
+          "video_input": {
+            "$ref": "#/components/schemas/VideoInputPolicy"
+          },
           "context_window_tokens": {
             "anyOf": [
               {
@@ -15984,6 +15990,22 @@
         "title": "TranscriptTurn",
         "description": "One ordinary input and its execution, including steering and resumes."
       },
+      "UrlInputSupport": {
+        "properties": {
+          "video": {
+            "items": {
+              "$ref": "#/components/schemas/VideoUrlType"
+            },
+            "type": "array",
+            "uniqueItems": true,
+            "title": "Video"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UrlInputSupport",
+        "description": "URL subtypes consumed natively by the selected transport."
+      },
       "UsageTotals": {
         "properties": {
           "model_requests": {
@@ -16099,6 +16121,21 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VideoInputPolicy": {
+        "properties": {
+          "max_video_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Video Bytes",
+            "description": "Maximum Base64-encoded bytes per video and in aggregate per model request.",
+            "default": 10485760
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VideoInputPolicy",
+        "description": "Base64-after byte budget for both one video and all inline videos in a request."
       },
       "WorkbenchPage": {
         "additionalProperties": false,
@@ -17761,13 +17798,18 @@
         "enum": [
           "image_understanding",
           "video_understanding",
-          "video_url_understanding",
-          "youtube_url_understanding",
           "audio_understanding",
           "document_understanding"
         ],
         "title": "ModelCapability",
         "description": "Harness-owned capabilities of the active Agent model."
+      },
+      "VideoUrlType": {
+        "type": "string",
+        "enum": [
+          "youtube"
+        ],
+        "title": "VideoUrlType"
       },
       "ModelRecipeRequest": {
         "properties": {

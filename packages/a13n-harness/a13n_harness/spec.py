@@ -15,6 +15,7 @@ from pydantic_ai.usage import UsageLimits
 from a13n_harness.capability_types import first_party_declarative_capability_types
 from a13n_harness.filters.cold_start import ColdStartFilterConfiguration
 from a13n_harness.image_input import ImageInputPolicy
+from a13n_harness.video_input import UrlInputSupport, VideoInputPolicy, VideoUrlType
 
 
 class ModelCapability(StrEnum):
@@ -22,14 +23,14 @@ class ModelCapability(StrEnum):
 
     IMAGE_UNDERSTANDING = "image_understanding"
     VIDEO_UNDERSTANDING = "video_understanding"
-    VIDEO_URL_UNDERSTANDING = "video_url_understanding"
-    YOUTUBE_URL_UNDERSTANDING = "youtube_url_understanding"
     AUDIO_UNDERSTANDING = "audio_understanding"
     # PDF documents as native content.
     DOCUMENT_UNDERSTANDING = "document_understanding"
 
 
 _DEFAULT_IMAGE_INPUT = ImageInputPolicy()
+_DEFAULT_URL_INPUT = UrlInputSupport()
+_DEFAULT_VIDEO_INPUT = VideoInputPolicy()
 
 
 class HarnessModelCharacteristics(BaseModel):
@@ -42,6 +43,12 @@ class HarnessModelCharacteristics(BaseModel):
         default_factory=ImageInputPolicy,
         exclude_if=lambda value: value == _DEFAULT_IMAGE_INPUT,
         description="Image preparation policy; omitted uses native defaults, null disables automatic preparation.",
+    )
+    url_input: UrlInputSupport = Field(
+        default_factory=UrlInputSupport, exclude_if=lambda value: value == _DEFAULT_URL_INPUT
+    )
+    video_input: VideoInputPolicy = Field(
+        default_factory=VideoInputPolicy, exclude_if=lambda value: value == _DEFAULT_VIDEO_INPUT
     )
     context_window_tokens: int | None = Field(default=None, gt=0)
     proactive_context_management_threshold: float | None = Field(default=0.65, ge=0.0, le=1.0)
@@ -160,4 +167,12 @@ class AgentSpec(PydanticAgentSpec):
         return schema
 
 
-__all__ = ["AgentSpec", "HarnessModelCharacteristics", "ImageInputPolicy", "ModelCapability"]
+__all__ = [
+    "AgentSpec",
+    "HarnessModelCharacteristics",
+    "ImageInputPolicy",
+    "ModelCapability",
+    "UrlInputSupport",
+    "VideoInputPolicy",
+    "VideoUrlType",
+]

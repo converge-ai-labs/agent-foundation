@@ -75,8 +75,6 @@ A trusted host can supply fresh upstream `MCP` capabilities in `RunBindings.capa
 class ModelCapability(StrEnum):
     IMAGE_UNDERSTANDING = "image_understanding"
     VIDEO_UNDERSTANDING = "video_understanding"
-    VIDEO_URL_UNDERSTANDING = "video_url_understanding"
-    YOUTUBE_URL_UNDERSTANDING = "youtube_url_understanding"
     AUDIO_UNDERSTANDING = "audio_understanding"
     DOCUMENT_UNDERSTANDING = "document_understanding"
 
@@ -84,6 +82,8 @@ class ModelCapability(StrEnum):
 class HarnessModelCharacteristics(BaseModel):
     capabilities: frozenset[ModelCapability] = frozenset()
     image_input: ImageInputPolicy | None = ImageInputPolicy()
+    url_input: UrlInputSupport = UrlInputSupport()
+    video_input: VideoInputPolicy = VideoInputPolicy()
     context_window_tokens: int | None = None
     proactive_context_management_threshold: float | None = 0.65
     compact_threshold: float = 0.90
@@ -100,7 +100,7 @@ The Harness `AgentSpec.usage_limits` uses Pydantic AI's native `UsageLimits` val
 
 `AgentSpec.cold_start_filter` configures cold compression of already-consumed tool results. Omission enables `ColdStartFilterConfiguration()` with a one-hour idle interval; `None` disables automatic installation. Plain native Pydantic AI specs receive the same default. An explicitly supplied `ColdStartFilterCapability` retains its authored policy instead of receiving a second automatic instance. The idle interval is a deliberate retention policy, not a provider-cache guarantee or adaptive cache-duration detector. Each child definition selects its own policy. [Input, Model, and Output Boundaries](16-input-model-and-output.md#request-and-history-filters) owns the exact filtering semantics.
 
-`video_understanding` declares native video-file input, independently of `video_url_understanding` for direct HTTP(S) video resources and `youtube_url_understanding` for YouTube links. The URL traits describe the selected model and transport together; file support never implies URL support. The default builder-owned `VideoUrlCapability` exposes `read_video_url` only when a URL trait is declared and filters unsupported URL input on a request-only copy. It needs no Host reader or feature binding. [Native video URLs](16-input-model-and-output.md#native-video-urls) owns admission and projection behavior.
+`video_understanding` declares binary video input. `url_input.video` is a set of native video URL subtypes, currently `youtube`, independently of binary modalities. `video_input.max_video_bytes` bounds both single and aggregate inline video Base64 bytes, default 10 MiB. Default URL and video policies are omitted from serialization to preserve legacy characteristic bytes and digests; explicit null is invalid. The builder-owned `VideoUrlCapability` exposes `read_video_url` for binary-video or native-URL support, and always projects video compatibility and budgets on detached requests. [Video inputs](16-input-model-and-output.md#video-inputs) owns admission, acquisition, and projection.
 
 `HarnessModelCharacteristics.image_input` owns request-only image preparation for the selected model. Omission enables the frozen `ImageInputPolicy()` defaults; a partial object validates with defaults for unspecified members, and explicit `None` disables automatic installation. Default-valued policies are omitted from serialization to preserve canonical bytes and content digests of legacy characteristics; explicit `None` is retained. An absent characteristics object and plain native Pydantic AI specs receive the same default-on behavior. An explicitly supplied `ImageFilterCapability` remains functional independently and suppresses the automatic duplicate. Each root, independently selected child, and image-understanding target uses its own selected model policy, not the parent's policy. This is neither native `ModelSettings` nor an Agent-wide/global configuration plane. The configuration and exact projection semantics belong to [Input, Model, and Output Boundaries](16-input-model-and-output.md#request-and-history-filters).
 

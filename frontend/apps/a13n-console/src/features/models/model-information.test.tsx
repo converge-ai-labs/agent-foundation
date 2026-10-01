@@ -7,29 +7,29 @@ vi.mock("react-i18next", () => ({
 }));
 afterEach(cleanup);
 
-it("preserves independent file, direct URL, and YouTube declarations when editing", () => {
-  const capabilities = [
-    "video_understanding",
-    "video_url_understanding",
-    "youtube_url_understanding",
-  ] as const;
+it("preserves binary, native URL and byte-budget declarations when editing", () => {
+  const value = {
+    capabilities: ["video_understanding"] as const,
+    url_input: { video: ["youtube"] as const },
+    video_input: { max_video_bytes: 10485760 },
+  };
   expect(
-    characteristicsInput({ capabilities: [...capabilities] }).capabilities,
-  ).toEqual(capabilities);
+    characteristicsInput({
+      ...value,
+      capabilities: [...value.capabilities],
+      url_input: { video: [...value.url_input.video] },
+    }),
+  ).toEqual(value);
 });
 
-it("edits YouTube support without enabling files or arbitrary video URLs", () => {
+it("edits native YouTube URL support without enabling video files", () => {
   const onChange = vi.fn();
   render(<ModelInformation value={{ capabilities: [] }} onChange={onChange} />);
   fireEvent.click(screen.getByRole("switch", { name: "YouTube URLs" }));
   expect(onChange).toHaveBeenCalledWith({
-    capabilities: ["youtube_url_understanding"],
+    capabilities: [],
+    url_input: { video: ["youtube"] },
   });
-  expect(
-    screen
-      .getByRole("switch", { name: "External video URLs" })
-      .getAttribute("aria-checked"),
-  ).toBe("false");
   expect(
     screen
       .getByRole("switch", { name: "Video files" })

@@ -116,7 +116,7 @@ Working state is not a distributed workflow engine. Cross-worker ownership, dura
 
 ## Filters
 
-`MessageIntegrityFilterCapability` is mandatory and builder-owned. Native video URL filtering is also built in: URLs unsupported by the selected model's `youtube_url_understanding` or `video_url_understanding` traits are replaced only in the provider request. Saved history and binary video files stay unchanged, including across Model switches. The filter does not download or analyze media. `ContentFilterCapability` is optional. Cold-start filtering is enabled by default through `AgentSpec.cold_start_filter`, with a one-hour idle interval:
+`MessageIntegrityFilterCapability` is mandatory and builder-owned. Video input projection is also built in: incompatible videos or inline videos exceeding the default 10 MiB single/aggregate Base64 budget are replaced only in provider requests. Direct `VideoUrl` input must use bounded `read_video_url` acquisition; YouTube requires `url_input.video: [youtube]`. Even unchanged inline videos receive detached request messages so 413 or exact payload-size self-healing can remove inline images/videos and replay once without changing saved history, source bytes, metadata, or annotations. `ContentFilterCapability` is optional. Cold-start filtering is enabled by default through `AgentSpec.cold_start_filter`, with a one-hour idle interval:
 
 ```python
 from a13n_harness import AgentSpec

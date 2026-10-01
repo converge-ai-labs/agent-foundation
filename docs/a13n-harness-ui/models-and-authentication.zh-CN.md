@@ -154,16 +154,20 @@ model_characteristics:
   compact_threshold: 0.90
 ```
 
-原生 Google API 的已知 Gemini Model 还包含 `audio_understanding`、`video_understanding` 和 `youtube_url_understanding`。默认值遵循所选协议：兼容路由不会仅因上游模型在其他 API 支持音频、视频或 YouTube，就自动获得这些输入能力。Gemini 入门默认值不启用任意外部 CDN 视频 URL。
+原生 Google API 的已知 Gemini Model 声明 `audio_understanding`、`video_understanding`，以及结构化的 `url_input.video: [youtube]`。默认值遵循所选协议：兼容路由不会自动获得音频、视频或原生 YouTube 支持。直接视频 URL 按二进制视频能力下载为有界内联内容。
 
-对于现有原生 Google Model，确认所选端点支持后，将 `youtube_url_understanding` 加入现有能力列表。无需配置 Agent Capability 或 reader：
+对于现有原生 Google Model，确认所选端点支持后，将以下结构化 URL 声明加入现有模型特征。无需 Agent Capability 或 reader：
 
 ```yaml
 model_characteristics:
-  capabilities: [image_understanding, audio_understanding, video_understanding, youtube_url_understanding]
+  capabilities: [image_understanding, audio_understanding, video_understanding]
+  url_input:
+    video: [youtube]
+  video_input:
+    max_video_bytes: 10485760
 ```
 
-Agent 可调用默认的 `read_video_url(url, instructions=None, media_type=None)` 工具，附加 YouTube 内容进行分析。粘贴的链接仍是普通文本，不会自动改写。工具权限仍然有效。一般直接视频资源需要独立的 `video_url_understanding` 声明及兼容的原生传输；无扩展名的资源还需指定视频 MIME 类型。两种 URL 声明都不代表本地视频文件支持。不支持的 URL 只从当前模型请求中过滤，保存的历史仍可供后续支持的 Model 使用。
+Agent 可调用默认 `read_video_url(url, instructions=None, media_type=None)`。直接 HTTP(S) 视频下载为原始字节 `BinaryContent`，SDK 编码 Base64；本地 `view` 和直接传入视频也受编码后默认 10 MiB 单个／总量预算约束。不做压缩、切分、帧提取或上传。YouTube 保持原生 URL，不支持则拒绝，无下载回退。粘贴的链接仍是文本。provider 的 413 或明确 payload 超限错误会沿用 self-healing 移除内联图像／视频后重试一次，普通认证、权限、MIME、限流错误不会触发；下载源错误单独返回工具错误。请求过滤和恢复均保留原始历史。
 
 能力与 Agent 工具和模型输出模态分开。尤其是文件 `view` 工具用这些声明直接向活动模型附加媒体。没有匹配能力时，需要显式配置[媒体理解回退](../a13n-harness/multimedia-understanding.md)，否则报告不可用。
 
@@ -362,12 +366,14 @@ Grok 使用 `kind: grok_subscription` 和兼容 `grok:` 路由。Copilot 使用 
 
 在 `model_characteristics` 中：
 
-| 字段                                     | 提供对象时的默认值 | 含义                                                                                                                                                                                           |
-| ---------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `capabilities`                           | `[]`               | 原生输入声明：`image_understanding`、`video_understanding`、`audio_understanding`、`youtube_url_understanding`、`video_url_understanding`；接受 `document_understanding`，但 Harness UI 不使用 |
-| `context_window_tokens`                  | `null`             | 正数工作上下文预算；省略保留原生/目录行为                                                                                                                                                      |
-| `proactive_context_management_threshold` | `0.65`             | 0–1 比例，或 `null` 关闭派生的主动阈值                                                                                                                                                         |
-| `compact_threshold`                      | `0.90`             | 大于 0 且不超过 1 的比例                                                                                                                                                                       |
+| 字段                                     | 提供对象时的默认值 | 含义                                                                                                          |
+| ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `capabilities`                           | `[]`               | 二进制输入声明：`image_understanding`、`video_understanding`、`audio_understanding`、`document_understanding` |
+| `url_input.video`                        | `[]`               | 原生视频 URL 子类型：`youtube`；与二进制视频能力独立                                                          |
+| `video_input.max_video_bytes`            | `10485760`         | 单个视频和整次请求所有内联视频的 Base64 编码后总字节上限                                                      |
+| `context_window_tokens`                  | `null`             | 正数工作上下文预算；省略保留原生/目录行为                                                                     |
+| `proactive_context_management_threshold` | `0.65`             | 0–1 比例，或 `null` 关闭派生的主动阈值                                                                        |
+| `compact_threshold`                      | `0.90`             | 大于 0 且不超过 1 的比例                                                                                      |
 
 Harness UI 在配置和已保存快照中接受旧名称 `context_window`。新序列化和编辑器保存使用 `context_window_tokens`；两者都提供时值必须一致。读取已有文件或对象不改写它们。核心 Harness Agent spec 要求规范名称。
 

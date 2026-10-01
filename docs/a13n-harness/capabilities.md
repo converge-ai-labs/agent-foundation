@@ -98,7 +98,7 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 
 ## Common Definition Capabilities
 
-Native video URL support is built in, not an optional definition Capability. Declare only URL types supported by the selected model and transport; normal tool permissions still control `media.read_video_url`. Local media remains the `view` tool's responsibility.
+Video input support is built in, not an optional definition Capability. `video_understanding` supports inline video and bounded direct URL downloads; `url_input.video: [youtube]` declares native YouTube support. Permissions still control `media.read_video_url`. Local files use `view` and share the inline video budget.
 
 | Capability                     | Adds                                                                                        | Needs fresh run collaborator                                   |
 | ------------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
@@ -235,7 +235,7 @@ bindings = RunBindings.embedded(
 )
 ```
 
-The same binding pattern applies to Web. The definition owns what behavior the Agent may request; the run collaborator owns current provider access. Video URLs need no provider binding: the default builder-owned `VideoUrlCapability` exposes `read_video_url` only when `model_characteristics.capabilities` declares `youtube_url_understanding` or `video_url_understanding`. File `video_understanding` does not imply URL support. The tool attaches native URL content without downloading or invoking a reader; incompatible URLs are filtered only from the current model request, not saved history. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path: native support comes from the active `AgentSpec.model_characteristics.capabilities` value supplied through the `model_characteristics` construction key, and dedicated image, video, or audio Agents can be configured directly through process environment variables without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
+Video URLs need no provider binding. The default `VideoUrlCapability` provides `read_video_url` for binary-video or native-video-URL models. Direct HTTP(S) resources become bounded raw-byte `BinaryContent`; the SDK encodes Base64, with a default 10 MiB encoded budget per video and in aggregate per request. YouTube uses only explicitly declared native URL support, with no download or conversion fallback. Request projection preserves saved history; there is no reader, compression, splitting, or helper Model. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path: native support comes from the active `AgentSpec.model_characteristics.capabilities` value supplied through the `model_characteristics` construction key, and dedicated image, video, or audio Agents can be configured directly through process environment variables without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
 
 ### Restrict Web domains
 

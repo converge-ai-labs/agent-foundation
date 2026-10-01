@@ -4433,6 +4433,12 @@
             ],
             "default": 0.65,
             "title": "Proactive Context Management Threshold"
+          },
+          "url_input": {
+            "$ref": "#/components/schemas/UrlInputSupport-Input"
+          },
+          "video_input": {
+            "$ref": "#/components/schemas/VideoInputPolicy"
           }
         },
         "title": "HarnessModelCharacteristics",
@@ -4492,6 +4498,12 @@
             ],
             "default": 0.65,
             "title": "Proactive Context Management Threshold"
+          },
+          "url_input": {
+            "$ref": "#/components/schemas/UrlInputSupport-Output"
+          },
+          "video_input": {
+            "$ref": "#/components/schemas/VideoInputPolicy"
           }
         },
         "title": "HarnessModelCharacteristics",
@@ -6738,8 +6750,6 @@
         "enum": [
           "image_understanding",
           "video_understanding",
-          "video_url_understanding",
-          "youtube_url_understanding",
           "audio_understanding",
           "document_understanding"
         ],
@@ -12873,6 +12883,37 @@
         "title": "UploadSource",
         "type": "object"
       },
+      "UrlInputSupport-Input": {
+        "additionalProperties": false,
+        "description": "URL subtypes consumed natively by the selected transport.",
+        "properties": {
+          "video": {
+            "items": {
+              "$ref": "#/components/schemas/VideoUrlType"
+            },
+            "title": "Video",
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "title": "UrlInputSupport",
+        "type": "object"
+      },
+      "UrlInputSupport-Output": {
+        "additionalProperties": false,
+        "description": "URL subtypes consumed natively by the selected transport.",
+        "properties": {
+          "video": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Video",
+            "type": "array"
+          }
+        },
+        "title": "UrlInputSupport",
+        "type": "object"
+      },
       "UrlPart": {
         "additionalProperties": false,
         "properties": {
@@ -13178,6 +13219,28 @@
           "write",
           "admin"
         ],
+        "type": "string"
+      },
+      "VideoInputPolicy": {
+        "additionalProperties": false,
+        "description": "Base64-after byte budget for both one video and all inline videos in a request.",
+        "properties": {
+          "max_video_bytes": {
+            "default": 10485760,
+            "description": "Maximum Base64-encoded bytes per video and in aggregate per model request.",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Video Bytes",
+            "type": "integer"
+          }
+        },
+        "title": "VideoInputPolicy",
+        "type": "object"
+      },
+      "VideoUrlType": {
+        "enum": [
+          "youtube"
+        ],
+        "title": "VideoUrlType",
         "type": "string"
       },
       "WaitReason": {

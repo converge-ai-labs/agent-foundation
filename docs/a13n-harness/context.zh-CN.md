@@ -116,7 +116,7 @@ Notes 保存结构化的会话事实，Tasks 保存执行状态，`summarize` �
 
 ## 过滤器
 
-`MessageIntegrityFilterCapability` 是必需组件，由 builder 管理。原生视频 URL 过滤也是内置行为：若所选模型的 `youtube_url_understanding` 或 `video_url_understanding` 不支持某个 URL，只在发往 provider 的请求中替换该 URL。保存的历史和二进制视频文件不变，切换 Model 也不会删除原始 URL。过滤器不下载或分析媒体。`ContentFilterCapability` 可选。冷启动过滤通过 `AgentSpec.cold_start_filter` 默认启用，空闲间隔为一小时：
+`MessageIntegrityFilterCapability` 是必需组件，由 builder 管理。视频输入投影也是内置行为：不兼容的视频或超出编码后 10 MiB 单个／总量预算的内联视频只在 provider 请求中替换；普通 `VideoUrl` 要求通过 `read_video_url` 有界下载，YouTube 则要求 `url_input.video: [youtube]`。即使视频未超限，也会分离请求消息，以避免 413 或明确 payload 超限错误触发 self-healing 时改变保存的历史。self-healing 移除内联图像／视频后最多重试一次；原始文件、元数据和注释不变。`ContentFilterCapability` 可选。冷启动过滤通过 `AgentSpec.cold_start_filter` 默认启用，空闲间隔为一小时：
 
 ```python
 from a13n_harness import AgentSpec
