@@ -7,8 +7,10 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from a13n_harness.providers.model.openai_chatgpt import DEFINITION as CHATGPT_DEFINITION
 from pydantic_ai.exceptions import UserError
 
+from a13n_harness_ui.model_accounts.models import AccountProjection, Provider
 from a13n_harness_ui.model_accounts.usage import CodexUsage, ResetRequest
 from a13n_harness_ui.storage.usage import ThreadUsageView, UsageTotals
 
@@ -113,7 +115,7 @@ def _usage_details(view: ThreadUsageView) -> str:
             "Cache/audio counters are subsets of input/output, not extra tokens.",
             "Cache rate = cache-read / (input + output), matching the status bar.",
             "Provider receipts are deduplicated across Runs and attributed to first observation.",
-            "Context occupancy: /status. Codex subscription limits: /usage subscription; reset credits: /usage reset.",
+            "Context occupancy: /status. Subscription usage: /usage subscription; Codex reset credits: /usage reset.",
         ]
     )
     return "\n".join(lines)
@@ -194,6 +196,33 @@ def usage_text(usage: CodexUsage, *, now: datetime | None = None) -> str:
     if usage.reset_unavailable:
         lines.append(f"Reset credits unavailable: {usage.reset_unavailable}")
     return "\n".join(lines)
+
+
+def chatgpt_usage_text(account: AccountProjection) -> str:
+    """SIWC has a management link, not an established numeric allowance API."""
+    lines = ["ChatGPT subscription"]
+    if account.account_id:
+        lines.append(f"Selected account: {account.account_id}")
+    if not account.usable:
+        lines.append("Sign in again with: a13n-harness-ui login chatgpt")
+    lines.extend(
+        [
+            "Remaining allowance and reset times are unavailable in Harness UI.",
+            f"Manage usage in ChatGPT: {CHATGPT_DEFINITION.setup_url}",
+            "Check that the browser uses the same ChatGPT account and workspace.",
+            "Codex limits and this conversation's token totals are not ChatGPT plan allowance.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+async def show_subscription_usage(shell: CliShell) -> str:
+    assert shell.backend is not None
+    if shell.status.model.startswith("openai-chatgpt:"):
+        account = await shell.backend.app.inspect_model_account(Provider.CHATGPT)
+        shell.emit(chatgpt_usage_text(account), kind="info")
+        return ""
+    return await show_codex_usage(shell)
 
 
 async def show_codex_usage(shell: CliShell) -> str:

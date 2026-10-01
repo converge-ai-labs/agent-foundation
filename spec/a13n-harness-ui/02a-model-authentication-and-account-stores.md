@@ -192,7 +192,11 @@ Every command supports detached text and JSON result rendering. Authorization pr
 
 [First-use setup](06-setup-and-environment-readiness.md) inspects credential-free status and offers each supported connection as an independent Model recipe. One operation creates one connection; additional Models and Agents do not combine credentials or introduce a runtime fallback. Discovery never starts login or refresh. The terminal wizard labels reusable accounts without requiring a new login. Copilot also offers explicit source/account reselection. Missing credentials offer explicit device/browser login through the same App sessions used by WebUI, rediscovery, or configuration without authentication. Login cancellation observes the actual terminal result; completed account publication is not rolled back by setup cancellation. Invalid or unsupported stores require repair rather than replacement. A missing or invalid provider does not prevent selecting the other provider or an existing configured Model.
 
-## Codex Subscription Usage and Reset Credits
+## Subscription Usage
+
+For a ChatGPT Model, idle `/status` and `/usage subscription` inspect the selected Host-managed account without refreshing credentials or calling the Codex account API. They show the official ChatGPT usage-management link, identify the selected account when available, and request sign-in when it is unusable. Numeric remaining allowance and reset timestamps are explicitly unavailable; local token totals, credential expiry, and Codex windows never substitute for ChatGPT plan allowance. The browser may use a different account or workspace, so the display asks the user to check that identity. `/usage reset` remains Codex-only.
+
+### Codex Subscription Usage and Reset Credits
 
 The App reads Codex subscription usage from the supported ChatGPT account API, separately from model-token accounting and token expiry. Read-only status reports provider usage windows, usage percentages, scheduled reset timestamps, and available reset credits. Unsupported or unavailable credit APIs do not hide successfully read usage windows. Unknown fields or unavailable prices are not invented. The CLI's `/status` and `/usage subscription` refresh this information while idle without opening a selector. Each reported window shows its own remaining percentage, clamped to 0–100, a duration-derived label, and local reset time; missing windows are explicitly unavailable, not zero. `/usage reset` explicitly opens eligible credit selection.
 
