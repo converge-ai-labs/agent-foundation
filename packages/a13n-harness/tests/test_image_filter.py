@@ -15,7 +15,16 @@ from a13n_harness import (
     ImageInputPolicy,
     RunBindings,
 )
+from a13n_harness.content import (
+    ContentItem,
+    ContentMetadata,
+    content_items,
+    input_request,
+    prompt_content,
+    request_input_content,
+)
 from a13n_harness.filters import ImageFilterCapability
+from a13n_harness.filters.image import _project_images
 from a13n_harness.models import SelfHealingModelCapability
 from a13n_harness.toolsets.file_media import AgentMediaUnderstandingProvider, MediaUnderstandingRequest
 from PIL import Image
@@ -27,6 +36,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    TextContent,
     TextPart,
     ThinkingPart,
     ToolCallPart,
@@ -144,6 +154,39 @@ async def test_split_geometry_overlap_and_native_identity(surface: str) -> None:
         if surface == "user":
             assert isinstance(projected_part.content, tuple)
             assert projected_part.content[0] == "before" and projected_part.content[-1] == "after"
+
+
+@pytest.mark.parametrize("shape", [list, tuple])
+@pytest.mark.parametrize("max_images", [1, 20])
+async def test_split_prompt_annotations_follow_segments_without_changing_history(shape, max_images: int) -> None:
+    native = BinaryImage(_png((12, 2600)), media_type="image/png", identifier="attachment")
+    items = [
+        ContentItem("before", ContentMetadata(source_id="authored-before")),
+        ContentItem(native, ContentMetadata(display=False, source_id="attachment", media=True, file_id="file-one")),
+        ContentItem("after", ContentMetadata(source_id="authored-after")),
+    ]
+    request = input_request(items, metadata={"application": {"reference": "retained"}})
+    request.parts[0].content = shape(request.parts[0].content)
+    original = deepcopy(request)
+    messages = _project_images(
+        [request],
+        ImageInputPolicy(image_split_max_height=1000, image_split_overlap=100, max_images=max_images),
+    )
+    assert messages is not None
+    projected = messages[0]
+    assert isinstance(projected, ModelRequest)
+    annotated = prompt_content(projected, 0)
+    assert [item.metadata for item in annotated] == [
+        items[0].metadata,
+        *([items[1].metadata] * 3),
+        items[2].metadata,
+    ]
+    assert annotated[0].value == "before" and annotated[-1].value == "after"
+    assert isinstance(projected.parts[0].content, shape)
+    assert projected.metadata["application"] == {"reference": "retained"}
+    assert request == original
+    assert prompt_content(request, 0) == items
+    assert request.metadata == original.metadata
 
 
 @pytest.mark.parametrize("height,expected_count", [(4096, 1), (5000, 2)])
@@ -644,6 +687,78 @@ async def test_default_image_filter_and_self_healing_compose_once_without_changi
     assert _images(result.state.message_history) == [native]
     assert result.state.message_history[:2] == original
     assert previous.message_history == original and history == original
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("annotated_input", [False, True])
+async def test_default_builder_split_images_retry_oversized_payload_without_changing_input(
+    streaming: bool, annotated_input: bool
+) -> None:
+    native = BinaryImage(
+        _png((10, 5000)), media_type="image/png", identifier="attachment", vendor_metadata={"detail": "high"}
+    )
+    input = ["look", native, "after"]
+    if annotated_input:
+        input = [
+            ContentItem("look", ContentMetadata(source_id="authored-before")),
+            ContentItem(
+                native,
+                ContentMetadata(display=False, source_id="attachment", media=True, file_id="file-one"),
+            ),
+            ContentItem("after", ContentMetadata(source_id="authored-after")),
+        ]
+    original = deepcopy(input)
+    expected = content_items(input)
+    seen: list[list[ModelMessage]] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        seen.append(deepcopy(messages))
+        if len(seen) == 1:
+            raise ModelHTTPError(status_code=413, model_name="image-test", body="payload too large")
+        yield "recovered"
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond))
+    if streaming:
+        async with executable.stream(input, bindings=RunBindings.embedded()) as run:
+            async for _ in run:
+                pass
+            result = run.result
+            assert result is not None
+    else:
+        result = await executable.run(input, bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "recovered"
+    assert len(seen) == 2 and result.usage.requests == 2
+    assert [image.identifier for image in _images(seen[0])] == ["attachment-segment-1", "attachment-segment-2"]
+    assert _images(seen[1]) == []
+    for attempt, messages in enumerate(seen):
+        items = [
+            item for message in messages if isinstance(message, ModelRequest) for item in request_input_content(message)
+        ]
+        assert expected[0] in items and expected[-1] in items
+        media = [
+            item
+            for item in items
+            if isinstance(item.value, BinaryContent)
+            or (isinstance(item.value, TextContent) and "provider's size limit" in item.value.content)
+        ]
+        assert len(media) == 2
+        metadata = expected[1].metadata
+        if attempt == 1:
+            metadata = metadata.model_copy(update={"display": False, "source_id": "a13n.model.self-healing"})
+        assert [item.metadata for item in media] == [metadata, metadata]
+    assert result.state is not None
+    canonical = [
+        item
+        for message in result.state.message_history
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
+        if isinstance(item.value, BinaryContent) or item.value in ("look", "after")
+    ]
+    assert canonical == expected
+    assert _images(result.all_messages()) == [native]
+    assert input == original
+    assert native == (original[1].value if annotated_input else original[1])
 
 
 @pytest.mark.parametrize("image_input", [{}, {"image_input": {}}])
