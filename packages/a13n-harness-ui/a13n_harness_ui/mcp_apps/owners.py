@@ -11,9 +11,8 @@ from a13n_harness_ui.composition.models import ResolvedAgentNode, ResolvedMcpRec
 from a13n_harness_ui.composition.resolver import AgentCompositionResolver, ThreadCompositionSelection
 from a13n_harness_ui.composition.service import CompositionAcceptanceService
 from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.mcp_runtime.connections import Connections
 from a13n_harness_ui.storage import LocalStore
-
-from .connections import Connections
 
 
 @dataclass(frozen=True)
@@ -42,10 +41,10 @@ class CurrentOwners:
         self.configurations = configurations
         self.resolver = resolver
 
-    async def resolve(self, thread_id: str) -> AppOwner:
+    async def resolve(self, thread_id: str, *, require_apps: bool = True) -> AppOwner:
         """Saved child compositions identify a route; they never supply today's policy."""
         source = await self.configurations.current()
-        if source is None or not source.document.webui.mcp_apps.enabled:
+        if source is None or (require_apps and not source.document.webui.mcp_apps.enabled):
             raise HarnessUiError("MCP Apps are disabled.", code="mcp_apps_disabled")
         thread = await self.store.threads.get(thread_id)
         route: list[str] = []
@@ -75,16 +74,27 @@ class CurrentOwners:
         return AppOwner(thread_id, thread.thread_id, node, tuple(reversed(route)))
 
     async def retire_unselected(self, connections: Connections) -> None:
-        """Configuration changes also revoke connections owned by removed child routes."""
+        """Generic children own sticky selections; App authority follows the current root route."""
+        source = await self.configurations.current()
         for thread_id in {item.thread_id for item in connections.current()}:
-            try:
-                owner = await self.resolve(thread_id)
-            except HarnessUiError:
-                connections.retain_thread_servers(thread_id, set())
-            else:
-                connections.retain_thread_servers(
-                    thread_id, {item.server_id for item in owner.node.mcp_servers if item.apps_enabled}
-                )
+            selected: set[str] = set()
+            thread = await self.store.threads.get(thread_id)
+            if source is not None and thread is not None and not thread.archived and thread.memory_scope is None:
+                try:
+                    node = self.resolver.resolve_agent(source, ThreadCompositionSelection.from_thread(thread))
+                except HarnessUiError:
+                    pass
+                else:
+                    selected.update(
+                        item.server_id for item in node.mcp_servers if item.host_owned and not item.apps_enabled
+                    )
+                try:
+                    owner = await self.resolve(thread_id)
+                except HarnessUiError:
+                    pass
+                else:
+                    selected.update(item.server_id for item in owner.node.mcp_servers if item.apps_enabled)
+            connections.retain_thread_servers(thread_id, selected)
 
     def permissions(self, owner: AppOwner) -> ToolPermissionsCapability:
         recipe = next(

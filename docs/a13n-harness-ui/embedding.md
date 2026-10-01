@@ -88,6 +88,14 @@ Read `thread_decisions(thread_id=..., expected_continuation_id=...)` or the deta
 
 Authenticate the responding human or executor and submit the complete current decision set. Ordinary prompts cannot answer pending decisions. Child Runs do not create durable deferred work.
 
+## MCP input and integration control
+
+WebUI and interactive CLI enable [MCP human input](mcp.md#human-input-from-mcp-servers). Headless `open_harness_ui_app()` defaults to `mcp_input_enabled=False`. An embedded adapter that can answer requests may explicitly pass `mcp_input_enabled=True`; it must consume requests concurrently with the active operation rather than waiting for completion first.
+
+`mcp_input_requests(thread_id)` reads process-local form/URL requests for that Thread and its descendants. `respond_mcp_input(thread_id, request_id, McpInputResponse(...))` accepts `accept`, `decline`, or `cancel`; import `McpInputResponse` from `a13n_harness_ui.mcp_runtime.inputs`. An accepted form includes its `content` object; URL confirmation includes no form data. Exact duplicate answers reconcile and conflicting answers fail. There is no continuation ID or new Run admission here. `ThreadWatch.snapshot.mcp_inputs` closes the initial-query race, while summary invalidations request a refetch. Answers and pending requests do not survive restart.
+
+`mcp_status(thread_id)` reports current retained generations without connecting. `close_mcp_integration(thread_id, server_id)` explicitly closes that Thread's generation; it does not remove the server selection or promise an already dispatched remote write had no effect. Connection lifetime follows [root MCP policy](mcp.md#connection-lifetime-and-protocol), independently of enabling the human-input channel.
+
 ## Attach files
 
 Use `AttachmentUpload` from `a13n_harness_ui.thread_files` and stage it for an existing Thread. Pass returned IDs as the `attachment_ids` tuple on submission. Limits are eight attachments per input, 10 MiB per attachment, and 20 MiB combined.

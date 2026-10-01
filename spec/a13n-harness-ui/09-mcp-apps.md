@@ -4,7 +4,7 @@
 
 Harness UI hosts MCP Apps in its WebUI. An App is an interactive presentation of an actual MCP tool result, not an Agent, a new execution engine, or a browser-control session. The Python App owns MCP connections, retained originals and interaction authority; the authenticated browser owns a View and trusted human confirmation. The MCP server owns its business state.
 
-[Composition](02-agent-composition-and-snapshots.md#mcp-servers) owns server selection and transport recipes. [App and surfaces](05-runtime-subagents-and-surfaces.md) owns ordinary input, execution and HTTP access. [Local storage](03-local-storage-and-recovery.md) owns immutable objects and selected continuation. This contract owns the MCP Apps exception to Run-local MCP transport lifetime and its browser protocol, presentation and follow-up operations. It does not grant browser automation, native Host access or additional Agent Environment authority.
+[Composition](02-agent-composition-and-snapshots.md#mcp-servers) owns server selection and transport recipes. [App and surfaces](05-runtime-subagents-and-surfaces.md) owns ordinary input, execution and HTTP access. [Local storage](03-local-storage-and-recovery.md) owns immutable objects and selected continuation. [Runtime MCP ownership](05-runtime-subagents-and-surfaces.md#mcp-client-ownership-and-human-input) owns generic client lifetimes and human input; this contract owns Apps browser protocol, presentation and follow-up authority. It does not grant browser automation, native Host access or additional Agent Environment authority.
 
 ## Opt-in and Compatibility
 
@@ -17,7 +17,7 @@ The supported profile uses MCP Apps `ui.resourceUri` and `text/html;profile=mcp-
 | Value                 | Owner and meaning                                                                                                                |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Server binding        | Current selected server recipe and resolved transport credentials for one owning Thread                                          |
-| Connection generation | One live process-local MCP session for `(thread_id, server_id)`; never durable execution authority                               |
+| Connection generation | One entered process-local MCP client for `(thread_id, server_id)`; not a modern protocol session or durable authority            |
 | App reference         | Small retained identity naming the actual Thread, Run, tool call, server, tool and immutable original snapshot                   |
 | Original snapshot     | Immutable tool descriptor, exact arguments, raw MCP result, original resource reference and connection generation                |
 | View                  | Explicitly activated process-local interaction binding to an original, connection generation and current owning root/child route |
@@ -25,15 +25,15 @@ The supported profile uses MCP Apps `ui.resourceUri` and `text/html;profile=mcp-
 | Context reference     | Exact latest context value in one View; replacing or discarding the value invalidates its old selector                           |
 | Message receipt       | Process-local single-consumption admission result for one user-confirmed App message                                             |
 
-Multiple Views can share one connection. They do not share follow-up result histories, pending approvals, context selection or message proposals. A View is not the connection and closing it does not close that connection. An ordinary Run still receives a fresh Toolset adapter; an Apps-enabled adapter borrows the App-owned connection rather than creating another live MCP session.
+Multiple Views can share one connection. They do not share follow-up result histories, pending approvals, context selection or message proposals. A View is not the connection and closing it does not close that connection. An ordinary Run still receives a fresh Toolset adapter; an Apps-enabled adapter borrows the Host-owned generation rather than creating another client.
 
-Connections have no idle TTL. Run completion, browser disconnect and View closure do not destroy server state. Explicit connection close, binding retirement, Thread disposal and Host shutdown end the relevant lifetime. Retiring a generation immediately prevents new dispatch; admitted work keeps its borrow until completion. Broken generations are not transparently reconnected and business calls are not replayed. Later explicit activation may start a new connection, but cannot recover the old server's private state.
+Connection retention and retirement follow the generic runtime contract. Multiple Views borrow the same eligible generation; View closure does not close it. Later explicit activation can create a replacement, but cannot recover the old server's private business state.
 
 Tool/resource discovery is refreshed through the live connection rather than a stale per-Run cache. Run-local notification handlers must not replace the connection's stable Host handlers. MCP sessions, process handles and resolved credentials are never serialized.
 
 ## Original Capture and Presentation
 
-The Host captures the raw public MCP result at the real tool invocation boundary, before model-facing conversion loses presentation metadata. It associates that result with the real Run and tool-call identity. It publishes bounded immutable resource and snapshot objects, then attaches only small recognized App references to the actual tool return and live presentation. Raw JSON, structured content and recognized resource metadata retain their protocol meanings; UI capture does not change model-facing tool content.
+The Host captures the terminal raw public MCP result at the real tool invocation boundary, after SDK-owned input rounds and before model-facing conversion loses presentation metadata. Intermediate `input_required` results are never retained as successful App originals. Core uses captured SDK mode (default `auto`); the independent Apps UI wire protocol is not replaced by the Core date. It associates that result with the real Run and tool-call identity. It publishes bounded immutable resource and snapshot objects, then attaches only small recognized App references to the actual tool return and live presentation. Raw JSON, structured content and recognized resource metadata retain their protocol meanings; UI capture does not change model-facing tool content.
 
 Resource or storage failure after tool success does not retry the tool or turn its successful model result into a failure. The card instead records an unavailable presentation and leaves the ordinary result visible. Existing history without App references remains readable.
 

@@ -18,7 +18,7 @@ webui:
 
 Apps are off by default. WebUI adds the selected servers to root and child Agents without editing their YAML; existing tool filters and permissions still apply. The CLI continues to use only ordinary `mcp_servers` selections. Restart WebUI after enabling Apps or changing its sandbox listener. Text tool results remain usable if an App presentation fails.
 
-The server must provide the MCP Apps `ui.resourceUri` metadata and a `text/html;profile=mcp-app` resource. Legacy MCP-UI HTML conventions are not an alternative supported protocol. The Host supports inline display, same-server tools/resources, text or structured context, messages, external links and theme changes. It does not currently support image context, App-provided model tools, fullscreen mode or stable-origin browser storage.
+The server must provide the MCP Apps `ui.resourceUri` metadata and a `text/html;profile=mcp-app` resource. Legacy MCP-UI HTML conventions are not an alternative supported protocol. MCP Core `2026-07-28`, the Python/TypeScript SDK major versions, and the Apps UI wire version are independent; upgrading to ext-apps 2.x does not change the UI wire version to the Core date. The Host supports inline display, same-server tools/resources, text or structured context, messages, external links and theme changes. It does not currently support image context, App-provided model tools, fullscreen mode or stable-origin browser storage.
 
 For a complete local example without a model account, run `make mcp-apps-demo` from a source checkout. See `examples/mcp-apps/README.md` in the repository for the real stdio counter, public App SDK bundle and standalone server instructions. The demo uses a scripted HTTP model but the normal Host, history and permission paths.
 
@@ -35,9 +35,11 @@ App tool operations do not use model review or custom Agent reviewers. A `review
 - Closing a View ends its controls and pending confirmations, not the MCP server's connection. Already dispatched operations may still finish.
 - Connections have no idle timeout. A completed Run or a disconnected browser does not discard server state. Host shutdown, explicit connection closure, binding retirement or Thread disposal ends the connection. A crashed server is not silently restarted and its business calls are not replayed.
 
-Removing a server from an Agent's generic selection does not remove it while WebUI Apps still selects it. Removing it from Apps settings disables new App interactions and retires the retained connection; generic MCP remains available if independently selected. Changes affect later Run captures, not an already admitted Run.
+Removing a server from an Agent's generic selection does not remove it while WebUI Apps still selects it. Removing it from Apps settings disables new App interactions and retires that App-enabled binding; generic MCP remains available if independently selected, with lifetime determined by root `mcp.host_owned_servers`. Changes affect later Run captures, not an already admitted Run.
 
 On reload, Open App restores the saved original result, not its prior interactive state. Reactivate to read current server state; restarting WebUI does not restore a server's private memory.
+
+An App tool or resource request may also need [MCP human input](mcp.md#human-input-from-mcp-servers). The trusted Host presents that request outside the iframe and attributes it to the initiating View. Answering continues the same operation through the SDK; the saved App snapshot is captured only from a complete final result, never an input-required intermediate round.
 
 ## Context is opt-in
 

@@ -48,6 +48,19 @@ The returned `RootRunReceipt` has `receipt_id`, `thread_id`, and `submitted_at`.
 
 Only one active root operation is allowed per Thread. A second submit is rejected, not queued. There is no Service-style durable acceptance/idempotency contract here. After losing an acknowledgement, read current Thread/root activity before deciding what to do; do not blindly submit the input again. After process restart, old receipts can be unavailable while the saved continuation remains readable.
 
+## MCP input and integration control
+
+These authenticated routes are separate from deferred decisions and root Run admission:
+
+| Route                                                              | Behavior                                                     |
+| ------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `GET /api/threads/{thread_id}/mcp/integrations`                    | Current retained generations; no connection attempt          |
+| `POST /api/threads/{thread_id}/mcp/integrations/{server_id}/close` | Explicitly close the owning Thread's generation; returns 204 |
+| `GET /api/threads/{thread_id}/mcp/inputs`                          | Input states for that Thread and descendant child Threads    |
+| `POST /api/threads/{thread_id}/mcp/inputs/{request_id}/response`   | Answer the exact live request without starting another Run   |
+
+A response is `{"action":"accept","content":{"name":"Ada"}}` for a form, `{"action":"accept"}` for URL confirmation, or `{"action":"decline"}` / `{"action":"cancel"}`. Inspect the request's mode and original schema. The response view acknowledges accepted input, not business completion; continue observing the original operation. Identical duplicates reconcile while conflicting answers fail. Expired, retired or unavailable requests cannot authorize follow-up sends. After uncertain delivery, query and retry only the exact answer, not another business submission. MCP request state is process-local and disappears on restart. See [human input](mcp.md#human-input-from-mcp-servers) and [Python adapters](embedding.md#mcp-input-and-integration-control).
+
 ## Memory observation
 
 `GET /api/threads?memory=true` selects only Memory Threads; the default list excludes them. Project filters and pagination retain their ordinary semantics; `projectless=true` selects Global memory. `POST /api/threads/lookup` accepts the same `memory` discriminator. A Memory Thread exposes its `memory_scope` and supports the existing transcript, live, configuration-inspection and usage reads, but mutation or execution control returns `memory_thread_read_only`.

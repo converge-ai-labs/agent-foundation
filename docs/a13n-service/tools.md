@@ -89,6 +89,8 @@ curl -X POST "$A13N_URL/api/v1/connections" \
 - `bearer` takes `{"token": "..."}`, sent as `Authorization: Bearer`. `headers` lists header names in `config.headers` and takes their values as `{"headers": {"x-api-key": "..."}}`. Transport and protocol headers (`host`, `content-type`, `cookie`, `mcp-*`, `sec-*`, `proxy-*`, ...) cannot be set.
 - Changing the URL, authentication or OAuth client drops the stored credential. Changing only `config.tools` keeps it.
 
+Each worker attempt lazily owns one entered MCP client for each exact authorized Connection/definition/caller binding. Internal Runs borrow fresh tool projections; they do not share mutable headers or reconnect between Runs. Clients close with the attempt and are not pooled by URL or persisted across workers. The SDK uses automatic modern discovery with legacy negotiation. Tool catalogs refresh while the client remains entered, and dispatch still checks current Connection availability and worker authority. The Service does not advertise MCP human input without a durable response channel; this is separate from client-tool waits and approvals.
+
 ### OAuth
 
 With `auth: "oauth"`, the connection obtains its token from the MCP server's authorization server. The connection holds **one** credential that serves every run in the workspace, whoever authorized it.

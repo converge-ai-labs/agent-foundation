@@ -100,6 +100,7 @@ from a13n_harness_ui.mcp_apps.operations import AppDecision, AppOperation, AppTo
 from a13n_harness_ui.mcp_apps.origins import origin
 from a13n_harness_ui.mcp_apps.resources import AppResourceRequest
 from a13n_harness_ui.mcp_apps.sandbox import serve_sandbox
+from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView, McpInputResponse, McpIntegrationView
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginCallbackInput, LoginRequest, LoginStatus
@@ -815,6 +816,27 @@ def create_webui(
             raise HarnessUiError("MCP Apps require a separate sandbox origin.", code="mcp_apps_origin_invalid")
         result = await app().open_mcp_app(thread_id, await _document(request, AppReference))
         return result.model_copy(update={"sandbox_url": sandbox_url})
+
+    @server.get("/api/threads/{thread_id}/mcp/integrations", response_model=tuple[McpIntegrationView, ...])
+    async def mcp_status(thread_id: str) -> tuple[McpIntegrationView, ...]:
+        return await app().mcp_status(thread_id)
+
+    @server.post("/api/threads/{thread_id}/mcp/integrations/{server_id}/close", status_code=204)
+    async def close_mcp_integration(thread_id: str, server_id: str) -> Response:
+        await app().close_mcp_integration(thread_id, server_id)
+        return Response(status_code=204)
+
+    @server.get("/api/threads/{thread_id}/mcp/inputs", response_model=tuple[McpInputRequestView, ...])
+    async def mcp_inputs(thread_id: str) -> tuple[McpInputRequestView, ...]:
+        return await app().mcp_input_requests(thread_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/mcp/inputs/{request_id}/response",
+        response_model=McpInputRequestView,
+        openapi_extra=_body(McpInputResponse),
+    )
+    async def respond_mcp_input(thread_id: str, request_id: str, request: Request) -> McpInputRequestView:
+        return await app().respond_mcp_input(thread_id, request_id, await _document(request, McpInputResponse))
 
     @server.post("/api/threads/{thread_id}/apps/activate", response_model=AppView, openapi_extra=_body(AppReference))
     async def activate_mcp_app(thread_id: str, request: Request) -> AppView:

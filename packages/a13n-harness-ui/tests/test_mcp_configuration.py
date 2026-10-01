@@ -404,3 +404,63 @@ async def test_upgrade_accepts_unchanged_legacy_mcp_sources_without_generation_c
         assert await service.load(legacy_digest) == legacy
         await service.accept(await load_harness_ui_configuration(root), expected_current_digest=current.source_digest)
         assert await service.current() == current
+
+
+@pytest.mark.parametrize("protocol", ["auto", "legacy", "2026-07-28"])
+async def test_root_mcp_policy_is_captured_without_selecting_tools(tmp_path: Path, protocol: str) -> None:
+    from .test_composition import _catalog, _selection, _write_source
+
+    root = _write_source(tmp_path)
+    policy = {"host_owned_servers": ["mcp-docs"], "protocol_overrides": {"mcp-docs": protocol}}
+    root.write_text(root.read_text() + yaml.safe_dump({"mcp": policy}))
+    source = await load_harness_ui_configuration(root)
+    resolver = AgentCompositionResolver(_catalog())
+    captured = resolver.resolve_run(source, _selection())
+    recipe = captured.root.mcp_servers[0]
+    assert recipe.server_id == "mcp-docs"
+    assert recipe.host_owned and recipe.protocol == protocol
+    assert recipe.generic_selected and not recipe.apps_enabled
+    # Policy never implicitly selects a server for a child that excluded it.
+    reviewer = next(child for child in captured.root.children if child.name == "agent-reviewer")
+    assert reviewer.definition.mcp_servers == ()
+    root.write_text(root.read_text().replace(yaml.safe_dump({"mcp": policy}), ""))
+    current = resolver.resolve_run(await load_harness_ui_configuration(root), _selection())
+    assert not current.root.mcp_servers[0].host_owned
+    assert current.root.mcp_servers[0].protocol == "auto"
+    assert recipe.host_owned and recipe.protocol == protocol
+    assert type(captured).model_validate_json(captured.model_dump_json()) == captured
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        {"host_owned_servers": ["mcp-missing"]},
+        {"protocol_overrides": {"mcp-missing": "legacy"}},
+        {"host_owned_servers": ["mcp-one", "mcp-one"]},
+        {"protocol_overrides": {"mcp-one": "2025-11-25"}},
+    ],
+)
+async def test_invalid_root_mcp_policy_rejects_configuration(tmp_path: Path, policy: dict) -> None:
+    root, _ = _source(tmp_path, {"mcpServers": {"one": {"command": "python"}}})
+    root.write_text(root.read_text() + yaml.safe_dump({"mcp": policy}))
+    with pytest.raises(ConfigurationError):
+        await load_harness_ui_configuration(root)
+
+
+async def test_historical_mcp_recipe_and_empty_policy_keep_canonical_payload(tmp_path: Path) -> None:
+    from a13n_harness_ui.configuration.models import HarnessUiDocument
+
+    from .test_object_store import _object_store
+
+    original = {"server_id": "mcp-one", "transport": {"command": "python", "arguments": [], "environment": {}}}
+    recipe = ResolvedMcpRecipe.model_validate(original)
+    assert not recipe.host_owned and recipe.protocol == "auto"
+    assert recipe.generic_selected and not recipe.apps_enabled
+    assert recipe.model_dump(mode="json") == original
+    assert "mcp" not in HarnessUiDocument().model_dump(mode="json")
+    store, _ = _object_store(tmp_path / "state")
+    from a13n_harness_ui.storage import ObjectKind
+
+    envelope = await store.publish(object_kind=ObjectKind.run_composition, object_schema_version="1", payload=original)
+    assert await store.read_model(envelope.ref, ResolvedMcpRecipe) == recipe
+    assert await store.read(envelope.ref) == envelope

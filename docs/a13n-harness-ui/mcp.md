@@ -49,7 +49,7 @@ Command `env` (or canonical `transport.environment`) and remote `headers` accept
 
 Empty literal strings and whitespace are preserved. References require non-empty variables in the **Harness UI process** environment; exporting in another shell does not change an already-running process. Expansion is one pass, only for `${NAME}` with a valid environment-variable name; there is no shell execution or default-value syntax. These substitutions apply only to environment/header values, not commands, arguments, or URLs.
 
-Direct token configuration is supported; environment references are optional. Keep credential-bearing source files private and out of version control. Harness UI does not copy MCP source text or literal environment/header values into `config show`, accepted generations, or Run compositions: it retains source locations and digests, then reads values at Run startup. A captured Run requires that literal-bearing source file to remain present and byte-identical until client construction. Editing it is supported for newly captured Runs, but an older captured Run or child continuation may fail with `mcp_source_changed`; use current configuration for a new Run. Already constructed ordinary clients keep their Run-local values. Opted-in [MCP Apps connections](mcp-apps.md) outlive a Run but recheck current binding and credentials before follow-up operations. Environment references can rotate without editing the source file.
+Direct token configuration is supported; environment references are optional. Keep credential-bearing source files private and out of version control. Harness UI does not copy MCP source text or literal environment/header values into `config show`, accepted generations, or Run compositions: it retains source locations and digests, then reads values at Run startup. A captured Run requires that literal-bearing source file to remain present and byte-identical until client construction. Editing it is supported for newly captured Runs, but an older captured Run or child continuation may fail with `mcp_source_changed`; use current configuration for a new Run. Already constructed ordinary clients keep their Run-local values. [Host-owned connections](#connection-lifetime-and-protocol) outlive a Run but retain an exact effective binding; later operations and SDK follow-up rounds cannot use a retired binding. Environment references can rotate without editing the source file.
 
 After editing, run `a13n-harness-ui config validate` and start a new session if you changed default MCP selections. Validation does not connect to servers or verify credentials.
 
@@ -105,7 +105,30 @@ defaults:
   mcp_servers: [mcp-github]
 ```
 
-An Agent's `mcp_servers: null` inherits the root defaults; `[]` explicitly selects none. Existing sessions retain exact sticky selections. Ordinary clients/processes are constructed fresh for Runs and are not saved into continuations. Opted-in [MCP Apps](mcp-apps.md) use App-owned connections that can stay interactive after Run completion; they are still never serialized into continuations. Model Sandbox selection does not imply that an arbitrary external MCP command or remote service is sandboxed.
+An Agent's `mcp_servers: null` inherits the root defaults; `[]` explicitly selects none. Existing sessions retain exact sticky selections. By default, clients/processes are constructed fresh for logical Runs. Root lifetime policy can retain selected clients, and enabled [MCP Apps](mcp-apps.md) automatically retain theirs. Neither client state nor pending MCP input is serialized into continuations. Model Sandbox selection does not imply that an arbitrary external MCP command or remote service is sandboxed.
+
+## Connection lifetime and protocol
+
+To preserve a server's process-local state between Runs, configure the root document:
+
+```yaml
+mcp:
+  host_owned_servers: [mcp-docs]
+  protocol_overrides:
+    mcp-docs: auto
+```
+
+`host_owned_servers` defaults to `[]`. It changes lifetime only: the server must still be selected on the Agent or Thread, and existing tool filters and permissions still apply. Each owning Thread/server keeps its own entered client for an exact transport, credential and protocol binding. Child Threads do not borrow their parent's client. There is no idle or browser-viewer timeout; Host shutdown, explicit close, Thread disposal or binding retirement ends the generation. Clients and generation IDs are process-local, not durable MCP sessions. A disconnected generation does not silently reconnect or replay business calls; App activation can explicitly establish a replacement.
+
+`protocol_overrides` defaults to `{}`. Each configured server ID accepts `auto`, `legacy`, or `2026-07-28`; an omitted ID uses `auto`. The override controls the upstream SDK's Core negotiation, independently of connection lifetime and the [MCP Apps UI wire protocol](mcp-apps.md). All policy IDs must name existing MCP resources. Existing YAML/JSON and saved recipes without these fields retain Run-local lifetime and automatic negotiation.
+
+## Human input from MCP servers
+
+CLI and WebUI present supported MCP form and URL requests while the original operation remains active. These are not `ask_user_question`, deferred continuation decisions, or another Run. A root conversation can see requests from its child Threads, with the source Thread/server and available Run, tool-call or App View attribution.
+
+Forms support primitive string, numeric and boolean fields, single-select enums and multi-select string enums, including titled options. The Host validates answers against the original schema. Unsupported schemas, remote references and declared sensitive fields are rejected; never enter passwords, tokens or other secrets into MCP forms. URL requests show the destination and require an explicit browser action outside the App iframe; complete the external flow before confirming.
+
+Choose accept, decline or cancel within five minutes. Cancellation, expiration, connection retirement or process shutdown makes the live request unavailable. Responses bypass the business dispatch lane so a waiting call cannot deadlock. An identical duplicate response reconciles the same request; a conflicting response is rejected. If delivery is uncertain, retry only the exact submitted answer or inspect current state. Acceptance acknowledges input delivery, not completion or absence of remote effects. Headless embedding advertises no input handler unless explicitly enabled; see [embedding](embedding.md#mcp-input-and-integration-control).
 
 ## MCP field reference
 

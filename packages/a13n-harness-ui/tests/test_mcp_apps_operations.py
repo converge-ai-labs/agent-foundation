@@ -17,6 +17,7 @@ from a13n_harness_ui.mcp_apps.messages import AppMessageRequest
 from a13n_harness_ui.mcp_apps.operations import AppOperations, AppToolRequest
 from a13n_harness_ui.mcp_apps.owners import CurrentOwners
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
+from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputResponse
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import AgentResourceSource, ObjectKind, ThreadConfiguration, open_local_store
 from a13n_harness_ui.surfaces import RootRunReceipt
@@ -30,13 +31,36 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def apps(tmp_path: Path):
+async def apps(tmp_path: Path, request: pytest.FixtureRequest):
     config = _write_source(tmp_path)
     root = yaml.safe_load(config.read_text())
     root["webui"] = {"mcp_apps": {"enabled": True, "servers": ["mcp-docs"]}}
+    with_inputs = getattr(request, "param", False)
+    if with_inputs:
+        root["mcp"] = {"protocol_overrides": {"mcp-docs": "2026-07-28"}}
     config.write_text(yaml.safe_dump(root))
     script = tmp_path / "apps_server.py"
-    script.write_text(_SERVER)
+    script_source = _SERVER
+    if with_inputs:
+        script_source = (
+            script_source.replace(
+                "from mcp.types import TextContent",
+                "from mcp.types import TextContent, InputRequiredResult, ElicitRequest, ElicitRequestFormParams",
+            )
+            .replace(
+                "async def counter(ctx: Context, delay: float = 0) -> ToolResult:",
+                "async def counter(ctx: Context, delay: float = 0, confirm: bool = False) -> ToolResult | InputRequiredResult:",
+            )
+            .replace(
+                "    await asyncio.sleep(delay)",
+                """    if confirm and ctx.input_responses is None:
+        return InputRequiredResult(request_state="counter-confirm", input_requests={"confirm": ElicitRequest(
+            params=ElicitRequestFormParams(message="Confirm count", requested_schema={"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]})
+        )})
+    await asyncio.sleep(delay)""",
+            )
+        )
+    script.write_text(script_source)
     mcp = tmp_path / "mcp/docs.yaml"
     server = yaml.safe_load(mcp.read_text())
     server["transport"] = {"command": sys.executable, "arguments": [str(script)]}
@@ -60,7 +84,12 @@ async def apps(tmp_path: Path):
             initial_state=_initial(),
         )
         owners = CurrentOwners(store, configurations, resolver)
-        connections = Connections()
+
+        async def changed(thread_id: str) -> None:
+            assert thread_id == "thread-1"
+
+        inputs = Inputs(changed)
+        connections = Connections(input_handler=inputs if with_inputs else None)
         snapshots = AppSnapshots(store.objects, connections)
         operations = AppOperations(snapshots, owners, tmp_path)
         try:
@@ -68,7 +97,12 @@ async def apps(tmp_path: Path):
             recipe = owner.recipe("mcp-docs")
             transport, effective, _ = await prepare_mcp_transport(recipe, tmp_path)
             connection = await connections.acquire(
-                "thread-1", "mcp-docs", effective, transport, binding=recipe.transport.model_dump_json()
+                "thread-1",
+                "mcp-docs",
+                effective,
+                transport,
+                binding=recipe.transport.model_dump_json(),
+                protocol=recipe.protocol,
             )
             tool = next(tool for tool in await connection.client.list_tools() if tool.name == "counter")
             result = await connection.client.call_tool_mcp("counter", {})
@@ -81,6 +115,7 @@ async def apps(tmp_path: Path):
             yield operations, reference
         finally:
             await operations.close()
+            await inputs.close()
             await connections.close()
 
 
@@ -540,3 +575,39 @@ async def test_child_message_is_attributed_to_root_and_rechecks_route_before_sub
     assert rejected.status == "failed"
     assert "no longer selected" in rejected.reason
     assert len(submitted) == 1
+
+
+@pytest.mark.parametrize("apps", [True], indirect=True)
+@pytest.mark.parametrize("revoke", [False, True])
+async def test_app_input_wait_retains_view_and_publishes_only_terminal_result(apps, revoke) -> None:
+    operations, reference = apps
+    view = await operations.activate(reference)
+    connection = operations.snapshots.connections.get("thread-1", "mcp-docs")
+    inputs = operations.snapshots.connections.input_handler
+    assert isinstance(inputs, Inputs)
+    request = AppToolRequest(request_key="confirm", name="counter", arguments={"confirm": True})
+    initial = await operations.call_tool("thread-1", view.view_id, request)
+    async with asyncio.timeout(10):
+        while not any(item.state == "pending" for item in inputs.requests({"thread-1"})):
+            await asyncio.sleep(0.01)
+    pending = next(item for item in inputs.requests({"thread-1"}) if item.state == "pending")
+    assert pending.view_id == view.view_id
+    assert pending.run_id is None and pending.tool_call_id is None
+    waiting = operations.get_operation("thread-1", view.view_id, "confirm")
+    assert waiting.operation_id == initial.operation_id and waiting.status == "running" and waiting.result is None
+    assert (await operations.snapshots.read(reference)).snapshot.result["structuredContent"]["count"] == 1
+    if revoke:
+        await _policy(operations, "deny")
+    await inputs.respond({"thread-1"}, pending.request_id, McpInputResponse(action="accept", content={"name": "Ada"}))
+    terminal = await _settle(operations, view.view_id, "confirm")
+    assert terminal.operation_id == initial.operation_id
+    if revoke:
+        assert terminal.status == "failed" and terminal.result is None
+        result = await connection.client.call_tool_mcp("counter", {})
+        assert result.structured_content["count"] == 2, "the refused continuation must not increment"
+    else:
+        assert terminal.status == "completed"
+        assert terminal.result["structuredContent"]["count"] == 2
+        assert "inputRequired" not in str(terminal.result)
+    assert connection.connected
+    assert (await operations.snapshots.read(reference)).snapshot.result["structuredContent"]["count"] == 1

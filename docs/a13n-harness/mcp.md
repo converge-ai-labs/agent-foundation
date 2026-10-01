@@ -39,7 +39,33 @@ agent_spec = AgentSpec.from_dict(
 )
 ```
 
-The default `a13n-harness` installation includes Pydantic AI's MCP client runtime, so local URL and stdio transports need no separate Harness extra. For richer process-local inputs such as an in-process server, transport, script path, or prebuilt `MCPToolset`, construct `pydantic_ai.capabilities.MCP` in trusted code and pass it through definition Capability composition. A host that owns fresh authenticated clients or toolsets for one execution can instead attach an exact upstream `MCP` instance to `RunBindings.capabilities`; never reuse that authenticated instance across runs. `defer_loading=True` uses upstream `load_capability` under the same Harness tool boundaries. Use `native=True, local=False` when the selected model provider should execute a URL MCP server natively.
+The default `a13n-harness` installation includes Pydantic AI's MCP client runtime, so local URL and stdio transports need no separate Harness extra. For richer process-local inputs such as an in-process server, transport, script path, or prebuilt `MCPToolset`, construct `pydantic_ai.capabilities.MCP` in trusted code and pass it through definition Capability composition. A Host can attach a fresh upstream `MCP` projection to `RunBindings.capabilities` while owning the entered client's lifetime separately. Do not reuse mutable Run projections or share authenticated clients across different authority/header bindings. `defer_loading=True` uses upstream `load_capability` under the same Harness tool boundaries. Use `native=True, local=False` when the selected model provider should execute a URL MCP server natively.
+
+## Host-owned clients
+
+When several Runs should use the same server state, trusted Host code can own an entered FastMCP client and create a new upstream projection for each Run:
+
+```python
+from fastmcp import Client
+from pydantic_ai.capabilities import MCP
+from pydantic_ai.mcp import MCPToolset
+
+from a13n_harness import RunBindings
+
+
+async def use_host_client(executable):
+    async with Client("https://mcp.example.com/mcp", mode="auto") as client:
+        results = []
+        for prompt in ("Create a workspace", "Inspect that workspace"):
+            projection = MCPToolset(client, id="workspace", cache_tools=False)
+            bindings = RunBindings.embedded(
+                capabilities=(MCP(id="workspace", local=projection),)
+            )
+            results.append(await executable.run(prompt, bindings=bindings))
+        return results
+```
+
+Configure authentication and any input handlers on the Host client before entering it. The Host owns shutdown, current authorization, callback routing, and isolation of exact bindings; Harness does not pool connections or persist clients in continuation state. `auto` delegates modern discovery and legacy negotiation to the SDK. Explicit `legacy` and `2026-07-28` modes are available on the code-first client. The SDK owns multi-round input and request-state handling, not another Harness agent loop. A disconnected client is not permission to replay an uncertain business call.
 
 ## Run-scoped headers with `ContextualMCP`
 

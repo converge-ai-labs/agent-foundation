@@ -4,7 +4,7 @@ import {
   type McpUiHostCapabilities,
   type McpUiResourceCsp,
 } from "@modelcontextprotocol/ext-apps/app-bridge";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult } from "@modelcontextprotocol/client";
 import { useEffect, useRef, useState } from "react";
 
 export type AppHandlers = Partial<

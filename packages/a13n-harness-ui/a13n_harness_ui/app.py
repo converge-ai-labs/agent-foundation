@@ -146,6 +146,8 @@ from a13n_harness_ui.mcp_apps.operations import AppOperation, AppOperations, App
 from a13n_harness_ui.mcp_apps.owners import CurrentOwners
 from a13n_harness_ui.mcp_apps.resources import AppResourceRequest
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
+from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
+from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputRequestView, McpInputResponse, McpIntegrationView
 from a13n_harness_ui.memory import MemoryOrganizationRun, memory_scopes
 from a13n_harness_ui.memory_organization import MemoryOrganizationStatus, MemoryOrganizer
 from a13n_harness_ui.model_accounts import (
@@ -391,9 +393,13 @@ class HarnessUiApp:
         memory_organizer: MemoryOrganizer,
         mcp_apps: AppSnapshots | None = None,
         mcp_operations: AppOperations | None = None,
+        mcp_connections: HostConnections | None = None,
+        mcp_inputs: Inputs | None = None,
     ) -> None:
         self._settings = settings
         self._mcp_apps = mcp_apps
+        self._mcp_connections = mcp_connections or (mcp_apps.connections if mcp_apps else None)
+        self._mcp_inputs = mcp_inputs
         self._mcp_operations = mcp_operations
         self._mcp_app_owners = (
             mcp_operations.owners
@@ -1234,6 +1240,58 @@ class HarnessUiApp:
             await self._retire_mcp_owners()
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
+
+    async def mcp_status(self, thread_id: str) -> tuple[McpIntegrationView, ...]:
+        async with self._operation():
+            await self._threads.get(thread_id)
+            return (
+                tuple(
+                    McpIntegrationView(
+                        thread_id=item.thread_id,
+                        server_id=item.server_id,
+                        generation=item.generation,
+                        connected=item.connected,
+                        retired=item.retired,
+                    )
+                    for item in self._mcp_connections.current()
+                    if item.thread_id == thread_id
+                )
+                if self._mcp_connections is not None
+                else ()
+            )
+
+    async def close_mcp_integration(self, thread_id: str, server_id: str) -> None:
+        async with self._operation():
+            await self._threads.get(thread_id)
+            if self._mcp_connections is not None:
+                await self._mcp_connections.close_integration(thread_id, server_id)
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+
+    async def _mcp_input_scope(self, thread_id: str) -> set[str]:
+        await self._threads.get(thread_id)
+        result = {thread_id}
+        if self._mcp_inputs is not None:
+            for candidate in self._mcp_inputs.thread_ids():
+                current = await self._store.threads.get(candidate)
+                while current is not None and current.parent_thread_id is not None:
+                    if current.parent_thread_id == thread_id:
+                        result.add(candidate)
+                        break
+                    current = await self._store.threads.get(current.parent_thread_id)
+        return result
+
+    async def mcp_input_requests(self, thread_id: str) -> tuple[McpInputRequestView, ...]:
+        async with self._operation():
+            scope = await self._mcp_input_scope(thread_id)
+            return self._mcp_inputs.requests(scope) if self._mcp_inputs is not None else ()
+
+    async def respond_mcp_input(
+        self, thread_id: str, request_id: str, response: McpInputResponse
+    ) -> McpInputRequestView:
+        async with self._operation():
+            if self._mcp_inputs is None:
+                raise HarnessUiError("Interactive MCP input is unavailable.", code="mcp_input_unavailable")
+            return await self._mcp_inputs.respond(await self._mcp_input_scope(thread_id), request_id, response)
 
     async def open_mcp_app(self, thread_id: str, reference: AppReference) -> AppPresentation:
         async with self._operation():
@@ -2630,6 +2688,7 @@ class HarnessUiApp:
                     cutover_sequence=cursor.sequence,
                     thread=thread,
                     root_operation=root_operation,
+                    mcp_inputs=await self.mcp_input_requests(root_thread_id),
                     recent_events=tuple(reversed(retained_events)),
                     root_stream=root_stream.summary if root_stream is not None else None,
                 ),
@@ -2668,21 +2727,29 @@ class HarnessUiApp:
         await self._summary_hub.publish(kind="project")
 
     async def _retire_mcp_bindings(self, source: LoadedHarnessUiConfiguration) -> None:
-        if self._mcp_apps is not None:
+        if self._mcp_connections is not None:
             settings = source.document.webui.mcp_apps
-            self._mcp_apps.connections.retain_bindings(
+            app_servers = set(settings.servers) if self._mcp_apps is not None and settings.enabled else set()
+            retained = set(source.document.mcp.host_owned_servers) | app_servers
+            self._mcp_connections.retain_bindings(
                 {
-                    identity: server.transport.model_dump_json()
+                    identity: repr(
+                        (
+                            server.transport.model_dump_json(),
+                            source.document.mcp.protocol_overrides.get(identity, "auto"),
+                            identity in app_servers,
+                        )
+                    )
                     for identity, server in source.mcp_servers.items()
-                    if settings.enabled and identity in settings.servers
+                    if identity in retained
                 }
             )
 
         await self._retire_mcp_owners()
 
     async def _retire_mcp_owners(self) -> None:
-        if self._mcp_apps is not None:
-            await self._mcp_app_owners.retire_unselected(self._mcp_apps.connections)
+        if self._mcp_connections is not None:
+            await self._mcp_app_owners.retire_unselected(self._mcp_connections)
 
     def _replace_candidate_error(self, replacement: HarnessUiError | None) -> bool:
         previous = None if self._candidate_error is None else (self._candidate_error.code, str(self._candidate_error))
@@ -2793,6 +2860,8 @@ class HarnessUiApp:
             await idle.wait()
 
     async def _close_collaborators(self) -> None:
+        if self._mcp_inputs is not None:
+            await self._mcp_inputs.close()
         self._page_presence.close()
         for draft in self._shared_drafts.values():
             draft.close()
@@ -2845,6 +2914,7 @@ async def open_harness_ui_app(
     *,
     configuration_path: Path | None = None,
     host_mode: Literal["local", "webui"] = "local",
+    mcp_input_enabled: bool = False,
     share_computer: bool = False,
     configuration_error: ConfigurationError | None = None,
     codex_login: CodexLoginCallback | None = None,
@@ -2938,21 +3008,36 @@ async def open_harness_ui_app(
                 if configuration_path is not None
                 else None,
             )
-            app_connections = Connections() if host_mode == "webui" else None
-            if app_connections is not None:
-                resources.push_async_callback(app_connections.close)
+            live_hub = HarnessUiLiveHub()
+            summary_hub = HarnessUiSummaryHub(epoch=live_hub.epoch)
+
+            async def input_changed(thread_id: str) -> None:
+                thread = await store.threads.get(thread_id)
+                while thread is not None and thread.parent_thread_id is not None:
+                    thread = await store.threads.get(thread.parent_thread_id)
+                await summary_hub.publish(kind="thread", thread_id=thread.thread_id if thread else thread_id)
+
+            mcp_inputs = Inputs(input_changed) if host_mode == "webui" or mcp_input_enabled else None
+            mcp_connections = (
+                Connections(input_handler=mcp_inputs, cleanup_timeout_seconds=settings.shutdown_timeout_seconds)
+                if host_mode == "webui"
+                else HostConnections(
+                    input_handler=mcp_inputs, cleanup_timeout_seconds=settings.shutdown_timeout_seconds
+                )
+            )
+            resources.push_async_callback(mcp_connections.close)
+            app_connections = mcp_connections if isinstance(mcp_connections, Connections) else None
             mcp_apps = AppSnapshots(store.objects, app_connections) if app_connections is not None else None
             agent_reconstructor = AgentReconstructor(
                 catalog,
                 mcp_apps=app_connections,
+                mcp_connections=mcp_connections,
                 instrumentation=observation.instrumentation,
                 api_keys=ApiKeyStore(store.layout.root / "auth.json"),
                 configuration_root=configuration_path.expanduser().resolve().parent
                 if configuration_path is not None
                 else None,
             )
-            live_hub = HarnessUiLiveHub()
-            summary_hub = HarnessUiSummaryHub(epoch=live_hub.epoch)
             cleanup_timeout = min(
                 settings.shutdown_timeout_seconds,
                 settings.storage.cleanup_timeout_seconds,
@@ -3136,6 +3221,8 @@ async def open_harness_ui_app(
                 store,
                 mcp_apps=mcp_apps,
                 mcp_operations=mcp_operations,
+                mcp_connections=mcp_connections,
+                mcp_inputs=mcp_inputs,
                 configuration_path=configuration_path,
                 catalog=catalog,
                 configurations=configurations,

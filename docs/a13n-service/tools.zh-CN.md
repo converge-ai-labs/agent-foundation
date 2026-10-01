@@ -89,6 +89,8 @@ curl -X POST "$A13N_URL/api/v1/connections" \
 - `bearer` 接受 `{"token": "..."}`，以 `Authorization: Bearer` 发送。`headers` 在 `config.headers` 中列出请求头名称，并以 `{"headers": {"x-api-key": "..."}}` 提供值。不能设置传输和协议请求头（`host`、`content-type`、`cookie`、`mcp-*`、`sec-*`、`proxy-*` 等）。
 - 修改 URL、认证方式或 OAuth 客户端会移除已保存凭据；只修改 `config.tools` 则保留。
 
+每次 worker attempt 为每个精确授权的 Connection/定义/调用方绑定懒加载并持有一个已进入的 MCP 客户端。内部 Run 借用新的工具投影，不共享可变请求头，也不在 Run 之间重连。客户端随 attempt 关闭，不按 URL 建立共享池，也不跨 worker 持久化。SDK 使用现代自动发现并保留旧版协商。客户端保持已进入时工具目录仍会刷新，派发继续检查当前 Connection 可用性和 worker 权限。没有持久响应通道时，Service 不声明 MCP 人工输入；这与客户端工具等待和审批不同。
+
 ### OAuth
 
 使用 `auth: "oauth"` 时，连接从 MCP 服务器的授权服务器获取 token。连接持有**一份** 凭据，供工作空间中所有运行使用，与授权人无关。

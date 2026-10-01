@@ -91,6 +91,9 @@ defaults:
   harness_plugins: []
   environment_run_extensions: []
   mcp_servers: []
+mcp:
+  host_owned_servers: []
+  protocol_overrides: {}
 display:
   theme: auto
   mode: concise
@@ -157,6 +160,10 @@ webui:
 要显式关闭地址限制，使用 `allowed_origins: ["*"]`。这不会关闭 API 密钥身份验证或浏览器同源检查，也不是 CORS 白名单。即使配置两个 origin，也不能让它们彼此发起跨源 API 请求。已知公共地址时应优先列出确切值；`"*"` 会移除 Host 限制，包括 DNS 重绑定保护。已有绑定地址和回环访问独立于这些条目，仍然允许。
 
 监听器在启动时捕获设置。编辑后重启 WebUI；接受配置重载不会改变活动监听器的访问边界。HTTPS 转发和代理信任见[反向代理](webui.md#reverse-proxies-and-public-addresses)。
+
+### MCP 生命周期与协议
+
+根 `mcp.host_owned_servers` 选择在 CLI 和 WebUI 中跨逻辑 Run 保留客户端的服务器 ID，不会将它们加入 Agent 工具选择。`mcp.protocol_overrides` 将已有服务器 ID 映射到 `auto`、`legacy` 或 `2026-07-28`；省略的 ID 使用 SDK 自动协商。默认值为 `[]` 和 `{}`，保留现有配置行为。见 [MCP 连接生命周期](mcp.md#connection-lifetime-and-protocol)和[人工输入](mcp.md#human-input-from-mcp-servers)。这些设置捕获供后续 Run 使用；实时客户端和输入答案不是配置或续接状态。
 
 ### WebUI MCP Apps
 

@@ -9,11 +9,12 @@ enabled and ready, and the worker's `DispatchCheck` must pass; otherwise the cal
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from functools import partial
 
-import httpx2
+import anyio
 from a13n_harness import AgentContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from fastmcp import Client
+from fastmcp.client.transports import ClientTransport
 from pydantic_ai.capabilities import AbstractCapability, Toolset
 from pydantic_ai.exceptions import ToolFailed
 from redis.asyncio import Redis
@@ -26,7 +27,7 @@ from a13n_service.infra.errors import conflict
 from a13n_service.providers.registry import Registry
 from a13n_service.providers.tools import DispatchCheck, ToolDispatch
 from a13n_service.providers.tools.connectors import connector_toolset, list_connector_tools
-from a13n_service.providers.tools.mcp import mcp_capability
+from a13n_service.providers.tools.mcp import mcp_capability, mcp_client
 from a13n_service.resources.connections.access import McpConnection, ResolvedConnection, resolve_connection
 from a13n_service.resources.connections.account import open_account
 from a13n_service.resources.connections.discovery import cache_tools, cached_tools
@@ -93,13 +94,30 @@ async def open_connections(
     policy: EndpointPolicy,
     settings: Providers,
 ) -> AsyncIterator[tuple[AbstractCapability[AgentContext], ...]]:
-    """The run's capabilities, with fallback cleanup for every native MCP client's setup."""
+    """One worker attempt owns lazily entered clients; native Runs borrow fresh projections."""
     async with AsyncExitStack() as stack:
 
-        async def client_for(connection: McpConnection) -> httpx2.AsyncClient:
-            return await stack.enter_async_context(
-                open_mcp_client(connection, storage=storage, keys=keys, policy=policy, settings=settings)
-            )
+        def client_source(connection: McpConnection, headers: Mapping[str, str]):
+            # One closure per authorized selection/definition use, never a URL-wide
+            # pool or mutable caller-header map shared with another Agent.
+            lock = anyio.Lock()
+            entered: Client[ClientTransport] | None = None
+
+            async def acquire() -> Client[ClientTransport]:
+                nonlocal entered
+                async with lock:
+                    if entered is None:
+                        http = await stack.enter_async_context(
+                            open_mcp_client(connection, storage=storage, keys=keys, policy=policy, settings=settings)
+                        )
+                        http.headers.update(headers)
+                        client = mcp_client(
+                            connection.config.url, connection.id, http, timeout=settings.tool_call_seconds
+                        )
+                        entered = await stack.enter_async_context(client)
+                    return entered
+
+            return acquire
 
         capabilities: list[AbstractCapability[AgentContext]] = []
         for selected in connections:
@@ -108,14 +126,11 @@ async def open_connections(
             if isinstance(connection, McpConnection):
                 capabilities.append(
                     mcp_capability(
-                        connection.config.url,
                         connection.id,
-                        partial(client_for, connection),
+                        client_source(connection, selected.caller_headers),
                         tools=selected.tools,
-                        caller_headers=selected.caller_headers,
                         defer_loading=selected.defer_loading,
                         check=checked,
-                        timeout=settings.tool_call_seconds,
                     )
                 )
                 continue

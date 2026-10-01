@@ -20,9 +20,10 @@ from referencing import Registry
 from a13n_harness_ui.configuration import canonical_digest
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_adapters import prepare_mcp_transport
+from a13n_harness_ui.mcp_runtime.connections import Connection, Operation
 from a13n_harness_ui.surfaces import RootRunReceipt
 
-from .connections import Connection, require_classic_tool, visibility
+from .connections import require_classic_tool, visibility
 from .context import AppContext, AppContextReference, AppContextUpdate, context_text
 from .messages import AppMessageReceipt, AppMessageRequest
 from .models import AppModel, AppReference
@@ -120,8 +121,9 @@ class AppOperations:
             reference.server_id,
             effective,
             transport,
-            binding=recipe.transport.model_dump_json(),
+            binding=repr((recipe.transport.model_dump_json(), recipe.protocol, True)),
             activate=True,
+            protocol=recipe.protocol,
         )
         value = AppView(
             view_id=f"view_{uuid4().hex}",
@@ -366,7 +368,9 @@ class AppOperations:
             await self._admit(view, view.value.reference.tool_name, {}, validate_arguments=False)
 
         try:
-            result = await view.connection.client.read_app_resource(request.uri, authorize=authorize)
+            result = await view.connection.client.read_app_resource(
+                request.uri, authorize=authorize, operation=Operation(view_id=view.value.view_id)
+            )
         except HarnessUiError:
             raise
         except Exception as exc:
@@ -457,7 +461,10 @@ class AppOperations:
 
         try:
             result = await view.connection.client.call_app_tool(
-                operation.name, operation.arguments, authorize=authorize
+                operation.name,
+                operation.arguments,
+                authorize=authorize,
+                operation=Operation(view_id=view.value.view_id),
             )
             payload = result.model_dump(mode="json", by_alias=True, exclude_none=True)
             if len(json.dumps(payload).encode()) > 8 * 1024 * 1024:

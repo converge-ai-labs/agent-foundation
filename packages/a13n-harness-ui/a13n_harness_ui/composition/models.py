@@ -79,6 +79,8 @@ class ResolvedMcpRecipe(CompositionModel):
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     # Historical recipes were all generically selected, including Apps-enabled ones.
     generic_selected: bool = Field(default=True, exclude_if=lambda value: value)
+    host_owned: bool = Field(default=False, exclude_if=lambda value: not value)
+    protocol: Literal["auto", "legacy", "2026-07-28"] = Field(default="auto", exclude_if=lambda value: value == "auto")
 
 
 class ResolvedRunExtensionRecipe(CompositionModel):

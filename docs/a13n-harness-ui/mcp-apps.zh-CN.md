@@ -18,7 +18,7 @@ webui:
 
 Apps 默认关闭。WebUI 会将选中的服务器加入根级和子级 Agent，不修改其 YAML；现有工具过滤和权限仍适用。CLI 继续只使用普通 `mcp_servers` 选择。启用 Apps 或修改沙箱监听后重启 WebUI。App 展示失败时，文本工具结果仍可使用。
 
-服务器必须提供 MCP Apps `ui.resourceUri` 元数据和 `text/html;profile=mcp-app` 资源。旧版 MCP-UI HTML 惯例不是受支持的替代协议。Host 支持内嵌显示、同服务器工具/资源、文本或结构化上下文、消息、外部链接和主题切换。当前不支持图像上下文、App 提供的模型工具、全屏模式或稳定 origin 的浏览器存储。
+服务器必须提供 MCP Apps `ui.resourceUri` 元数据和 `text/html;profile=mcp-app` 资源。旧版 MCP-UI HTML 惯例不是受支持的替代协议。MCP Core `2026-07-28`、Python/TypeScript SDK 主版本和 Apps UI 线协议版本相互独立；升级到 ext-apps 2.x 不会将 UI 线协议版本改成 Core 日期。Host 支持内嵌显示、同服务器工具/资源、文本或结构化上下文、消息、外部链接和主题切换。当前不支持图像上下文、App 提供的模型工具、全屏模式或稳定 origin 的浏览器存储。
 
 要运行不需要模型账户的完整本地示例，在源码检出目录运行 `make mcp-apps-demo`。真实 stdio 计数器、公共 App SDK 包和独立服务器说明见仓库 `examples/mcp-apps/README.md`。演示使用脚本化 HTTP 模型，但采用正常的 Host、历史和权限路径。
 
@@ -35,9 +35,11 @@ App 工具操作不使用模型审查或自定义 Agent 审查器。`review` 权
 - 关闭 View 会终止其控件和待确认请求，不会终止 MCP 服务器连接。已派发的操作仍可能完成。
 - 连接没有空闲超时。Run 完成或浏览器断开不会丢弃服务器状态。Host 关闭、显式关闭连接、绑定退役或 Thread 释放会终止连接。服务器崩溃不会静默重启，其业务调用也不会重放。
 
-从 Agent 的通用选择移除服务器，不会移除仍被 WebUI Apps 选择的服务器。从 Apps 设置移除会关闭新 App 交互并退役保留连接；如果独立选择了通用 MCP，它仍可用。变更影响后续 Run 捕获，不影响已受理 Run。
+从 Agent 的通用选择移除服务器，不会移除仍被 WebUI Apps 选择的服务器。从 Apps 设置移除会关闭新 App 交互并退役该启用 App 的绑定；如果独立选择了通用 MCP，它仍可用，其生命周期由根 `mcp.host_owned_servers` 决定。变更影响后续 Run 捕获，不影响已受理 Run。
 
 重新加载时，Open App 恢复已保存的原始结果，不恢复之前的交互状态。重新激活以读取当前服务器状态；重启 WebUI 不会恢复服务器私有内存。
+
+App 工具或资源请求也可能需要 [MCP 人工输入](mcp.md#human-input-from-mcp-servers)。可信 Host 在 iframe 之外呈现请求，并关联到发起 View。回答后由 SDK 继续同一操作；只从完整最终结果捕获保存的 App 快照，不从需要输入的中间轮次捕获。
 
 ## 上下文需要主动选择
 
