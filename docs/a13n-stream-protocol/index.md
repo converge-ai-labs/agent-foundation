@@ -18,8 +18,7 @@ Stream Protocol (`a13n-stream-protocol`) only converts events: it does not run a
 
 ```mermaid
 flowchart TB
-    Run["Harness source stream"] --> Router["Route by Thread and Run"]
-    Router --> Observer["HarnessAguiObserver"]
+    Run["Root stream with inline children"] --> Observer["HarnessAguiStreamObserver"]
     Observer --> Events["Typed AG-UI events"]
     Events --> Host["Host persistence and transport"]
     Host --> UI["Renderer"]
@@ -27,7 +26,7 @@ flowchart TB
 
 ## One observer, one Run
 
-An observer binds to the first successfully observed source correlation. Another Run, including a child Run, needs another observer even when the product displays both in one conversation.
+`HarnessAguiObserver` binds to one Run. `HarnessAguiStreamObserver` instead binds to a root stream and tracks its inline children independently, attributing their output with `subagentRunId`. Host-managed asynchronous executions still use independent observers.
 
 `observe()` returns only events produced by the current item. `snapshot()` returns detached accumulated events; it is an in-memory convenience, not a durable log. `resume()` reconstructs observer state from exact Harness source history without publishing history again.
 
@@ -50,6 +49,18 @@ Published Stream Protocol pins the matching Harness release. The source [quickst
 | Durable AG-UI IDs, persistence, replay, and fan-out               | Host                  |
 | SSE, WebSocket, Redis, or in-process delivery                     | Host transport        |
 | Rendered view state                                               | Renderer              |
+
+## Upgrade to AG-UI 1.0
+
+Upgrade Hosts and renderers together. Python uses `ag-ui-protocol>=1,<2`; browser consumers use upstream `@ag-ui/core` types and schemas, not a replacement transport client. Standard wire fields are camelCase. There is no 0.x decoder or alias layer.
+
+- Logical Run start emits `RUN_STARTED` once, after preparation and before public output.
+- Cancellation and suspension use `RUN_FINISHED` with cancelled or interrupt outcomes; only failure uses `RUN_ERROR`. Deferred call IDs stay native, and Host answer validation is unchanged.
+- Input uses CUSTOM `value.event.role` and `value.event.message_id`, with top-level metadata.
+- Tool results may contain ordered upstream content parts; hidden supplemental media is never public. Unsupported media is shown as unavailable rather than reconstructed from bytes or provider handles.
+- Namespace inline child display keys by `subagentRunId`. Child replies do not become root answers. Missing historical child display cannot be reconstructed from model history.
+
+This protocol upgrade does not discard Harness continuation state or usage ledgers. Optional saved-display additions do not require resetting those stores.
 
 ## Next Steps
 

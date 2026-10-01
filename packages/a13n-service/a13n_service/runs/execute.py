@@ -474,10 +474,9 @@ class _Attempt:
         event = item.event if isinstance(item, HarnessEvent) else None
         if isinstance(event, HarnessExtensionEvent) and event.kind == "usage":
             self.usage.report(event.payload)  # Every charge of the run, an inline child run's included.
-        if item.run_id != stream.run_id:
-            return  # Other output of an inline child run belongs to that child's own observation.
         if isinstance(event, SafeBoundary):
-            await self._boundary(event, stream, output)
+            if item.run_id == stream.run_id:
+                await self._boundary(event, stream, output)
             return
         output.observe(item)
 

@@ -707,3 +707,37 @@ async def test_failed_checkpoint_publication_never_enqueues_a_boundary_or_trims(
     entries = await _entries(service.runtime.redis, submitted["thread"]["id"])
     assert all("boundary" not in fields for _, fields in entries)
     assert not trimmed
+
+
+async def test_display_retains_standard_interrupt_and_scopes_child_native_ids() -> None:
+    fold = DisplayFold(RUN, Display(), attempt=1, max_bytes=1_000_000)
+    events = [
+        {"type": "TOOL_CALL_START", "toolCallId": "same", "toolCallName": "root"},
+        {"type": "TOOL_CALL_START", "toolCallId": "same", "toolCallName": "child", "subagentRunId": "child"},
+        {
+            "type": "TOOL_CALL_RESULT",
+            "toolCallId": "same",
+            "messageId": "result",
+            "content": [{"type": "image", "source": {"type": "url", "value": "https://example.com/a.png"}}],
+            "subagentRunId": "child",
+        },
+        {
+            "type": "RUN_FINISHED",
+            "runId": "harness",
+            "threadId": "thread",
+            "outcome": {
+                "type": "interrupt",
+                "interrupts": [{"id": "same", "toolCallId": "same", "reason": "approval"}],
+            },
+        },
+    ]
+    observed = fold.fold(events)
+    assert observed[-1].item is not None
+    saved = fold.snapshot()
+    root, child, interrupt = saved.items
+    assert root.id != child.id and root.state == "in_progress" and child.state == "completed"
+    assert child.content["subagentRunId"] == "child"
+    assert child.content["result_parts"] == events[2]["content"]
+    assert interrupt.content == events[-1]
+    restored = DisplayFold(RUN, Display.model_validate_json(saved.model_dump_json()), attempt=2, max_bytes=1_000_000)
+    assert restored.snapshot().items[-1].content == interrupt.content

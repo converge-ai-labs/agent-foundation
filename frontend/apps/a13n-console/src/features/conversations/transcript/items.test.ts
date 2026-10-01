@@ -191,3 +191,22 @@ it("does not keep an unresolved call working after the run stopped", () => {
     work(blocksOf(items, "running")[0]!).map((entry) => entry.state),
   ).toEqual(["done", "working"]);
 });
+
+it("keeps orphaned child replies visible as work rather than parent answers", () => {
+  const blocks = blocksOf([
+    item("child-reply", "text_message", {
+      text: "Child result",
+      subagentRunId: "child-a",
+    }),
+    item("root-reply", "text_message", { text: "Root answer" }),
+  ]);
+  expect(blocks.map((block) => [block.kind, block.id])).toEqual([
+    ["work", "child-reply"],
+    ["message", "root-reply"],
+  ]);
+  expect(work(blocks[0]!)[0]?.entry).toMatchObject({
+    text: "Child result",
+    subagentRunId: "child-a",
+  });
+  expect(workSummary(work(blocks[0]!)).named).toEqual([]);
+});

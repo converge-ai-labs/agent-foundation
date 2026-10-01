@@ -65,24 +65,24 @@ def result(renderer, value, *, native=False, outcome="success", call_id="questio
             run_id=run_id,
         )
     else:
-        renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": call_id, "content": json.dumps(value)}, run_id=run_id)
+        renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": call_id, "content": json.dumps(value)}, run_id=run_id)
 
 
 def streamed_request(renderer, pending, *, run_id="question-run"):
     renderer.ingest(
         "TOOL_CALL_START",
-        {"tool_call_id": pending.request_id, "tool_call_name": pending.tool_name},
+        {"toolCallId": pending.request_id, "toolCallName": pending.tool_name},
         run_id=run_id,
     )
     renderer.ingest(
         "TOOL_CALL_ARGS",
         {
-            "tool_call_id": pending.request_id,
+            "toolCallId": pending.request_id,
             "delta": json.dumps({"questions": [item.model_dump() for item in pending.questions]}),
         },
         run_id=run_id,
     )
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": pending.request_id}, run_id=run_id)
+    renderer.ingest("TOOL_CALL_END", {"toolCallId": pending.request_id}, run_id=run_id)
 
 
 def test_registration_and_run_finish_do_not_claim_an_answer(renderer):
@@ -242,7 +242,7 @@ def test_question_correlation_is_root_only(renderer):
     renderer.register_questions(request())
     renderer.ingest(
         "TOOL_CALL_RESULT",
-        {"tool_call_id": "question-1", "content": json.dumps({"answers": {request().questions[0].question: "Python"}})},
+        {"toolCallId": "question-1", "content": json.dumps({"answers": {request().questions[0].question: "Python"}})},
         child=True,
         run_id="child-run",
     )
@@ -298,8 +298,8 @@ def test_unknown_explicit_tool_name_does_not_match_registered_question(renderer)
     renderer.ingest(
         "TOOL_CALL_RESULT",
         {
-            "tool_call_id": "question-1",
-            "tool_call_name": "other_tool",
+            "toolCallId": "question-1",
+            "toolCallName": "other_tool",
             "content": json.dumps({"answers": {request().questions[0].question: "Python"}}),
         },
     )

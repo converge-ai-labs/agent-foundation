@@ -365,9 +365,16 @@ it.each(["user", "steering"])(
     const event = {
       type: "CUSTOM",
       name: `a13n.input.${source}`,
-      message_id: "run:input:1",
       metadata: { source_id: "inbox_one", display: true },
-      value: { event: { input_id: "input_one", source, content: "Question" } },
+      value: {
+        event: {
+          message_id: "run:input:1",
+          role: "user",
+          input_id: "input_one",
+          source,
+          content: "Question",
+        },
+      },
     };
     const items = fold([delta(1, event, message("completed"))]);
     expect(items.size).toBe(1);
@@ -381,3 +388,32 @@ it.each(["user", "steering"])(
     expect(items.size).toBe(1);
   },
 );
+
+it("retains standard interrupt observations identically in live folding and replay", () => {
+  const event = {
+    type: "RUN_FINISHED",
+    runId: "harness-root",
+    threadId: "thread",
+    outcome: {
+      type: "interrupt",
+      interrupts: [
+        {
+          id: "call",
+          toolCallId: "call",
+          reason: "approval",
+          metadata: { tool_name: "shell" },
+        },
+      ],
+    },
+  };
+  const next = delta(1, event, {
+    id: "interrupt",
+    kind: "observation",
+    state: "completed",
+  });
+  const items = fold([next]);
+  expect(items.get("interrupt")?.content).toEqual(next.event);
+  const saved = JSON.stringify([...items.values()]);
+  fold([next], items);
+  expect(JSON.stringify([...items.values()])).toBe(saved);
+});

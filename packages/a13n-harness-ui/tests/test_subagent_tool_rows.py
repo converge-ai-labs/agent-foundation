@@ -168,11 +168,11 @@ def test_streamed_subagent_receipts_wrap_and_deduplicate_native_protocol_results
         "content": result,
     }
     native = ("CUSTOM", {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}})
-    protocol = ("TOOL_CALL_RESULT", {"tool_call_id": "call", "content": json.dumps(result)})
+    protocol = ("TOOL_CALL_RESULT", {"toolCallId": "call", "content": json.dumps(result)})
     try:
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "call", "tool_call_name": name})
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "call", "delta": json.dumps(arguments)})
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "call"})
+        renderer.ingest("TOOL_CALL_START", {"toolCallId": "call", "toolCallName": name})
+        renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "call", "delta": json.dumps(arguments)})
+        renderer.ingest("TOOL_CALL_END", {"toolCallId": "call"})
         renderer.transcript.render(24)
         pending = "\n".join("".join(text for _, text in row) for row in renderer.transcript.rows)
         assert "wrapped" in pending and "…" in pending
@@ -198,11 +198,11 @@ def test_native_subagent_failure_is_not_overwritten_by_protocol_success():
 
     renderer = StreamRenderer(Status())
     try:
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "call", "tool_call_name": "steer_subagent"})
+        renderer.ingest("TOOL_CALL_START", {"toolCallId": "call", "toolCallName": "steer_subagent"})
         renderer.ingest(
-            "TOOL_CALL_ARGS", {"tool_call_id": "call", "delta": '{"execution_id":"exec-123","message":"new guidance"}'}
+            "TOOL_CALL_ARGS", {"toolCallId": "call", "delta": '{"execution_id":"exec-123","message":"new guidance"}'}
         )
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "call"})
+        renderer.ingest("TOOL_CALL_END", {"toolCallId": "call"})
         part = {
             "part_kind": "tool-return",
             "tool_name": "steer_subagent",
@@ -212,7 +212,7 @@ def test_native_subagent_failure_is_not_overwritten_by_protocol_success():
         }
         renderer.ingest("CUSTOM", {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}})
         renderer.ingest(
-            "TOOL_CALL_RESULT", {"tool_call_id": "call", "content": '{"execution_id":"exec-123","accepted":true}'}
+            "TOOL_CALL_RESULT", {"toolCallId": "call", "content": '{"execution_id":"exec-123","accepted":true}'}
         )
         block = next(iter(renderer.transcript.blocks.values()))
         assert "denied" in block.preview and "accepted for delivery" not in block.preview

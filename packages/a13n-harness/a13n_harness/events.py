@@ -121,6 +121,12 @@ class ModelRetryScheduledPayload(_FirstPartyPayload):
     delay_seconds: float = Field(ge=0, allow_inf_nan=False)
 
 
+class RunStartedPayload(_FirstPartyPayload):
+    """The prepared logical Run has begun public iteration."""
+
+    type: Literal["run_started"] = "run_started"
+
+
 class ModelRequestStartedPayload(_FirstPartyPayload):
     type: Literal["model_request_started"] = "model_request_started"
     request_id: str = Field(pattern=r"^model-request-[1-9][0-9]*$", max_length=64)
@@ -355,6 +361,7 @@ class ToolExtraEventPayload(_FirstPartyPayload):
 type FirstPartyEventPayload = (
     EnvironmentChangedPayload
     | ModelRetryScheduledPayload
+    | RunStartedPayload
     | ModelRequestStartedPayload
     | ModelRequestCompletedPayload
     | ModelRequestFailedPayload

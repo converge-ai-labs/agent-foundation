@@ -16,8 +16,8 @@ def text(transcript, width=40):
 
 
 def applied(renderer, after, *, path="file.py"):
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit", "tool_call_name": "edit"})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit"})
+    renderer.ingest("TOOL_CALL_START", {"toolCallId": "edit", "toolCallName": "edit"})
+    renderer.ingest("TOOL_CALL_END", {"toolCallId": "edit"})
     renderer.ingest(
         "CUSTOM",
         {
@@ -57,7 +57,7 @@ def test_hundred_long_diff_lines_keep_three_rows_each_and_expand_with_failed_res
         after = "".join(f"row-{index:02d} " + "wide content " * 15 + f" tail-{index:02d}\n" for index in range(100))
         applied(renderer, after, path="long/path/" * 12 + "unique-file.py")
         renderer.ingest(
-            "TOOL_CALL_RESULT", {"tool_call_id": "edit", "content": '{"ok":false,"error":{"message":"failed later"}}'}
+            "TOOL_CALL_RESULT", {"toolCallId": "edit", "content": '{"ok":false,"error":{"message":"failed later"}}'}
         )
         concise = text(renderer.transcript, 30)
         assert len(concise.splitlines()) > 64
@@ -112,10 +112,10 @@ def test_wrapped_exploration_rows_keep_later_members_and_expanded_raw_arguments(
         for index, tool in enumerate(("view", "glob")):
             args = {"file_path": "nested/" * 30 + "ending.py"} if tool == "view" else {"pattern": "**/最后的文件.py"}
             call_id = str(index)
-            renderer.ingest("TOOL_CALL_START", {"tool_call_id": call_id, "tool_call_name": tool})
-            renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": call_id, "delta": json.dumps(args)})
-            renderer.ingest("TOOL_CALL_END", {"tool_call_id": call_id})
-            renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": call_id, "content": '{"ok":true}'})
+            renderer.ingest("TOOL_CALL_START", {"toolCallId": call_id, "toolCallName": tool})
+            renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": call_id, "delta": json.dumps(args)})
+            renderer.ingest("TOOL_CALL_END", {"toolCallId": call_id})
+            renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": call_id, "content": '{"ok":true}'})
         concise = text(renderer.transcript, 24)
         assert "ending.py" in concise.replace("\n", "")
         assert "最后的文件.py" in concise

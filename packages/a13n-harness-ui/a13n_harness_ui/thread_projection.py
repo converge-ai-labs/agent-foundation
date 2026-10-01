@@ -13,6 +13,7 @@ from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID,
 from a13n_harness.content import ContentItem, prompt_content, request_input_content
 from a13n_harness.model_context import user_prompt_content
 from a13n_harness.tools._output import tool_execution_value
+from a13n_stream_protocol import tool_result_content
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from anyio import Lock, to_thread
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
@@ -1004,7 +1005,10 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
             for content, metadata in (projected,)
         )
     if isinstance(part, ToolReturnPart):
-        value, omitted = _bounded_json(tool_execution_value(part.content, part.metadata))
+        execution_value = tool_execution_value(part.content, part.metadata)
+        content = tool_result_content(execution_value)
+        parts = [item.model_dump(mode="json", by_alias=True) for item in content] if isinstance(content, list) else []
+        value, omitted = _bounded_json(parts if isinstance(content, list) else execution_value)
         return (
             TranscriptPart(
                 kind="tool_result",
@@ -1015,7 +1019,8 @@ def _request_parts(part: object, content_items: list[ContentItem] | None = None)
                 tool_images=tool_images(part),
                 mcp_apps=app_references(part),
                 tool_image_unavailable=tool_image_unavailable(part),
-                value=value,
+                content_parts=tuple(parts) if not omitted else (),
+                value=None if isinstance(content, list) else value,
                 value_omitted=omitted,
             ),
         )

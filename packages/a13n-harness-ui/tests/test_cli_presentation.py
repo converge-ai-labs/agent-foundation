@@ -93,7 +93,7 @@ def test_huge_delta_and_cache_budgets_are_visible_and_bounded() -> None:
 def test_interleaved_runs_keep_distinct_markdown_blocks_and_scroll_anchor() -> None:
     renderer = StreamRenderer(Status(mode="detailed"))
     for run, text in (("root", "root-1"), ("child", "child-1"), ("root", "root-2")):
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "same", "delta": text}, run_id=run, child=run == "child")
+        renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "same", "delta": text}, run_id=run, child=run == "child")
     sources = [block.source for block in renderer.transcript.blocks.values()]
     assert sources == ["root-1root-2", "**Subagent · child**\n\nchild-1"]
     control = TranscriptControl(renderer.transcript)

@@ -843,7 +843,9 @@ async def test_inline_delegation_forwards_child_lifecycle_before_pre_request_fai
     assert result.output_or_raise() == "handled"
     assert result.usage.requests == 2
     child_events = [event for event in events if event.run_id != parent_run_id]
-    assert len(child_events) == 3
+    assert len(child_events) == 4
+    assert child_events[0].event.payload == {"type": "run_started"}
+    child_events = child_events[1:]
     assert all(isinstance(event.event, HarnessExtensionEvent) for event in child_events)
     child_payloads = [event.event.payload for event in child_events if isinstance(event.event, HarnessExtensionEvent)]
     assert child_events[0].event.kind == "delegation"

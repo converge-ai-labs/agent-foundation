@@ -4,13 +4,16 @@ sidebarTitle: API and payload reference
 description: The package's public names, custom events, input metadata, and terminal events.
 ---
 
-Stream Protocol exposes seven package-root names. It converts public Harness observations into typed AG-UI events; transport, persistence, delivery acknowledgement, UI rendering, and Agent continuation remain outside this package.
+Stream Protocol exposes AG-UI 1.0 observation and content projection APIs. It converts public Harness observations into typed AG-UI events; transport, persistence, delivery acknowledgement, UI rendering, and Agent continuation remain outside this package.
 
 ## Public names
 
 | Export from `a13n_stream_protocol` | Purpose                                                                                                   |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `HarnessAguiObserver`              | Bind one Thread/Run, observe source items, snapshot detached events, or resume from finite source history |
+| `HarnessAguiStreamObserver`        | Observe one root stream with attributed inline children and independent multipart state                   |
+| `AUTHORED_INPUT_EVENT_NAMES`       | Names for authored user and steering input                                                                |
+| `tool_result_content`              | Project a public execution value into text or ordered upstream content parts without media I/O            |
 | `AguiEventProcessor`               | Synchronous `(source, event) -> event or None` Host projection callback                                   |
 | `AguiObservationError`             | Invalid correlation, observation, replay, or processor replacement                                        |
 | `ContentMetadata`                  | Presentation conventions plus opaque extra metadata                                                       |
@@ -33,7 +36,7 @@ frames = fragment_custom_event(original, identity="document-1")
 assembler = CustomEventAssembler()
 complete = None
 for frame in frames:
-    complete = assembler.accept(frame.model_dump(mode="json", by_alias=False))
+    complete = assembler.accept(frame.model_dump(mode="json", by_alias=True))
 assert complete is not None
 assert complete["name"] == "example.document"
 assert complete["value"] == original.value
@@ -50,7 +53,7 @@ One assembler belongs to one live subscription. Reset it on reconnect. A missing
 
 `ContentMetadata` defaults to `display=True`, `source_id=None`, and `media=False`, and allows opaque extra metadata. `from_native()` reads a metadata dict or returns defaults for a non-dict input. Metadata is presentation data, not instructions or authorization.
 
-Actual model text input uses user-role text events. A client normally hides content with `display=False`. Cache markers produce no presentation content. Media uses `a13n.input.media` with `media=True`:
+Text input uses source-specific CUSTOM events such as `a13n.input.user`; `role` and `message_id` live inside `value.event`, while presentation metadata remains top-level. A client normally hides content with `display=False`. Cache markers produce no presentation content. Media uses `a13n.input.media` with `media=True`:
 
 | Native input      | Projection                                                          |
 | ----------------- | ------------------------------------------------------------------- |
@@ -64,8 +67,10 @@ This is one-way observation, not a codec for restoring model input or a media-st
 ## Terminal events
 
 - Completed output becomes `RUN_FINISHED` with success outcome and usage. Non-JSON-safe output is omitted and marked `result_omitted` in source metadata rather than serialized as arbitrary Python.
-- Suspended root output becomes CUSTOM `a13n.harness.run_result` with status, suspend reason, and correlated deferred requests. It is not a completed answer.
-- Failure becomes `RUN_ERROR` with safe failure code/message and usage; cancellation uses `run_cancelled`.
+- Suspended output becomes `RUN_FINISHED` with `outcome.type="interrupt"` and one interrupt per deferred call or approval. `id` and `toolCallId` preserve the native call ID; Host pending-answer policy remains authoritative.
+- Cancellation becomes `RUN_FINISHED` with `outcome.type="cancelled"`.
+- Failure becomes `RUN_ERROR` with safe failure code/message and usage.
+- Inline children use `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, and `SUBAGENT_ERROR`; their content carries `subagentRunId` rather than nested root lifecycles.
 
 Source correlation includes Thread, Run, sequence, and occurrence time. A terminal presentation event does not mean the Host durably committed the result, delivered a message, or settled billing.
 

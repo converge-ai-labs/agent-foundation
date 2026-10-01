@@ -1,5 +1,5 @@
 import { createContext, memo, useContext, useMemo, useState } from "react";
-import { Button, DisclosureSection } from "a13n-ui";
+import { AguiContent, Button, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
 import {
   ArrowSquareOut,
@@ -384,6 +384,7 @@ function ToolDetails({ tool }: { tool: ToolView }) {
             />
           )
         )}
+        {tool.resultParts && <AguiContent parts={tool.resultParts} />}
         {tool.resultOmitted ? (
           <p>Result omitted by the server.</p>
         ) : (
@@ -394,11 +395,14 @@ function ToolDetails({ tool }: { tool: ToolView }) {
             />
           )
         )}
-        {tool.result === undefined && !tool.resultOmitted && (
-          <small>
-            {info.phase}. This does not establish whether side effects occurred.
-          </small>
-        )}
+        {tool.result === undefined &&
+          !tool.resultParts &&
+          !tool.resultOmitted && (
+            <small>
+              {info.phase}. This does not establish whether side effects
+              occurred.
+            </small>
+          )}
       </DisclosureSection>
     </div>
   );

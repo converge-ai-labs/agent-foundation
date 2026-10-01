@@ -1,34 +1,27 @@
 # Agent Stream Protocol
 
-`a13n-stream-protocol` observes public `a13n-harness` streams as typed AG-UI events. It maps text, reasoning, tool, and terminal observations to standard AG-UI events, exposes every other public observation through a namespaced `CUSTOM` fallback, applies an optional Host processor, and accumulates the resulting events for process-local use.
+`a13n-stream-protocol` observes public `a13n-harness` streams as typed AG-UI 1.0 events. It maps text, reasoning, tool, and terminal observations to standard AG-UI events, exposes every other public observation through a namespaced `CUSTOM` fallback, applies an optional Host processor, and accumulates the resulting events for process-local use.
 
 The repository directory is `packages/a13n-stream-protocol`, the Python distribution is `a13n-stream-protocol`, and the import package is `a13n_stream_protocol`.
 
 ## Usage
 
 ```python
-from a13n_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol import HarnessAguiStreamObserver
 
-observers: dict[tuple[str, str], HarnessAguiObserver] = {}
-
+observer = HarnessAguiStreamObserver()
 async with executable.stream(input, bindings=bindings) as stream:
     async for item in stream:
-        correlation = (item.thread_id, item.run_id)
-        observer = observers.get(correlation)
-        if observer is None:
-            observer = HarnessAguiObserver()
-            observers[correlation] = observer
-
         new_events = observer.observe(item)
         await host.persist_and_publish(new_events)
 ```
 
-One observer binds to the Thread and Run correlation on its first successful source item. Use a separate observer for each root or child Run, including child events forwarded through a parent stream. An integration whose source contains exactly one Run can use one observer directly.
+One stream observer binds to the root Thread and Run on its first successful source item. Forwarded inline children have independent state and carry `subagentRunId`, preserving native message and tool-call IDs. Independently executed asynchronous children use separate stream observers. `HarnessAguiObserver` remains available for sources containing exactly one Run.
 
 A Host that retains the exact public Harness source history can atomically rebuild a fresh observer before continuing with live items:
 
 ```python
-observer = HarnessAguiObserver()
+observer = HarnessAguiStreamObserver()
 await observer.resume(host.source_history(run_id=run_id, through=cursor))
 
 async for item in host.live_source(run_id=run_id, after=cursor):
@@ -36,7 +29,7 @@ async for item in host.live_source(run_id=run_id, after=cursor):
     await host.persist_and_publish(new_events)
 ```
 
-The history is a finite async iterable for one Run. `resume()` accumulates its post-processor AG-UI events without returning them for duplicate publication, leaves the observer fresh if reconstruction fails, and knows nothing about storage, cursors, gaps, or replay-to-live cutover. Those remain Host responsibilities.
+The history is a finite async iterable for one root stream, including its inline child observations. `resume()` accumulates its post-processor AG-UI events without returning them for duplicate publication, leaves the observer fresh if reconstruction fails, and knows nothing about storage, cursors, gaps, or replay-to-live cutover. Those remain Host responsibilities.
 
 A Host can filter or adjust converted values before accumulation:
 

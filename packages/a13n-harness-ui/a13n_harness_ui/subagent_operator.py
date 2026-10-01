@@ -53,7 +53,7 @@ from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot, intersect_usage_limits
 from a13n_logging import get_logger
-from a13n_stream_protocol import ContentMetadata, HarnessAguiObserver
+from a13n_stream_protocol import ContentMetadata, HarnessAguiStreamObserver
 from ag_ui.core import Event as AguiEvent
 from ag_ui.core.events import (
     CustomEvent,
@@ -1297,7 +1297,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         prepared: _PreparedSegment,
         active: _ActiveSegment,
     ) -> tuple[HarnessRunResult[Any], CompactChildDisplay, tuple[AguiEvent, ...]]:
-        observer = HarnessAguiObserver()
+        observer = HarnessAguiStreamObserver()
         tool_images = ToolImageCollector(
             run_id=prepared.stream.run_id, thread_id=prepared.state.thread_id, files=self._thread_files
         )
@@ -1802,7 +1802,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         if include_activity:
             display = await self._execution_display(head)
             view = await self._execution_view(head, display=display)
-            activity = _surface_activity(view.activity or SubagentActivitySnapshot(sequence=0))
+            activity = _surface_activity(view.activity or SubagentActivitySnapshot(sequence=0), display)
         if root_thread_id is None:
             root_thread_id = await self._root_thread_id(await self._require_child_thread(head))
         async with self._lock:
@@ -1911,18 +1911,22 @@ class _DisplayCompactor:
         self._activities = list(initial.activities)
         self._apps = {item.app_id: item for item in initial.mcp_apps}
         self._final_answer = initial.final_answer
-        self._text: dict[str, str] = {}
-        self._reasoning: dict[str, str] = {}
-        self._tool_names: dict[str, str] = {}
-        self._tool_arguments: dict[str, str] = {}
-        self._tool_results: dict[str, str] = {}
-        self._tool_ended: set[str] = set()
+        self._text: dict[tuple[str | None, str], str] = {}
+        self._reasoning: dict[tuple[str | None, str], str] = {}
+        self._tool_names: dict[tuple[str | None, str], str] = {}
+        self._tool_arguments: dict[tuple[str | None, str], str] = {}
+        self._tool_results: dict[tuple[str | None, str], str] = {}
+        self._tool_parts: dict[tuple[str | None, str], tuple[dict[str, JsonValue], ...]] = {}
+        self._tool_ended: set[tuple[str | None, str]] = set()
 
     def observe(self, events: Sequence[AguiEvent]) -> None:
         for event in events:
-            extra = event.model_extra or {}
-            metadata = ContentMetadata.from_native(extra.get("metadata"))
-            if not metadata.display or extra.get("role") == "user":
+            data = event.model_dump(mode="python")
+            scope = data.get("subagent_run_id")
+            message_key = (scope, data.get("message_id", ""))
+            tool_key = (scope, data.get("tool_call_id", ""))
+            metadata = ContentMetadata.from_native(event.metadata)
+            if not metadata.display or data.get("role") == "user":
                 continue
             if isinstance(event, CustomEvent) and event.name == METADATA_KEY:
                 value = event.value
@@ -1933,46 +1937,46 @@ class _DisplayCompactor:
                     while len(self._apps) > 128:
                         del self._apps[next(iter(self._apps))]
             elif isinstance(event, TextMessageStartEvent):
-                self._text[event.message_id] = ""
+                self._text[message_key] = ""
             elif isinstance(event, TextMessageContentEvent):
-                self._text[event.message_id] = _append_bounded(self._text.get(event.message_id, ""), event.delta)
+                self._text[message_key] = _append_bounded(self._text.get(message_key, ""), event.delta)
             elif isinstance(event, TextMessageEndEvent):
-                text = self._text.pop(event.message_id, "")
+                text = self._text.pop(message_key, "")
                 if text:
-                    self._append(CompactChildActivity(kind="text", text=text))
+                    self._append(CompactChildActivity(kind="text", text=text, subagent_run_id=scope))
             elif isinstance(event, ReasoningMessageStartEvent):
-                self._reasoning[event.message_id] = ""
+                self._reasoning[message_key] = ""
             elif isinstance(event, ReasoningMessageContentEvent):
-                self._reasoning[event.message_id] = _append_bounded(
-                    self._reasoning.get(event.message_id, ""),
+                self._reasoning[message_key] = _append_bounded(
+                    self._reasoning.get(message_key, ""),
                     event.delta,
                 )
             elif isinstance(event, ReasoningMessageEndEvent):
-                text = self._reasoning.pop(event.message_id, "")
+                text = self._reasoning.pop(message_key, "")
                 if text:
-                    self._append(CompactChildActivity(kind="thinking", text=text))
+                    self._append(CompactChildActivity(kind="thinking", text=text, subagent_run_id=scope))
             elif isinstance(event, ToolCallStartEvent):
-                self._tool_names[event.tool_call_id] = event.tool_call_name
+                self._tool_names[tool_key] = event.tool_call_name
             elif isinstance(event, ToolCallArgsEvent):
-                self._tool_arguments[event.tool_call_id] = _append_bounded(
-                    self._tool_arguments.get(event.tool_call_id, ""),
+                self._tool_arguments[tool_key] = _append_bounded(
+                    self._tool_arguments.get(tool_key, ""),
                     event.delta,
                     limit=_MAX_TOOL_VALUE_TEXT,
                 )
             elif isinstance(event, ToolCallResultEvent):
-                tool_call_id = event.tool_call_id
-                self._tool_results[tool_call_id] = _append_bounded(
-                    self._tool_results.get(tool_call_id, ""),
-                    event.content,
-                    limit=_MAX_TOOL_VALUE_TEXT,
-                )
-                if tool_call_id in self._tool_ended:
-                    self._finish_tool(tool_call_id)
+                if isinstance(event.content, str):
+                    self._tool_results[tool_key] = event.content[:_MAX_TOOL_VALUE_TEXT]
+                else:
+                    parts = tuple(part.model_dump(mode="json", by_alias=True) for part in event.content)
+                    if len(json.dumps(parts)) <= _MAX_TOOL_VALUE_TEXT:
+                        self._tool_parts[tool_key] = parts
+                    self._tool_results[tool_key] = ""
+                if tool_key in self._tool_ended:
+                    self._finish_tool(tool_key)
             elif isinstance(event, ToolCallEndEvent):
-                tool_call_id = event.tool_call_id
-                self._tool_ended.add(tool_call_id)
-                if tool_call_id in self._tool_results:
-                    self._finish_tool(tool_call_id)
+                self._tool_ended.add(tool_key)
+                if tool_key in self._tool_results:
+                    self._finish_tool(tool_key)
 
     def snapshot(self) -> CompactChildDisplay:
         return CompactChildDisplay(
@@ -1981,7 +1985,7 @@ class _DisplayCompactor:
             final_answer=self._final_answer,
         )
 
-    def _finish_tool(self, tool_call_id: str) -> None:
+    def _finish_tool(self, tool_call_id: tuple[str | None, str]) -> None:
         name = self._tool_names.pop(tool_call_id, None)
         self._tool_ended.discard(tool_call_id)
         if name is None:
@@ -1992,6 +1996,8 @@ class _DisplayCompactor:
                 tool_name=name[:128],
                 arguments=_safe_json(self._tool_arguments.pop(tool_call_id, None)),
                 result=_safe_json(self._tool_results.pop(tool_call_id, None)),
+                content_parts=self._tool_parts.pop(tool_call_id, ()),
+                subagent_run_id=tool_call_id[0],
             )
         )
 
@@ -2241,13 +2247,22 @@ def _decode_child_cursor(value: str) -> _ChildCursor:
         raise RunCoordinationError("Child cursor is invalid.", code="child_cursor_invalid") from exc
 
 
-def _surface_activity(value: SubagentActivitySnapshot) -> ChildActivityView:
+def _surface_activity(value: SubagentActivitySnapshot, display: CompactChildDisplay) -> ChildActivityView:
+    tools = [item for item in display.activities if item.kind == "tool"][-20:]
     return ChildActivityView(
         sequence=value.sequence,
         output_preview=value.output_preview,
         output_truncated=value.output_truncated,
         active_tool_calls=tuple(_surface_tool_call(item) for item in value.active_tool_calls),
-        recent_tool_calls=tuple(_surface_tool_call(item) for item in value.recent_tool_calls),
+        recent_tool_calls=tuple(
+            _surface_tool_call(item).model_copy(
+                update={
+                    "content_parts": activity.content_parts,
+                    "subagent_run_id": activity.subagent_run_id,
+                }
+            )
+            for item, activity in zip(value.recent_tool_calls, tools, strict=True)
+        ),
         dropped_tool_calls=value.dropped_tool_calls,
     )
 

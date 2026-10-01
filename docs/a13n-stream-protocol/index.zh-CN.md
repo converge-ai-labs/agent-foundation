@@ -18,8 +18,7 @@ Stream Protocol（`a13n-stream-protocol`）只负责转换事件，不运行 age
 
 ```mermaid
 flowchart TB
-    Run["Harness 源流"] --> Router["按线程与执行路由"]
-    Router --> Observer["HarnessAguiObserver"]
+    Run["包含内联子执行的根流"] --> Observer["HarnessAguiStreamObserver"]
     Observer --> Events["结构化 AG-UI 事件"]
     Events --> Host["Host 持久化与传输"]
     Host --> UI["渲染器"]
@@ -27,7 +26,7 @@ flowchart TB
 
 ## 一个 observer 对应一次执行
 
-observer 会绑定到首次成功观测的源关联标识。另一次执行，包括子执行，都需要独立 observer，即使产品在同一对话中显示两次执行。
+`HarnessAguiObserver` 绑定单次执行。`HarnessAguiStreamObserver` 则绑定根流，独立跟踪其中的内联子执行，并用 `subagentRunId` 标识其输出归属。Host 管理的异步执行仍使用独立 observer。
 
 `observe()` 只返回当前条目产生的事件。`snapshot()` 返回累积事件的独立副本，是便于读取的内存状态，不是持久日志。`resume()` 从精确的 Harness 源历史重建 observer 状态，不会再次发布历史。
 
@@ -50,6 +49,18 @@ uv add a13n-stream-protocol
 | 持久 AG-UI ID、持久化、重放和扇出               | Host                  |
 | SSE、WebSocket、Redis 或进程内交付              | Host 传输层           |
 | 渲染后的视图状态                                | 渲染器                |
+
+## 升级到 AG-UI 1.0
+
+请同步升级 Host 与渲染器。Python 使用 `ag-ui-protocol>=1,<2`；浏览器消费上游 `@ag-ui/core` 类型与 schema，不替换原有传输客户端。标准 wire 字段使用 camelCase，不提供 0.x 解码器或别名层。
+
+- 逻辑执行在准备成功后、公开输出前只发送一次 `RUN_STARTED`。
+- 取消和暂停使用带 cancelled 或 interrupt outcome 的 `RUN_FINISHED`，只有失败使用 `RUN_ERROR`。延后调用保留原生 ID，Host 回答验证策略不变。
+- 输入使用 CUSTOM `value.event.role` 和 `value.event.message_id`，元数据仍在顶层。
+- 工具结果可以包含有序的上游内容 part；隐藏的补充媒体不会公开。不支持的媒体显示为不可用，不从字节或 provider handle 重建。
+- 内联子执行的展示键按 `subagentRunId` 隔离，子回答不成为根回答。旧记录中缺失的子执行展示不能从模型历史重建。
+
+协议升级不删除 Harness 续接状态或用量账本。保存展示中的可选字段扩展不需要重置这些存储。
 
 ## 下一步
 

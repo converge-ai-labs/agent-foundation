@@ -2577,6 +2577,15 @@ export interface components {
         };
         /** ChildToolCallView */
         ChildToolCallView: {
+            /** Subagent Run Id */
+            subagent_run_id?: string | null;
+            /**
+             * Content Parts
+             * @default []
+             */
+            content_parts?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            }[];
             /** Tool Call Id */
             tool_call_id: string;
             /** Tool Name */
@@ -5579,6 +5588,13 @@ export interface components {
              * @default false
              */
             tool_image_unavailable?: boolean;
+            /**
+             * Content Parts
+             * @default []
+             */
+            content_parts?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            }[];
             value?: components["schemas"]["JsonValue"] | null;
             /**
              * Value Omitted

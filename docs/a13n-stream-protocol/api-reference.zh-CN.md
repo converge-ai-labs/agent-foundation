@@ -4,13 +4,16 @@ sidebarTitle: API 与载荷参考
 description: 包的公开名称、自定义事件、输入元数据和终结事件。
 ---
 
-Stream Protocol 从包根目录公开七个名称。它将 Harness 公开观测转换为结构化 AG-UI 事件；传输、持久化、交付确认、UI 渲染和 agent 续接均不由本包负责。
+Stream Protocol 提供 AG-UI 1.0 观测与内容投影 API。它将 Harness 公开观测转换为结构化 AG-UI 事件；传输、持久化、交付确认、UI 渲染和 agent 续接均不由本包负责。
 
 ## 公开名称
 
 | `a13n_stream_protocol` 导出项 | 用途                                                                |
 | ----------------------------- | ------------------------------------------------------------------- |
 | `HarnessAguiObserver`         | 绑定一个线程/执行，观测源条目、获取事件独立快照，或从有限源历史恢复 |
+| `HarnessAguiStreamObserver`   | 观测一个根流及其带归属标识的内联子执行，各自维护独立分片状态        |
+| `AUTHORED_INPUT_EVENT_NAMES`  | 用户输入与 steering 输入的事件名称集合                              |
+| `tool_result_content`         | 将公开执行值投影为文本或有序的上游内容 part，不执行媒体 I/O         |
 | `AguiEventProcessor`          | 同步 `(source, event) -> event or None` Host 投影回调               |
 | `AguiObservationError`        | 关联、观测、重放或处理器替换无效                                    |
 | `ContentMetadata`             | 展示约定及不透明的额外元数据                                        |
@@ -33,7 +36,7 @@ frames = fragment_custom_event(original, identity="document-1")
 assembler = CustomEventAssembler()
 complete = None
 for frame in frames:
-    complete = assembler.accept(frame.model_dump(mode="json", by_alias=False))
+    complete = assembler.accept(frame.model_dump(mode="json", by_alias=True))
 assert complete is not None
 assert complete["name"] == "example.document"
 assert complete["value"] == original.value
@@ -50,7 +53,7 @@ assembler 默认允许 64 MiB 待处理字节和八个待处理标识；两个�
 
 `ContentMetadata` 默认为 `display=True`、`source_id=None` 和 `media=False`，允许不透明的额外元数据。`from_native()` 读取元数据字典，输入不是字典时返回默认值。元数据用于展示，不是指令或授权。
 
-实际模型文本输入使用 user 角色文本事件。客户端通常隐藏 `display=False` 的内容。缓存标记不产生展示内容。媒体使用 `a13n.input.media`，并设置 `media=True`：
+文本输入使用 `a13n.input.user` 等按来源区分的 CUSTOM 事件；`role` 和 `message_id` 位于 `value.event` 内，展示元数据仍在顶层。客户端通常隐藏 `display=False` 的内容。缓存标记不产生展示内容。媒体使用 `a13n.input.media`，并设置 `media=True`：
 
 | 原生输入         | 投影                                                        |
 | ---------------- | ----------------------------------------------------------- |
@@ -64,8 +67,10 @@ assembler 默认允许 64 MiB 待处理字节和八个待处理标识；两个�
 ## 终结事件
 
 - 已完成输出转换为 `RUN_FINISHED`，包含成功结果和用量。不兼容 JSON 的输出会被省略，在源元数据中标记 `result_omitted`，不会任意序列化 Python 对象。
-- 暂停的根输出转换为 CUSTOM `a13n.harness.run_result`，包含状态、暂停原因和关联的延后请求。它不是已完成回答。
-- 失败转换为 `RUN_ERROR`，包含可安全公开的失败代码、消息和用量；取消使用 `run_cancelled`。
+- 暂停输出转换为 `RUN_FINISHED`，其 `outcome.type="interrupt"`，每个延后调用或审批对应一个 interrupt。`id` 和 `toolCallId` 保留原生调用 ID；待处理回答策略仍由 Host 决定。
+- 取消转换为 `RUN_FINISHED`，其 `outcome.type="cancelled"`。
+- 失败转换为 `RUN_ERROR`，包含可安全公开的失败代码、消息和用量。
+- 内联子执行使用 `SUBAGENT_STARTED`、`SUBAGENT_FINISHED` 和 `SUBAGENT_ERROR`；内容携带 `subagentRunId`，不嵌套根执行生命周期。
 
 源关联包含线程、执行、序号和发生时间。终结展示事件不代表 Host 已持久提交结果、交付消息或结算计费。
 

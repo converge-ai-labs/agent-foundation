@@ -47,9 +47,9 @@ def test_transcript_layout_uses_viewport_width_in_any_terminal_environment(
 
 def test_edit_applied_replaces_pending_call_and_retains_full_diff_on_expand() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit-one", "tool_call_name": "edit"})
-    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "edit-one", "delta": '{"file_path":"file.py"}'})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit-one"})
+    renderer.ingest("TOOL_CALL_START", {"toolCallId": "edit-one", "toolCallName": "edit"})
+    renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "edit-one", "delta": '{"file_path":"file.py"}'})
+    renderer.ingest("TOOL_CALL_END", {"toolCallId": "edit-one"})
     renderer.ingest(
         "CUSTOM",
         {
@@ -64,7 +64,7 @@ def test_edit_applied_replaces_pending_call_and_retains_full_diff_on_expand() ->
             },
         },
     )
-    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "edit-one", "content": '{"ok":true}'})
+    renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "edit-one", "content": '{"ok":true}'})
     assert len(renderer.transcript.blocks) == 1
     text = _text(renderer.transcript)
     assert "Edit · file.py · +20 -20" in text
@@ -99,7 +99,7 @@ def test_activity_input_uses_provenance_not_message_text(source: str | None) -> 
         "TEXT_MESSAGE_CONTENT",
         {
             "role": "user",
-            "message_id": "input-one",
+            "messageId": "input-one",
             "delta": "Background process process-1 has exited.",
             "metadata": {"a13n.steering-source": source} if source else {},
         },
@@ -169,11 +169,11 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
 def test_ordinary_tool_rows_keep_output_in_details_and_only_report_observed_success(result, state) -> None:
     renderer = StreamRenderer(Status())
     try:
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "view"})
+        renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": "view"})
         assert _text(renderer.transcript) == "Read path unavailable …"
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": '{"file_path":"file.py"}'})
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
-        renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": result})
+        renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "one", "delta": '{"file_path":"file.py"}'})
+        renderer.ingest("TOOL_CALL_END", {"toolCallId": "one"})
+        renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "one", "content": result})
         text = _text(renderer.transcript)
         assert text.startswith("Read failed:") if state == "failed" else text == "Read file.py"
         assert "{" not in text and "output-marker" not in text
@@ -201,9 +201,9 @@ def test_native_tool_outcomes_use_the_correlated_row_and_keep_details(name, with
     }
     try:
         if with_start:
-            renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": name})
-            renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": json.dumps(arguments)})
-            renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
+            renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": name})
+            renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "one", "delta": json.dumps(arguments)})
+            renderer.ingest("TOOL_CALL_END", {"toolCallId": "one"})
         renderer.ingest(
             "CUSTOM",
             {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}},
@@ -231,7 +231,7 @@ def test_native_retries_obey_child_visibility_and_run_scoped_correlation(mode) -
         for run in ("root", "child"):
             renderer.ingest(
                 "TOOL_CALL_START",
-                {"tool_call_id": "same", "tool_call_name": "task_create"},
+                {"toolCallId": "same", "toolCallName": "task_create"},
                 run_id=run,
                 child=run == "child",
             )

@@ -34,7 +34,7 @@ flowchart TB
         Features[Capabilities, Plugins, and MCP]
         Adapters[Environment adapters and Run Extensions]
         Harness[Harness Run]
-        Observer[HarnessAguiObserver]
+        Observer[HarnessAguiStreamObserver]
     end
 
     CLI & Embedding & ThreadCapability --> App
@@ -244,7 +244,7 @@ Each segment receives:
 - captured Project roots and Environment profile selection;
 - fresh Provider runtimes, Environment adapters, and Environment Run Extensions;
 - the child Thread's newly published empty `initial_state` for delegate or selected child checkpoint state for resume;
-- one `HarnessAguiObserver` bound to the child Thread and Run.
+- one `HarnessAguiStreamObserver` bound to the child Thread and Run.
 
 No parent `AgentContext`, entered Environment facade, live state coordinator, Model client, task, callback, or shell-process authority crosses into the child.
 

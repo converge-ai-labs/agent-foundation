@@ -106,16 +106,16 @@ def test_status_elapsed_respects_terminal_width(width: int) -> None:
 def test_renderer_modes_switch_without_replay_and_preserve_control_safety() -> None:
     status = Status()
     renderer = StreamRenderer(status)
-    renderer.ingest("THINKING_TEXT_MESSAGE_CONTENT", {"delta": "hidden summary"})
+    renderer.ingest("REASONING_MESSAGE_CONTENT", {"delta": "hidden summary"})
     renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "Hello "})
     assert renderer.drain() == "hidden summaryHello "
     assert renderer.drain() == ""
     status.mode = "detailed"
     renderer.ingest("REASONING_MESSAGE_CONTENT", {"delta": "public reasoning"})
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit-1", "tool_call_name": "edit"})
-    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "edit-1", "delta": '{"file_path":"a.py"}'})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit-1"})
-    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "edit-1", "content": "edited"})
+    renderer.ingest("TOOL_CALL_START", {"toolCallId": "edit-1", "toolCallName": "edit"})
+    renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "edit-1", "delta": '{"file_path":"a.py"}'})
+    renderer.ingest("TOOL_CALL_END", {"toolCallId": "edit-1"})
+    renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "edit-1", "content": "edited"})
     result = renderer.drain()
     assert "public reasoning" in result
     tool = next(block for block in renderer.transcript.blocks.values() if "edit | returned" in block.source)
@@ -128,10 +128,10 @@ def test_renderer_modes_switch_without_replay_and_preserve_control_safety() -> N
 
 def test_stream_argument_and_result_memory_is_bounded() -> None:
     renderer = StreamRenderer(Status(mode="detailed"), limit=128)
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "write"})
+    renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": "write"})
     for _ in range(1000):
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "one", "delta": "x" * 1000})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"})
+        renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "one", "delta": "x" * 1000})
+    renderer.ingest("TOOL_CALL_END", {"toolCallId": "one"})
     renderer.ingest("TOOL_CALL_RESULT", {"content": "\n".join(["line"] * 100)})
     assert len(renderer.drain()) < 2048
     assert "Arguments exceed display budget" in "".join(block.source for block in renderer.transcript.blocks.values())
@@ -141,20 +141,20 @@ def test_tool_streams_are_correlated_bounded_and_do_not_override_root_cancellati
     status = Status(mode="detailed")
     renderer = StreamRenderer(status, limit=128)
     for run_id in ("child-a", "child-b"):
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "one", "tool_call_name": "edit"}, child=True, run_id=run_id)
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "one"}, child=True, run_id=run_id)
+        renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": "edit"}, child=True, run_id=run_id)
+        renderer.ingest("TOOL_CALL_END", {"toolCallId": "one"}, child=True, run_id=run_id)
     for run_id in ("child-b", "child-a"):
-        renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "one", "content": "done"}, child=True, run_id=run_id)
+        renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "one", "content": "done"}, child=True, run_id=run_id)
     result = renderer.drain()
     assert "edit | returned" in result and "child-a" in result
     assert "child-b" in result
     for index in range(256):
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": str(index), "tool_call_name": "edit"})
+        renderer.ingest("TOOL_CALL_START", {"toolCallId": str(index), "toolCallName": "edit"})
     assert len(renderer._tools) == 128
     renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "answer"})
     assert status.state == "responding"
     status.state = "cancelling"
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "late", "tool_call_name": "edit"})
+    renderer.ingest("TOOL_CALL_START", {"toolCallId": "late", "toolCallName": "edit"})
     renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "late answer"})
     assert status.state == "cancelling"
 

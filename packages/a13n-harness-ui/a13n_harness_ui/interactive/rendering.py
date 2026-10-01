@@ -647,11 +647,21 @@ class StreamRenderer:
             self.gap |= self._custom_events.gap
             if payload is None:
                 return
+        inline_child = payload.get("subagentRunId")
+        if isinstance(inline_child, str):
+            child, run_id = True, inline_child
+        input_value = payload.get("value")
+        input_source = input_value.get("event") if isinstance(input_value, dict) else None
+        role = (
+            input_source.get("role")
+            if event_type == "CUSTOM" and isinstance(input_source, dict)
+            else payload.get("role")
+        )
         metadata = ContentMetadata.from_native(payload.get("metadata"))
         if not metadata.display:
             return
         piece = composer_piece(metadata)
-        if piece is not None and payload.get("role") == "user":
+        if piece is not None and role == "user":
             assert metadata.source_id is not None
             if (not child and metadata.source_id in self._local_inputs) or (child and self.status.mode != "detailed"):
                 return
@@ -700,14 +710,14 @@ class StreamRenderer:
             # projection. Reuse its correlated block and detail retention here.
             event_type = "TOOL_CALL_RESULT"
             payload = {
-                "tool_call_id": fields.get("tool_call_id", "unknown"),
-                "tool_call_name": fields.get("tool_name") or "tool",
+                "toolCallId": fields.get("tool_call_id", "unknown"),
+                "toolCallName": fields.get("tool_name") or "tool",
                 "content": json.dumps(part, ensure_ascii=False),
             }
         detailed = self.status.mode == "detailed"
         delta = payload.get("delta") or payload.get("content") or ""
         text = delta if isinstance(delta, str) else json.dumps(delta, ensure_ascii=False)
-        thinking = event_type.startswith(("REASONING_MESSAGE", "THINKING_TEXT_MESSAGE"))
+        thinking = event_type.startswith("REASONING_MESSAGE")
         message = event_type.startswith("TEXT_MESSAGE")
         user = message and payload.get("role") == "user"
         notification = user and (metadata.model_extra or {}).get("a13n.steering-source") in {
@@ -728,7 +738,7 @@ class StreamRenderer:
                 return
             key = (
                 run_id,
-                str(payload.get("message_id", "default")),
+                str(payload.get("messageId", "default")),
                 "thinking" if thinking else "user" if user else "assistant",
             )
             if event_type.endswith("START"):
@@ -760,12 +770,12 @@ class StreamRenderer:
                     self.assistant_seen = True
             return
         if event_type.startswith("TOOL_CALL"):
-            raw_call_id = str(payload.get("tool_call_id", "unknown"))
+            raw_call_id = str(payload.get("toolCallId", "unknown"))
             call_id = terminal_text(raw_call_id)
             key = (run_id, call_id)
             receipt = (
                 self._questions.get(raw_call_id)
-                if not child and payload.get("tool_call_name") in (None, "ask_user_question")
+                if not child and payload.get("toolCallName") in (None, "ask_user_question")
                 else None
             )
             if event_type.endswith("RESULT") and receipt is not None:
@@ -783,7 +793,7 @@ class StreamRenderer:
                 if self._exploration is not None and self._exploration.members:
                     if next(reversed(self.transcript.blocks), None) != self._exploration.members[-1].block_id:
                         self._exploration = None
-                preview = _ToolPreview(str(payload.get("tool_call_name", "tool"))[:60], time.monotonic())
+                preview = _ToolPreview(str(payload.get("toolCallName", "tool"))[:60], time.monotonic())
                 preview.semantic, preview.read_path = semantic_tool_row(preview.name, "", self.status.directory)
                 if preview.name not in EXPLORATION_TOOLS:
                     self._exploration = None
@@ -831,7 +841,7 @@ class StreamRenderer:
                 preview.size += min(len(text), available)
                 preview.truncated |= len(text) > available
             elif event_type.endswith("RESULT"):
-                name = preview.name if preview else str(payload.get("tool_call_name", "tool"))[:60]
+                name = preview.name if preview else str(payload.get("toolCallName", "tool"))[:60]
                 subagent_receipt = preview is not None and name in {"delegate", "steer_subagent"}
                 if subagent_receipt and preview is not None:
                     if (native_state is not None and preview.native_result_seen) or (
@@ -1004,6 +1014,14 @@ class StreamRenderer:
         if event_type in {"RUN_FINISHED", "RUN_ERROR"}:
             self._exploration = None
             self.end_process_observations(run_id)
+        if event_type == "RUN_FINISHED":
+            outcome = payload.get("outcome")
+            if isinstance(outcome, dict) and outcome.get("type") in {"cancelled", "interrupt"}:
+                self.append(
+                    "Execution cancelled.\n"
+                    if outcome["type"] == "cancelled"
+                    else "Execution suspended: a response is needed.\n"
+                )
         if event_type == "RUN_ERROR":
             self.finish()
             self.append(f"Error: {payload.get('message', payload.get('code', 'run failed'))}\n")

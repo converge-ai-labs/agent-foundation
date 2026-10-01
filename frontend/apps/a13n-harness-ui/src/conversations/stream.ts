@@ -1,3 +1,6 @@
+import type { ContentPart } from "@ag-ui/core";
+import { EventSchema } from "@ag-ui/core/schemas";
+import { readContentParts } from "a13n-ui";
 import type { Schema, Transport } from "../transport/client";
 import type { ThreadRefresh } from "./refresh";
 import { ProcessObservations } from "./process-observations";
@@ -15,6 +18,8 @@ export type DisplayBlock = {
   text: string;
   name?: string;
   result?: string;
+  resultParts?: ContentPart[];
+  subagentRunId?: string;
   done?: boolean;
   outcome?: ToolView["outcome"];
   failure?: string;
@@ -296,6 +301,7 @@ export class FocusDisplay {
           id: block.id,
           kind: block.kind,
           name: block.name,
+          subagentRunId: block.subagentRunId,
           text: (block.result ?? block.text).slice(-remaining),
           done: block.done,
         });
@@ -354,7 +360,12 @@ export class FocusDisplay {
     this.fragmentBytes -= assembly.size;
     try {
       const result: unknown = JSON.parse(assembly.parts.join(""));
-      if (object(result) && result.name !== "a13n.stream.fragment")
+      if (
+        object(result) &&
+        result.type === "CUSTOM" &&
+        result.name !== "a13n.stream.fragment" &&
+        EventSchema.safeParse(result).success
+      )
         return result;
     } catch {
       /* Display a gap rather than partial domain data. */
@@ -364,8 +375,17 @@ export class FocusDisplay {
   private fold(type: string, payload: Payload | null, omitted: boolean) {
     if (omitted) this.gap = true;
     if (!payload) return;
+    if (payload.type !== type || !EventSchema.safeParse(payload).success) {
+      this.gap = true;
+      return;
+    }
     if (object(payload.metadata) && payload.metadata.display === false) return;
-    if (this.recovery && (type === "RUN_FINISHED" || type === "RUN_ERROR"))
+    const subagentRunId = string(payload.subagentRunId) || undefined;
+    if (
+      !subagentRunId &&
+      this.recovery &&
+      (type === "RUN_FINISHED" || type === "RUN_ERROR")
+    )
       this.recovery = {
         ...this.recovery,
         state:
@@ -374,6 +394,7 @@ export class FocusDisplay {
             : "ended",
       };
     else if (
+      !subagentRunId &&
       this.recovery?.state === "retrying" &&
       (((type === "TEXT_MESSAGE_CONTENT" ||
         type === "REASONING_MESSAGE_CONTENT") &&
@@ -382,11 +403,10 @@ export class FocusDisplay {
     )
       this.recovery = { ...this.recovery, state: "resumed" };
     const id = string(
-      type.startsWith("TOOL_CALL_")
-        ? (payload.tool_call_id ?? payload.toolCallId)
-        : (payload.message_id ?? payload.messageId),
+      type.startsWith("TOOL_CALL_") ? payload.toolCallId : payload.messageId,
     );
-    const key = `${this.runId}:${id}`;
+    const scope = subagentRunId ? `${this.runId}:${subagentRunId}` : this.runId;
+    const key = `${scope}:${id}`;
     if (type === "TEXT_MESSAGE_START" || type === "REASONING_MESSAGE_START") {
       this.blocks.set(key, {
         id: key,
@@ -424,7 +444,7 @@ export class FocusDisplay {
         id: key,
         toolCallId: id,
         kind: "tool",
-        name: string(payload.tool_call_name ?? payload.toolCallName),
+        name: string(payload.toolCallName),
         text: "",
       });
     } else if (type === "TOOL_CALL_ARGS") {
@@ -447,24 +467,24 @@ export class FocusDisplay {
       };
       this.blocks.set(key, {
         ...block,
-        result: string(payload.content),
+        result:
+          typeof payload.content === "string" ? payload.content : undefined,
+        resultParts: readContentParts(payload.content),
         done: true,
       });
       if (this.runId)
-        this.processes.result(
-          this.runId,
-          block.name,
-          block.text,
-          payload.content,
-        );
+        this.processes.result(scope!, block.name, block.text, payload.content);
     } else if (type === "RUN_FINISHED" || type === "RUN_ERROR") {
       this.stopTools();
-      const failed = type === "RUN_ERROR" && payload.code !== "run_cancelled";
+      const failed = type === "RUN_ERROR";
+      const outcome = object(payload.outcome)
+        ? payload.outcome.type
+        : "success";
       this.terminalFailure = failed
         ? string(payload.message) || "The operation could not finish."
         : undefined;
       const status = `${this.runId}:execution`;
-      if (type === "RUN_FINISHED") {
+      if (type === "RUN_FINISHED" && outcome === "success") {
         // Ordinary completion belongs to controls, not a temporary transcript row.
         this.blocks.delete(status);
         return;
@@ -474,12 +494,40 @@ export class FocusDisplay {
         kind: "activity",
         diagnostic: failed,
         name:
-          payload.code === "run_cancelled"
+          outcome === "cancelled"
             ? "Execution cancelled"
-            : "Execution failed",
+            : outcome === "interrupt"
+              ? "Execution suspended"
+              : "Execution failed",
         text:
           string(payload.message) ||
-          "Execution finished. Inspect the operation receipt for continuation and Environment outcomes.",
+          (outcome === "interrupt"
+            ? "A response is needed before execution can continue."
+            : "Execution finished. Inspect the operation receipt for continuation and Environment outcomes."),
+      });
+    } else if (
+      type === "SUBAGENT_STARTED" ||
+      type === "SUBAGENT_FINISHED" ||
+      type === "SUBAGENT_ERROR"
+    ) {
+      if (type !== "SUBAGENT_STARTED") this.stopTools(subagentRunId);
+      const childKey = `${this.runId}:inline:${subagentRunId}`;
+      const previous = this.blocks.get(childKey);
+      this.blocks.set(childKey, {
+        id: childKey,
+        kind: "activity",
+        name:
+          previous?.name ||
+          `Subagent · ${string(payload.name) || subagentRunId}`,
+        text:
+          type === "SUBAGENT_STARTED"
+            ? "Running"
+            : type === "SUBAGENT_ERROR"
+              ? string(payload.message)
+              : object(payload.outcome) && payload.outcome.type === "suspended"
+                ? "Suspended"
+                : "Completed",
+        done: type !== "SUBAGENT_STARTED",
       });
     } else if (type === "CUSTOM") {
       const event = this.custom(payload);
@@ -490,16 +538,32 @@ export class FocusDisplay {
         return;
       this.foldCustom(event);
     }
+    if (subagentRunId) {
+      const block = this.blocks.get(key);
+      if (block) this.blocks.set(key, { ...block, subagentRunId });
+    }
   }
-  private stopTools() {
-    this.processes.end(this.runId);
+  private stopTools(subagentRunId?: string) {
+    this.processes.end(
+      subagentRunId ? `${this.runId}:${subagentRunId}` : this.runId,
+    );
     for (const [key, block] of this.blocks) {
+      if (subagentRunId && block.subagentRunId !== subagentRunId) continue;
+      if (block.subagentRunId)
+        this.processes.end(`${this.runId}:${block.subagentRunId}`);
       if (block.kind === "tool")
         this.blocks.set(key, { ...block, stopped: true });
     }
   }
   private foldCustom(event: Payload) {
     const name = string(event.name);
+    const subagentRunId = string(event.subagentRunId) || undefined;
+    const scope = subagentRunId ? `${this.runId}:${subagentRunId}` : this.runId;
+    const setBlock = (key: string, block: DisplayBlock) =>
+      this.blocks.set(key, {
+        ...block,
+        ...(subagentRunId ? { subagentRunId } : {}),
+      });
     const value = object(event.value) ? event.value : {};
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
@@ -510,7 +574,7 @@ export class FocusDisplay {
       typeof source.phase === "string"
     ) {
       this.processes.status(
-        this.runId,
+        scope!,
         source.process_id,
         source.phase,
         source.exit_code,
@@ -518,6 +582,7 @@ export class FocusDisplay {
       return;
     }
     if (
+      !subagentRunId &&
       name === "a13n.harness.recovery" &&
       payload.type === "model_retry_scheduled"
     ) {
@@ -530,6 +595,7 @@ export class FocusDisplay {
       return;
     }
     if (
+      !subagentRunId &&
       name === "a13n.harness_ui.checkpoint" &&
       typeof source.continuation_id === "string"
     ) {
@@ -540,7 +606,11 @@ export class FocusDisplay {
       }
       return;
     }
-    if (payload.type === "usage_report" && Array.isArray(payload.records)) {
+    if (
+      !subagentRunId &&
+      payload.type === "usage_report" &&
+      Array.isArray(payload.records)
+    ) {
       const resumedScope =
         typeof payload.usage_id === "string" && value.run_id === this.runId;
       for (const record of payload.records) {
@@ -583,10 +653,10 @@ export class FocusDisplay {
         typeof part.tool_call_id === "string"
       ) {
         const provider = string(part.provider_name) || "provider";
-        const key = `${this.runId}:native:${provider}:${part.tool_call_id}`;
+        const key = `${scope}:native:${provider}:${part.tool_call_id}`;
         const previous = this.blocks.get(key);
         const returned = part.part_kind === "builtin-tool-return";
-        this.blocks.set(key, {
+        setBlock(key, {
           id: key,
           kind: "tool",
           name: string(part.tool_name),
@@ -619,7 +689,7 @@ export class FocusDisplay {
       typeof source.tool_call_id === "string" &&
       Array.isArray(source.apps)
     ) {
-      const key = `${this.runId}:${source.tool_call_id}`;
+      const key = `${scope}:${source.tool_call_id}`;
       const apps = source.apps.filter(
         (value): value is Schema<"AppReference"> =>
           object(value) &&
@@ -632,7 +702,7 @@ export class FocusDisplay {
             "tool_name",
           ].every((field) => typeof value[field] === "string"),
       );
-      this.blocks.set(key, {
+      setBlock(key, {
         id: key,
         kind: "tool",
         text: "",
@@ -646,7 +716,7 @@ export class FocusDisplay {
       typeof source.tool_call_id === "string" &&
       Array.isArray(source.images)
     ) {
-      const key = `${this.runId}:${source.tool_call_id}`;
+      const key = `${scope}:${source.tool_call_id}`;
       const block = this.blocks.get(key);
       const images = source.images.filter(
         (image): image is Schema<"ToolImageView"> =>
@@ -658,7 +728,7 @@ export class FocusDisplay {
           typeof image.attachment.media_type === "string" &&
           typeof image.attachment.size === "number",
       );
-      this.blocks.set(key, {
+      setBlock(key, {
         id: key,
         kind: "tool",
         text: "",
@@ -676,9 +746,9 @@ export class FocusDisplay {
       typeof source.before === "string" &&
       typeof source.after === "string"
     ) {
-      const key = `${this.runId}:${source.tool_call_id}`;
+      const key = `${scope}:${source.tool_call_id}`;
       const block = this.blocks.get(key);
-      this.blocks.set(key, {
+      setBlock(key, {
         id: key,
         kind: "tool",
         text: "",
@@ -702,16 +772,16 @@ export class FocusDisplay {
         part.part_kind === "tool-return" ||
         part.part_kind === "retry-prompt"
       ) {
-        const key = `${this.runId}:${part.tool_call_id}`;
+        const key = `${scope}:${part.tool_call_id}`;
         const block = this.blocks.get(key);
         if (this.runId && part.part_kind === "tool-return")
           this.processes.result(
-            this.runId,
+            scope!,
             string(part.tool_name),
             block?.text,
             part.content,
           );
-        this.blocks.set(key, {
+        setBlock(key, {
           id: key,
           kind: "tool",
           text: "",
@@ -737,8 +807,8 @@ export class FocusDisplay {
       }
     }
     if (name === "a13n.input.user" || name === "a13n.input.steering") {
-      const key = `${this.runId}:${string(event.message_id)}`;
-      this.blocks.set(key, {
+      const key = `${scope}:${string(source.message_id)}`;
+      setBlock(key, {
         id: key,
         kind: "user",
         text: string(source.content),
@@ -750,8 +820,8 @@ export class FocusDisplay {
     if (name.startsWith("a13n.input.") && name !== "a13n.input.media") return;
     if (name === "a13n.input.media") {
       if (source.source !== "user" && source.source !== "steering") return;
-      const key = `${this.runId}:${string(event.message_id)}`;
-      this.blocks.set(key, {
+      const key = `${scope}:${string(source.message_id)}`;
+      setBlock(key, {
         id: key,
         kind: "media",
         text: "",
@@ -766,8 +836,8 @@ export class FocusDisplay {
       object(payload.task)
     ) {
       const task = payload.task;
-      const key = `${this.runId}:task:${string(task.id)}`;
-      this.blocks.set(key, {
+      const key = `${scope}:task:${string(task.id)}`;
+      setBlock(key, {
         id: key,
         kind: "task",
         name: string(task.status),
@@ -804,7 +874,7 @@ export class FocusDisplay {
         name === "a13n.context.handoff_summary"
           ? source
           : payload;
-      const key = `context:${string(operation.operation_id)}`;
+      const key = `${subagentRunId ? `${scope}:` : ""}context:${string(operation.operation_id)}`;
       const previous = this.blocks.get(key);
       const summary =
         name === "a13n.context.compaction_summary" ||
@@ -814,7 +884,7 @@ export class FocusDisplay {
         string(payload.type).startsWith("compaction_")
           ? "compaction"
           : "handoff";
-      this.blocks.set(key, {
+      setBlock(key, {
         id: key,
         kind: "activity",
         context,
@@ -836,19 +906,6 @@ export class FocusDisplay {
               .filter(Boolean)
               .join(" · "),
         result: summary ? string(source.summary) : previous?.result,
-      });
-      return;
-    }
-    if (name === "a13n.harness.run_result") {
-      this.stopTools();
-      const key = `${this.runId}:execution`;
-      this.blocks.set(key, {
-        id: key,
-        kind: "activity",
-        name: "Execution suspended",
-        text:
-          string(source.suspend_reason) ||
-          "A response is needed before execution can continue.",
       });
       return;
     }

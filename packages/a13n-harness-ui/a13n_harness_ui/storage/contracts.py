@@ -256,6 +256,8 @@ class AppReference(BaseModel):
 
 
 class CompactChildActivity(StoredContract):
+    subagent_run_id: str | None = None
+    content_parts: tuple[dict[str, JsonValue], ...] = ()
     kind: Literal["text", "thinking", "tool", "failure", "completion"]
     text: str | None = Field(default=None, max_length=32 * 1024)
     tool_name: str | None = Field(default=None, min_length=1, max_length=128)
@@ -267,7 +269,7 @@ class CompactChildActivity(StoredContract):
         if self.kind == "tool":
             if self.tool_name is None:
                 raise ValueError("tool activities require tool_name")
-        elif self.tool_name is not None or self.arguments is not None or self.result is not None:
+        elif self.tool_name is not None or self.arguments is not None or self.result is not None or self.content_parts:
             raise ValueError("only tool activities may contain tool fields")
         if self.kind in {"text", "thinking", "failure"} and self.text is None:
             raise ValueError(f"{self.kind} activities require text")

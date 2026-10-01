@@ -16,9 +16,10 @@ from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 from a13n_harness import HarnessEvent, HarnessStreamEvent
-from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiObserver
+from a13n_harness.tools._output import tool_execution_value
+from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiStreamObserver, tool_result_content
 from a13n_stream_protocol.fragments import CustomEventAssembler
-from ag_ui.core import Event, ToolCallArgsEvent, ToolCallResultEvent
+from ag_ui.core import Event, TextPart, ToolCallArgsEvent, ToolCallResultEvent
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic_ai.messages import FunctionToolResultEvent, OutputToolResultEvent, ToolReturnPart
 
@@ -44,7 +45,7 @@ _MESSAGE_KINDS: dict[str, ItemKind] = {
 _TOOL_EVENTS = frozenset({"TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END", "TOOL_CALL_RESULT"})
 _ENDS = frozenset({"TEXT_MESSAGE_END", "REASONING_MESSAGE_END", "TOOL_CALL_RESULT"})
 _FINISHED: frozenset[ItemState] = frozenset({"completed", "failed"})
-_COPIED = ("messageId", "role", "toolCallId", "toolCallName", "parentMessageId", "metadata")
+_COPIED = ("messageId", "role", "toolCallId", "toolCallName", "parentMessageId", "metadata", "subagentRunId")
 _ACCUMULATED = {
     "TEXT_MESSAGE_CONTENT": "text",
     "REASONING_MESSAGE_CONTENT": "text",
@@ -192,7 +193,14 @@ def _failed_tool_call(source: HarnessStreamEvent[Any]) -> tuple[str, str] | None
     part = event.part
     if isinstance(part, ToolReturnPart) and part.outcome == "success":
         return None
-    return part.tool_call_id, str(part.content)[:4096]
+    value = tool_execution_value(part.content, part.metadata) if isinstance(part, ToolReturnPart) else part.content
+    content = tool_result_content(value)
+    message = (
+        content
+        if isinstance(content, str)
+        else json.dumps([item.model_dump(mode="json", by_alias=True) for item in content])
+    )
+    return part.tool_call_id, message[:4096]
 
 
 def _bound_payloads(source: HarnessStreamEvent[Any], event: Event) -> Event:
@@ -200,8 +208,17 @@ def _bound_payloads(source: HarnessStreamEvent[Any], event: Event) -> Event:
 
     One character over the bound survives, so the fold still sees the value was truncated.
     """
-    if isinstance(event, ToolCallResultEvent) and len(event.content) > MAX_FIELD_CHARS:
+    if (
+        isinstance(event, ToolCallResultEvent)
+        and isinstance(event.content, str)
+        and len(event.content) > MAX_FIELD_CHARS
+    ):
         return event.model_copy(update={"content": event.content[: MAX_FIELD_CHARS + 1]})
+    if isinstance(event, ToolCallResultEvent) and isinstance(event.content, list):
+        if len(event.model_dump_json()) > MAX_FIELD_CHARS:
+            return event.model_copy(
+                update={"content": [TextPart(text="Result parts omitted: display size limit exceeded.")]}
+            )
     if isinstance(event, ToolCallArgsEvent) and len(event.delta) > MAX_FIELD_CHARS:
         return event.model_copy(update={"delta": event.delta[: MAX_FIELD_CHARS + 1]})
     return event
@@ -218,7 +235,7 @@ class DisplayFold:
         self.sizes: dict[str, int] = {}
         self.changed: set[str] = set(self.items)
         self.sequence = 0
-        self.observer = HarnessAguiObserver(processor=_bound_payloads)
+        self.observer = HarnessAguiStreamObserver(processor=_bound_payloads)
         # Assembly precedes display truncation; a small saved-display budget
         # must not erase the existence of a valid fragmented input message.
         self.assembler = CustomEventAssembler()
@@ -230,9 +247,7 @@ class DisplayFold:
 
     def events(self, source: HarnessStreamEvent[Any]) -> list[dict[str, Any]]:
         """The AG-UI events of one Harness event, as the JSON the stream carries."""
-        return [
-            event.model_dump(mode="json", by_alias=True, exclude_none=True) for event in self.observer.observe(source)
-        ]
+        return [event.model_dump(mode="json", by_alias=True) for event in self.observer.observe(source)]
 
     def fold(self, events: list[dict[str, Any]], source: HarnessStreamEvent[Any] | None = None) -> list[Observed]:
         """Give each event the next sequence and fold it. When `source` is a tool result the observer does not
@@ -242,7 +257,11 @@ class DisplayFold:
             self.sequence += 1
             observed.append(Observed(sequence=self.sequence, event=payload, item=self._fold(payload)))
         if observed and source is not None and (failed := _failed_tool_call(source)) is not None:
-            ref = self._fail_tool_call(*failed, at=_occurred(observed[-1].event))
+            ref = self._fail_tool_call(
+                *failed,
+                at=_occurred(observed[-1].event),
+                subagent_run_id=source.run_id if source.run_id != self.observer.run_id else None,
+            )
             if ref is not None:
                 observed[-1] = observed[-1].model_copy(update={"item": ref})
         return observed
@@ -280,6 +299,9 @@ class DisplayFold:
         event_type = payload["type"]
         if event_type == "CUSTOM":
             return self._observation(payload)
+        if event_type == "RUN_FINISHED" and payload.get("outcome", {}).get("type") == "interrupt":
+            key = item_id(self.run_id, "observation", f"{self.attempt}:{self.sequence}")
+            return self._put(key, "observation", "completed", payload, at=_occurred(payload))
         if event_type in _MESSAGE_KINDS:
             # An encrypted value names its reasoning message as the entity it belongs to.
             source_id = payload["entityId"] if event_type == "REASONING_ENCRYPTED_VALUE" else payload["messageId"]
@@ -288,7 +310,9 @@ class DisplayFold:
             kind, source_id = "tool_call", payload["toolCallId"]
         else:
             return None
-        key = item_id(self.run_id, kind, source_id)
+        key = item_id(
+            self.run_id, kind, f"{payload['subagentRunId']}:{source_id}" if payload.get("subagentRunId") else source_id
+        )
         previous = self.items.get(key)
         content: dict[str, JsonValue] = dict(previous.content) if previous is not None else {}
         content.update({name: payload[name] for name in _COPIED if name in payload})
@@ -297,7 +321,13 @@ class DisplayFold:
         if event_type == "REASONING_ENCRYPTED_VALUE":
             content["encrypted_value"] = payload.get("encryptedValue")
         if event_type == "TOOL_CALL_RESULT":
-            _bounded(content, "result", str(payload.get("content", "")))
+            result = payload.get("content", "")
+            if isinstance(result, list):
+                content["result_parts"] = result if _json_size(result) <= MAX_FIELD_CHARS else []
+                if not content["result_parts"]:
+                    content["truncated"] = True
+            else:
+                _bounded(content, "result", str(result))
         state: ItemState = "completed" if event_type in _ENDS else self._continued(previous)
         return self._put(key, kind, state, content, at=_occurred(payload))
 
@@ -315,8 +345,10 @@ class DisplayFold:
         value: JsonValue = assembled.get("value")  # type: ignore[assignment]
         if assembled.get("name") in AUTHORED_INPUT_EVENT_NAMES:
             assert isinstance(value, dict) and isinstance(value["event"], dict)
-            message_id = str(assembled["message_id"])
+            message_id = str(value["event"]["message_id"])
             content: dict[str, JsonValue] = {"messageId": message_id, "role": "user"}
+            if "subagentRunId" in assembled:
+                content["subagentRunId"] = cast(JsonValue, assembled["subagentRunId"])
             if "metadata" in assembled:
                 content["metadata"] = cast(JsonValue, assembled["metadata"])
             _bounded(content, "text", str(value["event"]["content"]))
@@ -326,6 +358,8 @@ class DisplayFold:
             value = _OMITTED
         key = item_id(self.run_id, "observation", f"{self.attempt}:{self.sequence}")
         content: dict[str, JsonValue] = {"name": str(assembled.get("name")), "value": value}
+        if "subagentRunId" in assembled:
+            content["subagentRunId"] = cast(JsonValue, assembled["subagentRunId"])
         return self._put(key, "observation", "completed", content, at=_occurred(payload))
 
     def _arguments(self, event: dict[str, Any], stream: object, text: str) -> ItemRef:
@@ -346,10 +380,16 @@ class DisplayFold:
             held.event = None
         value = held.event["value"] if held.event is not None else _OMITTED
         content: dict[str, JsonValue] = {"name": _PART_DELTA, "value": value}
+        if "subagentRunId" in event:
+            content["subagentRunId"] = cast(JsonValue, event["subagentRunId"])
         return self._put(held.key, "observation", "completed", content, at=held.at)
 
-    def _fail_tool_call(self, tool_call_id: str, message: str, *, at: datetime) -> ItemRef | None:
-        key = item_id(self.run_id, "tool_call", tool_call_id)
+    def _fail_tool_call(
+        self, tool_call_id: str, message: str, *, at: datetime, subagent_run_id: str | None = None
+    ) -> ItemRef | None:
+        key = item_id(
+            self.run_id, "tool_call", f"{subagent_run_id}:{tool_call_id}" if subagent_run_id else tool_call_id
+        )
         previous = self.items.get(key)
         if previous is None:
             return None

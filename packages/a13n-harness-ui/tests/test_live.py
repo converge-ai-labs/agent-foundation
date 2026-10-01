@@ -409,3 +409,30 @@ async def test_root_replay_is_not_evicted_by_another_roots_events() -> None:
         async with hub.subscribe(root_thread_id="quiet", after=cursor):
             pass
     await hub.close()
+
+
+def test_compact_child_display_retains_scoped_media_after_serialization() -> None:
+    from a13n_harness_ui.subagent_operator import CompactChildDisplay, _DisplayCompactor
+    from ag_ui.core import ImagePart, ToolCallEndEvent, ToolCallResultEvent, ToolCallStartEvent, UrlSource
+
+    display = _DisplayCompactor(CompactChildDisplay())
+    for child in (None, "inline-child"):
+        display.observe((ToolCallStartEvent(tool_call_id="same", tool_call_name="view", subagent_run_id=child),))
+    for child in ("inline-child", None):
+        display.observe(
+            (
+                ToolCallEndEvent(tool_call_id="same", subagent_run_id=child),
+                ToolCallResultEvent(
+                    tool_call_id="same",
+                    message_id="result",
+                    subagent_run_id=child,
+                    content=[ImagePart(source=UrlSource(value="https://example.com/result.png"))],
+                ),
+            )
+        )
+    restored = CompactChildDisplay.model_validate_json(display.snapshot().model_dump_json())
+    assert [activity.subagent_run_id for activity in restored.activities] == ["inline-child", None]
+    assert all(
+        activity.content_parts[0]["source"]["value"] == "https://example.com/result.png"
+        for activity in restored.activities
+    )
