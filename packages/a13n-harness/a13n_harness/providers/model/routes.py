@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
-import httpx2
 from anyio import move_on_after
 
 from ...configuration import RunConfiguration
@@ -48,12 +47,13 @@ ROUTES = {
     "typesafe": RouteSpec("typesafe", "typesafe.system_one"),
     "google": RouteSpec("google_gemini", "google.generate_content"),
     "openrouter": RouteSpec("openrouter", "openrouter.chat_completions"),
+    "fireworks": RouteSpec("fireworks", "openai.chat_completions"),
+    "together": RouteSpec("together", "openai.chat_completions"),
     "deepseek": RouteSpec("deepseek", "openai.chat_completions"),
     "zai": RouteSpec("zhipu", "openai.chat_completions", "https://api.z.ai/api/paas/v4", _zai_model),
     "moonshotai": RouteSpec("moonshot", "openai.chat_completions", "https://api.moonshot.ai/v1"),
     "grok": RouteSpec("openai", "openai.chat_completions", "https://api.x.ai/v1"),
 }
-_OPENAI_CLIENT_ROUTES = frozenset({"together", "fireworks"})
 
 
 async def build_api_key_model(
@@ -124,34 +124,14 @@ async def build_inferred_route(route: str, credential: ApiKeyCredential, *, base
     from pydantic_ai.providers import Provider, infer_provider_class
 
     provider_name = route.partition(":")[0]
-    owned_client: httpx2.AsyncClient | None = None
 
     def provider_factory(requested: str) -> Provider[Any]:
-        nonlocal owned_client
         if requested != provider_name:
             raise ValueError("the native Model requested a different provider")
         constructor = cast(Callable[..., Provider[Any]], infer_provider_class(requested))
-        if base_url is not None and requested in _OPENAI_CLIENT_ROUTES:
-            from openai import AsyncOpenAI
-
-            client = owned_client = create_model_http_client()
-            native = constructor(
-                openai_client=AsyncOpenAI(
-                    api_key=credential.api_key.get_secret_value(), base_url=base_url, http_client=client
-                )
-            )
-            native._own_http_client = client
-            native._http_client_factory = create_model_http_client
-            return native
         options = {"api_key": credential.api_key.get_secret_value()}
         if base_url is not None:
             options["base_url"] = base_url
         return constructor(**options)
 
-    try:
-        return infer_model(route, provider_factory=provider_factory)
-    except BaseException:
-        if owned_client is not None:
-            with move_on_after(5, shield=True):
-                await owned_client.aclose()
-        raise
+    return infer_model(route, provider_factory=provider_factory)

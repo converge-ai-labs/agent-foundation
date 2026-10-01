@@ -94,7 +94,15 @@ def test_input_modalities_declare_the_understanding_capabilities() -> None:
 
 def test_the_catalog_channels_are_those_the_registered_types_serve() -> None:
     channels = catalog_channels(BUILT_IN_MODEL_PROVIDERS)
-    assert {"openai", "openrouter", "amazon-bedrock", "google-vertex", "azure"} <= channels
+    assert {
+        "openai",
+        "openrouter",
+        "amazon-bedrock",
+        "google-vertex",
+        "azure",
+        "fireworks-ai",
+        "togetherai",
+    } <= channels
     assert "volcengine" not in channels
 
 
@@ -369,3 +377,19 @@ async def test_the_route_serves_the_catalog_to_signed_in_principals(service: Any
     served = {described["type"]: described["catalog_providers"] for described in types}
     assert served["openrouter"] == ["openrouter"] and served["ollama"] == []
     assert set().union(*served.values()) == channels
+
+
+@pytest.mark.parametrize(
+    ("provider_type", "channel", "model_id"),
+    [
+        ("fireworks", "fireworks-ai", "accounts/fireworks/models/llama-v3p3-70b-instruct"),
+        ("together", "togetherai", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+    ],
+)
+def test_hosted_open_model_providers_offer_their_catalog_channels(provider_type, channel, model_id):
+    definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == provider_type)
+    [item] = parse_catalog(
+        document({channel: {"models": {model_id: model()}}}),
+        catalog_channels([definition]),
+    )
+    assert item.ref == CatalogRef(provider=channel, model=model_id)

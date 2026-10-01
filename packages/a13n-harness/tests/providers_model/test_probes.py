@@ -23,6 +23,18 @@ class _AllowEndpoints:
     ("provider", "payload", "expected_url", "expected_headers"),
     [
         (
+            definition("fireworks").bind({}, {"api_key": "secret"}),
+            {"data": [{"id": "accounts/fireworks/models/llama-v3p3-70b-instruct"}]},
+            "https://api.fireworks.ai/inference/v1/models",
+            {"authorization": "Bearer secret"},
+        ),
+        (
+            definition("together").bind({}, {"api_key": "secret"}),
+            [{"id": "meta-llama/Llama-3.3-70B-Instruct-Turbo"}],
+            "https://api.together.xyz/v1/models",
+            {"authorization": "Bearer secret"},
+        ),
+        (
             definition("openrouter").bind({"base_url": "https://openrouter.ai/api/v1"}, {"api_key": "secret"}),
             {"data": [{"id": "anthropic/claude-next", "name": "Claude Next"}]},
             "https://openrouter.ai/api/v1/models",
@@ -82,7 +94,7 @@ class _AllowEndpoints:
 )
 async def test_provider_probe_uses_configured_endpoint_and_headers(
     provider: ModelConnection,
-    payload: dict[str, object],
+    payload: object,
     expected_url: str,
     expected_headers: dict[str, str],
 ) -> None:
