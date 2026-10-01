@@ -14,6 +14,7 @@ from . import (
     moonshot,
     ollama,
     openai,
+    openai_chatgpt,
     openrouter,
     typesafe,
     zhipu,
@@ -22,6 +23,7 @@ from .definition import ModelProviderDefinition
 
 BUILT_IN_MODEL_PROVIDERS: tuple[ModelProviderDefinition, ...] = (
     openai.DEFINITION,
+    openai_chatgpt.DEFINITION,
     anthropic.DEFINITION,
     google_gemini.DEFINITION,
     google_vertex.DEFINITION,

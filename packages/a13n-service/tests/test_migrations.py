@@ -70,6 +70,8 @@ def test_usage_cursor_migration_retries_after_concurrent_index_build(
     with migration_connection(empty_database, OSS) as config:
         # Concurrent index DDL commits before the revision marker. Model an
         # interruption in that window, including a failed build's invalid index.
+        # Remove later revisions first; this scenario concerns only replay of the index revision.
+        command.downgrade(config, "944ba3e51ffd")
         command.stamp(config, "123fec952fe1")
         if invalid_index:
             connection = config.attributes["connection"]

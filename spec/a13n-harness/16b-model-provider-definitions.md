@@ -14,7 +14,7 @@ A Host composes Model definitions in code and selects them through one [`Provide
 
 ## Authentication
 
-Model Providers use the shared [`Authentication` declaration](22-provider-subsystem.md#authentication) without a Model-specific variant. A local provider may omit setup help. Console applies the declared defaults and conditions without switching on a vendor name: ordinary choices, numbers, and nested fields retain their declared JSON types, while secrets remain write-only.
+Model Providers use the shared [`Authentication` declaration](22-provider-subsystem.md#authentication) for static credential presence. A definition may instead declare a `ModelOAuth` runtime-source capability. Such a definition forbids user-supplied static credentials, can be saved before authorization, and requires an authorized Host credential source at construction; it never weakens API-key Providers' presence rules. A local provider may omit setup help. Console applies the declared defaults and conditions without switching on a vendor name: ordinary choices, numbers, and nested fields retain their declared JSON types, while secrets remain write-only.
 
 ## Native Construction and Lifetime
 
@@ -24,7 +24,7 @@ The fixed native API bindings retain Responses, Chat Completions, Anthropic Mess
 
 `build_api_key_model()` supports embedding route names and the additional reviewed native SDK transports used by Harness UI. Shared provider families use these same definitions. Route-selected SDK dialects such as Z.AI remain native. The resulting Model owns its HTTP client and supports context re-entry. A host-selected custom URL can address its local network; Service instead supplies its deployment endpoint policy and checks each actual outbound destination.
 
-[Model Authentication](16a-model-authentication.md) owns OAuth sources and exchange behavior. Harness-specific Codex Thread affinity and Run turn state live under `a13n_harness.models.codex`, above provider construction. No Service OAuth account/login product is implied by a direct embedding API.
+[Model Authentication](16a-model-authentication.md) owns OAuth sources and exchange behavior. Harness-specific Codex Thread affinity and Run turn state live under `a13n_harness.models.codex`, above provider construction. The `openai_chatgpt` definition declares only Responses and a fixed public OpenAI endpoint, with Host-acquired credentials and its focused native Responses subclass. Native Provider construction and the Model dialect remain separate from this catalog glue, so a Host or upstream SDK can reuse them without Service or Harness UI persistence. Hosts own authorization presentation, pending state, readiness, encryption, and refresh coordination. Service's workspace-shared Provider authorization is defined in its resource contract.
 
 ## Invariants
 

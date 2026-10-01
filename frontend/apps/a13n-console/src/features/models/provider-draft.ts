@@ -40,6 +40,7 @@ export function useProviderDraft({
   close: () => void;
   onCreated?: (provider: Schema["Provider"], modelApi?: string) => void;
 }) {
+  const [createdProvider, setCreatedProvider] = useState<Schema["Provider"]>();
   const [original] = useState(resource),
     { t } = useTranslation(),
     client = useClient(),
@@ -107,6 +108,8 @@ export function useProviderDraft({
       section.setCredential({});
       void cache.invalidateQueries();
       if (onCreated) onCreated(provider, suggestedApi);
+      else if (!original && definition?.oauth_scheme)
+        setCreatedProvider(provider);
       else close();
     },
   });
@@ -142,6 +145,7 @@ export function useProviderDraft({
     JSON.stringify(configuration) !== JSON.stringify(original.value.config);
   return {
     api,
+    createdProvider,
     close,
     original,
     type,

@@ -380,6 +380,7 @@ def _describe(registry: Registry, definition: ProviderDefinition) -> ProviderTyp
         supports_test=supports_probe(definition),
     )
     if isinstance(definition, ModelProviderDefinition):
+        described.oauth_scheme = definition.oauth.scheme if definition.oauth else None
         apis = definition.supported_model_apis
         described.model_apis = list(apis)
         # The Harness calls through the first API when a model selects none.

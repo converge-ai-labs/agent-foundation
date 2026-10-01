@@ -22,11 +22,13 @@ from a13n_harness.providers.model.oauth import (
     GrokCredentials,
     GrokCredentialSource,
 )
+from a13n_harness.providers.model.oauth.chatgpt import OpenAIChatGPTCredentialSource
 from a13n_harness.providers.model.routes import build_api_key_model
 from pydantic_ai.models import Model, ModelResolutionContext
 
 from a13n_harness_ui.configuration import (
     ApiKeyAuthentication,
+    ChatGPTSubscriptionAuthentication,
     CodexSubscriptionAuthentication,
     CopilotSubscriptionAuthentication,
     GrokSubscriptionAuthentication,
@@ -37,6 +39,11 @@ if TYPE_CHECKING:
     from pydantic_ai.providers.openai_codex import OpenAICodexCredentialSource
 
     from a13n_harness_ui.composition.models import ResolvedModelRecipe
+
+
+@dataclass(frozen=True, slots=True)
+class ChatGPTSubscriptionSource:
+    source: OpenAIChatGPTCredentialSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +69,9 @@ class CopilotSubscriptionSource:
     refresh: CopilotRefresh | None = None
 
 
-type SubscriptionSource = CodexSubscriptionSource | GrokSubscriptionSource | CopilotSubscriptionSource
+type SubscriptionSource = (
+    ChatGPTSubscriptionSource | CodexSubscriptionSource | GrokSubscriptionSource | CopilotSubscriptionSource
+)
 
 
 class HarnessUiModelResolver:
@@ -116,6 +125,14 @@ class HarnessUiModelResolver:
             raise ModelResolutionError(
                 "This subscription Model transport cannot enforce Run allowed hosts.",
                 code="model_configuration_unsupported",
+            )
+        if isinstance(authentication, ChatGPTSubscriptionAuthentication):
+            from a13n_harness.models.chatgpt import OpenAIChatGPTResponsesModel
+            from a13n_harness.providers.model.chatgpt import OpenAIChatGPTProvider
+
+            source = self._required_subscription_source("chatgpt_subscription", ChatGPTSubscriptionSource)
+            return OpenAIChatGPTResponsesModel(
+                _model_name(recipe), provider=OpenAIChatGPTProvider(credential_source=source.source)
             )
         if isinstance(authentication, CodexSubscriptionAuthentication):
             from a13n_harness.models.codex import CodexRequestModel
@@ -228,6 +245,7 @@ def model_recipe_id(recipe: ResolvedModelRecipe) -> str:
 
 
 __all__ = [
+    "ChatGPTSubscriptionSource",
     "CodexSubscriptionSource",
     "CopilotSubscriptionSource",
     "GrokSubscriptionSource",

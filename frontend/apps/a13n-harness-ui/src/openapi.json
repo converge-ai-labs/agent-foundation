@@ -2799,6 +2799,55 @@
         }
       }
     },
+    "/api/auth/logins/{session_id}/callback": {
+      "post": {
+        "summary": "Submit Login Callback",
+        "operationId": "submit_login_callback_api_auth_logins__session_id__callback_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginCallbackInput"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/configuration/sources": {
       "get": {
         "summary": "Configuration Sources",
@@ -5645,6 +5694,7 @@
           "provider": {
             "type": "string",
             "enum": [
+              "chatgpt",
               "codex",
               "grok",
               "copilot"
@@ -5660,7 +5710,8 @@
               "type": "string",
               "enum": [
                 "device",
-                "browser"
+                "browser",
+                "manual_callback"
               ]
             },
             "type": "array",
@@ -6861,6 +6912,7 @@
         "type": "string",
         "enum": [
           "api_key",
+          "chatgpt_subscription",
           "codex_subscription",
           "grok_subscription",
           "copilot_subscription"
@@ -7386,6 +7438,21 @@
         ],
         "title": "ChangesPage",
         "type": "object"
+      },
+      "ChatGPTSubscriptionAuthentication": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "chatgpt_subscription",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ChatGPTSubscriptionAuthentication"
       },
       "ChildActivityView": {
         "properties": {
@@ -10606,6 +10673,7 @@
           "provider": {
             "type": "string",
             "enum": [
+              "chatgpt",
               "codex",
               "grok",
               "copilot"
@@ -10616,7 +10684,8 @@
             "type": "string",
             "enum": [
               "device",
-              "browser"
+              "browser",
+              "manual_callback"
             ],
             "title": "Method"
           },
@@ -10869,6 +10938,9 @@
             "$ref": "#/components/schemas/ApiKeyAuthentication"
           },
           {
+            "$ref": "#/components/schemas/ChatGPTSubscriptionAuthentication"
+          },
+          {
             "$ref": "#/components/schemas/CodexSubscriptionAuthentication"
           },
           {
@@ -10882,6 +10954,7 @@
           "propertyName": "kind",
           "mapping": {
             "api_key": "#/components/schemas/ApiKeyAuthentication",
+            "chatgpt_subscription": "#/components/schemas/ChatGPTSubscriptionAuthentication",
             "codex_subscription": "#/components/schemas/CodexSubscriptionAuthentication",
             "copilot_subscription": "#/components/schemas/CopilotSubscriptionAuthentication",
             "grok_subscription": "#/components/schemas/GrokSubscriptionAuthentication"
@@ -12313,7 +12386,8 @@
         "enum": [
           "codex",
           "grok",
-          "copilot"
+          "copilot",
+          "chatgpt"
         ],
         "title": "Provider"
       },
@@ -13206,6 +13280,7 @@
           "provider": {
             "type": "string",
             "enum": [
+              "chatgpt",
               "codex",
               "grok",
               "copilot"
@@ -17844,6 +17919,7 @@
           "provider": {
             "type": "string",
             "enum": [
+              "chatgpt",
               "codex",
               "grok",
               "copilot"
@@ -17854,7 +17930,8 @@
             "type": "string",
             "enum": [
               "device",
-              "browser"
+              "browser",
+              "manual_callback"
             ],
             "title": "Method",
             "default": "device"
@@ -17871,6 +17948,24 @@
           "provider"
         ],
         "title": "LoginRequest"
+      },
+      "LoginCallbackInput": {
+        "additionalProperties": false,
+        "properties": {
+          "callback_url": {
+            "format": "password",
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Callback Url",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "callback_url"
+        ],
+        "title": "LoginCallbackInput",
+        "type": "object"
       },
       "ResourceMutationRequest": {
         "additionalProperties": false,

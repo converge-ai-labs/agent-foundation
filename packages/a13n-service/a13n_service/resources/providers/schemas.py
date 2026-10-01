@@ -86,6 +86,7 @@ class ProviderType(BaseModel):
     settings_schemas: dict[str, dict[str, JsonValue]] | None = None
     catalog_providers: list[str] | None = None
     # Web types: the tool operations they serve.
+    oauth_scheme: str | None = None
     operations: list[WebOperation] | None = None
     # Environment types: the template schema, and whether its instances can be stopped and destroyed.
     environment_schema: dict[str, JsonValue] | None = None

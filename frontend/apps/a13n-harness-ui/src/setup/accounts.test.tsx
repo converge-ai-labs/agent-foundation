@@ -197,3 +197,46 @@ it("selects a Copilot source explicitly and confirms shared logout even when exp
   );
   await screen.findByText("other-user · Host account");
 });
+
+it("defaults ChatGPT to automatic callback and posts a private full-URL fallback without persistence", async () => {
+  login = { ...login, provider: "chatgpt", method: "browser", user_code: null };
+  const completed = vi.fn();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path.startsWith("/api/auth/accounts/"))
+        return json({ usable: false, required_action: "login" });
+      if (path.endsWith("/callback")) {
+        completed(await request.json());
+        return json(login);
+      }
+      if (path === "/api/auth/logins" || path === "/api/auth/logins/login-test")
+        return json(login);
+      throw new Error(`Unexpected request: ${path}`);
+    }),
+  );
+  mount({
+    provider: "chatgpt",
+    label: "ChatGPT",
+    login_methods: ["manual_callback", "browser"],
+  });
+  expect(
+    (await screen.findByRole("combobox", { name: "Login method" })).textContent,
+  ).toContain("Automatic browser callback");
+  fireEvent.click(
+    await screen.findByText("Callback cannot reach this server?"),
+  );
+  const input = screen.getByLabelText("Complete callback URL");
+  expect(input.getAttribute("type")).toBe("password");
+  fireEvent.change(input, {
+    target: { value: "http://127.0.0.1:1456/auth/callback?code=synthetic" },
+  });
+  expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+  await waitFor(() =>
+    expect(completed).toHaveBeenCalledWith({
+      callback_url: "http://127.0.0.1:1456/auth/callback?code=synthetic",
+    }),
+  );
+  await waitFor(() => expect(input).toHaveProperty("value", ""));
+});

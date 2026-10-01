@@ -25,6 +25,7 @@ from a13n_harness_ui.configuration import (
     AgentSubagentSelection,
     ApiKeyAuthentication,
     CanonicalSubagent,
+    ChatGPTSubscriptionAuthentication,
     CodexSubscriptionAuthentication,
     CopilotSubscriptionAuthentication,
     GrokSubscriptionAuthentication,
@@ -937,6 +938,8 @@ def _validate_auth_route(item: ModelResource) -> None:
         raise CompositionError(
             "Subscription connection configuration cannot be overridden.", code="model_configuration_unsupported"
         )
+    if isinstance(authentication, ChatGPTSubscriptionAuthentication) and prefix != "openai-chatgpt":
+        raise CompositionError("ChatGPT authentication requires an openai-chatgpt route.", code="model_auth_invalid")
     if isinstance(authentication, CodexSubscriptionAuthentication) and prefix != "openai-codex":
         raise CompositionError(
             "Codex subscription authentication requires an openai-codex route.", code="model_auth_invalid"
@@ -947,7 +950,7 @@ def _validate_auth_route(item: ModelResource) -> None:
         )
     if isinstance(authentication, GrokSubscriptionAuthentication) and prefix not in {"grok", "grok-build"}:
         raise CompositionError("Grok subscription authentication requires a Grok route.", code="model_auth_invalid")
-    if isinstance(authentication, ApiKeyAuthentication) and prefix in {"openai-codex", "grok-build"}:
+    if isinstance(authentication, ApiKeyAuthentication) and prefix in {"openai-chatgpt", "openai-codex", "grok-build"}:
         raise CompositionError(
             "The selected subscription route does not accept API-key authentication.", code="model_auth_invalid"
         )

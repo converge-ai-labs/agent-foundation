@@ -91,6 +91,36 @@ export function modelApi(client: Client, workspaceId: string) {
           params: { path: { provider_id } },
         })
         .then(data),
+    authorization: (provider_id: string, signal: AbortSignal) =>
+      http
+        .GET("/api/v1/model-providers/{provider_id}/authorization", {
+          params: { path: { provider_id } },
+          signal,
+        })
+        .then(data),
+    authorize: (provider_id: string, new_registration = false) =>
+      http
+        .POST("/api/v1/model-providers/{provider_id}/authorize", {
+          params: { path: { provider_id } },
+          body: { new_registration },
+        })
+        .then(data),
+    completeAuthorization: (
+      provider_id: string,
+      body: Schema["AuthorizationCallback"],
+    ) =>
+      http
+        .POST("/api/v1/model-providers/{provider_id}/authorization/callback", {
+          params: { path: { provider_id } },
+          body,
+        })
+        .then(data),
+    disconnect: (provider_id: string) =>
+      http
+        .DELETE("/api/v1/model-providers/{provider_id}/authorization", {
+          params: { path: { provider_id } },
+        })
+        .then(data),
     catalog: (signal: AbortSignal) =>
       client.http.GET("/api/v1/model-catalog", { signal }).then(data),
     model: (key: string, signal: AbortSignal) =>

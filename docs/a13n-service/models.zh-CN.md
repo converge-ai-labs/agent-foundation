@@ -27,6 +27,16 @@ Agent 调用一个**模型**：它对应**模型 provider** 账号下的上游�
 
 模型 provider 还可包含最多 32 个**额外请求头**，用于按请求头路由或计费的网关。请求头值作为密钥加密，永不返回（视图只列出 `header_names`），通过 `PATCH` 按名称编辑（`"X-Team": "..."` 设置值，`null` 移除，省略则保留）。传输、认证和协议请求头名称不可设置。
 
+## ChatGPT 订阅 provider
+
+创建 `openai_chatgpt` provider 时不填写静态凭据。在 **Workspace settings → Providers** 选择 **ChatGPT subscription**，添加后点击 **Sign in with ChatGPT**。授权属于 Provider，由整个工作空间共享，不是个人 Connection。
+
+授权后将浏览器地址栏的完整回调 URL 复制到 **Complete callback URL**，即使回环页面显示连接失败也可以。Service 可以部署在远端：它校验并交换粘贴的回调，不请求该 URL，也不要求浏览器访问服务器的回环监听器。
+
+API 客户端先以 `{}` 调用 `POST /api/v1/model-providers/{id}/authorize`，再以 `{"attempt_id": "oauth_...", "callback_url": "http://127.0.0.1:1456/auth/callback?..."}` 调用 `POST …/authorization/callback`。完整回调必须保密。无效输入可修正重试；交换开始后若失败，必须重启授权。`GET …/authorization` 返回不含凭据的状态。`DELETE …/authorization` 先清除 token，再请求撤销，并报告未确认的撤销结果。保留的注册信息支持再次登录；`{"new_registration": true}` 显式发起新注册。
+
+此 Provider 使用 `openai.responses` 和账户模型 slug。`GET …/models` 返回账户可见 slug 和显示名，Console 仍支持手动输入 ID。可见性不保证推理权限。端点固定，token 和待完成授权加密保存在 Provider 状态中，不进入 Model 配置或 Run 快照。每次请求固定 `store: false` 并使用必需的流，普通调用由原生 Model 收集该流。原生 profile 不发送 temperature、Top P 和输出 token 上限；previous-response ID 和不支持的托管工具明确失败，不会改成 API 密钥调用。Codex 凭据与此无关，不能代替该授权。
+
 ## 添加模型
 
 在 Console 中打开 **Models → Add model**，选择 provider，再从模型目录选择模型或输入上游模型 ID。目录列出 [models.dev](https://models.dev) 中该 provider 类型支持的近期文本模型，每个模型一行；如果 provider 以多个 ID 提供同一模型（例如 Bedrock 区域），可选择 ID。通用 `openai` 类型还提供 **Other models (compatible)** ，用于通过 OpenAI 兼容端点访问其他厂商模型。选择模型会填入上游模型 ID、能力和价格，保存前可修改。如果 Service 启动以来始终无法访问 models.dev，Console 会提示目录不可用，此时请手动输入上游模型 ID。
