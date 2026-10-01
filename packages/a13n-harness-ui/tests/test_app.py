@@ -2694,6 +2694,8 @@ async def test_oversized_history_is_indexed_once_and_hot_inspections_never_decod
             replacement=replacement,
             read_model=project_continuation(value),
         )
+        # Directly replacing the head bypasses checkpoint publication of identity-bound work.
+        assert await app._store.publish_work(thread.thread_id, replacement, value.harness_state)
         native_reads = 0
         read = app._store.objects.read_model
 

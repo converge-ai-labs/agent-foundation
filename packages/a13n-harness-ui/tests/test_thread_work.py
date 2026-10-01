@@ -120,13 +120,9 @@ async def test_work_observes_unsaved_notes_and_restores_all_tasks_on_idle_reply(
 
 
 @pytest.mark.parametrize("completed_run", [False, True])
-async def test_saved_work_decodes_capability_state_off_loop_and_reuses_cache(
+async def test_saved_work_and_details_never_load_continuations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, completed_run: bool
 ) -> None:
-    from threading import get_ident
-
-    from a13n_harness.state import AgentContextStateSnapshot
-
     calls = 0
 
     async def model(messages, info):
@@ -147,23 +143,48 @@ async def test_saved_work_decodes_capability_state_off_loop_and_reuses_cache(
         if completed_run:
             receipt = await app.submit_thread(thread_id=root.thread_id, prompt="Save work")
             assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
-        loop_thread = get_ident()
-        reads: list[int] = []
-        original = AgentContextStateSnapshot.entries.fget
 
-        def observed_entries(self):
-            reads.append(get_ident())
-            return original(self)
+        async def forbidden(*args, **kwargs):
+            pytest.fail("Small work queries must not load immutable objects")
 
         with monkeypatch.context() as patch:
-            patch.setattr(AgentContextStateSnapshot, "entries", property(observed_entries))
+            patch.setattr(app._store.objects, "read_model", forbidden)
+            patch.setattr(app._store.objects, "read", forbidden)
             work = await app.thread_work(thread_id=root.thread_id)
-            assert reads and loop_thread not in reads
-            reads.clear()
             assert await app.thread_work(thread_id=root.thread_id) == work
-            assert not reads
+            detailed = await app.thread_work(thread_id=root.thread_id, include=("tasks", "notes"))
+            assert detailed.notes.total == int(completed_run)
+            assert (await app.thread_notes(thread_id=root.thread_id)).total == int(completed_run)
+            assert (await app.thread_tasks(thread_id=root.thread_id)).total == 0
         assert work.source == ("saved" if completed_run else "unavailable")
         assert work.notes.total == int(completed_run)
+        if completed_run:
+            from a13n_harness_ui.errors import ThreadError
+            from a13n_harness_ui.storage.database import transaction
+            from a13n_harness_ui.storage.models import ThreadWorkRecord
+            from sqlalchemy import delete
+
+            async with transaction(app._store.database.sessions) as session:
+                await session.execute(delete(ThreadWorkRecord).where(ThreadWorkRecord.thread_id == root.thread_id))
+            with monkeypatch.context() as patch:
+                patch.setattr(app._store.objects, "read_model", forbidden)
+                patch.setattr(app._store.objects, "read", forbidden)
+                missing = await app.thread_work(thread_id=root.thread_id, include=("tasks", "notes"))
+                assert missing.source == "unavailable" and not missing.notes.available
+                with pytest.raises(ThreadError) as error:
+                    await app.thread_notes(thread_id=root.thread_id)
+                assert error.value.code == "thread_work_unavailable"
+            assert await app._store.repair_read_models() == (root.thread_id,)
+            assert (await app.thread_work(thread_id=root.thread_id)).notes.total == 1
+    async with open_harness_ui_app(
+        _settings(tmp_path / "data"), configuration_path=path, instrumentation=None
+    ) as restarted:
+        with monkeypatch.context() as patch:
+            patch.setattr(restarted._store.objects, "read_model", forbidden)
+            patch.setattr(restarted._store.objects, "read", forbidden)
+            saved = await restarted.thread_work(thread_id=root.thread_id, include=("tasks", "notes"))
+            assert saved.notes.total == int(completed_run)
+            assert (await restarted.thread_notes(thread_id=root.thread_id)).total == int(completed_run)
 
 
 async def test_work_counts_complete_state_without_expanding_bounded_pages(tmp_path: Path) -> None:

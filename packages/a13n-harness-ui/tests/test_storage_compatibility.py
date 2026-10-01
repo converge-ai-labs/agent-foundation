@@ -33,6 +33,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20261001_c82e5ae6ef80_add_small_thread_work_projections.py").unlink()
     (newer / "versions/20260926_1da116a90fda_add_memory_scope_to_observable_threads.py").unlink()
     (newer / "versions/20260924_6fb2512c92a3_add_shared_thread_stars.py").unlink()
     (newer / "versions/20260924_0a7582171995_replace_project_leads_with_thread_.py").unlink()
@@ -97,6 +98,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
                 "web_push_key",
                 "web_push_subscription",
                 "thread_inspection",
+                "thread_work",
                 "transcript_entry",
                 "transcript_turn",
             ):

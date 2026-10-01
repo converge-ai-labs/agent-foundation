@@ -362,7 +362,13 @@ class TerminalProjectionService:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
         if thread.continuation is None:
             return NotePage()
-        return (await self._threads.inspection(thread)).notes
+        data = await self._store.work.read(thread_id, thread.continuation, ("notes",))
+        if data is None:
+            raise ThreadError("Saved work is not available yet.", code="thread_work_unavailable")
+        page = (
+            await to_thread.run_sync(NotePage.model_validate_json, data.notes_json) if data.notes_json else NotePage()
+        )
+        return page.model_copy(update={"continuation_id": continuation_id})
 
     async def task_page(
         self,
@@ -381,7 +387,13 @@ class TerminalProjectionService:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
         if thread.continuation is None:
             return TaskPage(continuation_id=None)
-        page = (await self._threads.inspection(thread)).tasks
+        data = await self._store.work.read(thread_id, thread.continuation, ("tasks",))
+        if data is None:
+            raise ThreadError("Saved work is not available yet.", code="thread_work_unavailable")
+        page = (
+            await to_thread.run_sync(TaskPage.model_validate_json, data.tasks_json) if data.tasks_json else TaskPage()
+        )
+        page = page.model_copy(update={"continuation_id": continuation_id})
         return page.model_copy(update={"tasks": page.tasks[:limit], "omitted": max(0, page.total - limit)})
 
     async def decisions(

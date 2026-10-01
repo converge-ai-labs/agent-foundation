@@ -63,7 +63,7 @@ class GoalView(BaseModel):
 
 
 def saved_goal(state: HarnessState) -> GoalView | None:
-    entry = state.agent_context_state.entries.get(GOAL_CAPABILITY_ID)
+    entry = state.agent_context_state.get(GOAL_CAPABILITY_ID)
     if entry is None:
         return None
     if entry.version != GOAL_STATE_VERSION:

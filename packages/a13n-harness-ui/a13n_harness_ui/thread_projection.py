@@ -705,7 +705,7 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
     continuation_id = thread.continuation.logical_digest if thread.continuation else None
     notes = NotePage(continuation_id=continuation_id)
     tasks = TaskPage(continuation_id=continuation_id)
-    entry = state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
+    entry = state.agent_context_state.get(WORKING_STATE_CAPABILITY_ID)
     if entry is not None and continuation_id is not None:
         working = WorkingState.model_validate(entry.data)
         tasks, notes = project_working_state(working, continuation_id)
