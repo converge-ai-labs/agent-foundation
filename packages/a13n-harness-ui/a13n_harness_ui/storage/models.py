@@ -157,6 +157,22 @@ class ThreadRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
+class ThreadWorkRecord(Base):
+    """Small, replaceable work projection independent of transcript indexes."""
+
+    __tablename__ = "thread_work"
+
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    object_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary_json: Mapped[str] = mapped_column(Text, nullable=False)
+    tasks_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ThreadInspectionRecord(Base):
     """Rebuildable inspection index for one exact selected Thread source."""
 

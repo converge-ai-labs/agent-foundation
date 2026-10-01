@@ -844,6 +844,7 @@ class RootRunExecutor:
             )
         except Exception as exc:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
+        await self._store.publish_work(thread.thread_id, published_ref, state)
         # A disposable inspection index cannot change a successfully selected
         # execution checkpoint. Missing indexes rebuild on the next inspection.
         try:

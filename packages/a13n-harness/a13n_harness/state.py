@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Literal, cast
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, computed_field, create_model, field_validator
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
 
 from a13n_harness._json import dump_json_bytes
@@ -63,6 +63,12 @@ class CapabilityState(BaseModel):
         return _JSON_VALUE_ADAPTER.validate_json(cast(bytes, self.data_json))
 
 
+class _SelectedCapabilityState(BaseModel):
+    model_config = ConfigDict(extra="ignore", validate_by_name=False)
+
+    entry: CapabilityState | None = None
+
+
 _CAPABILITY_ENTRIES_ADAPTER = TypeAdapter(dict[str, CapabilityState])
 _EMPTY_ENTRIES_JSON = _CAPABILITY_ENTRIES_ADAPTER.dump_json({})
 
@@ -87,6 +93,15 @@ class AgentContextStateSnapshot(BaseModel):
             if not capability_id.strip():
                 raise ValueError("Capability state IDs must not be blank.")
         return _CAPABILITY_ENTRIES_ADAPTER.dump_json(entries)
+
+    def get(self, capability_id: str) -> CapabilityState | None:
+        """Decode one detached namespace without materializing unrelated payloads."""
+        selected = create_model(
+            "SelectedCapabilityState",
+            __base__=_SelectedCapabilityState,
+            entry=(CapabilityState | None, Field(default=None, alias=capability_id)),
+        )
+        return selected.model_validate_json(cast(bytes, self.entries_json)).entry
 
     @computed_field
     @property

@@ -156,7 +156,7 @@ class ThreadService:
             object_kind=ObjectKind.thread_initial_state,
             value=StoredThreadInitialState(harness_state=baseline, created_at=datetime.now(UTC)),
         )
-        return await self._store.threads.create(
+        thread = await self._store.threads.create(
             thread_id=baseline.thread_id,
             memory_scope=memory_scope,
             configuration=configuration,
@@ -165,6 +165,8 @@ class ThreadService:
             coordinator_thread_id=coordinator_thread_id,
             coordinator=coordinator,
         )
+        await self._store.publish_work(thread.thread_id, initial.ref, baseline)
+        return thread
 
     async def preview_creation(self, defaults: RootThreadDefaults | None = None) -> ThreadConfiguration:
         return resolve_thread_configuration(await self._required_configuration(), defaults)
@@ -268,6 +270,7 @@ class ThreadService:
                 read_model=read_model,
                 activity_changed=False,
             )
+            await self._store.publish_work(thread_id, published.ref, state)
 
     async def update_metadata(
         self,

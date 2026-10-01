@@ -35,18 +35,11 @@ async def test_steering_retains_or_matches_the_accepted_configuration(service, s
     thread_id = started["thread"]["id"]
     run_id = started["run"]["id"]
     assert started["run"]["options"]["configuration"] == configuration
-    running = await runs_kit.attempt(service)
-    await scripted_model.request()
-    for value in ({"allowed_hosts": []}, {"allowed_hosts": None}, {"allowed_hosts": ["different.test"]}):
-        body = runs_kit.message(agent, "change", options={"configuration": value})
-        response = await runs_kit.submit(service, thread_id, body)
-        assert response.status_code == 409, response.text
-        assert "run_configuration_immutable" in response.text
+    # Edit while the worker has not started: a gated model response does not stop its initial checkpoint
+    # from assigning steers, and assigned entries correctly refuse editing before configuration validation.
     omitted = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "omitted config"))
-    equal = await runs_kit.submit(
-        service, thread_id, runs_kit.message(agent, "same config", options={"configuration": configuration})
-    )
-    assert omitted.status_code == equal.status_code == 201
+    assert omitted.status_code == 201, omitted.text
+    assert omitted.json()["entry"]["status"] == "pending"
     thread = await runs_kit.get_thread(service, thread_id)
     edited = await service.client.patch(
         f"{service.api}/threads/{thread_id}/inbox/{omitted.json()['entry']['id']}",
@@ -55,6 +48,18 @@ async def test_steering_retains_or_matches_the_accepted_configuration(service, s
     )
     assert edited.status_code == 409, edited.text
     assert "run_configuration_immutable" in edited.text
+
+    running = await runs_kit.attempt(service)
+    await scripted_model.request()
+    for value in ({"allowed_hosts": []}, {"allowed_hosts": None}, {"allowed_hosts": ["different.test"]}):
+        body = runs_kit.message(agent, "change", options={"configuration": value})
+        response = await runs_kit.submit(service, thread_id, body)
+        assert response.status_code == 409, response.text
+        assert "run_configuration_immutable" in response.text
+    equal = await runs_kit.submit(
+        service, thread_id, runs_kit.message(agent, "same config", options={"configuration": configuration})
+    )
+    assert equal.status_code == 201, equal.text
     gate.set()
     await running
     entries = {entry["id"]: entry for entry in await runs_kit.inbox(service, thread_id)}

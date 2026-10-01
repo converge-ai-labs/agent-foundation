@@ -33,6 +33,8 @@ class CapabilityState(BaseModel):
 class AgentContextStateSnapshot(BaseModel):
     entries: dict[str, CapabilityState]
 
+    def get(self, capability_id: str) -> CapabilityState | None: ...
+
 
 class HarnessState(BaseModel):
     schema_version: Literal["1"]
@@ -49,7 +51,7 @@ class HarnessState(BaseModel):
     def fork(*, thread_id: str | None = None) -> HarnessState: ...
 ```
 
-`HarnessState` and its nested values are frozen detached envelopes. Pydantic message history is round-tripped through `ModelMessagesTypeAdapter`; Capability and Environment payload data are round-tripped through Pydantic `JsonValue`. Public accessors decode fresh copies, so mutable aliases do not cross the state boundary.
+`HarnessState` and its nested values are frozen detached envelopes. Pydantic message history is round-tripped through `ModelMessagesTypeAdapter`; Capability and Environment payload data are round-tripped through Pydantic `JsonValue`. Public accessors decode fresh copies, so mutable aliases do not cross the state boundary. `AgentContextStateSnapshot.get(capability_id)` returns one detached entry or `None`, without materializing unrelated namespace payloads. The complete `entries` view and serialized envelope remain unchanged; selective access does not replace complete validation during state construction or import.
 
 `thread_id` is an opaque provider-neutral correlation value for one independently advancing history. A generated value consists of the `thread-` prefix and 32 lowercase hexadecimal characters. A trusted Host may instead select a stable Foundation object ID in `<kind-prefix>_<lowercase-alphanumeric-suffix>` form, up to 256 characters. `HarnessState.new(thread_id=...)` selects that identity explicitly; omitting it generates one. Serialization, ordinary copies, exports, and resume preserve the value exactly; `RunBindings`, metadata, and run arguments do not duplicate or override State-owned identity.
 

@@ -7,12 +7,14 @@ import asyncio
 import json
 from collections.abc import Iterable
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 from a13n_service.infra import outbox
 from a13n_service.infra.db import transaction
 from a13n_service.infra.outbox import OutboxRow
 from a13n_service.runs import accept as accept_module
+from a13n_service.runs import subagents as subagents_module
 from a13n_service.runs.attempts import AttemptControl
 from a13n_service.runs.children import FULL_INBOX_SECONDS, child_results
 from a13n_service.runs.claim import claim
@@ -218,6 +220,17 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
     scripted_model.say("Checked", to="Role: coordinator")
     reads: list[str] = []
     page, statuses = ChildRuns._page, ChildRuns._statuses
+    # This case tests paging and status-only polling, not database speed. Advance only the operator's
+    # wait clock during polling sleeps, so the initial page cannot exhaust the test's 0.5-second budget.
+    elapsed = 0.0
+    clock = SimpleNamespace(time=lambda: elapsed)
+
+    async def poll_sleep(seconds: float) -> None:
+        nonlocal elapsed
+        elapsed += seconds
+        await asyncio.sleep(0)
+
+    monkeypatch.setattr(subagents_module, "asyncio", SimpleNamespace(get_running_loop=lambda: clock, sleep=poll_sleep))
 
     async def paged(operator: ChildRuns, execution_id: str | None, offset: int, limit: int) -> tuple[list, int]:
         reads.append("page")
@@ -225,6 +238,7 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
 
     async def polled(operator: ChildRuns, run_ids: Iterable[str]) -> dict[str, str]:
         reads.append("statuses")
+        assert tuple(run_ids) == (second,)
         return await statuses(operator, run_ids)
 
     monkeypatch.setattr(ChildRuns, "_page", paged)
@@ -241,7 +255,7 @@ async def test_a_parent_reads_its_children_a_page_at_a_time(service, scripted_mo
     assert (waited["total"], waited["next_offset"]) == (2, None)
     assert [(item["execution_id"], item["status"]) for item in waited["executions"]] == [(second, "running")]
     # The info call and the wait each read their page once; the wait then polls only its runs' statuses.
-    assert reads[:2] == ["page", "page"] and set(reads[2:]) == {"statuses"}, reads
+    assert reads == ["page", "page", "statuses", "statuses"], reads
 
 
 async def test_a_wait_for_children_ends_when_the_worker_drains(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
