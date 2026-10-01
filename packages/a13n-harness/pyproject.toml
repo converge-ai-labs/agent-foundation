@@ -22,6 +22,7 @@ dependencies = [
     "genai-prices>=0.1.9,<1",
     "httpx2>=2.5,<3",
     "jsonschema>=4.25,<5",
+    "mistralai>=2.9.4,<3",
     "opentelemetry-api>=1.39,<2",
     "pydantic>=2.12,<3",
     "pydantic-ai[bedrock,bedrock-mantle,cohere,google-realtime,groq,huggingface,mistral,openai-realtime,openrouter,retries,typesafe,xai,xai-realtime]>=2.51.0,<3",
