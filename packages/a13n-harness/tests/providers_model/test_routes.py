@@ -56,7 +56,10 @@ def test_credentials_reject_blank_keys_and_invalid_service_account_pem():
         ("moonshotai", "moonshot", "openai.chat_completions", "https://api.moonshot.ai/v1"),
         ("fireworks", "fireworks", "openai.chat_completions", None),
         ("together", "together", "openai.chat_completions", None),
-        ("grok", "openai", "openai.chat_completions", "https://api.x.ai/v1"),
+        ("cerebras", "cerebras", "openai.chat_completions", None),
+        ("sambanova", "sambanova", "openai.chat_completions", None),
+        ("vercel", "vercel", "openai.chat_completions", None),
+        ("grok", "xai", "openai.chat_completions", "https://api.x.ai/v1"),
     ],
 )
 def test_declared_routes_own_their_provider_api_and_endpoint(name, provider_type, model_api, default_base_url):
@@ -91,7 +94,7 @@ async def test_routes_without_a_host_endpoint_use_their_declared_default(monkeyp
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("provider", ["fireworks", "together"])
+@pytest.mark.parametrize("provider", ["fireworks", "together", "cerebras", "sambanova", "vercel", "grok"])
 async def test_hosted_open_model_routes_enforce_allowed_hosts_and_own_client_lifetime(provider):
     configuration = RunConfiguration(allowed_hosts=frozenset({"gateway.example"}))
     with pytest.raises(EndpointPolicyError):
@@ -106,7 +109,7 @@ async def test_hosted_open_model_routes_enforce_allowed_hosts_and_own_client_lif
         configuration=configuration,
     )
     assert model.provider is not None
-    assert model.provider.name == provider
+    assert model.provider.name == ("xai" if provider == "grok" else provider)
     assert str(model.provider.base_url).rstrip("/") == "https://gateway.example/v1"
     for _ in range(2):
         async with model:

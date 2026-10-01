@@ -19,8 +19,11 @@ from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.models.typesafe import TypeSafeModel
+from pydantic_ai.providers.cerebras import CerebrasProvider
 from pydantic_ai.providers.fireworks import FireworksProvider
+from pydantic_ai.providers.sambanova import SambaNovaProvider
 from pydantic_ai.providers.together import TogetherProvider
+from pydantic_ai.providers.vercel import VercelProvider
 
 
 class UnusedOAuthSource:
@@ -89,7 +92,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
                             assert model.client.max_retries == 0
                         if isinstance(model, BedrockConverseModel):
                             assert model.client.meta.config.retries["total_max_attempts"] == 1
-    assert len(BUILT_IN_MODEL_PROVIDERS) == 17
+    assert len(BUILT_IN_MODEL_PROVIDERS) == 21
 
 
 class Configuration(BaseModel):
@@ -183,6 +186,9 @@ async def test_owned_bedrock_client_respects_operator_tls_without_overriding_def
 @pytest.mark.parametrize(
     ("provider_type", "native_type", "model_name", "default_endpoint"),
     [
+        ("cerebras", CerebrasProvider, "gpt-oss-120b", "https://api.cerebras.ai/v1"),
+        ("sambanova", SambaNovaProvider, "DeepSeek-R1", "https://api.sambanova.ai/v1"),
+        ("vercel", VercelProvider, "anthropic/claude-sonnet-4.6", "https://ai-gateway.vercel.sh/v1"),
         (
             "fireworks",
             FireworksProvider,
@@ -238,7 +244,7 @@ async def test_hosted_open_models_preserve_native_profiles_and_request_wiring(
         assert str(model.provider.base_url).rstrip("/") == endpoint
         native_profile = native_type.model_profile(model_name)
         assert native_profile
-        assert all(model.profile[key] == value for key, value in native_profile.items())
+        assert model.profile == OpenAIChatModel(model_name, provider=native_type(openai_client=model.client)).profile
         assert model.client.max_retries == 0
         async with model:
             response = await model.request([ModelRequest(parts=[UserPromptPart("Hi")])], None, ModelRequestParameters())

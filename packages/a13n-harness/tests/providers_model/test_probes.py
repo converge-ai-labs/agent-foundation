@@ -22,6 +22,19 @@ class _AllowEndpoints:
 @pytest.mark.parametrize(
     ("provider", "payload", "expected_url", "expected_headers"),
     [
+        *[
+            (
+                definition(kind).bind({}, {"api_key": "secret"}),
+                {"data": [{"id": "fixture-model"}]},
+                endpoint,
+                {"authorization": "Bearer secret"},
+            )
+            for kind, endpoint in [
+                ("cerebras", "https://api.cerebras.ai/v1/models"),
+                ("sambanova", "https://api.sambanova.ai/v1/models"),
+                ("xai", "https://api.x.ai/v1/models"),
+            ]
+        ],
         (
             definition("fireworks").bind({}, {"api_key": "secret"}),
             {"data": [{"id": "accounts/fireworks/models/llama-v3p3-70b-instruct"}]},

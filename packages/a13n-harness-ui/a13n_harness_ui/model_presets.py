@@ -44,6 +44,11 @@ API_PROVIDERS = (
     ApiProvider(
         "fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY", "openai-client"
     ),
+    ApiProvider("cerebras", "Cerebras", "https://api.cerebras.ai/v1", "CEREBRAS_API_KEY", "openai-client"),
+    ApiProvider("sambanova", "SambaNova", "https://api.sambanova.ai/v1", "SAMBANOVA_API_KEY", "openai-client"),
+    ApiProvider(
+        "vercel", "Vercel AI Gateway", "https://ai-gateway.vercel.sh/v1", "VERCEL_AI_GATEWAY_API_KEY", "openai-client"
+    ),
     ApiProvider("grok", "xAI · Chat Completions", "https://api.x.ai/v1", "XAI_API_KEY", "openai-client"),
     ApiProvider("xai", "xAI · Native SDK (gRPC)", "", "XAI_API_KEY", "xai", supports_session_affinity=False),
 )
@@ -74,6 +79,9 @@ API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
     "mistral": ("mistral-large-latest", "mistral-small-latest", "codestral-latest"),
     "together": ("meta-llama/Llama-3.3-70B-Instruct-Turbo", "Qwen/Qwen3-235B-A22B-Instruct-2507-tput"),
     "fireworks": ("accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/gpt-oss-120b"),
+    "cerebras": ("gpt-oss-120b",),
+    "sambanova": ("DeepSeek-R1",),
+    "vercel": ("anthropic/claude-sonnet-4.6", "openai/gpt-5.4"),
     "grok": ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
     "xai": ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
 }

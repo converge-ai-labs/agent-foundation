@@ -14,17 +14,17 @@ from dev.service.api import Api, Json
 KINDS = ("model", "web", "connector", "environment")
 FICTIONAL_KEY = "fictional-not-a-real-key"
 # Configuration a type requires; other types need none.
-CONFIG: dict[str, Json] = {
-    "google_vertex": {"project_id": "northstar-fictional", "location": "us-central1"},
-    "azure_openai": {"resource_endpoint": "https://northstar-fictional.openai.azure.com"},
-    "aws_bedrock": {"region": "us-east-1"},
-    "ollama": {"base_url": "http://127.0.0.1:11434"},
-    "alibaba_model_studio": {"region": "cn-beijing", "domain_type": "mainland_china"},
-    "daytona": {"organization_id": "northstar-fictional"},
-    "modal": {"workspace": "northstar-fictional", "app_name": "a13n-fictional"},
-    "runloop": {"organization": "northstar-fictional"},
-    "sprites": {"organization": "northstar-fictional"},
-    "vercel": {"team_id": "team_fictional", "project_id": "prj_fictional"},
+CONFIG: dict[tuple[str, str], Json] = {
+    ("model", "google_vertex"): {"project_id": "northstar-fictional", "location": "us-central1"},
+    ("model", "azure_openai"): {"resource_endpoint": "https://northstar-fictional.openai.azure.com"},
+    ("model", "aws_bedrock"): {"region": "us-east-1"},
+    ("model", "ollama"): {"base_url": "http://127.0.0.1:11434"},
+    ("model", "alibaba_model_studio"): {"region": "cn-beijing", "domain_type": "mainland_china"},
+    ("environment", "daytona"): {"organization_id": "northstar-fictional"},
+    ("environment", "modal"): {"workspace": "northstar-fictional", "app_name": "a13n-fictional"},
+    ("environment", "runloop"): {"organization": "northstar-fictional"},
+    ("environment", "sprites"): {"organization": "northstar-fictional"},
+    ("environment", "vercel"): {"team_id": "team_fictional", "project_id": "prj_fictional"},
 }
 DISABLED = "minimax"
 EXTRA_HEADERS = {"openrouter": {"x-title": "Northstar Studio"}}
@@ -70,7 +70,7 @@ def _account(api: Api, kind: str, described: Json) -> Json:
         "type": provider_type,
         # A type without a credential, such as `docker`, is a real account of this machine.
         "name": described["display_name"] if credential is None else f"{described['display_name']} (fictional)",
-        "config": CONFIG.get(provider_type, {}),
+        "config": CONFIG.get((kind, provider_type), {}),
         "credential": credential,
         "extra_headers": EXTRA_HEADERS.get(provider_type, {}),
     }

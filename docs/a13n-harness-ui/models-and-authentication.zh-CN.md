@@ -419,7 +419,7 @@ a13n-harness-ui login codex --allow-account-switch
 
 ## API 提供方与设置预设
 
-引导式 HTTP/API 密钥目录包含 OpenAI Responses、OpenAI 兼容 Chat Completions、Anthropic、Google Gemini API、OpenRouter、DeepSeek、Z.AI / GLM、Moonshot AI / Kimi、Groq、Mistral、Together AI 和 Fireworks AI 集成。xAI 有两种独立 API 密钥选项：`grok:` 使用 Chat Completions，`xai:` 使用原生 SDK 默认 gRPC 端点，提供原生 X Search 和其他 xAI 工具。原生 SDK 跳过 HTTP 基础 URL 步骤。两者都不同于 Grok 订阅身份验证。其他 OpenAI 兼容服务，选择 **OpenAI-compatible · Chat Completions**，填写服务 URL 和模型 ID。Cloud IAM 和订阅传输不是通用 URL/密钥连接。
+引导式 HTTP/API 密钥目录包含 OpenAI Responses、OpenAI 兼容 Chat Completions、Anthropic、Google Gemini API、OpenRouter、DeepSeek、Z.AI / GLM、Moonshot AI / Kimi、Groq、Mistral、Together AI、Fireworks AI、Cerebras、SambaNova 和 Vercel AI Gateway 集成。xAI 有两种独立 API 密钥选项：`grok:` 使用 Chat Completions，`xai:` 使用原生 SDK 默认 gRPC 端点，提供原生 X Search 和其他 xAI 工具。原生 SDK 跳过 HTTP 基础 URL 步骤。两者都不同于 Grok 订阅身份验证。其他 OpenAI 兼容服务，选择 **OpenAI-compatible · Chat Completions**，填写服务 URL 和模型 ID。Cloud IAM 和订阅传输不是通用 URL/密钥连接。
 
 预设选择器在推理旁显示输出上限；最后的 Environment 或命名问题在保存前显示组装的连接和设置。首次欢迎页、`add model` 和新 Model 的 `add agent` 共用这些创建时预设。预设写入普通、可编辑 YAML：
 

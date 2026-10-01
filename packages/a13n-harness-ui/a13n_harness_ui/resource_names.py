@@ -25,6 +25,9 @@ _PROVIDER_NAMES = {
     "moonshotai": "Moonshot AI",
     "groq": "Groq",
     "mistral": "Mistral",
+    "cerebras": "Cerebras",
+    "sambanova": "SambaNova",
+    "vercel": "Vercel AI Gateway",
     "together": "Together AI",
     "fireworks": "Fireworks AI",
 }

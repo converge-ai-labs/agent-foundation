@@ -66,9 +66,10 @@ const curatedBrands: Record<string, Brand> = {
     hosts: ["mcp.sentry.dev", "sentry.io"],
   },
   vercel: {
-    icon: `${svgl}vercel.svg`,
-    darkIcon: `${svgl}vercel_dark.svg`,
-    hosts: ["mcp.vercel.com", "vercel.com"],
+    icon: `${lobeIconsCdn}vercel.svg`,
+    invertInDark: true,
+    aliases: ["vercel-ai-gateway", "vercel_ai_gateway"],
+    hosts: ["mcp.vercel.com", "vercel.com", "ai-gateway.vercel.sh"],
   },
   hubspot: {
     icon: "https://cdn.simpleicons.org/hubspot",
@@ -118,6 +119,20 @@ const curatedBrands: Record<string, Brand> = {
   together: {
     icon: `${lobeIconsCdn}together-color.svg`,
     hosts: ["together.ai", "api.together.ai", "api.together.xyz"],
+  },
+  cerebras: {
+    icon: `${lobeIconsCdn}cerebras-color.svg`,
+    hosts: ["cerebras.ai", "cloud.cerebras.ai", "api.cerebras.ai"],
+  },
+  sambanova: {
+    icon: `${lobeIconsCdn}sambanova-color.svg`,
+    hosts: ["sambanova.ai", "cloud.sambanova.ai", "api.sambanova.ai"],
+  },
+  xai: {
+    icon: `${lobeIconsCdn}xai.svg`,
+    invertInDark: true,
+    aliases: ["x-ai"],
+    hosts: ["x.ai", "console.x.ai", "api.x.ai"],
   },
   ollama: { icon: `${lobeIconsCdn}ollama.svg`, invertInDark: true },
   alibaba_model_studio: { icon: `${lobeIconsCdn}qwen-color.svg` },

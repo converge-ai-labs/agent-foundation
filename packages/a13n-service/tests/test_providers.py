@@ -663,6 +663,7 @@ async def test_provider_types_describe_each_registered_definition(service) -> No
     }
     assert openai["credential_schema"]["properties"]["api_key"]
     assert openai["authentication"]["mode"] == "required"
+    assert models["vercel"]["supports_test"] is False
     # Every calling API of every type describes its native settings, including the unified thinking levels.
     for described in models.values():
         assert set(described["settings_schemas"]) == set(described["model_apis"]) == set(described["model_api_labels"])
