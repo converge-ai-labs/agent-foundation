@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
@@ -10,7 +11,9 @@ from weakref import WeakKeyDictionary
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, field_validator, model_validator
 from pydantic_ai import RunContext
-from pydantic_ai.messages import AgentStreamEvent
+from pydantic_ai.messages import AgentStreamEvent, CapabilityEvent, UserContent
+
+from a13n_harness.content import ContentItem, ContentMetadata, content_items, project_input_content
 
 if TYPE_CHECKING:
     from a13n_harness.context import AgentContext
@@ -32,6 +35,49 @@ type HarnessExtensionKind = Literal[
     "tool",
     "diagnostic",
 ]
+
+
+type InputSource = Literal["user", "steering", "context", "recovery", "async_subagent", "background_process"]
+
+
+@dataclass(kw_only=True)
+class InputTextEvent(CapabilityEvent, namespace="a13n.input", name="text"):
+    """One source-typed text observation, separate from native model content."""
+
+    input_id: str
+    source: InputSource
+    content: str
+    metadata: ContentMetadata = field(default_factory=ContentMetadata)
+
+
+@dataclass(kw_only=True)
+class InputMediaEvent(CapabilityEvent, namespace="a13n.input", name="media"):
+    """One payload-free media observation belonging to an input group."""
+
+    input_id: str
+    source: InputSource
+    content: dict[str, JsonValue]
+    metadata: ContentMetadata = field(default_factory=lambda: ContentMetadata(media=True))
+
+
+type InputEvent = InputTextEvent | InputMediaEvent
+
+
+def input_events(
+    content: str | Sequence[UserContent | ContentItem], *, source: InputSource, input_id: str
+) -> list[InputEvent]:
+    """Project an ordered input group without exposing provider content objects."""
+    events: list[InputEvent] = []
+    for item in content_items(content):
+        projected = project_input_content(item)
+        if projected is None:
+            continue
+        value, metadata = projected
+        if isinstance(value, str):
+            events.append(InputTextEvent(input_id=input_id, source=source, content=value, metadata=metadata))
+        else:
+            events.append(InputMediaEvent(input_id=input_id, source=source, content=value, metadata=metadata))
+    return events
 
 
 class HarnessExtensionEvent(BaseModel):
@@ -57,6 +103,15 @@ class _FirstPartyPayload(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
+class EnvironmentChangedPayload(_FirstPartyPayload):
+    type: Literal["environment_changed"] = "environment_changed"
+    sequence: int = Field(ge=1)
+    kind: Literal["mounted", "replaced", "unmounted", "default_changed"]
+    name: str | None
+    previous_default: str | None
+    current_default: str | None
+
+
 class ModelRetryScheduledPayload(_FirstPartyPayload):
     """A continuation numbered within a failure streak, not a durable Host retry."""
 
@@ -64,6 +119,12 @@ class ModelRetryScheduledPayload(_FirstPartyPayload):
     attempt: int = Field(ge=2)
     max_attempts: int = Field(ge=2)
     delay_seconds: float = Field(ge=0, allow_inf_nan=False)
+
+
+class RunStartedPayload(_FirstPartyPayload):
+    """The prepared logical Run has begun public iteration."""
+
+    type: Literal["run_started"] = "run_started"
 
 
 class ModelRequestStartedPayload(_FirstPartyPayload):
@@ -298,7 +359,9 @@ class ToolExtraEventPayload(_FirstPartyPayload):
 
 
 type FirstPartyEventPayload = (
-    ModelRetryScheduledPayload
+    EnvironmentChangedPayload
+    | ModelRetryScheduledPayload
+    | RunStartedPayload
     | ModelRequestStartedPayload
     | ModelRequestCompletedPayload
     | ModelRequestFailedPayload

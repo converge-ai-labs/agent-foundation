@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import copy, deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
@@ -18,6 +18,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import ModelRequestContext
 
+from a13n_harness.content import replace_request_parts, request_parts
 from a13n_harness.context import AgentContext
 
 MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID = "a13n.filter.message-integrity"
@@ -83,20 +84,20 @@ def _filter_tool_result_pairs(messages: list[ModelMessage]) -> tuple[list[ModelM
             current_call_ids.clear()
             consumed_call_ids.clear()
 
-        kept: list[ModelRequestPart] = []
-        for part in message.parts:
+        kept = []
+        for part, content_annotations in request_parts(message):
             tool_call_id = _tool_result_id(part)
             if tool_call_id is None:
-                kept.append(part)
+                kept.append((part, content_annotations))
                 continue
             if tool_call_id not in current_call_ids or tool_call_id in consumed_call_ids:
                 changed = True
                 continue
             consumed_call_ids.add(tool_call_id)
-            kept.append(part)
+            kept.append((part, content_annotations))
 
         if kept or not message.parts or index == len(messages) - 1:
-            filtered.append(message if len(kept) == len(message.parts) else replace(message, parts=tuple(kept)))
+            filtered.append(message if len(kept) == len(message.parts) else replace_request_parts(message, kept))
         else:
             changed = True
 

@@ -697,8 +697,8 @@ it("counts only the tool calls in each execution segment", () => {
       .getAllByRole("button", { name: /Execution details/ })
       .map((toggle) => toggle.textContent),
   ).toEqual([
-    "Execution details · 1 tool call",
-    "Execution details · 2 tool calls",
+    "Execution details · 1 tool call · 1 running",
+    "Execution details · 2 tool calls · 2 running",
   ]);
 });
 

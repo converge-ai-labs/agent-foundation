@@ -30,6 +30,14 @@ At execution, accepted input distinguishes message content from a deferred-resul
 - An **attempt** executes a run under a renewable lease. Recovery and handoff replace the attempt; the run and its assigned inputs stay.
 - A **checkpoint** is resumable Harness state, committed by moving the run's pointer to an immutable object. The display committed with it is what viewers see ([07](07-facts-and-delivery.md#checkpoints-and-display)). A checkpoint never rolls back external effects.
 
+## Run configuration
+
+Message `options.configuration` accepts the shared [Harness Run configuration](../a13n-harness/06-execution-context-and-lifecycle.md#run-configuration), independently of Agent revision overrides. Omission or null selects the default for a new Run and retains the snapshot when steering. An explicit object selects its entire value; `{allowed_hosts: null}` explicitly clears a hostname restriction for a new Run, while `{allowed_hosts: []}` denies every destination.
+
+Acceptance normalizes and freezes the configuration in `Run.options` alongside the resolved selection. Worker recovery, handoff, resume successors and child-result continuations retain it. Inline and async child Runs inherit the parent's configuration; their usage ceilings remain independently narrowed. Input URL materialization uses the accepted snapshot before entering Harness, including steering, recovered inputs and resume input.
+
+A `steer` submission or pending-entry edit against an active Run may omit configuration or explicitly match the frozen value. An explicit different value fails with conflict reason `run_configuration_immutable`; it never silently becomes a later Run. `next_run` selects a new snapshot without modifying the active one. Canonical request idempotency includes normalized configuration; the other-options steering digest excludes it and steering compares configuration separately.
+
 ## Tables
 
 The tenant foreign-key rules in [03](03-tenancy.md#tenant-integrity) apply throughout. Payloads, outputs and options are bounded inline JSON; files a message refers to are assets ([04](04-resources.md)).
@@ -299,7 +307,7 @@ Inside thread → run → attempt locks, a seal:
 5. For a child thread's completed, failed or cancelled run, enqueues one `child_result` outbox row keyed by the run ([child runs](#child-runs)). A waiting child run reports nothing.
 6. Stages `run.{status}` and `run_attempt.{succeeded | failed | cancelled}` webhooks.
 
-The seal transaction stages durable reclamation of objects that no final pointer names ([07](07-facts-and-delivery.md#objects)). After commit, its transaction owner calls `accept` in a separate transaction for a completed or waiting run, without waiting for deletion; failed and cancelled runs pause the thread. The `advance_threads` sweep ([09](09-runtime.md#sweeps)) recovers a lost call: it visits idle, unarchived, unpaused threads with pending input and no waiting head in rotating ID order, in batches of `control.sweep_batch`. Waiting heads are excluded before the batch limit so they do not delay eligible threads; acceptance rechecks the head under the thread lock. A thread that fails to advance is logged and retried by a later pass.
+The seal transaction stages durable reclamation of objects that no final pointer names ([07](07-facts-and-delivery.md#objects)). After commit, its transaction owner calls `accept` in a separate transaction for a completed or waiting run, without waiting for deletion; failed and cancelled runs pause the thread. The `advance_threads` sweep ([09](09-runtime.md#sweeps)) recovers a lost call: it discovers distinct threads from pending inbox entries and visits eligible threads in rotating ID order, in batches of `control.sweep_batch`. Active, archived, paused and waiting threads are excluded before the batch limit so they do not delay eligible threads; acceptance rechecks eligibility under the thread lock. Discovery work depends on the pending backlog rather than the population of historical idle threads, and a large pending backlog can make a pass more expensive. A thread that fails to advance is logged and retried by a later pass.
 
 **Recovery.** A transient worker failure, a lost lease and a handoff return the run to accepted instead of sealing it, with these exceptions: a cancellation request seals it cancelled, and a failed attempt that was the run's last (`attempts = max_attempts`) seals it failed with that attempt's failure. Otherwise the attempt closes as `yielded` or `failed`, assignments stay, and the run becomes due immediately (handoff) or after min(60, 2^(attempts − 1)) seconds. `run.accepted` and `run_attempt.{yielded | failed}` webhooks are staged, and a run that is due at once wakes workers.
 

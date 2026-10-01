@@ -18,6 +18,8 @@ if TYPE_CHECKING:
         SubagentIdentityPolicy,
         derive_child_identity,
     )
+    from a13n_harness.configuration import RunConfiguration
+    from a13n_harness.content import ContentItem, ContentMetadata
     from a13n_harness.context import AgentContext, RunBindings
     from a13n_harness.environment import (
         Environment,
@@ -41,6 +43,8 @@ if TYPE_CHECKING:
         HarnessExtensionEvent,
         HarnessRunResultEvent,
         HarnessStreamEvent,
+        InputMediaEvent,
+        InputTextEvent,
     )
     from a13n_harness.execution import ExecutableAgent, HarnessRunStream
     from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext, AgentInstanceRef
@@ -60,15 +64,25 @@ if TYPE_CHECKING:
     from a13n_harness.plugins import AbstractHarnessPlugin, PluginOrdering
     from a13n_harness.recovery import ModelRecoveryPolicy, ToolRecoveryMode
     from a13n_harness.result import HarnessRunResult, SafeFailure
-    from a13n_harness.spec import AgentSpec, HarnessModelCharacteristics, ModelCapability
+    from a13n_harness.spec import (
+        AgentSpec,
+        HarnessModelCharacteristics,
+        ImageInputPolicy,
+        ModelCapability,
+        UrlInputSupport,
+        VideoInputPolicy,
+        VideoUrlType,
+    )
     from a13n_harness.state import HarnessState
     from a13n_harness.tools.deferred import DeferredToolResume
 
 _EXPORTS = {
+    "a13n_harness.configuration": ("RunConfiguration",),
     "a13n_harness.context": (
         "AgentContext",
         "RunBindings",
     ),
+    "a13n_harness.content": ("ContentItem", "ContentMetadata"),
     "a13n_harness.environment": (
         "Environment",
         "EnvironmentEntry",
@@ -89,6 +103,8 @@ _EXPORTS = {
         "AgentStreamEventProtocol",
         "HarnessEvent",
         "HarnessExtensionEvent",
+        "InputMediaEvent",
+        "InputTextEvent",
         "HarnessRunResultEvent",
         "HarnessStreamEvent",
     ),
@@ -140,7 +156,11 @@ _EXPORTS = {
     "a13n_harness.spec": (
         "AgentSpec",
         "HarnessModelCharacteristics",
+        "ImageInputPolicy",
         "ModelCapability",
+        "UrlInputSupport",
+        "VideoInputPolicy",
+        "VideoUrlType",
     ),
     "a13n_harness.state": ("HarnessState",),
     "a13n_harness.tools.deferred": ("DeferredToolResume",),

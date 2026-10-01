@@ -485,13 +485,11 @@ class FileToolset:
 
             kind = cast(NativeInputMediaKind, media_type.split("/", maxsplit=1)[0])
             if _model_supports_native_media(ctx, kind):
-                message = f"The {media_type} file {file_path} is attached in the user message."
+                message = f"The {media_type} file {file_path} is attached in this tool result."
                 return ToolReturn(
                     return_value=message,
                     metadata=retention_metadata,
-                    # Native tool attachments may be stored in a UserPromptPart,
-                    # but they are model content, not a new authored user turn.
-                    content=[BinaryContent(data=data, media_type=media_type, vendor_metadata={"display": False})],
+                    content=[BinaryContent(data=data, media_type=media_type)],
                 )
 
             try:

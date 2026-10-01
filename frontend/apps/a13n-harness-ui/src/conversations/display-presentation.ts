@@ -1,3 +1,4 @@
+import { readContentParts } from "a13n-ui";
 import type { DisplayBlock as SharedBlock } from "a13n-ui/display";
 import type { Schema } from "../transport/client";
 import type { DisplayBlock } from "./stream";
@@ -60,7 +61,11 @@ export function displayBlock(
         name: text(c.name),
         text: sourceText(c.arguments),
         done: c.arguments_complete === true,
-        result: "result" in c ? sourceText(c.result) : undefined,
+        result: typeof c.result === "string" ? c.result : undefined,
+        resultParts:
+          Array.isArray(c.content_parts) && c.content_parts.length
+            ? readContentParts(c.content_parts)
+            : undefined,
         outcome: ["success", "failed", "denied", "interrupted"].includes(
           text(outcome),
         )

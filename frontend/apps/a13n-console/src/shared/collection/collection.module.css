@@ -8,7 +8,7 @@
 }
 .cell {
   color: var(--a13n-text-supporting);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 400;
   line-height: 1.5;
 }
@@ -17,7 +17,7 @@
 }
 .cell[data-tone="muted"] {
   color: var(--a13n-muted);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .cell[data-align="right"] {
   font-variant-numeric: tabular-nums;
@@ -26,7 +26,7 @@
   display: block;
   margin-top: 3px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-weight: 400;
 }
 .menuCell {
@@ -57,9 +57,10 @@ tr:focus-within .rowMenu,
   flex-wrap: wrap;
   min-width: 0;
 }
+/* Up to 300px; it narrows before the filters wrap to a second row. */
 .toolbarSearch {
-  width: 300px;
-  max-width: 100%;
+  flex: 1 1 200px;
+  max-width: 300px;
 }
 .toolbarFilters {
   display: flex;
@@ -81,9 +82,9 @@ tr:focus-within .rowMenu,
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 4px 0;
+  padding: 14px 16px 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .footer p {
   margin: 0;
@@ -117,7 +118,7 @@ tr:focus-within .rowMenu,
   flex: 1 1 auto;
 }
 .rowCopy strong {
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -125,7 +126,7 @@ tr:focus-within .rowMenu,
 }
 .rowCopy small {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -136,7 +137,7 @@ tr:focus-within .rowMenu,
   gap: 8px;
   flex: none;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .rowActions {
   display: flex;
@@ -154,7 +155,7 @@ tr:focus-within .rowMenu,
   border-radius: var(--a13n-radius-row);
   background: var(--a13n-surface);
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
 }
 
 /* Picker ----------------------------------------------------------------- */
@@ -182,7 +183,7 @@ tr:focus-within .rowMenu,
   padding: 7px 8px;
   border-radius: 7px;
   text-align: left;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   cursor: pointer;
 }
 .pickerItem:hover,
@@ -206,7 +207,7 @@ tr:focus-within .rowMenu,
 }
 .pickerItem small {
   color: var(--a13n-secondary);
-  font-size: 11.5px;
+  font-size: var(--a13n-text-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -215,7 +216,7 @@ tr:focus-within .rowMenu,
   padding: 18px 12px;
   text-align: center;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
 }
 .pickerFooter {
   display: flex;
@@ -223,21 +224,19 @@ tr:focus-within .rowMenu,
   align-items: center;
   gap: 8px;
   padding: 8px 12px 10px;
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .pickerFooter a {
   color: var(--a13n-secondary);
 }
 @media (max-width: 760px) {
   .toolbarSearch {
-    width: 100%;
+    flex-basis: 100%;
+    max-width: none;
   }
   .toolbarTrailing {
     margin-left: 0;
   }
-}
-.archivedChip {
-  border-radius: 999px;
 }
 .archivedChip[data-active="true"] {
   background: var(--a13n-selected);

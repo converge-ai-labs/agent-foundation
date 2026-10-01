@@ -301,9 +301,7 @@ function TimeRangeFilter({
         setOpen(value);
       }}
     >
-      <PopoverTrigger
-        render={<Button variant="outline" size="sm" type="button" />}
-      >
+      <PopoverTrigger render={<Button variant="outline" type="button" />}>
         <span className={styles.chipLabel}>{t("Time range")}</span>
         {committedStart && committedEnd && (
           <span>
@@ -414,9 +412,7 @@ function MetadataFilter({
         setOpen(value);
       }}
     >
-      <PopoverTrigger
-        render={<Button variant="outline" size="sm" type="button" />}
-      >
+      <PopoverTrigger render={<Button variant="outline" type="button" />}>
         <span className={styles.chipLabel}>{t("Metadata")}</span>
         {active > 0 && <span>{active}</span>}
         <CaretDownIcon aria-hidden="true" />

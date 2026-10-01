@@ -20,7 +20,6 @@ import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { StatePill } from "../../shared/feedback";
-import { CopyButton } from "../../shared/identity";
 import { AgentAvatar } from "../agents/avatar";
 import { useAgent } from "../agents/queries";
 import { isActiveRun, isConsoleSession } from "./api";
@@ -84,14 +83,6 @@ export function SessionHeader({
         ) : (
           <span className={styles.agentLink}>{t("Session")}</span>
         )}
-        <span className={styles.sessionId}>
-          {sessionId}
-          <CopyButton
-            value={sessionId}
-            iconOnly
-            copyLabel={t("Copy session ID")}
-          />
-        </span>
         <span className={styles.subNote}>
           {debugSession
             ? [

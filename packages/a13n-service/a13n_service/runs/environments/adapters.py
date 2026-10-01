@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import anyio
+from a13n_harness import RunConfiguration
 from a13n_harness.providers.environment.management import Environment
 from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_logging import exception_details, get_logger
@@ -49,9 +50,17 @@ class Target:
     state: EnvironmentState | None
 
 
-async def construct(runtime: Runtime, target: Target, *, operation_id: str | None, allow_create: bool) -> Environment:
+async def construct(
+    runtime: Runtime,
+    target: Target,
+    *,
+    operation_id: str | None,
+    allow_create: bool,
+    configuration: RunConfiguration | None = None,
+) -> Environment:
     """A fresh, unentered adapter. `allow_create=False` connects to the existing instance and never creates,
     starts or replaces one; an external target is only ever connected to."""
+    policy = runtime.endpoint_policy.for_run(configuration or RunConfiguration())
     account = target.account
     if isinstance(account, ExternalAccount):
         return await envd.connect(
@@ -59,7 +68,7 @@ async def construct(runtime: Runtime, target: Target, *, operation_id: str | Non
             account.reveal_token(runtime.keys),
             environment_id=target.environment_id,
             device_id=account.device_id,
-            policy=runtime.endpoint_policy,
+            policy=policy,
         )
     registry = runtime.registry
     recipe = dict(target.recipe)
@@ -67,7 +76,7 @@ async def construct(runtime: Runtime, target: Target, *, operation_id: str | Non
         # Legacy handles omitted the then-fixed default, including interrupted creates without portable state.
         # New handles freeze the effective image before dispatch, so absence always retains the old meaning.
         recipe["image"] = "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"
-    await registry.check_environment_endpoint(account.type, account.config, runtime.endpoint_policy)
+    await registry.check_environment_endpoint(account.type, account.config, policy)
     return await registry.get("environment", account.type).create(
         recipe,
         configuration=account.config,

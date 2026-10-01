@@ -2,13 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, MenuItem, MenuSeparator, ModalFrame } from "a13n-ui";
 import {
   ChatIcon,
+  ChatsIcon,
   DownloadSimpleIcon,
   PencilSimpleIcon,
   PlayIcon,
 } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, ifMatch, representation } from "../../shared/api";
@@ -270,6 +271,19 @@ export function AgentDetail() {
                 >
                   <ChatIcon size={15} aria-hidden="true" />
                   {t("Edit with AI")}
+                </Button>
+              )}
+              {can("read") && (
+                <Button
+                  variant="outline"
+                  render={
+                    <Link
+                      to={`${basePath}/sessions?agent_id=${encodeURIComponent(agent.id)}`}
+                    />
+                  }
+                >
+                  <ChatsIcon size={15} aria-hidden="true" />
+                  {t("View sessions")}
                 </Button>
               )}
               {can("run") && (

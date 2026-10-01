@@ -1,8 +1,9 @@
 import type { Client } from "../../service-client";
 import {
-  allPages,
   data,
   ifMatch,
+  matchesSearch,
+  matchingPage,
   representation,
   type Schema,
 } from "../../shared/api";
@@ -32,33 +33,29 @@ export function modelApi(client: Client, workspaceId: string) {
       })
       .then(data);
   return {
-    /**
-     * The collection has no search or filters, so a filtered view reads it
-     * whole and matches in the browser.
-     */
-    models: async (
+    models: (
       signal: AbortSignal,
       cursor?: string,
-      query?: string,
+      query = "",
       provider_id?: string,
       enabled?: boolean,
     ) => {
-      if (!query && !provider_id && enabled === undefined)
-        return models(signal, cursor);
-      const term = query?.toLocaleLowerCase();
-      const items = await allPages((next) => models(signal, next, 100));
-      return {
-        items: items.filter(
-          (model) =>
-            (!term ||
-              `${model.name} ${model.key} ${model.config.model_name}`
-                .toLocaleLowerCase()
-                .includes(term)) &&
-            (!provider_id || model.provider_id === provider_id) &&
-            (enabled === undefined || model.enabled === enabled),
-        ),
-        next_cursor: null,
-      };
+      const term = query.toLocaleLowerCase();
+      return matchingPage(
+        (next, limit) => models(signal, next, limit),
+        cursor,
+        term || provider_id || enabled !== undefined
+          ? (model) =>
+              matchesSearch(
+                term,
+                model.name,
+                model.key,
+                model.config.model_name,
+              ) &&
+              (!provider_id || model.provider_id === provider_id) &&
+              (enabled === undefined || model.enabled === enabled)
+          : undefined,
+      );
     },
     providers: (signal: AbortSignal, cursor?: string) =>
       http
@@ -91,6 +88,36 @@ export function modelApi(client: Client, workspaceId: string) {
     testProvider: (provider_id: string) =>
       http
         .POST("/api/v1/model-providers/{provider_id}/test", {
+          params: { path: { provider_id } },
+        })
+        .then(data),
+    authorization: (provider_id: string, signal: AbortSignal) =>
+      http
+        .GET("/api/v1/model-providers/{provider_id}/authorization", {
+          params: { path: { provider_id } },
+          signal,
+        })
+        .then(data),
+    authorize: (provider_id: string, new_registration = false) =>
+      http
+        .POST("/api/v1/model-providers/{provider_id}/authorize", {
+          params: { path: { provider_id } },
+          body: { new_registration },
+        })
+        .then(data),
+    completeAuthorization: (
+      provider_id: string,
+      body: Schema["AuthorizationCallback"],
+    ) =>
+      http
+        .POST("/api/v1/model-providers/{provider_id}/authorization/callback", {
+          params: { path: { provider_id } },
+          body,
+        })
+        .then(data),
+    disconnect: (provider_id: string) =>
+      http
+        .DELETE("/api/v1/model-providers/{provider_id}/authorization", {
           params: { path: { provider_id } },
         })
         .then(data),

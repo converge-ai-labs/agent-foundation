@@ -15,6 +15,7 @@ from a13n_harness import (
     ModelRecoveryPolicy,
     RunBindings,
 )
+from a13n_harness.content import request_input_content
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.recovery import (
     INTERRUPTED_TOOL_RESULT,
@@ -36,7 +37,6 @@ from pydantic_ai.messages import (
     PartEndEvent,
     PartStartEvent,
     RetryPromptPart,
-    TextContent,
     TextPart,
     ThinkingPart,
     ToolCallPart,
@@ -116,11 +116,16 @@ async def test_stream_failure_resumes_with_partial_history_and_shared_usage() ->
     assert interrupted.state == "interrupted"
     assert interrupted.parts == [TextPart(content="partial answer")]
     assert any(
-        isinstance(part, UserPromptPart)
-        and tuple(part.content) == (TextContent(_recovery_policy().continuation_prompt, metadata={"display": False}),)
+        isinstance(part, UserPromptPart) and part.content == _recovery_policy().continuation_prompt
         for message in calls[1]
         if isinstance(message, ModelRequest)
         for part in message.parts
+    )
+    assert any(
+        item.value == _recovery_policy().continuation_prompt and not item.metadata.display
+        for message in result.all_messages()
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
     )
     response_run_ids = {
         message.run_id
@@ -665,11 +670,16 @@ async def test_recovery_prompt_factory_receives_the_failure_and_repaired_history
     assert isinstance(factory_calls[0][2][-1], ModelResponse)
     assert factory_calls[0][2][-1].state == "interrupted"
     assert any(
-        isinstance(part, UserPromptPart)
-        and tuple(part.content) == (TextContent("custom continuation", metadata={"display": False}),)
+        isinstance(part, UserPromptPart) and part.content == "custom continuation"
         for message in calls[1]
         if isinstance(message, ModelRequest)
         for part in message.parts
+    )
+    assert any(
+        item.value == "custom continuation" and not item.metadata.display
+        for message in result.all_messages()
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
     )
 
 
@@ -1714,3 +1724,46 @@ def test_native_filter_preserves_finalized_parts_and_closes_only_complete_ordina
     else:
         assert len(normalized) == 1
     assert normalize_interrupted_history(normalized, close_tool_calls=close_tool_calls) == (normalized, 0)
+
+
+async def test_primary_input_observed_once_and_recovery_has_its_own_source_and_annotations():
+    from a13n_harness.content import ContentItem, ContentMetadata, request_input_content
+    from a13n_harness.events import InputTextEvent
+
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield "partial"
+            raise httpx2.ReadError("disconnected")
+        yield "done"
+
+    policy = _recovery_policy()
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), model_recovery=policy
+    )
+    observations = []
+    async with executable.stream([ContentItem("Actual task", ContentMetadata(source_id="authored"))]) as run:
+        async for event in run:
+            if isinstance(event, HarnessEvent) and isinstance(event.event, InputTextEvent):
+                observations.append(event.event)
+    assert run.result.output_or_raise() == "done"
+    authored = [event for event in observations if event.source == "user"]
+    recovery = [event for event in observations if event.source == "recovery"]
+    assert len(authored) == len(recovery) == 1
+    assert authored[0].content == "Actual task"
+    assert authored[0].metadata.source_id == "authored"
+    assert recovery[0].content == policy.continuation_prompt
+    assert recovery[0].metadata.display is False
+    assert authored[0].input_id != recovery[0].input_id
+    retained = [
+        item
+        for message in run.result.state.message_history
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
+    ]
+    assert [item.value for item in retained if item.metadata.source_id == "authored"] == ["Actual task"]
+    assert not hasattr(run.context._steering, "initial_content")
+    assert not hasattr(run.context._steering, "attempt_content")

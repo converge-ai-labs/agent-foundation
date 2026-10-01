@@ -6,7 +6,7 @@ type Characteristics = Schema["HarnessModelCharacteristics-Input"];
 const inputCapabilities = [
   ["image_understanding", "Images"],
   ["audio_understanding", "Audio"],
-  ["video_understanding", "Video"],
+  ["video_understanding", "Video files"],
   ["document_understanding", "PDF documents"],
 ] as const;
 
@@ -16,6 +16,14 @@ export function characteristicsInput(
 ): Characteristics {
   return {
     ...value,
+    url_input: value?.url_input
+      ? {
+          ...value.url_input,
+          video: value.url_input.video?.flatMap((item) =>
+            item === "youtube" ? ["youtube" as const] : [],
+          ),
+        }
+      : undefined,
     capabilities: value?.capabilities?.flatMap((item) =>
       inputCapabilities.flatMap(([capability]) =>
         capability === item ? [capability] : [],
@@ -54,6 +62,21 @@ export function ModelInformation({
           />
         </SettingsRow>
       ))}
+      <SettingsRow label={t("YouTube URLs")}>
+        <Switch
+          aria-label={t("YouTube URLs")}
+          checked={value.url_input?.video?.includes("youtube") ?? false}
+          onCheckedChange={(enabled) =>
+            onChange({
+              ...value,
+              url_input: {
+                ...value.url_input,
+                video: enabled ? ["youtube"] : [],
+              },
+            })
+          }
+        />
+      </SettingsRow>
       <SettingsRow label={t("Context window")} description={t("Tokens")}>
         <Input
           type="number"

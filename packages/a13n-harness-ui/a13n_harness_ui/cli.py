@@ -77,7 +77,7 @@ class _CliContext:
 _CONTEXT_SETTINGS = {"help_option_names": ("-h", "--help")}
 _FORMAT_CHOICE = click.Choice(tuple(item.value for item in OutputFormat), case_sensitive=True)
 _ENVIRONMENT_MODE_CHOICE = click.Choice(("full-control", "sandbox"))
-_PROVIDER_CHOICE = click.Choice(("codex", "grok", "copilot"))
+_PROVIDER_CHOICE = click.Choice(("chatgpt", "codex", "grok", "copilot"))
 _PRODUCT_CHOICE = click.Choice(("claude-code", "cursor", "codex"))
 _SCOPE_CHOICE = click.Choice(("user", "project"))
 _PATH = click.Path(path_type=Path)

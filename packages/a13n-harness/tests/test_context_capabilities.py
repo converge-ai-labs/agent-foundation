@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -48,6 +49,7 @@ from a13n_harness.environment.advanced import (
 from a13n_harness.environment.providers import (
     EnvironmentRuntimeMount,
 )
+from a13n_harness.events import InputTextEvent
 from a13n_harness.model_context import (
     ModelContextBlock,
     ModelContextInputOrigin,
@@ -55,7 +57,6 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
-    ModelInputEvent,
     _commit_projection,
     _requires_exact_history,
     user_prompt_content,
@@ -336,9 +337,9 @@ async def test_handoff_reprojects_current_notes_after_history_replacement() -> N
     assert "note-before-handoff" not in str(calls[-1])
 
 
-async def test_handoff_preserves_structured_multimodal_original_request() -> None:
+async def test_handoff_preserves_structured_multimodal_original_request(png_image_bytes: bytes) -> None:
     calls: list[list[ModelMessage]] = []
-    image = BinaryContent(data=b"\xff\x00image", media_type="image/png")
+    image = BinaryContent(data=png_image_bytes, media_type="image/png")
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         calls.append(messages)
@@ -382,14 +383,14 @@ async def test_handoff_preserves_structured_multimodal_original_request() -> Non
     assert restored_image.data == image.data
     assert restored_image.media_type == image.media_type
     assert result.state is not None
-    assert "_wBpbWFnZQ==" in result.state.model_dump_json()
+    assert base64.urlsafe_b64encode(image.data).decode() in result.state.model_dump_json()
 
 
-async def test_handoff_replays_delivered_multimodal_steering_in_order() -> None:
+async def test_handoff_replays_delivered_multimodal_steering_in_order(png_image_bytes: bytes) -> None:
     started = asyncio.Event()
     release = asyncio.Event()
     calls: list[list[ModelMessage]] = []
-    image = BinaryContent(data=b"steering-image", media_type="image/png")
+    image = BinaryContent(data=png_image_bytes, media_type="image/png")
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         del info
@@ -457,11 +458,9 @@ async def test_handoff_replays_delivered_multimodal_steering_in_order() -> None:
     assert "Do not deploy; follow this image" in _user_text(list(result.state.message_history))
     # Restoring history is not another input delivery, even when it retains steering.
     fresh = [
-        content.content
+        item.event.content
         for item in events
-        if isinstance(item.event, ModelInputEvent)
-        for content in item.event.content
-        if isinstance(content, TextContent) and (content.metadata or {}).get("display") is not False
+        if isinstance(item.event, InputTextEvent) and item.event.source == "user" and item.event.metadata.display
     ]
     assert fresh == ["Initial current task"]
     from pydantic_ai.messages import EnqueuedMessagesEvent
@@ -795,11 +794,9 @@ async def test_compaction_retains_only_applied_inputs_from_the_current_logical_r
     async with executable.stream("Next request", bindings=RunBindings.embedded(), previous_state=previous) as run:
         result = await _consume_run(run, events)
     fresh = [
-        content.content
+        item.event.content
         for item in events
-        if isinstance(item.event, ModelInputEvent)
-        for content in item.event.content
-        if isinstance(content, TextContent) and (content.metadata or {}).get("display") is not False
+        if isinstance(item.event, InputTextEvent) and item.event.source == "user" and item.event.metadata.display
     ]
     assert fresh == ["Next request"]
 

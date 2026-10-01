@@ -198,7 +198,7 @@ The boundary value algebra is JSON null, boolean, integer, finite float, UTF-8 s
 
 `max_output_bytes` bounds each input object, nested argument set, nested return value, cumulative nested bridge values, printed output, and final outer value. The producer-specific and mandatory Harness tool-result boundaries may narrow the final model-visible result further. CodeAct does not weaken a nested tool's own output policy.
 
-For a nested `ToolReturn`, `return_value` is the value visible to restricted code. Supported supplemental model content remains outside Monty and is appended to the successful outer `ToolReturn` in nested-call order. Nested metadata remains available to owning hooks and usage producers but is not exposed to Monty or merged into outer metadata. Unsupported supplemental content fails closed instead of being converted through object representation.
+For a nested `ToolReturn`, `return_value` is the value visible to restricted code. Supported supplemental model content remains outside Monty and is appended to the successful outer `ToolReturn` in nested-call order. Harness lowers only this outer settlement into native multimodal tool-result content under the [tool-content contract](07-tool-execution.md#approval-and-deferred-calls); no supplement is integrated as authored user input. Nested metadata remains available to owning hooks and usage producers but is not exposed to Monty or merged into outer metadata. Unsupported supplemental content fails closed instead of being converted through object representation.
 
 ## Timeout, Cancellation, and Cleanup
 

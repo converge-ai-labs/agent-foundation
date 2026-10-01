@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from a13n_harness.capabilities import SubagentOperator
 from a13n_harness.capabilities.skills import SkillsCapability
+from a13n_harness.models import SelfHealingModelCapability
 from a13n_harness.plugin_factories import HarnessPluginFactory, HarnessPluginFactoryContext
 from a13n_harness.plugins import AbstractHarnessPlugin
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
@@ -509,6 +510,15 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
         subagent_operator=_UnusedOperator(),
     )
 
+    for executable in (
+        reconstructed.executable,
+        *(child.executable for child in reconstructed.executable.subagents.values()),
+    ):
+        leaves = []
+        executable._agent.root_capability.apply(leaves.append)
+        assert sum(isinstance(capability, SelfHealingModelCapability) for capability in leaves) == 1
+    # Builder defaults are execution behavior, not authored capture selections.
+    assert "a13n.model.self-healing" not in reconstructed.definition_capability_ids
     assert reconstructed.executable.definition.definition_id == "a13n-harness-ui:agent:agent-assistant"
     assert tuple(reconstructed.executable.subagents) == ("explorer", "agent-reviewer")
     assert reconstructed.executable.definition.agent.model.startswith("a13n-harness-ui:model-")
@@ -1691,3 +1701,88 @@ async def test_reasoning_mode_capture_preserves_model_and_independent_children(t
     assert source.models["model-primary"].settings["openai_reasoning_mode"] == "pro"
     assert model.read_bytes() == original_bytes
     assert captured_configuration("capture", composition).agent.reasoning_mode == (mode or "pro")
+
+
+async def test_run_configuration_is_captured_for_root_and_children(tmp_path: Path) -> None:
+    path = _write_source(tmp_path)
+    with path.open("a") as stream:
+        stream.write(
+            "run_configuration:\n  allowed_hosts: [EXAMPLE.com.]\n  extensions:\n    example.filter: {image: keep}\n"
+        )
+    source = await load_harness_ui_configuration(path)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    captured = type(composition).model_validate_json(composition.model_dump_json())
+    assert captured.run_configuration.allowed_hosts == {"example.com"}
+    reconstructor = AgentReconstructor(_catalog())
+    root = reconstructor.reconstruct(captured, subagent_operator=_UnusedOperator())
+    child_composition = captured.model_copy(update={"root": captured.root.children[0].definition})
+    child = reconstructor.reconstruct(child_composition, subagent_operator=_UnusedOperator())
+    assert root.run_configuration == captured.run_configuration
+    assert child.run_configuration == captured.run_configuration
+    assert root.model_resolver.configuration == child.model_resolver.configuration == captured.run_configuration
+
+
+@pytest.mark.parametrize("policy", [None, {}, {"support_gif": False, "max_images": 3}])
+async def test_image_input_policy_is_captured_per_model_and_reconstructed(tmp_path, policy):
+    import yaml
+    from a13n_harness import ImageInputPolicy
+    from a13n_harness_ui.composition.models import ResolvedRunComposition
+
+    root = _write_source(tmp_path)
+    path = tmp_path / "models/primary.yaml"
+    document = yaml.safe_load(path.read_text())
+    document["model_characteristics"] = {"image_input": policy}
+    path.write_text(yaml.safe_dump(document))
+    document["id"] = "model-child"
+    document["model_characteristics"] = {"image_input": {"max_images": 0}}
+    (tmp_path / "models/child.yaml").write_text(yaml.safe_dump(document))
+    child = tmp_path / "agents/reviewer.yaml"
+    child.write_text(child.read_text().replace("model-primary", "model-child"))
+    source = await load_harness_ui_configuration(root)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    encoded = composition.model_dump_json()
+    restored = ResolvedRunComposition.model_validate_json(encoded)
+    expected = None if policy is None else ImageInputPolicy.model_validate(policy)
+    assert restored.root.model.model_characteristics.image_input == expected
+    source.models["model-primary"] = source.models["model-child"]
+    rebuilt = AgentReconstructor(_catalog(), instrumentation=None).reconstruct(
+        restored, subagent_operator=_UnusedOperator()
+    )
+    assert rebuilt.executable.definition.agent.model_characteristics.image_input == expected
+    children = {child.name: child for child in rebuilt.executable.definition.subagents}
+    assert children["explorer"].agent.agent.model_characteristics.image_input == expected
+    assert children["agent-reviewer"].agent.agent.model_characteristics.image_input == ImageInputPolicy(max_images=0)
+    assert restored.model_dump_json() == encoded
+
+
+def test_legacy_model_recipe_retains_canonical_bytes_and_identity():
+    import hashlib
+    import json
+
+    from a13n_harness import ImageInputPolicy
+    from a13n_harness_ui.composition.models import ResolvedModelRecipe
+    from a13n_harness_ui.model_runtime import model_recipe_id
+
+    legacy = {
+        "model_id": "model-primary",
+        "route": "openai:gpt-5",
+        "authentication": {"kind": "api_key", "env": "OPENAI_API_KEY", "credential_ref": None},
+        "settings": {},
+        "model_configuration": {},
+        "model_characteristics": {
+            "capabilities": ["image_understanding"],
+            "context_window_tokens": 32000,
+            "proactive_context_management_threshold": 0.8,
+            "compact_threshold": 0.9,
+        },
+    }
+    encoded = json.dumps(legacy, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
+    recipe = ResolvedModelRecipe.model_validate_json(encoded)
+    assert recipe.model_characteristics.image_input == ImageInputPolicy()
+    assert recipe.model_dump(mode="json") == legacy
+    assert model_recipe_id(recipe) == f"a13n-harness-ui:model-{hashlib.sha256(encoded.encode()).hexdigest()[:24]}"
+    explicit = recipe.model_copy(
+        update={"model_characteristics": recipe.model_characteristics.model_copy(update={"image_input": None})}
+    )
+    assert explicit.model_dump(mode="json")["model_characteristics"]["image_input"] is None
+    assert model_recipe_id(explicit) != model_recipe_id(recipe)

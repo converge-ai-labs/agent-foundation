@@ -15,7 +15,12 @@ from anyio import create_task_group
 def test_model_choices_project_release_owned_connections() -> None:
     choices = ModelChoices()
     subscriptions = [c for c in choices.connections if c.authentication != "api_key"]
-    assert [c.id for c in subscriptions] == ["codex", "grok-subscription", "copilot-subscription"]
+    assert [c.id for c in subscriptions] == [
+        "codex",
+        "grok-subscription",
+        "copilot-subscription",
+        "chatgpt-subscription",
+    ]
     providers = [c for c in choices.connections if c.authentication == "api_key"]
     assert tuple(provider.id for provider in providers) == tuple(p.route for p in API_PROVIDERS)
     for provider in providers:
@@ -135,18 +140,7 @@ async def test_shared_model_authoring_http_contract_is_inert_and_has_one_setup_s
     ):
         choices = await client.get("/api/models/choices")
         assert choices.status_code == 200
-        connections = {c["id"]: c for c in choices.json()["connections"]}
-        assert connections.keys() >= {"codex", "grok-subscription", "openai-chat"}
-        for connection_id in ("codex", "openai-responses", "openai-chat"):
-            choice = connections[connection_id]
-            assert choice["default_model"] == "gpt-6.1-sol"
-            assert [model["value"] for model in choice["models"]][:5] == [
-                "gpt-6.1-sol",
-                "gpt-6-astra",
-                "gpt-5.6-terra",
-                "gpt-6-sol",
-                "gpt-5.6-sol",
-            ]
+        assert choices.json() == ModelChoices().model_dump(mode="json")
         catalog = await client.get("/api/models/catalog")
         assert catalog.status_code == 200 and catalog.json()["items"]
         request = {"connection": connection, "model_id": model_id}

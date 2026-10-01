@@ -9,13 +9,16 @@ from types import MappingProxyType
 from typing import Any, Protocol, cast
 from urllib.parse import urlparse
 
+import httpx2
 from pydantic import JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability
+from pydantic_ai.mcp import MCPToolset
 
 from a13n_harness._json import dump_json_text
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
+from a13n_harness.http import outbound_tls_verify
 
 
 class MCPHeadersFactory(Protocol):
@@ -200,6 +203,12 @@ class ContextualMCP(MCP[AgentContext]):
                 )
             return existing
 
+        ctx.deps.configuration.authorize_url(self._recipe.url)
+        if self._recipe.native and ctx.deps.configuration.allowed_hosts is not None:
+            raise DefinitionError(
+                "Provider-native MCP cannot enforce Run allowed hosts.", code="mcp_configuration_unsupported"
+            )
+
         produced = self._headers_factory(ctx.deps)
         if inspect.isawaitable(produced):
             produced = await produced
@@ -212,11 +221,32 @@ class ContextualMCP(MCP[AgentContext]):
         _require_no_header_conflicts(static_headers, validated_dynamic_headers)
         merged_headers = {**static_headers, **validated_dynamic_headers}
 
+        local: bool | MCPToolset[AgentContext] | None = self._recipe.local
+        if ctx.deps.configuration.allowed_hosts is not None:
+
+            async def authorize(request: httpx2.Request) -> None:
+                ctx.deps.configuration.authorize_url(str(request.url))
+
+            client = httpx2.AsyncClient(
+                verify=outbound_tls_verify(), follow_redirects=False, event_hooks={"request": [authorize]}
+            )
+            local_headers = dict(merged_headers)
+            if self._recipe.authorization_token:
+                local_headers["Authorization"] = self._recipe.authorization_token
+            local = MCPToolset(
+                self._recipe.url,
+                id=self._recipe.capability_id,
+                headers=local_headers or None,
+                http_client=client,
+                include_instructions=True,
+            )
+            ctx.deps._register_run_cleanup(cache_id, client.aclose)
+
         replacement = MCP[AgentContext](
             self._recipe.url,
             id=self._recipe.capability_id,
             native=self._recipe.native,
-            local=self._recipe.local,
+            local=local,
             authorization_token=self._recipe.authorization_token,
             headers=merged_headers or None,
             allowed_tools=list(self._recipe.allowed_tools) if self._recipe.allowed_tools is not None else None,

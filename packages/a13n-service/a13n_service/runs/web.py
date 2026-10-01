@@ -30,6 +30,7 @@ from a13n_harness.capabilities.web import (
     WebSearchResponse,
     WebSearchResult,
 )
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_harness.providers.web.contracts import WebPurpose
 from a13n_harness.providers.web.options import ScrapeOptions, SearchOptions
@@ -104,9 +105,11 @@ async def _provider(
 
 
 @asynccontextmanager
-async def open_web(web: ResolvedWeb, check: CallCheck, *, runtime: Runtime) -> AsyncIterator[WebBinding]:
+async def open_web(
+    web: ResolvedWeb, check: CallCheck, *, runtime: Runtime, configuration: RunConfiguration
+) -> AsyncIterator[WebBinding]:
     """The run's `RunBindings.web`; provider handles stay open until the context exits."""
-    policy = runtime.endpoint_policy
+    policy = runtime.endpoint_policy.for_run(configuration)
     async with AsyncExitStack() as stack:
         searches: tuple[WebSearchBackendBinding, ...] = ()
         scrapes: tuple[WebScrapeBackendBinding, ...] = ()
@@ -181,7 +184,7 @@ class _EndpointGuard:
 
     async def authorize(self, url: str, *, purpose: WebPurpose) -> None:
         try:
-            await self.endpoints.validate(url, resolve_dns=False)
+            await self.endpoints.validate(url)
         except EndpointPolicyError:
             raise WebProviderError("web_destination_denied") from None
 
@@ -223,7 +226,7 @@ class _HostTransport:
                 if redirects == request.max_redirects:
                     raise WebProviderError("web_redirect_limit")
                 target = urljoin(url, location)
-                await self.endpoints.validate_redirect(url, target, resolve_dns=False)
+                await self.endpoints.validate_redirect(url, target)
                 url, redirects = target, redirects + 1
         except EndpointPolicyError:
             await stack.aclose()

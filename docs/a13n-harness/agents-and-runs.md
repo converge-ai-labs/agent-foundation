@@ -15,7 +15,6 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessModelCharacteristics,
 )
-from a13n_harness.models import SelfHealingModelCapability
 
 executable = HarnessBuilder().build(
     AgentSpec(
@@ -24,7 +23,7 @@ executable = HarnessBuilder().build(
     ),
     output_type=str,
     model=model,
-    capabilities=(SelfHealingModelCapability(), *capabilities),
+    capabilities=capabilities,
     plugins=plugins,
     subagents=subagents,
 )
@@ -47,7 +46,7 @@ agent_definition = AgentDefinition(
 executable = HarnessBuilder().build(agent_definition)
 ```
 
-Both overloads follow the same validation and construction path. Build is synchronous and inert with respect to model, Environment, and external provider I/O. Self-healing is optional rather than implicitly enabled; selecting `SelfHealingModelCapability()` is recommended for production Agents that need its known one-shot provider-history repairs.
+Both overloads follow the same validation and construction path. Build is synchronous and inert with respect to model, Environment, and external provider I/O. Known one-shot provider-history repairs are enabled by default. Set `HarnessBuilder(self_healing_enabled=False)` to disable automatic installation. Explicitly selected `SelfHealingModelCapability` instances keep their configured rules and remain active even with this flag disabled; they replace rather than duplicate the default.
 
 ### Build-time values
 
@@ -59,7 +58,7 @@ An `AgentDefinition` fixes:
 - definition-selected Capabilities;
 - trusted Harness middleware plugins;
 - finite inline child definitions;
-- self-healing and bounded model-recovery policy;
+- explicitly selected self-healing rules and bounded model-recovery policy;
 - one default-on build-time model-cost policy.
 
 The output contract cannot change per run. Pass a Python output type or Pydantic AI `OutputSpec` through `output_type`, or use `AgentSpec.output_schema`; do not set both.
@@ -227,7 +226,7 @@ bindings = RunBindings.embedded(
 
 `RunBindings.embedded()` supplies an embedded identity and optional advanced integrations. Use it when an embedded application needs run Capabilities, a model resolver, model-context middleware, metadata, or an advanced `EnvironmentRuntime`. Ordinary `run()` and `stream()` calls can omit `bindings`; run normalization creates fresh embedded bindings and an empty Environment runtime when no Environment input is supplied. A Host can construct `RunBindings` directly with an exact `AgentInstanceContext`.
 
-Create fresh bindings for every root, resumed, or child run. Do not persist or reuse live bindings as continuation state. Optional feature providers and overrides use `web`, `media_reader`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`; each is consumed by its selected feature Capability rather than a companion Run Capability. Leave selection fields `None` to retain defaults; an explicit empty Skill set or client-tool tuple selects none. The Host owns provider lifetime, including any deliberately shared transport.
+Create fresh bindings for every root, resumed, or child run. Do not persist or reuse live bindings as continuation state. Optional feature providers and overrides use `web`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`; each is consumed by its selected feature Capability rather than a companion Run Capability. Leave selection fields `None` to retain defaults; an explicit empty Skill set or client-tool tuple selects none. The Host owns provider lifetime, including any deliberately shared transport.
 
 | Stable definition input     | Fresh run input                                            |
 | --------------------------- | ---------------------------------------------------------- |
@@ -335,11 +334,11 @@ Recovery has narrow owners:
 | Failure class                                         | Owner                                                            |
 | ----------------------------------------------------- | ---------------------------------------------------------------- |
 | Provider transport retry                              | Model provider/client and native Pydantic AI retry configuration |
-| Exact provider-history incompatibility                | Selected `SelfHealingModelCapability` and `SelfHealingModel`     |
+| Exact provider-history incompatibility                | Default-on `SelfHealingModelCapability` and `SelfHealingModel`   |
 | Interrupted model attempt inside one live logical run | `ModelRecoveryPolicy` and `HarnessRunStream`                     |
 | Worker/process loss, durable replay, or delivery      | Embedding Host                                                   |
 
-Self-healing is opt-in through `SelfHealingModelCapability` and performs only supported one-shot history repairs around the final effective Model, including a concrete, run-resolved, or natively inferred Model. It is not a retry for arbitrary model or tool exceptions. Semantic model recovery is disabled by default; opt in with a bounded `ModelRecoveryPolicy` on the definition when continuing an interrupted model attempt is valid for the application.
+Self-healing is enabled by default and performs only supported one-shot history repairs around the final effective Model, including a concrete, run-resolved, or natively inferred Model. `HarnessBuilder(self_healing_enabled=False)` restores the former opt-in behavior for the root and inline children, including compaction through the same Agent. Rebuilding older definitions or Host captures now enables these repairs without changing their saved schema. Independent native tool-review and media-understanding Agents do not inherit the primary Agent's request Capabilities. It is not a retry for arbitrary model or tool exceptions. Semantic model recovery is disabled by default; opt in with a bounded `ModelRecoveryPolicy` on the definition when continuing an interrupted model attempt is valid for the application.
 
 An interrupted attempt retains text already emitted, even when the stream stops during a subsequent tool call. The next attempt receives that partial response as interrupted history, not as completed output. Unfinished thinking and tool arguments are excluded; invalid provider-native call/return groups are removed without erasing surrounding recoverable text. Failed or cancelled runs export the same filtered history for a later Host-selected continuation.
 

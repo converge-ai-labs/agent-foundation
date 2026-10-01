@@ -1816,13 +1816,13 @@ class CliShell:
                 kind="info",
             )
             if self.backend is not None and not self.busy:
-                if self.status.model.startswith("openai-codex:") and self.interaction is None:
-                    from .usage import show_codex_usage
+                if self.status.model.startswith(("openai-codex:", "openai-chatgpt:")) and self.interaction is None:
+                    from .usage import show_subscription_usage
 
-                    self.launch(show_codex_usage(self), kind="usage")
+                    self.launch(show_subscription_usage(self), kind="usage")
                 else:
                     self.launch(self.backend.pending())
-            elif self.status.model.startswith("openai-codex:"):
+            elif self.status.model.startswith(("openai-codex:", "openai-chatgpt:")):
                 self.emit("/usage subscription · available while idle.")
         elif self.backend is None:
             raise ValueError("The App is not ready. No operation was started.")
@@ -1831,7 +1831,7 @@ class CliShell:
                 "Answer the selectable prompt or use /cancel before another command. Pending requests stay unapproved."
             )
         elif name == "usage":
-            from .usage import choose_codex_reset, show_codex_usage, thread_usage_text
+            from .usage import choose_codex_reset, show_subscription_usage, thread_usage_text
 
             if argument in {None, "details"}:
                 if self.backend.thread_id is None:
@@ -1840,11 +1840,15 @@ class CliShell:
                 view = await self.backend.app.thread_usage(thread_id=self.backend.thread_id)
                 self.emit(thread_usage_text(view, details=argument == "details"), kind="info")
             else:
-                if not self.status.model.startswith("openai-codex:"):
-                    raise ValueError("Subscription usage is available for Codex Agents only.")
+                if not self.status.model.startswith(("openai-codex:", "openai-chatgpt:")):
+                    raise ValueError("Subscription usage is available for Codex and ChatGPT Models only.")
+                if argument == "reset" and not self.status.model.startswith("openai-codex:"):
+                    raise ValueError("Reset credits are available for Codex Models only. Use /usage subscription.")
                 if self.busy:
                     raise ValueError("Wait for active work before inspecting subscription limits or resetting.")
-                self.launch(choose_codex_reset(self) if argument == "reset" else show_codex_usage(self), kind="usage")
+                self.launch(
+                    choose_codex_reset(self) if argument == "reset" else show_subscription_usage(self), kind="usage"
+                )
         elif name == "steer":
             assert argument is not None
             prompt = self.inline.compile(argument)

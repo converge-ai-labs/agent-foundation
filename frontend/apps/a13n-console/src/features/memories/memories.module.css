@@ -35,13 +35,13 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px 12px;
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
 }
 .note {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
 }
 .inherited {
   max-height: 280px;
@@ -52,7 +52,7 @@
   background: var(--a13n-surface);
   color: var(--a13n-text-supporting);
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
   white-space: pre-wrap;
 }
@@ -87,7 +87,7 @@
 .editor textarea {
   min-height: min(480px, calc(100dvh - 380px));
   font-family: var(--a13n-mono);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.7;
 }
 
@@ -112,7 +112,7 @@
   border-radius: 999px;
   background: var(--a13n-surface);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .historyActions {
   margin-left: auto;

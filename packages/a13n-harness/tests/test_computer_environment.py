@@ -111,7 +111,7 @@ async def test_observe_only_mount_returns_direct_image_and_does_not_allow_input(
         result = await tools.computer_observe(alias="desktop")
         assert isinstance(result, ToolReturn)
         assert isinstance(result.content[0], BinaryContent)
-        assert result.content[0].vendor_metadata == {"display": False}
+        assert result.content[0].vendor_metadata is None
         assert "mount_id" not in result.return_value
         denied = await tools.computer_click(result.return_value["observation_id"], ComputerPoint(x=1, y=1))
         assert denied["ok"] is False and denied["error"]["code"] == "environment_denied"

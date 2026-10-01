@@ -30,6 +30,7 @@ from a13n_harness import (
     HarnessModelCharacteristics,
     ModelRecoveryPolicy,
     RunBindings,
+    RunConfiguration,
     RunModelResolver,
     SubagentDefinition,
 )
@@ -213,7 +214,9 @@ async def resolve(
     return await node(revision.agent_id, revision.revision_id, config)
 
 
-async def open_models(stack: AsyncExitStack, runtime: Runtime, agent: ResolvedAgent) -> dict[str, Model]:
+async def open_models(
+    stack: AsyncExitStack, runtime: Runtime, agent: ResolvedAgent, *, configuration: RunConfiguration | None = None
+) -> dict[str, Model]:
     """Every model of the agent and its inline subagents, by model key, opened once and closed by `stack`."""
     opened: dict[str, Model] = {}
     for model in agent.models():
@@ -222,8 +225,9 @@ async def open_models(stack: AsyncExitStack, runtime: Runtime, agent: ResolvedAg
                 open_model(
                     model,
                     registry=runtime.registry,
+                    storage=runtime.storage,
                     keys=runtime.keys,
-                    policy=runtime.endpoint_policy,
+                    policy=runtime.endpoint_policy.for_run(configuration or RunConfiguration()),
                     settings=runtime.settings.providers,
                 )
             )
@@ -296,6 +300,11 @@ class _MediaUnderstanding:
             },
             model_settings={kind: _settings(model, {}) for kind, model in self.agent.media.items()},
             model_ids={kind: model.key for kind, model in self.agent.media.items()},
+            image_input=(
+                self.agent.media["image"].config.characteristics.image_input
+                if "image" in self.agent.media
+                else HarnessModelCharacteristics().image_input
+            ),
         )
         return await provider.understand(request, usage=usage)
 
@@ -403,6 +412,7 @@ def _characteristics(agent: ResolvedAgent) -> HarnessModelCharacteristics:
     declared, policy = agent.model.config.characteristics, agent.config.model_characteristics
     return HarnessModelCharacteristics(
         capabilities=declared.capabilities,
+        image_input=declared.image_input,
         context_window_tokens=policy.context_window_tokens or declared.context_window_tokens,
         proactive_context_management_threshold=policy.proactive_context_management_threshold,
         compact_threshold=policy.compact_threshold,

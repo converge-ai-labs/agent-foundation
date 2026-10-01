@@ -436,7 +436,7 @@ async def test_configuration_and_credentials_must_agree(service) -> None:  # typ
         # Headers the transport owns never become credential headers that could never be sent.
         {"config": {"url": url, "headers": ["host"]}, "auth": "headers", "credential": {"headers": {"host": SECRET}}},
         {"config": {"url": url, "headers": ["mcp-session-id"]}, "auth": "headers"},
-        {"config": {"url": "http://10.1.2.3/mcp"}},
+        {"config": {"url": "http://127.0.0.1:9/mcp#fragment"}},
         {"config": {"app": "github", "actions": ["GITHUB_CREATE"]}},
     ]
     for body in refused:
@@ -983,7 +983,7 @@ async def test_a_refresh_the_endpoint_policy_refuses_keeps_the_credential(servic
         created = await create(service, {"config": {"url": f"{server.url}/mcp"}, "auth": "oauth"})
         await authorized(service, server, created)
         item = f"/connections/{created['id']}/test"
-        await move_token_endpoint(service, created["id"], "http://169.254.169.254/token")
+        await move_token_endpoint(service, created["id"], f"{server.url}/token#fragment")
         await expire_soon(service, created["id"])
         assert (await post(service, item))["status"] == "failed"
         kept = await view(service, created["id"])

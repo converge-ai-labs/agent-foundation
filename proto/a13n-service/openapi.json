@@ -2006,6 +2006,53 @@
         "title": "AuthenticationCase",
         "type": "object"
       },
+      "AuthorizationCallback": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_id": {
+            "maxLength": 72,
+            "minLength": 1,
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "callback_url": {
+            "format": "password",
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Callback Url",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "attempt_id",
+          "callback_url"
+        ],
+        "title": "AuthorizationCallback",
+        "type": "object"
+      },
+      "AuthorizationDisconnect": {
+        "properties": {
+          "local_tokens_cleared": {
+            "default": true,
+            "title": "Local Tokens Cleared",
+            "type": "boolean"
+          },
+          "revocation_confirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revocation Confirmed"
+          }
+        },
+        "title": "AuthorizationDisconnect",
+        "type": "object"
+      },
       "AuthorizationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -2057,6 +2104,124 @@
           "expires_at"
         ],
         "title": "AuthorizationResult",
+        "type": "object"
+      },
+      "AuthorizationStart": {
+        "properties": {
+          "attempt_id": {
+            "title": "Attempt Id",
+            "type": "string"
+          },
+          "authorization_url": {
+            "title": "Authorization Url",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "method": {
+            "default": "manual_callback",
+            "enum": [
+              "manual_callback",
+              "browser_callback"
+            ],
+            "title": "Method",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "authorization_url",
+          "expires_at"
+        ],
+        "title": "AuthorizationStart",
+        "type": "object"
+      },
+      "AuthorizationStatus": {
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "pending": {
+            "default": false,
+            "title": "Pending",
+            "type": "boolean"
+          },
+          "provider_id": {
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "disconnected",
+              "connected",
+              "refreshing",
+              "reauthentication_required"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject"
+          }
+        },
+        "required": [
+          "provider_id",
+          "state"
+        ],
+        "title": "AuthorizationStatus",
         "type": "object"
       },
       "BearerCredential": {
@@ -2261,6 +2426,24 @@
           "unknown"
         ],
         "type": "string"
+      },
+      "ChatGPTModel": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "display_name"
+        ],
+        "title": "ChatGPTModel",
+        "type": "object"
       },
       "ChildEnvironmentPolicy": {
         "additionalProperties": false,
@@ -4467,6 +4650,17 @@
             ],
             "title": "Context Window Tokens"
           },
+          "image_input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageInputPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Image preparation policy; omitted uses native defaults, null disables automatic preparation."
+          },
           "proactive_context_management_threshold": {
             "anyOf": [
               {
@@ -4480,6 +4674,12 @@
             ],
             "default": 0.65,
             "title": "Proactive Context Management Threshold"
+          },
+          "url_input": {
+            "$ref": "#/components/schemas/UrlInputSupport-Input"
+          },
+          "video_input": {
+            "$ref": "#/components/schemas/VideoInputPolicy"
           }
         },
         "title": "HarnessModelCharacteristics",
@@ -4515,6 +4715,17 @@
             ],
             "title": "Context Window Tokens"
           },
+          "image_input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageInputPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Image preparation policy; omitted uses native defaults, null disables automatic preparation."
+          },
           "proactive_context_management_threshold": {
             "anyOf": [
               {
@@ -4528,6 +4739,12 @@
             ],
             "default": 0.65,
             "title": "Proactive Context Management Threshold"
+          },
+          "url_input": {
+            "$ref": "#/components/schemas/UrlInputSupport-Output"
+          },
+          "video_input": {
+            "$ref": "#/components/schemas/VideoInputPolicy"
           }
         },
         "title": "HarnessModelCharacteristics",
@@ -4565,6 +4782,57 @@
           "purged"
         ],
         "title": "HistoryPurge",
+        "type": "object"
+      },
+      "ImageInputPolicy": {
+        "additionalProperties": false,
+        "description": "Preparation limits for one model's image input, not native ModelSettings.",
+        "properties": {
+          "image_split_max_height": {
+            "default": 4096,
+            "exclusiveMinimum": 0.0,
+            "title": "Image Split Max Height",
+            "type": "integer"
+          },
+          "image_split_overlap": {
+            "default": 50,
+            "minimum": 0.0,
+            "title": "Image Split Overlap",
+            "type": "integer"
+          },
+          "max_image_bytes": {
+            "default": 5242880,
+            "description": "Maximum base64-encoded bytes per image; zero disables this byte limit.",
+            "minimum": 0.0,
+            "title": "Max Image Bytes",
+            "type": "integer"
+          },
+          "max_image_dimension": {
+            "default": 8000,
+            "description": "Maximum image axis; zero disables this limit.",
+            "minimum": 0.0,
+            "title": "Max Image Dimension",
+            "type": "integer"
+          },
+          "max_images": {
+            "default": 20,
+            "description": "Keep the newest images; zero removes all image input.",
+            "minimum": 0.0,
+            "title": "Max Images",
+            "type": "integer"
+          },
+          "split_large_images": {
+            "default": true,
+            "title": "Split Large Images",
+            "type": "boolean"
+          },
+          "support_gif": {
+            "default": true,
+            "title": "Support Gif",
+            "type": "boolean"
+          }
+        },
+        "title": "ImageInputPolicy",
         "type": "object"
       },
       "InboxOrder": {
@@ -8597,6 +8865,18 @@
         "title": "Provider",
         "type": "object"
       },
+      "ProviderAuthorizationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "new_registration": {
+            "default": false,
+            "title": "New Registration",
+            "type": "boolean"
+          }
+        },
+        "title": "ProviderAuthorizationRequest",
+        "type": "object"
+      },
       "ProviderCreate": {
         "additionalProperties": false,
         "properties": {
@@ -8824,6 +9104,17 @@
               }
             ],
             "title": "Model Apis"
+          },
+          "oauth_scheme": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oauth Scheme"
           },
           "operations": {
             "anyOf": [
@@ -9282,6 +9573,67 @@
         "title": "RevokedConnection",
         "type": "object"
       },
+      "RunConfiguration-Input": {
+        "additionalProperties": false,
+        "description": "An accepted snapshot, independent of Agent definitions and Capability configuration.\n\nConsumers explicitly opt into namespaced extensions and own their validation.\nExtension lookups return detached values, not mutable shared state.",
+        "properties": {
+          "allowed_hosts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.",
+            "title": "Allowed Hosts"
+          },
+          "extensions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Extensions",
+            "type": "object"
+          }
+        },
+        "title": "RunConfiguration",
+        "type": "object"
+      },
+      "RunConfiguration-Output": {
+        "additionalProperties": false,
+        "description": "An accepted snapshot, independent of Agent definitions and Capability configuration.\n\nConsumers explicitly opt into namespaced extensions and own their validation.\nExtension lookups return detached values, not mutable shared state.",
+        "properties": {
+          "allowed_hosts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.",
+            "title": "Allowed Hosts"
+          },
+          "extensions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Extensions",
+            "type": "object"
+          }
+        },
+        "title": "RunConfiguration",
+        "type": "object"
+      },
       "RunItems": {
         "description": "A run's committed display with the run it describes. Live output continues after `position`.",
         "properties": {
@@ -9391,6 +9743,16 @@
         "additionalProperties": false,
         "description": "What a message may choose for the run it starts. A steer joins a run with the defaults or equal options.",
         "properties": {
+          "configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunConfiguration-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "labels": {
             "additionalProperties": {
               "maxLength": 128,
@@ -9432,6 +9794,16 @@
         "additionalProperties": false,
         "description": "What a message may choose for the run it starts. A steer joins a run with the defaults or equal options.",
         "properties": {
+          "configuration": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunConfiguration-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "labels": {
             "additionalProperties": {
               "maxLength": 128,
@@ -12698,6 +13070,37 @@
         "title": "UploadSource",
         "type": "object"
       },
+      "UrlInputSupport-Input": {
+        "additionalProperties": false,
+        "description": "URL subtypes consumed natively by the selected transport.",
+        "properties": {
+          "video": {
+            "items": {
+              "$ref": "#/components/schemas/VideoUrlType"
+            },
+            "title": "Video",
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "title": "UrlInputSupport",
+        "type": "object"
+      },
+      "UrlInputSupport-Output": {
+        "additionalProperties": false,
+        "description": "URL subtypes consumed natively by the selected transport.",
+        "properties": {
+          "video": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Video",
+            "type": "array"
+          }
+        },
+        "title": "UrlInputSupport",
+        "type": "object"
+      },
       "UrlPart": {
         "additionalProperties": false,
         "properties": {
@@ -13003,6 +13406,28 @@
           "write",
           "admin"
         ],
+        "type": "string"
+      },
+      "VideoInputPolicy": {
+        "additionalProperties": false,
+        "description": "Base64-after byte budget for both one video and all inline videos in a request.",
+        "properties": {
+          "max_video_bytes": {
+            "default": 10485760,
+            "description": "Maximum Base64-encoded bytes per video and in aggregate per model request.",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Video Bytes",
+            "type": "integer"
+          }
+        },
+        "title": "VideoInputPolicy",
+        "type": "object"
+      },
+      "VideoUrlType": {
+        "enum": [
+          "youtube"
+        ],
+        "title": "VideoUrlType",
         "type": "string"
       },
       "WaitReason": {
@@ -20713,6 +21138,361 @@
           }
         ],
         "summary": "Update model provider",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/api/v1/model-providers/{provider_id}/authorization": {
+      "delete": {
+        "operationId": "disconnect_model_authorization_api_v1_model_providers__provider_id__authorization_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationDisconnect"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Disconnect Model Authorization",
+        "tags": [
+          "providers"
+        ]
+      },
+      "get": {
+        "operationId": "model_authorization_api_v1_model_providers__provider_id__authorization_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Model Authorization",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/api/v1/model-providers/{provider_id}/authorization/callback": {
+      "post": {
+        "operationId": "complete_model_authorization_api_v1_model_providers__provider_id__authorization_callback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthorizationCallback"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Complete Model Authorization",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/api/v1/model-providers/{provider_id}/authorize": {
+      "post": {
+        "operationId": "authorize_model_api_v1_model_providers__provider_id__authorize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderAuthorizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizationStart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Authorize Model",
+        "tags": [
+          "providers"
+        ]
+      }
+    },
+    "/api/v1/model-providers/{provider_id}/models": {
+      "get": {
+        "operationId": "discover_model_provider_models_api_v1_model_providers__provider_id__models_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatGPTModel"
+                  },
+                  "title": "Response Discover Model Provider Models Api V1 Model Providers  Provider Id  Models Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Discover Model Provider Models",
         "tags": [
           "providers"
         ]

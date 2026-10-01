@@ -361,3 +361,79 @@ it("propagates the consumer's coverage instead of inferring it from content", ()
       .coverage,
   ).toBe("unavailable");
 });
+
+it("nests inline children by their delegation parent, including nested reused IDs", () => {
+  const child = (entry: ReturnType<typeof lifecycle>, id: string) => ({
+    ...entry,
+    content: { ...entry.content, subagentRunId: id },
+  });
+  const delegation = (parent: string, id: string) =>
+    custom("a13n.harness.delegation", {
+      type: "inline_delegation",
+      invocation_id: `inv-${id}`,
+      parent_run_id: parent,
+      child_run_id: id,
+      parent_tool_call_id: "same",
+      subagent: id,
+      status: "completed",
+    });
+  const { entries } = timeline(
+    lifecycle("model_request_started"),
+    tool("delegate", "root-call", { toolCallId: "same" }),
+    delegation("root", "child-a"),
+    child(lifecycle("model_request_started"), "child-a"),
+    tool("delegate", "child-call", {
+      toolCallId: "same",
+      subagentRunId: "child-a",
+    }),
+    delegation("child-a", "child-b"),
+    child(lifecycle("model_request_started"), "child-b"),
+    message("child-reply", "assistant", {
+      text: "Child output",
+      subagentRunId: "child-b",
+    }),
+    message("root-reply", "assistant", { text: "Root output" }),
+  );
+  const root = models(entries)[0]!;
+  expect(root.children.map((entry) => entry.id)).toEqual([
+    "root-call",
+    "root-reply",
+  ]);
+  const outer = root.children[0]!;
+  expect(outer).toMatchObject({
+    kind: "subagent",
+    children: [
+      {
+        subagentRunId: "child-a",
+        children: [
+          {
+            id: "child-call",
+            kind: "subagent",
+            children: [
+              {
+                subagentRunId: "child-b",
+                children: [{ id: "child-reply", subagentRunId: "child-b" }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+});
+
+it("does not discard orphaned inline content when no parent was retained", () => {
+  const { entries } = timeline(
+    message("child-reply", "assistant", {
+      text: "Partial child output",
+      subagentRunId: "missing-child",
+    }),
+  );
+  expect(entries).toEqual([
+    expect.objectContaining({
+      id: "child-reply",
+      subagentRunId: "missing-child",
+      kind: "reply",
+    }),
+  ]);
+});

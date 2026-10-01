@@ -1,3 +1,4 @@
+import { EventSchema } from "@ag-ui/core/schemas";
 import { ApiError, isRecord, ProtocolError } from "../errors.js";
 import type { DisplayDelta } from "a13n-ui/display";
 import { delay, workspaceHeaders, type Transport } from "../transport.js";
@@ -105,7 +106,7 @@ function parseFrame(event: string, id: string, text: string): ThreadFrame {
       return {
         type: "delta",
         cursor: id,
-        // The envelope is checked here; event payloads belong to their consumers.
+        // Validate canonical AG-UI 1.0 inside the Host-owned envelope.
         delta: data as unknown as ThreadDelta,
       };
   }

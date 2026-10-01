@@ -29,6 +29,7 @@ flowchart TB
 | 构建、运行、流式输出与结果处理        | [Agent 与执行](agents-and-runs.md)                     |
 | 选择模型并配置认证                    | [模型](models.md)和[模型认证](model-authentication.md) |
 | 添加函数工具与应用依赖                | [工具与依赖](tools-and-dependencies.md)                |
+| 提出结构化问题并提供人工反馈          | [人机协作工具](human-in-the-loop.md)                   |
 | 接收媒体输入并返回指定类型的输出      | [输入与输出](inputs-and-outputs.md)                    |
 | 选择可选能力                          | [Capabilities](capabilities.md)                        |
 | 管理对话上下文和任务                  | [上下文](context.md)                                   |

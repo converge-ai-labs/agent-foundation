@@ -157,6 +157,12 @@ export class DisplayState {
     });
   }
 
+  /** Detached scope lineage for presentation without copying the whole display. */
+  selectScope(id: string): DisplayScope | undefined {
+    const scope = this._scopes.get(id);
+    return scope ? structuredClone(scope) : undefined;
+  }
+
   capture(): DisplaySnapshot {
     return structuredClone({
       format: "display/1",

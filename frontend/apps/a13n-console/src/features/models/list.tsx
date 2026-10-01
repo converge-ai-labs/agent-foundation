@@ -36,18 +36,6 @@ import styles from "./models.module.css";
 const FILTER_KEYS = ["q", "provider_id", "status"];
 
 export function ModelsPage() {
-  const { t } = useTranslation();
-  return (
-    <Page
-      title={t("Models")}
-      description={t("Choose the models your agents can use.")}
-    >
-      <Models />
-    </Page>
-  );
-}
-
-function Models() {
   const { t } = useTranslation(),
     { can, workspace } = useWorkspace(),
     client = useClient(),
@@ -114,7 +102,70 @@ function Models() {
     />
   );
   return (
-    <div className={styles.list}>
+    <Page
+      title={t("Models")}
+      description={t("Choose the models your agents can use.")}
+      toolbar={
+        <Toolbar
+          search={search}
+          searchLabel={t("Search models")}
+          onSearchChange={(value) => {
+            setSearch(value);
+            updateFilters({ q: value.trim() });
+          }}
+          filters={
+            <>
+              <ChoiceField
+                label={t("Provider")}
+                variant="filter"
+                value={providerId || "all"}
+                onValueChange={(value) =>
+                  updateFilters({ provider_id: value === "all" ? "" : value })
+                }
+                options={[
+                  { value: "all", label: t("All providers") },
+                  ...(providers.data ?? []).map((provider) => ({
+                    value: provider.id,
+                    label: provider.name,
+                    icon: <ProviderIcon type={provider.type} />,
+                  })),
+                ]}
+              />
+              <ChoiceField
+                label={t("Status")}
+                variant="filter"
+                value={status ?? "all"}
+                onValueChange={(value) =>
+                  updateFilters({ status: value === "all" ? "" : value })
+                }
+                options={[
+                  { value: "all", label: t("All statuses") },
+                  { value: "enabled", label: t("Enabled") },
+                  { value: "disabled", label: t("Disabled") },
+                ]}
+              />
+              {hasFilters && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch("");
+                    updateFilters({
+                      q: "",
+                      provider_id: "",
+                      status: "",
+                    });
+                  }}
+                >
+                  {t("Clear")}
+                </Button>
+              )}
+            </>
+          }
+        />
+      }
+    >
       <PageActions secondary>
         <ManageProvidersLink category="models" />
       </PageActions>
@@ -126,64 +177,6 @@ function Models() {
           {...rows.control}
         />
       )}
-      <Toolbar
-        search={search}
-        searchLabel={t("Search models")}
-        onSearchChange={(value) => {
-          setSearch(value);
-          updateFilters({ q: value.trim() });
-        }}
-        filters={
-          <>
-            <ChoiceField
-              label={t("Provider")}
-              variant="filter"
-              value={providerId || "all"}
-              onValueChange={(value) =>
-                updateFilters({ provider_id: value === "all" ? "" : value })
-              }
-              options={[
-                { value: "all", label: t("All providers") },
-                ...(providers.data ?? []).map((provider) => ({
-                  value: provider.id,
-                  label: provider.name,
-                  icon: <ProviderIcon type={provider.type} />,
-                })),
-              ]}
-            />
-            <ChoiceField
-              label={t("Status")}
-              variant="filter"
-              value={status ?? "all"}
-              onValueChange={(value) =>
-                updateFilters({ status: value === "all" ? "" : value })
-              }
-              options={[
-                { value: "all", label: t("All statuses") },
-                { value: "enabled", label: t("Enabled") },
-                { value: "disabled", label: t("Disabled") },
-              ]}
-            />
-            {hasFilters && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setSearch("");
-                  updateFilters({
-                    q: "",
-                    provider_id: "",
-                    status: "",
-                  });
-                }}
-              >
-                {t("Clear")}
-              </Button>
-            )}
-          </>
-        }
-      />
       <ErrorNotice
         error={providers.error}
         retry={() => void providers.refetch()}
@@ -311,7 +304,7 @@ function Models() {
           action={!hasFilters && create}
         />
       )}
-    </div>
+    </Page>
   );
 }
 

@@ -59,8 +59,6 @@ class HttpTransport:
             raise ValueError("HTTP attachment credential must be non-empty and contain no whitespace")
         if request_timeout <= 0:
             raise ValueError("request_timeout must be positive")
-        if verify is False:
-            raise ValueError("HTTP TLS verification cannot be disabled")
         _validate_limit("max_request_bytes", max_request_bytes)
         _validate_limit("max_response_bytes", max_response_bytes)
         _validate_limit("max_transfer_frame_bytes", max_transfer_frame_bytes)

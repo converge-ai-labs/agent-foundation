@@ -12,18 +12,18 @@ The package does not expose a serialized Agent-definition language, compiler, or
 
 The package root is a closed primary code-first facade. It exports only the values needed to define, build, run, observe, continue, and compose an Agent through the ordinary path:
 
-| Group                         | Root exports                                                                                                                                                                                                              |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Version                       | `__version__`                                                                                                                                                                                                             |
-| Definition and build          | `AgentSpec`, `ModelCapability`, `HarnessModelCharacteristics`, `AgentDefinition`, `HarnessBuilder`, `ExecutableAgent`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, `derive_child_identity` |
-| Context and identity          | `RunBindings`, `AgentContext`, `AgentIdentityRef`, `AgentInstanceRef`, `AgentInstanceContext`                                                                                                                             |
-| Input                         | `NativeRunInput`, `RunInputValue`, `SemanticRunInput`, `RunInputFactory`, `RunPreparationContext`, `DeferredToolResume`                                                                                                   |
-| Environment selection         | `Environment`, `EnvironmentEntry`, `EnvironmentMount`                                                                                                                                                                     |
-| Direct plugins                | `AbstractHarnessPlugin`, `PluginOrdering`                                                                                                                                                                                 |
-| Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`, `ToolRecoveryMode`                                                                                                                                              |
-| Observation                   | `HarnessInstrumentation`, `HarnessObservationContext`, `HarnessTraceContent`                                                                                                                                              |
-| State, execution, and results | `HarnessState`, `HarnessRunStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                 |
-| Errors                        | `HarnessError`, `DefinitionError`, `IdentityError`, `InputError`, `ModelResolutionError`, `PluginError`, `RunCleanupError`, `RunError`, `StateError`                                                                      |
+| Group                         | Root exports                                                                                                                                                                                                                                                                                         |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Version                       | `__version__`                                                                                                                                                                                                                                                                                        |
+| Definition and build          | `AgentSpec`, `ModelCapability`, `HarnessModelCharacteristics`, `ImageInputPolicy`, `UrlInputSupport`, `VideoInputPolicy`, `VideoUrlType`, `AgentDefinition`, `HarnessBuilder`, `ExecutableAgent`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, `derive_child_identity` |
+| Context and identity          | `RunBindings`, `AgentContext`, `AgentIdentityRef`, `AgentInstanceRef`, `AgentInstanceContext`                                                                                                                                                                                                        |
+| Input                         | `NativeRunInput`, `RunInputValue`, `SemanticRunInput`, `ContentItem`, `ContentMetadata`, `RunInputFactory`, `RunPreparationContext`, `DeferredToolResume`                                                                                                                                            |
+| Environment selection         | `Environment`, `EnvironmentEntry`, `EnvironmentMount`                                                                                                                                                                                                                                                |
+| Direct plugins                | `AbstractHarnessPlugin`, `PluginOrdering`                                                                                                                                                                                                                                                            |
+| Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`, `ToolRecoveryMode`                                                                                                                                                                                                                         |
+| Observation                   | `HarnessInstrumentation`, `HarnessObservationContext`, `HarnessTraceContent`, `InputTextEvent`, `InputMediaEvent`                                                                                                                                                                                    |
+| State, execution, and results | `HarnessState`, `HarnessRunStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                                                                                            |
+| Errors                        | `HarnessError`, `DefinitionError`, `IdentityError`, `InputError`, `ModelResolutionError`, `PluginError`, `RunCleanupError`, `RunError`, `StateError`                                                                                                                                                 |
 
 `a13n_harness.__all__` is exactly this table. Feature-family APIs remain public through their owning stable modules rather than being duplicated at the package root. Important routes include:
 
@@ -36,7 +36,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | `a13n_harness.environment.advanced`  | Explicit Run-local runtime construction over the same Environment mount inputs               |
 | `a13n_harness.environment.providers` | Advanced Host binding scopes, exact runtime mount ceilings, and entered aggregate contracts  |
 | `a13n_harness.events`                | Event emission helpers and typed first-party payloads                                        |
-| `a13n_harness.filters`               | First-party content and integrity filters                                                    |
+| `a13n_harness.filters`               | First-party content, image, cold-start, and integrity filters                                |
 | `a13n_harness.mcp`                   | MCP context-header integration                                                               |
 | `a13n_harness.providers.memory`      | Memory store contracts, file format, local directory store, and Memory Provider definitions  |
 | `a13n_harness.providers.model.oauth` | Codex login supplements and Grok OAuth sources, flows, lifecycle, and Model construction     |
@@ -99,6 +99,7 @@ class HarnessBuilder:
         configured_plugins_enabled: bool | None = None,
         instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
         gateway_provider_factory: GatewayModelProviderFactory | None = None,
+        self_healing_enabled: bool = True,
     ) -> None: ...
 
     @overload
@@ -165,7 +166,6 @@ class RunBindings:
         AbstractCapability[AgentContext], ...
     ] = ()
     web: WebBinding | None = None
-    media_reader: MediaReader | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
@@ -192,7 +192,6 @@ class RunBindings:
             AbstractCapability[AgentContext]
         ] = (),
         web: WebBinding | None = None,
-        media_reader: MediaReader | None = None,
         document_converter: DocumentConverter | None = None,
         file_media_understanding: MediaUnderstandingProvider | None = None,
         skill_selection: frozenset[str] | None = None,
@@ -395,7 +394,7 @@ A completed output may legitimately be `None` when the output contract permits i
 
 ## Events
 
-`a13n_harness.model_context` exports native `ModelInputEvent` and `user_prompt_content` for metadata-preserving, media-payload-free presentation. `a13n_harness.capabilities` exports native `CompactionSummaryEvent`. `a13n_harness.toolsets.events` exports native `FileEditAppliedEvent`, `HandoffSummaryEvent`, and `ShellStatusEvent`. [Events and Usage](12-events-observability-and-usage.md) owns their content and lifecycle contracts.
+`a13n_harness.events` exports `InputTextEvent`, `InputMediaEvent`, and the annotation-preserving `input_events` projection; the event payloads contain strings or payload-free media descriptors rather than native provider-content objects. `a13n_harness` re-exports both input event classes. `a13n_harness.model_context` exports `user_prompt_content` for native prompt inspection. `a13n_harness.capabilities` exports native `CompactionSummaryEvent`. `a13n_harness.toolsets.events` exports native `FileEditAppliedEvent`, `HandoffSummaryEvent`, and `ShellStatusEvent`. [Events and Usage](12-events-observability-and-usage.md) owns their content and lifecycle contracts.
 
 ```python
 class HarnessEvent(BaseModel):

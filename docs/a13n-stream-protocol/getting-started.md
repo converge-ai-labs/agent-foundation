@@ -66,7 +66,7 @@ Each printed line is an AG-UI event encoded as JSON. The output includes text ev
 
 ## Add child Runs or multiple concurrent Runs
 
-Route source items by `(item.thread_id, item.run_id)` and keep an observer for each pair. A parent stream can forward child items without changing their correlation. Feeding them all into a single observer is a correlation error.
+Use `HarnessAguiStreamObserver` for a root stream that forwards inline-child observations. It preserves their source correlation and emits child-attributed output without nested root lifecycles. Keep separate stream observers for independently executed root or asynchronous child Runs. `HarnessAguiObserver` rejects other Run correlations and is appropriate only for a strictly single-Run source.
 
 Use the [multi-Run routing example](events.md#observe-a-harness-run) before enabling delegation.
 

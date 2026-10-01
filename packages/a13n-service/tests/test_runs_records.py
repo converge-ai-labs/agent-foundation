@@ -187,3 +187,33 @@ async def test_record_store_calls_recheck_the_run_and_the_provider(service) -> N
             await store.search("green tea", limit=5)
         assert disabled.value.code == "unavailable"
     assert BACKEND.calls == [("search", memory["namespace"])]
+
+
+async def test_record_memory_uses_the_accepted_run_configuration(service, scripted_model, runs_kit, monkeypatch):
+    from contextlib import asynccontextmanager
+    from urllib.parse import urlsplit
+
+    from a13n_service.runs.memories import execution
+
+    memory = await facts(service, "likes green tea")
+    configuration = {
+        "allowed_hosts": [urlsplit(scripted_model.url).hostname],
+        "extensions": {"example.reader": {"images": True}},
+    }
+    native = execution.open_record_store
+    seen = []
+
+    @asynccontextmanager
+    async def capture(runtime, provider, namespace, *, configuration=None):
+        seen.append(configuration.model_dump(mode="json"))
+        async with native(runtime, provider, namespace, configuration=configuration) as store:
+            yield store
+
+    monkeypatch.setattr(execution, "open_record_store", capture)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    scripted_model.say("Noted")
+    await runs_kit.start_thread(
+        service, agent, "tea", memories=[mount(memory)], options={"configuration": configuration}
+    )
+    await (await runs_kit.attempt(service))
+    assert seen == [configuration]

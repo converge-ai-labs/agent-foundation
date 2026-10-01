@@ -269,3 +269,55 @@ def test_summary_files_task_version_and_terminal_lifecycle_are_producer_facts() 
     assert blocks["root:execution:handoff"].content["value"]["status"] == "succeeded"
     assert blocks["root:task:task-1"].content["task_state_version"] == 7
     assert receiver.capture().blocks == projector.capture().blocks
+
+
+def test_canonical_annotations_control_visibility_without_exposing_hidden_ledger() -> None:
+    from a13n_harness.content import ContentItem, ContentMetadata, input_request
+    from a13n_harness.events import input_events
+    from pydantic_ai.messages import ImageUrl
+
+    items = [
+        ContentItem("same", ContentMetadata(source_id="visible")),
+        ContentItem("same", ContentMetadata(display=False, source_id="private-source", secret="private-metadata")),
+        ContentItem(ImageUrl("https://example.test/private.png"), ContentMetadata(display=False)),
+    ]
+    projector, receiver = _projector()
+    projector.reconcile_message("root", 0, input_request(items, metadata={"a13n.steering-run": "run"}))
+    before = projector.capture()
+    for event in input_events(items, source="user", input_id="input"):
+        projector.observe("root", 0, event)
+    assert projector.capture() == before
+    assert len(before.blocks) == 1
+    assert before.blocks[0].content["metadata"]["source_id"] == "visible"
+    assert before.blocks[0].content["message_metadata"] == {"a13n.steering-run": "run"}
+    assert "private" not in before.model_dump_json()
+    assert receiver.capture() == before
+
+
+def test_tool_execution_projection_hides_supplements_and_preserves_ordered_media() -> None:
+    from a13n_harness.tools._output import TOOL_CONTENT_METADATA_KEY
+    from pydantic_ai.messages import BinaryContent, ImageUrl
+
+    projector, receiver = _projector()
+    value = [
+        "first",
+        ImageUrl("https://example.test/image.png"),
+        "first",
+        BinaryContent(b"private pixels", media_type="image/png"),
+    ]
+    part = ToolReturnPart(
+        "observe",
+        [value, "private supplement"],
+        tool_call_id="call",
+        metadata={TOOL_CONTENT_METADATA_KEY: {"result_index": 0, "items": [{"private": True}]}, "host": "reference"},
+    )
+    projector.observe("root", 0, FunctionToolResultEvent(part))
+    projector.reconcile_message("root", 1, ModelRequest(parts=[part]))
+    (block,) = projector.capture().blocks
+    assert block.content["result"] is None
+    assert [item["type"] for item in block.content["content_parts"]] == ["text", "image", "text", "text"]
+    assert block.content["content_parts"][0] == block.content["content_parts"][2]
+    assert block.content["metadata"] == {"host": "reference"}
+    assert "private" not in projector.capture().model_dump_json()
+    assert block.status == "succeeded"
+    assert receiver.capture() == projector.capture()

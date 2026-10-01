@@ -98,6 +98,8 @@ executable = HarnessBuilder(
 
 ## 常用定义 Capabilities
 
+视频输入支持是内置行为，不是可选的定义 Capability。`video_understanding` 支持内联视频和有界直接 URL 下载，`url_input.video: [youtube]` 声明原生 YouTube 支持；工具权限仍控制 `media.read_video_url`。本地文件使用 `view`，同样受内联视频预算约束。
+
 | Capability                     | 添加内容                                                             | 需要当前执行的协作对象                               |
 | ------------------------------ | -------------------------------------------------------------------- | ---------------------------------------------------- |
 | `RuntimeContextCapability`     | 大小受限的当前时间、已用时间、用量、上下文窗口和选定元数据投影       | 否                                                   |
@@ -110,18 +112,12 @@ executable = HarnessBuilder(
 | `FileMemoryCapability`         | 挂载文件记忆：指南、`memory_file_*` 工具和执行开始时的文件变化上下文 | 每个挂载一个已打开 `FileStore`；可选 `MemoryCursors` |
 | `RecordMemoryCapability`       | 挂载记录记忆：指南、`memory_record_*` 工具和执行开始时召回           | 每个挂载一个已打开 `RecordStore`                     |
 | `UserInteractionCapability`    | 通过原生延后工具提出结构化用户问题                                   | Host 处理暂停与恢复                                  |
-| `MediaCapability`              | 媒体读取 Toolset                                                     | `RunBindings.media_reader`                           |
-| `DocumentsCapability`          | 文档转换 Toolset                                                     | `RunBindings.document_converter`                     |
-| `WebCapability`                | 搜索、获取和抓取 Toolset                                             | 具有当前客户端和策略的 `WebBinding`                  |
-| `HandoffCapability`            | 显式 `summarize` 工具和续接提醒                                      | 否                                                   |
-| `CompactionCapability`         | provider 用量触发的同 agent 纯文本压缩，重放保留用户输入             | 否                                                   |
-| `SubagentCapability`           | 明确声明的子 agent 的内联或异步执行                                  | 定义选择的 `SubagentOperator`                        |
-| `CodeActCapability`            | 受限 Python runner 和显式键到 JSON 存储值                            | 明确选定的适用工具，以及用于程序的环境文件           |
-| `ContextualMCP`                | 基于 URL 的 MCP，请求头从当前逻辑执行解析一次                        | Harness 提供的当前 `AgentContext`                    |
+
+| `DocumentsCapability` | 文档转换 Toolset | `RunBindings.document_converter` | | `WebCapability` | 搜索、获取和抓取 Toolset | 具有当前客户端和策略的 `WebBinding` | | `HandoffCapability` | 显式 `summarize` 工具和续接提醒 | 否 | | `CompactionCapability` | provider 用量触发的同 agent 纯文本压缩，重放保留用户输入 | 否 | | `SubagentCapability` | 明确声明的子 agent 的内联或异步执行 | 定义选择的 `SubagentOperator` | | `CodeActCapability` | 受限 Python runner 和显式键到 JSON 存储值 | 明确选定的适用工具，以及用于程序的环境文件 | | `ContextualMCP` | 基于 URL 的 MCP，请求头从当前逻辑执行解析一次 | Harness 提供的当前 `AgentContext` |
 
 大型本地工具集合可使用 [ToolProxyCapability](tool-proxy.md)，它接受由被动 `ToolProxyGroup(source=..., description=...)` 值组成的 `groups` 映射。这个统一代码入口支持分组发现、动态 schema 和 CodeAct，不替代原生执行。来源选择和插件组合见 [Host 集成指南](tool-proxy.md#host-integration)。
 
-每个功能只公开一个 Capability。内部活跃替代实例保持私有，在同一逻辑执行的 ModelAttempt 之间复用，不跨执行复用。Host 协作对象通过 `RunBindings.web`、`media_reader`、`document_converter`、`file_media_understanding`、`skill_selection`、`task_state` 和 `client_toolsets` 提供。`WebBinding` 和 `TaskStateBinding` 是被动冻结值，不是 Capability。这些字段不会启用缺失功能，也绝不进入 `HarnessState`。Host 负责 provider 生命周期，在 provider 契约允许时可以共享传输。
+每个功能只公开一个 Capability。内部活跃替代实例保持私有，在同一逻辑执行的 ModelAttempt 之间复用，不跨执行复用。Host 协作对象通过 `RunBindings.web`、`document_converter`、`file_media_understanding`、`skill_selection`、`task_state` 和 `client_toolsets` 提供。`WebBinding` 和 `TaskStateBinding` 是被动冻结值，不是 Capability。这些字段不会启用缺失功能，也绝不进入 `HarnessState`。Host 负责 provider 生命周期，在 provider 契约允许时可以共享传输。
 
 内联子 agent 的 `SubagentDefinition.run_bindings_factory` 接收子 agent 基础 `RunBindings`，返回携带其协作对象的替代绑定。必须保留子实例、借用环境和继承的调用策略。父功能绑定不会自动继承；显式共享任务状态策略提供借用状态单元，并拒绝与工厂绑定冲突。
 
@@ -215,7 +211,7 @@ Harness 默认在 `extra_high` 风险时触发 `deny`；配置 `on_flagged: appr
 
 当前 `RunBindings.deferred_tools_supported` 启用时，`UserInteractionCapability` 为根和子 agent 提供 `ask_user_question`。等待用户时，调用不会让 Harness 执行一直打开。它返回 `status="suspended"`，携带原生请求和可移植状态。Host 随后提供新绑定、之前状态和关联的 `DeferredToolResume`。[内置内联子 agent](delegation-and-codeact.md#host-managed-feedback)显式禁用延后工具；Host 管理的子 agent 使用原生恢复边界。不支持的执行既不提供工具，也不提供其指导。
 
-参见[状态与恢复](state-and-resume.md)。
+请求与答案载荷、应用自定义类型和关联恢复示例见[人机协作工具](human-in-the-loop.md)。[状态与恢复](state-and-resume.md)介绍通用的继续执行生命周期。
 
 ## 媒体、文档与 Web
 
@@ -239,7 +235,7 @@ bindings = RunBindings.embedded(
 )
 ```
 
-同一模式适用于通用 URL 导向的 `MediaCapability` 和 Web。环境文件[多媒体理解](multimedia-understanding.md)是独立第一方路径：原生支持来自通过 `model_characteristics` 构建键提供的活跃 `AgentSpec.model_characteristics.capabilities`，专用图像、视频或音频 agent 可直接通过进程环境变量配置，无需 Host 协作对象。Web 还会逐次 Host 请求检查活跃 `WebPolicy`。
+视频 URL 无需 provider 绑定。默认 `VideoUrlCapability` 为支持二进制视频或原生视频 URL 的模型提供 `read_video_url`。直接 HTTP(S) 视频下载为原始字节并附加为 `BinaryContent`；SDK 负责编码 Base64，默认编码后单个和整次请求视频总预算均为 10 MiB。YouTube 仅走明确声明的原生 URL 路径，不支持时拒绝，不下载或转换。预算和兼容性过滤只改变 provider 请求，不改变保存的历史；没有 reader、压缩、切分或辅助模型。环境文件[多媒体理解](multimedia-understanding.md)是独立第一方路径：原生支持来自通过 `model_characteristics` 构建键提供的活跃 `AgentSpec.model_characteristics.capabilities`，专用图像、视频或音频 agent 可直接通过进程环境变量配置，无需 Host 协作对象。Web 还会逐次 Host 请求检查活跃 `WebPolicy`。
 
 ### 限制 Web 域名
 

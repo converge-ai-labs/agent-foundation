@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import secrets
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from contextlib import AsyncExitStack
+from dataclasses import dataclass, field
 from typing import Literal
 
 from a13n_harness.providers.model.oauth import (
@@ -15,13 +16,18 @@ from a13n_harness.providers.model.oauth import (
     GrokDeviceAuthorizationFlow,
     GrokOAuthFlow,
 )
-from anyio import CancelScope, Event, fail_after
-from anyio.abc import TaskGroup
+from a13n_harness.providers.model.oauth.chatgpt import OpenAIChatGPTOAuthFlow
+from anyio import CancelScope, Event, create_task_group, create_tcp_listener, fail_after
+from anyio.abc import SocketAttribute, TaskGroup
+from pydantic import Field, SecretStr
+from pydantic_ai.exceptions import UserError
 
 from a13n_harness_ui.configuration.models import StrictModel
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_authoring import account_connection
 
+from .callback import receive_callback
+from .chatgpt import ChatGPTAccountStore
 from .codex import CodexAccountStore, CodexLoginRequest
 from .copilot import CopilotAccountStore, CopilotLoginRequest
 from .grok import (
@@ -35,15 +41,19 @@ from .models import AccountStoreError, Provider
 
 
 class LoginRequest(StrictModel):
-    provider: Literal["codex", "grok", "copilot"]
-    method: Literal["device", "browser"] = "device"
+    provider: Literal["chatgpt", "codex", "grok", "copilot"]
+    method: Literal["device", "browser", "manual_callback"] = "device"
     allow_account_switch: bool = False
+
+
+class LoginCallbackInput(StrictModel):
+    callback_url: SecretStr = Field(min_length=1, max_length=16384, repr=False)
 
 
 class LoginStatus(StrictModel):
     session_id: str
-    provider: Literal["codex", "grok", "copilot"]
-    method: Literal["device", "browser"]
+    provider: Literal["chatgpt", "codex", "grok", "copilot"]
+    method: Literal["device", "browser", "manual_callback"]
     state: Literal["starting", "waiting", "succeeded", "failed", "cancelled", "expired"] = "starting"
     verification_url: str | None = None
     user_code: str | None = None
@@ -57,6 +67,9 @@ class _Session:
     status: LoginStatus
     scope: CancelScope
     done: Event
+    callback_ready: Event = field(default_factory=Event)
+    callback_url: str | None = field(default=None, repr=False)
+    flow: OpenAIChatGPTOAuthFlow | None = field(default=None, repr=False)
 
 
 async def authorize_codex(request: CodexLoginRequest, method: str, present: Callable[..., None]) -> CodexLoginResult:
@@ -101,6 +114,7 @@ async def authorize_copilot(
     request: CopilotLoginRequest, method: str, present: Callable[..., None]
 ) -> CopilotCredentials:
     import httpx2
+    from a13n_harness.http import outbound_tls_verify
     from a13n_harness.providers.model.oauth.copilot import copilot_account_id
     from pydantic_ai.providers.github_copilot import GitHubCopilotOAuthFlow
 
@@ -108,7 +122,7 @@ async def authorize_copilot(
         raise HarnessUiError("Copilot supports device authorization only.", code="login_method_unsupported")
     # This is the directly verified CLI device-flow scope baseline, not a claim
     # of minimal permissions. The authorization page shows the requested access.
-    async with httpx2.AsyncClient(follow_redirects=False) as client:
+    async with httpx2.AsyncClient(verify=outbound_tls_verify(), follow_redirects=False) as client:
         flow = GitHubCopilotOAuthFlow(
             client_id=request.client_id, scope="read:user,read:org,repo,gist", http_client=client
         )
@@ -128,7 +142,7 @@ class LoginSessions:
     def __init__(
         self,
         tasks: TaskGroup,
-        account: Callable[[Provider], CodexAccountStore | GrokAccountStore | CopilotAccountStore],
+        account: Callable[[Provider], ChatGPTAccountStore | CodexAccountStore | GrokAccountStore | CopilotAccountStore],
     ) -> None:
         self._tasks = tasks
         self._account = account
@@ -162,6 +176,60 @@ class LoginSessions:
     def status(self, session_id: str) -> LoginStatus:
         return self._get(session_id).status
 
+    def submit_callback(self, session_id: str, callback_url: str) -> LoginStatus:
+        session = self._get(session_id)
+        if session.status.state != "waiting" or session.flow is None or session.callback_ready.is_set():
+            raise HarnessUiError("This sign-in is not waiting for a callback.", code="login_callback_unavailable")
+        try:
+            session.flow.validate_callback(callback_url)
+        except UserError:
+            raise HarnessUiError(
+                "The callback URL does not match this sign-in. Paste the complete URL from the browser address bar.",
+                code="login_callback_invalid",
+            ) from None
+        session.callback_url = callback_url
+        session.callback_ready.set()
+        return session.status
+
+    async def _chatgpt(
+        self, session: _Session, account: ChatGPTAccountStore, request: LoginRequest, present: Callable[..., None]
+    ) -> None:
+        async with AsyncExitStack() as resources:
+            listener = None
+            redirect_uri = "http://127.0.0.1:1456/auth/callback"
+            if request.method == "browser":
+                # Bind before exposing the URL; manual paste needs no local socket.
+                listener = await resources.enter_async_context(
+                    await create_tcp_listener(local_host="127.0.0.1", local_port=0)
+                )
+                port = listener.extra(SocketAttribute.local_address)[1]
+                redirect_uri = f"http://127.0.0.1:{port}/auth/callback"
+            session.flow = await account.begin(
+                session.status.session_id, redirect_uri, new_registration=request.allow_account_switch
+            )
+            async with create_task_group() as tasks:
+                if listener is not None:
+
+                    async def handle(stream):
+                        await receive_callback(
+                            stream, redirect_uri, lambda url: self.submit_callback(session.status.session_id, url)
+                        )
+
+                    tasks.start_soon(listener.serve, handle)
+                present(
+                    verification_url=session.flow.authorization_url(),
+                    expires_in=600,
+                    message=(
+                        "After sign-in, paste the complete callback URL from the browser address bar, even if the loopback page cannot be reached. Never share that URL."
+                        if request.method == "manual_callback"
+                        else "If the automatic callback cannot reach this Host, paste the complete callback URL from the browser address bar. Never share that URL."
+                    ),
+                )
+                await session.callback_ready.wait()
+                assert session.callback_url is not None
+                await account.complete(session.status.session_id, session.callback_url)
+                tasks.cancel_scope.cancel()
+
     async def cancel(self, session_id: str) -> LoginStatus:
         session = self._get(session_id)
         session.scope.cancel()
@@ -172,7 +240,7 @@ class LoginSessions:
         self,
         session: _Session,
         request: LoginRequest,
-        account: CodexAccountStore | GrokAccountStore | CopilotAccountStore,
+        account: ChatGPTAccountStore | CodexAccountStore | GrokAccountStore | CopilotAccountStore,
     ) -> None:
         method = request.method
 
@@ -192,10 +260,14 @@ class LoginSessions:
                 )
                 raise
 
+        succeeded = False
         try:
             with session.scope:
                 with fail_after(900):
-                    if isinstance(account, CodexAccountStore):
+                    if isinstance(account, ChatGPTAccountStore):
+                        with fail_after(600):
+                            await self._chatgpt(session, account, request, present)
+                    elif isinstance(account, CodexAccountStore):
                         await account.login(
                             lambda request: authorize(authorize_codex(request, method, present)),
                             allow_account_switch=request.allow_account_switch,
@@ -212,8 +284,8 @@ class LoginSessions:
                         )
                     else:
                         raise HarnessUiError("No login flow is registered for this account.", code="login_unsupported")
-                    session.status = session.status.model_copy(update={"state": "succeeded"})
-            if session.scope.cancel_called and session.status.state != "succeeded":
+                    succeeded = True
+            if session.scope.cancel_called and not succeeded:
                 session.status = session.status.model_copy(update={"state": "cancelled"})
         except TimeoutError:
             session.status = session.status.model_copy(
@@ -231,7 +303,15 @@ class LoginSessions:
                 }
             )
         finally:
-            if session.status.state in {"starting", "waiting"}:
+            session.callback_url = None
+            session.flow = None
+            if isinstance(account, ChatGPTAccountStore):
+                with CancelScope(shield=True):
+                    await account.cancel(session.status.session_id)
+            # Publish success only after cleanup; the next login can start immediately.
+            if succeeded:
+                session.status = session.status.model_copy(update={"state": "succeeded"})
+            elif session.status.state in {"starting", "waiting"}:
                 session.status = session.status.model_copy(update={"state": "cancelled"})
             session.status = session.status.model_copy(update={"verification_url": None, "user_code": None})
             session.done.set()

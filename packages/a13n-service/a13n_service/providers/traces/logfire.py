@@ -53,7 +53,12 @@ class Logfire:
 
     @classmethod
     def configure(
-        cls, url: str | None, write_token: SecretStr | None, read_token: SecretStr | None, *, timeout: float
+        cls,
+        url: str | None,
+        write_token: SecretStr | None,
+        read_token: SecretStr | None,
+        *,
+        timeout: float,
     ) -> Self:
         if url is None or write_token is None or read_token is None:
             raise ValueError("telemetry: Logfire needs trace_url, logfire_write_token and logfire_read_token")

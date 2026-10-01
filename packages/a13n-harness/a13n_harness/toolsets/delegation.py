@@ -582,6 +582,7 @@ def _create_inline_child_bindings(
         deferred_tools_supported=False,
         capabilities=(invocation_policy,) if invocation_policy is not None else (),
         metadata=parent.metadata,
+        configuration=parent.configuration,
     )
     factory = child.declaration.run_bindings_factory
     if factory is None:
@@ -598,6 +599,8 @@ def _create_inline_child_bindings(
         raise DefinitionError(
             "Child bindings cannot enable unsupported deferred tools.", code="subagent_binding_invalid"
         )
+    if resolved.configuration != bindings.configuration:
+        raise DefinitionError("Child bindings cannot replace Run configuration.", code="subagent_binding_invalid")
     if resolved.model_call_check is not bindings.model_call_check:
         raise DefinitionError("Child bindings cannot replace the model call check.", code="subagent_binding_invalid")
     if resolved.usage_reporter is not bindings.usage_reporter:

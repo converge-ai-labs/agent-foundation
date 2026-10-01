@@ -153,7 +153,7 @@ class WebhookSender:
         """None when the receiver accepted the delivery, otherwise a short reason without secrets.
 
         The status alone decides; the response body is never read. Redirects are not followed, and the policy
-        checks the destination's addresses on every attempt.
+        validates the declared destination URL on every attempt.
         """
         try:
             target = WebhookTarget.model_validate(claim.target)

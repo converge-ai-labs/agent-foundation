@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.infra import cursors
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
@@ -356,9 +357,11 @@ async def test_github_import_records_the_resolved_commit(service) -> None:  # ty
 
 async def test_github_imports_are_bounded_and_preconditions_come_first(service) -> None:  # type: ignore[no-untyped-def]
     # The archive host GitHub redirects to is checked like any other destination.
-    with github_server(archive(REPOSITORY), download="http://169.254.169.254") as (url, requests):
-        metadata = await refused(import_skill(service, importer(service, url), SOURCE))
-    assert (metadata.code, metadata.details) == ("unavailable", {"dependency": "github"})
+    with github_server(archive(REPOSITORY), download="http://127.0.0.1:9") as (url, requests):
+        policy = EndpointPolicy.from_http_origins(require_https=True, http_origins=(url,))
+        github = GitHub(policy, timeout=5, max_bytes=1 << 24, api_url=url)
+        denied = await refused(import_skill(service, github, SOURCE))
+    assert (denied.code, denied.details) == ("unavailable", {"dependency": "github"})
     assert requests == ["/repos/acme/skills/commits/main", f"/repos/acme/skills/zipball/{COMMIT}"]
 
     oversized = archive({**REPOSITORY, "acme-skills-0123456/skills/review/blob.bin": os.urandom(4096)})

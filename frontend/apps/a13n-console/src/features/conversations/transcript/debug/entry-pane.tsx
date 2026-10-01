@@ -1,4 +1,4 @@
-import { Button, DisclosureSection } from "a13n-ui";
+import { AguiContent, Button, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
@@ -29,7 +29,11 @@ export function EntryPane({
   scope: RunScope;
 }) {
   if (entry.kind === "model") return <ModelPane entry={entry} />;
-  if (entry.kind === "reasoning" || entry.kind === "guidance")
+  if (
+    entry.kind === "reasoning" ||
+    entry.kind === "guidance" ||
+    entry.kind === "reply"
+  )
     return <ContentPane entry={entry} />;
   if (entry.kind === "other") return <OtherPane entry={entry} />;
   if (!isAction(entry)) return null;
@@ -216,7 +220,11 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
             <PaneValue value={entry.arguments} />
           </PaneSection>
           <PaneSection label={t("Result")}>
-            <PaneValue value={entry.result} />
+            {entry.resultParts ? (
+              <AguiContent parts={entry.resultParts} />
+            ) : (
+              <PaneValue value={entry.result} />
+            )}
           </PaneSection>
         </div>
       )}

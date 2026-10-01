@@ -1,17 +1,31 @@
 import { MonitorIcon, PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, FormField, Input, ModalFrame, SearchPicker } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  FormField,
+  Input,
+  ModalFrame,
+  SearchPicker,
+} from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, data, type Schema } from "../../shared/api";
+import {
+  allPages,
+  data,
+  matchesSearch,
+  matchingPage,
+  type Schema,
+} from "../../shared/api";
 import {
   CollectionFooter,
   Empty,
   Pagination,
   ResourceIdentity,
   ResourceTable,
+  Toolbar,
   useCursor,
 } from "../../shared/collection";
 import {
@@ -23,7 +37,7 @@ import {
 } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { ProviderIcon } from "../../shared/identity";
-import { PageActions } from "../../shared/page";
+import { Page, PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
 import { ManageProvidersLink } from "../providers/manage-link";
 import {
@@ -34,25 +48,43 @@ import {
 import instanceStyles from "./environments.module.css";
 import { EnvironmentPanel } from "./instance-details";
 
+const STATUSES = [
+  "creating",
+  "starting",
+  "ready",
+  "stopping",
+  "stopped",
+  "deleting",
+] as const;
+
 /** The environments that exist right now, with their lifecycle state. */
 export function EnvironmentInstances() {
   const client = useClient(),
     { workspace, can } = useWorkspace(),
     { t } = useTranslation(),
-    page = useCursor(),
     [selected, setSelected] = useState<Schema["EnvironmentView"]>();
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<(typeof STATUSES)[number]>();
+  const term = search.trim().toLocaleLowerCase();
+  const filtered = !!term || !!status;
+  const page = useCursor({ term, status });
   const query = useQuery({
-    queryKey: ["environments", workspace.id, page.cursor],
+    queryKey: ["environments", workspace.id, page.cursor, term, status],
     queryFn: ({ signal }) =>
-      client
-        .workspace(workspace.id)
-        .GET("/api/v1/environments", {
-          params: {
-            query: { cursor: page.cursor },
-          },
-          signal,
-        })
-        .then(data),
+      matchingPage(
+        (cursor, limit) =>
+          client
+            .workspace(workspace.id)
+            .GET("/api/v1/environments", {
+              params: { query: { cursor, limit, status } },
+              signal,
+            })
+            .then(data),
+        page.cursor,
+        term
+          ? (item) => matchesSearch(term, item.name, item.endpoint)
+          : undefined,
+      ),
     refetchInterval: 15_000,
   });
   const providers = useQuery({
@@ -84,7 +116,34 @@ export function EnvironmentInstances() {
     return templates.isPending ? <InlineLoading width="6rem" /> : t("Managed");
   }
   return (
-    <div className={styles.stack}>
+    <Page
+      title={t("Environment instances")}
+      description={t("Inspect the environments your agents are using.")}
+      toolbar={
+        <Toolbar
+          search={search}
+          onSearchChange={setSearch}
+          searchLabel={t("Search environments")}
+          filters={
+            <ChoiceField
+              label={t("Status")}
+              variant="filter"
+              value={status ?? "all"}
+              onValueChange={(value) =>
+                setStatus(STATUSES.find((item) => item === value))
+              }
+              options={[
+                { value: "all", label: t("All statuses") },
+                ...STATUSES.map((value) => ({
+                  value,
+                  label: t(`state.${value}`),
+                })),
+              ]}
+            />
+          }
+        />
+      }
+    >
       <PageActions secondary>
         <ManageProvidersLink category="environments" />
       </PageActions>
@@ -166,11 +225,19 @@ export function EnvironmentInstances() {
         !query.error && (
           <Empty
             icon={<MonitorIcon aria-hidden="true" />}
-            title={t("No environments yet")}
-            description={t(
-              "Choose an environment template when starting a conversation, or register an external environment.",
-            )}
-            action={can("write") && <CreateEnvironment />}
+            title={
+              filtered
+                ? t("No matching environments")
+                : t("No environments yet")
+            }
+            description={
+              filtered
+                ? t("Change or clear the search and filters.")
+                : t(
+                    "Choose an environment template when starting a conversation, or register an external environment.",
+                  )
+            }
+            action={!filtered && can("write") && <CreateEnvironment />}
           />
         )
       )}
@@ -182,7 +249,7 @@ export function EnvironmentInstances() {
           onClose={() => setSelected(undefined)}
         />
       )}
-    </div>
+    </Page>
   );
 }
 

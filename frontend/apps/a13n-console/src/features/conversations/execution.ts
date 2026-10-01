@@ -17,8 +17,9 @@ export interface StepEdit {
 
 export interface ExecutionStep {
   id: string;
-  /** The attempt that ran the step; request and call IDs are unique only within it. */
+  /** Attempt and inline Harness run; native IDs are local to this scope. */
   scope: string;
+  subagentRunId?: string;
   kind: ExecutionKind;
   name?: string;
   state: string;
@@ -105,6 +106,7 @@ export interface Occurrence {
   position: string;
   occurredAt: string | null;
   scope: string;
+  subagentRunId?: string;
 }
 
 /** An action is settled once a terminal fact fixed its outcome. */
@@ -150,6 +152,7 @@ export function addStep(
   if (execution.steps.findLastIndex((existing) => existing.id === step.id) < 0)
     execution.steps.push({
       ...step,
+      subagentRunId: at.subagentRunId,
       position: at.position,
       startedAt: at.occurredAt,
       endedAt: null,
@@ -194,17 +197,30 @@ function occurrence(
   id: string,
   position: string,
   occurredAt: string | null,
+  subagentRunId?: string,
 ): Occurrence {
-  return { id, position, occurredAt, scope: attemptOf(position) };
+  const attempt = attemptOf(position);
+  return {
+    id,
+    position,
+    occurredAt,
+    subagentRunId,
+    scope: subagentRunId ? `${attempt}/child/${subagentRunId}` : attempt,
+  };
 }
 
 function facts(items: readonly DisplayItem[]): Fact[] {
   const list: Fact[] = [];
   for (const item of items) {
-    const opened = {
-      ...occurrence(item.id, item.first_stream_id, item.started_at),
-      scope: item.scope_id ?? attemptOf(item.first_stream_id),
-    };
+    const at = occurrence(
+      item.id,
+      item.first_stream_id,
+      item.started_at,
+      typeof item.content.subagentRunId === "string"
+        ? item.content.subagentRunId
+        : undefined,
+    );
+    const opened = { ...at, scope: item.scope_id ?? at.scope };
     if (item.kind === "observation") {
       list.push({ kind: "observation", at: opened, content: item.content });
       continue;
@@ -224,7 +240,12 @@ function facts(items: readonly DisplayItem[]): Fact[] {
       list.push({
         kind: "finished",
         at: {
-          ...occurrence(item.id, item.last_stream_id, item.ended_at ?? null),
+          ...occurrence(
+            item.id,
+            item.last_stream_id,
+            item.ended_at ?? null,
+            opened.subagentRunId,
+          ),
           scope: opened.scope,
         },
         item: presented,

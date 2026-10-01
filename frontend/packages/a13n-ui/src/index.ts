@@ -1,3 +1,4 @@
+export * from "./components/agui-content";
 export * from "./components/avatar";
 export * from "./components/alert";
 export * from "./components/badge";

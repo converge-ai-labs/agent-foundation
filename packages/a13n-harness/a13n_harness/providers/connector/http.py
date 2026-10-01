@@ -69,7 +69,7 @@ class ConnectorHttpClient:
                         raise ValueError("Connector path must not contain a fragment")
                     if params is not None:
                         target = target.copy_merge_params(params)
-                    destination = await self._endpoint_validator.validate(str(target), resolve_dns=True)
+                    destination = await self._endpoint_validator.validate(str(target))
                 except (ValueError, httpx2.InvalidURL) as error:
                     raise ConnectorProviderError("endpoint_denied") from error
                 headers = {"accept": "application/json", "content-type": "application/json"}

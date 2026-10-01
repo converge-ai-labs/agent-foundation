@@ -29,6 +29,7 @@ Build once, then supply current run inputs. Save the returned state to continue 
 | Build, run, stream, and handle results              | [Agents and Runs](agents-and-runs.md)                                   |
 | Select a model and configure authentication         | [Models](models.md) and [Model authentication](model-authentication.md) |
 | Add function tools and application dependencies     | [Tools and dependencies](tools-and-dependencies.md)                     |
+| Ask structured questions and supply human feedback  | [Human-in-the-loop tools](human-in-the-loop.md)                         |
 | Accept media input and return typed output          | [Inputs and outputs](inputs-and-outputs.md)                             |
 | Select optional behavior                            | [Capabilities](capabilities.md)                                         |
 | Manage conversation context and tasks               | [Context](context.md)                                                   |

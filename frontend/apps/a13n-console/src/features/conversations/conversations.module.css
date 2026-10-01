@@ -50,7 +50,7 @@
   padding: 3px 6px 3px 2px;
   border-radius: var(--a13n-radius-tile);
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   text-decoration: none;
 }
 .back:hover {
@@ -84,7 +84,7 @@
   margin-left: -2px;
   border-radius: var(--a13n-radius-tile);
   color: var(--a13n-text);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
   text-decoration: none;
   overflow: hidden;
@@ -103,23 +103,12 @@ a.agentLink:focus-visible {
   height: 20px;
   flex: none;
   border-radius: 6px;
-  font-size: 10px;
-}
-.sessionId {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex: none;
-  min-width: 0;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  font-size: var(--a13n-text-2xs);
 }
 .subNote {
   min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -139,7 +128,7 @@ a.agentLink:focus-visible {
   align-items: center;
   gap: 4px;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   white-space: nowrap;
 }
 .breadcrumb a {
@@ -174,22 +163,22 @@ a.agentLink:focus-visible {
 }
 .startHeader h1 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.4px;
-  line-height: 1.25;
+  font-size: var(--a13n-text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--a13n-tracking-title);
+  line-height: 1.2;
 }
 .startHeader p {
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.6;
 }
 .pickerAvatar {
   width: 20px;
   height: 20px;
   border-radius: 6px;
-  font-size: 10px;
+  font-size: var(--a13n-text-2xs);
 }
 
 /* Session list ----------------------------------------------------------- */
@@ -197,7 +186,7 @@ a.agentLink:focus-visible {
   width: 32px;
   height: 32px;
   border-radius: var(--a13n-radius-row);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 
 /* Filters ---------------------------------------------------------------- */
@@ -248,7 +237,7 @@ a.agentLink:focus-visible {
 .updatedError {
   margin: 0;
   color: var(--a13n-danger);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
 }
 .updatedFooter {
   display: flex;
@@ -258,7 +247,7 @@ a.agentLink:focus-visible {
   padding-top: 12px;
   border-top: 1px solid var(--a13n-border-soft);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .updatedActions {
   display: flex;
@@ -277,9 +266,6 @@ a.agentLink:focus-visible {
 @media (max-width: 760px) {
   .agentFilter {
     width: 100%;
-  }
-  .sessionId {
-    display: none;
   }
   .startPage {
     padding: 24px 16px 64px;

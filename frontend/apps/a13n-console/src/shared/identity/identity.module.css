@@ -17,7 +17,7 @@
   vertical-align: middle;
 }
 .identifierText[data-primary] {
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   color: var(--a13n-text-supporting);
 }
 .control {
@@ -52,7 +52,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   font-weight: 500;
-  font-size: 13.5px;
+  font-size: var(--a13n-text-md);
   line-height: 1.35;
 }
 .resourceCopy small {
@@ -62,7 +62,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 
 /* Surface tile that frames an icon, avatar, or brand mark. */
@@ -155,7 +155,7 @@
 }
 .label {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -164,7 +164,7 @@
   overflow: hidden;
   color: var(--a13n-text);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -181,7 +181,7 @@
   border-radius: 999px;
   background: var(--a13n-surface);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 18px;
 }
 .resourceKeyText {

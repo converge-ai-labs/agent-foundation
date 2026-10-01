@@ -38,13 +38,13 @@
 }
 .heading h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-md);
   font-weight: 500;
 }
 .heading p {
   margin: 6px 0 0;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   line-height: 1.5;
 }
 .fields {

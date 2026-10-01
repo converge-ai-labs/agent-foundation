@@ -11,7 +11,9 @@ Service 在启动时从可选 TOML 文件和环境变量读取一次设置。修
 
 未知设置会阻止启动，不会退回默认值。验证错误不会输出密钥值。
 
-接受列表、映射或嵌套节的字段，在环境变量中使用 JSON，例如 `server.trusted_proxies`、`providers` 列表（`private_domains`、`private_cidrs`、`http_origins`、`return_urls`、`mcp_servers`）、`encryption.keys`、`plugins.keys` 或嵌套 `auth.mail` 节。例如 `A13N_PLUGINS__KEYS='["notes"]'` 或 `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`。
+共享进程变量 `A13N_OUTBOUND_TLS_VERIFY` 也受支持，不属于节字段覆盖机制。未设置或设为 `true` 会验证目标证书；`false` 会显式关闭自有 HTTP 客户端的验证。其他值会阻止启动。它没有 TOML 字段。请分别在每个 control/worker 进程中设置，修改后重启；具体范围、例外及被拦截风险见[出站 TLS 验证](../a13n-harness/models.md#outbound-tls-verification)。
+
+接受列表、映射或嵌套节的字段，在环境变量中使用 JSON，例如 `server.trusted_proxies`、`providers` 列表（`http_origins`、`return_urls`、`mcp_servers`）、`encryption.keys`、`plugins.keys` 或嵌套 `auth.mail` 节。例如 `A13N_PLUGINS__KEYS='["notes"]'` 或 `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`。
 
 ```toml
 [server]
@@ -110,8 +112,22 @@ Service 对 provider、远程 MCP 服务器、OAuth 服务器和 webhook 端点�
 
 - URL 使用 `http` 或 `https`，不包含用户信息、片段或类似凭据的查询参数。
 - `providers.require_https = true`（默认值）时，拒绝明文 HTTP，除非源与 `providers.http_origins` 中的条目完全一致。
-- 默认拒绝私有地址、回环和链路本地目标，除非主机匹配 `providers.private_domains`（包含子域），或解析地址位于 `providers.private_cidrs` 中。云元数据地址始终拒绝。
-- 宿主拥有的直接 HTTP 连接会在 DNS 解析后检查地址，并且只连接检查通过的地址。不跟随重定向，拒绝压缩响应，响应体受 `providers.response_bytes` 限制。
+- Host provider 客户端不跟随重定向，拒绝压缩响应，并通过 `providers.response_bytes` 限制响应体。TLS 验证、凭据规则和超时保持有效。
+
+Run 消息通过 `options.configuration` 接受配置，与 Agent overrides 分开：
+
+```json
+{
+  "configuration": {
+    "allowed_hosts": ["api.example.com", "regex:(api|docs)\\.example\\.com"],
+    "extensions": {}
+  }
+}
+```
+
+请包含所需 Model、Web、connection 和远程 Environment 的全部域名。`allowed_hosts` 为 null 表示不限制，空数组拒绝全部目标；普通条目精确匹配规范化后的主机名/IP，`regex:<pattern>` 条目则使用 Python 正则匹配完整的规范化主机名。JSON 示例使用双反斜杠表示字面量的点，仅放行 `api.example.com` 或 `docs.example.com`，不放行任意子域或后缀。无效或空表达式会在接受时被拒绝。规范化、子域表达式和转义详见[主机规则与正则表达式](../a13n-harness/context.md#host-rules-and-regular-expressions)。glob、端口和 CIDR 不是主机规则。接受时冻结快照，供输入 URL 读取、执行、故障恢复、resume 和子 Run 使用。Steering 可省略配置或指定完全相同的值；活跃 Run 的不同配置会以 `run_configuration_immutable` 拒绝。使用 `delivery: "next_run"` 选择新的快照。带命名空间的 JSON extensions 仅由显式支持它们的消费者读取。Console 控件由 #823 单独跟进；API 已支持此配置。
+
+授权只检查 URL 声明的域名，不预解析 DNS、不分类地址，也不固定 IP。Run 之外的管理操作保留进程的 URL/HTTPS 策略，不借用 Run 配置。任意 shell、第三方插件和不透明 SDK 流量的网络限制应在部署或 Environment 边界实施。
 
 ### 出站代理
 
@@ -125,7 +141,7 @@ export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
 
 支持大写形式和 `ALL_PROXY`；选择及绕过匹配遵循 `httpx2`。HTTP 代理 URL 可以通过 CONNECT 转发 HTTPS 流量。模型、Remote MCP/OAuth、connector、记录型记忆、web 请求、模型目录、webhook 和宿主 HTTP 客户端的其他调用方都使用这些路由。
 
-**部署运维人员的代理属于可信出站基础设施。** 请求 URL 校验和 TLS 验证仍启用，但最终 DNS 和目标网络限制由代理负责。应用层 DNS/IP 固定和最终地址拦截仅适用于直接连接，包括 `NO_PROXY`，不适用于代理发出的连接。按需在代理上配置限制。已有端点预检查仍可能要求本地 DNS。代理请求失败不会自动回退为直连。
+**部署运维人员的代理属于可信出站基础设施。** 声明域名授权和 TLS 验证独立于路由保持有效。代理负责最终 DNS 和目标网络限制；直连及 `NO_PROXY` 路由同样使用原生传输的 DNS，不在应用层固定 IP。代理请求失败不会自动回退为直连。
 
 HTTPS Envd 挂载也使用环境代理；明文本地或 provider 私有 Envd 链接保持直连。其他 SDK 管理的环境和存储传输保持各自代理行为。这不会改变 Envd 受控出站 broker 或其执行隔离策略。
 
@@ -135,7 +151,6 @@ HTTPS Envd 挂载也使用环境代理；明文本地或 provider 私有 Envd �
 
 ```toml
 [providers]
-private_domains = ["host.docker.internal"]
 http_origins = ["http://host.docker.internal:11434"]
 ```
 

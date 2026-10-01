@@ -3,9 +3,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib.util
-import ipaddress
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import httpx2
@@ -20,9 +20,6 @@ def smoke(monkeypatch):
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, spec.name, module)
     spec.loader.exec_module(module)
-    monkeypatch.setattr(
-        "a13n_harness.providers.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("8.8.8.8")]
-    )
     args = argparse.Namespace(
         command="call", model="vendor/model", settings='{"max_tokens": 256}', prompt="Reply with OK."
     )
@@ -100,11 +97,11 @@ def test_inference_uses_async_native_factory(smoke, monkeypatch, capsys, command
     assert "dummy-key" not in output
 
 
-def test_inference_rejects_private_endpoint_before_dispatch(smoke, monkeypatch):
+def test_inference_rejects_invalid_endpoint_before_dispatch(smoke, monkeypatch):
     _, calls, run = smoke
-    monkeypatch.setattr(
-        "a13n_harness.providers.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("127.0.0.1")]
-    )
+    module = sys.modules["openrouter_smoke"]
+    definition = module.DEFINITION
+    monkeypatch.setattr(module, "DEFINITION", replace(definition, endpoint=f"{definition.endpoint}#fragment"))
     with pytest.raises(EndpointPolicyError):
         run()
     assert calls == []

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { useMatch, useNavigate } from "react-router";
+import { NavLink, useMatch, useNavigate } from "react-router";
 import {
   Button,
   FormField,
@@ -18,7 +18,7 @@ import {
   Funnel,
   Folder,
   CaretRight,
-  CaretDoubleDown,
+  House,
   DotsThree,
   DotsSixVertical,
   Gear,
@@ -40,7 +40,6 @@ import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { DraftNavigation } from "./draft-navigation";
 
-type Presence = Schema<"PresenceFrame"> | null;
 type Group = {
   id: string;
   name: string;
@@ -48,11 +47,7 @@ type Group = {
   scope?: "projectless" | "unavailable";
 };
 
-export function ConversationNavigation({
-  presence = null,
-}: {
-  presence?: Presence;
-}) {
+export function ConversationNavigation() {
   const projects = useProjects();
   const navigate = useNavigate();
   const match = useMatch("/threads/:threadId");
@@ -156,7 +151,19 @@ export function ConversationNavigation({
           </PopoverPopup>
         </Popover>
       </div>
-      <DraftNavigation />
+      <nav aria-label="Conversation shortcuts" className={styles.shortcuts}>
+        <NavLink
+          to="/"
+          end
+          className={({ isActive }) =>
+            `${styles.homeLink} ${isActive ? styles.selected : ""}`
+          }
+        >
+          <House size={18} />
+          <span>Home</span>
+        </NavLink>
+        <DraftNavigation />
+      </nav>
       <div className={styles.navigationHeading}>
         <span title={scopedProject?.name}>
           {scopedProject?.name ?? "Projects"}
@@ -201,7 +208,6 @@ export function ConversationNavigation({
                 !searching &&
                 (!scopedProject || scopedProject.project_id === group.projectId)
               }
-              presence={presence}
               selected={activeGroup === group.id ? selected : undefined}
               selectedUpdatedAt={selectedDetail.dataUpdatedAt}
               create={() =>
@@ -213,11 +219,7 @@ export function ConversationNavigation({
           ))}
         </div>
         {searching && (
-          <SearchResults
-            query={query.trim()}
-            project={scopedProject}
-            presence={presence}
-          />
+          <SearchResults query={query.trim()} project={scopedProject} />
         )}
       </div>
       <span className={styles.srOnly} role="status">
@@ -246,7 +248,6 @@ function ProjectGroup({
   toggle,
   enabled,
   hidden,
-  presence,
   selected,
   selectedUpdatedAt,
   create,
@@ -258,7 +259,6 @@ function ProjectGroup({
   toggle: (open: boolean) => void;
   enabled: boolean;
   hidden: boolean;
-  presence: Presence;
   selected?: Schema<"ThreadSummary">;
   selectedUpdatedAt: number;
   create: () => void;
@@ -267,6 +267,7 @@ function ProjectGroup({
 }) {
   const navigate = useNavigate();
   const results = useResults();
+  const [markingRead, setMarkingRead] = useState(false);
   const projects = useProjects();
   const belongs = (thread: Schema<"ThreadSummary">) => {
     const project = thread.configuration.project_id;
@@ -410,12 +411,25 @@ function ProjectGroup({
       Number(!!b.thread.starred) - Number(!!a.thread.starred) || byTouch(a, b),
   );
   const rows = [...activeRows, ...unreadRows, ...recentRows];
+  const markAllRead = async () => {
+    if (!results.tracker || markingRead) return;
+    // Capture the displayed group's versions before storage writes can yield.
+    const unread = [...observed.values()]
+      .filter(({ thread }) => !thread.archived)
+      .map(({ thread }) => thread);
+    setMarkingRead(true);
+    try {
+      await results.tracker.acknowledgeAll(unread);
+    } finally {
+      setMarkingRead(false);
+    }
+  };
   return (
     <section
       hidden={hidden}
       data-project-key={group.projectId}
       aria-label={group.name}
-      className={order.moving === group.id ? styles.movingProject : undefined}
+      className={`${styles.projectGroup} ${order.moving === group.id ? styles.movingProject : ""}`}
     >
       <div className={styles.groupHeading}>
         {group.projectId && (
@@ -524,30 +538,56 @@ function ProjectGroup({
           {rows.map((row, index) => (
             <Fragment key={row.thread.thread_id}>
               {activeRows.length > 0 && index === 0 && (
-                <small className={styles.emptyGroup}>
-                  Running · {activeRows.length}
-                </small>
+                <div
+                  className={styles.sectionHeading}
+                  role="heading"
+                  aria-level={3}
+                  aria-label={`Running · ${activeRows.length}`}
+                >
+                  <span>Running</span>
+                  <small>{activeRows.length}</small>
+                </div>
               )}
               {unreadRows.length > 0 && index === activeRows.length && (
-                <small className={styles.emptyGroup}>
-                  New results · {unreadRows.length}
-                </small>
+                <div
+                  className={styles.sectionHeading}
+                  role="heading"
+                  aria-level={3}
+                  aria-label={`New results · ${unreadRows.length}`}
+                >
+                  <span>New results</span>
+                  <small>{unreadRows.length}</small>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    loading={markingRead}
+                    aria-label={`Mark all results read in ${group.name}`}
+                    title="Mark all current results in this group as read"
+                    onClick={() => void markAllRead()}
+                  >
+                    Mark all read
+                  </Button>
+                </div>
               )}
               {recentRows.length > 0 &&
-                (activeRows.length > 0 || unreadRows.length > 0) &&
                 index === activeRows.length + unreadRows.length && (
-                  <small className={styles.emptyGroup}>Recent</small>
+                  <div
+                    className={styles.sectionHeading}
+                    role="heading"
+                    aria-level={3}
+                  >
+                    Recent
+                  </div>
                 )}
               {row.thread.role === "coordinator" ? (
                 <CoordinatorEntry
                   row={row}
-                  presence={presence}
                   enabled={enabled && expanded}
                   selected={selected}
                   selectedUpdatedAt={selectedUpdatedAt}
                 />
               ) : (
-                <ThreadRow row={row} presence={presence} />
+                <ThreadRow row={row} />
               )}
             </Fragment>
           ))}
@@ -568,13 +608,14 @@ function ProjectGroup({
           {list.hasNextPage && (
             <Button
               variant="ghost"
-              size="icon-sm"
+              size="xs"
+              className={styles.showMore}
               loading={list.isFetchingNextPage}
               onClick={() => void list.fetchNextPage()}
               aria-label={`Show more conversations in ${group.name}`}
               title={`Show more conversations in ${group.name}`}
             >
-              <CaretDoubleDown aria-hidden="true" />
+              Show more
             </Button>
           )}
         </div>
@@ -586,11 +627,9 @@ function ProjectGroup({
 function SearchResults({
   query,
   project,
-  presence,
 }: {
   query: string;
   project?: { project_id: string; name: string };
-  presence: Presence;
 }) {
   const list = useThreads(query, project?.project_id);
   const rows = [
@@ -612,7 +651,7 @@ function SearchResults({
             {row.project_name}
             {row.thread.coordinator_thread_id ? " · Coordinator worker" : ""}
           </small>
-          <ThreadRow row={row} presence={presence} />
+          <ThreadRow row={row} />
         </div>
       ))}
       {list.isFetching && !list.isFetchingNextPage && (

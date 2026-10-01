@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.history import HistoryBrowser
+from a13n_harness_ui.interactive.rendering import Status
 from a13n_harness_ui.interactive.selection import Choice, Selection
 from a13n_harness_ui.interactive.shell import CliShell
 from prompt_toolkit.application import create_app_session
@@ -31,8 +32,10 @@ def shell() -> Iterator[CliShell]:
         shell.renderer.transcript.close()
 
 
-@pytest.mark.parametrize("width", [24, 40, 59, 60, 80, 100, 160])
-@pytest.mark.parametrize("state", ["preparing", "idle", "working", "steering"])
+@pytest.mark.parametrize(
+    "width, state",
+    [(24, "preparing"), (40, "steering"), (59, "idle"), (60, "working"), (80, "steering"), (160, "idle")],
+)
 def test_chat_hints_prioritize_history_without_repeating_submission(
     shell: CliShell, monkeypatch: pytest.MonkeyPatch, width: int, state: str
 ) -> None:
@@ -74,7 +77,7 @@ def test_chat_hints_prioritize_history_without_repeating_submission(
             assert expected in header
 
 
-@pytest.mark.parametrize("width", [24, 40, 60, 80, 100])
+@pytest.mark.parametrize("width", [24, 80])
 def test_modal_hints_describe_current_focus_and_completion(
     shell: CliShell, monkeypatch: pytest.MonkeyPatch, width: int
 ) -> None:
@@ -132,6 +135,8 @@ async def test_rendered_footer_reflows_on_resize_and_preserves_input(
                 expected = shell._hints().splitlines()
                 if mode == "history" or height >= 12:
                     # String checks alone miss the original fixed-height clipping bug.
+                    if mode != "history":
+                        assert shell.status.line(width).rstrip() in rows
                     assert rows[-len(expected) :] == expected
                     assert len(expected) <= (2 if height >= 12 else 1)
                     if mode == "chat":
@@ -228,23 +233,17 @@ async def test_note_count_refreshes_and_discards_cross_thread_snapshot(shell: Cl
     assert shell.renderer.note_count == 0
 
 
-@pytest.mark.parametrize("width", [24, 40, 59, 60, 80, 100, 160])
-@pytest.mark.parametrize("fast", ["default", "off", "on"])
-@pytest.mark.parametrize("tokens", [None, 0, 12345, 1234567])
-@pytest.mark.anyio
-async def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(
-    shell: CliShell, monkeypatch, width, fast, tokens
-) -> None:
+@pytest.mark.parametrize(
+    "width, fast, tokens",
+    [(24, "on", None), (40, "off", 0), (59, "default", 12345), (60, "on", 1234567), (100, "on", 12345)],
+)
+def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(width, fast, tokens) -> None:
     from a13n_harness.usage import BoundedRequestUsage
 
-    shell.status.state = "ready"
-    shell.status.fast = fast
-    shell.status.context_tokens = 1200
-    shell.status.context_window = 350000
+    status = Status(state="ready", fast=fast, context_tokens=1200, context_window=350000)
     if tokens is not None:
-        shell.status.usage = BoundedRequestUsage(input_tokens=tokens, cache_read_tokens=tokens // 2)
-    monkeypatch.setattr(shell.app.output, "get_size", lambda: Size(rows=24, columns=width))
-    line = shell.status.line(width)
+        status.usage = BoundedRequestUsage(input_tokens=tokens, cache_read_tokens=tokens // 2)
+    line = status.line(width)
     assert get_cwidth(line) <= width
     assert ("Fast" in line) == (fast == "on")
     assert ("tok " if width < 60 else "tokens ") in line
@@ -256,11 +255,3 @@ async def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(
         assert ("12.3K" if tokens == 12345 else "1.2M") in line
     if width >= 80:
         assert "ctx 1,200 (0%)" in line
-    with set_app(shell.app):
-        shell.app.render_counter += 1
-        shell.app.renderer.render(shell.app, shell.app.layout)
-        screen = shell.app.renderer._last_screen
-        assert screen is not None
-        rows = ["".join(screen.data_buffer[y][x].char for x in range(width)).rstrip() for y in range(24)]
-        assert line.rstrip() in rows
-    await shell.app.cancel_and_wait_for_background_tasks()

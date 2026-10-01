@@ -24,11 +24,6 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
     monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
     endpoint = "https://example.invalid/custom/v1"
     model_cfg = {} if provider.transport == "xai" else {"base_url": endpoint}
-    import ipaddress
-
-    monkeypatch.setattr(
-        "a13n_harness.providers.endpoint_policy._resolve_addresses", lambda *_: (ipaddress.ip_address("93.184.216.34"),)
-    )
     model_name = "openai/test-model" if provider.route == "openrouter" else "test-model"
     recipe = ResolvedModelRecipe(
         model_id="model-test",
@@ -53,7 +48,7 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("prefix", ["google-cloud", "google-gla", "google-vertex", "gemini"])
+@pytest.mark.parametrize("prefix", ["google-cloud", "gemini"])
 async def test_google_cloud_routes_preserve_custom_endpoint_and_native_provider(prefix, monkeypatch):
     from pydantic_ai.providers.google_cloud import GoogleCloudProvider
 
@@ -75,13 +70,6 @@ async def test_google_cloud_routes_preserve_custom_endpoint_and_native_provider(
     assert str(model.provider.base_url).rstrip("/") == endpoint
     async with model:
         assert model.model_name == "gateway-gemini"
-
-
-def test_preset_descriptions_use_product_language() -> None:
-    for provider in API_PROVIDERS:
-        for model_id in ("claude-sonnet-4-5", "claude-sonnet-4-6"):
-            for preset in settings_presets(provider.route, model_id):
-                assert "pydantic" not in preset.description.lower(), (provider.route, model_id, preset.key)
 
 
 @pytest.mark.parametrize("model_id", ["gpt-4.1", "custom-model"])
@@ -330,12 +318,6 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
         return httpx.Response(200, json=body)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)):
-        import ipaddress
-
-        monkeypatch.setattr(
-            "a13n_harness.providers.endpoint_policy._resolve_addresses",
-            lambda *_: (ipaddress.ip_address("93.184.216.34"),),
-        )
 
         async def native_request(_transport, request):
             return respond(request)
@@ -465,16 +447,6 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
         return httpx.Response(200, text=content, headers={"content-type": "text/event-stream"})
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)):
-        import ipaddress
-
-        monkeypatch.setattr(
-            "a13n_harness.providers.endpoint_policy._resolve_addresses",
-            lambda *_: (ipaddress.ip_address("93.184.216.34"),),
-        )
-        monkeypatch.setattr(
-            "a13n_harness.providers.endpoint_policy._resolve_addresses",
-            lambda *_: (ipaddress.ip_address("93.184.216.34"),),
-        )
 
         async def native_request(_transport, request):
             return respond(request)

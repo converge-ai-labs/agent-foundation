@@ -23,6 +23,7 @@ import {
   useAppContextSelection,
 } from "../mcp-apps/context-selection";
 import { ComposerStatus } from "./composer-status";
+import { RunActivity } from "./run-activity";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
 import { ConversationDetails } from "./details";
@@ -32,7 +33,7 @@ import {
 } from "./coordinator-settings";
 import { WorkInspector } from "./work-inspector";
 import { RootFailureNotice } from "./failure-notice";
-import { useHistory, useThread } from "./queries";
+import { useHistory, useOperation, useThread } from "./queries";
 import { refreshThread } from "./refresh";
 import { refreshActivity } from "./activity-updates";
 import { applyThreadMutation } from "./thread-updates";
@@ -151,6 +152,9 @@ function ConversationContent({
   const [showAvailable, setShowAvailable] = useState(false);
   const pageReady = useInitialReady(
     showAvailable ||
+      // A confirmed Send already has readable input. Keep it and the next
+      // prompt visible while the destination observes detail and saved history.
+      draft.localInputs.some((input) => input.state === "accepted") ||
       detail.isError ||
       !!detail.data?.thread.parent_thread_id ||
       (!!detail.data && (!!history.data || history.isError)),
@@ -408,6 +412,13 @@ function ConversationContent({
     (draft.submission.kind === "accepted"
       ? draft.submission.receipt
       : undefined);
+  const observedOperation = useOperation(
+    threadId,
+    operation?.receipt_id ??
+      (draft.submission.kind === "accepted"
+        ? draft.submission.receipt
+        : receipt),
+  );
   // Advance only after the replacement history query arrives. SSE completion alone
   // is not evidence that continuation was saved.
   const presentation = display.presentationFor(continuation);
@@ -699,6 +710,19 @@ function ConversationContent({
                   continuation={continuation}
                   gap={showLive && display.gap}
                   threadId={threadId}
+                  activity={
+                    !readOnly &&
+                    !hasLater &&
+                    !thread?.archived &&
+                    !detail.data?.deferred_requests?.length &&
+                    display.recovery?.state !== "retrying" ? (
+                      <RunActivity
+                        activity={operation}
+                        submission={draft.submission}
+                        operation={observedOperation.data}
+                      />
+                    ) : undefined
+                  }
                   pending={
                     !hasLater && detail.data?.deferred_requests?.length
                       ? {

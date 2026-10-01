@@ -19,6 +19,49 @@ agent 既需要当前任务相关的输入，也需要足够的状态来继续�
 
 设置模型上下文预算不会自动启用工具。先选择相应的 Capability，再配置阈值。继续执行时的序列化和人工决策，参阅[状态与恢复](state-and-resume.md)。
 
+## Run 配置
+
+使用 `RunConfiguration` 保存调用方为一次 Run 选择、由多个消费者共享的不可变值，而不是可变工作状态或 Capability 构造参数：
+
+```python
+from a13n_harness import RunBindings, RunConfiguration
+
+configuration = RunConfiguration(
+    allowed_hosts={"api.example.com", "docs.example.com"},
+    extensions={"example.reader": {"images": True}},
+)
+bindings = RunBindings.embedded(configuration=configuration)
+# Pass bindings to executable.run(..., bindings=bindings).
+```
+
+插件和工具通过 `AgentContext.configuration` 读取配置（原生工具上下文中为 `ctx.deps.configuration`）。消费者显式验证自己的命名空间扩展，例如 `context.configuration.extensions.get("example.reader")`；嵌套值是独立副本，修改它们不会改变接受的快照。Harness 不会自动将 extensions 合并到 Capabilities，也不注册扩展 schema。
+
+`allowed_hosts=None` 不限制目标，空集合拒绝全部目标。普通条目精确匹配规范化后的域名/IP；需要匹配一组主机时，使用下文说明的显式 `regex:` 条目。端口和 CIDR 不是主机规则。在每个自有 HTTP(S) 请求及重定向跳转前调用 `configuration.authorize_url(url)`；它检查声明的主机名，不解析 DNS，也不固定 IP。第一方 Host 传输显式接入。限制性配置使用 Host Web 工具代替原生搜索，避免直接转发视频 URL，并拒绝无法检查的原生 Model/MCP 路由。限制性配置还会在 SDK 下载或 provider 转发前拒绝原生 Model 的媒体 URL，包括历史和工具返回中的 URL；请将已授权的内容物化为 `BinaryContent`。注入的 Model resolver 必须为自身请求执行该快照。任意 shell 和插件的网络流量仍需部署或 Environment 隔离。Host 为持久恢复和异步子 Run 捕获配置；Harness 在内部恢复及内联子 Run 中复用它。
+
+### 主机规则与正则表达式
+
+精确主机与 `regex:<pattern>` 规则可以混用，任一条目匹配即可放行。正则采用 Python 正则表达式语法，对 **完整的规范化主机名** 执行匹配（`re.fullmatch`），因此 `^` 和 `$` 可省略。它不匹配协议、凭据、端口、路径或查询参数。匹配前会将域名转为小写、移除末尾的点、将国际化域名转为 ASCII IDNA，并规范化 IP 字面值。请使用小写/ASCII 表达式，或显式添加 `(?i)` 等内联标志；正则本身不会被转为小写或 IDNA。
+
+```python
+configuration = RunConfiguration(
+    allowed_hosts={
+        "api.vendor.example",                         # Exact host only.
+        r"regex:(api|docs)\.example\.com",            # Two named subdomains.
+        r"regex:(?:[a-z0-9-]+\.)*assets\.example\.com", # Base and all subdomain levels.
+    },
+)
+```
+
+| 规则                                  | 放行                                | 不放行                                    |
+| ------------------------------------- | ----------------------------------- | ----------------------------------------- |
+| `example.com`                         | `example.com`                       | `api.example.com`                         |
+| `regex:[a-z0-9-]+\.example\.com`      | `api.example.com`                   | `example.com`、`eu.api.example.com`       |
+| `regex:(?:[a-z0-9-]+\.)*example\.com` | `example.com`、`eu.api.example.com` | `notexample.com`、`example.com.evil.test` |
+
+字面量的点应写成 `\.`；未转义的 `.` 会匹配任意字符。`*.example.com` 不是受支持的 glob。单独的 `regex:example` 不会匹配 `example.com`，因为这里不是子串搜索。空表达式或无效表达式会在执行前使配置验证失败。正则属于可信调用方编写的配置：保持简单，避免有歧义的嵌套重复，不要接受模型生成的表达式。`regex:.*` 这样的宽泛规则放行所有有效主机名，但该 Run 仍被视为限制性配置，保留上文的原生传输限制。每个重定向目标都必须独立匹配规则。
+
+YAML 中使用单引号保留反斜杠，例如 `'regex:(api|docs)\.example\.com'`。JSON 需要双反斜杠：`"regex:(api|docs)\\.example\\.com"`。上面的 Python 原始字符串可避免额外转义。
+
 ## 组合上下文
 
 Harness 的上下文功能共用一个模型上下文协调器。每个功能只贡献一个大小受限的内容块，不直接改写其他功能的消息。
@@ -73,7 +116,7 @@ Notes 保存结构化的会话事实，Tasks 保存执行状态，`summarize` �
 
 ## 过滤器
 
-`MessageIntegrityFilterCapability` 是必需组件，由 builder 管理。`ContentFilterCapability` 可选。冷启动过滤通过 `AgentSpec.cold_start_filter` 默认启用，空闲间隔为一小时：
+`MessageIntegrityFilterCapability` 是必需组件，由 builder 管理。视频输入投影也是内置行为：不兼容的视频或超出编码后 10 MiB 单个／总量预算的内联视频只在 provider 请求中替换；普通 `VideoUrl` 要求通过 `read_video_url` 有界下载，YouTube 则要求 `url_input.video: [youtube]`。即使视频未超限，也会分离请求消息，以避免 413 或明确 payload 超限错误触发 self-healing 时改变保存的历史。self-healing 移除内联图像／视频后最多重试一次；原始文件、元数据和注释不变。`ContentFilterCapability` 可选。冷启动过滤通过 `AgentSpec.cold_start_filter` 默认启用，空闲间隔为一小时：
 
 ```python
 from a13n_harness import AgentSpec
@@ -96,6 +139,24 @@ without_cold_compression = spec.with_updates(cold_start_filter=None)
 ```
 
 内容过滤只用于适配 provider 或模型的多模态兼容性。距离最近一次模型响应达到配置间隔后，冷启动过滤会缩短旧的、已经消费的工具结果字符串；用户输入、thinking、原生媒体和待处理工具结果保持不变。一小时是明确的保留策略，并不代表 provider 的缓存到期时间。如果显式组合了 `ColdStartFilterCapability`，它会使用自己的策略，并阻止自动实例启用。这两种过滤器都不负责传输重试或语义恢复。
+
+图片预处理也默认启用。每次模型请求前，`ImageFilterCapability` 将较高的静态图片切成完整宽度的分段（每段高 4096 像素，相邻段重叠 50 像素），把每张图片或分段压缩到不超过 5 MiB 的 base64 编码字节和单边 8000 像素，并保留最新的 20 张图片。损坏、无法满足限制或较旧的超额图片，只在本次请求中替换为说明文字；保存的历史和原始文件保留原有像素与元数据。
+
+```python
+from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
+
+characteristics = HarnessModelCharacteristics(
+    image_input=ImageInputPolicy(max_images=10, split_large_images=False),
+)
+spec = AgentSpec(model_characteristics=characteristics)
+without_image_preparation = spec.with_updates(
+    model_characteristics=characteristics.model_copy(update={"image_input": None}),
+)
+```
+
+所选模型通过 `model_characteristics.image_input` 拥有该策略：省略时采用默认策略，部分对象为未指定字段采用默认值，显式 `null` 禁用自动预处理。显式组合的 `ImageFilterCapability` 保留自己的策略，并阻止自动重复实例。完整参数见[图片输入策略](models.md#image-input-policy)。
+
+设置 `max_image_bytes=0` 或 `max_image_dimension=0` 可独立禁用相应的压缩限制；设置 `support_gif=False` 会移除二进制 GIF 输入。动画图片不会分段，也不会转换成丢失动画的 JPEG。该策略处理原生用户内容序列，以及普通工具返回的单个图片或顶层列表中的图片；不会把嵌套工具 JSON 重新解释为图片输入。图片 URL 参与数量限制，但不会被获取或变换。该策略不限制整个请求的总字节，也不保证所有网关都接受请求。`AgentMediaUnderstandingProvider` 通过自己的 typed `image_input` 参数独立选择图片目标模型的策略，不继承父 agent 的限制。
 
 ## Handoff 与自动压缩
 

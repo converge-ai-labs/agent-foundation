@@ -9,7 +9,7 @@ The Harness preserves native Pydantic AI input, Model, settings, profile, messag
 3. input-only convenience layers that immediately materialize selected model-characteristics and model-settings aliases;
 4. optional fresh run-scoped resolution of a logical model ID;
 5. one automatic request-correlation header derived from the active Thread;
-6. optional exact one-shot provider-history self-healing;
+6. default-on exact one-shot provider-history self-healing with an explicit build-time opt-out;
 7. bounded logical-run recovery after a recoverable model interruption;
 8. optional native image generation with Host-owned saving.
 
@@ -19,7 +19,13 @@ It does not add a hosted input wire format, durable model registry, serialized s
 
 ```python
 type NativeRunInput = str | Sequence[UserContent]
-type RunInputValue = NativeRunInput
+type RunInputValue = str | Sequence[UserContent | ContentItem]
+
+
+@dataclass(frozen=True, slots=True)
+class ContentItem:
+    value: UserContent
+    metadata: ContentMetadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +44,7 @@ type RunInputFactory = Callable[
 
 @dataclass(frozen=True, slots=True)
 class SemanticRunInput:
-    value: str | tuple[UserContent, ...] | None
+    value: str | tuple[UserContent | ContentItem, ...] | None
 ```
 
 `run()` and `stream()` accept either an immediate value or one async factory, never both. The factory runs exactly once after Harness has entered the fresh Environment adapters and atomically published the initial mount set, but before plugin middleware or Pydantic execution. It can use trusted run identity, metadata, scoped readiness, and the entered Environment without depending on `DynamicEnvironmentCapability` or receiving a live Pydantic run handle.
@@ -47,8 +53,16 @@ Normalization rules are deliberately small:
 
 - `None` means no new input and does not manufacture an empty prompt;
 - a string must be non-empty;
-- a `Sequence[UserContent]` must be non-empty and is copied to a tuple;
+- a `Sequence[UserContent | ContentItem]` must be non-empty and is copied to a tuple;
 - bytes and non-sequence values are rejected.
+
+### Content Annotations
+
+The Harness owns `ContentItem` and `ContentMetadata`. A `ContentItem` pairs one native `UserContent` value with presentation annotations: `display` defaults to true, `source_id` is optional, `media` defaults to false, and opaque JSON application references are preserved. These annotations grant no authority and are not model instructions. Native `TextContent.metadata` is accepted as application metadata at input normalization; native media `vendor_metadata` contains provider options only, such as `detail`, `fps`, and `media_resolution`.
+
+Execution unwraps envelopes before the native Agent or provider sees input. Authored input and steering remain native `UserPromptPart` values. Canonical `ModelRequest.metadata['a13n.content']` stores annotations as a mapping from decimal part-index strings to ordered per-item metadata objects. A string prompt has one item. The item count must match its prompt, and native message/state JSON serialization preserves this mapping.
+
+Content and annotations travel together through canonical part insertion, replacement, removal, request merging, replay, and system-prompt reconciliation. Primary input annotation and observation have a Run-local owner independent of steering attachment and delivery. It retains only the current primary attempt's input; nested same-Agent helper runs do not consume it. Each primary recovery attempt uses its current input's annotations, not the initial logical Run's envelope, and marks recovery content hidden for normal presentation while preserving its native model value and application references. Whole-history compaction and handoff replacements discard the template's positional annotations and steering identities; retained input requests keep their own annotations and delivery identities. Equal text or bytes never identify annotation ownership. Provider-normalized temporary histories do not reconstruct application annotations. Live input, transcript history, retained display history, and conversation excerpts share the same annotation-aware projection. Cache markers remain model-only. Metadata absence on imported native input uses ordinary visible defaults; media vendor options are never interpreted as presentation annotations.
 
 Plugins receive `SemanticRunInput` and can replace it through the same normalization. The trusted `AgentContext` cannot be replaced. Hosted correlation, content references, artifact policy, and transport schemas belong to the Host adapter that creates native Pydantic `UserContent` before calling the Harness.
 
@@ -284,6 +298,22 @@ The mapping follows these rules:
 
 A concrete build-time Model remains valid for embedded use because the automatic defaults are request-dynamic rather than Model defaults. One reusable executable therefore receives each active State's Thread affinity without sharing one static cache or session value across independent histories. Trusted composition may explicitly override a default with a provider-required derivation, but the resulting value must preserve the Thread isolation above.
 
+## Video Inputs
+
+Every built Agent includes exactly one builder-owned `VideoUrlCapability`, owning URL acquisition and request-only video compatibility. `video_understanding` declares binary video input. `model_characteristics.url_input.video` declares native video URL subtypes, currently only `youtube`. URL support describes the selected model and transport together, not a parallel top-level ModelCapability. No native URL subtype is inferred from file modalities, model names, or compatible routes. The tool is visible when binary video or a native video URL subtype is supported.
+
+`read_video_url(url, instructions=None, media_type=None)` admits an audience-safe HTTP(S) URL without credentials or a fragment. A YouTube link classified by native `VideoUrl.is_youtube` requires explicit `url_input.video: [youtube]` and remains a native `VideoUrl` with `force_download=False`. Unsupported YouTube links are rejected, never downloaded or converted to another link. Restrictive Run hostname policy disallows native URL processing, including YouTube; this tool does not bypass the existing Model boundary. Tool visibility, its advertised URL types, and packaged guidance reflect the captured model and effective Run policy: native YouTube guidance is included only when usable, and direct-download guidance only with binary video support. A YouTube-only model under restrictive Run hostname policy exposes no video URL tool.
+
+Other URLs require binary `video_understanding`. The tool downloads the direct resource into bounded in-memory raw bytes and attaches native `BinaryContent`; the SDK owns Base64 encoding. Acquisition validates the source and every redirect before I/O using Run hostname policy and the shared endpoint policy. At most five redirects are followed, HTTPS cannot downgrade to HTTP, and redirects into YouTube are rejected. A 120-second operation deadline covers endpoint authorization, all redirect hops, and body consumption, in addition to the owned HTTP client's 30-second I/O timeout. The client honours operator TLS configuration and closes responses and the client on success, failure, or cancellation. No DNS/IP policy is added to the established proxy-trust contract. MIME comes from a video response Content-Type, or explicit MIME / URL extension for absent or generic binary Content-Type; non-video responses and empty bodies fail. The tool does not decode, compress, split, extract frames, upload, or call a helper Model.
+
+`VideoInputPolicy.max_video_bytes` is a positive Base64-after byte budget, defaulting to 10 MiB (`10 * 1024 * 1024`). The same budget applies to one video and the aggregate of inline videos in a model request, including `view` results and directly supplied binary input. It is Harness policy, not a provider's hard request limit. For `n` raw bytes, encoded size is `4 * ((n + 2) // 3)`; acquisition bounds raw bytes by `(budget // 4) * 3` without allocating Base64. Content-Length preflight and streamed response bounds reject oversized resources before attachment. Download oversize, MIME, HTTP status, denied redirects, and timeout failures are structured tool failures, not Model payload errors.
+
+The mandatory request projection scans `UserPromptPart` and ordinary `ToolReturnPart` scalar or top-level list/tuple content. It retains inline videos in encounter order while their cumulative encoded bytes fit the budget, replacing incompatible or excess input with bounded explanatory text. Non-YouTube `VideoUrl` values are replaced with instructions to use `read_video_url`, rather than allowing an adapter's unbounded implicit download. Other content, sequence shape, tool-call identity, native metadata, and application annotations remain intact; nested JSON and provider-native returns are not reinterpreted. Supported native YouTube URLs stay unchanged. Inline binary video always receives detached request envelopes, even when unchanged, because exact-error self-healing mutates its input. Immutable bytes are shared, not re-encoded or copied. Text / supported-YouTube-only requests need no history copy.
+
+Ordinary and streaming dispatch share the projection. Provider 413 or an exact recognized payload-size rejection may still occur because the complete request includes other content and framing. Existing self-healing replaces inline images and videos with explicit reminders and replays once only if repair changed content. YouTube URLs, audio, documents, unrelated errors, opt-outs, no-op repairs, second failures, and already-yielded streams do not receive a new video retry path. Each physical replay remains subject to ordinary request admission and usage accounting. Projection and replay never modify canonical messages, saved state, source bytes, or original input annotations.
+
+The stable tool identity remains `media.read_video_url`; tool permissions and invocation policy remain authoritative. Source text and focused instructions accompany attached input, and presentation annotations stay out of vendor metadata. Pasted links remain text until the Agent calls the tool. Local files use `view`. The optional Media Capability, `read_media`, and `RunBindings.media_reader` are removed without aliases; no reader binding is required.
+
 ## Request and History Filters
 
 Filter Capabilities are the narrow family of copy-on-write transformations applied to native Pydantic messages at the public model-request boundary. They do not form a second pipeline API, model profile, retry framework, or authority plane. Each Filter owns one request/history invariant and composes through ordinary Pydantic Capability ordering.
@@ -307,7 +337,32 @@ class ContentFilterConfiguration(BaseModel):
 
 The configuration is compatibility policy selected by trusted embedding code, not a second `ModelProfile`, provider capability registry, or inference from a model name. A dynamic `RunModelResolver` that routes among incompatible media surfaces selects an Agent definition or trusted policy valid for that route; model content never widens the policy.
 
-The Content Filter preserves accepted native Pydantic values. It classifies `BinaryContent` by canonical media type, treats image/audio/video/document URLs and `UploadedFile` as their native families, rejects credential-bearing URLs, and enforces aggregate item and inline-binary byte limits before provider serialization. An unsupported, unsafe, or over-limit item is replaced in place by one bounded explanatory text value; non-media content, tool-call identity, and request ordering remain unchanged. Scalar content remains scalar for a one-to-one replacement, while list and tuple shapes retain their sequence shape. This filter does not upload, fetch, decode, compress, spill, or persist content and grants no authority.
+The Content Filter preserves accepted native Pydantic values. It classifies `BinaryContent` by canonical media type, treats image/audio/video/document URLs and `UploadedFile` as their native families, rejects credential-bearing URLs, and enforces aggregate item and inline-binary byte limits before provider serialization. An unsupported, unsafe, or over-limit item is replaced in place by one bounded explanatory text value; non-media content, tool-call identity, and request ordering remain unchanged. Replacements in `UserPromptPart` use native `TextContent`; the canonical annotation for the replaced slot retains its display visibility, source identity, and opaque application references. Ordinary `ToolReturnPart` replacements remain string values. Scalar content remains scalar for a one-to-one replacement, while list and tuple shapes retain their sequence shape. This filter does not upload, fetch, decode, compress, spill, or persist content and grants no authority.
+
+Provider adapters receive only native content and provider-specific media options. Presentation annotations remain in Harness-owned canonical request metadata, outside media `vendor_metadata`; Google requests, streams, and request-time token counting use the native adapter without a Harness metadata sanitizer.
+
+`ImageFilterCapability` is installed by default through the selected model's `HarnessModelCharacteristics.image_input`. It projects image input only through `wrap_model_request`, after committed model-context preparation. The projection reaches concrete, run-resolved, and inferred Models on ordinary and streaming requests without changing canonical messages, original input objects, retained file bytes, or application provenance metadata. It does not write through `RunContext.messages`, acquire files, or fetch URLs.
+
+```python
+class ImageInputPolicy(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    split_large_images: bool = True
+    image_split_max_height: int = 4096
+    image_split_overlap: int = 50
+    max_image_bytes: int = 5 * 1024 * 1024
+    max_image_dimension: int = 8000
+    max_images: int = 20
+    support_gif: bool = True
+```
+
+The image policy first validates binary images, splits tall static images into ordered full-width vertical segments with the configured overlap, and compresses each image or segment when its encoded-byte or per-axis dimension limit is exceeded. Splitting preserves spatial coverage rather than selecting or discarding a semantic region. Segment identities are distinct; one-to-one transformations preserve the native image subtype, identity, and vendor metadata. Compression resizes proportionally and produces JPEG, compositing transparent pixels onto white. The byte limit applies to base64-encoded payload bytes, with a raw budget of `(max_image_bytes // 4) * 3`; zero disables that limit, and `max_image_dimension=0` independently disables dimension-based resizing. Compression cannot flatten animation, and animated images bypass segmentation. Corrupt images and images that cannot satisfy the configured limits are replaced by explanatory text. Static images must pass pixel decoding before they consume the image count, even when no split or compression is needed. Static pixel decoding and pixel-changing processing are bounded to 80 million source pixels and run off the event loop.
+
+The policy then keeps the newest `max_images` images across request messages, parts, and content items, replacing older images with explanatory text. Segments count as individual images; corrupted or unpreparable inputs do not consume the count. `max_images=0` removes all image input. Finally, `support_gif=False` replaces binary GIFs with a compatibility explanation. Native `ImageUrl` values participate in counting but are not fetched, decoded, split, compressed, or classified by URL suffix. Other media and Model response files remain unchanged.
+
+Both native user-content sequences and ordinary tool-return scalar or top-level list media participate in this image projection. Arbitrary nested tool JSON and tuple-valued tool data are not reinterpreted as provider image files. Scalar tool content becomes a list only for a one-to-many split; existing user list/tuple and tool list shapes are otherwise retained. The image policy is trusted target-model configuration rather than inferred provider characteristics or a new profile schema. It has no shared total-request byte budget and cannot guarantee acceptance by every gateway.
+
+`AgentMediaUnderstandingProvider` selects the same default policy independently for its image target through its typed `image_input` constructor argument; a configuration replaces that policy and `None` disables it. It does not inherit the parent Agent's policy, and audio/video targets do not receive the image filter.
 
 `ColdStartFilterCapability` is installed by default through [AgentSpec cold-start configuration](03-agent-definition-and-build.md#agentdefinition). It can be configured or disabled there. After its configured idle interval since the latest `ModelResponse`, it shortens oversized string leaves in ordinary tool results strictly before that latest response. Those results have already been consumed by the model; the latest response and every later request, including pending tool results, remain exact. Structured dictionaries, lists, and tuples retain their shape and short hint fields; native media and non-string values remain unchanged. The filter does not spill content or replace explicit compaction.
 
@@ -317,26 +372,29 @@ The tool execution boundary does not duplicate Filter behavior. It preserves nat
 
 Former global history processors resolve to one current owner:
 
-| Behavior                                                                | Owner                                                        |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Orphan and duplicate ordinary tool results                              | Mandatory `MessageIntegrityFilterCapability`                 |
-| Unsupported, unsafe, or over-limit request media                        | Optional `ContentFilterCapability`                           |
-| Cold-cache reduction of already-consumed tool-result strings            | AgentSpec-configured `ColdStartFilterCapability`             |
-| Current tool-return redaction, bounds, and spill                        | `ToolExecutionBoundaryCapability`                            |
-| Runtime, file, Environment, handoff, working-state, and process notices | Their focused context or Environment Capabilities            |
-| Accepted live user or Agent messages                                    | Native enqueue plus Host delivery acceptance                 |
-| Media acquisition, transformation, or upload                            | Optional Media Capability/provider integration               |
-| System instructions and provider request rendering                      | `AgentSpec`, native Model profile, and provider adapter      |
-| Exact provider-history rejection repair                                 | Selected `SelfHealingModelCapability` and `SelfHealingModel` |
-| Interrupted-history normalization and `ModelAttempt` recovery           | Harness state recovery and `HarnessRunStream`                |
+| Behavior                                                                      | Owner                                                          |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Orphan and duplicate ordinary tool results                                    | Mandatory `MessageIntegrityFilterCapability`                   |
+| Unsupported, unsafe, or over-limit request media                              | Optional `ContentFilterCapability`                             |
+| Request-only image splitting, compression, newest-first count, and GIF policy | Model-characteristics-configured `ImageFilterCapability`       |
+| Cold-cache reduction of already-consumed tool-result strings                  | AgentSpec-configured `ColdStartFilterCapability`               |
+| Current tool-return redaction, bounds, and spill                              | `ToolExecutionBoundaryCapability`                              |
+| Runtime, file, Environment, handoff, working-state, and process notices       | Their focused context or Environment Capabilities              |
+| Accepted live user or Agent messages                                          | Native enqueue plus Host delivery acceptance                   |
+| Other media acquisition, transformation, or upload                            | Optional Media Capability/provider integration                 |
+| System instructions and provider request rendering                            | `AgentSpec`, native Model profile, and provider adapter        |
+| Exact provider-history rejection repair                                       | Default-on `SelfHealingModelCapability` and `SelfHealingModel` |
+| Interrupted-history normalization and `ModelAttempt` recovery                 | Harness state recovery and `HarnessRunStream`                  |
 
-Malformed current tool arguments, ordinary provider reasoning projection, and transport retry remain upstream Model/adapter/client concerns rather than generic Filters. An exact residual provider incompatibility uses an explicitly selected `SelfHealingModelCapability` or another narrowly scoped compatibility Capability only when the native profile lacks the required public behavior.
+Malformed current tool arguments, ordinary provider reasoning projection, and transport retry remain upstream Model/adapter/client concerns rather than generic Filters. An exact residual provider incompatibility uses `SelfHealingModelCapability` or another narrowly scoped compatibility Capability only when the native profile lacks the required public behavior.
 
 ## Narrow Self-Healing
 
-`SelfHealingModelCapability` is an optional code-first Capability with stable ID `a13n.model.self-healing`. It is not installed by default. Applications that need the supported repairs should select it explicitly through an Agent definition, native Agent spec, run binding, or trusted plugin contribution.
+`SelfHealingModelCapability` is a code-first Capability with stable ID `a13n.model.self-healing`. `HarnessBuilder` installs it by default for every built Agent, including inline children. `HarnessBuilder(self_healing_enabled=False)` disables automatic installation without removing an explicitly selected Capability or an explicitly wrapped `SelfHealingModel`. A Capability selected through the definition, a Host-authorized native Agent spec, or a trusted plugin contribution takes precedence over the automatic default, preserving its configured rules without installing a duplicate. Run bindings remain restricted to their documented runtime policy and MCP types.
 
-The Capability runs at the innermost model-request wrapper boundary. After logical resolution and native model inference have selected the effective request Model, it copies the request context and wraps that Model exactly once in `SelfHealingModel`. This preserves the native resolver chain, covers concrete, run-resolved, and natively inferred Models uniformly, and leaves the original request context unchanged. An already wrapped Model is reused.
+The default also applies to compaction's nested request through the same Agent. Independent native auxiliary Agents for tool review and media understanding inherit Run observation and usage accounting, not the primary Agent's Capability tree; this builder option does not install self-healing on those Agents.
+
+The Capability runs at the innermost model-request wrapper boundary. After logical resolution and native model inference have selected the effective request Model, it copies the request context and wraps that Model exactly once in `SelfHealingModel`. This preserves the native resolver chain, covers concrete, run-resolved, and natively inferred Models uniformly, and leaves the original request context unchanged. An existing `SelfHealingModel` anywhere in the native `WrapperModel.wrapped` chain is reused without replacing its rules or removing outer profile and usage wrappers.
 
 `SelfHealingModelCapability` accepts an optional sequence of `ModelRecoveryRule` values. `None` selects the built-in rules; an explicit empty sequence selects no rules. `SelfHealingModel` has the same rule semantics and preserves the native Model interface and profile.
 
@@ -354,15 +412,17 @@ Default rules are narrow tested provider repairs:
 
 | Rule                                            | Repair                                                                              |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Oversized request payload                       | Replace inline images with an explicit removal reminder                             |
+| Oversized request payload                       | Replace inline images and videos with explicit removal reminders                    |
 | Invalid provider item ID                        | Remove provider-bound response IDs, metadata, reasoning state, and compaction parts |
 | Incomplete Anthropic thinking                   | Remove thinking parts                                                               |
 | Modified or invalidly signed Anthropic thinking | Remove thinking parts                                                               |
 | Stale or unverifiable reasoning                 | Remove thinking parts                                                               |
 
+Oversized image/video reminders inserted into native user-prompt parts are `TextContent` with canonical slot annotations `display: false` and source ID `a13n.model.self-healing`, preserving opaque application references. They remain model-visible recovery instructions, not human-authored submissions. Ordinary user text in the same prompt is retained. Tool-return reminders remain tool content. Original media files and retained video history are unchanged; further inspection should use a smaller resource rather than repeatedly attaching the same oversized original.
+
 The wrapper does not retry generic transport, rate-limit, tool, output-validation, or cancellation failures. Provider/client `RetryConfig` owns transport retry.
 
-Custom `ModelRecoveryRule` values contain one exact matcher and one history repair function. Their safety is the caller's responsibility; the wrapper still permits at most one replay per request. Selecting the Capability is recommended for production Agents that need these known provider-history repairs; direct `SelfHealingModel` construction remains available for callers that already own one concrete Model.
+Custom `ModelRecoveryRule` values contain one exact matcher and one history repair function. Their safety is the caller's responsibility; the wrapper still permits at most one replay per request. Direct `SelfHealingModel` construction remains available for callers that already own one concrete Model. Applications that require the former opt-in behavior set `self_healing_enabled=False`; existing definitions and Host captures need no schema rewrite, but rebuilding them with the default builder enables these repairs. This is a behavioral compatibility change, not a new general retry policy.
 
 ## ModelAttempt Recovery
 

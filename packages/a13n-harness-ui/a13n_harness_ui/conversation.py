@@ -6,17 +6,16 @@ from collections.abc import Iterable
 from typing import Literal
 
 from a13n_harness import HarnessEvent, HarnessExtensionEvent, HarnessRunResult
-from a13n_harness.model_context import ModelInputEvent, user_prompt_content
+from a13n_harness.content import ContentItem, ContentMetadata, request_input_content
+from a13n_harness.events import InputMediaEvent, InputTextEvent
 from a13n_stream_protocol.messages import project_input_content
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.messages import (
-    EnqueuedMessagesEvent,
     ModelRequest,
     ModelResponse,
     PartEndEvent,
     TextPart,
     UserContent,
-    UserPromptPart,
 )
 
 EXCERPT_LIMIT = 2048
@@ -51,14 +50,14 @@ def excerpt_text(text: str, limit: int = EXCERPT_LIMIT) -> str:
     return normalized if len(normalized) <= limit else normalized[: limit - 1] + "…"
 
 
-def input_excerpt(content: Iterable[UserContent]) -> str:
+def input_excerpt(content: Iterable[UserContent | ContentItem]) -> str:
+    return _projected_excerpt(projected for item in content if (projected := project_input_content(item)) is not None)
+
+
+def _projected_excerpt(content: Iterable[tuple[str | dict, ContentMetadata]]) -> str:
     text: list[str] = []
     attachments: list[str] = []
-    for item in content:
-        projected = project_input_content(item)
-        if projected is None:
-            continue
-        value, metadata = projected
+    for value, metadata in content:
         extra = metadata.model_extra or {}
         if not metadata.display or extra.get("a13n.steering-source") in {"background_process", "async_subagent"}:
             continue
@@ -83,12 +82,7 @@ def checkpoint_excerpt(previous: ConversationExcerpt, history: Iterable[object])
         if isinstance(message, ModelRequest):
             if (message.metadata or {}).get("a13n.context") in {"handoff", "compaction"}:
                 continue
-            text = input_excerpt(
-                content
-                for part in message.parts
-                if isinstance(part, UserPromptPart)
-                for content in user_prompt_content(part)
-            )
+            text = input_excerpt(request_input_content(message))
             if text:
                 value = ConversationExcerpt(first_input=value.first_input or excerpt_text(text, 512), latest_input=text)
         elif isinstance(message, ModelResponse):
@@ -106,13 +100,24 @@ class ExcerptCollector:
         self.run_id = run_id
         self.changed = False
         self._reply = ""
+        self._input_id: str | None = None
+        self._input_parts: list[tuple[str | dict, ContentMetadata]] = []
+        self._first_group = False
 
-    def _input(self, content: Iterable[UserContent]) -> None:
-        text = input_excerpt(content)
+    def _input(self, event: InputTextEvent | InputMediaEvent) -> None:
+        if event.source not in {"user", "steering"} or not event.metadata.display:
+            return
+        if event.input_id != self._input_id:
+            self._input_id = event.input_id
+            self._input_parts = []
+            self._first_group = not self.value.first_input
+        content = excerpt_text(event.content) if isinstance(event.content, str) else event.content
+        self._input_parts.append((content, event.metadata))
+        text = _projected_excerpt(self._input_parts)
         if not text:
             return
         self.value = ConversationExcerpt(
-            first_input=self.value.first_input or excerpt_text(text, 512),
+            first_input=excerpt_text(text, 512) if self._first_group else self.value.first_input,
             latest_input=text,
         )
         self._reply = ""
@@ -122,17 +127,8 @@ class ExcerptCollector:
         if not isinstance(item, HarnessEvent) or item.run_id != self.run_id:
             return
         event = item.event
-        if isinstance(event, ModelInputEvent):
-            self._input(event.content)
-        elif isinstance(event, EnqueuedMessagesEvent):
-            for message in event.messages:
-                if isinstance(message, ModelRequest):
-                    self._input(
-                        content
-                        for part in message.parts
-                        if isinstance(part, UserPromptPart)
-                        for content in user_prompt_content(part)
-                    )
+        if isinstance(event, InputTextEvent | InputMediaEvent):
+            self._input(event)
         elif isinstance(event, HarnessExtensionEvent):
             if isinstance(event.payload, dict) and event.payload.get("type") == "model_request_started":
                 self._reply = ""

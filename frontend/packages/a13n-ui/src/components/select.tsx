@@ -143,7 +143,7 @@ export function SelectPopup({
           >
             <CaretUpIcon className="relative size-4.5 sm:size-4" />
           </SelectPrimitive.ScrollUpArrow>
-          <div className="relative h-full min-w-(--anchor-width) rounded-[10px] border-0 bg-popover not-dark:bg-clip-padding shadow-[0_10px_32px_--theme(--color-black/14%),0_1px_3px_--theme(--color-black/8%)] dark:shadow-[0_10px_32px_--theme(--color-black/48%),0_0_0_1px_--theme(--color-white/6%)]">
+          <div className="relative h-full min-w-(--anchor-width) rounded-[10px] border-0 bg-popover not-dark:bg-clip-padding shadow-overlay">
             <SelectPrimitive.List
               className={cn(
                 "max-h-(--available-height) overflow-y-auto p-1",

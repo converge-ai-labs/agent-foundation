@@ -1,5 +1,5 @@
 import { isRecord } from "../../service-client";
-import type { DisplayItem } from "./display";
+import { AUTHORED_INPUT_EVENT_NAMES, type DisplayItem } from "./display";
 import type { PresentedItem } from "./projection";
 import {
   addStep,
@@ -23,13 +23,46 @@ export function applyObservation(
 ): Execution {
   const { scope } = at;
   const { name, value } = content;
+  if (
+    content.type === "RUN_FINISHED" &&
+    isRecord(content.outcome) &&
+    content.outcome.type === "interrupt"
+  ) {
+    const interrupts = content.outcome.interrupts;
+    if (!Array.isArray(interrupts)) return current;
+    for (const interrupt of interrupts) {
+      if (!isRecord(interrupt)) continue;
+      const child = interrupt.subagentRunId;
+      const targetScope =
+        typeof child === "string"
+          ? `${at.position.split("-")[0]}/child/${child}`
+          : scope;
+      const step = current.steps.find(
+        (step) =>
+          step.scope === targetScope && step.callId === interrupt.toolCallId,
+      );
+      if (step)
+        updateStep(current, at, step.id, {
+          state: "waiting",
+          waitingReason:
+            interrupt.reason === "approval" ? "approval" : "external_call",
+          ...(interrupt.reason === "approval"
+            ? {
+                kind: "hitl" as const,
+                hitl: "approval" as const,
+                name: "Approval",
+              }
+            : {}),
+          detail: interrupt.metadata,
+        });
+    }
+    return current;
+  }
   if (typeof name !== "string") return current;
   if (
-    [
-      "a13n.context.model_input",
-      "a13n.input.media",
-      "a13n.pydantic_ai.enqueued_messages",
-    ].includes(name)
+    AUTHORED_INPUT_EVENT_NAMES.has(name) ||
+    name === "a13n.input.media" ||
+    name === "a13n.pydantic_ai.enqueued_messages"
   )
     return current;
   const source = isRecord(value) ? (value.event ?? value) : value;
@@ -150,40 +183,12 @@ export function applyObservation(
     return applyUsageReport(next, at, scope, payload);
   if (name === "a13n.filesystem.edit_applied")
     return applyEdit(next, at, scope, payload, items);
-  if (name === "a13n.harness.run_result" && isRecord(payload.deferred)) {
-    for (const category of ["calls", "approvals"] as const) {
-      const calls = payload.deferred[category];
-      if (!Array.isArray(calls)) continue;
-      for (const call of calls) {
-        if (!isRecord(call)) continue;
-        const step = next.steps.find(
-          (step) => step.scope === scope && step.callId === call.tool_call_id,
-        );
-        if (step)
-          next = updateStep(next, at, step.id, {
-            state: "waiting",
-            waitingReason:
-              category === "approvals" ? "approval" : "external_call",
-            ...(category === "approvals"
-              ? {
-                  kind: "hitl" as const,
-                  hitl: "approval" as const,
-                  name: "Approval",
-                }
-              : {}),
-            detail: call,
-          });
-      }
-    }
-    return next;
-  }
   if (
     name === "a13n.harness.delegation" &&
     type === "inline_delegation" &&
     typeof payload.invocation_id === "string"
   ) {
-    // The display observes one Harness run per attempt, so the delegating
-    // run is always this scope's own.
+    // facts() resolves delegation observations to their semantic parent run.
     const tool = next.steps.find(
       (step) =>
         step.scope === scope && step.callId === payload.parent_tool_call_id,

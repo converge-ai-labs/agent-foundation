@@ -279,3 +279,22 @@ def test_http_transport_proxy_routing_preserves_plaintext_private_link(monkeypat
                 await transport.close()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("verify", [True, False])
+async def test_explicit_tls_verification_choice_keeps_https_and_redirect_policy(monkeypatch, verify):
+    import ssl
+
+    # The low-level package does not read Harness process settings itself.
+    monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", "false")
+    transport = HttpTransport("https://example.test", "test-credential", verify=verify)
+    try:
+        context = transport._client._transport._pool._ssl_context
+        assert context.verify_mode == (ssl.CERT_REQUIRED if verify else ssl.CERT_NONE)
+        assert context.check_hostname is verify
+        assert transport._client.follow_redirects is False
+        with pytest.raises(ValueError):
+            HttpTransport("http://example.test", "test-credential", verify=verify)
+    finally:
+        await transport.close()

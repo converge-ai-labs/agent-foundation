@@ -108,7 +108,7 @@ class Checkout:
             "encryption": {"active_key_id": "local"},
             "encryption.keys": {"local": self._encryption_key()},
             # The scripted model and other local fixtures listen on loopback over plain HTTP.
-            "providers": {"private_cidrs": ["127.0.0.0/8"], "require_https": False},
+            "providers": {"require_https": False},
             # Development only: `local` environments are directories on this host, with no isolation boundary.
             "provisioning.local": {"enabled": True, "root": str(self.environments)},
             "telemetry": {"log_format": "pretty", **telemetry},

@@ -9,8 +9,10 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.native_tools import WebSearchTool
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
+from a13n_harness.configuration import HostNotAllowedError, RunConfiguration
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.providers.web.contracts import WebPurpose
 from a13n_harness.toolsets.web import (
     WEB_SCRAPE_BACKEND_ENV,
     WEB_SCRAPE_BACKEND_PRIORITY_ENV,
@@ -70,6 +72,19 @@ class WebBinding:
             raise ValueError("scrape backend IDs must be unique")
 
 
+@dataclass(frozen=True, slots=True)
+class _RunWebPolicy(WebPolicy):
+    base: WebPolicy
+    configuration: RunConfiguration
+
+    async def authorize(self, url: str, *, purpose: WebPurpose) -> None:
+        try:
+            self.configuration.authorize_url(url)
+        except HostNotAllowedError as error:
+            raise WebProviderError("web_destination_denied") from error
+        await self.base.authorize(url, purpose=purpose)
+
+
 @dataclass(init=False)
 class WebCapability(AbstractCapability[AgentContext]):
     """Expose provider-neutral search, scrape, fetch, and download tools."""
@@ -79,10 +94,26 @@ class WebCapability(AbstractCapability[AgentContext]):
     def __init__(self, configuration: WebConfiguration | None = None) -> None:
         resolved = WebConfiguration.from_environment() if configuration is None else configuration
         self.configuration = resolved.model_copy(deep=True)
+        self._run_configuration = RunConfiguration()
+
+    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
+        if ctx.deps.configuration.allowed_hosts is None:
+            return self
+        owner = WebCapability(self.configuration)
+        owner._run_configuration = ctx.deps.configuration
+        # Provider-native navigation cannot apply per-hop hostname authorization.
+        if owner.configuration.search.mode in {"auto", "native"}:
+            search = owner.configuration.search.model_copy(update={"mode": "host"})
+            owner.configuration = owner.configuration.model_copy(update={"search": search})
+        return owner
 
     def get_native_tools(self) -> list[WebSearchTool]:
         search = self.configuration.search
-        if search.mode not in {"native", "auto"} or search.restricted:
+        if (
+            search.mode not in {"native", "auto"}
+            or search.restricted
+            or self._run_configuration.allowed_hosts is not None
+        ):
             return []
         return [WebSearchTool(search_context_size=search.search_context_size)]
 
@@ -93,7 +124,7 @@ class WebCapability(AbstractCapability[AgentContext]):
         attachment = self._bind(ctx)
         return WebToolset(
             client=attachment.client,
-            policy=attachment.policy,
+            policy=_RunWebPolicy(attachment.policy, ctx.deps.configuration),
             configuration=self.configuration,
             search_backends=attachment.search_backends,
             scrape_backends=attachment.scrape_backends,

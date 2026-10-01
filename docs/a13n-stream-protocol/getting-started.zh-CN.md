@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
 ## 添加子执行或多个并发执行
 
-按 `(item.thread_id, item.run_id)` 路由源条目，为每个组合保留一个 observer。父流可以转发子条目，不改变其关联标识。全部送入同一个 observer 会产生关联错误。
+对于转发内联子执行观测的根流，使用 `HarnessAguiStreamObserver`。它保留源关联，并输出带子执行归属的内容，不嵌套根执行生命周期。独立运行的根执行或异步子执行各自使用独立 stream observer。`HarnessAguiObserver` 会拒绝其他执行的关联标识，只适用于严格包含单次执行的源。
 
 启用委派前，先参考[多执行路由示例](events.md#observe-a-harness-run)。
 

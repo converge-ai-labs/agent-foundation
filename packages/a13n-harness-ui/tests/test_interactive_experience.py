@@ -261,12 +261,16 @@ async def test_ctrl_c_feedback_edit_disarms_exit_and_f2_toggles() -> None:
 
 
 def test_terminal_is_one_consumer_of_structured_media_input() -> None:
+    from a13n_harness.content import ContentItem, ContentMetadata
     from pydantic_ai.messages import BinaryContent, ImageUrl
 
     from .terminal_display_fixtures import present_input
 
     content = [
-        BinaryContent(data=b"private pixels", media_type="image/png", vendor_metadata={"image_object_id": "image-one"}),
+        ContentItem(
+            BinaryContent(data=b"private pixels", media_type="image/png"),
+            ContentMetadata(image_object_id="image-one"),
+        ),
         ImageUrl("https://example.test/picture.png"),
     ]
     renderer = StreamRenderer(Status())

@@ -5,7 +5,7 @@ description: Declare tools that your application executes outside the agent proc
 
 Use client tools when the model can request an action but a separate application must execute it: a browser action, an external application integration, or another authenticated client. The declaration supplies model guidance and JSON argument schemas, not a Python executor or credential.
 
-A root Run suspends with correlated external calls. The Host authenticates the executor, performs or collects the action, persists the result, and resumes a fresh Run. For in-process functions, use [Tools and dependencies](tools-and-dependencies.md) instead.
+A root Run suspends with correlated external calls. The Host authenticates the executor, performs or collects the action, persists the result, and resumes a fresh Run. For in-process functions, use [Tools and dependencies](tools-and-dependencies.md) instead. For the built-in `ask_user_question` request and answer shapes, see [Human-in-the-loop tools](human-in-the-loop.md); no custom client-tool declaration is needed.
 
 ## Declare, suspend, and resume offline
 

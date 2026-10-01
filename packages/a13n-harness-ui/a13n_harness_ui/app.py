@@ -17,7 +17,9 @@ import httpx2
 from a13n_envd_client.eip.v1 import DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
 from a13n_harness import HarnessInstrumentation
+from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment import EnvironmentRunExtensionFactory
+from a13n_harness.http import outbound_tls_verify
 from a13n_harness.input import RunInputValue
 from a13n_harness.plugin_factories import HarnessPluginFactory
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
@@ -116,9 +118,10 @@ from a13n_harness_ui.host_files import (
     FileDeleteRequest,
     FileDeletion,
     FileEntry,
+    FileInfo,
     FileMoveRequest,
     FileReadRequest,
-    FileSnapshot,
+    FileStream,
     FileText,
     FileWriteRequest,
     HostFiles,
@@ -159,6 +162,7 @@ from a13n_harness_ui.model_accounts import (
     resolve_grok_scope,
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
+from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
 from a13n_harness_ui.model_accounts.copilot import CopilotAccountStore, CopilotLoginCallback
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
 from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
@@ -175,6 +179,7 @@ from a13n_harness_ui.model_authoring import (
 )
 from a13n_harness_ui.model_catalog import ModelCatalog, ModelCatalogSnapshot
 from a13n_harness_ui.model_runtime import (
+    ChatGPTSubscriptionSource,
     CodexSubscriptionSource,
     CopilotSubscriptionSource,
     GrokSubscriptionSource,
@@ -427,6 +432,7 @@ class HarnessUiApp:
         self._copilot_account = copilot_account
         self._copilot_login = copilot_login
         self._codex_account = codex_account
+        self._chatgpt_account = ChatGPTAccountStore(store.layout.root / "auth.json")
         self._codex_account_error = codex_account_error
         self._rediscover_accounts = rediscover_accounts
         self._resolve_sandbox_executable = resolve_sandbox_executable
@@ -488,6 +494,12 @@ class HarnessUiApp:
             if self._logins is None:
                 raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
             return self._logins.status(session_id)
+
+    async def submit_login_callback(self, session_id: str, callback_url: str) -> LoginStatus:
+        async with self._operation():
+            if self._logins is None:
+                raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
+            return self._logins.submit_callback(session_id, callback_url)
 
     async def cancel_login(self, session_id: str) -> LoginStatus:
         async with self._operation():
@@ -1715,13 +1727,28 @@ class HarnessUiApp:
         async with self._operation():
             return await self._host_files.browse(path, offset=offset, limit=limit, revision=revision)
 
+    async def host_file_info(self, request: FileReadRequest) -> FileInfo:
+        async with self._operation():
+            return await self._host_files.info(request)
+
     async def read_host_file(self, request: FileReadRequest) -> FileText:
         async with self._operation():
             return await self._host_files.read_text(request)
 
-    async def download_host_file(self, request: FileReadRequest) -> FileSnapshot:
+    async def open_host_file_stream(self, request: FileReadRequest) -> FileStream:
+        opened: FileStream | None = None
+        try:
+            async with self._operation():
+                opened = await self._host_files.open_stream(request)
+            return opened
+        except BaseException:
+            if opened is not None:
+                await opened.close()
+            raise
+
+    async def read_host_file_stream(self, opened: FileStream, offset: int, size: int) -> bytes:
         async with self._operation():
-            return await self._host_files.download(request)
+            return await self._host_files.read_stream(opened, offset, size)
 
     async def write_host_file(self, request: FileWriteRequest) -> FileEntry:
         async with self._operation():
@@ -1850,7 +1877,7 @@ class HarnessUiApp:
             > MAX_INPUT_BYTES
         ):
             raise ValueError("An input supports up to 20 MiB of attachments.")
-        parts: list[UserContent] = []
+        parts: list[UserContent | ContentItem] = []
         if isinstance(prompt, ComposerInput):
             if not prompt.text.strip() and not uploads and not resolved and not attachments:
                 raise ValueError("A root message must not be blank.")
@@ -1894,7 +1921,7 @@ class HarnessUiApp:
         source_id: str | None = None,
         index: int = 0,
         label: str | None = None,
-    ) -> list[UserContent]:
+    ) -> list[UserContent | ContentItem]:
         # Retain before admission, so accepted input never references draft scratch.
         await self._thread_files.retain(thread_id, item.attachment_id)
         path = f"attachments/{item.attachment_id}/content"
@@ -1914,7 +1941,7 @@ class HarnessUiApp:
         # cannot teach the model what the user's 'image#2' refers to.
         name = f"{label} ({item.name!r})" if label else repr(item.name)
         description_metadata = {**metadata, "display": False} if source_id and is_image else metadata
-        parts: list[UserContent] = [
+        parts: list[UserContent | ContentItem] = [
             TextContent(
                 f"Attachment {name} ({item.media_type}): {path} on the thread-files Environment mount.{source_description}",
                 metadata=description_metadata,
@@ -1927,7 +1954,11 @@ class HarnessUiApp:
                     TextContent(captured_text, metadata={**metadata, "display": False} if source_id else metadata)
                 )
         if is_image:
-            parts.append(BinaryContent(data=data, media_type=item.media_type, vendor_metadata=metadata))
+            parts.append(
+                ContentItem(
+                    BinaryContent(data=data, media_type=item.media_type), ContentMetadata.model_validate(metadata)
+                )
+            )
         return parts
 
     async def submit_thread(
@@ -2293,12 +2324,12 @@ class HarnessUiApp:
     async def model_account_candidates(self, provider: Provider | str) -> tuple[AccountCandidate, ...]:
         async with self._operation():
             account = self._account(Provider(provider))
-            return await account.candidates() if isinstance(account, CopilotAccountStore) else ()
+            return await account.candidates() if isinstance(account, CopilotAccountStore | ChatGPTAccountStore) else ()
 
     async def select_model_account(self, provider: Provider | str, selection: AccountSelection) -> AccountProjection:
         async with self._operation():
             account = self._account(Provider(provider))
-            if not isinstance(account, CopilotAccountStore):
+            if not isinstance(account, CopilotAccountStore | ChatGPTAccountStore):
                 raise AppStateError(
                     "This account has no source-selection action.", code="account_selection_unsupported"
                 )
@@ -2309,6 +2340,17 @@ class HarnessUiApp:
         from a13n_harness.providers.model.oauth import discover_copilot_models
 
         async with self._operation():
+            if Provider(provider) is Provider.CHATGPT:
+                from a13n_harness.providers.model.chatgpt import discover_chatgpt_models
+
+                try:
+                    models = await discover_chatgpt_models(credential_source=self._chatgpt_account)
+                    return tuple(ModelChoice(value=item.slug, label=item.display_name) for item in models)
+                except Exception:
+                    raise AppStateError(
+                        "ChatGPT model discovery failed. Check the selected registration and account access.",
+                        code="model_discovery_failed",
+                    ) from None
             if Provider(provider) is not Provider.COPILOT:
                 raise AppStateError("This account has no model-discovery action.", code="model_discovery_unsupported")
             try:
@@ -2656,7 +2698,7 @@ class HarnessUiApp:
         async with self._operation():
             account = self._account(Provider.CODEX)
             assert isinstance(account, CodexAccountStore)
-            async with httpx2.AsyncClient() as client:
+            async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
                 return await CodexUsageClient(account, client).read()
 
     async def redeem_codex_reset(self, request: ResetRequest) -> ResetResult:
@@ -2664,14 +2706,18 @@ class HarnessUiApp:
         async with self._operation():
             account = self._account(Provider.CODEX)
             assert isinstance(account, CodexAccountStore)
-            async with httpx2.AsyncClient() as client:
+            async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
                 return await CodexUsageClient(
                     account,
                     client,
                     expected_account_id=request.account_id,
                 ).redeem(request)
 
-    def _account(self, provider: Provider) -> CodexAccountStore | GrokAccountStore | CopilotAccountStore:
+    def _account(
+        self, provider: Provider
+    ) -> ChatGPTAccountStore | CodexAccountStore | GrokAccountStore | CopilotAccountStore:
+        if provider is Provider.CHATGPT:
+            return self._chatgpt_account
         if provider is Provider.COPILOT:
             return self._copilot_account
         if provider is Provider.CODEX:
@@ -2930,6 +2976,9 @@ async def open_harness_ui_app(
                 grok_account_error = exc
             copilot_account = CopilotAccountStore(store.layout.root / "oauth" / "copilot.json")
             subscription_sources: dict[str, SubscriptionSource] = {
+                "chatgpt_subscription": ChatGPTSubscriptionSource(
+                    source=ChatGPTAccountStore(store.layout.root / "auth.json")
+                ),
                 "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
             }
             if codex_account is not None:
@@ -2991,7 +3040,7 @@ async def open_harness_ui_app(
             web_push = None
             if host_mode == "webui":
                 push_client = await resources.enter_async_context(
-                    httpx2.AsyncClient(timeout=10, follow_redirects=False)
+                    httpx2.AsyncClient(verify=outbound_tls_verify(), timeout=10, follow_redirects=False)
                 )
                 web_push = WebPush(store, push_client)
 
@@ -3062,6 +3111,9 @@ async def open_harness_ui_app(
             ]:
                 errors: dict[Provider, AccountStoreError] = {}
                 sources: dict[str, SubscriptionSource] = {
+                    "chatgpt_subscription": ChatGPTSubscriptionSource(
+                        source=ChatGPTAccountStore(store.layout.root / "auth.json")
+                    ),
                     "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
                 }
                 discovered_codex: CodexAccountStore | None = None

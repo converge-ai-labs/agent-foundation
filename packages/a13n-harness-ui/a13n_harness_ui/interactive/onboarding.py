@@ -19,6 +19,8 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import TextArea
 
+from a13n_harness_ui.errors import HarnessUiError
+
 from .rendering import terminal_text
 from .selection import Choice, Selection, resolve_choice
 from .setup import Question, SetupWizard
@@ -274,6 +276,9 @@ async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit:
 
     connection = account_connection(provider)
     login_choices = {
+        "manual_callback": Choice(
+            "manual_callback", "Sign in and paste the callback URL", "Works when this Host is remote"
+        ),
         "device": Choice("device", "Sign in with a device code", "Complete authorization in any browser"),
         "browser": Choice(
             "browser", "Sign in through a local browser", "Browser must reach this Host's loopback callback"
@@ -330,7 +335,7 @@ async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit:
         if action.startswith("source-"):
             await app.select_model_account(provider, candidates[int(action.removeprefix("source-"))].selection)
             continue
-        if action in {"device", "browser"}:
+        if action in {"device", "browser", "manual_callback"}:
             from a13n_harness_ui.model_accounts.login import LoginRequest
 
             active = await app.active_login()
@@ -340,6 +345,7 @@ async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit:
             login = active or await app.start_login(
                 LoginRequest.model_validate({"provider": provider, "method": action})
             )
+            callback_submitted = False
             try:
                 while login.state in {"starting", "waiting"}:
                     emit(
@@ -355,6 +361,15 @@ async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit:
                             if part
                         )
                     )
+                    if provider == "chatgpt" and login.state == "waiting" and not callback_submitted:
+                        value = await ask_user(
+                            Question("callback_url", "Paste the complete browser callback URL", "", password=True), None
+                        )
+                        try:
+                            await app.submit_login_callback(login.session_id, value)
+                            callback_submitted = True
+                        except HarnessUiError as exc:
+                            emit(str(exc))
                     await asyncio.sleep(0.5)
                     login = await app.login_status(login.session_id)
             except asyncio.CancelledError:

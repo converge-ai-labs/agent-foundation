@@ -512,6 +512,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/host/files/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Host File Info */
+        get: operations["host_file_info_api_host_files_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/host/files/text": {
         parameters: {
             query?: never;
@@ -588,14 +605,48 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Host File */
-        get: operations["download_host_file_api_host_files_content_get"];
+        get?: never;
         /** Upload Host File */
         put: operations["upload_host_file_api_host_files_content_put"];
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/host/files/transfers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Host File Transfer */
+        post: operations["host_file_transfer_api_host_files_transfers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/host/files/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transfer Host File */
+        get: operations["transfer_host_file_api_host_files_transfer_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /** Transfer Host File */
+        head: operations["transfer_host_file_api_host_files_transfer_head"];
         patch?: never;
         trace?: never;
     };
@@ -989,6 +1040,23 @@ export interface paths {
         post?: never;
         /** Cancel Login */
         delete: operations["cancel_login_api_auth_logins__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logins/{session_id}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Login Callback */
+        post: operations["submit_login_callback_api_auth_logins__session_id__callback_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1741,11 +1809,11 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok" | "copilot";
+            provider: "chatgpt" | "codex" | "grok" | "copilot";
             /** Label */
             label: string;
             /** Login Methods */
-            login_methods: ("device" | "browser")[];
+            login_methods: ("device" | "browser" | "manual_callback")[];
             /**
              * Model Discovery
              * @default false
@@ -2183,7 +2251,7 @@ export interface components {
             override_allowed?: boolean;
         };
         /** @enum {string} */
-        AuthenticationKind: "api_key" | "codex_subscription" | "grok_subscription" | "copilot_subscription";
+        AuthenticationKind: "api_key" | "chatgpt_subscription" | "codex_subscription" | "grok_subscription" | "copilot_subscription";
         /**
          * Availability
          * @enum {string}
@@ -2365,6 +2433,14 @@ export interface components {
              */
             comparison?: ("staged" | "unstaged" | "untracked") | null;
         };
+        /** ChatGPTSubscriptionAuthentication */
+        ChatGPTSubscriptionAuthentication: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "chatgpt_subscription";
+        };
         /** ChildActivityView */
         ChildActivityView: {
             /** Sequence */
@@ -2526,6 +2602,15 @@ export interface components {
         };
         /** ChildToolCallView */
         ChildToolCallView: {
+            /** Subagent Run Id */
+            subagent_run_id?: string | null;
+            /**
+             * Content Parts
+             * @default []
+             */
+            content_parts?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            }[];
             /** Tool Call Id */
             tool_call_id: string;
             /** Tool Name */
@@ -2722,10 +2807,7 @@ export interface components {
         };
         /**
          * ContentMetadata
-         * @description Client presentation conventions plus opaque caller-owned metadata.
-         *
-         *     Metadata is not model instruction or authorization. Clients may resolve
-         *     references such as image_object_id through their own application services.
+         * @description Presentation and opaque Host references; never instructions or authority.
          */
         ContentMetadata: {
             /**
@@ -3239,6 +3321,14 @@ export interface components {
             /** Link Target */
             link_target?: string | null;
         };
+        /** FileInfo */
+        FileInfo: {
+            entry: components["schemas"]["FileEntry"];
+            /** Resolved Path */
+            resolved_path: string;
+            /** Media Type */
+            media_type: string;
+        };
         /** FilePage */
         FilePage: {
             /**
@@ -3261,6 +3351,13 @@ export interface components {
             presentation: "text" | "binary" | "too_large";
             /** Text */
             text?: string | null;
+        };
+        /** FileTransferAccess */
+        FileTransferAccess: {
+            /** Url */
+            url: string;
+            /** Expires At */
+            expires_at: number;
         };
         /** GitChange */
         GitChange: {
@@ -3463,6 +3560,10 @@ export interface components {
         HarnessModelCharacteristics: {
             /** Capabilities */
             capabilities?: components["schemas"]["ModelCapability"][];
+            /** @description Image preparation policy; omitted uses native defaults, null disables automatic preparation. */
+            image_input?: components["schemas"]["ImageInputPolicy"] | null;
+            url_input?: components["schemas"]["UrlInputSupport"];
+            video_input?: components["schemas"]["VideoInputPolicy"];
             /** Context Window Tokens */
             context_window_tokens?: number | null;
             /**
@@ -3475,6 +3576,50 @@ export interface components {
              * @default 0.9
              */
             compact_threshold?: number;
+        };
+        /**
+         * ImageInputPolicy
+         * @description Preparation limits for one model's image input, not native ModelSettings.
+         */
+        ImageInputPolicy: {
+            /**
+             * Split Large Images
+             * @default true
+             */
+            split_large_images?: boolean;
+            /**
+             * Image Split Max Height
+             * @default 4096
+             */
+            image_split_max_height?: number;
+            /**
+             * Image Split Overlap
+             * @default 50
+             */
+            image_split_overlap?: number;
+            /**
+             * Max Image Bytes
+             * @description Maximum base64-encoded bytes per image; zero disables this byte limit.
+             * @default 5242880
+             */
+            max_image_bytes?: number;
+            /**
+             * Max Image Dimension
+             * @description Maximum image axis; zero disables this limit.
+             * @default 8000
+             */
+            max_image_dimension?: number;
+            /**
+             * Max Images
+             * @description Keep the newest images; zero removes all image input.
+             * @default 20
+             */
+            max_images?: number;
+            /**
+             * Support Gif
+             * @default true
+             */
+            support_gif?: boolean;
         };
         JsonValue: unknown;
         /**
@@ -3547,12 +3692,12 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok" | "copilot";
+            provider: "chatgpt" | "codex" | "grok" | "copilot";
             /**
              * Method
              * @enum {string}
              */
-            method: "device" | "browser";
+            method: "device" | "browser" | "manual_callback";
             /**
              * State
              * @default starting
@@ -3661,7 +3806,7 @@ export interface components {
              */
             output_tokens?: number;
         };
-        ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
+        ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["ChatGPTSubscriptionAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
         /** ModelCatalogSnapshot */
         ModelCatalogSnapshot: {
             /** Items */
@@ -4169,7 +4314,7 @@ export interface components {
          * Provider
          * @enum {string}
          */
-        Provider: "codex" | "grok" | "copilot";
+        Provider: "codex" | "grok" | "copilot" | "chatgpt";
         /** PublicDestinations */
         PublicDestinations: {
             /**
@@ -4477,7 +4622,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok" | "copilot";
+            provider: "chatgpt" | "codex" | "grok" | "copilot";
             /** Available */
             available: boolean;
             /** Selected */
@@ -5470,6 +5615,13 @@ export interface components {
              * @default false
              */
             tool_image_unavailable?: boolean;
+            /**
+             * Content Parts
+             * @default []
+             */
+            content_parts?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            }[];
             value?: components["schemas"]["JsonValue"] | null;
             /**
              * Value Omitted
@@ -5514,6 +5666,14 @@ export interface components {
              */
             steering_count?: number;
         };
+        /**
+         * UrlInputSupport
+         * @description URL subtypes consumed natively by the selected transport.
+         */
+        UrlInputSupport: {
+            /** Video */
+            video?: components["schemas"]["VideoUrlType"][];
+        };
         /** UsageTotals */
         UsageTotals: {
             /** Model Requests */
@@ -5551,6 +5711,18 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * VideoInputPolicy
+         * @description Base64-after byte budget for both one video and all inline videos in a request.
+         */
+        VideoInputPolicy: {
+            /**
+             * Max Video Bytes
+             * @description Maximum Base64-encoded bytes per video and in aggregate per model request.
+             * @default 10485760
+             */
+            max_video_bytes?: number;
         };
         /** WorkbenchPage */
         WorkbenchPage: {
@@ -6318,6 +6490,19 @@ export interface components {
              */
             recursive?: boolean;
         };
+        /** FileTransferRequest */
+        FileTransferRequest: {
+            /** Path */
+            path: string;
+            /** Expected Revision */
+            expected_revision: string;
+            /**
+             * Disposition
+             * @default attachment
+             * @enum {string}
+             */
+            disposition?: "attachment" | "inline";
+        };
         /** FileCaptureRequest */
         FileCaptureRequest: {
             /** Path */
@@ -6367,6 +6552,11 @@ export interface components {
          * @enum {string}
          */
         ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding" | "document_understanding";
+        /**
+         * VideoUrlType
+         * @enum {string}
+         */
+        VideoUrlType: "youtube";
         /** ModelRecipeRequest */
         ModelRecipeRequest: {
             /** Connection */
@@ -6417,18 +6607,26 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok" | "copilot";
+            provider: "chatgpt" | "codex" | "grok" | "copilot";
             /**
              * Method
              * @default device
              * @enum {string}
              */
-            method?: "device" | "browser";
+            method?: "device" | "browser" | "manual_callback";
             /**
              * Allow Account Switch
              * @default false
              */
             allow_account_switch?: boolean;
+        };
+        /** LoginCallbackInput */
+        LoginCallbackInput: {
+            /**
+             * Callback Url
+             * Format: password
+             */
+            callback_url: string;
         };
         /**
          * ResourceMutationRequest
@@ -7682,6 +7880,38 @@ export interface operations {
             };
         };
     };
+    host_file_info_api_host_files_info_get: {
+        parameters: {
+            query: {
+                path: string;
+                expected_revision?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     host_file_text_api_host_files_text_get: {
         parameters: {
             query: {
@@ -7810,11 +8040,70 @@ export interface operations {
             };
         };
     };
-    download_host_file_api_host_files_content_get: {
+    upload_host_file_api_host_files_content_put: {
         parameters: {
             query: {
                 path: string;
                 expected_revision?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    host_file_transfer_api_host_files_transfers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FileTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileTransferAccess"];
+                };
+            };
+        };
+    };
+    transfer_host_file_api_host_files_transfer_get: {
+        parameters: {
+            query: {
+                token: string;
             };
             header?: never;
             path?: never;
@@ -7842,21 +8131,16 @@ export interface operations {
             };
         };
     };
-    upload_host_file_api_host_files_content_put: {
+    transfer_host_file_api_host_files_transfer_head: {
         parameters: {
             query: {
-                path: string;
-                expected_revision?: string | null;
+                token: string;
             };
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/octet-stream": string;
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -7864,7 +8148,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FileEntry"];
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -8609,6 +8893,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_login_callback_api_auth_logins__session_id__callback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginCallbackInput"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -127,7 +127,9 @@ A new semantic continuation prompt is input to the next `ModelAttempt`, not retr
 
 ## Interrupted History Normalization
 
-Recovery normalizes only a terminal message explicitly marked `state="interrupted"`.
+Before each native initialization, canonical history adapts native orphan-result removal, dangling ordinary-tool-call repair, and compatible adjacent-request merging jointly with content annotations. Request-local prompt order and annotations survive structural edits, including imported/recovery histories and JSON round trips. Delivered steering identities are retained in order when requests merge. Interrupted-tail repair follows the actual new-input/deferred-result boundary; pending deferred facts are not synthesized over. This preparation grants no tool authority and does not reinterpret application annotations from provider-normalized temporary history.
+
+Harness live recovery normalizes only a terminal message explicitly marked `state="interrupted"`.
 
 Before tool-call closure, the Harness observes `PartStartEvent`, `PartDeltaEvent`, and `PartEndEvent` values for the current model response and applies these replay rules. Observations are scoped to the exact response boundary established by the preceding public message count; part indices are local to a response and never identify a boundary. If the raw interrupted tail has no lifecycle event observed for that exact response, the Harness discards the complete tail rather than trusting unobserved internal parts. A tool-return part that is atomic and has no delta form is complete at `PartStartEvent`; streamed tool-call parts still require `PartEndEvent`.
 
@@ -182,7 +184,7 @@ A checkpoint without a result proves neither execution nor non-execution. This p
 
 The current Harness `AgentSpec` owns the complete ordered static system prompt. `HarnessState` retains public Pydantic messages, including the system-prompt parts materialized for the definition that produced its selected checkpoint, but those historical parts do not override the definition selected for a later model request.
 
-Before passing non-empty imported history into a new Pydantic model request, the Harness creates a detached canonical history projection. It removes every `SystemPromptPart` from every `ModelRequest`, then inserts the current definition's normalized system-prompt blocks at the beginning of the first request. A definition with no system prompt removes historical blocks without replacement. All non-system parts, request instructions, metadata, timestamps, responses, and ordering remain unchanged. The normalized messages become the Pydantic history for the run, so a successful exported checkpoint carries the current definition's prompt rather than requiring a permanent model-bound overlay.
+Before passing non-empty imported history into a new Pydantic model request, the Harness creates a detached canonical history projection. It removes every `SystemPromptPart` from every `ModelRequest`, then inserts the current definition's normalized system-prompt blocks at the beginning of the first request. A definition with no system prompt removes historical blocks without replacement. All non-system parts, request instructions, unrelated metadata, timestamps, responses, and ordering remain unchanged; [content annotations](16-input-model-and-output.md#content-annotations) are reindexed jointly with their prompt parts. The normalized messages become the Pydantic history for the run, so a successful exported checkpoint carries the current definition's prompt rather than requiring a permanent model-bound overlay.
 
 Empty history uses Pydantic AI's native `Agent.from_spec(system_prompt=...)` construction path. System-prompt reconciliation does not reinterpret or merge `ModelRequest.instructions`: static and dynamic instructions retain their native per-request lifecycle.
 

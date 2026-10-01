@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 
 import httpx2
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.providers.memory import MemoryRecord, MemoryStoreError, RecordStore, validate_record_text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,13 +63,21 @@ async def record_memory(session: AsyncSession, memory: MemoryRow) -> RecordMemor
 
 
 @asynccontextmanager
-async def open_record_store(runtime: Runtime, provider: ResolvedProvider, namespace: str) -> AsyncIterator[RecordStore]:
+async def open_record_store(
+    runtime: Runtime,
+    provider: ResolvedProvider,
+    namespace: str,
+    *,
+    configuration: RunConfiguration | None = None,
+) -> AsyncIterator[RecordStore]:
     """The provider's store bound to `namespace`, over the host's outbound client; call it through `backend`."""
     definition = runtime.registry.get("memory", provider.type)
     settings = runtime.settings.providers
     async with (
         open_http(
-            runtime.endpoint_policy, timeout=settings.operation_seconds, max_bytes=settings.response_bytes
+            runtime.endpoint_policy.for_run(configuration or RunConfiguration()),
+            timeout=settings.operation_seconds,
+            max_bytes=settings.response_bytes,
         ) as client,
         definition.open(
             provider.config, provider.reveal_credential(runtime.keys), namespace=namespace, http=client

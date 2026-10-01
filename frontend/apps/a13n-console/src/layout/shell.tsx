@@ -305,14 +305,20 @@ function NavigationRow({
         <TooltipPopup side="right">{label}</TooltipPopup>
       </Tooltip>
     );
+  // An open group highlights its selected child, never itself as well.
+  const selected = active && !expandable;
   return (
     <SidebarMenuButton
-      isActive={active}
+      isActive={selected}
       render={<NavLink to={to} onClick={onNavigate} />}
     >
       <Icon weight={active ? "duotone" : "regular"} />
       <span>{label}</span>
-      {expandable && <CaretDownIcon className="ml-auto size-3" />}
+      {expandable && (
+        <CaretDownIcon
+          className={active ? "ml-auto size-3" : "ml-auto size-3 -rotate-90"}
+        />
+      )}
     </SidebarMenuButton>
   );
 }

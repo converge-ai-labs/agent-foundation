@@ -138,6 +138,9 @@ async def test_local_mcp_oversized_results_use_unmanaged_truncation(kind: str) -
 
 class _MCPContextDeps:
     def __init__(self, run_id: str = "run-1") -> None:
+        from a13n_harness import RunConfiguration
+
+        self.configuration = RunConfiguration()
         self.run_id = run_id
         self.thread_id = "thread-1"
         self.instance = AgentInstanceContext(

@@ -321,63 +321,69 @@ export function InputContent({
           <div key={index}>{renderText(part.text || "")}</div>
         );
       })}
-      {copyText.trim() && <CopyMessage text={copyText} />}
     </>
   );
   return (
-    <div
-      className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
-    >
-      <header>
-        {source ? (
-          <Link
-            className={styles.threadSource}
-            to={`/threads/${encodeURIComponent(source.id)}`}
-            title={source.title ? `${source.title} · ${source.id}` : source.id}
-            aria-label={`From thread ${source.title || source.id}`}
-          >
-            <Chats size={16} aria-hidden="true" />
-            <span className={styles.threadSourceLabel}>From thread</span>
-            <span className={styles.threadSourceName}>
-              {source.title || source.id}
-            </span>
-            <ArrowUpRight size={12} aria-hidden="true" />
-          </Link>
-        ) : (
-          "User"
-        )}
-        {status && (
-          <span role="status" className={styles.inputStatus}>
-            {status}
-          </span>
-        )}
-      </header>
-      {source ? (
-        <div id={contentId} hidden={!expanded}>
-          {content}
-        </div>
-      ) : (
-        content
-      )}
-      {source && (
-        <button
-          type="button"
-          className={styles.threadMessageToggle}
-          aria-label="Thread message details"
-          aria-expanded={expanded}
-          aria-controls={contentId}
-          onClick={() => setExpanded(!expanded)}
-        >
-          {!expanded && copyText.trim() && (
-            <span className={styles.threadMessagePreview} aria-hidden="true">
-              {copyText}
+    <div className={styles.userInput}>
+      <div
+        className={`${styles.userMessage} ${source ? styles.threadMessage : ""}`}
+      >
+        <header>
+          {source ? (
+            <Link
+              className={styles.threadSource}
+              to={`/threads/${encodeURIComponent(source.id)}`}
+              title={
+                source.title ? `${source.title} · ${source.id}` : source.id
+              }
+              aria-label={`From thread ${source.title || source.id}`}
+            >
+              <Chats size={16} aria-hidden="true" />
+              <span className={styles.threadSourceLabel}>From thread</span>
+              <span className={styles.threadSourceName}>
+                {source.title || source.id}
+              </span>
+              <ArrowUpRight size={12} aria-hidden="true" />
+            </Link>
+          ) : (
+            "User"
+          )}
+          {status && (
+            <span role="status" className={styles.inputStatus}>
+              {status}
             </span>
           )}
-          <span className={styles.threadMessageToggleLabel}>
-            {expanded ? "Show less" : "Show message"}
-            <CaretDown size={14} aria-hidden="true" />
-          </span>
-        </button>
+        </header>
+        {source ? (
+          <div id={contentId} hidden={!expanded}>
+            {content}
+          </div>
+        ) : (
+          content
+        )}
+        {source && (
+          <button
+            type="button"
+            className={styles.threadMessageToggle}
+            aria-label="Thread message details"
+            aria-expanded={expanded}
+            aria-controls={contentId}
+            onClick={() => setExpanded(!expanded)}
+          >
+            {!expanded && copyText.trim() && (
+              <span className={styles.threadMessagePreview} aria-hidden="true">
+                {copyText}
+              </span>
+            )}
+            <span className={styles.threadMessageToggleLabel}>
+              {expanded ? "Show less" : "Show message"}
+              <CaretDown size={14} aria-hidden="true" />
+            </span>
+          </button>
+        )}
+      </div>
+      {(!source || expanded) && copyText.trim() && (
+        <CopyMessage text={copyText} />
       )}
     </div>
   );

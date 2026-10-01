@@ -1,3 +1,4 @@
+import type { ContentPart } from "@ag-ui/core";
 import { structuredPatch } from "diff";
 import { sumCosts } from "../../shared/cost";
 import { isRecord } from "../../service-client";
@@ -29,6 +30,7 @@ export interface TimelineEdit {
 
 interface EntryBase {
   id: string;
+  subagentRunId?: string;
   startedAt: string | null;
   endedAt: string | null;
   durationMs: number | null;
@@ -61,6 +63,7 @@ export interface ActionEntry extends EntryBase {
   name: string | null;
   arguments: unknown;
   result: unknown;
+  resultParts?: ContentPart[];
   failure: unknown;
   edit: TimelineEdit | null;
   providerUsage: StepUsage | null;
@@ -143,6 +146,21 @@ export function runTimeline({
   for (const step of execution.steps)
     if (step.kind === "llm")
       for (const id of step.items) requestOfItem.set(id, step);
+  const delegationOf = new Map<string, string>();
+  for (const step of execution.steps)
+    if (
+      step.kind === "subagent" &&
+      isRecord(step.detail) &&
+      typeof step.detail.child_run_id === "string"
+    )
+      delegationOf.set(
+        `${step.position.split("-")[0]}/${step.detail.child_run_id}`,
+        step.id,
+      );
+  const childOwner = (position: string, child?: string) =>
+    child
+      ? (delegationOf.get(`${position.split("-")[0]}/${child}`) ?? null)
+      : null;
   /** Nesting uses explicit correlation only; nothing is inferred from order. */
   function parentOf(step: ExecutionStep): string | null {
     if (step.parentId) return step.parentId;
@@ -160,7 +178,7 @@ export function runTimeline({
       );
       if (request) return request.id;
     }
-    return null;
+    return childOwner(step.position, step.subagentRunId);
   }
 
   const children = new Map<string, Positioned[]>();
@@ -198,10 +216,14 @@ export function runTimeline({
     const entry =
       content ?? (item.kind === "tool_call" ? retainedAction(item) : null);
     if (entry)
-      place(requestOfItem.get(item.id)?.id ?? null, {
-        position: item.firstPosition,
-        entry,
-      });
+      place(
+        requestOfItem.get(item.id)?.id ??
+          childOwner(item.firstPosition, item.subagentRunId),
+        {
+          position: item.firstPosition,
+          entry,
+        },
+      );
   }
 
   // A later attempt starts before anything it displayed.
@@ -255,6 +277,7 @@ function modelEntry(
   return {
     kind: "model",
     id: step.id,
+    subagentRunId: step.subagentRunId,
     index,
     model: step.usage?.model ?? null,
     usage: step.usage ?? null,
@@ -290,11 +313,13 @@ function actionEntry(
   return {
     kind,
     id: step.id,
+    subagentRunId: step.subagentRunId,
     name: step.name ?? null,
     arguments: item
       ? parseItemValue(item.arguments)
       : parseItemValue(detail.arguments),
     result: item ? parseItemValue(item.result) : parseItemValue(detail.result),
+    resultParts: item?.resultParts,
     failure: item?.failure ?? null,
     edit: step.edit
       ? {
@@ -324,9 +349,11 @@ function retainedAction(item: PresentedItem): ActionEntry {
   return {
     kind: "tool",
     id: item.id,
+    subagentRunId: item.subagentRunId,
     name: item.toolName || null,
     arguments: parseItemValue(item.arguments),
     result: parseItemValue(item.result),
+    resultParts: item.resultParts,
     failure: item.failure ?? null,
     edit: null,
     providerUsage: null,
@@ -356,6 +383,7 @@ function contentEntry(
 ): ContentEntry | null {
   const base = {
     id: item.id,
+    subagentRunId: item.subagentRunId,
     text: item.text,
     steeringSource: item.steeringSource ?? null,
     protectedReasoning: item.protectedReasoning,

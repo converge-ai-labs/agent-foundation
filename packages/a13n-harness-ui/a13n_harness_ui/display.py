@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from a13n_harness import HarnessEvent
+from a13n_harness.tools._output import TOOL_CONTENT_METADATA_KEY
 from a13n_stream_protocol.display import DisplayPosition, DisplaySnapshot, Producer
 from a13n_stream_protocol.session import DisplayCapture, HistoryCursor
 from pydantic import JsonValue, TypeAdapter
@@ -22,7 +23,13 @@ def enrich_tool(display: DisplayCapture, item: object) -> None:
     if not isinstance(part, ToolReturnPart) or not isinstance(part.metadata, dict) or session is None:
         return
     scope = session.cursor.tool_scopes.get(part.tool_call_id, item.run_id)
-    display.projector.enrich_tool(scope, part.tool_call_id, _METADATA.validate_python(part.metadata))
+    display.projector.enrich_tool(
+        scope,
+        part.tool_call_id,
+        _METADATA.validate_python(
+            {key: value for key, value in part.metadata.items() if key != TOOL_CONTENT_METADATA_KEY}
+        ),
+    )
 
 
 def baseline(run_id: str, saved: DisplaySnapshot | None = None) -> DisplaySnapshot:

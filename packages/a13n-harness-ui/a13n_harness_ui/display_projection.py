@@ -68,6 +68,7 @@ def _parts(
         )
     if block.kind == "tool_chunk":
         name = str(content.get("name", "unknown"))
+        provider = str(content.get("provider") or "native") if content.get("native") else None
         call_id = str(content.get("tool_call_id", block.id))
         arguments = content.get("arguments", "")
         if isinstance(arguments, str):
@@ -81,7 +82,7 @@ def _parts(
                 tool_name=name,
                 tool_call_id=call_id,
                 value=arguments,
-                provider="native" if content.get("native") else None,
+                provider=provider,
             )
         ]
         if "result" in content:
@@ -89,13 +90,23 @@ def _parts(
             result = ToolReturnPart(
                 tool_name=name, tool_call_id=call_id, content=content["result"], metadata=content.get("metadata")
             )
+            content_parts = content.get("content_parts")
             parts.append(
                 TranscriptPart(
-                    kind="tool_result",
+                    kind="retry" if content.get("retry") is True else "tool_result",
+                    text=_text(content["result"]) if content.get("retry") is True else None,
                     tool_name=name,
                     tool_call_id=call_id,
+                    provider=provider,
                     value=content["result"],
-                    outcome="success"
+                    content_parts=tuple(item for item in content_parts if isinstance(item, dict))
+                    if isinstance(content_parts, list)
+                    else (),
+                    outcome="interrupted"
+                    if block.status == "cancelled" or content.get("outcome") == "interrupted"
+                    else "denied"
+                    if content.get("outcome") == "denied"
+                    else "success"
                     if block.status == "succeeded"
                     else "interrupted"
                     if block.status == "cancelled"
@@ -241,13 +252,20 @@ def child_presentation(snapshot: DisplaySnapshot, final_answer: str | None = Non
 
     activities = []
     apps = {}
+    scopes = {scope.id: scope for scope in snapshot.scopes}
     for block in snapshot.blocks:
+        scope = scopes[block.scope_id]
+        inline_run = scope.run_id if scope.parent_scope_id is not None else None
         content = block.content
         if block.kind in {"text", "reasoning"}:
             text = content.get("text")
             if isinstance(text, str) and text:
                 activities.append(
-                    CompactChildActivity(kind="thinking" if block.kind == "reasoning" else "text", text=text[:32768])
+                    CompactChildActivity(
+                        kind="thinking" if block.kind == "reasoning" else "text",
+                        text=text[:32768],
+                        subagent_run_id=inline_run,
+                    )
                 )
         elif block.kind == "tool_chunk":
             arguments = content.get("arguments")
@@ -256,9 +274,14 @@ def child_presentation(snapshot: DisplaySnapshot, final_answer: str | None = Non
                     arguments = json.loads(arguments)
                 except ValueError:
                     pass
+            content_parts = content.get("content_parts")
             activities.append(
                 CompactChildActivity(
                     kind="tool",
+                    subagent_run_id=inline_run,
+                    content_parts=tuple(item for item in content_parts if isinstance(item, dict))
+                    if isinstance(content_parts, list)
+                    else (),
                     tool_name=str(content.get("name", "unknown"))[:128],
                     arguments=arguments,
                     result=content.get("result"),

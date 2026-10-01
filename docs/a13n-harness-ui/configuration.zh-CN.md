@@ -317,6 +317,8 @@ Agent 可通过仅支持文件的 `configuration` 挂载读写选中的配置目
 
 仍接受旧输入键 `tools.ask_user_question_timeout_seconds`。保存配置使用 `tools.interaction_timeout_seconds`。编辑响应不重启 Host 计时器；到期会拒绝，不会批准或虚构结果。
 
+只有在明确接受未验证的目标证书时，才在启动前设置 `A13N_OUTBOUND_TLS_VERIFY=false`。未设置或设为 `true` 会保留验证。这个共享进程变量不是 YAML 字段；适用范围、例外及风险见[出站 TLS 验证](../a13n-harness/models.md#outbound-tls-verification)。
+
 ## 出站 HTTP 代理
 
 启动 Harness UI 前设置标准环境变量；无须 YAML 代理设置：
@@ -329,6 +331,19 @@ export no_proxy=localhost,127.0.0.1,::1
 
 支持大写形式和 `ALL_PROXY`。选择和绕过匹配遵循 `httpx2`。Host 所有的 Web 搜索/抓取/获取/下载请求、远程 HTTPS MCP 连接和更新检查，以及 [Model HTTP 客户端](../a13n-harness/models.md#outbound-http-proxies)均遵循这些变量。改变环境后重启进程。容器运行时，代理地址必须能从容器访问。
 
-配置的代理是可信出站基础设施。URL 验证、本地 DNS 预检查、TLS 验证、重定向检查和响应限制仍适用，但最终 DNS 解析和目的网络限制由代理负责。直接连接的 Web 请求（包括 `NO_PROXY` 绕过）保留已有 IP 检查和固定机制。没有自定义 IP CONNECT 协议，代理失败也不会回退为直连。
+配置的代理是可信出站基础设施，负责目标 DNS 解析和网络限制。Host Web 工具使用原生 HTTP 连接，不预解析目标域名或固定 IP，直连和 `NO_PROXY` 路径也一样。只通过代理访问外网的机器不再需要本地目标 DNS。HTTP(S) URL 校验、重定向检查、超时和响应限制仍启用。TLS 验证默认启用；只有运维人员可通过[出站 TLS 开关](../a13n-harness/models.md#outbound-tls-verification)对自有客户端显式关闭验证。代理请求失败不会回退为直连。
+
+`run_configuration` 为每次接受的根 Run 及其子 Run 选择同一不可变配置：
+
+```yaml
+run_configuration:
+  allowed_hosts:
+    - api.example.com
+    - 'regex:(?:[a-z0-9-]+\.)*docs\.example\.com'
+  extensions:
+    example.reader: {images: true}
+```
+
+省略 `allowed_hosts` 或设为 null 表示不限制目标；`[]` 拒绝全部目标。普通条目精确匹配规范化的域名或 IP 字面值；以 `regex:` 开头的条目使用 Python 正则匹配完整的规范化主机名。示例放行 `docs.example.com` 及其子域，但不放行 `docs.example.com.evil.test`。字面量的点写成 `\.`，YAML 使用单引号保留反斜杠。无效或空表达式会使配置验证失败。正则看到的是小写 ASCII IDNA 域名或规范化 IP，不是 URL、路径或端口；请保持简单，并由可信调用方编写。更多示例、匹配边界和 Python/JSON 转义见[主机规则与正则表达式](../a13n-harness/context.md#host-rules-and-regular-expressions)。不支持 glob 和 CIDR。请包含所需 Model、Web 和 MCP 的全部域名。检查针对直连和代理请求 URL 声明的主机名，包括宿主拥有的重定向跳转；不解析 DNS，也不固定 IP。根与子 Run 的组合保留该快照，修改仅影响后续根 Run，不改变活跃或重建的 Run。API-key Model 客户端及 Host Web/MCP 支持此配置；无法检查内部传输的订阅 Model 会拒绝限制性配置。Extensions 是供显式接入的消费者使用的带命名空间 JSON 值，不会自动变成 Capability 构造参数。任意 shell 和可信插件的网络流量仍需部署或 Environment 网络隔离。
 
 明文回环 MCP 和明文本地/provider 私有 Envd 附加仍直连。HTTPS Envd 附加遵循代理变量。第三方 SDK 所有的传输保留 SDK 代理行为；守护进程发起的 Envd 配对和反向 WebSocket 连接，与 Python HTTP 附加客户端相互独立。

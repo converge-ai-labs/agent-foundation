@@ -794,7 +794,7 @@ async def test_saved_key_connects_deferred_default_agent_and_first_native_conver
         assert "Keep my instructions." in info.instructions
         yield "Connected."
 
-    async def infer(route, credential, *, base_url=None):
+    async def infer(route, credential, *, base_url=None, configuration=None):
         seen.append(credential.api_key.get_secret_value())
         return FunctionModel(stream_function=stream)
 

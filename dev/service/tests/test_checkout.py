@@ -31,7 +31,7 @@ def test_settings_describe_only_this_checkout(checkout_root: Path) -> None:
     assert settings.database.url.get_secret_value().endswith(f"@127.0.0.1:{ports.postgres}/a13n_service_dev")
     assert settings.redis.url.get_secret_value() == f"redis://127.0.0.1:{ports.redis}/0"
     assert settings.objects.root == checkout_root / "var/dev/objects"
-    assert settings.providers.require_https is False and "127.0.0.0/8" in settings.providers.private_cidrs
+    assert settings.providers.require_https is False
     assert settings.provisioning.local.enabled is True
     assert settings.provisioning.local.root == checkout.environments
     assert settings.telemetry.trace_config() is not None

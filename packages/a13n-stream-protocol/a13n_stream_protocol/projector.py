@@ -12,8 +12,9 @@ from itertools import chain
 from typing import Any
 
 from a13n_harness.capabilities.context import ContextRestoredEvent
-from a13n_harness.events import HarnessExtensionEvent, InlineDelegationPayload
-from a13n_harness.model_context import ModelInputEvent, user_prompt_content
+from a13n_harness.content import CONTENT_METADATA_KEY, prompt_content
+from a13n_harness.events import HarnessExtensionEvent, InlineDelegationPayload, InputMediaEvent, InputTextEvent
+from a13n_harness.tools._output import TOOL_CONTENT_METADATA_KEY, tool_execution_value
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai.messages import (
     AgentStreamEvent,
@@ -22,6 +23,7 @@ from pydantic_ai.messages import (
     FilePart,
     FunctionToolResultEvent,
     ModelMessage,
+    ModelRequest,
     ModelResponse,
     NativeToolCallPart,
     NativeToolReturnPart,
@@ -42,6 +44,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from a13n_stream_protocol.content import tool_result_content
 from a13n_stream_protocol.display import (
     BlockAppend,
     BlockKind,
@@ -368,14 +371,28 @@ class DisplayProjector:
             if previous is not None
             else {"tool_call_id": part.tool_call_id, "name": part.tool_name}
         )
-        content["result"] = part.model_response() if isinstance(part, RetryPromptPart) else part.model_response_str()
+        if isinstance(part, RetryPromptPart):
+            content["result"] = part.model_response()
+        else:
+            value = (
+                tool_execution_value(part.content, part.metadata) if isinstance(part, ToolReturnPart) else part.content
+            )
+            result = tool_result_content(value)
+            content["result"] = result if isinstance(result, str) else None
+            content["content_parts"] = _json(
+                [item.model_dump(mode="json", by_alias=True, exclude_none=True) for item in result]
+                if isinstance(result, list)
+                else []
+            )
         status: BlockStatus
         if isinstance(part, ToolReturnPart | NativeToolReturnPart):
             content["outcome"] = part.outcome
             if isinstance(part, NativeToolReturnPart):
                 content["provider"] = part.provider_name
             if isinstance(part, ToolReturnPart):
-                content["metadata"] = _json(part.metadata or {})
+                content["metadata"] = _json(
+                    {key: value for key, value in (part.metadata or {}).items() if key != TOOL_CONTENT_METADATA_KEY}
+                )
             status = "succeeded" if part.outcome == "success" else "failed"
         else:
             content["retry"] = True
@@ -391,6 +408,9 @@ class DisplayProjector:
     ) -> DisplayDelta | None:
         operations: list[DisplayOperation] = []
         prefix = f"{scope}:message:{index}:"
+        message_metadata = _json(
+            {key: value for key, value in (message.metadata or {}).items() if key != CONTENT_METADATA_KEY}
+        )
         current: set[str] = set()
         for part_index, part in enumerate(message.parts):
             if isinstance(part, NativeToolReturnPart):
@@ -410,7 +430,8 @@ class DisplayProjector:
                     self._response_part(scope, index, part_index, part, complete=message.state == "complete")
                 )
             elif isinstance(part, UserPromptPart):
-                for content_index, item in enumerate(user_prompt_content(part)):
+                assert isinstance(message, ModelRequest)
+                for content_index, item in enumerate(prompt_content(message, part_index)):
                     projected = project_input_content(item)
                     if projected is None:
                         continue
@@ -421,7 +442,7 @@ class DisplayProjector:
                     current.add(identifier)
                     content: dict[str, JsonValue] = {"text": value} if isinstance(value, str) else {"media": value}
                     content["metadata"] = metadata.model_dump(mode="json")
-                    content["message_metadata"] = _json(message.metadata or {})
+                    content["message_metadata"] = message_metadata
                     operations.extend(
                         self._put(
                             id=identifier,
@@ -450,7 +471,7 @@ class DisplayProjector:
                                 **operation.block.content,
                                 "timestamp": message.timestamp.isoformat() if message.timestamp is not None else None,
                                 "message_kind": "response" if isinstance(message, ModelResponse) else "request",
-                                "message_metadata": _json(message.metadata or {}),
+                                "message_metadata": message_metadata,
                             }
                         }
                     )
@@ -560,7 +581,7 @@ class DisplayProjector:
                         operations.append(BlocksRemove(ids=(previous.id,), omitted=self.state.omitted))
         elif isinstance(event, FunctionToolResultEvent | OutputToolResultEvent):
             operations = self._tool_result(scope, event.part)
-        elif isinstance(event, ModelInputEvent | ContextRestoredEvent):
+        elif isinstance(event, InputTextEvent | InputMediaEvent | ContextRestoredEvent):
             # Canonical reconciliation owns inputs (including display:false and
             # payload-free media). Never serialize raw native input as custom data.
             return None

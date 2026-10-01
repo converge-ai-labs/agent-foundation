@@ -157,30 +157,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it.each([false, true])(
-  "shows the Memory entry exactly when Memory is enabled (%s), independently of automatic organization",
-  async (enabled) => {
-    localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
-    vi.mocked(fetch).mockImplementation(async (request) => {
-      if (new URL((request as Request).url).pathname === "/api/status")
-        return json({
-          ...status,
-          app: {
-            ...status.app,
-            memory_organization: {
-              memory_enabled: enabled,
-              availability: "disabled",
-            },
-          },
-        });
-      return fixture(request as Request);
-    });
-    render(<BrowserApp />);
-    await screen.findByText("1.2.3rc2");
-    expect(!!screen.queryByRole("link", { name: "Memory" })).toBe(enabled);
-  },
-);
-
 it("observes Memory with the shared Thread viewer and scoped files without mounting an editor", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
   window.history.replaceState(null, "", "/memory");
@@ -682,6 +658,43 @@ it("retains source edits across rejected access and reauthentication", async () 
   expect(
     ((await screen.findByLabelText("Name")) as HTMLInputElement).value,
   ).toBe("Before access expired");
+});
+
+it("collapses and restores desktop navigation without losing expanded Projects", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const request = input as Request;
+    if (new URL(request.url).pathname === "/api/projects")
+      return json([{ project_id: "project-main", name: "Main" }]);
+    return fixture(request);
+  });
+  render(<BrowserApp />);
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Workbench navigation",
+  });
+  const project = await within(sidebar).findByRole("button", {
+    name: "Main",
+    expanded: false,
+  });
+  await userEvent.click(project);
+  await userEvent.click(
+    within(sidebar).getByRole("button", { name: "Collapse navigation" }),
+  );
+  const expand = await screen.findByRole("button", {
+    name: "Expand navigation",
+  });
+  expect(localStorage.getItem("a13n-harness-ui.sidebar")).toBe("collapsed");
+  await waitFor(() => expect(document.activeElement).toBe(expand));
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      within(sidebar).getByRole("button", { name: "Collapse navigation" }),
+    ),
+  );
+  expect(
+    within(sidebar).getByRole("button", { name: "Main", expanded: true }),
+  ).toBe(project);
+  expect(localStorage.getItem("a13n-harness-ui.sidebar")).toBe("expanded");
 });
 
 it("works without browser storage", async () => {
@@ -1312,7 +1325,7 @@ it("configures Sidekick in General without changing defaults or starting convers
   expect(submissions).toBe(0);
 });
 
-it("previews collaboration colors and remembers a random initial color and later selection", async () => {
+it("persists the initial collaboration color and restores explicit changes", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "test-key");
   const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
   try {
@@ -1325,9 +1338,6 @@ it("previews collaboration colors and remembers a random initial color and later
     );
     const color = await screen.findByRole("combobox", { name: "Your color" });
     expect(color.textContent).toBe("Purple");
-    expect(
-      color.querySelector<HTMLElement>("[style]")?.style.backgroundColor,
-    ).toBe("rgb(124, 58, 237)");
     expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#7c3aed");
     component.unmount();
 
@@ -1343,17 +1353,8 @@ it("previews collaboration colors and remembers a random initial color and later
     });
     expect(remembered.textContent).toBe("Purple");
     await user.click(remembered);
-    for (const name of ["Slate", "Blue", "Purple", "Green", "Amber"]) {
-      const option = await screen.findByRole("option", { name });
-      expect(
-        option.querySelector<HTMLElement>("[style]")?.style.backgroundColor,
-      ).toBeTruthy();
-    }
-    await user.click(screen.getByRole("option", { name: "Green" }));
+    await user.click(await screen.findByRole("option", { name: "Green" }));
     expect(remembered.textContent).toBe("Green");
-    expect(
-      remembered.querySelector<HTMLElement>("[style]")?.style.backgroundColor,
-    ).toBe("rgb(5, 150, 105)");
     await waitFor(() =>
       expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#059669"),
     );

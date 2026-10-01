@@ -5,9 +5,10 @@ shared. A provider belongs to one workspace, and a row referencing one does so t
 the database refuses a provider of another workspace.
 """
 
+from datetime import datetime
 from typing import Any, ClassVar
 
-from sqlalchemy import ForeignKey, ForeignKeyConstraint, String, UniqueConstraint, text
+from sqlalchemy import DateTime, ForeignKey, ForeignKeyConstraint, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
@@ -82,3 +83,29 @@ class MemoryProviderRow(ProviderRow):
     PROVIDER_KIND = "memory"
     KIND: ClassVar[str] = "memory_provider"
     ID_PREFIX = "memprov"
+
+
+class ModelProviderOAuthRow(Base):
+    """Independent mutable authorization state, shared by the provider's workspace."""
+
+    __tablename__ = "model_provider_oauth"
+    __table_args__ = (
+        ForeignKeyConstraint(["workspace_id", "provider_id"], ["model_providers.workspace_id", "model_providers.id"]),
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+    )
+
+    provider_id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    workspace_id: Mapped[str]
+    host_id: Mapped[str] = mapped_column(String(72))
+    client_id: Mapped[str | None]
+    subject: Mapped[str | None]
+    email: Mapped[str | None]
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tokens: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    pending: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    pending_id: Mapped[str | None] = mapped_column(String(72))
+    login_claim: Mapped[str | None] = mapped_column(String(72))
+    refresh_claim: Mapped[str | None] = mapped_column(String(72))
+    refresh_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    refresh_blocked: Mapped[bool] = mapped_column(server_default=text("false"))

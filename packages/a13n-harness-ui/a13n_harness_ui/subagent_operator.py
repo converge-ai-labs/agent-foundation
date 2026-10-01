@@ -53,7 +53,7 @@ from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot, intersect_usage_limits
 from a13n_logging import get_logger
-from a13n_stream_protocol import HarnessAguiConverter
+from a13n_stream_protocol import HarnessAguiStreamConverter
 from a13n_stream_protocol.display import DisplaySnapshot, Producer
 from a13n_stream_protocol.projector import DisplayProjector
 from a13n_stream_protocol.session import DisplayCapture
@@ -410,6 +410,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             source,
             selection,
             parent_node=scope.composition.root,
+            run_configuration=scope.composition.run_configuration,
         )
         if published.value.root != edge.definition:
             raise RunCoordinationError(
@@ -836,6 +837,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             source,
             _selection(thread.thread_id, thread.configuration),
             parent_node=scope.composition.root,
+            run_configuration=scope.composition.run_configuration,
         )
         pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
         display = DisplayCapture(await to_thread.run_sync(_child_projector, checkpoint.display))
@@ -1041,6 +1043,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             display.projector = _child_projector(display.projector.capture())
             display.sessions.clear()
         bindings = RunBindings(
+            configuration=reconstructed.run_configuration,
             instance=AgentInstanceContext(
                 identity=identity,
                 agent_instance_id=agent_instance_id,
@@ -1328,7 +1331,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         prepared: _PreparedSegment,
         active: _ActiveSegment,
     ) -> tuple[HarnessRunResult[Any], DisplaySnapshot, tuple[AguiEvent, ...]]:
-        observer = HarnessAguiConverter(fragment=False)
+        observer = HarnessAguiStreamConverter(fragment=False)
         tool_evidence = ToolEvidenceCollector()
         tool_images = ToolImageCollector(
             run_id=prepared.stream.run_id, thread_id=prepared.state.thread_id, files=self._thread_files
@@ -1846,7 +1849,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         if include_activity:
             display = await self._execution_display(head)
             view = await self._execution_view(head, display=display)
-            activity = _surface_activity(view.activity or SubagentActivitySnapshot(sequence=0))
+            activity = _surface_activity(view.activity or SubagentActivitySnapshot(sequence=0), display)
         if root_thread_id is None:
             root_thread_id = await self._root_thread_id(await self._require_child_thread(head))
         async with self._lock:
@@ -2170,13 +2173,22 @@ def _decode_child_cursor(value: str) -> _ChildCursor:
         raise RunCoordinationError("Child cursor is invalid.", code="child_cursor_invalid") from exc
 
 
-def _surface_activity(value: SubagentActivitySnapshot) -> ChildActivityView:
+def _surface_activity(value: SubagentActivitySnapshot, display: CompactChildDisplay) -> ChildActivityView:
+    tools = [item for item in display.activities if item.kind == "tool"][-20:]
     return ChildActivityView(
         sequence=value.sequence,
         output_preview=value.output_preview,
         output_truncated=value.output_truncated,
         active_tool_calls=tuple(_surface_tool_call(item) for item in value.active_tool_calls),
-        recent_tool_calls=tuple(_surface_tool_call(item) for item in value.recent_tool_calls),
+        recent_tool_calls=tuple(
+            _surface_tool_call(item).model_copy(
+                update={
+                    "content_parts": activity.content_parts,
+                    "subagent_run_id": activity.subagent_run_id,
+                }
+            )
+            for item, activity in zip(value.recent_tool_calls, tools, strict=True)
+        ),
         dropped_tool_calls=value.dropped_tool_calls,
     )
 

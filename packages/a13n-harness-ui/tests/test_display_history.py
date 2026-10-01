@@ -118,3 +118,72 @@ async def test_context_summary_projection_keeps_complete_markdown(kind: str) -> 
     assert entries[0].parts[0].text == content
     assert entries[0].parts[0].metadata.model_dump()["operation_id"] == "summary-long"
     assert type(entries[0]).model_validate_json(entries[0].model_dump_json()) == entries[0]
+
+
+def test_shared_tool_media_lineage_provider_and_outcome_survive_saved_presentation() -> None:
+    from a13n_harness_ui.display_projection import child_presentation
+    from pydantic_ai.messages import (
+        FunctionToolResultEvent,
+        ImageUrl,
+        NativeToolCallPart,
+        NativeToolReturnPart,
+        RetryPromptPart,
+        TextContent,
+        ToolReturnPart,
+    )
+
+    projector = DisplayProjector(baseline("root"))
+    projector.scope(DisplayScope(id="root", run_id="root", thread_id="thread"))
+    projector.scope(DisplayScope(id="inline", run_id="inline", thread_id="child", parent_scope_id="root"))
+    projector.reconcile_message(
+        "root",
+        0,
+        ModelResponse(
+            parts=[
+                NativeToolCallPart("search", {}, tool_call_id="native", provider_name="web"),
+                NativeToolReturnPart("search", "found", tool_call_id="native", provider_name="web"),
+            ]
+        ),
+    )
+    projector.observe(
+        "inline",
+        1,
+        FunctionToolResultEvent(
+            ToolReturnPart(
+                "observe",
+                [TextContent("same"), ImageUrl("https://example.test/image.png"), TextContent("same")],
+                tool_call_id="media",
+                outcome="denied",
+            )
+        ),
+    )
+    projector.observe(
+        "root",
+        2,
+        FunctionToolResultEvent(
+            RetryPromptPart(
+                "invalid argument",
+                tool_name="search",
+                tool_call_id="retry",
+            )
+        ),
+    )
+    snapshot = DisplaySnapshot.model_validate_json(projector.capture().model_dump_json())
+    entries, _ = transcript(snapshot, thread_id="thread", source_id=None)
+    parts = [part for entry in entries for part in entry.parts]
+    native = [part for part in parts if part.tool_call_id == "native"]
+    assert [part.provider for part in native] == ["web", "web"]
+    media = next(part for part in parts if part.tool_call_id == "media" and part.kind == "tool_result")
+    assert media.outcome == "denied" and media.value is None
+    assert [item["type"] for item in media.content_parts] == ["text", "image", "text"]
+    assert media.content_parts[0] == media.content_parts[2]
+    assert any(
+        part.kind == "retry"
+        and part.text == RetryPromptPart("invalid argument", tool_name="search", tool_call_id="retry").model_response()
+        for part in parts
+    )
+    child = child_presentation(snapshot)
+    activity = next(item for item in child.activities if item.tool_name == "observe")
+    assert activity.subagent_run_id == "inline"
+    assert activity.content_parts == media.content_parts
+    assert next(item for item in child.activities if item.tool_name == "search").subagent_run_id is None

@@ -7,7 +7,7 @@ import pytest
 pytestmark = pytest.mark.anyio
 
 
-async def mixed_wait(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+async def mixed_wait(service, scripted_model, runs_kit, *, options=None):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     model = await runs_kit.create_model(service, scripted_model)
     agent = await runs_kit.add_agent(
@@ -50,7 +50,7 @@ async def mixed_wait(service, scripted_model, runs_kit):  # type: ignore[no-unty
             "to": None,
         }
     )
-    first = await runs_kit.start_thread(service, agent, "Review the invoice and choose a color")
+    first = await runs_kit.start_thread(service, agent, "Review the invoice and choose a color", options=options or {})
     await (await runs_kit.attempt(service))
     waiting = await runs_kit.get_run(service, first["run"]["id"])
     assert waiting["status"] == "waiting", waiting

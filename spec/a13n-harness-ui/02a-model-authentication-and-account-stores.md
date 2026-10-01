@@ -41,6 +41,10 @@ class GrokSubscriptionAuthentication(BaseModel):
     kind: Literal["grok_subscription"]
 
 
+class ChatGPTSubscriptionAuthentication(BaseModel):
+    kind: Literal["chatgpt_subscription"]
+
+
 class CopilotSubscriptionAuthentication(BaseModel):
     kind: Literal["copilot_subscription"]
 
@@ -50,6 +54,7 @@ ModelAuthentication = (
     | CodexSubscriptionAuthentication
     | GrokSubscriptionAuthentication
     | CopilotSubscriptionAuthentication
+    | ChatGPTSubscriptionAuthentication
 )
 ```
 
@@ -98,9 +103,19 @@ Logout deletes the selected native entry or both accepted token fields for the s
 
 Authenticated model discovery is a separate explicit `POST /api/auth/accounts/copilot/models` operation. It requests `/models` from the native provider, returns only unique IDs advertising `/chat/completions`, does not follow server pagination URLs, and rejects results after a source/account change. It is not the public model directory, an inference probe, a settings recommendation, or proof of entitlement. Custom model IDs remain editable when discovery is unavailable.
 
+## ChatGPT Subscription Accounts
+
+`chatgpt_subscription` requires `openai-chatgpt:<model_id>` and uses the shared [ChatGPT protocol and Model dialect](../a13n-harness/16a-model-authentication.md). It is independent of Codex and never reads or modifies `~/.codex`. No static API key or configurable endpoint is accepted.
+
+The Host data root's `auth.json` owns the stable host identity, selected issued client registration, complete credentials, and a bounded pending PKCE attempt in `openai_chatgpt`. Registration identity and subject survive logout. Explicit account selection or new registration changes the binding; active Model providers reject a changed account or host. Inspect and candidate projections contain identity, expiry and required action, never tokens or private callback material. The Host serializes grant spend and publication across cooperating processes; durable grant fingerprints prevent replay after an uncertain outcome or interruption. Both rotated tokens are published before use. The file remains plaintext with private permissions and is not a keyring.
+
+Full callback URL paste is the primary TUI and one-shot CLI path. Browser WebUI defaults to an automatic loopback listener and offers paste as a secondary path, including when the Host is remote. Both paths validate the same exact loopback redirect, state, expiry and issued client and use the same exchange; a pasted URL is never fetched. A valid callback consumes the durable pending attempt before token exchange. Invalid input leaves it retryable; exchange failure requires a new attempt. A successful or cancelled session clears callback material. Logout clears local tokens first, retains registration metadata, and separately reports when OpenAI revocation is not confirmed.
+
+Explicit account model discovery requests the public `/v1/models` endpoint, filters `visibility=list`, and preserves server order, slugs and display names. It is account-specific, not proof of inference entitlement. Custom model IDs remain available.
+
 ## Host-local API Keys
 
-API-key authentication selects exactly one `env` name or `credential_ref` resource ID. A reference resolves in the Host data root's independent `auth.json`, not the configuration tree. The file contains a versioned map of references to plaintext keys; it contains no subscription tokens. Harness UI supports explicit add/replace/delete and lists only reference IDs. Reads, diagnostics, exports, and frozen Run recipes never return key bytes or masked key fragments. Environment references remain supported without implicit fallback.
+API-key authentication selects exactly one `env` name or `credential_ref` resource ID. A reference resolves in the Host data root's independent `auth.json`, not the configuration tree. The version-1 file contains a map of references to plaintext keys and an independent `openai_chatgpt` authorization section. One atomic document writer preserves both sections and additive metadata; API-key projections expose only key references. Harness UI supports explicit add/replace/delete and lists only reference IDs. Reads, diagnostics, exports, and frozen Run recipes never return key bytes or masked key fragments. Environment references remain supported without implicit fallback.
 
 The Host rereads a referenced key when constructing a Model for a Run. Updating or deleting a key affects future resolution, not already constructed clients. Missing references fail before a provider request. Writes serialize across cooperating processes, preserve unrelated references, and atomically replace the file with POSIX mode `0600` in a private directory. Version-1 documents accept additive JSON metadata outside the `keys` map. Add/replace/delete preserves that metadata as well as unrelated key references; it never substitutes masked `SecretStr` display values for stored key bytes. Unsupported versions and malformed known fields fail without overwrite. API inputs remain closed contracts, and listing exposes only reference IDs, not document metadata. This is a local plaintext store, not encryption or a keyring.
 
@@ -150,7 +165,7 @@ This default creates only the matching in-memory adapter. No file entry exists u
 
 ### Browser and Device Presentation
 
-Interactive and one-shot CLI authentication default to device authorization for all three providers. The Host presents a verification URL and user code; the user may open the URL in any browser. No browser is opened automatically and no local callback is needed. Grok uses RFC 8628; Codex uses its vendor-specific device-code/authorization-code exchange and registered device callback. Unsupported device authorization fails explicitly without fallback.
+Interactive and one-shot CLI authentication default to device authorization for Codex, Grok and Copilot. ChatGPT uses the full callback URL paste path described above. The Host presents a verification URL and user code; the user may open the URL in any browser. No browser is opened automatically and no local callback is needed. Grok uses RFC 8628; Codex uses its vendor-specific device-code/authorization-code exchange and registered device callback. Unsupported device authorization fails explicitly without fallback.
 
 The auth CLI offers explicit browser and device actions. Codex browser authorization retains `http://localhost:1455/auth/callback`; Grok discovery uses its compatible loopback callback. Neither callback is rewritten to a different application origin. Browser login requires the user's browser to reach the Host's loopback listener; otherwise the user selects device authorization. Codex PKCE, state, and callback handling remain upstream-owned; its login exchange retains the real ID token required for native `auth.json`. Grok nonce and identity validation remain Harness-owned. Successful Codex login callbacks return `CodexLoginResult`, not a bare model credential. Fresh login and account switching publish its new ID token; same-account refresh preserves the stored ID token.
 
@@ -162,14 +177,14 @@ Interactive sessions are process-local and bounded to fifteen minutes, with star
 a13n-harness-ui auth key list [--format json]
 a13n-harness-ui auth key set <reference>
 a13n-harness-ui auth key delete <reference> [--yes]
-a13n-harness-ui auth status [codex|grok|copilot]
-a13n-harness-ui login <codex|grok|copilot> [--allow-account-switch] [--device-code|--browser]
-a13n-harness-ui auth logout <codex|grok|copilot>
+a13n-harness-ui auth status [codex|grok|copilot|chatgpt]
+a13n-harness-ui login <codex|grok|copilot|chatgpt> [--allow-account-switch] [--device-code|--browser]
+a13n-harness-ui auth logout <codex|grok|copilot|chatgpt>
 a13n-harness-ui auth sources copilot
 a13n-harness-ui auth select copilot --source <native|copilot_cli_file> --account <login>
 ```
 
-`status` without a provider returns provider projections in stable `codex`, `grok`, `copilot` order; selecting a provider returns one. `login` and `logout` require a provider. Login defaults to device authorization; `--browser` explicitly selects a Host-local callback for Codex or Grok and is rejected for Copilot. Logout removes only the selected compatible provider record or Grok scope and preserves unrelated document fields and scopes.
+`status` without a provider returns provider projections in stable `codex`, `grok`, `copilot`, `chatgpt` order; selecting a provider returns one. `login` and `logout` require a provider. ChatGPT login defaults to manual callback paste; other providers default to device authorization; `--browser` explicitly selects a Host-local callback for Codex or Grok and is rejected for Copilot. Logout removes only the selected compatible provider record or Grok scope and preserves unrelated document fields and scopes.
 
 Every command supports detached text and JSON result rendering. Authorization progress and URLs use stderr in both formats; the final credential-free projection uses stdout. Login cancellation or failure exits nonzero and leaves the previous shared account unchanged.
 
@@ -177,7 +192,11 @@ Every command supports detached text and JSON result rendering. Authorization pr
 
 [First-use setup](06-setup-and-environment-readiness.md) inspects credential-free status and offers each supported connection as an independent Model recipe. One operation creates one connection; additional Models and Agents do not combine credentials or introduce a runtime fallback. Discovery never starts login or refresh. The terminal wizard labels reusable accounts without requiring a new login. Copilot also offers explicit source/account reselection. Missing credentials offer explicit device/browser login through the same App sessions used by WebUI, rediscovery, or configuration without authentication. Login cancellation observes the actual terminal result; completed account publication is not rolled back by setup cancellation. Invalid or unsupported stores require repair rather than replacement. A missing or invalid provider does not prevent selecting the other provider or an existing configured Model.
 
-## Codex Subscription Usage and Reset Credits
+## Subscription Usage
+
+For a ChatGPT Model, idle `/status` and `/usage subscription` only report that subscription usage is unavailable and show the official ChatGPT usage-management URL. This display performs no account query, credential inspection, or refresh. Numeric remaining allowance and reset timestamps are not supplied; local token totals, credential expiry, and Codex windows never substitute for ChatGPT plan allowance. `/usage reset` remains Codex-only.
+
+### Codex Subscription Usage and Reset Credits
 
 The App reads Codex subscription usage from the supported ChatGPT account API, separately from model-token accounting and token expiry. Read-only status reports provider usage windows, usage percentages, scheduled reset timestamps, and available reset credits. Unsupported or unavailable credit APIs do not hide successfully read usage windows. Unknown fields or unavailable prices are not invented. The CLI's `/status` and `/usage subscription` refresh this information while idle without opening a selector. Each reported window shows its own remaining percentage, clamped to 0–100, a duration-derived label, and local reset time; missing windows are explicitly unavailable, not zero. `/usage reset` explicitly opens eligible credit selection.
 

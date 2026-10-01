@@ -1197,6 +1197,75 @@ export interface paths {
     patch: operations["update_provider_api_v1_model_providers__provider_id__patch"];
     trace?: never;
   };
+  "/api/v1/model-providers/{provider_id}/authorization": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Model Authorization */
+    get: operations["model_authorization_api_v1_model_providers__provider_id__authorization_get"];
+    put?: never;
+    post?: never;
+    /** Disconnect Model Authorization */
+    delete: operations["disconnect_model_authorization_api_v1_model_providers__provider_id__authorization_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-providers/{provider_id}/authorization/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Complete Model Authorization */
+    post: operations["complete_model_authorization_api_v1_model_providers__provider_id__authorization_callback_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-providers/{provider_id}/authorize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Authorize Model */
+    post: operations["authorize_model_api_v1_model_providers__provider_id__authorize_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-providers/{provider_id}/models": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Discover Model Provider Models */
+    get: operations["discover_model_provider_models_api_v1_model_providers__provider_id__models_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/model-providers/{provider_id}/test": {
     parameters: {
       query?: never;
@@ -3543,6 +3612,26 @@ export interface components {
       field: string;
       mode: components["schemas"]["CredentialMode"];
     };
+    /** AuthorizationCallback */
+    AuthorizationCallback: {
+      /** Attempt Id */
+      attempt_id: string;
+      /**
+       * Callback Url
+       * Format: password
+       */
+      callback_url: string;
+    };
+    /** AuthorizationDisconnect */
+    AuthorizationDisconnect: {
+      /**
+       * Local Tokens Cleared
+       * @default true
+       */
+      local_tokens_cleared?: boolean;
+      /** Revocation Confirmed */
+      revocation_confirmed?: boolean | null;
+    };
     /** AuthorizationRequest */
     AuthorizationRequest: {
       /** Return Url */
@@ -3557,6 +3646,53 @@ export interface components {
       expires_at: string | null;
       /** Redirect Url */
       redirect_url: string | null;
+    };
+    /** AuthorizationStart */
+    AuthorizationStart: {
+      /** Attempt Id */
+      attempt_id: string;
+      /** Authorization Url */
+      authorization_url: string;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /**
+       * Method
+       * @default manual_callback
+       * @enum {string}
+       */
+      method?: "manual_callback" | "browser_callback";
+    };
+    /** AuthorizationStatus */
+    AuthorizationStatus: {
+      /** Client Id */
+      client_id?: string | null;
+      /** Email */
+      email?: string | null;
+      /** Expires At */
+      expires_at?: string | null;
+      /** Message */
+      message?: string | null;
+      /**
+       * Pending
+       * @default false
+       */
+      pending?: boolean;
+      /** Provider Id */
+      provider_id: string;
+      /**
+       * State
+       * @enum {string}
+       */
+      state:
+        | "disconnected"
+        | "connected"
+        | "refreshing"
+        | "reauthentication_required";
+      /** Subject */
+      subject?: string | null;
     };
     /** BearerCredential */
     BearerCredential: {
@@ -3641,6 +3777,13 @@ export interface components {
     };
     /** @enum {string} */
     Certainty: "not_dispatched" | "known" | "unknown";
+    /** ChatGPTModel */
+    ChatGPTModel: {
+      /** Display Name */
+      display_name: string;
+      /** Slug */
+      slug: string;
+    };
     /**
      * ChildEnvironmentPolicy
      * @description What a child run mounts: no environment, the parent's, or a new one from `template_id`.
@@ -4404,11 +4547,15 @@ export interface components {
       compact_threshold?: number;
       /** Context Window Tokens */
       context_window_tokens?: number | null;
+      /** @description Image preparation policy; omitted uses native defaults, null disables automatic preparation. */
+      image_input?: components["schemas"]["ImageInputPolicy"] | null;
       /**
        * Proactive Context Management Threshold
        * @default 0.65
        */
       proactive_context_management_threshold?: number | null;
+      url_input?: components["schemas"]["UrlInputSupport-Input"];
+      video_input?: components["schemas"]["VideoInputPolicy"];
     };
     /**
      * HarnessModelCharacteristics
@@ -4424,11 +4571,15 @@ export interface components {
       compact_threshold?: number;
       /** Context Window Tokens */
       context_window_tokens?: number | null;
+      /** @description Image preparation policy; omitted uses native defaults, null disables automatic preparation. */
+      image_input?: components["schemas"]["ImageInputPolicy"] | null;
       /**
        * Proactive Context Management Threshold
        * @default 0.65
        */
       proactive_context_management_threshold?: number | null;
+      url_input?: components["schemas"]["UrlInputSupport-Output"];
+      video_input?: components["schemas"]["VideoInputPolicy"];
     };
     /** HeadersCredential */
     HeadersCredential: {
@@ -4441,6 +4592,50 @@ export interface components {
     HistoryPurge: {
       /** Purged */
       purged: number;
+    };
+    /**
+     * ImageInputPolicy
+     * @description Preparation limits for one model's image input, not native ModelSettings.
+     */
+    ImageInputPolicy: {
+      /**
+       * Image Split Max Height
+       * @default 4096
+       */
+      image_split_max_height?: number;
+      /**
+       * Image Split Overlap
+       * @default 50
+       */
+      image_split_overlap?: number;
+      /**
+       * Max Image Bytes
+       * @description Maximum base64-encoded bytes per image; zero disables this byte limit.
+       * @default 5242880
+       */
+      max_image_bytes?: number;
+      /**
+       * Max Image Dimension
+       * @description Maximum image axis; zero disables this limit.
+       * @default 8000
+       */
+      max_image_dimension?: number;
+      /**
+       * Max Images
+       * @description Keep the newest images; zero removes all image input.
+       * @default 20
+       */
+      max_images?: number;
+      /**
+       * Split Large Images
+       * @default true
+       */
+      split_large_images?: boolean;
+      /**
+       * Support Gif
+       * @default true
+       */
+      support_gif?: boolean;
     };
     /** InboxOrder */
     InboxOrder: {
@@ -5749,6 +5944,14 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
+    /** ProviderAuthorizationRequest */
+    ProviderAuthorizationRequest: {
+      /**
+       * New Registration
+       * @default false
+       */
+      new_registration?: boolean;
+    };
     /** ProviderCreate */
     ProviderCreate: {
       /** Config */
@@ -5821,6 +6024,8 @@ export interface components {
       } | null;
       /** Model Apis */
       model_apis?: string[] | null;
+      /** Oauth Scheme */
+      oauth_scheme?: string | null;
       /** Operations */
       operations?: components["schemas"]["WebOperation"][] | null;
       /** Settings Schemas */
@@ -5965,6 +6170,42 @@ export interface components {
       workspace_id: string;
     };
     /**
+     * RunConfiguration
+     * @description An accepted snapshot, independent of Agent definitions and Capability configuration.
+     *
+     *     Consumers explicitly opt into namespaced extensions and own their validation.
+     *     Extension lookups return detached values, not mutable shared state.
+     */
+    "RunConfiguration-Input": {
+      /**
+       * Allowed Hosts
+       * @description Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.
+       */
+      allowed_hosts?: string[] | null;
+      /** Extensions */
+      extensions?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+    };
+    /**
+     * RunConfiguration
+     * @description An accepted snapshot, independent of Agent definitions and Capability configuration.
+     *
+     *     Consumers explicitly opt into namespaced extensions and own their validation.
+     *     Extension lookups return detached values, not mutable shared state.
+     */
+    "RunConfiguration-Output": {
+      /**
+       * Allowed Hosts
+       * @description Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.
+       */
+      allowed_hosts?: string[] | null;
+      /** Extensions */
+      extensions?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+    };
+    /**
      * RunItems
      * @description A run's committed display with the run it describes. Live output continues after `position`.
      */
@@ -5999,6 +6240,7 @@ export interface components {
      * @description What a message may choose for the run it starts. A steer joins a run with the defaults or equal options.
      */
     "RunOptions-Input": {
+      configuration?: components["schemas"]["RunConfiguration-Input"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -6011,6 +6253,7 @@ export interface components {
      * @description What a message may choose for the run it starts. A steer joins a run with the defaults or equal options.
      */
     "RunOptions-Output": {
+      configuration?: components["schemas"]["RunConfiguration-Output"] | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -7043,6 +7286,22 @@ export interface components {
       /** Upload Id */
       upload_id: string;
     };
+    /**
+     * UrlInputSupport
+     * @description URL subtypes consumed natively by the selected transport.
+     */
+    "UrlInputSupport-Input": {
+      /** Video */
+      video?: components["schemas"]["VideoUrlType"][];
+    };
+    /**
+     * UrlInputSupport
+     * @description URL subtypes consumed natively by the selected transport.
+     */
+    "UrlInputSupport-Output": {
+      /** Video */
+      video?: string[];
+    };
     /** UrlPart */
     UrlPart: {
       /**
@@ -7147,6 +7406,23 @@ export interface components {
     };
     /** @enum {string} */
     Verb: "read" | "run" | "write" | "admin";
+    /**
+     * VideoInputPolicy
+     * @description Base64-after byte budget for both one video and all inline videos in a request.
+     */
+    VideoInputPolicy: {
+      /**
+       * Max Video Bytes
+       * @description Maximum Base64-encoded bytes per video and in aggregate per model request.
+       * @default 10485760
+       */
+      max_video_bytes?: number;
+    };
+    /**
+     * VideoUrlType
+     * @enum {string}
+     */
+    VideoUrlType: "youtube";
     /** @enum {string} */
     WaitReason: "approval" | "call" | "multiple";
     /** @enum {string} */
@@ -10018,6 +10294,149 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  model_authorization_api_v1_model_providers__provider_id__authorization_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationStatus"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  disconnect_model_authorization_api_v1_model_providers__provider_id__authorization_delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationDisconnect"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  complete_model_authorization_api_v1_model_providers__provider_id__authorization_callback_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AuthorizationCallback"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationStatus"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  authorize_model_api_v1_model_providers__provider_id__authorize_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderAuthorizationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationStart"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  discover_model_provider_models_api_v1_model_providers__provider_id__models_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ChatGPTModel"][];
         };
       };
       400: components["responses"]["Error"];

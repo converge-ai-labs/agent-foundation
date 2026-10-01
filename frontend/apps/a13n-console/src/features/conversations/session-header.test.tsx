@@ -124,7 +124,8 @@ it("identifies the session and switches the level in the URL", async () => {
   show([fixtureThread()]);
   const user = userEvent.setup();
   expect(screen.getByRole("link", { name: /Release Bot/ })).toBeTruthy();
-  expect(screen.getByText("ses_1")).toBeTruthy();
+  // The identifier stays one action away instead of leading the header.
+  expect(screen.queryByText("ses_1")).toBeNull();
   expect(await screen.findByText("Debug session · 2 runs")).toBeTruthy();
   // The header reports the followed run's state; stopping belongs to the dock.
   expect(await screen.findByText("state.running")).toBeTruthy();
@@ -135,6 +136,10 @@ it("identifies the session and switches the level in the URL", async () => {
   // Chat is written out too: the level a reader chose outlives a reload.
   await user.click(screen.getByRole("button", { name: "Chat" }));
   expect(await screen.findByText("level:?view=chat")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Session actions" }));
+  expect(
+    await screen.findByRole("menuitem", { name: "Copy session ID" }),
+  ).toBeTruthy();
 });
 
 it("opens an application's session in Debug and still offers Chat", async () => {

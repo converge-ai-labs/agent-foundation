@@ -1,15 +1,23 @@
 import { StackIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
+import { ChoiceField } from "a13n-ui";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, type Schema } from "../../shared/api";
+import {
+  allPages,
+  matchesSearch,
+  matchingPage,
+  type Schema,
+} from "../../shared/api";
 import {
   CollectionFooter,
   Empty,
   Pagination,
   ResourceIdentity,
   ResourceTable,
+  Toolbar,
   useCursor,
 } from "../../shared/collection";
 import { useResourceRows } from "../../shared/dialogs";
@@ -21,8 +29,7 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { ProviderIcon } from "../../shared/identity";
-import { PageActions } from "../../shared/page";
-import styles from "../../shared/shared.module.css";
+import { Page, PageActions } from "../../shared/page";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { environmentApi, environmentTemplates } from "./api";
 import { useEnvironmentTypes } from "./providers";
@@ -33,14 +40,33 @@ export function EnvironmentTemplates() {
   const client = useClient(),
     { can, workspace } = useWorkspace(),
     { t } = useTranslation(),
-    page = useCursor(),
     api = environmentApi(client, workspace.id),
     rows = useResourceRows<Schema["Template"]>(),
     providerTypes = useEnvironmentTypes();
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState<"all" | "active" | "archived">("all");
+  const term = search.trim().toLocaleLowerCase();
+  const filtered = !!term || status !== "all";
+  const page = useCursor({ term, status });
   const query = useQuery({
-    queryKey: ["environment-templates", workspace.id, page.cursor],
+    queryKey: [
+      "environment-templates",
+      workspace.id,
+      page.cursor,
+      term,
+      status,
+    ],
     queryFn: ({ signal }) =>
-      environmentTemplates(client, workspace.id, signal, page.cursor),
+      matchingPage(
+        (cursor, limit) =>
+          environmentTemplates(client, workspace.id, signal, cursor, limit),
+        page.cursor,
+        filtered
+          ? (template) =>
+              matchesSearch(term, template.name, template.description) &&
+              (status === "all" || template.enabled === (status === "active"))
+          : undefined,
+      ),
   });
   const providers = useQuery({
     queryKey: ["environment-provider-options", workspace.id],
@@ -64,7 +90,36 @@ export function EnvironmentTemplates() {
     );
   }
   return (
-    <div className={styles.stack}>
+    <Page
+      title={t("Environment templates")}
+      description={t(
+        "Reusable templates for your agents' working environments.",
+      )}
+      toolbar={
+        <Toolbar
+          search={search}
+          onSearchChange={setSearch}
+          searchLabel={t("Search templates")}
+          filters={
+            <ChoiceField
+              label={t("Status")}
+              variant="filter"
+              value={status}
+              onValueChange={(value) =>
+                setStatus(
+                  value === "active" || value === "archived" ? value : "all",
+                )
+              }
+              options={[
+                { value: "all", label: t("All statuses") },
+                { value: "active", label: t("state.active") },
+                { value: "archived", label: t("state.archived") },
+              ]}
+            />
+          }
+        />
+      }
+    >
       <PageActions secondary>
         <ManageProvidersLink category="environments" />
       </PageActions>
@@ -156,14 +211,22 @@ export function EnvironmentTemplates() {
         !query.error && (
           <Empty
             icon={<StackIcon aria-hidden="true" />}
-            title={t("No environment templates")}
-            description={t(
-              "Create a template, then choose it when starting a conversation.",
-            )}
-            action={manage ? <TemplateEditor /> : undefined}
+            title={
+              filtered
+                ? t("No matching templates")
+                : t("No environment templates")
+            }
+            description={
+              filtered
+                ? t("Change or clear the search and filters.")
+                : t(
+                    "Create a template, then choose it when starting a conversation.",
+                  )
+            }
+            action={!filtered && manage ? <TemplateEditor /> : undefined}
           />
         )
       )}
-    </div>
+    </Page>
   );
 }

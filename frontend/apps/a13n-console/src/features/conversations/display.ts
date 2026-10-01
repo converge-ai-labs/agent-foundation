@@ -2,6 +2,11 @@ import type { DisplayBlock, DisplaySnapshot } from "a13n-ui/display";
 import { isRecord, type Client } from "../../service-client";
 import { data } from "../../shared/api";
 
+export const AUTHORED_INPUT_EVENT_NAMES = new Set([
+  "a13n.input.user",
+  "a13n.input.steering",
+]);
+
 /** Presentation-only adapter; all incremental semantics live in a13n-ui/display. */
 export interface DisplayItem {
   id: string;
@@ -74,6 +79,8 @@ function item(
   if (block.kind === "tool_chunk") {
     content.toolCallId = content.tool_call_id;
     content.toolCallName = content.name;
+    content.result_parts = content.content_parts;
+    if (content.result === null) delete content.result;
   }
   if (block.kind === "reasoning" && content.signature)
     content.encrypted_value = content.signature;

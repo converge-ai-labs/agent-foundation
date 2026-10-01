@@ -29,7 +29,7 @@ from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot
 from a13n_logging import get_logger
-from a13n_stream_protocol import HarnessAguiConverter
+from a13n_stream_protocol import HarnessAguiStreamConverter
 from a13n_stream_protocol.display import DisplaySnapshot
 from a13n_stream_protocol.projector import DisplayProjector
 from a13n_stream_protocol.session import DisplayCapture
@@ -439,6 +439,7 @@ class RootRunExecutor:
             )
             bindings = RunBindings(
                 instance=instance,
+                configuration=reconstructed.run_configuration,
                 environment=None if environment is None else environment.runtime,
                 tool_result_directory=None if environment is None else environment.tool_result_directory,
                 model_resolver=reconstructed.model_resolver,
@@ -451,7 +452,10 @@ class RootRunExecutor:
                     else None
                 ),
             )
-            bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
+            bindings = production_run_bindings(
+                bindings,
+                reconstructed.definition_capability_ids,
+            )
             record_phase_result(
                 preparation_span,
                 status="completed",
@@ -489,7 +493,7 @@ class RootRunExecutor:
             tool_images = ToolImageCollector(run_id=stream.run_id, thread_id=thread.thread_id, files=self._thread_files)
             if on_stream is not None:
                 await on_stream(stream, input_files)
-            observer = HarnessAguiConverter(fragment=False)
+            observer = HarnessAguiStreamConverter(fragment=False)
             async with self._bind_subagent_parent(
                 thread_id=thread.thread_id,
                 run_id=stream.run_id,

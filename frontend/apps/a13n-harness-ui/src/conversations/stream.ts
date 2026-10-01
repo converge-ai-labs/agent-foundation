@@ -1,3 +1,4 @@
+import type { ContentPart } from "@ag-ui/core";
 import {
   DisplayState,
   sameProducer,
@@ -19,6 +20,8 @@ export type DisplayBlock = {
   text: string;
   name?: string;
   result?: string;
+  resultParts?: ContentPart[];
+  subagentRunId?: string;
   done?: boolean;
   outcome?: ToolView["outcome"];
   failure?: string;
@@ -351,10 +354,12 @@ export class FocusDisplay {
       const peerId = contextPeerId(block);
       const view = displayBlock(block, peerId ? joined.get(peerId) : undefined);
       if (view) {
+        const scope = this.state?.selectScope(block.scope_id);
+        if (scope?.parent_scope_id != null) view.subagentRunId = scope.run_id;
         this.blocks.set(block.id, view);
         if (view.kind === "tool" && "result" in block.content && this.runId)
           this.processes.result(
-            this.runId,
+            scope?.run_id ?? this.runId,
             view.name,
             view.text,
             block.content.result,
@@ -388,6 +393,12 @@ export class FocusDisplay {
     const value = object(data.value) ? data.value : {};
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
+    const scope =
+      typeof data.subagentRunId === "string"
+        ? data.subagentRunId
+        : typeof value.run_id === "string"
+          ? value.run_id
+          : this.runId;
     if (
       data.name === "a13n.shell.status" &&
       this.runId &&
@@ -395,12 +406,13 @@ export class FocusDisplay {
       typeof source.phase === "string"
     )
       this.processes.status(
-        this.runId,
+        scope!,
         source.process_id,
         source.phase,
         source.exit_code,
       );
     if (
+      scope === this.runId &&
       data.name === "a13n.harness.recovery" &&
       payload.type === "model_retry_scheduled"
     )
@@ -410,6 +422,7 @@ export class FocusDisplay {
         retries: typeof payload.attempt === "number" ? payload.attempt - 1 : 1,
       };
     if (
+      scope === this.runId &&
       data.name === "a13n.harness_ui.checkpoint" &&
       typeof source.continuation_id === "string" &&
       typeof source.display_sequence === "number"

@@ -13,8 +13,12 @@ from types import MappingProxyType
 from typing import Annotated, Any, Literal, get_args, get_origin
 from urllib.parse import urlsplit
 
+from a13n_harness.http import OUTBOUND_TLS_VERIFY_ENV, outbound_tls_verify
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.model.oauth.chatgpt import DYNAMIC_CLIENT_ID, validate_chatgpt_redirect_uri
 from a13n_logging import LogFile, LogFormat
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from pydantic_ai.exceptions import UserError
 
 from a13n_service.infra.outbox import OutboxKind, Policy
 from a13n_service.providers.tools.mcp_catalog import McpServers
@@ -394,8 +398,6 @@ class Composer(Section):
 class Providers(Section):
     """Outbound network policy, call bounds and browser authorization flows for every provider and connection."""
 
-    private_domains: tuple[str, ...] = ()
-    private_cidrs: tuple[str, ...] = ()
     http_origins: tuple[str, ...] = ()
     require_https: bool = True
     # Exact URLs a browser authorization may return to after the connection callback, besides any page on the
@@ -414,6 +416,34 @@ class Providers(Section):
     # Per-read timeout of one model exchange; reasoning models can stay silent for minutes.
     model_timeout: float = Field(default=300, gt=0, le=3600)
     response_bytes: int = Field(default=16777216, ge=65536, le=268435456)
+    # Explicitly provisioned public SIWC client; an OSS-issued ID does not authorize HTTPS callbacks.
+    chatgpt_client_id: str | None = Field(default=None, min_length=1, max_length=256)
+    chatgpt_redirect_uri: str = Field(default="http://127.0.0.1:1456/auth/callback", max_length=2048)
+
+    @model_validator(mode="after")
+    def chatgpt_callback(self) -> "Providers":
+        if self.chatgpt_client_id is not None and (
+            not self.chatgpt_client_id.strip() or self.chatgpt_client_id == DYNAMIC_CLIENT_ID
+        ):
+            raise ValueError("providers.chatgpt_client_id must be an explicitly provisioned client ID")
+        try:
+            validate_chatgpt_redirect_uri(
+                self.chatgpt_redirect_uri, preconfigured_client=self.chatgpt_client_id is not None
+            )
+        except UserError as error:
+            raise ValueError(f"providers.chatgpt_redirect_uri: {error}") from None
+        return self
+
+    @property
+    def chatgpt_browser_callback(self) -> bool:
+        return urlsplit(self.chatgpt_redirect_uri).scheme == "https"
+
+    @property
+    def endpoint_policy(self) -> EndpointPolicy:
+        return EndpointPolicy.from_http_origins(
+            http_origins=self.http_origins,
+            require_https=self.require_https,
+        )
 
 
 class Telemetry(Section):
@@ -462,9 +492,19 @@ class Telemetry(Section):
             case "none":
                 return None
             case "langfuse":
-                return Langfuse.configure(url, self.langfuse_public_key, self.langfuse_secret_key, timeout=timeout)
+                return Langfuse.configure(
+                    url,
+                    self.langfuse_public_key,
+                    self.langfuse_secret_key,
+                    timeout=timeout,
+                )
             case "logfire":
-                return Logfire.configure(url, self.logfire_write_token, self.logfire_read_token, timeout=timeout)
+                return Logfire.configure(
+                    url,
+                    self.logfire_write_token,
+                    self.logfire_read_token,
+                    timeout=timeout,
+                )
 
 
 class Settings(Section):
@@ -486,6 +526,17 @@ class Settings(Section):
     telemetry: Telemetry = Field(default_factory=Telemetry)
     # Sections a distribution declares, validated by their own types.
     extensions: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def chatgpt_callback_origin(self) -> "Settings":
+        if self.providers.chatgpt_browser_callback:
+            parts = urlsplit(self.providers.chatgpt_redirect_uri)
+            origin = f"{parts.scheme}://{parts.netloc.lower().removesuffix(':443')}"
+            if origin != self.server.public_origin:
+                raise ValueError(
+                    "providers.chatgpt_redirect_uri must share server.public_url's origin for browser cookies"
+                )
+        return self
 
     @model_validator(mode="after")
     def metrics_port_is_free(self) -> "Settings":
@@ -558,13 +609,14 @@ class Settings(Section):
 
 
 def load_settings(path: Path | None = None, *, extensions: Mapping[str, type[Section]] = {}) -> Settings:
+    outbound_tls_verify()
     selected = path or (Path(os.environ["A13N_SETTINGS_FILE"]) if "A13N_SETTINGS_FILE" in os.environ else None)
     values: dict[str, Any] = tomllib.loads(selected.read_text()) if selected else {}
     known = set(Settings.model_fields) - {"extensions"}
     if shadowed := known & set(extensions):
         raise ValueError(f"Distribution settings sections shadow core sections: {sorted(shadowed)}")
     for name, value in os.environ.items():
-        if not name.startswith("A13N_") or name == "A13N_SETTINGS_FILE":
+        if not name.startswith("A13N_") or name in {"A13N_SETTINGS_FILE", OUTBOUND_TLS_VERIFY_ENV}:
             continue
         parts = name.removeprefix("A13N_").lower().split("__")
         if len(parts) != 2 or parts[0] not in known | set(extensions):

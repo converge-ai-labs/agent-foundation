@@ -11,12 +11,160 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConversationTranscript } from "./transcript";
+import { RunActivity } from "./run-activity";
+import type { DisplayBlock } from "./stream";
 import type { Schema } from "../transport/client";
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+
+it("keeps immediate activity beside the response as tools arrive, outside collapsed details", () => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  const input: Schema<"TranscriptEntry"> = {
+    position: 0,
+    message_kind: "request",
+    parts: [{ kind: "user", text: "Check the current work" }],
+  };
+  const tool: DisplayBlock = {
+    id: "tool-one",
+    kind: "tool",
+    name: "shell_exec",
+    text: '{"command":"echo checking"}',
+    done: true,
+  };
+  const base = {
+    threadId: "one",
+    entries: [input],
+    localInputs: [],
+    turns: [
+      {
+        turn_id: "one",
+        input_position: 0,
+        end_position: 1,
+        final_position: null,
+        preview: "Check the current work",
+      },
+    ],
+  };
+  const view = render(
+    <ConversationTranscript
+      {...base}
+      blocks={[]}
+      activity={
+        <RunActivity submission={{ kind: "pending", action: "send" }} />
+      }
+    />,
+  );
+  const message = screen.getByText("Check the current work");
+  expect(screen.getByRole("status").textContent).toBe("Sending…");
+  expect(
+    message.compareDocumentPosition(screen.getByRole("status")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  const working = (
+    <RunActivity
+      activity={{ state: "running" }}
+      submission={{ kind: "idle" }}
+    />
+  );
+  view.rerender(
+    <ConversationTranscript {...base} blocks={[tool]} activity={working} />,
+  );
+  const trigger = screen.getByRole("button", {
+    name: /Execution details\s*· 1 tool call · 1 running/,
+    expanded: false,
+  });
+  const status = screen.getByRole("status");
+  expect(status.textContent).toBe("Working…");
+  expect(
+    trigger.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(status.closest("[data-execution-reader]")).toBeNull();
+  expect(
+    screen.queryByRole("region", { name: "Execution details" }),
+  ).toBeNull();
+  view.rerender(
+    <ConversationTranscript
+      {...base}
+      blocks={[{ ...tool, result: "checked" }]}
+      activity={working}
+    />,
+  );
+  expect(
+    screen.getByRole("button", {
+      name: /Execution details\s*· 1 tool call$/,
+      expanded: false,
+    }),
+  ).toBe(trigger);
+  expect(screen.getByRole("status").textContent).toBe("Working…");
+  view.rerender(
+    <ConversationTranscript
+      {...base}
+      blocks={[{ ...tool, result: "checked" }]}
+      activity={
+        <RunActivity
+          activity={{ state: "inactive" }}
+          submission={{ kind: "idle" }}
+        />
+      }
+    />,
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+it.each([
+  { outcome: "denied" as const },
+  { outcome: "interrupted" as const },
+  { stopped: true },
+  { result: "" },
+])(
+  "does not label a terminal or empty tool result as running: %j",
+  (terminal) => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: false,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    render(
+      <ConversationTranscript
+        threadId="one"
+        entries={entries.slice(0, 1)}
+        localInputs={[]}
+        turns={[
+          {
+            turn_id: "one",
+            input_position: 0,
+            end_position: 1,
+            final_position: null,
+            preview: "Check",
+          },
+        ]}
+        blocks={[
+          {
+            id: "tool-one",
+            kind: "tool",
+            name: "shell_exec",
+            text: "{}",
+            done: true,
+            ...terminal,
+          },
+        ]}
+      />,
+    );
+    expect(
+      screen.getByRole("button", {
+        name: /Execution details\s*· 1 tool call$/,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/running/)).toBeNull();
+  },
+);
 
 function viewport() {
   let mobile = true;

@@ -13,6 +13,7 @@ from a13n_harness import (
     HarnessBuilder,
     RunBindings,
 )
+from a13n_harness.content import CONTENT_METADATA_KEY, request_input_content
 from a13n_harness.errors import DefinitionError
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
@@ -306,11 +307,7 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
         final = messages[-1]
         assert isinstance(final, ModelRequest)
         runtime_context = [
-            item.content
-            for part in final.parts
-            if isinstance(part, UserPromptPart)
-            for item in user_prompt_content(part)
-            if isinstance(item, TextContent) and item.metadata.get("source_id") == "a13n.agent-context"
+            item.value for item in request_input_content(final) if item.metadata.source_id == "a13n.agent-context"
         ]
         assert len(runtime_context) == 1
         assert "automatic runtime metadata, not a new user message" in runtime_context[0]
@@ -329,13 +326,11 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
 
     injected_context = [
         [
-            item.content if isinstance(item, TextContent) else item
+            item.value
             for message in messages
             if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, UserPromptPart)
-            for item in user_prompt_content(part)
-            if isinstance(item, TextContent) and item.content.startswith("capability context ")
+            for item in request_input_content(message)
+            if isinstance(item.value, str) and item.value.startswith("capability context ")
         ]
         for messages in (*seen, canonical_messages)
     ]
@@ -698,20 +693,23 @@ def test_overlay_commit_preserves_user_content_and_request_metadata() -> None:
 
     final = committed[-1]
     assert isinstance(final, ModelRequest)
-    assert final.metadata == metadata
+    assert {key: value for key, value in final.metadata.items() if key != CONTENT_METADATA_KEY} == metadata
     assert final.parts[0] is original.parts[0]
     assert len(final.parts) == 2
     restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(committed))
-    assert restored[-1].metadata == metadata
-    injected = restored[-1].parts[-1].content[0]
-    assert isinstance(injected, TextContent)
-    assert injected.metadata == {"display": False, "source_id": "test.same-text"}
-    assert restored[-1].parts[0].content == "same text"
+    assert restored[-1].metadata == final.metadata
+    authored, injected = request_input_content(restored[-1])
+    assert injected.value == "same text"
+    assert injected.metadata.display is False
+    assert injected.metadata.source_id == "test.same-text"
+    assert authored.value == "same text"
+    assert authored.metadata.display is True
+    assert original.metadata == metadata
 
 
 async def test_input_events_do_not_replay_restored_history_or_change_provider_prefix() -> None:
     from a13n_harness import HarnessEvent, HarnessState
-    from a13n_harness.model_context import ModelInputEvent
+    from a13n_harness.events import InputTextEvent
     from pydantic_ai.models.openai import OpenAIResponsesModel
     from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -734,11 +732,12 @@ async def test_input_events_do_not_replay_restored_history_or_change_provider_pr
     prompt = [TextContent("current input", metadata={"source_id": "input-current"})]
     async with executable.stream(prompt, previous_state=previous, bindings=RunBindings.embedded()) as stream:
         async for event in stream:
-            if isinstance(event, HarnessEvent) and isinstance(event.event, ModelInputEvent):
-                observed.extend(
-                    item for item in event.event.content if (item.metadata or {}).get("display") is not False
-                )
-    assert [(item.content, item.metadata) for item in observed] == [("current input", {"source_id": "input-current"})]
+            if isinstance(event, HarnessEvent) and isinstance(event.event, InputTextEvent):
+                if event.event.source == "user" and event.event.metadata.display:
+                    observed.append(event.event)
+    assert len(observed) == 1
+    assert observed[0].content == "current input"
+    assert observed[0].metadata.source_id == "input-current"
     assert previous.model_dump_json() == before
     assert ModelMessagesTypeAdapter.dump_json(seen[: len(history)]) == ModelMessagesTypeAdapter.dump_json(history)
     model = OpenAIResponsesModel("gpt-4o", provider=OpenAIProvider(api_key="fixture-only"))

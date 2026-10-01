@@ -7,6 +7,7 @@ from threading import Event as ThreadEvent
 import pytest
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.host_files import (
+    FILE_CHUNK_BYTES,
     MAX_TEXT_BYTES,
     DirectoryCreateRequest,
     FileCaptureRequest,
@@ -20,6 +21,17 @@ from a13n_harness_ui.thread_files import MAX_ATTACHMENT_BYTES
 from anyio import CancelScope, create_task_group, sleep, to_thread
 
 pytestmark = pytest.mark.anyio
+
+
+async def streamed_content(files: HostFiles, request: FileReadRequest) -> bytes:
+    opened = await files.open_stream(request)
+    data = bytearray()
+    try:
+        while chunk := await files.read_stream(opened, len(data), FILE_CHUNK_BYTES):
+            data.extend(chunk)
+        return bytes(data)
+    finally:
+        await opened.close()
 
 
 async def test_disabled_gate_precedes_filesystem_access(tmp_path: Path) -> None:
@@ -117,7 +129,7 @@ async def test_symlinks_are_visible_read_targets_explicit_and_delete_does_not_fo
     dangling.symlink_to(tmp_path / "missing")
     assert (await files.metadata(str(dangling))).kind == "symlink"
     with pytest.raises(HarnessUiError) as failure:
-        await files.download(FileReadRequest(path=str(dangling)))
+        await files.open_stream(FileReadRequest(path=str(dangling)))
     assert failure.value.code == "host_files_not_found"
 
 
@@ -126,17 +138,20 @@ async def test_binary_large_special_and_path_limits(tmp_path: Path) -> None:
     binary = tmp_path / "binary"
     await files.write(str(binary), b"\x00\xff", expected_revision=None)
     assert (await files.read_text(FileReadRequest(path=str(binary)))).presentation == "binary"
-    assert (await files.download(FileReadRequest(path=str(binary)))).data == b"\x00\xff"
+    assert await streamed_content(files, FileReadRequest(path=str(binary))) == b"\x00\xff"
     large = tmp_path / "large"
     large.write_bytes(b"a" * (MAX_TEXT_BYTES + 1))
     text = await files.read_text(FileReadRequest(path=str(large)))
     assert text.presentation == "too_large" and text.text is None
-    assert len((await files.download(FileReadRequest(path=str(large)))).data) == MAX_TEXT_BYTES + 1
+    assert len(await streamed_content(files, FileReadRequest(path=str(large)))) == MAX_TEXT_BYTES + 1
     with large.open("wb") as stream:
         stream.truncate(MAX_ATTACHMENT_BYTES + 1)
-    with pytest.raises(HarnessUiError) as failure:
-        await files.download(FileReadRequest(path=str(large)))
-    assert failure.value.code == "host_files_too_large"
+    opened = await files.open_stream(FileReadRequest(path=str(large)))
+    try:
+        assert opened.entry.size == MAX_ATTACHMENT_BYTES + 1
+        assert len(await files.read_stream(opened, 0, FILE_CHUNK_BYTES)) == FILE_CHUNK_BYTES
+    finally:
+        await opened.close()
     with pytest.raises(HarnessUiError):
         await files.write(str(tmp_path / "oversize"), b"x" * (MAX_ATTACHMENT_BYTES + 1), expected_revision=None)
     assert not (tmp_path / "oversize").exists()
@@ -149,7 +164,7 @@ async def test_binary_large_special_and_path_limits(tmp_path: Path) -> None:
         os.mkfifo(fifo)
         assert (await files.metadata(str(fifo))).kind == "other"
         with pytest.raises(HarnessUiError, match="regular files"):
-            await files.download(FileReadRequest(path=str(fifo)))
+            await files.open_stream(FileReadRequest(path=str(fifo)))
     with pytest.raises(ValueError):
         FileWriteRequest(path=str(binary), text="\ud800")
 
@@ -306,8 +321,9 @@ async def test_saved_files_have_matching_path_and_handle_revisions(tmp_path: Pat
     path = tmp_path / name
     saved = await files.write(str(path), b"created", expected_revision=None)
     # Creation uses a temporary hard link; removing it changes native metadata.
-    snapshot = await files.download(FileReadRequest(path=str(path), expected_revision=saved.revision))
-    assert snapshot.data == b"created" and snapshot.entry.revision == saved.revision
+    assert (
+        await streamed_content(files, FileReadRequest(path=str(path), expected_revision=saved.revision)) == b"created"
+    )
     saved = await files.write(str(path), b"replaced", expected_revision=saved.revision)
     assert (await files.read_text(FileReadRequest(path=str(path), expected_revision=saved.revision))).text == "replaced"
 
@@ -324,8 +340,9 @@ async def test_atomic_save_replaces_only_selected_hardlink(tmp_path: Path) -> No
     assert not os.path.samefile(selected, alias)
     assert selected.stat().st_nlink == alias.stat().st_nlink == 1
     assert (
-        await files.download(FileReadRequest(path=str(selected), expected_revision=saved.revision))
-    ).data == b"edited"
+        await streamed_content(files, FileReadRequest(path=str(selected), expected_revision=saved.revision))
+        == b"edited"
+    )
     with pytest.raises(HarnessUiError) as failure:
         await files.write(str(alias), b"stale", expected_revision=alias_observed.revision)
     assert failure.value.code == "host_files_conflict"
@@ -381,7 +398,7 @@ async def test_same_app_writers_conflict_and_reads_detect_external_change(
 
     monkeypatch.setattr(os, "fstat", concurrent_change)
     with pytest.raises(HarnessUiError) as failure:
-        await files.download(FileReadRequest(path=str(path)))
+        await files.open_stream(FileReadRequest(path=str(path)))
     assert failure.value.code == "host_files_conflict"
 
 

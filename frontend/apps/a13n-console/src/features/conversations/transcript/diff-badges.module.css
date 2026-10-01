@@ -3,7 +3,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

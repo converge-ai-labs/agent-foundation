@@ -15,6 +15,7 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessInstrumentation,
     ModelRecoveryPolicy,
+    RunConfiguration,
     SubagentDefinition,
 )
 from a13n_harness.capabilities import SubagentCapability, SubagentOperator, ToolProxyPlan, ToolProxySelection
@@ -63,6 +64,7 @@ class ReconstructedAgent:
     executable: ExecutableAgent[str]
     model_resolver: HarnessUiModelResolver
     definition_capability_ids: frozenset[str]
+    run_configuration: RunConfiguration = field(default_factory=RunConfiguration)
     media_models: Mapping[NativeInputMediaKind, ResolvedModelRecipe] = field(default_factory=dict)
     memory_cursors: MemoryCursors = field(default_factory=MemoryCursors)
 
@@ -275,12 +277,14 @@ class AgentReconstructor:
                 code="run_composition_reconstruction_failed",
             ) from exc
         return ReconstructedAgent(
+            run_configuration=composition.run_configuration,
             memory_cursors=cursors,
             executable=cast(ExecutableAgent[str], executable),
             model_resolver=HarnessUiModelResolver(
                 model_recipes,
                 subscription_sources=subscription_sources,
                 api_keys=self._api_keys,
+                configuration=composition.run_configuration,
             ),
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
             media_models={
@@ -330,7 +334,9 @@ class AgentReconstructor:
                 {recipe_id: node.model},
                 subscription_sources=subscription_sources,
                 api_keys=self._api_keys,
+                configuration=composition.run_configuration,
             ),
+            run_configuration=composition.run_configuration,
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
         )
 

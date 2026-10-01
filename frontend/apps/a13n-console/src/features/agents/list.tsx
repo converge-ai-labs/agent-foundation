@@ -6,7 +6,7 @@ import {
   ArchiveIcon,
   DownloadSimpleIcon,
   PlayIcon,
-  HeartIcon,
+  HeadCircuitIcon,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -106,7 +106,7 @@ export function Agents() {
         <ErrorNotice error={list.error} retry={() => void list.refetch()} />
       ) : !items.length ? (
         <Empty
-          icon={<HeartIcon aria-hidden="true" />}
+          icon={<HeadCircuitIcon aria-hidden="true" />}
           title={
             filtered
               ? t("No matching agents")
@@ -119,7 +119,9 @@ export function Agents() {
                 )
               : archived
                 ? t("Change or clear the search and filters.")
-                : t("Choose a model, give it instructions, and put it to work.")
+                : t(
+                    "Describe what you need to AI Composer, or configure your agent yourself.",
+                  )
           }
           action={!filtered && create}
         />

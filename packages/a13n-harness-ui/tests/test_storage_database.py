@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from a13n_harness_ui.errors import StoreIntegrityError
 from a13n_harness_ui.settings import StorageSettings
-from a13n_harness_ui.storage.database import open_database, short_session, transaction
+from a13n_harness_ui.storage import database as database_module
+from a13n_harness_ui.storage.database import check_database, open_database, short_session, transaction
 from a13n_harness_ui.storage.metadata import harness_ui_metadata
 from a13n_harness_ui.storage.migration import DatabaseMigrator, DatabaseSchemaError
 from a13n_harness_ui.storage.models import AcceptedConfigurationRecord
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
-from sqlalchemy import DateTime, bindparam, create_engine, inspect, select, text
+from anyio import fail_after, sleep_forever
+from sqlalchemy import DateTime, Engine, bindparam, create_engine, event, inspect, select, text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 pytestmark = pytest.mark.anyio
 
@@ -206,6 +211,62 @@ def test_migration_verification_rejects_an_unknown_database_revision(tmp_path: P
 
     with pytest.raises(DatabaseSchemaError, match="missing required table"):
         DatabaseMigrator(path).verify_current()
+
+
+async def test_database_startup_uses_lightweight_probe_with_twenty_second_budget(tmp_path, monkeypatch):
+    statements = []
+    timeouts = []
+
+    def record_statement(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    def record_timeout(seconds):
+        timeouts.append(seconds)
+        return fail_after(seconds)
+
+    monkeypatch.setattr(database_module, "fail_after", record_timeout)
+    event.listen(Engine, "before_cursor_execute", record_statement)
+    try:
+        async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)):
+            pass
+    finally:
+        event.remove(Engine, "before_cursor_execute", record_statement)
+
+    assert timeouts == [20.0]
+    assert "SELECT 1" in statements
+    assert not any("quick_check" in statement or "integrity_check" in statement for statement in statements)
+
+
+async def test_database_check_connection_wait_respects_timeout(tmp_path, monkeypatch):
+    async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
+
+        @asynccontextmanager
+        async def blocked_connect(self):
+            await sleep_forever()
+            yield
+
+        with monkeypatch.context() as patch:
+            patch.setattr(AsyncEngine, "connect", blocked_connect)
+            with pytest.raises(TimeoutError):
+                await check_database(database, timeout_seconds=0.01)
+
+        await check_database(database)
+
+
+async def test_database_startup_still_rejects_missing_required_schema(tmp_path):
+    path = tmp_path / "metadata.sqlite3"
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(path, settings) as database:
+        async with database.engine.begin() as connection:
+            await connection.execute(text("DROP TABLE project_model_preference"))
+
+    with pytest.raises(StoreIntegrityError) as error:
+        async with open_database(path, settings):
+            pytest.fail("An incompatible database must not be exposed")
+
+    assert error.value.code == "database_incompatible"
+    assert isinstance(error.value.__cause__, DatabaseSchemaError)
+    assert "missing required table project_model_preference" in str(error.value.__cause__)
 
 
 async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path) -> None:

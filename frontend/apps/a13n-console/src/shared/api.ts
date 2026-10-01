@@ -69,3 +69,28 @@ export async function allPages<T>(
   } while (cursor);
   return items;
 }
+/**
+ * A table page of a collection the Service cannot search or filter: a filtered
+ * view reads the collection whole and matches in the browser.
+ */
+export async function matchingPage<T>(
+  read: (
+    cursor?: string,
+    limit?: number,
+  ) => Promise<{ items: T[]; next_cursor?: string | null }>,
+  cursor: string | undefined,
+  match?: (item: T) => boolean,
+): Promise<{ items: T[]; next_cursor?: string | null }> {
+  if (!match) return read(cursor);
+  const items = await allPages((next) => read(next, 100));
+  return { items: items.filter(match), next_cursor: null };
+}
+/** Whether any of the texts contains a search term already trimmed and lowercased. */
+export function matchesSearch(
+  term: string,
+  ...texts: (string | null | undefined)[]
+) {
+  return (
+    !term || texts.some((text) => text?.toLocaleLowerCase().includes(term))
+  );
+}

@@ -118,3 +118,67 @@ def test_public_pending_preserves_approval_details_without_exposing_call_metadat
     assert public.calls[0].arguments == {"invoice": 7}
     assert "internal" not in public.model_dump_json() and "tool/private" not in public.model_dump_json()
     assert native.metadata["review"]["internal"] == {"retained": True}
+
+
+@pytest.mark.parametrize("source", ["user", "steering", "context", "recovery", "async_subagent", "background_process"])
+@pytest.mark.parametrize("length", [20, 80000, 300000])
+def test_canonical_input_visibility_and_source_observation_do_not_duplicate_display(source, length):
+    from datetime import UTC, datetime
+
+    from a13n_harness import HarnessEvent
+    from a13n_harness.content import ContentItem, ContentMetadata, input_request
+    from a13n_harness.events import InputTextEvent
+    from a13n_service.runs.display import MAX_FIELD_CHARS
+    from a13n_stream_protocol import HarnessAguiConverter
+
+    text = "x" * length
+    metadata = ContentMetadata(source_id="inbox_one", display=source in {"user", "steering"})
+    projector = DisplayProjector(
+        Display.empty("run_test", attempt=1).snapshot,
+        max_bytes=2 * 1024 * 1024,
+        max_field_chars=MAX_FIELD_CHARS,
+    )
+    projector.scope(DisplayScope(id="run_test", thread_id="thread_test", run_id="run_test"))
+    projector.reconcile_message("run_test", 0, input_request([ContentItem(text, metadata)]))
+    baseline = projector.capture()
+    event = HarnessEvent(
+        thread_id="thread_test",
+        run_id="run_test",
+        sequence=1,
+        occurred_at=datetime.now(UTC),
+        event=InputTextEvent(input_id="input_one", source=source, content=text, metadata=metadata),
+    )
+    # Explicit AG-UI observation remains source-typed and payload-fragmented.
+    observed = HarnessAguiConverter().observe(event)
+    assert observed
+    # Compact display only reconciles the canonical annotated request, never a
+    # second copy from the observation channel (including hidden generated input).
+    projector.observe("run_test", 0, event.event)
+    assert projector.capture() == baseline
+    if source in {"user", "steering"}:
+        (block,) = baseline.blocks
+        assert block.kind == "input" and block.status == "succeeded"
+        assert block.content["text"] == text[:MAX_FIELD_CHARS]
+        assert block.content["metadata"]["source_id"] == "inbox_one"
+        assert block.content.get("truncated", False) is (length > MAX_FIELD_CHARS)
+    else:
+        assert baseline.blocks == ()
+        assert text not in baseline.model_dump_json()
+    display = Display(snapshot=baseline)
+    assert Display.model_validate_json(display.model_dump_json()) == display
+
+
+def test_small_display_budget_evicts_multibyte_input_with_explicit_omission_coverage():
+    from a13n_harness.content import input_request
+    from a13n_stream_protocol import DisplayState
+
+    baseline = Display.empty("run_test", attempt=1).snapshot
+    receiver = DisplayState(baseline)
+    projector = DisplayProjector(baseline, publish=receiver.apply, max_bytes=65536)
+    projector.scope(DisplayScope(id="run_test", thread_id="thread_test", run_id="run_test"))
+    projector.reconcile_message("run_test", 0, input_request("汉" * 30000))
+    snapshot = projector.capture()
+    assert snapshot.blocks == () and snapshot.omitted == 1
+    assert snapshot.position.sequence > 0
+    assert receiver.capture() == snapshot
+    assert len(snapshot.model_dump_json().encode()) <= 65536

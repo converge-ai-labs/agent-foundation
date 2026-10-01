@@ -1265,7 +1265,11 @@ async def test_codex_official_refresh_persistence_failure_keeps_rotated_memory()
     assert requests == ["/oauth/token", "/backend-api/codex/responses"]
 
 
-async def test_codex_owned_client_supports_nested_entry_and_reopening() -> None:
+@pytest.mark.parametrize("verify", ["true", "false"])
+async def test_codex_owned_client_supports_nested_entry_and_reopening(monkeypatch, verify) -> None:
+    import ssl
+
+    monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", verify)
     source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
     model = CodexRequestModel("gpt-5", credential_source=source)
     assert model.provider is not None
@@ -1275,9 +1279,15 @@ async def test_codex_owned_client_supports_nested_entry_and_reopening() -> None:
             assert not original.is_closed()
         assert not original.is_closed()
     assert original.is_closed()
+    assert model._client._transport._pool._ssl_context.verify_mode == (
+        ssl.CERT_REQUIRED if verify == "true" else ssl.CERT_NONE
+    )
     async with model:
         assert model.provider is not None
         reopened = model.provider.client
+        assert model._client._transport._pool._ssl_context.verify_mode == (
+            ssl.CERT_REQUIRED if verify == "true" else ssl.CERT_NONE
+        )
         assert reopened is not original
         assert not reopened.is_closed()
     assert reopened.is_closed()

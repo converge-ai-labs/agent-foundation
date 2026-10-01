@@ -23,10 +23,6 @@ import { refreshThread } from "./refresh";
 import { ComposerDrafts } from "./composer";
 import { conversationTitle } from "./local-input";
 import { NewConversationDrafts, newConversationPath } from "./new-conversation";
-import {
-  ParticipantAvatars,
-  threadParticipants,
-} from "../shell/participant-avatars";
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { useUnsent } from "./unsent";
@@ -67,12 +63,10 @@ type ActivityRow = Pick<Schema<"ThreadActivityView">, "thread"> &
 
 export function ThreadRow({
   row,
-  presence,
   showRestore = false,
   showProject = false,
 }: {
   row: ActivityRow;
-  presence: Schema<"PresenceFrame"> | null;
   showRestore?: boolean | "compact";
   showProject?: boolean;
 }) {
@@ -91,8 +85,7 @@ export function ThreadRow({
     row.thread,
     composers.get(row.thread.thread_id)?.localInputs,
   );
-  const starButton = useRef<HTMLButtonElement>(null);
-  const restoreStarFocus = useRef(false);
+  const actionsButton = useRef<HTMLButtonElement>(null);
   const canStar = row.thread.role !== "worker" && !row.thread.parent_thread_id;
   const starLabel = row.thread.starred
     ? "Unstar conversation"
@@ -116,14 +109,12 @@ export function ThreadRow({
         }),
         refreshThreadLists(queries),
       ]);
-      if (restoreStarFocus.current && document.activeElement === document.body)
-        starButton.current?.focus();
-      restoreStarFocus.current = false;
+      if (document.activeElement === document.body)
+        actionsButton.current?.focus();
     },
   });
   const toggleStar = () => {
     if (star.isPending) return;
-    restoreStarFocus.current = document.activeElement === starButton.current;
     star.mutate();
   };
   const archive = useMutation({
@@ -169,7 +160,7 @@ export function ThreadRow({
           <span>
             <strong title={title}>{title}</strong>
             {row.thread.role === "coordinator" && title !== "Coordinator" && (
-              <small>Coordinator</small>
+              <span className={styles.srOnly}>Coordinator</span>
             )}
             {showProject && (
               <small>
@@ -179,7 +170,18 @@ export function ThreadRow({
                     : "Without a project")}
               </small>
             )}
-            {threadState(row) && <small>{threadState(row)}</small>}
+            {threadState(row) && (
+              <small
+                className={
+                  row.pending_decision ||
+                  row.latest_operation?.status === "failed"
+                    ? styles.attentionState
+                    : styles.srOnly
+                }
+              >
+                {threadState(row)}
+              </small>
+            )}
           </span>
           {unsent && (
             <span className={styles.unsentMarker} title="Shared, unsent input">
@@ -195,11 +197,6 @@ export function ThreadRow({
             />
           )}
         </NavLink>
-        <ParticipantAvatars
-          participants={threadParticipants(presence, row.thread.thread_id)}
-          ownId={presence?.participant_id}
-          threadTitle={title}
-        />
         {showRestore && row.thread.archived && (
           <Button
             variant="ghost"
@@ -214,26 +211,23 @@ export function ThreadRow({
             {showRestore !== "compact" && "Restore"}
           </Button>
         )}
-        {canStar && (
-          <Button
-            ref={starButton}
-            variant="ghost"
-            size="icon-sm"
+        {canStar && row.thread.starred && (
+          <span
             className={styles.threadStar}
-            title={`${starLabel} · Shared with everyone in this project`}
-            aria-label={`${starLabel}: ${title}`}
-            aria-pressed={!!row.thread.starred}
-            aria-disabled={star.isPending}
-            aria-busy={star.isPending}
-            onClick={toggleStar}
+            role="img"
+            aria-label={`Starred conversation: ${title}`}
+            title="Starred · Shared with everyone in this project"
           >
-            <Star weight={row.thread.starred ? "fill" : "regular"} />
-          </Button>
+            <Star size={14} weight="fill" aria-hidden="true" />
+          </span>
         )}
         <Menu>
           <MenuTrigger
-            render={<Button variant="ghost" size="icon-sm" />}
+            render={
+              <Button ref={actionsButton} variant="ghost" size="icon-sm" />
+            }
             className={styles.threadActions}
+            aria-busy={star.isPending}
             aria-label={`Actions for ${title}`}
           >
             <DotsThree />

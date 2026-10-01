@@ -1385,6 +1385,65 @@
         }
       }
     },
+    "/api/host/files/info": {
+      "get": {
+        "summary": "Host File Info",
+        "operationId": "host_file_info_api_host_files_info_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "expected_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/host/files/text": {
       "get": {
         "summary": "Host File Text",
@@ -1622,38 +1681,85 @@
             }
           }
         }
-      },
-      "get": {
-        "summary": "Download Host File",
-        "operationId": "download_host_file_api_host_files_content_get",
+      }
+    },
+    "/api/host/files/transfers": {
+      "post": {
+        "summary": "Host File Transfer",
+        "operationId": "host_file_transfer_api_host_files_transfers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileTransferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileTransferAccess"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/host/files/transfer": {
+      "head": {
+        "summary": "Transfer Host File",
+        "operationId": "transfer_host_file_api_host_files_transfer_head",
         "parameters": [
           {
-            "name": "path",
+            "name": "token",
             "in": "query",
             "required": true,
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "maxLength": 4096,
-              "title": "Path"
+              "maxLength": 32768,
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
             }
           },
-          {
-            "name": "expected_revision",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                {
-                  "type": "null"
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
-              ],
-              "title": "Expected Revision"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Transfer Host File",
+        "operationId": "transfer_host_file_api_host_files_transfer_get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32768,
+              "title": "Token"
             }
           }
         ],
@@ -2687,6 +2793,55 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/logins/{session_id}/callback": {
+      "post": {
+        "summary": "Submit Login Callback",
+        "operationId": "submit_login_callback_api_auth_logins__session_id__callback_post",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginCallbackInput"
               }
             }
           }
@@ -5539,6 +5694,7 @@
           "provider": {
             "type": "string",
             "enum": [
+              "chatgpt",
               "codex",
               "grok",
               "copilot"
@@ -5554,7 +5710,8 @@
               "type": "string",
               "enum": [
                 "device",
-                "browser"
+                "browser",
+                "manual_callback"
               ]
             },
             "type": "array",
@@ -6755,6 +6912,7 @@
         "type": "string",
         "enum": [
           "api_key",
+          "chatgpt_subscription",
           "codex_subscription",
           "grok_subscription",
           "copilot_subscription"
@@ -7281,6 +7439,21 @@
         "title": "ChangesPage",
         "type": "object"
       },
+      "ChatGPTSubscriptionAuthentication": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "chatgpt_subscription",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ChatGPTSubscriptionAuthentication"
+      },
       "ChildActivityView": {
         "properties": {
           "sequence": {
@@ -7678,6 +7851,28 @@
       },
       "ChildToolCallView": {
         "properties": {
+          "subagent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subagent Run Id"
+          },
+          "content_parts": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Content Parts",
+            "default": []
+          },
           "tool_call_id": {
             "type": "string",
             "maxLength": 256,
@@ -8265,7 +8460,7 @@
         "additionalProperties": true,
         "type": "object",
         "title": "ContentMetadata",
-        "description": "Client presentation conventions plus opaque caller-owned metadata.\n\nMetadata is not model instruction or authorization. Clients may resolve\nreferences such as image_object_id through their own application services."
+        "description": "Presentation and opaque Host references; never instructions or authority."
       },
       "ContextChoice": {
         "properties": {
@@ -9657,6 +9852,31 @@
         ],
         "title": "FileEntry"
       },
+      "FileInfo": {
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/FileEntry"
+          },
+          "resolved_path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Resolved Path"
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entry",
+          "resolved_path",
+          "media_type"
+        ],
+        "title": "FileInfo"
+      },
       "FilePage": {
         "additionalProperties": false,
         "properties": {
@@ -9719,6 +9939,25 @@
           "presentation"
         ],
         "title": "FileText"
+      },
+      "FileTransferAccess": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "expires_at": {
+            "type": "integer",
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "FileTransferAccess"
       },
       "GitChange": {
         "properties": {
@@ -10245,6 +10484,23 @@
             "uniqueItems": true,
             "title": "Capabilities"
           },
+          "image_input": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageInputPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Image preparation policy; omitted uses native defaults, null disables automatic preparation."
+          },
+          "url_input": {
+            "$ref": "#/components/schemas/UrlInputSupport"
+          },
+          "video_input": {
+            "$ref": "#/components/schemas/VideoInputPolicy"
+          },
           "context_window_tokens": {
             "anyOf": [
               {
@@ -10283,6 +10539,57 @@
         "type": "object",
         "title": "HarnessModelCharacteristics",
         "description": "Resolved Harness characteristics of the active Agent model."
+      },
+      "ImageInputPolicy": {
+        "properties": {
+          "split_large_images": {
+            "type": "boolean",
+            "title": "Split Large Images",
+            "default": true
+          },
+          "image_split_max_height": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Image Split Max Height",
+            "default": 4096
+          },
+          "image_split_overlap": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Image Split Overlap",
+            "default": 50
+          },
+          "max_image_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Image Bytes",
+            "description": "Maximum base64-encoded bytes per image; zero disables this byte limit.",
+            "default": 5242880
+          },
+          "max_image_dimension": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Image Dimension",
+            "description": "Maximum image axis; zero disables this limit.",
+            "default": 8000
+          },
+          "max_images": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Max Images",
+            "description": "Keep the newest images; zero removes all image input.",
+            "default": 20
+          },
+          "support_gif": {
+            "type": "boolean",
+            "title": "Support Gif",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ImageInputPolicy",
+        "description": "Preparation limits for one model's image input, not native ModelSettings."
       },
       "JsonValue": {},
       "ListenerFeatures": {
@@ -10394,6 +10701,7 @@
           "provider": {
             "type": "string",
             "enum": [
+              "chatgpt",
               "codex",
               "grok",
               "copilot"
@@ -10404,7 +10712,8 @@
             "type": "string",
             "enum": [
               "device",
-              "browser"
+              "browser",
+              "manual_callback"
             ],
             "title": "Method"
           },
@@ -10657,6 +10966,9 @@
             "$ref": "#/components/schemas/ApiKeyAuthentication"
           },
           {
+            "$ref": "#/components/schemas/ChatGPTSubscriptionAuthentication"
+          },
+          {
             "$ref": "#/components/schemas/CodexSubscriptionAuthentication"
           },
           {
@@ -10670,6 +10982,7 @@
           "propertyName": "kind",
           "mapping": {
             "api_key": "#/components/schemas/ApiKeyAuthentication",
+            "chatgpt_subscription": "#/components/schemas/ChatGPTSubscriptionAuthentication",
             "codex_subscription": "#/components/schemas/CodexSubscriptionAuthentication",
             "copilot_subscription": "#/components/schemas/CopilotSubscriptionAuthentication",
             "grok_subscription": "#/components/schemas/GrokSubscriptionAuthentication"
@@ -12101,7 +12414,8 @@
         "enum": [
           "codex",
           "grok",
-          "copilot"
+          "copilot",
+          "chatgpt"
         ],
         "title": "Provider"
       },
@@ -12994,6 +13308,7 @@
           "provider": {
             "type": "string",
             "enum": [
+              "chatgpt",
               "codex",
               "grok",
               "copilot"
@@ -15573,6 +15888,17 @@
             "title": "Tool Image Unavailable",
             "default": false
           },
+          "content_parts": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Content Parts",
+            "default": []
+          },
           "value": {
             "anyOf": [
               {
@@ -15697,6 +16023,22 @@
         "title": "TranscriptTurn",
         "description": "One ordinary input and its execution, including steering and resumes."
       },
+      "UrlInputSupport": {
+        "properties": {
+          "video": {
+            "items": {
+              "$ref": "#/components/schemas/VideoUrlType"
+            },
+            "type": "array",
+            "uniqueItems": true,
+            "title": "Video"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "UrlInputSupport",
+        "description": "URL subtypes consumed natively by the selected transport."
+      },
       "UsageTotals": {
         "properties": {
           "model_requests": {
@@ -15812,6 +16154,21 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VideoInputPolicy": {
+        "properties": {
+          "max_video_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Max Video Bytes",
+            "description": "Maximum Base64-encoded bytes per video and in aggregate per model request.",
+            "default": 10485760
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VideoInputPolicy",
+        "description": "Base64-after byte budget for both one video and all inline videos in a request."
       },
       "WorkbenchPage": {
         "additionalProperties": false,
@@ -17702,6 +18059,38 @@
         ],
         "title": "FileDeleteRequest"
       },
+      "FileTransferRequest": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Path"
+          },
+          "expected_revision": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Expected Revision"
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "attachment",
+              "inline"
+            ],
+            "title": "Disposition",
+            "default": "attachment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "expected_revision"
+        ],
+        "title": "FileTransferRequest"
+      },
       "FileCaptureRequest": {
         "additionalProperties": false,
         "properties": {
@@ -17873,6 +18262,13 @@
         "title": "ModelCapability",
         "description": "Harness-owned capabilities of the active Agent model."
       },
+      "VideoUrlType": {
+        "type": "string",
+        "enum": [
+          "youtube"
+        ],
+        "title": "VideoUrlType"
+      },
       "ModelRecipeRequest": {
         "properties": {
           "connection": {
@@ -18025,6 +18421,7 @@
           "provider": {
             "type": "string",
             "enum": [
+              "chatgpt",
               "codex",
               "grok",
               "copilot"
@@ -18035,7 +18432,8 @@
             "type": "string",
             "enum": [
               "device",
-              "browser"
+              "browser",
+              "manual_callback"
             ],
             "title": "Method",
             "default": "device"
@@ -18052,6 +18450,24 @@
           "provider"
         ],
         "title": "LoginRequest"
+      },
+      "LoginCallbackInput": {
+        "additionalProperties": false,
+        "properties": {
+          "callback_url": {
+            "format": "password",
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Callback Url",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "callback_url"
+        ],
+        "title": "LoginCallbackInput",
+        "type": "object"
       },
       "ResourceMutationRequest": {
         "additionalProperties": false,

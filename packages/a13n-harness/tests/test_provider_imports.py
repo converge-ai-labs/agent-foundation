@@ -51,6 +51,9 @@ def test_package_import_and_provider_metadata_stay_inert() -> None:
         "assert len(manifest.environment) == 11\n"
         "assert all(item.configuration_model.model_json_schema() for item in manifest.environment)\n"
         "assert BUILT_IN_CONNECTOR_PROVIDERS and BUILT_IN_MODEL_PROVIDERS\n"
+        "chatgpt = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == 'openai_chatgpt')\n"
+        "assert chatgpt.configuration_model.model_json_schema()\n"
+        "assert chatgpt.configuration_model().client_id is None\n"
         "assert all(item.configuration_model.model_json_schema() for item in BUILT_IN_MEMORY_PROVIDERS)\n"
         "assert built_in_web_providers()\n"
         # Selecting one built-in needs no other Provider runtime.

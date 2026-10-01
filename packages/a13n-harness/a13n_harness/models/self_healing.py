@@ -19,6 +19,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     NativeToolReturnPart,
+    TextContent,
     TextPart,
     ThinkingPart,
     ToolReturnPart,
@@ -28,6 +29,8 @@ from pydantic_ai.models import Model, ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.tools import RunContext
+
+from a13n_harness.content import ContentItem, annotate_prompt, prompt_content
 
 HistoryRepair = Callable[[list[ModelMessage]], int]
 ErrorMatcher = Callable[[Exception], bool]
@@ -262,6 +265,11 @@ _OVERSIZED_IMAGE_REMINDER = (
     "provider's size limit. View it again if you still need it.</system-reminder>"
 )
 
+_OVERSIZED_VIDEO_REMINDER = (
+    "<system-reminder>A video was removed because the request exceeded the "
+    "provider's size limit. Read or view it again if you still need it.</system-reminder>"
+)
+
 
 def _is_oversized_payload(error: Exception) -> bool:
     if not isinstance(error, ModelAPIError):
@@ -271,12 +279,21 @@ def _is_oversized_payload(error: Exception) -> bool:
     return any(marker in _error_text(error) for marker in _OVERSIZED_PAYLOAD_MARKERS)
 
 
-def _drop_inline_images(history: list[ModelMessage]) -> int:
+def _oversized_media_reminder(item: BinaryContent, *, user_prompt: bool) -> TextContent | str:
+    text = _OVERSIZED_IMAGE_REMINDER if item.is_image else _OVERSIZED_VIDEO_REMINDER
+    return (
+        TextContent(content=text, metadata={"display": False, "source_id": "a13n.model.self-healing"})
+        if user_prompt
+        else text
+    )
+
+
+def _drop_inline_media(history: list[ModelMessage]) -> int:
     removed = 0
     for message in history:
         if not isinstance(message, ModelRequest):
             continue
-        for part in message.parts:
+        for part_index, part in enumerate(message.parts):
             if isinstance(part, UserPromptPart):
                 media_part = part
             elif type(part) is ToolReturnPart:
@@ -284,27 +301,43 @@ def _drop_inline_images(history: list[ModelMessage]) -> int:
             else:
                 continue
             content = media_part.content
+
             if isinstance(content, BinaryContent):
-                if content.media_type.startswith("image/"):
-                    media_part.content = _OVERSIZED_IMAGE_REMINDER
+                if content.media_type.startswith(("image/", "video/")):
+                    reminder = _oversized_media_reminder(content, user_prompt=isinstance(media_part, UserPromptPart))
+                    if isinstance(media_part, UserPromptPart):
+                        media_part.content = [reminder]
+                    else:
+                        media_part.content = reminder
                     removed += 1
                 continue
             if isinstance(content, str) or not isinstance(content, Sequence):
                 continue
             items = list(content)
+            annotated = prompt_content(message, part_index) if isinstance(media_part, UserPromptPart) else None
             changed = False
             for index, item in enumerate(items):
-                if isinstance(item, BinaryContent) and item.media_type.startswith("image/"):
-                    items[index] = _OVERSIZED_IMAGE_REMINDER
+                if isinstance(item, BinaryContent) and item.media_type.startswith(("image/", "video/")):
+                    reminder = _oversized_media_reminder(item, user_prompt=isinstance(media_part, UserPromptPart))
+                    items[index] = reminder
+                    if annotated is not None:
+                        annotated[index] = ContentItem(
+                            reminder,
+                            annotated[index].metadata.model_copy(
+                                update={"display": False, "source_id": "a13n.model.self-healing"}
+                            ),
+                        )
                     removed += 1
                     changed = True
             if changed:
                 media_part.content = items
+                if annotated is not None:
+                    message.metadata = annotate_prompt(message, part_index, annotated).metadata
     return removed
 
 
 DEFAULT_MODEL_RECOVERY_RULES: tuple[ModelRecoveryRule, ...] = (
-    ModelRecoveryRule("oversized_payload", _is_oversized_payload, _drop_inline_images),
+    ModelRecoveryRule("oversized_payload", _is_oversized_payload, _drop_inline_media),
     ModelRecoveryRule("invalid_provider_item_id", _is_invalid_provider_item_id, strip_provider_native_state),
     ModelRecoveryRule("anthropic_incomplete_thinking", _is_anthropic_incomplete_thinking, strip_thinking_parts),
     ModelRecoveryRule("anthropic_modified_thinking", _is_anthropic_modified_thinking, strip_thinking_parts),

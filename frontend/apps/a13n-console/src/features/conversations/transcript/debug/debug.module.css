@@ -68,15 +68,15 @@
   transform: rotate(90deg);
 }
 .runName {
-  font-size: 13.5px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
-  letter-spacing: -0.1px;
+  letter-spacing: var(--a13n-tracking-heading);
   white-space: nowrap;
 }
 .lineage {
   flex: none;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   white-space: nowrap;
 }
 .headingMeta {
@@ -85,7 +85,7 @@
   gap: 8px;
   margin-left: auto;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -113,12 +113,12 @@
 }
 .requestLabel {
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
 .requestBody {
   min-width: 0;
-  font-size: 14px;
+  font-size: var(--a13n-text-md);
   line-height: 1.6;
 }
 .request[data-collapsed] .requestBody {
@@ -135,7 +135,7 @@
   margin: 0 0 8px;
   padding-left: 30px;
   color: var(--a13n-warning);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
 }
 .structured {
   margin: 12px 0 0 30px;
@@ -234,7 +234,7 @@
   max-width: 55%;
   overflow: hidden;
   color: var(--a13n-text-supporting);
-  font-size: 13px;
+  font-size: var(--a13n-text-sm);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -244,13 +244,13 @@
 }
 .name[data-mono] {
   font-family: var(--a13n-mono);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
 }
 .subject {
   min-width: 0;
   overflow: hidden;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -260,7 +260,7 @@
   gap: 8px;
   flex: none;
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
 }
 .tokens {
@@ -314,7 +314,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--a13n-secondary);
-  font-size: 12.5px;
+  font-size: var(--a13n-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -334,7 +334,7 @@
   align-items: center;
   gap: 6px;
   color: var(--a13n-secondary);
-  font-size: 11px;
+  font-size: var(--a13n-text-2xs);
   font-weight: 500;
 }
 .replyBody {

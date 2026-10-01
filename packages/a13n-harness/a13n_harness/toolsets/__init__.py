@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     )
     from .files import FILE_VIEW_RULES, FileToolset, FileViewRule
     from .interaction import UserInteractionToolset
-    from .media import MediaToolset
     from .output import (
         DEFAULT_TOOL_OUTPUT_CHARS,
         FINAL_TOOL_OUTPUT_HARD_CHARS,
@@ -47,6 +46,7 @@ if TYPE_CHECKING:
     )
     from .shell import ShellToolset
     from .subagents import AsyncSubagentToolset
+    from .video_url import VideoUrlToolset
     from .web import WebToolset
     from .working_state import WorkingStateToolset
 
@@ -82,7 +82,7 @@ _EXPORTS = {
         "FileViewRule",
     ),
     "a13n_harness.toolsets.interaction": ("UserInteractionToolset",),
-    "a13n_harness.toolsets.media": ("MediaToolset",),
+    "a13n_harness.toolsets.video_url": ("VideoUrlToolset",),
     "a13n_harness.toolsets.output": (
         "DEFAULT_TOOL_OUTPUT_CHARS",
         "FINAL_TOOL_OUTPUT_HARD_CHARS",

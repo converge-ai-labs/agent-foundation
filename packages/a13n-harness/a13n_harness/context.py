@@ -15,8 +15,10 @@ from pydantic import JsonValue
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 
+from a13n_harness.configuration import RunConfiguration
 from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.input import ModelInputState
 from a13n_harness.model_calls import ModelCallCheck
 from a13n_harness.observation import HarnessObservationContext
 from a13n_harness.recovery import ModelRecoveryState
@@ -24,7 +26,6 @@ from a13n_harness.state import AgentContextState, HarnessState
 
 if TYPE_CHECKING:
     from a13n_harness.builder import AgentDefinition, SubagentDefinition
-    from a13n_harness.capabilities.media import MediaReader
     from a13n_harness.capabilities.steering import SteeringBridge
     from a13n_harness.capabilities.web import WebBinding
     from a13n_harness.capabilities.working_state import TaskStateBinding, WorkingStateObserver
@@ -139,13 +140,13 @@ class RunBindings:
     """Fresh trusted authority and optional advanced integrations supplied by the caller."""
 
     instance: AgentInstanceContext
+    configuration: RunConfiguration = field(default_factory=RunConfiguration)
     environment: EnvironmentRuntime | None = None
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None
     deferred_tools_supported: bool = True
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     web: WebBinding | None = None
-    media_reader: MediaReader | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
@@ -172,6 +173,8 @@ class RunBindings:
             raise TypeError("RunBindings.usage_reporter must implement UsageReporter or UsageDeltaReporter")
         if self.model_call_check is not None and not isinstance(self.model_call_check, ModelCallCheck):
             raise TypeError("RunBindings.model_call_check must implement ModelCallCheck")
+        if not isinstance(self.configuration, RunConfiguration):
+            raise TypeError("RunBindings.configuration must be a RunConfiguration")
         if not isinstance(self.deferred_tools_supported, bool):
             raise TypeError("deferred_tools_supported must be a boolean")
         if self.tool_result_directory is not None:
@@ -183,7 +186,6 @@ class RunBindings:
             raise TypeError("toolset_instructions must be a boolean or None")
         if self.observation is not None and not isinstance(self.observation, HarnessObservationContext):
             raise TypeError("observation must be a HarnessObservationContext or None")
-        from a13n_harness.capabilities.media import MediaReader
         from a13n_harness.capabilities.skills import _validate_skill_selection
         from a13n_harness.capabilities.web import WebBinding
         from a13n_harness.capabilities.working_state import TaskStateBinding
@@ -193,7 +195,6 @@ class RunBindings:
 
         for name, value, expected in (
             ("web", self.web, WebBinding),
-            ("media_reader", self.media_reader, MediaReader),
             ("document_converter", self.document_converter, DocumentConverter),
             ("file_media_understanding", self.file_media_understanding, MediaUnderstandingProvider),
             ("task_state", self.task_state, TaskStateBinding),
@@ -216,6 +217,7 @@ class RunBindings:
         cls,
         *,
         identity: AgentIdentityRef | None = None,
+        configuration: RunConfiguration | None = None,
         environment: EnvironmentRuntime | None = None,
         model_resolver: RunModelResolver | None = None,
         toolset_instructions: bool | None = None,
@@ -225,7 +227,6 @@ class RunBindings:
         usage_reporter: UsageReporter | UsageDeltaReporter | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         web: WebBinding | None = None,
-        media_reader: MediaReader | None = None,
         document_converter: DocumentConverter | None = None,
         file_media_understanding: MediaUnderstandingProvider | None = None,
         skill_selection: frozenset[str] | None = None,
@@ -244,6 +245,7 @@ class RunBindings:
                 identity=identity or AgentIdentityRef(issuer="local", subject="embedded"),
                 agent_instance_id=instance_id,
             ),
+            configuration=configuration or RunConfiguration(),
             environment=environment,
             model_resolver=model_resolver,
             toolset_instructions=toolset_instructions,
@@ -253,7 +255,6 @@ class RunBindings:
             usage_reporter=usage_reporter,
             capabilities=tuple(capabilities),
             web=web,
-            media_reader=media_reader,
             document_converter=document_converter,
             file_media_understanding=file_media_understanding,
             skill_selection=skill_selection,
@@ -381,10 +382,12 @@ class AgentContext:
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
+    configuration: RunConfiguration = field(default_factory=RunConfiguration)
     deferred_tools_supported: bool = True
     _deferred_input: DeferredInputState | None = field(default=None, repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
     _model_recovery: ModelRecoveryState = field(default_factory=ModelRecoveryState, repr=False, compare=False)
+    _model_input: ModelInputState = field(default_factory=ModelInputState, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None
     model_call_check: ModelCallCheck | None = None
     usage_reporter: UsageReporter | UsageDeltaReporter | None = None
@@ -395,7 +398,6 @@ class AgentContext:
     )
     _started_at_monotonic: float = field(default_factory=monotonic, repr=False, compare=False)
     web: WebBinding | None = None
-    media_reader: MediaReader | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None

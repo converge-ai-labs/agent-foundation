@@ -300,3 +300,45 @@ async def test_deferred_response_retains_captured_bindings_unless_explicitly_pat
         retained = patch is None or "environment_bindings" not in patch
         assert captures[-1].environment_bindings == (captures[0].environment_bindings if retained else ())
         assert captures[-1].default_environment == ("build" if retained else None)
+
+
+async def test_run_authorizes_device_before_transport_or_credentials(tmp_path, monkeypatch):
+    from a13n_harness import RunConfiguration
+    from a13n_harness.configuration import HostNotAllowedError
+    from a13n_harness_ui.environment_runtime import EnvironmentRunService, EnvironmentSnapshotReconstructor
+    from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
+
+    loaded = await source(tmp_path)
+    selected = ThreadCompositionSelection(
+        thread_id="thread-device-policy",
+        version=1,
+        project_id="project-remote",
+        agent_source_kind="agent",
+        agent_source_id="agent-main",
+        environment_profile_id="environment-native",
+        harness_plugin_ids=(),
+        environment_run_extension_ids=(),
+        mcp_server_ids=(),
+        environment_bindings=(binding(),),
+        default_environment="build",
+    )
+    composition = AgentCompositionResolver().resolve_run(loaded, selected)
+    async with open_local_store(StorageSettings(data_root=tmp_path / "data")) as store:
+        service = EnvironmentRunService(store, EnvironmentSnapshotReconstructor(catalog=HarnessUiExtensionCatalog()))
+        reached = []
+
+        async def binding_reached(*args, **kwargs):
+            reached.append(True)
+            raise RuntimeError("binding reached")
+
+        monkeypatch.setattr(service, "_prepare_device_mount", binding_reached)
+        restricted = composition.model_copy(update={"run_configuration": RunConfiguration(allowed_hosts=[])})
+        with pytest.raises(HostNotAllowedError):
+            await service.prepare(restricted)
+        assert reached == []
+        allowed = composition.model_copy(
+            update={"run_configuration": RunConfiguration(allowed_hosts={"device.example"})}
+        )
+        with pytest.raises(RuntimeError, match="binding reached"):
+            await service.prepare(allowed)
+        assert reached == [True]

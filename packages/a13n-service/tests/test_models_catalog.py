@@ -10,7 +10,7 @@ from typing import Any
 import anyio
 import httpx2
 import pytest
-from a13n_harness import ModelCapability
+from a13n_harness import ModelCapability, RunConfiguration
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_service.resources.models import catalog as catalog_module
@@ -31,7 +31,7 @@ from a13n_service.resources.models.schemas import CatalogModel, CatalogRef, Mode
 from fastapi import FastAPI, Response
 
 CHANNELS = frozenset({"openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter"})
-LOOPBACK = EndpointPolicy.from_operator_allowlist(private_cidrs=["127.0.0.0/8"])
+LOOPBACK = EndpointPolicy()
 
 
 def model(**changes: Any) -> dict[str, Any]:
@@ -84,7 +84,12 @@ def test_the_catalog_offers_recent_text_models_of_served_channels() -> None:
 def test_input_modalities_declare_the_understanding_capabilities() -> None:
     inputs = {"input": ["text", "image", "audio", "video", "pdf"], "output": ["text"]}
     [item] = parse_catalog(document({"openai": {"models": {"omni": model(modalities=inputs)}}}), CHANNELS)
-    assert item.characteristics.capabilities == set(ModelCapability)
+    assert item.characteristics.capabilities == {
+        ModelCapability.IMAGE_UNDERSTANDING,
+        ModelCapability.AUDIO_UNDERSTANDING,
+        ModelCapability.VIDEO_UNDERSTANDING,
+        ModelCapability.DOCUMENT_UNDERSTANDING,
+    }
 
 
 def test_the_catalog_channels_are_those_the_registered_types_serve() -> None:
@@ -283,8 +288,10 @@ async def test_the_catalog_is_unavailable_until_a_refresh_first_succeeds(models_
     async with running(ModelsDevCatalog(CHANNELS, LOOPBACK, url=models_dev.url)) as catalog:
         unavailable = await catalog.read()
         assert (unavailable.status, unavailable.items) == ("unavailable", [])
-    # The document is fetched under the Service's endpoint policy, which refuses loopback by default.
-    refused = ModelsDevCatalog(CHANNELS, EndpointPolicy.from_operator_allowlist(), url=models_dev.url)
+    # The document is fetched under the supplied endpoint policy, including an explicit deny-all host set.
+    refused = ModelsDevCatalog(
+        CHANNELS, EndpointPolicy(configuration=RunConfiguration(allowed_hosts=set())), url=models_dev.url
+    )
     async with running(refused):
         assert (await refused.read()).status == "unavailable"
     assert models_dev.requests == 1

@@ -219,17 +219,11 @@ async def test_direct_transport_closed_alongside_proxy(monkeypatch: pytest.Monke
 async def test_default_provider_clients_honor_proxy_without_adding_retries(
     monkeypatch: pytest.MonkeyPatch, kind: str
 ) -> None:
-    import ipaddress
     from dataclasses import replace
 
     from a13n_harness.providers.connector.builtins import COMPOSIO
     from a13n_harness.providers.memory import MEM0_PLATFORM
     from a13n_harness.providers.web.transport import provider_client
-
-    monkeypatch.setattr(
-        "a13n_harness.providers.endpoint_policy._resolve_addresses",
-        lambda host, port: (ipaddress.ip_address("93.184.216.34"),),
-    )
 
     @asynccontextmanager
     async def connector(configuration, credential, http):
@@ -260,3 +254,91 @@ async def test_default_provider_clients_honor_proxy_without_adding_retries(
                 await client.post("https://origin.test/write", content=b"mutation")
         assert len(seen) == 1
         assert seen[0].startswith(b"CONNECT origin.test:443 HTTP/1.1")
+
+
+@pytest.mark.parametrize(
+    "value,expected", [(None, True), ("true", True), (" TRUE ", True), ("false", False), (" FaLsE ", False)]
+)
+def test_operator_tls_verify_setting(monkeypatch: pytest.MonkeyPatch, value: str | None, expected: bool) -> None:
+    from a13n_harness.http import outbound_tls_verify
+
+    monkeypatch.delenv("A13N_OUTBOUND_TLS_VERIFY", raising=False)
+    if value is not None:
+        monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", value)
+    assert outbound_tls_verify() is expected
+
+
+@pytest.mark.parametrize("value", ["", "0", "1", "off", "secret-invalid-value"])
+def test_invalid_tls_setting_fails_without_echoing_value(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    from a13n_harness.http import outbound_tls_verify
+
+    monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", value)
+    with pytest.raises(ValueError, match=r"^A13N_OUTBOUND_TLS_VERIFY must be true or false$"):
+        outbound_tls_verify()
+
+
+@pytest.mark.parametrize("kind", ["model", "web", "envd"])
+@pytest.mark.parametrize("route", ["direct", "proxy", "bypass"])
+@pytest.mark.parametrize("verify", [None, "true", "false"])
+async def test_owned_clients_verify_self_signed_https_unless_operator_opts_out(
+    monkeypatch: pytest.MonkeyPatch,
+    tls_contexts: tuple[ssl.SSLContext, ssl.SSLContext],
+    kind: str,
+    route: str,
+    verify: str | None,
+) -> None:
+    from a13n_envd_client import HttpTransport
+    from a13n_harness.http import outbound_tls_verify
+    from a13n_harness.models.transport import create_model_http_client
+    from a13n_harness.providers.web.transport import provider_client
+
+    monkeypatch.delenv("A13N_OUTBOUND_TLS_VERIFY", raising=False)
+    if verify is not None:
+        monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", verify)
+
+    @asynccontextmanager
+    async def open_client(url: str):
+        if kind == "model":
+            async with create_model_http_client(timeout=2, connect=2, retry=None) as client:
+                yield client
+        elif kind == "web":
+            async with provider_client() as client:
+                yield client
+        else:
+            transport = HttpTransport(url, "test-credential", verify=outbound_tls_verify(), request_timeout=2)
+            try:
+                yield transport._client
+            finally:
+                await transport.close()
+
+    server_tls, _ = tls_contexts
+    async with endpoint(context=server_tls) as (port, origin), endpoint(proxy=True) as (proxy, seen):
+        host = "origin.test" if route == "proxy" else "127.0.0.1"
+        if route != "direct":
+            monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{proxy}")
+        if route == "bypass":
+            monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+        url = f"https://{host}:{port}"
+        async with open_client(url) as client:
+            if verify == "false":
+                assert (await client.get(url + "/path")).text == "ok"
+            else:
+                with pytest.raises(httpx2.ConnectError, match="certificate verify failed"):
+                    await client.get(url + "/path")
+        assert len(origin) == (1 if verify == "false" else 0)
+        assert bool(seen) is (route == "proxy")
+
+
+async def test_injected_transport_keeps_its_verified_tls_policy(
+    monkeypatch: pytest.MonkeyPatch, tls_contexts: tuple[ssl.SSLContext, ssl.SSLContext]
+) -> None:
+    from a13n_harness.models.transport import create_model_http_client
+
+    monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", "false")
+    server_tls, _ = tls_contexts
+    async with endpoint(context=server_tls) as (port, _):
+        async with create_model_http_client(
+            timeout=2, connect=2, retry=None, transport=httpx2.AsyncHTTPTransport(verify=True, trust_env=False)
+        ) as client:
+            with pytest.raises(httpx2.ConnectError, match="certificate verify failed"):
+                await client.get(f"https://127.0.0.1:{port}/")

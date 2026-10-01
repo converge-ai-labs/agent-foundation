@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Literal, Self, get_args, get_origin
 
+from a13n_harness import RunConfiguration
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -175,6 +176,9 @@ class ResolvedRunComposition(CompositionModel):
     memory_organization: bool = Field(default=False, exclude_if=lambda value: not value)
     # Missing in old captures means memory was not attached to that Run.
     memory_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
+    run_configuration: RunConfiguration = Field(
+        default_factory=RunConfiguration, exclude_if=lambda value: value == RunConfiguration()
+    )
     webui_sidekick: SidekickConfiguration | None = None
     role: Literal["ordinary", "coordinator", "worker"] | None = None
     coordinator_thread_id: str | None = None

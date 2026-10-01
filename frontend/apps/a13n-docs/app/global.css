@@ -10,9 +10,9 @@
 
 /*
  * The docs follow the a13n-ui design system (spec/frontend/design-system.md):
- * the system font, neutral surfaces instead of outlines, weights 400 and 500,
- * and the near-black primary as the only accent. The rules below adapt
- * Fumadocs components to it.
+ * the system font, neutral surfaces instead of outlines, and the near-black
+ * primary as the only accent, with reading type from its Documentation Pages
+ * section. The rules below adapt Fumadocs components to it.
  */
 
 @theme inline {
@@ -40,8 +40,8 @@ html > body[data-scroll-locked] {
 
 /* Page header: title, one-line description, and page actions. */
 #nd-page h1 {
-  font-size: 28px;
-  font-weight: 500;
+  font-size: 30px;
+  font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.02em;
 }
@@ -49,7 +49,7 @@ html > body[data-scroll-locked] {
 /* One centered reading column, balanced between the sidebar and the table of contents. */
 #nd-page[data-full="false"] > * {
   width: 100%;
-  max-width: 720px;
+  max-width: 800px;
   margin-inline: auto;
 }
 
@@ -58,24 +58,28 @@ html > body[data-scroll-locked] {
   scroll-margin-top: calc(var(--fd-docs-row-3) + 1.5rem);
 }
 
-/* Prose: 15px body, 500-weight headings, and links in text color. */
+/* Prose: 16px body and links in text color; headings sit close to the text they introduce. */
 .prose {
-  --tw-prose-size: 0.9375;
-  --tw-prose-body: var(--a13n-text-supporting);
+  --tw-prose-size: 1;
+  --tw-prose-body: var(--a13n-text);
   line-height: 1.7;
 }
 
 .prose :where(h2, h3, h4) {
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 .prose h2 {
-  font-size: 1.3334em;
+  margin-top: 36px;
+  margin-bottom: 12px;
+  font-size: 20px;
 }
 
 .prose h3 {
-  font-size: 1.0667em;
+  margin-top: 28px;
+  margin-bottom: 8px;
+  font-size: 17px;
 }
 
 .prose h4 {
@@ -83,7 +87,7 @@ html > body[data-scroll-locked] {
 }
 
 .prose strong {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .prose a:not([data-card], .not-prose *) {
@@ -108,8 +112,8 @@ html > body[data-scroll-locked] {
 }
 
 .prose :is(p, li, td, blockquote) code:not(pre code, .not-prose *) {
-  padding: 0.1em 0.3em;
-  border-radius: 5px;
+  padding: 0.125em 0.375em;
+  border-radius: 6px;
   background: var(--a13n-surface);
 }
 
@@ -184,11 +188,11 @@ figure.shiki > div.absolute {
   max-height: none;
 }
 
-/* Sidebar and its phone drawer: a tinted column with 32px rows and quiet group labels. */
-#nd-sidebar-mobile {
+/* Sidebar and its phone drawer: part of the page, with 32px rows in text color under bold group labels. */
+:is(#nd-sidebar, #nd-sidebar-mobile) {
   border: 0;
-  background: var(--sidebar);
-  color: var(--sidebar-foreground);
+  background: var(--color-fd-background);
+  color: var(--color-fd-foreground);
 }
 
 :is(#nd-sidebar, #nd-sidebar-mobile) > [role="presentation"] :is(a, button) {
@@ -196,8 +200,9 @@ figure.shiki > div.absolute {
   padding-block: 6px;
   border-radius: 8px;
   font-size: 14px;
+  font-weight: 400;
   line-height: 20px;
-  color: var(--sidebar-foreground);
+  color: var(--color-fd-foreground);
   transition: background-color 100ms;
 }
 
@@ -212,8 +217,6 @@ figure.shiki > div.absolute {
   > [role="presentation"]
   a[data-active="true"] {
   background: var(--sidebar-accent);
-  color: var(--sidebar-accent-foreground);
-  font-weight: 500;
 }
 
 :is(#nd-sidebar, #nd-sidebar-mobile) > [role="presentation"] :is(a, button) {
@@ -235,11 +238,11 @@ figure.shiki > div.absolute {
 }
 
 :is(#nd-sidebar, #nd-sidebar-mobile) > [role="presentation"] p {
-  margin-top: 20px;
+  margin-top: 24px;
   margin-bottom: 4px;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--color-fd-muted-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-fd-foreground);
 }
 
 :is(#nd-sidebar, #nd-sidebar-mobile) > [role="presentation"] p:first-child {
@@ -286,7 +289,7 @@ figure.shiki > div.absolute {
   line-height: 18px;
 }
 
-/* Table of contents: a quiet rail label and 13px entries. */
+/* Table of contents: a quiet rail label, 14px entries, and the page actions below. */
 #toc-title {
   font-size: 12px;
   font-weight: 500;
@@ -297,7 +300,7 @@ figure.shiki > div.absolute {
 }
 
 #nd-toc a {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 #nd-toc code {

@@ -207,11 +207,14 @@ def test_live_and_history_combine_parts_without_internal_details_or_duplicate_ec
             "harness_ui": {"composer": {"index": index, "label": label}, "attachment": {"name": name}},
         }
 
+    from a13n_harness import ContentItem, ContentMetadata
+
     content = [
         TextContent("before " + "x" * 17000, metadata=metadata(0)),
         TextContent("internal path", metadata={**metadata(1), "display": False}),
-        BinaryContent(
-            b"private pixels", media_type="image/png", vendor_metadata=metadata(1, "image#1", "clipboard.png")
+        ContentItem(
+            BinaryContent(b"private pixels", media_type="image/png"),
+            ContentMetadata.model_validate(metadata(1, "image#1", "clipboard.png")),
         ),
         TextContent(" using ", metadata=metadata(2)),
         TextContent("internal file path and metadata", metadata=metadata(3, "file#2", "requirements.md")),

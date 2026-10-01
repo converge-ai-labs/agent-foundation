@@ -839,6 +839,8 @@ class StreamRenderer:
         if complete and name == "ask_user_question" and not child_label and not arguments_truncated:
             self._register_question_arguments(call_id, preview, detail_arguments)
         result = c.get("result")
+        if result is None and isinstance(c.get("content_parts"), list):
+            result = c["content_parts"]
         text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
         has_result = "result" in c
         result_view = tool_result(name, text) if has_result else ""
@@ -991,6 +993,14 @@ class StreamRenderer:
         if event_type in {"RUN_FINISHED", "RUN_ERROR"}:
             self._exploration = None
             self.end_process_observations(run_id)
+        if event_type == "RUN_FINISHED":
+            outcome = payload.get("outcome")
+            if isinstance(outcome, dict) and outcome.get("type") in {"cancelled", "interrupt"}:
+                self.append(
+                    "Execution cancelled.\n"
+                    if outcome["type"] == "cancelled"
+                    else "Execution suspended: a response is needed.\n"
+                )
         if event_type == "RUN_ERROR":
             self.finish()
             self.append(f"Error: {payload.get('message', payload.get('code', 'run failed'))}\n")

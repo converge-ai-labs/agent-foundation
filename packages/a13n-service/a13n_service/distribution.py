@@ -52,6 +52,7 @@ from a13n_service.resources.providers.tables import (
     ConnectorProviderRow,
     EnvironmentProviderRow,
     MemoryProviderRow,
+    ModelProviderOAuthRow,
     ModelProviderRow,
     WebProviderRow,
 )
@@ -270,6 +271,7 @@ OSS = Distribution(
         AuditEventRow,
         OutboxRow,
         ModelProviderRow,
+        ModelProviderOAuthRow,
         ModelRow,
         WebProviderRow,
         ConnectorProviderRow,

@@ -589,3 +589,25 @@ def test_proxy_rejects_duplicate_membership_and_copies_lists() -> None:
     proxy = AgentToolProxy.model_validate({"groups": {"knowledge": group}})
     group["mcp_servers"].clear()
     assert proxy.groups["knowledge"].mcp_servers == ("mcp-docs",)
+
+
+@pytest.mark.parametrize(
+    "setting,expected",
+    [
+        ("", None),
+        ("run_configuration:\n  allowed_hosts: null\n", None),
+        ("run_configuration:\n  allowed_hosts: []\n", frozenset()),
+        ("run_configuration:\n  allowed_hosts: [EXAMPLE.com.]\n", frozenset({"example.com"})),
+        (
+            "run_configuration:\n  allowed_hosts: ['regex:(api|docs)\\.example\\.com']\n",
+            frozenset({r"regex:(api|docs)\.example\.com"}),
+        ),
+    ],
+)
+async def test_run_configuration_round_trips(tmp_path: Path, setting: str, expected) -> None:
+    path = _write_source_tree(tmp_path, root='schema_version: "1"\n' + setting)
+    original = path.read_bytes()
+    loaded = await load_harness_ui_configuration(path)
+    assert loaded.document.run_configuration.allowed_hosts == expected
+    assert type(loaded).model_validate_json(loaded.model_dump_json()) == loaded
+    assert path.read_bytes() == original

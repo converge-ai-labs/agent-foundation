@@ -1,5 +1,3 @@
-import { useTranslation } from "react-i18next";
-import { Page } from "../../shared/page";
 import { EnvironmentInstances } from "./instances";
 import { EnvironmentTemplates } from "./templates";
 
@@ -9,22 +7,9 @@ export function EnvironmentsPage({
 }: {
   section?: "templates" | "instances";
 }) {
-  const { t } = useTranslation();
-  const titles = {
-    templates: "Environment templates",
-    instances: "Environment instances",
-  };
-  const descriptions = {
-    templates: "Reusable templates for your agents' working environments.",
-    instances: "Inspect the environments your agents are using.",
-  };
-  return (
-    <Page title={t(titles[section])} description={t(descriptions[section])}>
-      {section === "instances" ? (
-        <EnvironmentInstances />
-      ) : (
-        <EnvironmentTemplates />
-      )}
-    </Page>
+  return section === "instances" ? (
+    <EnvironmentInstances />
+  ) : (
+    <EnvironmentTemplates />
   );
 }

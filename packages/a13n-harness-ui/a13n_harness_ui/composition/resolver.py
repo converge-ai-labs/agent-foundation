@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from a13n_harness import RunConfiguration
 from a13n_harness.environment import (
     EnvironmentRunExtensionFactoryContext,
     EnvironmentRunExtensionFactoryRegistration,
@@ -24,6 +25,7 @@ from a13n_harness_ui.configuration import (
     AgentSubagentSelection,
     ApiKeyAuthentication,
     CanonicalSubagent,
+    ChatGPTSubscriptionAuthentication,
     CodexSubscriptionAuthentication,
     CopilotSubscriptionAuthentication,
     GrokSubscriptionAuthentication,
@@ -247,6 +249,7 @@ class AgentCompositionResolver:
         *,
         parent_node: ResolvedAgentNode | None = None,
         model_overrides: RunModelOverrides | None = None,
+        run_configuration: RunConfiguration | None = None,
     ) -> ResolvedRunComposition:
         """Resolve one exact Thread head against one accepted source generation."""
         root = self.resolve_agent(source, selection, parent_node=parent_node, model_overrides=model_overrides)
@@ -277,6 +280,7 @@ class AgentCompositionResolver:
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
             memory_enabled=source.document.memory.enabled,
+            run_configuration=run_configuration or source.document.run_configuration,
             role=selection.role,
             coordinator_thread_id=selection.coordinator_thread_id,
             project_roots=selection.local_roots,
@@ -524,6 +528,7 @@ class AgentCompositionResolver:
             thread_configuration_version=thread.configuration.version,
             project_id=thread.configuration.project_id,
             memory_organization=True,
+            run_configuration=source.document.run_configuration,
             root=ResolvedAgentNode(
                 source_kind="memory",
                 source_id="memory",
@@ -933,6 +938,8 @@ def _validate_auth_route(item: ModelResource) -> None:
         raise CompositionError(
             "Subscription connection configuration cannot be overridden.", code="model_configuration_unsupported"
         )
+    if isinstance(authentication, ChatGPTSubscriptionAuthentication) and prefix != "openai-chatgpt":
+        raise CompositionError("ChatGPT authentication requires an openai-chatgpt route.", code="model_auth_invalid")
     if isinstance(authentication, CodexSubscriptionAuthentication) and prefix != "openai-codex":
         raise CompositionError(
             "Codex subscription authentication requires an openai-codex route.", code="model_auth_invalid"
@@ -943,7 +950,7 @@ def _validate_auth_route(item: ModelResource) -> None:
         )
     if isinstance(authentication, GrokSubscriptionAuthentication) and prefix not in {"grok", "grok-build"}:
         raise CompositionError("Grok subscription authentication requires a Grok route.", code="model_auth_invalid")
-    if isinstance(authentication, ApiKeyAuthentication) and prefix in {"openai-codex", "grok-build"}:
+    if isinstance(authentication, ApiKeyAuthentication) and prefix in {"openai-chatgpt", "openai-codex", "grok-build"}:
         raise CompositionError(
             "The selected subscription route does not accept API-key authentication.", code="model_auth_invalid"
         )

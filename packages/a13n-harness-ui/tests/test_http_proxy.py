@@ -2,12 +2,14 @@
 
 import asyncio
 import os
+import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx2
 import pytest
+from a13n_harness import RunConfiguration
 
 # Composition initializes the existing MCP/configuration import graph.
 from a13n_harness_ui import composition  # noqa: F401
@@ -86,23 +88,23 @@ async def test_update_check_uses_https_proxy_and_keeps_failure_tolerance(
 
 
 @pytest.mark.parametrize("bypass", [False, True])
-async def test_web_client_uses_native_proxy_or_pinned_direct_route(
-    monkeypatch: pytest.MonkeyPatch, bypass: bool
-) -> None:
+async def test_web_client_uses_native_proxy_or_no_proxy_route(monkeypatch: pytest.MonkeyPatch, bypass: bool) -> None:
     from a13n_harness.capabilities import WebRequest
-    from a13n_harness_ui.capability_runtime import HttpxWebClient, PublicWebPolicy
+    from a13n_harness_ui.capability_runtime import HttpWebPolicy, HttpxWebClient
 
-    async def resolve(self, url: str, *, purpose: str) -> tuple[str, ...]:
-        # Stand in for the authorized DNS answer; a real connection must use it
-        # on NO_PROXY, while the proxy receives the original hostname otherwise.
-        return ("127.0.0.1",)
+    original_dns = socket.getaddrinfo
 
-    monkeypatch.setattr(PublicWebPolicy, "resolve", resolve)
+    def resolve(host, *args, **kwargs):
+        if host in {"public.test", b"public.test"}:
+            pytest.fail("Proxy destination must not be resolved locally")
+        return original_dns(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
     async with endpoint(200) as (proxy, proxied), endpoint(200) as (origin, direct):
         monkeypatch.setenv("http_proxy", proxy)
         if bypass:
-            monkeypatch.setenv("NO_PROXY", "public.test")
-        url = origin.replace("127.0.0.1", "public.test") + "/page"
+            monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+        url = (origin if bypass else origin.replace("127.0.0.1", "public.test")) + "/page"
         request = WebRequest(
             url=url,
             purpose="fetch",
@@ -113,7 +115,7 @@ async def test_web_client_uses_native_proxy_or_pinned_direct_route(
             max_header_bytes=8192,
             max_stream_chunk_bytes=1024,
         )
-        response = await HttpxWebClient().request(request, policy=PublicWebPolicy())
+        response = await HttpxWebClient().request(request, policy=HttpWebPolicy())
         try:
             assert response.status_code == 200
             assert response.final_url == url
@@ -123,3 +125,86 @@ async def test_web_client_uses_native_proxy_or_pinned_direct_route(
     assert len(proxied) == int(not bypass)
     if proxied:
         assert proxied[0].startswith(f"GET {url} HTTP/1.1".encode())
+
+
+@pytest.mark.parametrize("guard", [False, True])
+async def test_web_https_proxy_does_not_require_destination_dns(monkeypatch: pytest.MonkeyPatch, guard: bool) -> None:
+    from a13n_harness.capabilities import WebRequest
+    from a13n_harness_ui.capability_runtime import HttpWebPolicy, HttpxWebClient
+
+    original_dns = socket.getaddrinfo
+
+    def resolve(host, *args, **kwargs):
+        if host in {"proxy-only.test", b"proxy-only.test"}:
+            pytest.fail("HTTPS proxy destination must not be resolved locally")
+        return original_dns(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    async with endpoint() as (proxy, requests):
+        monkeypatch.setenv("HTTPS_PROXY", proxy)
+        request = WebRequest(
+            url="https://proxy-only.test/read",
+            purpose="fetch",
+            deadline_seconds=2,
+            max_redirects=2,
+            max_response_bytes=1024,
+            max_header_count=128,
+            max_header_bytes=8192,
+            max_stream_chunk_bytes=1024,
+        )
+        with pytest.raises(httpx2.ProxyError):
+            await HttpxWebClient().request(
+                request,
+                policy=HttpWebPolicy(
+                    RunConfiguration(allowed_hosts={"proxy-only.test", "public.test"} if guard else None)
+                ),
+            )
+    assert len(requests) == 1
+    assert requests[0].startswith(b"CONNECT proxy-only.test:443 HTTP/1.1")
+
+
+@pytest.mark.parametrize("guard", [False, True])
+async def test_web_allowed_hosts_check_each_redirect_without_dns(monkeypatch: pytest.MonkeyPatch, guard: bool) -> None:
+    from a13n_harness.capabilities import WebProviderError, WebRequest
+    from a13n_harness_ui.capability_runtime import HttpWebPolicy, HttpxWebClient
+
+    requests = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(str(request.url))
+        if len(requests) == 1:
+            return httpx2.Response(302, headers={"location": "http://127.0.0.1/private"})
+        return httpx2.Response(200, content=b"ok")
+
+    native_client = httpx2.AsyncClient
+    monkeypatch.setattr(
+        httpx2,
+        "AsyncClient",
+        lambda **kwargs: native_client(transport=httpx2.MockTransport(respond), trust_env=False, **kwargs),
+    )
+    request = WebRequest(
+        url="http://public.test/",
+        purpose="fetch",
+        deadline_seconds=2,
+        max_redirects=2,
+        max_response_bytes=1024,
+        max_header_count=128,
+        max_header_bytes=8192,
+        max_stream_chunk_bytes=1024,
+    )
+    client = HttpxWebClient()
+    policy = HttpWebPolicy(RunConfiguration(allowed_hosts={"proxy-only.test", "public.test"} if guard else None))
+    if guard:
+        with pytest.raises(WebProviderError) as error:
+            await client.request(request, policy=policy)
+        assert error.value.code == "web_destination_denied"
+        assert len(requests) == 1
+    else:
+        response = await client.request(request, policy=policy)
+        try:
+            assert response.final_url == "http://127.0.0.1/private"
+            assert response.redirect_count == 1
+            assert b"".join([chunk async for chunk in response.body]) == b"ok"
+        finally:
+            await response.close()
+        assert len(requests) == 2

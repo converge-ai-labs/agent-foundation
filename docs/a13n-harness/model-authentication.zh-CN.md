@@ -90,6 +90,34 @@ async def grok_device_login(issuer, client_id, scopes, show_device_code, source)
 
 模型凭据管理器在刷新/重新加载前后检查身份，并在使用前持久保存轮换。持久化失败应视为凭据转换失败，不能仅因远程 token 端点响应就认定成功。注入的 HTTP 客户端仍由调用者管理；适配器管理自己创建的客户端。
 
+## ChatGPT 登录与原生 Model
+
+此集成将 OAuth、Provider 和 Model 请求方言与 Host 存储分离：
+
+- `providers.model.oauth.chatgpt.OpenAIChatGPTOAuthFlow.start(ext_agent_host_id=..., agent_name=..., redirect_uri=..., client_id=None, credentials=None)` 创建有期限的 PKCE 注册或再次授权。显示 `authorization_url()`，再将完整 URL 交给 `validate_callback()` 和 `exchange_callback()`。两者均不请求该 URL。Host 必须在交换前持久化有效待完成授权的消费状态，在报告成功前保存完整且经过验证的凭据。
+- `OpenAIChatGPTCredentials` 和 `OpenAIChatGPTCredentialSource` 定义边界。Source 实现 `async load()` 和 `async rotate(expected, exchange)`，负责同账户仲裁和持久化发布。`refresh_chatgpt_credentials` 与 `revoke_chatgpt_credentials` 执行协议操作，不拥有存储。
+- `providers.model.chatgpt.OpenAIChatGPTProvider(credential_source=..., http_client=None)` 是原生 OpenAI Provider，端点固定，每次请求重新读取身份，通过协调轮换以及一次 401 重放工作。注入的客户端仍由调用者管理，且不能已有身份验证。
+- `models.chatgpt.OpenAIChatGPTResponsesModel(model_name, provider=...)` 继承原生 Responses 渲染，保留普通请求的流收集器。它强制 `store=false`、`stream=true`、完整输入历史、developer 指令、受支持工具位置和自然 `response.completed` 终止事件。不支持的 SIWC 设置与托管工具明确失败。
+
+这些 API 不发现本地账户文件，也不嵌入 Harness UI 或 Service 存储。`discover_chatgpt_models(credential_source=..., http_client=None)` 按服务器顺序返回账户可见 slug 和显示名，仍可手动输入 ID。ChatGPT 订阅资格与模型权限由上游决定，与 Codex 和 API 密钥授权分离。
+
+### 预配置的公共 client
+
+默认 OSS 流程（包括使用已签发 client ID 的再次登录）要求 `http://127.0.0.1:<port>/auth/callback`，只能变更端口。若需使用其他已注册的回调，显式选择单独申请的**公共** client：
+
+```python
+flow = OpenAIChatGPTOAuthFlow.start(
+    ext_agent_host_id=host_id,
+    agent_name="My Agent",
+    client_id="approved-public-client",
+    redirect_uri="https://agent.example.com/auth/openai/callback",
+)
+```
+
+URI 必须与此 client 在 OpenAI 注册的值完全一致，使用 HTTPS 或 HTTP `127.0.0.1`，包含路径且不能有用户信息、query 或 fragment。Host 从受保护存储恢复完整 `flow.authorization`，包括 `preconfigured_client` 标记。再次授权只能传入同一 client、同一 Host 的凭据；切换账户时不传保留凭据，但仍保留显式 `client_id`。
+
+此配置不授予 ChatGPT 订阅额度调用权限。集成仍要求可刷新的 token 及 `resource.invoke` / `chatgpt.tokens.use.direct`，因此仅身份登录的网站授权会被拒绝。托管/商业使用需要另获 OpenAI 批准。若已注册机密 client，还需传入 `token_endpoint_auth_method="client_secret_basic"` 和从受保护服务端存储读取的 `client_secret`。公共 client 使用 `none`，不传 secret。待完成授权和可刷新凭据会冻结该身份认证信息，供交换、刷新和撤销使用；secret 不进入授权 URL 或表单正文，只通过服务端 HTTP Basic 请求头发送。完整待完成状态与凭据必须加密保存。部署覆盖参数和浏览器接收流程请参阅 [Service 配置](../a13n-service/models.md#self-hosted-callback)。
+
 ## 身份验证失败
 
 | 公开异常                     | 含义                                                   |

@@ -158,14 +158,14 @@ def present_native_result(renderer, part, *, run_id="root", child=False, executi
 
 
 def present_input(renderer, content, *, run_id="root"):
+    from a13n_harness.content import input_request
     from a13n_stream_protocol.projector import DisplayProjector
-    from pydantic_ai.messages import ModelRequest, UserPromptPart
 
     state = state_for(renderer, run_id)
     if run_id not in state.scopes:
         state.publish((ScopePut(scope=DisplayScope(id=run_id, run_id=run_id, thread_id="thread-" + run_id)),))
     projector = DisplayProjector(state.capture())
-    delta = projector.reconcile_message(run_id, 0, ModelRequest(parts=[UserPromptPart(content)]))
+    delta = projector.reconcile_message(run_id, 0, input_request(content))
     if delta is not None:
         state.apply(delta)
     renderer.display_blocks(state, tuple(state.blocks))

@@ -8,7 +8,6 @@ import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, ModelRecoveryPolicy, RunBindings
 from a13n_harness.capabilities import (
     DocumentsCapability,
-    MediaCapability,
     TaskStateBinding,
     WebBinding,
     WebCapability,
@@ -25,7 +24,7 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize(
     "field",
-    ["web", "media_reader", "document_converter", "file_media_understanding", "task_state", "client_toolsets"],
+    ["web", "document_converter", "file_media_understanding", "task_state", "client_toolsets"],
 )
 def test_run_binding_fields_reject_incompatible_values(field: str) -> None:
     with pytest.raises(TypeError):
@@ -75,12 +74,12 @@ async def test_concurrent_runs_bind_shared_resource_definitions_to_current_depen
             observations.setdefault(run, []).append(
                 (
                     ctx.deps,
-                    tuple(ctx.capabilities[key] for key in ("a13n.web", "a13n.media", "a13n.documents")),
+                    tuple(ctx.capabilities[key] for key in ("a13n.web", "a13n.documents")),
                     ctx.run_id,
-                    tuple(ctx.capabilities[key]._bind(ctx) for key in ("a13n.web", "a13n.media", "a13n.documents")),
+                    tuple(ctx.capabilities[key]._bind(ctx) for key in ("a13n.web", "a13n.documents")),
                 )
             )
-            assert all(ctx.deps._run_capability(key) is None for key in ("a13n.web", "a13n.media", "a13n.documents"))
+            assert all(ctx.deps._run_capability(key) is None for key in ("a13n.web", "a13n.documents"))
             return request_context
 
     async def model(messages, info):
@@ -98,7 +97,6 @@ async def test_concurrent_runs_bind_shared_resource_definitions_to_current_depen
         RunBindings.embedded(
             environment=EmptyEnvironmentRuntime(),
             web=WebBinding(client=transport, policy=provider),
-            media_reader=provider,
             document_converter=provider,
         )
         for provider in providers
@@ -111,7 +109,6 @@ async def test_concurrent_runs_bind_shared_resource_definitions_to_current_depen
             WebCapability(
                 WebConfiguration(search=WebSearchConfiguration(mode="off"), scrape=WebScrapeConfiguration(mode="off"))
             ),
-            MediaCapability(),
             DocumentsCapability(),
             Observe(),
         ),
@@ -128,15 +125,11 @@ async def test_concurrent_runs_bind_shared_resource_definitions_to_current_depen
         assert len(attempts) == 2 and attempts[0][2] != attempts[1][2]
         first_context, first_active, _, first_bound = attempts[0]
         assert all(one is two for one, two in zip(first_bound, attempts[1][3], strict=True))
-        assert all(
-            one is two
-            for one, two in zip(first_bound, (value.web, value.media_reader, value.document_converter), strict=True)
-        )
+        assert all(one is two for one, two in zip(first_bound, (value.web, value.document_converter), strict=True))
         assert attempts[1][0] is first_context
         assert all(one is two for one, two in zip(first_active, attempts[1][1], strict=True))
         assert all(item is not None for item in first_active)
         assert first_context.web is value.web
-        assert first_context.media_reader is value.media_reader
         assert first_context.document_converter is value.document_converter
         active.append(first_active)
     assert all(one is two for one, two in zip(*active, strict=True))

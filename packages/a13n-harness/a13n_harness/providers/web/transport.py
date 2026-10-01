@@ -10,7 +10,7 @@ import httpx2
 from a13n_logging import get_logger
 from anyio import move_on_after
 
-from a13n_harness.http import ProviderHttpError, bounded_response_body, retry_after_seconds
+from a13n_harness.http import ProviderHttpError, bounded_response_body, outbound_tls_verify, retry_after_seconds
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_harness.providers.web.contracts import (
     WebProviderError,
@@ -33,7 +33,7 @@ async def _close(close: Callable[[], Awaitable[None]]) -> None:
 
 
 def provider_client() -> httpx2.AsyncClient:
-    return httpx2.AsyncClient(timeout=30, follow_redirects=False)
+    return httpx2.AsyncClient(verify=outbound_tls_verify(), timeout=30, follow_redirects=False)
 
 
 class WebProviderTransport:

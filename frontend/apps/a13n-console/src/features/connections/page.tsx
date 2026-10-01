@@ -1,16 +1,20 @@
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { PlugIcon } from "@phosphor-icons/react";
-import { BrandIcon, Button } from "a13n-ui";
+import { BrandIcon, Button, ChoiceField } from "a13n-ui";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, data } from "../../shared/api";
+import { allPages, data, matchesSearch, matchingPage } from "../../shared/api";
 import {
+  CollectionFooter,
   Empty,
+  Pagination,
   ResourceIdentity,
   ResourceTable,
+  Toolbar,
+  useCursor,
 } from "../../shared/collection";
 import {
   ErrorNotice,
@@ -36,29 +40,47 @@ function endpointHost(url: string) {
   }
 }
 
+const STATES = ["ready", "pending", "reauthorization_required", "disabled"];
+
 export function ConnectionsPage() {
   const client = useClient(),
     { workspace, can } = useWorkspace(),
     { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
   const [cleanup, setCleanup] = useState<RemoteCleanup>();
-  const connections = useInfiniteQuery({
-    queryKey: ["connections", workspace.id, "list"],
+  const [query, setQuery] = useState("");
+  const [state, setState] = useState("all");
+  const term = query.trim().toLocaleLowerCase();
+  const filtered = !!term || state !== "all";
+  const page = useCursor({ term, state });
+  const connections = useQuery({
+    queryKey: ["connections", workspace.id, "list", page.cursor, term, state],
     enabled: can("read"),
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ signal, pageParam }) =>
-      client
-        .workspace(workspace.id)
-        .GET("/api/v1/connections", {
-          params: {
-            query: { cursor: pageParam },
-          },
-          signal,
-        })
-        .then(data),
-    getNextPageParam: (page) => page.next_cursor ?? undefined,
+    queryFn: ({ signal }) =>
+      matchingPage(
+        (cursor, limit) =>
+          client
+            .workspace(workspace.id)
+            .GET("/api/v1/connections", {
+              params: { query: { cursor, limit } },
+              signal,
+            })
+            .then(data),
+        page.cursor,
+        filtered
+          ? (connection) =>
+              matchesSearch(
+                term,
+                connection.name,
+                "app" in connection.config
+                  ? connection.config.app
+                  : connection.config.url,
+              ) &&
+              (state === "all" || connectionState(connection) === state)
+          : undefined,
+      ),
   });
-  const rows = connections.data?.pages.flatMap((page) => page.items) ?? [];
+  const rows = connections.data?.items ?? [];
   const focused = search.get("connection");
   const providers = useQuery({
     queryKey: ["connector-providers", "workspace", workspace.id, "picker"],
@@ -83,6 +105,28 @@ export function ConnectionsPage() {
     <Page
       title={t("Connections")}
       description={t("Connect accounts and remote tools for your agents.")}
+      toolbar={
+        <Toolbar
+          search={query}
+          onSearchChange={setQuery}
+          searchLabel={t("Search connections")}
+          filters={
+            <ChoiceField
+              label={t("Status")}
+              variant="filter"
+              value={state}
+              onValueChange={setState}
+              options={[
+                { value: "all", label: t("All statuses") },
+                ...STATES.map((value) => ({
+                  value,
+                  label: t(`state.${value}`),
+                })),
+              ]}
+            />
+          }
+        />
+      }
     >
       <PageActions secondary>
         <ManageProvidersLink category="connectors" />
@@ -119,77 +163,83 @@ export function ConnectionsPage() {
       {connections.isLoading ? (
         <Loading variant="table" columns={4} />
       ) : rows.length ? (
-        <ResourceTable
-          items={rows}
-          caption={t("Connections")}
-          onRowActivate={(row) => select(row.id)}
-          columns={[
-            {
-              label: t("Connection"),
-              tone: "primary",
-              render: (row) => (
-                <ResourceIdentity
-                  name={row.name}
-                  resourceId={row.id}
-                  description={
-                    "app" in row.config
-                      ? row.config.app
-                      : endpointHost(row.config.url)
-                  }
-                  icon={
-                    "app" in row.config ? (
-                      <BrandIcon alias={row.config.app} />
-                    ) : (
-                      <MCPConnectionIcon endpoint={row.config.url} />
-                    )
-                  }
-                />
-              ),
-            },
-            {
-              label: t("Source"),
-              render: (row) =>
-                row.type === "mcp"
-                  ? t("Remote MCP")
-                  : (providers.data?.find(
-                      (provider) => provider.id === row.connector_provider_id,
-                    )?.name ?? t("Connected account")),
-            },
-            {
-              label: t("Status"),
-              render: (connection) => (
-                <StatePill state={connectionState(connection)} />
-              ),
-            },
-            {
-              label: t("Updated"),
-              tone: "muted",
-              render: (connection) => (
-                <Timestamp value={connection.updated_at} relative />
-              ),
-            },
-          ]}
-        />
+        <>
+          <ResourceTable
+            items={rows}
+            caption={t("Connections")}
+            onRowActivate={(row) => select(row.id)}
+            columns={[
+              {
+                label: t("Connection"),
+                tone: "primary",
+                render: (row) => (
+                  <ResourceIdentity
+                    name={row.name}
+                    resourceId={row.id}
+                    description={
+                      "app" in row.config
+                        ? row.config.app
+                        : endpointHost(row.config.url)
+                    }
+                    icon={
+                      "app" in row.config ? (
+                        <BrandIcon alias={row.config.app} />
+                      ) : (
+                        <MCPConnectionIcon endpoint={row.config.url} />
+                      )
+                    }
+                  />
+                ),
+              },
+              {
+                label: t("Source"),
+                render: (row) =>
+                  row.type === "mcp"
+                    ? t("Remote MCP")
+                    : (providers.data?.find(
+                        (provider) => provider.id === row.connector_provider_id,
+                      )?.name ?? t("Connected account")),
+              },
+              {
+                label: t("Status"),
+                render: (connection) => (
+                  <StatePill state={connectionState(connection)} />
+                ),
+              },
+              {
+                label: t("Updated"),
+                tone: "muted",
+                render: (connection) => (
+                  <Timestamp value={connection.updated_at} relative />
+                ),
+              },
+            ]}
+          />
+          <CollectionFooter
+            count={t("{{count}} connections on this page", {
+              count: rows.length,
+            })}
+          >
+            <Pagination page={page} next={connections.data?.next_cursor} />
+          </CollectionFooter>
+        </>
       ) : (
         !connections.error && (
           <Empty
             icon={<PlugIcon aria-hidden="true" />}
-            title={t("No connections yet")}
-            description={t(
-              "Choose a service to connect your first account or MCP server.",
-            )}
-            action={create}
+            title={
+              filtered ? t("No matching connections") : t("No connections yet")
+            }
+            description={
+              filtered
+                ? t("Change or clear the search and filters.")
+                : t(
+                    "Choose a service to connect your first account or MCP server.",
+                  )
+            }
+            action={!filtered && create}
           />
         )
-      )}
-      {connections.hasNextPage && (
-        <Button
-          variant="outline"
-          loading={connections.isFetchingNextPage}
-          onClick={() => void connections.fetchNextPage()}
-        >
-          {t("Load more")}
-        </Button>
       )}
       {focused && can("read") && (
         <ConnectionDetails

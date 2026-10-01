@@ -3,6 +3,7 @@ import type {
   DisplayBlock,
   DisplayDelta,
   DisplaySnapshot,
+  JsonValue,
 } from "a13n-ui/display";
 import { createTransport, type Schema } from "../transport/client";
 import { mockWebSocket, FakeWebSocket } from "../../tests/fake-websocket";
@@ -86,7 +87,7 @@ function opening(
       recent_events: [
         {
           event_type: "TEXT_MESSAGE_CONTENT",
-          payload: { delta: "diagnostic only" },
+          payload: { type: "TEXT_MESSAGE_CONTENT", delta: "diagnostic only" },
         },
       ],
       root_stream: root ? summary(root, checkpoints) : null,
@@ -795,3 +796,48 @@ it.each([false, true])(
     expect(display.blocks.size).toBe(0);
   },
 );
+
+it("presents ordered media and inline attribution from shared scope lineage", () => {
+  const parts: JsonValue[] = [
+    { type: "text", text: "same" },
+    {
+      type: "image",
+      source: { type: "url", value: "https://example.test/image.png" },
+    },
+    { type: "text", text: "same" },
+  ];
+  const tool = (id: string, scope_id: string) =>
+    block(id, "", {
+      scope_id,
+      kind: "tool_chunk",
+      status: "succeeded",
+      content: {
+        name: "observe",
+        tool_call_id: "same-id",
+        arguments: "{}",
+        arguments_complete: true,
+        result: null,
+        content_parts: parts,
+      },
+    });
+  const snapshot = baseline([
+    tool("root-tool", "run-one"),
+    tool("inline-tool", "inline"),
+  ]);
+  snapshot.scopes.push({
+    ...snapshot.scopes[0]!,
+    id: "inline",
+    run_id: "inline-run",
+    parent_scope_id: "run-one",
+    parent_tool_call_id: "delegate",
+  });
+  const display = new FocusDisplay();
+  boot(display, snapshot);
+  const root = display.blocks.get("root-tool")!;
+  const child = display.blocks.get("inline-tool")!;
+  expect(root.subagentRunId).toBeUndefined();
+  expect(child.subagentRunId).toBe("inline-run");
+  expect(child.result).toBeUndefined();
+  expect(child.resultParts).toEqual(parts);
+  expect(root.resultParts).toEqual(child.resultParts);
+});

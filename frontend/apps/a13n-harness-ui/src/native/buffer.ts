@@ -1,14 +1,20 @@
 import { createContext } from "react";
 import type { Schema } from "../transport/client";
 
+// Media need only a metadata observation; text observations also carry an
+// editable presentation. Keep both without pretending metadata are text reads.
+export type FileObservation =
+  | (Schema<"FileText"> & { media_type?: string })
+  | (Schema<"FileInfo"> & { presentation?: never; text?: never });
+
 /** A private edit buffer, never a CRDT or a claim that disk stayed unchanged. */
 export class FileBuffer {
   value: string;
-  observed: Schema<"FileText">;
+  observed: FileObservation;
   position?: { anchor: number; head: number; top: number; left: number };
   saving = false;
   uncertain = false;
-  constructor(public base: Schema<"FileText">) {
+  constructor(public base: FileObservation) {
     this.observed = base;
     this.value = base.text ?? "";
   }
@@ -18,7 +24,7 @@ export class FileBuffer {
   get conflict() {
     return this.observed.entry.revision !== this.base.entry.revision;
   }
-  observe(next: Schema<"FileText">) {
+  observe(next: FileObservation) {
     this.observed = next;
     if (!this.dirty && !this.saving && !this.uncertain) {
       this.base = next;

@@ -9,6 +9,8 @@ Agent 调用一个**模型**：它对应**模型 provider** 账号下的上游�
 
 在 Console 中打开 **Models → Add model → Connect a new provider**，或在 **Workspace settings → Providers** 管理 provider。通过 API 使用时，按 [Provider](resources.md#providers)中的说明在 `/api/v1/model-providers` 创建。
 
+![Console 中的模型 provider 目录](../../.github/assets/console-model-providers.webp)
+
 | 类型                                                               | 模型 API（首项为默认值）                                                          |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
 | `openai`                                                           | `openai.responses`, `openai.chat_completions`                                     |
@@ -24,6 +26,34 @@ Agent 调用一个**模型**：它对应**模型 provider** 账号下的上游�
 各类型的配置和凭据字段来自 Harness；`GET /api/v1/provider-types/model` 以 JSON Schema 返回。多数类型接受可选 `base_url` 和 `api_key` 凭据。各类型选项请参阅 [Harness 模型](../a13n-harness/models.md)和[模型认证](../a13n-harness/model-authentication.md)。
 
 模型 provider 还可包含最多 32 个**额外请求头**，用于按请求头路由或计费的网关。请求头值作为密钥加密，永不返回（视图只列出 `header_names`），通过 `PATCH` 按名称编辑（`"X-Team": "..."` 设置值，`null` 移除，省略则保留）。传输、认证和协议请求头名称不可设置。
+
+## ChatGPT 订阅 provider
+
+创建 `openai_chatgpt` provider；默认 OSS 流程不需要静态凭据。在 **Workspace settings → Providers** 选择 **ChatGPT subscription**，添加后点击 **Sign in with ChatGPT**。授权属于 Provider，由整个工作空间共享，不是个人 Connection。
+
+默认 OSS 流程中，授权后将浏览器地址栏的完整回调 URL 复制到 **Complete callback URL**，即使回环页面显示连接失败也可以。Service 可以部署在远端：它校验并交换粘贴的回调，不请求该 URL，也不要求浏览器访问服务器的回环监听器。
+
+API 客户端先以 `{}` 调用 `POST /api/v1/model-providers/{id}/authorize`，再以 `{"attempt_id": "oauth_...", "callback_url": "http://127.0.0.1:1456/auth/callback?..."}` 调用 `POST …/authorization/callback`。完整回调必须保密。无效输入可修正重试；交换开始后若失败，必须重启授权。`GET …/authorization` 返回不含凭据的状态。`DELETE …/authorization` 先清除 token，再请求撤销，并报告未确认的撤销结果。保留的注册信息支持再次登录；`{"new_registration": true}` 重新选择账户（创建新 OSS 注册，或使用相同的配置 client 而不保留账户提示）。
+
+此 Provider 使用 `openai.responses` 和账户模型 slug。`GET …/models` 返回账户可见 slug 和显示名，Console 仍支持手动输入 ID。可见性不保证推理权限。端点固定，token 和待完成授权加密保存在 Provider 状态中，不进入 Model 配置或 Run 快照。每次请求固定 `store: false` 并使用必需的流，普通调用由原生 Model 收集该流。原生 profile 不发送 temperature、Top P 和输出 token 上限；previous-response ID 和不支持的托管工具明确失败，不会改成 API 密钥调用。Codex 凭据与此无关，不能代替该授权。
+
+### 自托管回调
+
+默认动态注册流程即使拿到 OpenAI 签发的 client ID，也仍使用 HTTP `127.0.0.1`，只能变更端口。使用单独申请的 client 时，在创建或编辑 ChatGPT Provider 时配置 **OAuth client ID**、**Callback URL** 和 **Token endpoint authentication**。公共 client 使用 `none`，不填写 secret；机密 client 使用 `client_secret_basic`，并必须填写 **OAuth client secret**。先保存修改，再重启登录。Provider 的 `config.client_id` 和 `config.redirect_uri` 优先于部署默认值，留空则继承默认值。secret 使用现有加密字段 `credential.client_secret` 保存，不进入普通配置，也不会通过 API 返回。
+
+部署级公共 client 默认值可以在启动 Service 前配置：
+
+```sh
+export A13N_SERVER__PUBLIC_URL="https://agent.example.com"
+export A13N_PROVIDERS__CHATGPT_CLIENT_ID="approved-public-client"
+export A13N_PROVIDERS__CHATGPT_REDIRECT_URI="https://agent.example.com/api/v1/model-providers/oauth/callback"
+```
+
+环境变量覆盖 Service TOML 的 `[providers] chatgpt_client_id` 与 `chatgpt_redirect_uri`。HTTPS 回调必须与 Service 配置的公共地址同源，以便发起浏览器的 cookie 返回。Console 提示自动完成并在授权有效期内刷新状态；必须从用户登录会话发起，不能使用 API key。仍可手动粘贴回调。若需自定义公网路径，先注册准确的 URI，在 Provider 或 `CHATGPT_REDIRECT_URI` 中设置，并通过反向代理把该路径映射到 Service 的 `GET /api/v1/model-providers/oauth/callback`，保留 query 与 cookie。回调不会根据 Host/转发请求头选择交换 URI。代理/访问日志应排除回调 query。
+
+修改 client ID 会发起新登录，不复用其他 client 的账户绑定；配置或 secret 修改会取消待完成及交换中的登录；现有授权仍使用该授权保存的 client 身份认证刷新。**Use another ChatGPT account** 保留配置的 client。没有自定义 client 时，`CHATGPT_REDIRECT_URI` 只能覆盖回环端口，不能变更 scheme、host 或 `/auth/callback` 路径。
+
+网站身份登录 client 不等于使用 ChatGPT 订阅额度的许可。此集成仍要求可刷新的 token 及直接调用订阅额度的 scope；托管/商业使用需要另获 OpenAI 批准。机密 client 只在服务端 HTTP Basic 请求头中发送 secret，同时保留 PKCE；交换、刷新和撤销使用随授权冻结的身份认证信息。Issuer、协议端点、resource 和必需 scope 由此集成固定管理，不作为用户可修改的 OAuth 参数。
 
 ## 添加模型
 
@@ -64,6 +94,14 @@ curl "$A13N_URL/api/v1/model-catalog" -H "Authorization: Bearer $A13N_API_KEY"
 模型使用其 provider 的凭据，因此创建模型或修改 `config` 也需要 provider 上的 `write` 权限。Provider 和模型属于同一工作空间。
 
 使用 `PATCH /api/v1/models/{key}`（`name`、`description`、`config`、`pricing`、`catalog_ref`、`enabled`）和 `If-Match` 值 `"{key}:{version}"` 修改模型。`{"enabled": false}` 可禁用；模型没有删除操作。推理强度等模型 API 专属设置可以作为共享模型默认值（`config.settings`），或作为 Agent 修订版本覆盖值（`model_settings`）。两者都按 provider 类型的 `settings_schemas` 校验。这些 schema 不包含运维超时、上游模型选择、provider 账号对话状态（例如 `openai_previous_response_id`、`bedrock_inference_profile`、`openrouter_models` 或辅助 `openai_moderation` 模型），以及 `max_usage` 无法完整计量的服务端工具，例如 `openai_native_tools`。
+
+### 图片输入预处理
+
+模型的**高级**设置中，**图片输入**默认开启**预处理图片**与**支持 GIF**，**最多图片数**为 20，**单张图片大小上限（MiB）**为 5。关闭 GIF 支持后，模型请求中会移除二进制 GIF；不会下载图片 URL 或据此判断格式。图片数量设为 0 会移除全部图片；大小设为 0 不限制字节数。大小预算按**单张图片的 Base64 编码字节数**计算；1 MiB 为 1,048,576 字节，不是十进制 MB 或原始文件大小。
+
+API 字段是 `config.characteristics.image_input`，不是 `config.settings`。省略时启用默认预处理，提供对象可自定义，显式 `null` 则关闭自动预处理。全部七个字段均可通过 API 配置，见[共享策略参考](../a13n-harness/models.md#image-input-policy)。编辑其他控件时，Console 保留未展示的尺寸与切分字段，以及精确的字节预算。
+
+主模型、独立子 agent 的模型与图片理解模型各自拥有自己的策略。每次 attempt 使用当次解析出的模型配置；后续 attempt（包括恢复）与其他实时模型默认值一样，重新解析当前模型。与 Harness UI 不同，Service 不会跨 attempt 冻结模型 recipe。
 
 ### 高级请求设置
 

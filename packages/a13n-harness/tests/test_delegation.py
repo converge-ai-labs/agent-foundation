@@ -37,6 +37,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID
+from a13n_harness.content import request_input_content
 from a13n_harness.environment.advanced import (
     EmptyEnvironmentRuntime,
 )
@@ -83,9 +84,9 @@ def _latest_user_text(messages: list[ModelMessage]) -> str | None:
     for message in reversed(messages):
         if not isinstance(message, ModelRequest):
             continue
-        for part in reversed(message.parts):
-            if isinstance(part, UserPromptPart) and isinstance(part.content, str):
-                return part.content
+        for item in reversed(request_input_content(message)):
+            if item.metadata.display and isinstance(item.value, str):
+                return item.value
     return None
 
 
@@ -95,7 +96,7 @@ def _returns_after_latest_user(messages: list[ModelMessage]) -> list[ToolReturnP
             index
             for index, message in enumerate(messages)
             if isinstance(message, ModelRequest)
-            and any(isinstance(part, UserPromptPart) and isinstance(part.content, str) for part in message.parts)
+            and any(item.metadata.display for item in request_input_content(message))
         ),
         default=-1,
     )
@@ -356,7 +357,9 @@ async def test_inline_children_receive_fresh_search_bindings_without_parent_inhe
     result = await HarnessBuilder().build(parent).run("delegate", bindings=parent_binding)
     assert result.output_or_raise() == "parent-done"
     assert len(created) == 3 and len({id(item) for item in created}) == 3
-    assert dispatched == [created[1].search_backends[0].provider, created[2].search_backends[0].provider]
+    # Independent child calls may dispatch in either order.
+    assert len(dispatched) == 2
+    assert set(dispatched) == {created[1].search_backends[0].provider, created[2].search_backends[0].provider}
 
 
 async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspension(
@@ -842,7 +845,9 @@ async def test_inline_delegation_forwards_child_lifecycle_before_pre_request_fai
     assert result.output_or_raise() == "handled"
     assert result.usage.requests == 2
     child_events = [event for event in events if event.run_id != parent_run_id]
-    assert len(child_events) == 3
+    assert len(child_events) == 4
+    assert child_events[0].event.payload == {"type": "run_started"}
+    child_events = child_events[1:]
     assert all(isinstance(event.event, HarnessExtensionEvent) for event in child_events)
     child_payloads = [event.event.payload for event in child_events if isinstance(event.event, HarnessExtensionEvent)]
     assert child_events[0].event.kind == "delegation"
@@ -1337,7 +1342,9 @@ async def test_inline_delegation_uses_standard_result_policy() -> None:
     assert result.output_or_raise() == "done"
 
 
-@pytest.mark.parametrize("change", ["result_type", "instance", "environment", "policy", "shared_tasks", "deferred"])
+@pytest.mark.parametrize(
+    "change", ["result_type", "instance", "environment", "configuration", "policy", "shared_tasks", "deferred"]
+)
 async def test_inline_child_binding_factory_preserves_owned_boundaries(change: str) -> None:
     from a13n_harness.capabilities import EmbeddedTaskStateCell, TaskStateBinding
 
@@ -1361,7 +1368,7 @@ async def test_inline_child_binding_factory_preserves_owned_boundaries(change: s
             yield "handled"
 
     def factory(baseline):
-        assert baseline.web is None and baseline.media_reader is None
+        assert baseline.web is None
         assert baseline.skill_selection is None and baseline.client_toolsets is None
         assert baseline.task_state is None
         assert baseline.deferred_tools_supported is False
@@ -1373,6 +1380,10 @@ async def test_inline_child_binding_factory_preserves_owned_boundaries(change: s
             return replace(baseline, instance=_bindings_factory().instance)
         if change == "environment":
             return replace(baseline, environment=EmptyEnvironmentRuntime())
+        if change == "configuration":
+            from a13n_harness import RunConfiguration
+
+            return replace(baseline, configuration=RunConfiguration(allowed_hosts=[]))
         if change == "policy":
             return replace(baseline, capabilities=())
         return replace(baseline, task_state=TaskStateBinding(source="embedded_borrowed", cell=EmbeddedTaskStateCell()))
@@ -1501,3 +1512,36 @@ async def test_summary_delegation_reads_the_context_summary_not_replayed_input(
     else:
         assert summary in payload["parent_history_summary"]
         assert "Original user request" not in payload["parent_history_summary"]
+
+
+async def test_inline_child_bindings_inherit_the_exact_run_configuration():
+    from a13n_harness import RunConfiguration
+
+    observed = []
+    configuration = RunConfiguration(allowed_hosts={"allowed.test"}, extensions={"example.filter": {"image": "keep"}})
+
+    def capture(bindings):
+        observed.append(bindings.configuration)
+        return bindings
+
+    async def parent_stream(messages, info):
+        if not _returns_after_latest_user(messages):
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps({"subagent": "reviewer", "prompt": "inspect"}),
+                    tool_call_id="delegate-config",
+                )
+            }
+        else:
+            yield "parent-done"
+
+    parent = _parent_definition(_child_definition(), FunctionModel(stream_function=parent_stream))
+    parent = replace(parent, subagents=(replace(parent.subagents[0], run_bindings_factory=capture),))
+    result = (
+        await HarnessBuilder()
+        .build(parent)
+        .run("delegate", bindings=replace(_bindings_factory(), configuration=configuration))
+    )
+    assert result.output_or_raise() == "parent-done"
+    assert observed == [configuration]

@@ -10,6 +10,7 @@ import pytest
 from a13n_harness import AgentContext, HarnessState, RunBindings
 from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.model_affinity import derive_model_affinity_id
+from a13n_harness.models import SelfHealingModelCapability
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.openai import DEFINITION
@@ -263,6 +264,9 @@ async def test_service_composition_binds_affinity_per_thread_without_mutating_cl
             executable = build(
                 root, capabilities=lambda _: [], plugins=HarnessPluginFactoryCatalog([]), instrumentation=None
             )
+            leaves = []
+            executable._agent.root_capability.apply(leaves.append)
+            assert sum(isinstance(capability, SelfHealingModelCapability) for capability in leaves) == 1
             bindings = RunBindings.embedded(model_resolver=model_resolver(root, {model.key: native}))
 
             async def run(thread: str) -> None:
@@ -634,3 +638,218 @@ async def test_explicit_model_store_and_reasoning_defaults_reach_native_wire(sto
     assert captured[0]["reasoning"] == {"effort": "medium", "summary": "detailed"}
     assert captured[0]["max_output_tokens"] == 8192
     assert "reasoning.encrypted_content" in captured[0]["include"]
+
+
+@pytest.mark.parametrize("policy, count", [(None, 1), ({}, 0), ({"max_images": 0}, 0)])
+async def test_selected_model_image_policy_is_independent_of_agent_context(policy, count):
+    from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
+    from pydantic_ai import BinaryContent
+
+    model = selected(
+        ModelConfig(
+            model_name="test",
+            model_api="openai.responses",
+            characteristics=HarnessModelCharacteristics.model_validate(
+                {"image_input": policy, "context_window_tokens": 10000}
+            ),
+        )
+    )
+    agent = ResolvedAgent(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        AgentConfig.model_validate(
+            {
+                "model": model.key,
+                "toolsets": {},
+                "model_characteristics": {"context_window_tokens": 20000, "compact_threshold": 0.7},
+            }
+        ),
+        model,
+        None,
+        {},
+        {},
+        {},
+    )
+    executable = build(agent, capabilities=lambda _: [], plugins=HarnessPluginFactoryCatalog([]), instrumentation=None)
+    traits = executable.definition.agent.model_characteristics
+    assert traits.image_input == (None if policy is None else ImageInputPolicy.model_validate(policy))
+    assert traits.context_window_tokens == 20000
+    assert traits.compact_threshold == 0.7
+    seen = []
+
+    async def infer(messages, info):
+        seen.extend(
+            item
+            for message in messages
+            for part in message.parts
+            if isinstance(part, UserPromptPart) and isinstance(part.content, (list, tuple))
+            for item in part.content
+            if isinstance(item, BinaryContent)
+        )
+        yield "done"
+
+    result = await executable.run(
+        ["read", BinaryContent(b"invalid", media_type="image/png")],
+        bindings=RunBindings.embedded(
+            model_resolver=model_resolver(agent, {model.key: FunctionModel(stream_function=infer)})
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    assert len(seen) == count
+
+
+@pytest.mark.parametrize("policy, count", [(None, 1), ({}, 0), ({"max_images": 0}, 0)])
+async def test_auxiliary_image_policy_comes_from_image_target_not_primary_or_video(policy, count):
+    from a13n_harness import HarnessModelCharacteristics
+    from pydantic_ai import BinaryContent
+    from pydantic_ai.messages import ModelResponse, TextPart
+
+    primary = selected(
+        ModelConfig(
+            model_name="primary",
+            model_api="openai.responses",
+            characteristics=HarnessModelCharacteristics(image_input=None),
+        )
+    )
+    image = selected(
+        ModelConfig(
+            model_name="image",
+            model_api="openai.responses",
+            characteristics=HarnessModelCharacteristics.model_validate({"image_input": policy}),
+        )
+    )
+    video = selected(
+        ModelConfig(
+            model_name="video",
+            model_api="openai.responses",
+            characteristics=HarnessModelCharacteristics(image_input=None),
+        )
+    )
+    agent = ResolvedAgent(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        AgentConfig.model_validate({"model": primary.key, "toolsets": {}}),
+        primary,
+        None,
+        {"image": image, "video": video},
+        {},
+        {},
+    )
+    seen = []
+
+    async def infer(messages, info):
+        seen.extend(
+            item
+            for message in messages
+            for part in message.parts
+            if isinstance(part, UserPromptPart) and isinstance(part.content, (list, tuple))
+            for item in part.content
+            if isinstance(item, BinaryContent)
+        )
+        return ModelResponse(parts=[TextPart("description")])
+
+    provider = media_understanding(agent, {image.key: FunctionModel(infer), video.key: FunctionModel(infer)})
+
+    async def inspect_media(ctx: RunContext[AgentContext]) -> str:
+        result = await provider.understand(
+            MediaUnderstandingRequest(
+                kind="image", media_type="image/png", source_name="invalid.png", source_bytes=b"invalid"
+            ),
+            usage=ModelUsageBinding.for_context(
+                ctx.deps, source="files.media_understanding", tool_id="inspect_media", tool_call_id=ctx.tool_call_id
+            ),
+        )
+        return result.text
+
+    async def stream(messages, info):
+        if len(messages) == 1:
+            yield {0: DeltaToolCall(name="inspect_media", json_args="{}", tool_call_id="image-call")}
+        else:
+            yield "done"
+
+    executable = build(
+        agent,
+        capabilities=lambda _: [Capability(id="tools", tools=[inspect_media])],
+        plugins=HarnessPluginFactoryCatalog([]),
+        instrumentation=None,
+    )
+    result = await executable.run(
+        "inspect",
+        bindings=RunBindings.embedded(
+            model_resolver=model_resolver(
+                agent,
+                {
+                    primary.key: FunctionModel(stream_function=stream),
+                    image.key: FunctionModel(infer),
+                    video.key: FunctionModel(infer),
+                },
+            )
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    assert len(seen) == count
+
+
+def test_inline_child_image_policy_is_bound_from_its_own_resolved_model():
+    from dataclasses import replace
+
+    from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
+    from a13n_service.resources.agents.schemas import SubagentSelection
+    from a13n_service.runs.agent import ResolvedSubagent
+    from pydantic import ValidationError
+
+    primary = selected(
+        ModelConfig(
+            model_name="primary",
+            model_api="openai.responses",
+            characteristics=HarnessModelCharacteristics(image_input=ImageInputPolicy(max_images=0)),
+        )
+    )
+    child_model = selected(
+        ModelConfig(
+            model_name="child",
+            model_api="openai.responses",
+            characteristics=HarnessModelCharacteristics(image_input=None),
+        )
+    )
+    root = ResolvedAgent(
+        new_object_id("ap"),
+        new_object_id("apr"),
+        AgentConfig.model_validate({"model": primary.key, "toolsets": {}}),
+        primary,
+        None,
+        {},
+        {},
+        {},
+    )
+    child = replace(
+        root,
+        agent_id=new_object_id("ap"),
+        revision_id=new_object_id("apr"),
+        model=child_model,
+        config=root.config.model_copy(update={"model": child_model.key}),
+    )
+    root = replace(
+        root,
+        subagents={
+            "child": ResolvedSubagent(
+                SubagentSelection(agent_id=child.agent_id), child.revision_id, "Independent model", child
+            )
+        },
+    )
+    executable = build(root, capabilities=lambda _: [], plugins=HarnessPluginFactoryCatalog([]), instrumentation=None)
+    assert executable.definition.agent.model_characteristics.image_input == ImageInputPolicy(max_images=0)
+    assert executable.definition.subagents[0].agent.agent.model_characteristics.image_input is None
+    with pytest.raises(ValidationError, match="frozen"):
+        primary.config.characteristics.image_input.max_images = 3
+    # A later attempt's new resolution does not mutate an already bound definition.
+    updated = replace(
+        root,
+        model=replace(
+            primary,
+            config=primary.config.model_copy(update={"characteristics": HarnessModelCharacteristics(image_input=None)}),
+        ),
+    )
+    later = build(updated, capabilities=lambda _: [], plugins=HarnessPluginFactoryCatalog([]), instrumentation=None)
+    assert later.definition.agent.model_characteristics.image_input is None
+    assert executable.definition.agent.model_characteristics.image_input == ImageInputPolicy(max_images=0)

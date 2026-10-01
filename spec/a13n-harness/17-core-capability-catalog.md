@@ -19,6 +19,7 @@ The current mandatory build contribution is deliberately narrow:
 
 | Entry                     | Primitive                                                       | Purpose                                                                                                                                              | Owner                                                      |
 | ------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Video inputs              | Mandatory `VideoUrlCapability`                                  | Acquire bounded direct video bytes or native YouTube URLs; project compatibility and single/aggregate Base64 budgets only in provider requests       | [Video inputs](16-input-model-and-output.md#video-inputs)  |
 | Logical model resolver    | Pydantic `ResolveModelId`                                       | Consult fresh `RunModelResolver` or use Harness `infer_model()`                                                                                      | [Input, Model, and Output](16-input-model-and-output.md)   |
 | Request affinity          | Mandatory final model-request Capability                        | Add opt-in Thread-derived `session_affinity_header` and independently default-on GPT-eligible `openai_prompt_cache_key` unless explicitly overridden | [Input, Model, and Output](16-input-model-and-output.md)   |
 | Typed run dependencies    | `AgentContext`                                                  | Carry Identity, Environment, model and model-context bindings, events, usage attribution, plugins, children, metadata, and state                     | [Capability Model](04-capability-model.md)                 |
@@ -32,7 +33,7 @@ The current mandatory build contribution is deliberately narrow:
 | Model context coordinator | Mandatory `ModelContextCoordinatorCapability`                   | Preserve historical overlays, resolve the typed Host/Capability/terminal projection chain, and commit one validated current request overlay          | [Context and Working State](09-context-and-memory.md)      |
 | Continuation coordinator  | `AgentContextState` typed methods                               | Provide detached versioned JSON namespaces without a second Capability registry                                                                      | [Harness State and Resume](10-snapshot-and-resume.md)      |
 
-Model self-healing remains optional. `SelfHealingModelCapability` installs the `SelfHealingModel` wrapper at the final effective request-Model boundary; the wrapper owns repair and replay behavior. Interrupted-stream semantic recovery is owned by `HarnessRunStream`, not a Capability. Plugin input/result middleware remains outside the Agent loop.
+Model self-healing is installed by default, with an explicit builder opt-out. `SelfHealingModelCapability` installs the `SelfHealingModel` wrapper at the final effective request-Model boundary; the wrapper owns repair and replay behavior. Interrupted-stream semantic recovery is owned by `HarnessRunStream`, not a Capability. Plugin input/result middleware remains outside the Agent loop.
 
 ## Optional Capability Roles
 
@@ -55,7 +56,7 @@ Model self-healing remains optional. `SelfHealingModelCapability` installs the `
 | File memory                      | Model-context Capability with run-frozen mount instructions, a file Toolset, and first-input context over Host-opened stores | [File Memory](21-file-memory.md)                                                    |
 | Record memory                    | Model-context Capability with run-frozen mount instructions, a record Toolset, and first-input recall of Host-opened stores  | [Record Memory](21a-record-memory.md)                                               |
 | Structured user interaction      | Native deferred client-side tool                                                                                             | [Tool Execution](07-tool-execution.md)                                              |
-| Media, documents, and web        | Feature Toolsets over explicit providers; Web may compose provider-native search with a Host function fallback               | [Context and Working State](09-context-and-memory.md)                               |
+| Documents and web                | Feature Toolsets over explicit providers; Web may compose provider-native search with a Host function fallback               | [Context and Working State](09-context-and-memory.md)                               |
 | Native image generation          | `NativeImageGenerationCapability` composing native `ImageGenerationTool` with a required Host saver                          | [Input, Model, and Output](16-input-model-and-output.md#native-image-generation)    |
 | Provider usage                   | `AgentContext` attribution seam                                                                                              | [Events and Usage](12-events-observability-and-usage.md)                            |
 | Subagent execution               | `SubagentCapability` selects Harness-private inline execution or a standard async Toolset backed by a complete Host operator | [Delegation and Subagents](11-delegation-and-subagents.md)                          |
@@ -88,7 +89,7 @@ flowchart LR
     Boundary[Mandatory tool execution boundary] --> PAI
     ToolReview[Optional tool risk review] --> PAI
     Integrity[Mandatory message integrity Filter] --> PAI
-    SelfHealing[Optional model self-healing] --> PAI
+    SelfHealing[Default-on model self-healing] --> PAI
     PAI --> Agent[Pydantic AI Agent loop]
 ```
 
@@ -110,7 +111,7 @@ A Host that requires a particular run Capability constructs and retains the type
 
 ## Provider Compatibility and Recovery
 
-Stable model/provider/adapter compatibility belongs to the native Model profile and adapter. Transport retries belong to the provider/client configuration. The optional `SelfHealingModelCapability` installs `SelfHealingModel` around the final effective request Model; `SelfHealingModel` owns exact one-shot history repairs. `HarnessRunStream` owns bounded `ModelAttempt` recovery after model interruption.
+Stable model/provider/adapter compatibility belongs to the native Model profile and adapter. Transport retries belong to the provider/client configuration. The default-on `SelfHealingModelCapability` installs `SelfHealingModel` around the final effective request Model; `SelfHealingModel` owns exact one-shot history repairs. `HarnessRunStream` owns bounded `ModelAttempt` recovery after model interruption.
 
 A Capability is appropriate only for actual Agent/run behavior exposed through public Pydantic hooks. It may install focused request behavior such as self-healing, but it is not the default place for provider profile facts, stream reconstruction, or retry orchestration.
 

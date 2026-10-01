@@ -21,6 +21,7 @@ import {
   ProviderConnection,
   ordinaryConfigurationSchema,
 } from "./provider-connection";
+import { ProviderAuthorization } from "./provider-authorization";
 import { useProviderDraft } from "./provider-draft";
 
 /** The name, one settings group, then the advanced disclosure. */
@@ -88,7 +89,18 @@ export function ProviderForm({
           only={["base_url"]}
         />
       </ProviderGroup>
-      {definition && (
+      {definition?.oauth_scheme && original && (
+        <ProviderAuthorization
+          provider={original.value}
+          configurationDirty={
+            JSON.stringify(draft.configuration) !==
+              JSON.stringify(original.value.config) ||
+            Object.keys(draft.section.credential).length > 0 ||
+            draft.section.removing
+          }
+        />
+      )}
+      {definition && !definition.oauth_scheme && (
         <ProviderConnection
           type={type}
           schema={definition.configuration_schema}

@@ -20,14 +20,15 @@ export function SettingsSection({
       aria-labelledby={title ? id : undefined}
     >
       {title && (
-        <div className="mb-2.5 px-1">
-          <h3 id={id} className="font-medium text-[15px] text-foreground">
+        <div className="mb-2.5">
+          <h3
+            id={id}
+            className="font-semibold text-[15px] text-foreground tracking-[-0.011em]"
+          >
             {title}
           </h3>
           {description && (
-            <p className="mt-1 text-[12.5px] text-muted-foreground">
-              {description}
-            </p>
+            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
           )}
         </div>
       )}

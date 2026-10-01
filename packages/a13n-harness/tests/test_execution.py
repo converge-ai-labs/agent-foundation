@@ -745,6 +745,10 @@ async def test_prestart_cancellation_never_calls_the_model_or_counts_budget_base
         usage=supplied_usage,
     ) as stream:
         stream.cancel()
+        started = await stream.__anext__()
+        assert isinstance(started, HarnessEvent)
+        assert isinstance(started.event, HarnessExtensionEvent)
+        assert started.event.payload["type"] == "run_started"
         terminal = await stream.__anext__()
 
     assert isinstance(terminal, HarnessRunResultEvent)
@@ -827,12 +831,28 @@ async def test_concurrent_next_is_rejected_without_closing_the_active_stream() -
     executable = _build(FunctionModel(stream_function=blocking_stream))
 
     async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
-        lifecycle = await stream.__anext__()
-        assert isinstance(lifecycle, HarnessEvent)
-        assert isinstance(lifecycle.event, HarnessExtensionEvent)
-        assert lifecycle.event.payload["type"] == "model_request_started"
+        for expected_type in ("run_started", "model_request_started"):
+            lifecycle = await stream.__anext__()
+            assert isinstance(lifecycle, HarnessEvent)
+            assert isinstance(lifecycle.event, HarnessExtensionEvent)
+            assert lifecycle.event.payload["type"] == expected_type
 
-        active_next = asyncio.create_task(stream.__anext__())
+        from a13n_harness.events import InputTextEvent
+
+        observed_input = await stream.__anext__()
+        assert isinstance(observed_input, HarnessEvent) and isinstance(observed_input.event, InputTextEvent)
+        assert observed_input.event.source == "user"
+        projected_context = await stream.__anext__()
+        assert isinstance(projected_context, HarnessEvent) and isinstance(projected_context.event, InputTextEvent)
+        assert projected_context.event.source == "context"
+        next_entered = asyncio.Event()
+
+        async def read_next():
+            next_entered.set()
+            return await stream.__anext__()
+
+        active_next = asyncio.create_task(read_next())
+        await next_entered.wait()
         await started.wait()
         with pytest.raises(RunError) as exc_info:
             await stream.__anext__()
@@ -913,7 +933,9 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
     assert enqueue_id
     assert len(calls) == 2
     assert "wait_subagent" in str(calls[1])
-    from pydantic_ai.messages import EnqueuedMessagesEvent, ModelRequest, TextContent, UserPromptPart
+    from a13n_harness.content import request_input_content
+    from a13n_harness.events import InputTextEvent
+    from pydantic_ai.messages import EnqueuedMessagesEvent, ModelRequest
 
     delivered = next(
         item for item in items if isinstance(item, HarnessEvent) and isinstance(item.event, EnqueuedMessagesEvent)
@@ -922,13 +944,21 @@ async def test_harness_lifecycle_notice_steers_active_run_and_emits_public_event
         content
         for message in delivered.event.messages
         if isinstance(message, ModelRequest)
-        for part in message.parts
-        if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
-        for content in part.content
-        if isinstance(content, TextContent)
+        for content in request_input_content(message)
     ]
-    assert content[0].metadata == {"a13n.steering-source": "async_subagent"}
-    assert content[0].content == "Background subagent subagent-1 has finished. Call wait_subagent."
+    assert content[0].metadata.display is False
+    assert content[0].metadata.source_id == "a13n.async_subagent"
+    assert content[0].value == "Background subagent subagent-1 has finished. Call wait_subagent."
+    observed = [
+        item.event
+        for item in items
+        if isinstance(item, HarnessEvent)
+        and isinstance(item.event, InputTextEvent)
+        and item.event.source == "async_subagent"
+    ]
+    assert len(observed) == 1
+    assert observed[0].content == content[0].value
+    assert observed[0].input_id == enqueue_id
     notifications = [
         item.event
         for item in items

@@ -317,6 +317,8 @@ There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `
 
 The legacy `tools.ask_user_question_timeout_seconds` input key remains accepted. Saved configuration uses `tools.interaction_timeout_seconds`. Editing a response does not restart the Host timer; expiry denies rather than approving or inventing a result.
 
+Set `A13N_OUTBOUND_TLS_VERIFY=false` before launch only when intentionally accepting unverified destination certificates. Unset or `true` retains verification. This shared process variable is not a YAML field; see [outbound TLS verification](../a13n-harness/models.md#outbound-tls-verification) for coverage, exclusions and risks.
+
 ## Outbound HTTP proxies
 
 Set standard environment variables before starting Harness UI; no YAML proxy setting is needed:
@@ -329,6 +331,19 @@ export no_proxy=localhost,127.0.0.1,::1
 
 Uppercase forms and `ALL_PROXY` are supported. Selection and bypass matching follow `httpx2`. Host-owned Web search/scrape/fetch/download requests, remote HTTPS MCP connections and update checks honor these variables, alongside the [Model HTTP client](../a13n-harness/models.md#outbound-http-proxies). Restart the process after changing its environment. When running in a container, the proxy address must be reachable from that container.
 
-The proxy you configure is trusted outbound infrastructure. URL validation, local DNS prechecks, TLS verification, redirect checks and response limits remain in effect, but the proxy owns final DNS resolution and destination network restrictions. Web requests that connect directly, including `NO_PROXY` bypasses, retain their existing IP checks and pinning. There is no custom IP-based CONNECT protocol or fallback to direct when the proxy fails.
+The proxy you configure is trusted outbound infrastructure and owns destination DNS and network restrictions. Host Web tools use native HTTP connections and never pre-resolve destination hostnames or pin IP addresses, including on direct and `NO_PROXY` routes. This allows proxy-only hosts to work without local destination DNS. HTTP(S) URL validation, redirect checks, deadlines and response limits remain enabled. TLS verification is enabled by default; only the operator-controlled [outbound TLS switch](../a13n-harness/models.md#outbound-tls-verification) can opt out for owned clients. A failed proxy request does not fall back to direct.
+
+`run_configuration` selects one immutable configuration for each accepted root Run and its children:
+
+```yaml
+run_configuration:
+  allowed_hosts:
+    - api.example.com
+    - 'regex:(?:[a-z0-9-]+\.)*docs\.example\.com'
+  extensions:
+    example.reader: {images: true}
+```
+
+Omit `allowed_hosts` or set it to null for unrestricted destinations; `[]` denies all. Ordinary entries match exact normalized hostnames or IP literals; entries prefixed with `regex:` use Python regular expressions to match the entire normalized hostname. The example allows `docs.example.com` and its subdomains, not `docs.example.com.evil.test`. Use `\.` for literal dots and YAML single quotes to preserve backslashes. Invalid/empty patterns fail configuration validation. Patterns see lowercased ASCII IDNA hostnames or canonical IPs, never URLs, paths or ports; keep them simple and caller-authored. See [host rules and regular expressions](../a13n-harness/context.md#host-rules-and-regular-expressions) for examples, matching boundaries and Python/JSON escaping. Globs and CIDRs are not supported. Include every required Model, Web and MCP hostname. The check uses declared URL hostnames on direct and proxy routes, including owned redirect hops; it never resolves DNS or pins IPs. Root and child compositions retain the snapshot; edits affect later root Runs, not active or reconstructed ones. API-key Model clients and Host Web/MCP support it; opaque subscription Model transports reject restrictive configurations. Extensions are namespaced JSON values for explicitly opting-in consumers, not automatic Capability constructor settings. Arbitrary shell and trusted plugin traffic require deployment or Environment network isolation.
 
 Plaintext loopback MCP and plaintext local/provider-private Envd attachments stay direct. HTTPS Envd attachments honor proxy variables. Third-party SDK-owned transports retain their SDK's proxy behavior; daemon-initiated Envd pairing and reverse WebSocket connections are separate from the Python HTTP attachment client.

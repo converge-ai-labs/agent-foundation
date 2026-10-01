@@ -9,7 +9,7 @@ description: 配置 agent，开始对话，并跟踪、引导或回复运行。
 
 ## Agent
 
-在 Console 中打开 **Agents → Create agent**。每次保存创建一个不可变**版本** （API 中称为 revision）；**Versions** 列出版本，**Set as default** 选择新对话使用的版本。**Import from YAML** 和 **Export agent** 用于在工作空间之间复制 agent，将每个引用资源匹配到目标工作空间中的资源。
+在 Console 中打开 **Agents → Create manually**。每次保存创建一个不可变**版本** （API 中称为 revision）；**Versions** 列出版本，**Set as default** 选择新对话使用的版本。**Import from YAML** 和 **Export agent** 用于在工作空间之间复制 agent，将每个引用资源匹配到目标工作空间中的资源。
 
 通过 API 使用：
 
@@ -31,6 +31,8 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 内置 [Agent Composer](agent-composer.md)也是 agent，是工作空间中唯一 `source: "builtin"` 的 agent，不能修改或归档。
 
 ### Agent 配置
+
+在手动配置页面展开 **Tools** 下的工具集，可选择具体工具，并为每个操作设置 **Allow**、**Ask** 或 **Deny**。三个权限按钮分别用勾号、手掌和禁止符号表示。
 
 修订版本的 `config` 包含：
 
@@ -160,7 +162,6 @@ OpenAPI 和生成客户端将此字段表示为 JSON 对象，不重复 Pydantic
 ```python
 import json
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
-
 
 def history_json(messages: list[ModelMessage]) -> list[dict]:
     return json.loads(ModelMessagesTypeAdapter.dump_json(messages))

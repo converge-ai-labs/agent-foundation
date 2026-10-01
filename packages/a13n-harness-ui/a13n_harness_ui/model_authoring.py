@@ -21,13 +21,16 @@ from a13n_harness_ui.model_presets import (
     SettingsPreset,
     known_context_window,
     known_model_capabilities,
+    known_model_characteristics,
     settings_presets,
     validate_base_url,
 )
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl, describe_reasoning_mode
 from a13n_harness_ui.resource_names import model_name
 
-type AuthenticationKind = Literal["api_key", "codex_subscription", "grok_subscription", "copilot_subscription"]
+type AuthenticationKind = Literal[
+    "api_key", "chatgpt_subscription", "codex_subscription", "grok_subscription", "copilot_subscription"
+]
 
 
 class ModelChoice(StrictModel):
@@ -51,9 +54,9 @@ CODEX_CONTEXT_CHOICES = (
 class AccountConnection(StrictModel):
     """Built-in account actions shared by terminal and browser authoring."""
 
-    provider: Literal["codex", "grok", "copilot"]
+    provider: Literal["chatgpt", "codex", "grok", "copilot"]
     label: str
-    login_methods: tuple[Literal["device", "browser"], ...]
+    login_methods: tuple[Literal["device", "browser", "manual_callback"], ...]
     model_discovery: bool = False
     source_selection: bool = False
 
@@ -106,6 +109,21 @@ SUBSCRIPTION_CONNECTIONS = (
             provider="copilot",
             label="GitHub Copilot",
             login_methods=("device",),
+            model_discovery=True,
+            source_selection=True,
+        ),
+        models=(),
+        default_model="",
+    ),
+    ModelConnection(
+        id="chatgpt-subscription",
+        label="ChatGPT subscription",
+        provider="openai-chatgpt",
+        authentication="chatgpt_subscription",
+        account=AccountConnection(
+            provider="chatgpt",
+            label="ChatGPT",
+            login_methods=("manual_callback", "browser"),
             model_discovery=True,
             source_selection=True,
         ),
@@ -311,7 +329,8 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
         if connection.authentication == "api_key"
         else None
     )
-    known_capabilities = known_model_capabilities(route)
+    known_inputs = known_model_characteristics(route)
+    known_capabilities = known_inputs.capabilities if known_inputs is not None else None
     context = (
         HarnessModelCharacteristics().context_window_tokens
         if connection.authentication in {"grok_subscription", "copilot_subscription"}
@@ -319,6 +338,14 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
         if known_context
         else 350000
     )
+    characteristics = HarnessModelCharacteristics(
+        context_window_tokens=context,
+        capabilities=known_capabilities or frozenset(),
+        proactive_context_management_threshold=0.65,
+        compact_threshold=0.90,
+    )
+    if known_inputs is not None and known_inputs.url_input.video:
+        characteristics = characteristics.model_copy(update={"url_input": known_inputs.url_input})
     return ModelOptions(
         name=model_name(connection.id, request.model_id),
         route=route,
@@ -329,12 +356,7 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
         context_window=context,
         known_context_window=known_context,
         context_choices=CODEX_CONTEXT_CHOICES if connection.id == "codex" else (),
-        characteristics=HarnessModelCharacteristics(
-            context_window_tokens=context,
-            capabilities=known_capabilities or frozenset(),
-            proactive_context_management_threshold=0.65,
-            compact_threshold=0.90,
-        ),
+        characteristics=characteristics,
         known_capabilities=known_capabilities is not None,
         supports_service_tier=connection.id in {"codex", "openai-responses", "openai-chat"},
         reasoning_mode=describe_reasoning_mode(route, request.settings or {}),
@@ -404,10 +426,14 @@ def recipe_name(recipe: ModelRecipe) -> str:
 def _characteristics(route: str, authored: ModelCharacteristics | None) -> ModelCharacteristics:
     """Materialize omitted capabilities before any JSON or YAML boundary."""
     characteristics = authored if authored is not None else HarnessModelCharacteristics()
-    if "capabilities" not in characteristics.model_fields_set:
-        known = known_model_capabilities(route)
-        if known is not None:
-            characteristics = characteristics.model_copy(update={"capabilities": known})
+    known = known_model_characteristics(route)
+    if known is not None:
+        updates = {
+            field: getattr(known, field)
+            for field in ("capabilities", "url_input")
+            if field not in characteristics.model_fields_set and (field != "url_input" or known.url_input.video)
+        }
+        characteristics = characteristics.model_copy(update=updates)
     return characteristics
 
 
@@ -417,5 +443,9 @@ def recipe_document(recipe: ModelRecipe) -> dict[str, JsonValue]:
     characteristics = _characteristics(recipe.route, recipe.model_characteristics)
     policy = characteristics.model_dump(mode="json")
     policy["capabilities"] = sorted(item.value for item in characteristics.capabilities)
+    if "url_input" in characteristics.model_fields_set:
+        # Preserve an explicit empty declaration through creation and re-authoring,
+        # just as capabilities=[] overrides reviewed creation defaults.
+        policy["url_input"] = characteristics.url_input.model_dump(mode="json")
     document["model_characteristics"] = policy
     return document

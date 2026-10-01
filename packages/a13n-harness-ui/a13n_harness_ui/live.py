@@ -860,7 +860,7 @@ class HarnessUiSummaryHub:
 
 def _bounded_payload(event: AguiEvent) -> tuple[dict[str, JsonValue] | None, bool]:
     try:
-        payload = _LIVE_PAYLOAD_ADAPTER.validate_python(event.model_dump(mode="json"))
+        payload = _LIVE_PAYLOAD_ADAPTER.validate_python(event.model_dump(mode="json", by_alias=True))
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     except (TypeError, ValueError, ValidationError):
         return None, True

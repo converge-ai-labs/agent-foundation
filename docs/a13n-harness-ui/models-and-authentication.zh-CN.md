@@ -68,17 +68,40 @@ a13n-harness-ui auth status
 a13n-harness-ui login codex
 a13n-harness-ui login grok
 a13n-harness-ui login copilot
+a13n-harness-ui login chatgpt
 a13n-harness-ui login codex --browser
 a13n-harness-ui auth key list
 a13n-harness-ui auth key set key-primary
 a13n-harness-ui auth key delete key-primary
 ```
 
-默认使用设备授权，无须宿主机回调。自行打开打印的 URL。只有浏览器能访问宿主机回环回调时，才使用 `--browser`；Codex 使用 `http://localhost:1455/auth/callback`。不会自动回退到其他登录方式。授权十五分钟内到期。替换另一个共享账户需通过 CLI 使用 `--allow-account-switch`。
+Codex、Grok 和 Copilot 默认使用设备授权，无须宿主机回调。自行打开打印的 URL。只有浏览器能访问宿主机回环回调时，才使用 `--browser`；Codex 使用 `http://localhost:1455/auth/callback`。不会自动回退到其他登录方式。授权十五分钟内到期。替换另一个共享账户需通过 CLI 使用 `--allow-account-switch`。
 
 使用 API 时，在首次设置、`a13n-harness-ui add model`，或 `a13n-harness-ui add agent` 的 **Create a new model** 分支选择 **API key** 。选择提供方/协议，确认或修改基础 URL，在不回显凭据框输入密钥，选择提供方模型建议（或手动输入区分大小写的 ID），选择设置预设，并检查工作上下文预算。也可用 `key:key-primary` 引用已存密钥，或 `env:OPENAI_API_KEY` 引用 Harness UI 进程可用的环境变量。新密钥立即以新引用保存在本地密钥存储中，与配置发布独立。不要将 API 密钥粘贴到普通输入框。
 
 已存 API 密钥以明文保存于数据根的独立 `auth.json`，文件权限为私有。保护宿主机和备份。配置和 Run 快照只含引用，不含密钥字节。凭据保存/登录与设置发布独立，取消设置不会撤销。
+
+## ChatGPT 订阅
+
+在 Add Model 选择 **ChatGPT subscription**，或运行 `a13n-harness-ui login chatgpt`。终端先显示登录链接，再通过隐藏输入要求提供**完整回调 URL**。授权后复制浏览器地址栏的全部 URL，即使回环页面无法访问也可以。不要粘贴到对话或分享给别人：其中包含一次性授权码。无效 URL 可以修正；交换失败则需要重新登录。
+
+WebUI 优先尝试自动回环回调。如果服务器位于远端，展开 **Callback cannot reach this server?** 并粘贴完整 URL。两条路径使用同一套校验和交换逻辑，绝不请求粘贴的 URL。这是授权码回调流程，不是设备验证码。
+
+```yaml
+schema_version: "1"
+kind: model
+id: model-chatgpt
+name: ChatGPT Subscription
+route: openai-chatgpt:YOUR_ACCOUNT_MODEL_SLUG
+authentication:
+  kind: chatgpt_subscription
+settings: {}
+model_configuration: {}
+```
+
+登录后发现模型 slug，或手动输入。账户可见性不保证推理权限。ChatGPT 使用公共 Responses 端点，固定 `store: false`、`stream: true`、完整输入历史和 developer 指令；普通调用由原生 Model 收集必需的流。不支持端点覆盖、静态 API 密钥、previous-response ID、temperature、Top P、输出 token 上限，以及策略允许的网页搜索之外的托管工具。
+
+凭据以明文保存在 Host 数据根的私有 `auth.json`，与 API 密钥同文件但分区独立，绝不使用 `~/.codex` 或 Codex 凭据。`a13n-harness-ui auth logout chatgpt` 清除 token，保留已颁发注册信息供后续登录，并请求 OpenAI 撤销授权；未确认撤销会单独报告。更换账户会影响使用此 Host 的所有人。
 
 ## GitHub Copilot 订阅
 
@@ -131,7 +154,20 @@ model_characteristics:
   compact_threshold: 0.90
 ```
 
-原生 Google API 的已知 Gemini Model 还可包含 `audio_understanding` 和 `video_understanding`。默认值遵循所选协议：兼容路由支持图像，不代表仅凭上游模型在其他 API 支持音频/视频就自动获得这些输入能力。
+原生 Google API 的已知 Gemini Model 声明 `audio_understanding`、`video_understanding`，以及结构化的 `url_input.video: [youtube]`。默认值遵循所选协议：兼容路由不会自动获得音频、视频或原生 YouTube 支持。直接视频 URL 按二进制视频能力下载为有界内联内容。
+
+对于现有原生 Google Model，确认所选端点支持后，将以下结构化 URL 声明加入现有模型特征。无需 Agent Capability 或 reader：
+
+```yaml
+model_characteristics:
+  capabilities: [image_understanding, audio_understanding, video_understanding]
+  url_input:
+    video: [youtube]
+  video_input:
+    max_video_bytes: 10485760
+```
+
+Agent 可调用默认 `read_video_url(url, instructions=None, media_type=None)`。直接 HTTP(S) 视频下载为原始字节 `BinaryContent`，SDK 编码 Base64；本地 `view` 和直接传入视频也受编码后默认 10 MiB 单个／总量预算约束。不做压缩、切分、帧提取或上传。YouTube 保持原生 URL，不支持则拒绝，无下载回退。粘贴的链接仍是文本。provider 的 413 或明确 payload 超限错误会沿用 self-healing 移除内联图像／视频后重试一次，普通认证、权限、MIME、限流错误不会触发；下载源错误单独返回工具错误。请求过滤和恢复均保留原始历史。
 
 能力与 Agent 工具和模型输出模态分开。尤其是文件 `view` 工具用这些声明直接向活动模型附加媒体。没有匹配能力时，需要显式配置[媒体理解回退](../a13n-harness/multimedia-understanding.md)，否则报告不可用。
 
@@ -330,16 +366,34 @@ Grok 使用 `kind: grok_subscription` 和兼容 `grok:` 路由。Copilot 使用 
 
 在 `model_characteristics` 中：
 
-| 字段                                     | 提供对象时的默认值 | 含义                                                                                                                                   |
-| ---------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `capabilities`                           | `[]`               | 可选原生策略：`image_understanding`、`video_understanding`、`audio_understanding`；接受 `document_understanding`，但 Harness UI 不使用 |
-| `context_window_tokens`                  | `null`             | 正数工作上下文预算；省略保留原生/目录行为                                                                                              |
-| `proactive_context_management_threshold` | `0.65`             | 0–1 比例，或 `null` 关闭派生的主动阈值                                                                                                 |
-| `compact_threshold`                      | `0.90`             | 大于 0 且不超过 1 的比例                                                                                                               |
+| 字段                                     | 提供对象时的默认值 | 含义                                                                                                          |
+| ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `capabilities`                           | `[]`               | 二进制输入声明：`image_understanding`、`video_understanding`、`audio_understanding`、`document_understanding` |
+| `url_input.video`                        | `[]`               | 原生视频 URL 子类型：`youtube`；与二进制视频能力独立                                                          |
+| `video_input.max_video_bytes`            | `10485760`         | 单个视频和整次请求所有内联视频的 Base64 编码后总字节上限                                                      |
+| `context_window_tokens`                  | `null`             | 正数工作上下文预算；省略保留原生/目录行为                                                                     |
+| `proactive_context_management_threshold` | `0.65`             | 0–1 比例，或 `null` 关闭派生的主动阈值                                                                        |
+| `compact_threshold`                      | `0.90`             | 大于 0 且不超过 1 的比例                                                                                      |
 
 Harness UI 在配置和已保存快照中接受旧名称 `context_window`。新序列化和编辑器保存使用 `context_window_tokens`；两者都提供时值必须一致。读取已有文件或对象不改写它们。核心 Harness Agent spec 要求规范名称。
 
 这些值指导 Harness 行为，不能让模型获得其本身缺少的模态或 token 权限。Agent 级显式上下文能力阈值仍优先。改变通用示例前，检查所选提供方支持的设置。
+
+### 图片输入预处理
+
+模型文件支持 `model_characteristics.image_input`，它独立于上下文阈值与 capabilities。省略时使用默认预处理，提供对象可自定义，设为 `null` 则关闭自动预处理：
+
+```yaml
+model_characteristics:
+  image_input:
+    support_gif: false
+    max_images: 10
+    max_image_bytes: 5242880
+```
+
+完整的七个字段及默认值见共享的[图片输入策略参考](../a13n-harness/models.md#image-input-policy)，包括尺寸与切分控制。字节预算按**单张图片的 Base64 编码大小**计算，不是原始文件大小或整个请求的大小。对象中省略的字段保留原生默认值。GIF 支持是显式声明的策略，不会自动探测模型。
+
+主模型、独立子 agent 的模型与图片理解模型各自使用自己的策略。Run 捕获会冻结完整策略；即使之后修改模型文件，恢复仍使用捕获的值。旧捕获保留原有序列化结果，不会被改写。
 
 ### 账户存储位置
 

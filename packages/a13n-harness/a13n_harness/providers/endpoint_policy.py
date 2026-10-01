@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import ipaddress
-import socket
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from urllib.parse import SplitResult, parse_qsl, urlsplit, urlunsplit
 
-from anyio import to_thread
+from a13n_harness.configuration import HostNotAllowedError, RunConfiguration, normalize_host
 
 _SENSITIVE_QUERY_NAMES = frozenset(
     {
@@ -25,13 +23,6 @@ _SENSITIVE_QUERY_NAMES = frozenset(
         "token",
     }
 )
-_CLOUD_METADATA_ADDRESSES = frozenset(
-    {
-        ipaddress.ip_address("100.100.100.200"),
-        ipaddress.ip_address("169.254.169.254"),
-        ipaddress.ip_address("fd00:ec2::254"),
-    }
-)
 
 
 class EndpointPolicyError(ValueError):
@@ -40,56 +31,31 @@ class EndpointPolicyError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class EndpointPolicy:
-    """Normalize destinations and reject unsafe address or redirect changes."""
+    """URL syntax, HTTPS and Run hostname authorization; no DNS or IP policy."""
 
-    allowed_private_domains: frozenset[str] = frozenset()
-    allowed_private_networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = ()
+    configuration: RunConfiguration = field(default_factory=RunConfiguration)
     require_https: bool = False
     allowed_http_origins: frozenset[str] = frozenset()
 
     @classmethod
-    def from_operator_allowlist(
-        cls,
-        *,
-        private_domains: Iterable[str] = (),
-        private_cidrs: Iterable[str] = (),
-        require_https: bool = False,
-        http_origins: Iterable[str] = (),
-    ) -> EndpointPolicy:
-        domains = frozenset(_normalize_domain(value) for value in private_domains)
-        networks = tuple(ipaddress.ip_network(value, strict=True) for value in private_cidrs)
-        origins = frozenset(_normalize_http_origin(value) for value in http_origins)
+    def from_http_origins(cls, *, require_https: bool = False, http_origins: Iterable[str] = ()) -> EndpointPolicy:
         return cls(
-            allowed_private_domains=domains,
-            allowed_private_networks=networks,
             require_https=require_https,
-            allowed_http_origins=origins,
+            allowed_http_origins=frozenset(_normalize_http_origin(value) for value in http_origins),
         )
 
-    async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str:
-        """Normalize and validate an endpoint, including its current DNS answers."""
+    def for_run(self, configuration: RunConfiguration) -> EndpointPolicy:
+        return replace(self, configuration=configuration)
 
-        normalized, hostname, port = self.validate_syntax(endpoint)
-        try:
-            literal_address = ipaddress.ip_address(hostname)
-        except ValueError:
-            literal_address = None
-        if literal_address is not None:
-            self.validate_address(hostname, literal_address)
-            return normalized
-        if resolve_dns:
-            addresses = await to_thread.run_sync(_resolve_addresses, hostname, port, abandon_on_cancel=True)
-            if not addresses:
-                raise EndpointPolicyError("endpoint hostname has no address")
-            for address in addresses:
-                self.validate_address(hostname, address)
-        return normalized
+    async def validate(self, endpoint: str) -> str:
+        """Normalize and authorize the declared destination without resolving it."""
+        return self.validate_syntax(endpoint)[0]
 
-    async def validate_redirect(self, source: str, target: str, *, resolve_dns: bool = True) -> tuple[str, bool]:
+    async def validate_redirect(self, source: str, target: str) -> tuple[str, bool]:
         """Validate one redirect and report whether origin-bound credentials may be reused."""
 
         source_normalized, _, _ = self.validate_syntax(source)
-        target_normalized = await self.validate(target, resolve_dns=resolve_dns)
+        target_normalized = await self.validate(target)
         source_parsed = urlsplit(source_normalized)
         target_parsed = urlsplit(target_normalized)
         source_origin = _origin(source_parsed)
@@ -115,7 +81,11 @@ class EndpointPolicy:
         if any(name.lower() in _SENSITIVE_QUERY_NAMES for name, _ in parse_qsl(parsed.query, keep_blank_values=True)):
             raise EndpointPolicyError("endpoint query contains a sensitive parameter")
 
-        hostname = _normalize_domain(parsed.hostname)
+        try:
+            hostname = normalize_host(parsed.hostname)
+            self.configuration.authorize_url(endpoint)
+        except (HostNotAllowedError, ValueError) as error:
+            raise EndpointPolicyError(str(error)) from error
         effective_port = port or (443 if parsed.scheme == "https" else 80)
         host = f"[{hostname}]" if ":" in hostname else hostname
         default_port = (parsed.scheme == "https" and effective_port == 443) or (
@@ -131,33 +101,6 @@ class EndpointPolicy:
         ):
             raise EndpointPolicyError("endpoint must use HTTPS")
         return normalized, hostname, effective_port
-
-    def validate_address(self, hostname: str, address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None:
-        if address in _CLOUD_METADATA_ADDRESSES:
-            raise EndpointPolicyError("cloud metadata destinations are denied")
-        if (
-            address.is_loopback or address.is_link_local or address.is_multicast or address.is_unspecified
-        ) and not self._allows_private(hostname, address):
-            raise EndpointPolicyError("non-routable endpoint destination is denied")
-        if address.is_private and not self._allows_private(hostname, address):
-            raise EndpointPolicyError("private endpoint destination is not allowlisted")
-
-    def _allows_private(self, hostname: str, address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-        domain_allowed = any(
-            hostname == domain or hostname.endswith(f".{domain}") for domain in self.allowed_private_domains
-        )
-        network_allowed = any(address in network for network in self.allowed_private_networks)
-        return domain_allowed or network_allowed
-
-
-def _normalize_domain(value: str) -> str:
-    domain = value.strip().rstrip(".").lower()
-    if not domain or len(domain) > 253:
-        raise EndpointPolicyError("invalid domain name")
-    try:
-        return domain.encode("idna").decode("ascii")
-    except UnicodeError as error:
-        raise EndpointPolicyError("invalid domain name") from error
 
 
 def _normalize_http_origin(value: str) -> str:
@@ -178,15 +121,3 @@ def _origin(parsed: SplitResult) -> str:
     host = f"[{hostname}]" if ":" in hostname else hostname
     default_port = (scheme == "https" and port == 443) or (scheme == "http" and port == 80)
     return f"{scheme}://{host}" if default_port else f"{scheme}://{host}:{port}"
-
-
-def _resolve_addresses(hostname: str, port: int) -> tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, ...]:
-    try:
-        literal = ipaddress.ip_address(hostname)
-    except ValueError:
-        try:
-            results = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
-        except socket.gaierror as error:
-            raise EndpointPolicyError("endpoint hostname could not be resolved") from error
-        return tuple(dict.fromkeys(ipaddress.ip_address(result[4][0]) for result in results))
-    return (literal,)

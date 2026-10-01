@@ -218,6 +218,11 @@ async def test_own_effects_confirm_but_concurrent_write_never_advances_manifest(
 
 async def test_organizer_runs_real_restricted_harness_and_gates_clean_or_cooled_scopes(tmp_path, monkeypatch):
     root, source, scope, store = await _seed(tmp_path)
+    configuration = {"allowed_hosts": ["model.test"], "extensions": {"example.reader": {"images": True}}}
+    value = yaml.safe_load(root.read_text())
+    value["run_configuration"] = configuration
+    root.write_text(yaml.safe_dump(value))
+    source = await load_harness_ui_configuration(root)
     calls = []
 
     async def model(messages, info):
@@ -228,6 +233,8 @@ async def test_organizer_runs_real_restricted_harness_and_gates_clean_or_cooled_
         yield "No reorganization needed."
 
     async def resolve(self, context, model_id):
+        assert self.configuration.model_dump(mode="json") == configuration
+        assert context.deps.configuration == self.configuration
         return FunctionModel(stream_function=model)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)

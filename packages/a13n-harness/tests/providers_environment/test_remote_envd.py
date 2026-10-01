@@ -488,3 +488,18 @@ async def test_websocket_device_describe_does_not_open_session(initialized):
         assert initialized[0].sessions == []
         await connection.close()
         await attached
+
+
+@pytest.mark.parametrize("value,expected", [(None, True), ("true", True), ("false", False)])
+def test_http_envd_uses_operator_tls_default_and_preserves_explicit_override(monkeypatch, value, expected):
+    import ssl
+
+    monkeypatch.delenv("A13N_OUTBOUND_TLS_VERIFY", raising=False)
+    if value is not None:
+        monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", value)
+    configuration = HttpEnvdConnectionConfiguration(endpoint="https://example.com")
+    credential = HttpEnvdCredential(token=SecretStr("secret"))
+    assert HttpEnvdProviderRuntime(configuration, credential).verify is expected
+    assert HttpEnvdProviderRuntime(configuration, credential, verify=True).verify is True
+    custom = ssl.create_default_context()
+    assert HttpEnvdProviderRuntime(configuration, credential, verify=custom).verify is custom

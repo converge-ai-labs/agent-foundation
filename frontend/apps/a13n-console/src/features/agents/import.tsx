@@ -1,8 +1,8 @@
 import {
   CaretDownIcon,
-  ChatIcon,
   FileArrowUpIcon,
   PlusIcon,
+  RocketLaunchIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -51,48 +51,44 @@ export function AgentCreationMenu() {
   const [busy, setBusy] = useState(false);
   return (
     <>
-      <div className={styles.splitButton}>
-        <Button
-          ref={triggerRef}
-          variant="default"
-          onClick={() => navigate("new")}
-        >
-          <PlusIcon size={15} aria-hidden="true" />
-          {t("Create agent")}
-        </Button>
-        <Menu>
-          <MenuTrigger
-            render={
-              <Button
-                variant="default"
-                size="icon"
-                aria-label={t("More ways to create an agent")}
-                title={t("More ways to create an agent")}
-              />
-            }
+      <div className={styles.creationActions}>
+        {composer.available && (
+          <Button
+            variant="default"
+            loading={composer.pending}
+            onClick={() => composer.start()}
           >
-            <CaretDownIcon size={14} aria-hidden="true" />
-          </MenuTrigger>
-          <MenuPopup align="end" className="min-w-48">
-            <MenuItem onClick={() => navigate("new")}>
-              <PlusIcon size={16} aria-hidden="true" />
-              {t("Create manually")}
-            </MenuItem>
-            {composer.available && (
-              <MenuItem
-                disabled={composer.pending}
-                onClick={() => composer.start()}
-              >
-                <ChatIcon size={16} aria-hidden="true" />
-                {t("Create with AI")}
+            <RocketLaunchIcon size={16} aria-hidden="true" />
+            {t("Create with AI")}
+          </Button>
+        )}
+        <div className={styles.splitButton}>
+          <Button variant="outline" onClick={() => navigate("new")}>
+            <PlusIcon size={15} aria-hidden="true" />
+            {t("Create manually")}
+          </Button>
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  ref={triggerRef}
+                  variant="outline"
+                  size="icon"
+                  aria-label={t("More ways to create an agent")}
+                  title={t("More ways to create an agent")}
+                />
+              }
+            >
+              <CaretDownIcon size={14} aria-hidden="true" />
+            </MenuTrigger>
+            <MenuPopup align="end" className="min-w-48">
+              <MenuItem onClick={() => setOpen(true)}>
+                <FileArrowUpIcon size={16} aria-hidden="true" />
+                {t("Import YAML")}
               </MenuItem>
-            )}
-            <MenuItem onClick={() => setOpen(true)}>
-              <FileArrowUpIcon size={16} aria-hidden="true" />
-              {t("Import YAML")}
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
+            </MenuPopup>
+          </Menu>
+        </div>
       </div>
       <ModalFrame
         open={open}

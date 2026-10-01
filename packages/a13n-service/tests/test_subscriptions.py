@@ -1,7 +1,6 @@
 """Subscriptions: admin configuration, write-only signing secrets, signed webhook delivery and redelivery."""
 
 import json
-import socket
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -65,9 +64,9 @@ async def test_subscription_configuration_is_admin_only(service) -> None:  # typ
     assert SECRET not in json.dumps(stored.signing_secret)
 
     assert (await service.client.post(base, json={**body, "kinds": ["run.started"]})).status_code == 400
-    # Link-local metadata addresses are never permitted destinations.
-    metadata = await service.client.post(base, json={**body, "url": "http://169.254.169.254/latest"})
-    assert metadata.status_code == 400 and metadata.json()["error"]["details"]["field"] == "url"
+    # URL fragments are not part of an HTTP destination.
+    invalid = await service.client.post(base, json={**body, "url": "http://127.0.0.1:9/hook#fragment"})
+    assert invalid.status_code == 400 and invalid.json()["error"]["details"]["field"] == "url"
 
     change = {"kinds": ["run.failed", "run_attempt.failed"], "enabled": False}
     assert (await service.client.patch(item, json=change)).status_code == 428
@@ -354,25 +353,16 @@ async def test_the_status_alone_settles_a_delivery(service: SimpleNamespace, run
         assert await status(runtime, moved) == ("dead", 1, "HTTP 302") and len(received) == 1
 
 
-async def test_destinations_are_checked_at_the_address_connected(  # type: ignore[no-untyped-def]
-    service: SimpleNamespace, runs_kit: SimpleNamespace, monkeypatch
-) -> None:
+async def test_destinations_are_checked_again_at_delivery(service: SimpleNamespace, runs_kit: SimpleNamespace) -> None:
     await runs_kit.pause_sweeps(service)
-    resolve = socket.getaddrinfo
-
-    def rebound(host: str | bytes | None, *args, **kwargs):  # type: ignore[no-untyped-def]
-        # A name that passed its check when configured now answers with a loopback address.
-        return resolve("127.0.0.1" if host in {"rebind.test", b"rebind.test"} else host, *args, **kwargs)
-
-    monkeypatch.setattr(socket, "getaddrinfo", rebound)
     runtime = service.runtime
     with receiver([200]) as (url, received):
         subscription = await subscribe(service, url, ["run.completed"])
-        rebind = url.replace("127.0.0.1", "rebind.test")
-        refused = await queue(runtime, subscription["id"], 1, url=rebind)
-        await send(runtime, attempts=1, policy=EndpointPolicy())
+        refused = await queue(runtime, subscription["id"], 1, url=url)
+        await send(runtime, attempts=1, policy=EndpointPolicy(require_https=True))
         assert await status(runtime, refused) == ("dead", 1, "EndpointPolicyError") and received == []
-        # The deployment's policy allows loopback, so the same name is delivered to.
-        allowed = await queue(runtime, subscription["id"], 2, url=rebind)
-        await send(runtime, attempts=1)
+        # An exact HTTP origin exception permits the same destination on the next attempt.
+        allowed = await queue(runtime, subscription["id"], 2, url=url)
+        policy = EndpointPolicy.from_http_origins(require_https=True, http_origins=(url.removesuffix("/hook"),))
+        await send(runtime, attempts=1, policy=policy)
         assert await status(runtime, allowed) == ("delivered", 1, None) and len(received) == 1

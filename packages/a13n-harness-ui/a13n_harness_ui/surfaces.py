@@ -274,6 +274,7 @@ class TranscriptPart(SurfaceModel):
     tool_images: tuple[ToolImageView, ...] = ()
     mcp_apps: tuple[AppReference, ...] = ()
     tool_image_unavailable: bool = False
+    content_parts: tuple[dict[str, JsonValue], ...] = ()
     value: JsonValue | None = None
     value_omitted: bool = False
 
@@ -504,6 +505,8 @@ class ThreadDeferredResponse(SurfaceModel):
 
 
 class ChildToolCallView(SurfaceModel):
+    subagent_run_id: str | None = None
+    content_parts: tuple[dict[str, JsonValue], ...] = ()
     tool_call_id: str = Field(min_length=1, max_length=256)
     tool_name: str = Field(min_length=1, max_length=256)
     status: Literal["running", "success", "failed", "denied", "interrupted"]

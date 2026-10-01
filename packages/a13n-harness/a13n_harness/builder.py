@@ -35,6 +35,7 @@ from a13n_harness._output_contract import (
 from a13n_harness.capabilities.context import (
     HandoffCapability,
 )
+from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import (
     LifecycleEventCapability,
 )
@@ -44,6 +45,7 @@ from a13n_harness.capabilities.steering import (
 from a13n_harness.capabilities.tool_proxy import (
     ToolProxyPlan,
 )
+from a13n_harness.capabilities.video_url import VideoUrlCapability
 from a13n_harness.capability_types import (
     CapabilityTypeCatalog,
     first_party_declarative_capability_types,
@@ -62,6 +64,7 @@ from a13n_harness.errors import (
 )
 from a13n_harness.execution import ExecutableAgent
 from a13n_harness.filters.cold_start import ColdStartFilterCapability, ColdStartFilterConfiguration
+from a13n_harness.filters.image import ImageFilterCapability
 from a13n_harness.filters.integrity import (
     MessageIntegrityFilterCapability,
 )
@@ -70,6 +73,7 @@ from a13n_harness.model_context import (
     ModelContextCoordinatorCapability,
 )
 from a13n_harness.models.binding import resolve_run_model
+from a13n_harness.models.capability import SelfHealingModelCapability
 from a13n_harness.models.inference import GatewayModelProviderFactory, infer_model
 from a13n_harness.models.profile import project_context_window
 from a13n_harness.models.request_headers import (
@@ -104,6 +108,7 @@ from a13n_harness.recovery import (
     ModelRecoveryPolicy,
 )
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
+from a13n_harness.spec import ImageInputPolicy
 from a13n_harness.tools.invocation import (
     ToolExecutionBoundaryCapability,
 )
@@ -320,9 +325,47 @@ class _DefaultColdStartCapability(AbstractCapability[AgentContext]):
         return ColdStartFilterCapability(self.configuration)
 
 
+@dataclass
+class _DefaultSelfHealingCapability(AbstractCapability[AgentContext]):
+    """Preserve authored rules after native declarative capabilities are resolved."""
+
+    def for_agent(self, agent: AbstractAgent[AgentContext, Any]) -> AbstractCapability[AgentContext]:
+        leaves: list[AbstractCapability[AgentContext]] = []
+        agent.root_capability.apply(leaves.append)
+        for capability in leaves:
+            while isinstance(capability, WrapperCapability):
+                capability = capability.wrapped
+            if isinstance(capability, SelfHealingModelCapability):
+                return CombinedCapability([])
+        return SelfHealingModelCapability()
+
+
 def _cold_start_capabilities(agent: AgentSpec) -> tuple[AbstractCapability[AgentContext], ...]:
     configuration = agent.cold_start_filter if isinstance(agent, HarnessAgentSpec) else ColdStartFilterConfiguration()
     return (_DefaultColdStartCapability(configuration),) if configuration is not None else ()
+
+
+@dataclass
+class _DefaultImageFilterCapability(AbstractCapability[AgentContext]):
+    """Defer the image default until authored native capabilities are resolved."""
+
+    configuration: ImageInputPolicy
+
+    def for_agent(self, agent: AbstractAgent[AgentContext, Any]) -> AbstractCapability[AgentContext]:
+        leaves: list[AbstractCapability[AgentContext]] = []
+        agent.root_capability.apply(leaves.append)
+        for capability in leaves:
+            while isinstance(capability, WrapperCapability):
+                capability = capability.wrapped
+            if isinstance(capability, ImageFilterCapability):
+                return CombinedCapability([])
+        return ImageFilterCapability(self.configuration)
+
+
+def _image_filter_capabilities(agent: AgentSpec) -> tuple[AbstractCapability[AgentContext], ...]:
+    characteristics = agent.model_characteristics if isinstance(agent, HarnessAgentSpec) else None
+    configuration = characteristics.image_input if characteristics is not None else ImageInputPolicy()
+    return (_DefaultImageFilterCapability(configuration),) if configuration is not None else ()
 
 
 def _normalize_system_prompt(agent: AgentSpec) -> tuple[str, ...]:
@@ -378,6 +421,7 @@ class HarnessBuilder:
         instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
         session_affinity_header: str | None = None,
         openai_prompt_cache_key_enabled: bool | None = None,
+        self_healing_enabled: bool = True,
     ) -> None:
         if capability_type_catalog is not None and not isinstance(capability_type_catalog, CapabilityTypeCatalog):
             raise DefinitionError(
@@ -399,6 +443,9 @@ class HarnessBuilder:
                 "gateway_provider_factory must be callable or None.",
                 code="gateway_provider_factory_invalid",
             )
+        if not isinstance(self_healing_enabled, bool):
+            raise TypeError("self_healing_enabled must be a boolean")
+        self._self_healing_enabled = self_healing_enabled
         self._capability_type_catalog = capability_type_catalog or _EMPTY_CAPABILITY_TYPE_CATALOG
         self._gateway_provider_factory = gateway_provider_factory
         resolved_instrumentation = (
@@ -640,9 +687,13 @@ class HarnessBuilder:
                 MessageIntegrityFilterCapability(),
                 LifecycleEventCapability(),
                 SteeringCapability(),
+                InputCapability(),
+                VideoUrlCapability(),
                 ModelContextCoordinatorCapability(),
                 ResolveModelId(resolve_model),
                 *_cold_start_capabilities(construction_spec),
+                *_image_filter_capabilities(construction_spec),
+                *((_DefaultSelfHealingCapability(),) if self._self_healing_enabled else ()),
                 *authored_capabilities,
                 *default_model_costs,
                 ModelRequestHeadersCapability(self._model_request_patch_configuration),

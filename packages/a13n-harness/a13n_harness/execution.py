@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Mapping, Sequence
 from copy import deepcopy
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from traceback import walk_tb
 from typing import TYPE_CHECKING, Any, cast, overload
@@ -21,16 +21,11 @@ from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.exceptions import AgentRunError, ModelHTTPError, RunCancelled, UsageLimitExceeded, UserError
 from pydantic_ai.messages import (
     AgentStreamEvent,
-    BinaryContent,
     EnqueuedMessagesEvent,
-    FileUrl,
     ModelMessage,
     ModelRequest,
     ModelResponse,
     SystemPromptPart,
-    TextContent,
-    UploadedFile,
-    UserContent,
 )
 from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
@@ -44,6 +39,14 @@ from a13n_harness.capabilities.context import (
 )
 from a13n_harness.capabilities.steering import (
     SteeringBridge,
+)
+from a13n_harness.content import (
+    content_items,
+    native_content,
+    normalize_request_history,
+    replace_request_parts,
+    request_input_content,
+    request_parts,
 )
 from a13n_harness.context import (
     AgentContext,
@@ -63,14 +66,18 @@ from a13n_harness.errors import (
 )
 from a13n_harness.events import (
     AgentStreamEventProtocol,
+    EnvironmentChangedPayload,
     HarnessEvent,
     HarnessEventEmitter,
     HarnessExtensionEvent,
     HarnessRunResultEvent,
     HarnessStreamEvent,
+    InputSource,
     ModelRetryScheduledPayload,
+    RunStartedPayload,
     _ChildEventForwarder,
     _RunEventEmitter,
+    input_events,
 )
 from a13n_harness.input import (
     RunInputFactory,
@@ -245,15 +252,14 @@ async def _emit_environment_change_events(
 
 
 def _environment_change_event(change: EnvironmentChange) -> HarnessExtensionEvent:
-    payload: dict[str, JsonValue] = {
-        "type": "environment_changed",
-        "sequence": change.sequence,
-        "kind": change.kind,
-        "name": change.name,
-        "previous_default": change.previous_default,
-        "current_default": change.current_default,
-    }
-    return HarnessExtensionEvent(kind="context", payload=payload)
+    payload = EnvironmentChangedPayload(
+        sequence=change.sequence,
+        kind=change.kind,
+        name=change.name,
+        previous_default=change.previous_default,
+        current_default=change.current_default,
+    )
+    return HarnessExtensionEvent(kind="context", payload=payload.model_dump(mode="json"))
 
 
 def _normalize_toolset_instructions(agent: AgentSpec) -> bool:
@@ -280,12 +286,16 @@ def _reconcile_system_prompt(
     for index, message in enumerate(reconciled):
         if not isinstance(message, ModelRequest):
             continue
-        parts = tuple(part for part in message.parts if not isinstance(part, SystemPromptPart))
+        parts = [
+            (part, annotations)
+            for part, annotations in request_parts(message)
+            if not isinstance(part, SystemPromptPart)
+        ]
         if first_request:
-            parts = (*[SystemPromptPart(content=block) for block in system_prompt], *parts)
+            parts = [*[(SystemPromptPart(content=block), None) for block in system_prompt], *parts]
             first_request = False
-        if parts != tuple(message.parts):
-            reconciled[index] = replace(message, parts=parts)
+        if tuple(part for part, _ in parts) != tuple(message.parts):
+            reconciled[index] = replace_request_parts(message, parts)
     return tuple(reconciled)
 
 
@@ -816,6 +826,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             run_id=self.run_id,
             thread_id=self._previous_state.thread_id,
             instance=bindings.instance,
+            configuration=bindings.configuration,
             state=context_state,
             environment=environment,
             model_resolver=bindings.model_resolver,
@@ -852,7 +863,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 events=self._emitter,
             ),
             web=bindings.web,
-            media_reader=bindings.media_reader,
             document_converter=bindings.document_converter,
             file_media_understanding=bindings.file_media_understanding,
             skill_selection=bindings.skill_selection,
@@ -985,7 +995,15 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     async def _next_item(self) -> HarnessStreamEvent[OutputT]:
         assert self._response is not None
         try:
-            self._start_logical_event_mux()
+            if not self._logical_events_started:
+                self._start_logical_event_mux()
+                return HarnessEvent(
+                    thread_id=self.thread_id,
+                    run_id=self.run_id,
+                    sequence=self._next_public_sequence(),
+                    occurred_at=datetime.now(UTC),
+                    event=HarnessExtensionEvent(kind="lifecycle", payload=RunStartedPayload().model_dump()),
+                )
             if self._pending_result is None:
                 if self._response_next_task is None:
                     self._response_next_task = asyncio.create_task(self._response_queue.get())
@@ -1215,6 +1233,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             raise PluginError("Plugin emitted an invalid stream item.", code="plugin_event_invalid")
         event = item.event
         if isinstance(event, HarnessExtensionEvent):
+            if (
+                item.run_id == self.run_id
+                and event.kind == "lifecycle"
+                and isinstance(event.payload, dict)
+                and event.payload.get("type") == "run_started"
+            ):
+                raise PluginError("Run start is owned by Harness.", code="plugin_event_invalid")
             try:
                 event = _EXTENSION_EVENT_ADAPTER.validate_python(event.model_dump(), strict=True)
             except ValidationError as exc:
@@ -1631,14 +1656,25 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._latest_messages = current_history
 
         while True:
+            current_history = normalize_request_history(
+                current_history,
+                has_new_prompt=current_input.value is not None,
+                has_deferred_results=deferred_results is not None and attempt_index == 0,
+            )
+            self._latest_messages = current_history
             await exchange.context._steering.resolve_delivered(current_history)
             retry_error: BaseException | None = None
             recovery.attempt_id = f"model-attempt-{uuid4().hex}"
+            exchange.context._model_input.begin(
+                recovery.attempt_id,
+                tuple(content_items(current_input.value)) if current_input.value is not None else None,
+                recovery=attempt_index > 0,
+            )
             recovery.request_error = None
             response_tracker = InterruptedResponseTracker()
             attempt_token = self._observation.record_model_attempt() if self._observation is not None else None
             manager = self._executable._agent.run_stream_events(
-                current_input.value,
+                native_content(current_input.value) if current_input.value is not None else None,
                 message_history=current_history,
                 deferred_tool_results=(deferred_results if attempt_index == 0 else None),
                 run_id=recovery.attempt_id,
@@ -1673,6 +1709,22 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 yield self._record_inner_candidate(candidate)
                                 return
                             yield self._adapt_event(cast(AgentStreamEvent, event))
+                            if isinstance(event, EnqueuedMessagesEvent):
+                                for message in event.messages:
+                                    if not isinstance(message, ModelRequest):
+                                        continue
+                                    notification = (message.metadata or {}).get("a13n.steering-source")
+                                    source: InputSource = (
+                                        notification
+                                        if notification in {"async_subagent", "background_process"}
+                                        else "steering"
+                                    )
+                                    for observed in input_events(
+                                        request_input_content(message),
+                                        source=source,
+                                        input_id=event.enqueue_id,
+                                    ):
+                                        yield self._adapt_event(observed)
                     except RunCancelled as exc:
                         if exc.run_id is None:
                             # Native execution has not started; its empty history cannot
@@ -1847,21 +1899,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 retry_input = await policy.build_prompt(retry_error, retry_index, self._latest_messages)
                 observe_output(span, {"retry_input_available": retry_input is not None}, status="prepared")
             current_input = normalize_input(retry_input)
-            # Recovery is model context, not a new user submission. Record that
-            # distinction in native history so every display consumer honors it.
-            retry_content = (current_input.value,) if isinstance(current_input.value, str) else current_input.value
-            if retry_content is not None:
-                hidden: list[UserContent] = []
-                for item in retry_content:
-                    if isinstance(item, str):
-                        item = TextContent(item)
-                    if isinstance(item, TextContent):
-                        metadata = item.metadata if isinstance(item.metadata, dict) else {}
-                        item = replace(item, metadata={**metadata, "display": False})
-                    elif isinstance(item, BinaryContent | FileUrl | UploadedFile):
-                        item = replace(item, vendor_metadata={**(item.vendor_metadata or {}), "display": False})
-                    hidden.append(item)
-                current_input = current_input.replace(hidden)
             current_history = self._latest_messages
             attempt_index += 1
 

@@ -16,17 +16,17 @@
 .markdown h1,
 .markdown h2,
 .markdown h3 {
-  font-weight: 500;
+  font-weight: 600;
   line-height: 1.4;
-  margin: 24px 0 12px;
+  margin: 28px 0 10px;
 }
 .markdown h1 {
-  font-size: 21px;
-  letter-spacing: -0.5px;
+  font-size: 20px;
+  letter-spacing: var(--a13n-tracking-title);
 }
 .markdown h2 {
   font-size: 17px;
-  letter-spacing: -0.2px;
+  letter-spacing: var(--a13n-tracking-heading);
 }
 .markdown h3 {
   font-size: 15px;

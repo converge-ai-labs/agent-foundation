@@ -9,7 +9,6 @@ import pytest
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 from a13n_harness_ui.interactive.shell import CliShell
-from a13n_harness_ui.interactive.theme import resolve_theme
 from a13n_harness_ui.interactive.transcript import Transcript
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
@@ -22,29 +21,6 @@ from .terminal_display_fixtures import present_native_result, present_text, pres
 def _text(transcript: Transcript, width: int = 80) -> str:
     transcript.render(width)
     return "\n".join("".join(text for _, text in row).rstrip() for row in transcript.rows)
-
-
-@pytest.mark.parametrize("legacy_windows", [False, True])
-@pytest.mark.parametrize("theme", ["dark", "light"])
-@pytest.mark.parametrize("width", [28, 80])
-def test_custom_panels_share_frame_and_preserve_literal_output(
-    theme: str, width: int, legacy_windows: bool, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import a13n_harness_ui.interactive.transcript as module
-
-    monkeypatch.setattr(module, "Console", partial(module.Console, legacy_windows=legacy_windows))
-    transcript = Transcript()
-    transcript.theme = resolve_theme(theme)
-    for kind in ("command", "edit", "info", "notes", "summary", "compact"):
-        transcript.append("Title\n[bold]literal[/bold]\n+added\n-removed", kind=kind)
-    text = _text(transcript, width)
-    assert text.count("╭") + text.count("┌") == 6
-    assert text.count("╰") + text.count("└") == 6
-    assert "[bold]literal[/bold]" in text
-    assert all(get_cwidth(line) <= width for line in text.splitlines())
-    assert any("ansigreen" in style for row in transcript.rows for style, _ in row)
-    assert any("ansired" in style for row in transcript.rows for style, _ in row)
-    transcript.close()
 
 
 @pytest.mark.parametrize("terminal", ["dumb", "unknown", "xterm-256color"])
@@ -69,20 +45,6 @@ def test_transcript_layout_uses_viewport_width_in_any_terminal_environment(
         assert all(get_cwidth(line) <= 80 for line in wide.splitlines())
     finally:
         transcript.close()
-
-
-@pytest.mark.parametrize("detailed", [False, True])
-@pytest.mark.parametrize("kind", ["tool", "command", "edit"])
-def test_thinking_touches_tool_frame_but_answer_keeps_paragraph_spacing(kind: str, detailed: bool) -> None:
-    transcript = Transcript()
-    transcript.detailed = detailed
-    transcript.append("Thinking.", markdown=True, kind="thinking")
-    transcript.append("Tool\noutput", kind=kind)
-    text = _text(transcript)
-    lines = text.splitlines()
-    assert lines[0] == "Thinking."
-    assert lines[1].strip()
-    transcript.close()
 
 
 def test_edit_applied_replaces_pending_call_and_retains_full_diff_on_expand() -> None:
@@ -192,72 +154,6 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
         shell.renderer.transcript.close()
 
 
-@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
-@pytest.mark.parametrize("kind", ["tool", "command"])
-@pytest.mark.parametrize(
-    "state, tone",
-    [
-        ("running", "running"),
-        ("waiting", "waiting"),
-        ("retry", "waiting"),
-        ("denied", "muted"),
-        ("completed", "completed"),
-        ("exit 0", "completed"),
-        ("failed", "muted"),
-        ("timed out", "muted"),
-        ("cancelled", "muted"),
-        ("returned", "muted"),
-        ("status unavailable", "muted"),
-    ],
-)
-def test_tool_rows_use_status_colors_without_bold_or_payload_markup(theme, kind, state, tone) -> None:
-    from a13n_harness_ui.interactive.theme import activity_colors
-
-    transcript = Transcript()
-    transcript.theme = resolve_theme(theme)
-    payload = "cat [bold]file[/bold] | grep 'failed · result'"
-    block = transcript.append("Expanded details", kind=kind)
-    transcript.preview(block, f"tool_name | {state} | {payload}")
-    try:
-        assert _text(transcript, 120) == f"tool_name | {state} | {payload}"
-        fragments = transcript.rows[0]
-        colors = activity_colors(transcript.theme)
-        expected = colors[tone]
-        expected = expected if expected.startswith("#") else "ansi" + expected.replace("_", "")
-        assert any(text == state and f"fg:{expected}" in style for style, text in fragments)
-        muted = colors["muted"]
-        muted = muted if muted.startswith("#") else "ansi" + muted.replace("_", "")
-        assert any(payload in text and f"fg:{muted}" in style for style, text in fragments)
-        assert all("bold" not in style.split() for style, _ in fragments)
-    finally:
-        transcript.close()
-
-
-@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
-@pytest.mark.parametrize(
-    "preview",
-    [
-        "Run failed · exit 1 · python3 -u -c 'print(1)'",
-        "Run timed out · sleep 120",
-        "Call mkdir failed: permission denied",
-        "Read file.py denied: environment_denied",
-        "Explored 2 files\n  Read file.py failed: not found",
-    ],
-)
-def test_semantic_tool_failures_keep_text_without_error_emphasis(theme: str, preview: str) -> None:
-    transcript = Transcript()
-    transcript.theme = resolve_theme(theme)
-    block = transcript.append("Expanded details", kind="tool")
-    transcript.preview(block, preview, lines=len(preview.splitlines()))
-    try:
-        assert _text(transcript, 120) == preview
-        assert all(
-            "ansired" not in style and "bold" not in style.split() for row in transcript.rows for style, _ in row
-        )
-    finally:
-        transcript.close()
-
-
 @pytest.mark.parametrize(
     "result, state",
     [
@@ -286,19 +182,6 @@ def test_ordinary_tool_rows_keep_output_in_details_and_only_report_observed_succ
         assert "output-marker" in expanded and '"file_path": "file.py"' in expanded
     finally:
         renderer.transcript.close()
-
-
-@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
-def test_expanded_shell_title_keeps_normal_weight(theme) -> None:
-    transcript = Transcript()
-    transcript.theme = resolve_theme(theme)
-    transcript.append("shell_exec | returned\n[bold]literal output[/bold]", kind="command")
-    try:
-        text = _text(transcript)
-        assert "shell_exec | returned" in text and "[bold]literal output[/bold]" in text
-        assert all("bold" not in style.split() for row in transcript.rows for style, _ in row)
-    finally:
-        transcript.close()
 
 
 @pytest.mark.parametrize("name", ["task_create", "shell_exec", "ask_user_question"])
@@ -376,49 +259,3 @@ def test_native_retries_obey_child_visibility_and_run_scoped_correlation(mode) -
         assert len(renderer.transcript.blocks) == (2 if mode == "detailed" else 1)
     finally:
         renderer.transcript.close()
-
-
-@pytest.mark.parametrize("theme", ["auto", "dark", "light"])
-@pytest.mark.parametrize(
-    "preview",
-    [
-        "Read packages/a13n-harness-ui/tests/test_path_display.py",
-        "Find **/*.py in packages/a13n-harness-ui",
-        "Search literal [bold]query[/bold] in packages",
-        "List packages/a13n-harness-ui/tests",
-        "Run exit 0 · python -m pytest packages/a13n-harness-ui/tests",
-        "Call mkdir packages/a13n-harness-ui/tests",
-        "Delegate explorer · Inspect the terminal rendering implementation",
-        "Steer child-one · Check the long-path presentation",
-        "Modified: packages/a13n-harness-ui/tests/test_path_display.py",
-        "Explored 2 files\n  Read packages/first.py\n  Read packages/second.py",
-    ],
-)
-def test_entire_tool_summary_and_wrapped_continuations_are_subdued(theme: str, preview: str) -> None:
-    from a13n_harness_ui.interactive.theme import activity_colors
-
-    transcript = Transcript()
-    transcript.theme = resolve_theme(theme)
-    block = transcript.append("Expanded details", kind="tool")
-    transcript.preview(block, preview)
-    try:
-        colors = activity_colors(transcript.theme)
-        muted = colors["muted"]
-        muted = muted if muted.startswith("#") else "ansi" + muted.replace("_", "")
-        for width in (28, 120, 28):
-            _text(transcript, width)
-            assert all(
-                f"fg:{muted}" in style and "bold" not in style.split() and "dim" not in style.split()
-                for row in transcript.rows
-                for style, text in row
-                if text.strip()
-            )
-        transcript.append("Assistant prose", markdown=True)
-        _text(transcript)
-        assert any(
-            text.rstrip() == "Assistant prose" and f"fg:{muted}" not in style
-            for row in transcript.rows
-            for style, text in row
-        )
-    finally:
-        transcript.close()

@@ -6,8 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai import RunContext
-from pydantic_ai.agent import ModelRequestNode
-from pydantic_ai.capabilities import AbstractCapability, AgentNode
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, DynamicToolset
 
 from a13n_harness.context import AgentContext
@@ -24,7 +23,6 @@ from a13n_harness.toolsets.file_media import (
 from a13n_harness.toolsets.files import FileToolset
 from a13n_harness.toolsets.shell import ShellToolset
 
-from ._dynamic_context import _DynamicEnvironmentContext
 from .configuration import DynamicEnvironmentConfiguration
 from .providers import BoundEnvironment
 
@@ -80,7 +78,6 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         self._environment = environment
         self._shell_toolset = ShellToolset(environment)
         self._computer_toolset = ComputerToolset(environment)
-        self._dynamic_context = _DynamicEnvironmentContext()
         self._file_toolset = FileToolset(
             environment.files,
             file_scopes=environment,
@@ -157,17 +154,7 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         return self._toolset
 
     async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Any) -> Any:
-        async def run_with_dynamic_context() -> Any:
-            return await self._dynamic_context.wrap_run(ctx, handler=handler)
-
-        return await self._shell_toolset.wrap_run(ctx, handler=run_with_dynamic_context)
-
-    async def before_node_run(
-        self, ctx: RunContext[AgentContext], *, node: AgentNode[AgentContext]
-    ) -> AgentNode[AgentContext]:
-        if isinstance(node, ModelRequestNode):
-            self._dynamic_context.before_model_node(ctx)
-        return node
+        return await self._shell_toolset.wrap_run(ctx, handler=handler)
 
     async def _close_processes(self) -> None:
         await self._shell_toolset.close()

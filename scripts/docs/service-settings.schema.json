@@ -1009,22 +1009,6 @@
       "additionalProperties": false,
       "description": "Outbound network policy, call bounds and browser authorization flows for every provider and connection.",
       "properties": {
-        "private_domains": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "title": "Private Domains",
-          "type": "array"
-        },
-        "private_cidrs": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "title": "Private Cidrs",
-          "type": "array"
-        },
         "http_origins": {
           "default": [],
           "items": {
@@ -1098,6 +1082,26 @@
           "minimum": 65536,
           "title": "Response Bytes",
           "type": "integer"
+        },
+        "chatgpt_client_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chatgpt Client Id"
+        },
+        "chatgpt_redirect_uri": {
+          "default": "http://127.0.0.1:1456/auth/callback",
+          "maxLength": 2048,
+          "title": "Chatgpt Redirect Uri",
+          "type": "string"
         }
       },
       "title": "Providers",

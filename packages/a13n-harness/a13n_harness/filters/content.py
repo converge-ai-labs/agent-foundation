@@ -13,6 +13,7 @@ from pydantic_ai import (
     DocumentUrl,
     ImageUrl,
     RunContext,
+    TextContent,
     UploadedFile,
     VideoUrl,
 )
@@ -94,6 +95,7 @@ class ContentFilterCapability(AbstractCapability[AgentContext]):
                     if family is None:
                         filtered.append(item)
                         continue
+                    assert isinstance(item, BinaryContent | ImageUrl | AudioUrl | VideoUrl | DocumentUrl | UploadedFile)
                     item_bytes = len(item.data) if isinstance(item, BinaryContent) else 0
                     unsafe_url = _has_unsafe_url(item)
                     if (
@@ -102,7 +104,10 @@ class ContentFilterCapability(AbstractCapability[AgentContext]):
                         or media_items >= self.configuration.max_media_items
                         or binary_bytes + item_bytes > self.configuration.max_binary_bytes
                     ):
-                        filtered.append(_filtered_message(family, unsafe=unsafe_url))
+                        text = _filtered_message(family, unsafe=unsafe_url)
+                        # Replacement is one-for-one, so request/tool annotations
+                        # remain associated with the same content slot.
+                        filtered.append(TextContent(text) if isinstance(part, UserPromptPart) else text)
                         part_changed = True
                         continue
                     media_items += 1
