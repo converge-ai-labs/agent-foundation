@@ -223,6 +223,8 @@ Create a stable release with canonical version `X.Y.Z` or a release candidate wi
 
 Release workflows reuse the existing GitHub Environments and their secrets; environment names are infrastructure identifiers, not package names. Keep these environment names when renaming components, and update their deployment tag policies to match the owning workflow's canonical release tag pattern instead of creating replacement environments. Preserve other environment protection settings.
 
+GitHub Release creation is retry-safe: when the canonical tag already has a Release, the shared creation script succeeds without changing its notes or assets or comparing them with a rebuild. Lookup failures other than a missing Release remain errors. Read-only notes previews still render even when a Release exists.
+
 When bootstrapping an empty registry namespace, publish dependency owners before their consumers:
 
 1. publish the a13n-envd release so `a13n-envd` and `a13n-envd-client` exist;

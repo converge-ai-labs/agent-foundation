@@ -39,6 +39,23 @@ def _release_tags(component: str, current_tag: str) -> list[str]:
     return result.stdout.splitlines()
 
 
+def _release_exists(repository: str, tag: str) -> bool:
+    try:
+        result = subprocess.run(
+            ["gh", "release", "view", tag, "--repo", repository, "--json", "tagName"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        raise ValueError(f"Cannot read GitHub Release {tag}: {error}") from error
+    if result.returncode == 0:
+        return True
+    if result.stderr.strip() == "release not found":
+        return False
+    raise ValueError(f"Cannot read GitHub Release {tag}: {result.stderr.strip()}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Create a GitHub Release with notes scoped to one component release channel."
@@ -62,6 +79,9 @@ def main() -> None:
         tags = _release_tags(args.component, expected_tag)
         if expected_tag not in tags:
             raise ValueError(f"Release tag is missing from the checkout: {expected_tag}")
+        if not args.dry_run and _release_exists(repository, expected_tag):
+            print(f"GitHub Release {expected_tag} already exists; leaving its notes and assets unchanged")
+            return
         previous_tag = previous_release_tag(args.component, args.version, tags)
         manual_notes = read_manual_release_notes(Path.cwd(), args.component, args.version)
 

@@ -249,7 +249,10 @@ def test_cli_scopes_generated_notes_to_previous_channel_tag(tmp_path: Path) -> N
     arguments_file = tmp_path / "gh-arguments"
     fake_gh = fake_bin / "gh"
     fake_gh.write_text(
-        '#!/bin/sh\nprintf "%s\\n" "$@" > "$GH_ARGUMENTS_FILE"\ncat > "$GH_NOTES_FILE"\n', encoding="utf-8"
+        "#!/bin/sh\n"
+        'if [ "$1 $2" = "release view" ]; then echo "release not found" >&2; exit 1; fi\n'
+        'printf "%s\\n" "$@" > "$GH_ARGUMENTS_FILE"\ncat > "$GH_NOTES_FILE"\n',
+        encoding="utf-8",
     )
     fake_gh.chmod(0o755)
     environment = os.environ.copy()
@@ -565,6 +568,7 @@ def test_release_cli_reads_labels_before_rendering_and_dry_run_never_publishes(g
     fake_gh.write_text(
         "#!/bin/sh\n"
         'printf "%s\\n" "$*" >> gh-calls\n'
+        'if [ "$1 $2" = "release view" ]; then echo "release not found" >&2; exit 1; fi\n'
         'if [ "$1" = pr ]; then printf "bug\\n"; exit 0; fi\n'
         "cat > published-notes\n",
         encoding="utf-8",
@@ -581,6 +585,8 @@ def test_release_cli_reads_labels_before_rendering_and_dry_run_never_publishes(g
         command.append("--dry-run")
     result = subprocess.run(command, cwd=root, env=environment, text=True, capture_output=True, check=True)
     calls = (root / "gh-calls").read_text().splitlines()
+    if not dry_run:
+        assert calls.pop(0) == "release view release/a13n-logging-v0.1.1 --repo owner/repo --json tagName"
     assert calls[0].startswith("pr view 42 --repo owner/repo")
     assert len(calls) == (1 if dry_run else 2)
     assert (root / "published-notes").exists() is not dry_run
@@ -591,6 +597,108 @@ def test_release_cli_reads_labels_before_rendering_and_dry_run_never_publishes(g
     if not dry_run:
         assert calls[1].startswith("release create release/a13n-logging-v0.1.1 ")
         assert calls[1].endswith("--notes-file -")
+
+
+@pytest.fixture(params=["0.5.1", "0.6.0-rc.1"])
+def release_cli(git_repository, request):
+    root = git_repository
+    version = request.param
+    tag = release_tag("a13n-harness", version)
+    _git(root, "tag", "release/a13n-harness-v0.5.0")
+    _commit(root, "packages/a13n-harness/api.py", "fix: retain release behavior (#42)")
+    _git(root, "tag", tag)
+    fake_bin = root / "bin"
+    fake_bin.mkdir()
+    fake_gh = fake_bin / "gh"
+    fake_gh.write_text(
+        "#!/bin/sh\n"
+        'printf "%s\\n" "$*" >> gh-calls\n'
+        'case "$1 $2" in\n'
+        '  "release view")\n'
+        '    if [ -n "$GH_LOOKUP_ERROR" ]; then echo "$GH_LOOKUP_ERROR" >&2; exit 1; fi\n'
+        "    if [ -f published-notes ]; then exit 0; fi\n"
+        '    echo "release not found" >&2; exit 1;;\n'
+        '  "pr view") echo bug;;\n'
+        '  "release create")\n'
+        '    if [ -n "$GH_CREATE_ERROR" ]; then echo "$GH_CREATE_ERROR" >&2; exit 1; fi\n'
+        "    if [ -f published-notes ]; then echo 'release already exists' >&2; exit 1; fi\n"
+        "    cat > published-notes;;\n"
+        "  *) exit 2;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake_gh.chmod(0o755)
+    environment = {
+        **os.environ,
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "owner/repo",
+        "GITHUB_REF_NAME": tag,
+        "GH_LOOKUP_ERROR": "",
+        "GH_CREATE_ERROR": "",
+    }
+    command = [sys.executable, str(CREATE_RELEASE), "a13n-harness", version, f"Harness {version}"]
+    return root, environment, command
+
+
+def test_release_cli_retry_preserves_existing_release_and_dry_run_still_previews(release_cli):
+    root, environment, command = release_cli
+    asset = root / "package.whl"
+    asset.write_bytes(b"wheel")
+    command.append(str(asset))
+    first = subprocess.run(command, cwd=root, env=environment, text=True, capture_output=True, check=True)
+    assert "Generating release notes" in first.stdout
+    notes = (root / "published-notes").read_text()
+    assert "### Bug fixes" in notes
+
+    asset.unlink()
+    retry = subprocess.run(command, cwd=root, env=environment, text=True, capture_output=True, check=True)
+    assert "already exists; leaving its notes and assets unchanged" in retry.stdout
+    assert (root / "published-notes").read_text() == notes
+    calls = (root / "gh-calls").read_text().splitlines()
+    tag = environment["GITHUB_REF_NAME"]
+    assert calls[-1] == f"release view {tag} --repo owner/repo --json tagName"
+    assert len(calls) == 4  # Initial lookup, label query, create, retry lookup.
+
+    preview = subprocess.run(
+        [*command[:-1], "--dry-run"], cwd=root, env=environment, text=True, capture_output=True, check=True
+    )
+    assert preview.stdout == notes
+    assert (root / "published-notes").read_text() == notes
+    assert (root / "gh-calls").read_text().splitlines() == [
+        *calls,
+        "pr view 42 --repo owner/repo --json labels --jq .labels[].name",
+    ]
+
+
+@pytest.mark.parametrize("error", ["HTTP 401: Bad credentials", "HTTP 403: Forbidden", "HTTP 500: Server error"])
+def test_release_cli_lookup_errors_do_not_create_or_skip_a_release(release_cli, error):
+    root, environment, command = release_cli
+    environment["GH_LOOKUP_ERROR"] = error
+    result = subprocess.run(command, cwd=root, env=environment, text=True, capture_output=True, check=False)
+    assert result.returncode != 0
+    assert "Cannot read GitHub Release" in result.stderr
+    assert error in result.stderr
+    assert len((root / "gh-calls").read_text().splitlines()) == 1
+    assert not (root / "published-notes").exists()
+
+
+def test_release_cli_still_reports_creation_failures(release_cli):
+    root, environment, command = release_cli
+    environment["GH_CREATE_ERROR"] = "upload failed"
+    result = subprocess.run(command, cwd=root, env=environment, text=True, capture_output=True, check=False)
+    assert result.returncode == 1
+    assert "upload failed" in result.stderr
+    assert not (root / "published-notes").exists()
+
+
+def test_release_cli_validates_tag_before_skipping_an_existing_release(release_cli):
+    root, environment, command = release_cli
+    (root / "published-notes").write_text("Existing release notes")
+    environment["GITHUB_REF_NAME"] = "release/a13n-harness-v9.9.9"
+    result = subprocess.run(command, cwd=root, env=environment, text=True, capture_output=True, check=False)
+    assert result.returncode != 0
+    assert "Expected release tag" in result.stderr
+    assert not (root / "gh-calls").exists()
 
 
 def test_service_exports_do_not_enter_envd_release_notes(git_repository):
