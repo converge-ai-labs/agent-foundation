@@ -535,8 +535,9 @@ def test_provider_model_suggestions_accept_numeric_default_and_custom_case(provi
     ):
         wizard.accept(value)
     assert wizard.question.choices == API_MODEL_SUGGESTIONS[provider.route]
-    wizard.accept("2")
-    assert wizard.values["model"] == API_MODEL_SUGGESTIONS[provider.route][1]
+    index = min(2, len(API_MODEL_SUGGESTIONS[provider.route]))
+    wizard.accept(str(index))
+    assert wizard.values["model"] == API_MODEL_SUGGESTIONS[provider.route][index - 1]
     assert wizard.back()
     wizard.accept("Qwen/My-Custom-Model")
     assert wizard.values["model"] == "Qwen/My-Custom-Model"

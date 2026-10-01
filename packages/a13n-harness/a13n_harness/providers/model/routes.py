@@ -49,10 +49,14 @@ ROUTES = {
     "openrouter": RouteSpec("openrouter", "openrouter.chat_completions"),
     "fireworks": RouteSpec("fireworks", "openai.chat_completions"),
     "together": RouteSpec("together", "openai.chat_completions"),
+    "cerebras": RouteSpec("cerebras", "openai.chat_completions"),
+    "sambanova": RouteSpec("sambanova", "openai.chat_completions"),
+    "vercel": RouteSpec("vercel", "openai.chat_completions"),
+    "mistral": RouteSpec("mistral", "mistral.chat_completions"),
     "deepseek": RouteSpec("deepseek", "openai.chat_completions"),
     "zai": RouteSpec("zhipu", "openai.chat_completions", "https://api.z.ai/api/paas/v4", _zai_model),
     "moonshotai": RouteSpec("moonshot", "openai.chat_completions", "https://api.moonshot.ai/v1"),
-    "grok": RouteSpec("openai", "openai.chat_completions", "https://api.x.ai/v1"),
+    "grok": RouteSpec("xai", "openai.chat_completions", "https://api.x.ai/v1"),
 }
 
 

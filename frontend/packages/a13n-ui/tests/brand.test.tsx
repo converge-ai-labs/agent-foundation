@@ -86,6 +86,9 @@ it("prefers an explicit remote logo before the MCP fallback", () => {
 });
 
 it.each([
+  ["cerebras", "cerebras", "https://api.cerebras.ai/v1"],
+  ["sambanova", "sambanova", "https://api.sambanova.ai/v1"],
+  ["mistral", "mistralai", "https://api.mistral.ai"],
   ["fireworks", "fireworks-ai", "https://api.fireworks.ai/inference/v1"],
   ["together", "togetherai", "https://api.together.xyz/v1"],
   ["together", "together.ai", "https://api.together.ai/v1"],
@@ -99,5 +102,19 @@ it.each([
     expect(brand.icon).toBe(
       `https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.95.0/icons/${identity}-color.svg`,
     );
+  },
+);
+
+it.each([
+  ["vercel", "vercel-ai-gateway", "https://ai-gateway.vercel.sh/v1"],
+  ["xai", "x-ai", "https://api.x.ai/v1"],
+])(
+  "resolves %s gateway identities and dark-mode SVGs",
+  (identity, alias, endpoint) => {
+    const brand = brands[identity];
+    expect(resolveBrand({ alias })).toBe(brand);
+    expect(resolveBrand({ endpoint })).toBe(brand);
+    expect(brand.icon).toMatch(/\.svg$/);
+    expect(brand.darkIcon || brand.invertInDark).toBeTruthy();
   },
 );
