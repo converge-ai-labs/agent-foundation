@@ -34,7 +34,6 @@ from a13n_harness.capabilities.lifecycle import (
     LifecycleEventCapability,
     _LifecycleEventActiveCapability,
 )
-from a13n_harness.capabilities.media import MEDIA_CAPABILITY_ID, MediaCapability
 from a13n_harness.capabilities.skills import SKILLS_CAPABILITY_ID, SkillsCapability, _SkillsRunCapability
 from a13n_harness.capabilities.steering import STEERING_CAPABILITY_ID, SteeringCapability
 from a13n_harness.capabilities.subagents import (
@@ -49,6 +48,7 @@ from a13n_harness.capabilities.tool_proxy import (
     _ToolProxyGroupCapability,
     _ToolProxySurfaceCapability,
 )
+from a13n_harness.capabilities.video_url import VIDEO_URL_CAPABILITY_ID, VideoUrlCapability
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID, WebCapability
 from a13n_harness.capabilities.working_state import (
     WORKING_STATE_CAPABILITY_ID,
@@ -91,7 +91,6 @@ _DEFINITION_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], ...]
     COMPACTION_CAPABILITY_ID: (CompactionCapability,),
     USER_INTERACTION_CAPABILITY_ID: (UserInteractionCapability,),
     SKILLS_CAPABILITY_ID: (SkillsCapability, _SkillsRunCapability),
-    MEDIA_CAPABILITY_ID: (MediaCapability,),
     DOCUMENTS_CAPABILITY_ID: (DocumentsCapability,),
     WEB_CAPABILITY_ID: (WebCapability,),
     WORKING_STATE_CAPABILITY_ID: (WorkingStateCapability, _WorkingStateRunCapability),
@@ -106,6 +105,7 @@ _BUILT_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], str]] = {
     LIFECYCLE_EVENT_CAPABILITY_ID: (LifecycleEventCapability, "lifecycle event"),
     STEERING_CAPABILITY_ID: (SteeringCapability, "steering"),
     INPUT_CAPABILITY_ID: (InputCapability, "input"),
+    VIDEO_URL_CAPABILITY_ID: (VideoUrlCapability, "video URL"),
     MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID: (ModelContextCoordinatorCapability, "model context coordinator"),
     MODEL_REQUEST_HEADERS_CAPABILITY_ID: (ModelRequestHeadersCapability, "model request headers"),
     STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID: (
@@ -147,6 +147,7 @@ def _reserved_harness_capability_contract() -> tuple[
         MessageIntegrityFilterCapability,
         LifecycleEventCapability,
         ModelContextCoordinatorCapability,
+        VideoUrlCapability,
         InvocationPolicyCapability,
         AbstractModelCostCapability,
         ClientToolsCapability,
@@ -389,6 +390,10 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             (MessageIntegrityFilterCapability,),
             None,
         ),
+        VIDEO_URL_CAPABILITY_ID: (
+            (VideoUrlCapability,),
+            None,
+        ),
         LIFECYCLE_EVENT_CAPABILITY_ID: (
             (_LifecycleEventActiveCapability,),
             None,
@@ -463,7 +468,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             )
 
     for owner_id, binding, prefix, label in (
-        (MEDIA_CAPABILITY_ID, ctx.deps.media_reader, "media", "Media"),
         (DOCUMENTS_CAPABILITY_ID, ctx.deps.document_converter, "documents", "Documents"),
         (WEB_CAPABILITY_ID, ctx.deps.web, "web", "Web"),
     ):

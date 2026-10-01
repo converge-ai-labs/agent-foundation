@@ -98,6 +98,8 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 
 ## Common Definition Capabilities
 
+Video input support is built in, not an optional definition Capability. `video_understanding` supports inline video and bounded direct URL downloads; `url_input.video: [youtube]` declares native YouTube support. Permissions still control `media.read_video_url`. Local files use `view` and share the inline video budget.
+
 | Capability                     | Adds                                                                                        | Needs fresh run collaborator                                   |
 | ------------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `RuntimeContextCapability`     | Bounded current time, elapsed time, usage, context-window, and selected metadata projection | No                                                             |
@@ -110,18 +112,12 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `FileMemoryCapability`         | Mounted file memories: guides, `memory_file_*` tools, and changed-file context at run start | One opened `FileStore` per mount; optional `MemoryCursors`     |
 | `RecordMemoryCapability`       | Mounted record memories: guides, `memory_record_*` tools, and recall at run start           | One opened `RecordStore` per mount                             |
 | `UserInteractionCapability`    | Structured user questions through native deferred tools                                     | Host handles suspension and resume                             |
-| `MediaCapability`              | Media-reading Toolset                                                                       | `RunBindings.media_reader`                                     |
-| `DocumentsCapability`          | Document-conversion Toolset                                                                 | `RunBindings.document_converter`                               |
-| `WebCapability`                | Search, fetch, and scrape Toolset                                                           | `WebBinding` with current client and policy                    |
-| `HandoffCapability`            | Explicit `summarize` tool and continuation reminder                                         | No                                                             |
-| `CompactionCapability`         | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay   | No                                                             |
-| `SubagentCapability`           | Inline or asynchronous execution of exact declared children                                 | Definition-selected `SubagentOperator`                         |
-| `CodeActCapability`            | Restricted Python runners and explicit key-to-JSON stored values                            | Explicit eligible tools and Environment files for programs     |
-| `ContextualMCP`                | URL-based MCP with headers resolved once from the current logical run                       | Current `AgentContext` supplied by the Harness                 |
+
+| `DocumentsCapability` | Document-conversion Toolset | `RunBindings.document_converter` | | `WebCapability` | Search, fetch, and scrape Toolset | `WebBinding` with current client and policy | | `HandoffCapability` | Explicit `summarize` tool and continuation reminder | No | | `CompactionCapability` | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay | No | | `SubagentCapability` | Inline or asynchronous execution of exact declared children | Definition-selected `SubagentOperator` | | `CodeActCapability` | Restricted Python runners and explicit key-to-JSON stored values | Explicit eligible tools and Environment files for programs | | `ContextualMCP` | URL-based MCP with headers resolved once from the current logical run | Current `AgentContext` supplied by the Harness |
 
 For large local tool collections, [ToolProxyCapability](tool-proxy.md) accepts a `groups` mapping of passive `ToolProxyGroup(source=..., description=...)` values. This single code-first entry provides grouped discovery with dynamic schemas and CodeAct compatibility, without replacing native execution. The [Host integration guide](tool-proxy.md#host-integration) covers source selection and plugin composition.
 
-Each feature has one public Capability. Its internal active replacement stays private and is reused across ModelAttempts in the same logical Run, not across Runs. Host collaborators use `RunBindings.web`, `media_reader`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`. `WebBinding` and `TaskStateBinding` are passive frozen values, not Capabilities. These fields do not enable a missing feature, and never enter `HarnessState`. The Host owns provider lifetime and may share a transport when its provider contract permits it.
+Each feature has one public Capability. Its internal active replacement stays private and is reused across ModelAttempts in the same logical Run, not across Runs. Host collaborators use `RunBindings.web`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`. `WebBinding` and `TaskStateBinding` are passive frozen values, not Capabilities. These fields do not enable a missing feature, and never enter `HarnessState`. The Host owns provider lifetime and may share a transport when its provider contract permits it.
 
 For inline children, `SubagentDefinition.run_bindings_factory` receives the child's baseline `RunBindings` and returns a replacement with that child's collaborators. It must preserve the child instance, borrowed Environment, and inherited invocation policy. Parent feature bindings are not inherited automatically; an explicit shared task-state policy supplies the borrowed cell and rejects a conflicting factory binding.
 
@@ -239,7 +235,7 @@ bindings = RunBindings.embedded(
 )
 ```
 
-The same pattern applies to the general URL-oriented `MediaCapability` and to Web. The definition owns what behavior the Agent may request; the run collaborator owns current provider access. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path: native support comes from the active `AgentSpec.model_characteristics.capabilities` value supplied through the `model_characteristics` construction key, and dedicated image, video, or audio Agents can be configured directly through process environment variables without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
+Video URLs need no provider binding. The default `VideoUrlCapability` provides `read_video_url` for binary-video or native-video-URL models. Direct HTTP(S) resources become bounded raw-byte `BinaryContent`; the SDK encodes Base64, with a default 10 MiB encoded budget per video and in aggregate per request. YouTube uses only explicitly declared native URL support, with no download or conversion fallback. Request projection preserves saved history; there is no reader, compression, splitting, or helper Model. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path: native support comes from the active `AgentSpec.model_characteristics.capabilities` value supplied through the `model_characteristics` construction key, and dedicated image, video, or audio Agents can be configured directly through process environment variables without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
 
 ### Restrict Web domains
 

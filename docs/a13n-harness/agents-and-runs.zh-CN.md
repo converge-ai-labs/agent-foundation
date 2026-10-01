@@ -226,7 +226,7 @@ bindings = RunBindings.embedded(
 
 `RunBindings.embedded()` 提供嵌入式身份和可选高级集成。嵌入应用需要执行 Capability、模型解析器、模型上下文中间件、元数据或高级 `EnvironmentRuntime` 时使用。普通 `run()` 和 `stream()` 可省略 `bindings`；执行规范化会创建新嵌入式绑定，未提供环境输入时创建空环境运行时。Host 也可用精确 `AgentInstanceContext` 直接构建 `RunBindings`。
 
-每次根执行、恢复执行或子执行都创建新绑定。不要将活跃绑定持久保存或复用为续接状态。可选功能 provider 和覆盖使用 `web`、`media_reader`、`document_converter`、`file_media_understanding`、`skill_selection`、`task_state` 和 `client_toolsets`；每个字段由对应功能 Capability 消费，不另设配套执行 Capability。选择字段保留 `None` 可使用默认值；显式空 skill 集合或客户端工具元组表示不选择任何项。Host 负责 provider 生命周期，包括有意共享的传输。
+每次根执行、恢复执行或子执行都创建新绑定。不要将活跃绑定持久保存或复用为续接状态。可选功能 provider 和覆盖使用 `web`、`document_converter`、`file_media_understanding`、`skill_selection`、`task_state` 和 `client_toolsets`；每个字段由对应功能 Capability 消费，不另设配套执行 Capability。选择字段保留 `None` 可使用默认值；显式空 skill 集合或客户端工具元组表示不选择任何项。Host 负责 provider 生命周期，包括有意共享的传输。
 
 | 稳定定义输入            | 每次执行的新输入             |
 | ----------------------- | ---------------------------- |

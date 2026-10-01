@@ -38,15 +38,6 @@ if TYPE_CHECKING:
         UserQuestionAnswers,
         UserQuestionOption,
     )
-    from .media import (
-        MediaCapability,
-        MediaConfiguration,
-        MediaKind,
-        MediaReader,
-        MediaReadError,
-        MediaReadRequest,
-        MediaResource,
-    )
     from .memory import (
         DEFAULT_FILE_GUIDE,
         DEFAULT_RECORD_GUIDE,
@@ -116,6 +107,7 @@ if TYPE_CHECKING:
         ToolReviewRule,
         ToolRiskLevel,
     )
+    from .video_url import VideoUrlCapability
     from .web import (
         WEB_SCRAPE_BACKEND_ENV,
         WEB_SCRAPE_BACKEND_PRIORITY_ENV,
@@ -199,15 +191,7 @@ _EXPORTS = {
         "UserQuestionAnswers",
         "UserQuestionOption",
     ),
-    "a13n_harness.capabilities.media": (
-        "MediaCapability",
-        "MediaConfiguration",
-        "MediaKind",
-        "MediaReadError",
-        "MediaReadRequest",
-        "MediaReader",
-        "MediaResource",
-    ),
+    "a13n_harness.capabilities.video_url": ("VideoUrlCapability",),
     "a13n_harness.capabilities.memory": (
         "DEFAULT_FILE_GUIDE",
         "DEFAULT_RECORD_GUIDE",
