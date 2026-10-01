@@ -5106,6 +5106,8 @@ export interface components {
     ModelCapability:
       | "image_understanding"
       | "video_understanding"
+      | "video_url_understanding"
+      | "youtube_url_understanding"
       | "audio_understanding"
       | "document_understanding";
     /**

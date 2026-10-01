@@ -166,7 +166,6 @@ class RunBindings:
         AbstractCapability[AgentContext], ...
     ] = ()
     web: WebBinding | None = None
-    media_reader: MediaReader | None = None
     document_converter: DocumentConverter | None = None
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
@@ -193,7 +192,6 @@ class RunBindings:
             AbstractCapability[AgentContext]
         ] = (),
         web: WebBinding | None = None,
-        media_reader: MediaReader | None = None,
         document_converter: DocumentConverter | None = None,
         file_media_understanding: MediaUnderstandingProvider | None = None,
         skill_selection: frozenset[str] | None = None,

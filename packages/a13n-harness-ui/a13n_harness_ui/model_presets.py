@@ -135,11 +135,18 @@ def known_model_capabilities(route: str) -> frozenset[ModelCapability] | None:
     entry = get_official_model_catalog().get(catalog_key)
     if entry is None or "capabilities" not in entry.characteristics.model_fields_set:
         return None
-    # The Google adapter accepts native image, audio, video and document bytes. The other
-    # setup transports are reviewed here for image input only, not video URLs,
-    # frame extraction, live voice, or provider-native tools.
+    # Native Google supports reviewed file inputs and YouTube URLs, not arbitrary
+    # external video URLs. Compatible transports are reviewed for image input only.
     supported = (
-        frozenset(ModelCapability)
+        frozenset(
+            {
+                ModelCapability.IMAGE_UNDERSTANDING,
+                ModelCapability.AUDIO_UNDERSTANDING,
+                ModelCapability.VIDEO_UNDERSTANDING,
+                ModelCapability.DOCUMENT_UNDERSTANDING,
+                ModelCapability.YOUTUBE_URL_UNDERSTANDING,
+            }
+        )
         if provider in {"google", "google-gla"}
         else frozenset({ModelCapability.IMAGE_UNDERSTANDING})
     )

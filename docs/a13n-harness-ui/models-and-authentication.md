@@ -131,7 +131,16 @@ model_characteristics:
   compact_threshold: 0.90
 ```
 
-Known Gemini Models on the native Google API can also include `audio_understanding` and `video_understanding`. Defaults respect the selected protocol: an image-capable compatible route does not automatically gain native audio/video input just because the upstream model supports it through another API.
+Known Gemini Models on the native Google API also include `audio_understanding`, `video_understanding`, and `youtube_url_understanding`. Defaults respect the selected protocol: compatible routes do not automatically gain audio, video, or YouTube input just because the upstream model supports it through another API. Arbitrary external CDN video URLs are not enabled by the Gemini starter defaults.
+
+For an existing native Google Model, add `youtube_url_understanding` to its existing capabilities after verifying the selected endpoint. No Agent Capability or reader configuration is needed:
+
+```yaml
+model_characteristics:
+  capabilities: [image_understanding, audio_understanding, video_understanding, youtube_url_understanding]
+```
+
+The Agent can call the default `read_video_url(url, instructions=None, media_type=None)` tool to attach YouTube content for analysis. Pasted links remain ordinary text; they are not rewritten automatically. Tool permissions still apply. General direct video resources require the separate `video_url_understanding` trait and a compatible native transport; extensionless resources also need a video MIME type. Neither URL trait implies local video-file support. Unsupported URLs are filtered only from the current model request, preserving saved history for a later supported Model.
 
 Capabilities are separate from an Agent's tools and from model output modalities. In particular, the file `view` tool uses these declarations to attach media directly to the active model. Without a matching capability, it requires an explicitly configured [media-understanding fallback](../a13n-harness/multimedia-understanding.md) or reports unavailability.
 
@@ -330,12 +339,12 @@ Grok uses `kind: grok_subscription` and a compatible `grok:` route. Copilot uses
 
 Within `model_characteristics`:
 
-| Field                                    | Default when the object is supplied | Meaning                                                                                                                                                      |
-| ---------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `capabilities`                           | `[]`                                | Optional native policy: `image_understanding`, `video_understanding`, `audio_understanding`; `document_understanding` is accepted but not used by Harness UI |
-| `context_window_tokens`                  | `null`                              | Positive working context budget; omission retains native/catalog behavior                                                                                    |
-| `proactive_context_management_threshold` | `0.65`                              | Fraction 0–1, or `null` to disable the derived proactive threshold                                                                                           |
-| `compact_threshold`                      | `0.90`                              | Fraction greater than 0 and at most 1                                                                                                                        |
+| Field                                    | Default when the object is supplied | Meaning                                                                                                                                                                                                                 |
+| ---------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `capabilities`                           | `[]`                                | Native input declarations: `image_understanding`, `video_understanding`, `audio_understanding`, `youtube_url_understanding`, `video_url_understanding`; `document_understanding` is accepted but not used by Harness UI |
+| `context_window_tokens`                  | `null`                              | Positive working context budget; omission retains native/catalog behavior                                                                                                                                               |
+| `proactive_context_management_threshold` | `0.65`                              | Fraction 0–1, or `null` to disable the derived proactive threshold                                                                                                                                                      |
+| `compact_threshold`                      | `0.90`                              | Fraction greater than 0 and at most 1                                                                                                                                                                                   |
 
 Harness UI accepts the legacy name `context_window` in configuration and saved snapshots. New serialization and editor saves use `context_window_tokens`; if both are supplied, their values must agree. Reading existing files or saved objects does not rewrite them. Core Harness Agent specs require the canonical spelling.
 

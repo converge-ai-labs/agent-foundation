@@ -6321,7 +6321,7 @@ export interface components {
          * @description Harness-owned capabilities of the active Agent model.
          * @enum {string}
          */
-        ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding" | "document_understanding";
+        ModelCapability: "image_understanding" | "video_understanding" | "video_url_understanding" | "youtube_url_understanding" | "audio_understanding" | "document_understanding";
         /** ModelRecipeRequest */
         ModelRecipeRequest: {
             /** Connection */

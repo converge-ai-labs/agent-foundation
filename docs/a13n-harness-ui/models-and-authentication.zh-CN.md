@@ -131,7 +131,16 @@ model_characteristics:
   compact_threshold: 0.90
 ```
 
-原生 Google API 的已知 Gemini Model 还可包含 `audio_understanding` 和 `video_understanding`。默认值遵循所选协议：兼容路由支持图像，不代表仅凭上游模型在其他 API 支持音频/视频就自动获得这些输入能力。
+原生 Google API 的已知 Gemini Model 还包含 `audio_understanding`、`video_understanding` 和 `youtube_url_understanding`。默认值遵循所选协议：兼容路由不会仅因上游模型在其他 API 支持音频、视频或 YouTube，就自动获得这些输入能力。Gemini 入门默认值不启用任意外部 CDN 视频 URL。
+
+对于现有原生 Google Model，确认所选端点支持后，将 `youtube_url_understanding` 加入现有能力列表。无需配置 Agent Capability 或 reader：
+
+```yaml
+model_characteristics:
+  capabilities: [image_understanding, audio_understanding, video_understanding, youtube_url_understanding]
+```
+
+Agent 可调用默认的 `read_video_url(url, instructions=None, media_type=None)` 工具，附加 YouTube 内容进行分析。粘贴的链接仍是普通文本，不会自动改写。工具权限仍然有效。一般直接视频资源需要独立的 `video_url_understanding` 声明及兼容的原生传输；无扩展名的资源还需指定视频 MIME 类型。两种 URL 声明都不代表本地视频文件支持。不支持的 URL 只从当前模型请求中过滤，保存的历史仍可供后续支持的 Model 使用。
 
 能力与 Agent 工具和模型输出模态分开。尤其是文件 `view` 工具用这些声明直接向活动模型附加媒体。没有匹配能力时，需要显式配置[媒体理解回退](../a13n-harness/multimedia-understanding.md)，否则报告不可用。
 
@@ -330,12 +339,12 @@ Grok 使用 `kind: grok_subscription` 和兼容 `grok:` 路由。Copilot 使用 
 
 在 `model_characteristics` 中：
 
-| 字段                                     | 提供对象时的默认值 | 含义                                                                                                                                   |
-| ---------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `capabilities`                           | `[]`               | 可选原生策略：`image_understanding`、`video_understanding`、`audio_understanding`；接受 `document_understanding`，但 Harness UI 不使用 |
-| `context_window_tokens`                  | `null`             | 正数工作上下文预算；省略保留原生/目录行为                                                                                              |
-| `proactive_context_management_threshold` | `0.65`             | 0–1 比例，或 `null` 关闭派生的主动阈值                                                                                                 |
-| `compact_threshold`                      | `0.90`             | 大于 0 且不超过 1 的比例                                                                                                               |
+| 字段                                     | 提供对象时的默认值 | 含义                                                                                                                                                                                           |
+| ---------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `capabilities`                           | `[]`               | 原生输入声明：`image_understanding`、`video_understanding`、`audio_understanding`、`youtube_url_understanding`、`video_url_understanding`；接受 `document_understanding`，但 Harness UI 不使用 |
+| `context_window_tokens`                  | `null`             | 正数工作上下文预算；省略保留原生/目录行为                                                                                                                                                      |
+| `proactive_context_management_threshold` | `0.65`             | 0–1 比例，或 `null` 关闭派生的主动阈值                                                                                                                                                         |
+| `compact_threshold`                      | `0.90`             | 大于 0 且不超过 1 的比例                                                                                                                                                                       |
 
 Harness UI 在配置和已保存快照中接受旧名称 `context_window`。新序列化和编辑器保存使用 `context_window_tokens`；两者都提供时值必须一致。读取已有文件或对象不改写它们。核心 Harness Agent spec 要求规范名称。
 

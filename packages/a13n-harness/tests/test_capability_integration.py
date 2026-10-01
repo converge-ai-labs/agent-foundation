@@ -21,9 +21,6 @@ from a13n_harness.capabilities import (
     FileContextConfiguration,
     FileSkillSource,
     HandoffCapability,
-    MediaCapability,
-    MediaReadRequest,
-    MediaResource,
     RuntimeContextCapability,
     RuntimeContextConfiguration,
     SkillManager,
@@ -89,7 +86,6 @@ _EXPECTED_TOOLS = {
     "note_write",
     "office_to_markdown",
     "pdf_convert",
-    "read_media",
     "scrape",
     "search",
     "summarize",
@@ -100,11 +96,6 @@ _EXPECTED_TOOLS = {
     "view",
     "write",
 }
-
-
-class _MediaReader:
-    async def read(self, request: MediaReadRequest) -> MediaResource:
-        raise AssertionError(f"unexpected media request: {request.url}")
 
 
 class _DocumentConverter:
@@ -159,7 +150,6 @@ def _bindings(root: Path) -> RunBindings:
     return RunBindings.embedded(
         environment=_environment(root),
         metadata={"tenant": "integration-test"},
-        media_reader=_MediaReader(),
         document_converter=_DocumentConverter(),
         web=WebBinding(
             client=_WebClient(),
@@ -181,7 +171,6 @@ def _definition_capabilities():
         SkillsCapability(skill_manager),
         WorkingStateCapability(),
         UserInteractionCapability(),
-        MediaCapability(),
         DocumentsCapability(),
         WebCapability(WebConfiguration(search=WebSearchConfiguration(mode="host"))),
     )

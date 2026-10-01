@@ -84,7 +84,12 @@ def test_the_catalog_offers_recent_text_models_of_served_channels() -> None:
 def test_input_modalities_declare_the_understanding_capabilities() -> None:
     inputs = {"input": ["text", "image", "audio", "video", "pdf"], "output": ["text"]}
     [item] = parse_catalog(document({"openai": {"models": {"omni": model(modalities=inputs)}}}), CHANNELS)
-    assert item.characteristics.capabilities == set(ModelCapability)
+    assert item.characteristics.capabilities == {
+        ModelCapability.IMAGE_UNDERSTANDING,
+        ModelCapability.AUDIO_UNDERSTANDING,
+        ModelCapability.VIDEO_UNDERSTANDING,
+        ModelCapability.DOCUMENT_UNDERSTANDING,
+    }
 
 
 def test_the_catalog_channels_are_those_the_registered_types_serve() -> None:

@@ -5,8 +5,8 @@ from typing import TypeAliasType, get_args, get_origin, get_type_hints
 from a13n_harness.toolsets.context import HandoffToolset
 from a13n_harness.toolsets.documents import DocumentsToolset
 from a13n_harness.toolsets.files import FileToolset
-from a13n_harness.toolsets.media import MediaToolset
 from a13n_harness.toolsets.shell import ShellToolset
+from a13n_harness.toolsets.video_url import VideoUrlToolset
 from a13n_harness.toolsets.web import WebToolset
 from a13n_harness.toolsets.working_state import WorkingStateToolset
 from pydantic_ai import ToolReturn
@@ -59,7 +59,7 @@ def test_every_model_facing_function_tool_has_an_explicit_result_contract() -> N
             "note_delete",
             "note_get",
         },
-        MediaToolset: {"read_media"},
+        VideoUrlToolset: {"read_video_url"},
         DocumentsToolset: {"pdf_convert", "office_to_markdown"},
         WebToolset: {"search", "scrape", "fetch", "download"},
     }

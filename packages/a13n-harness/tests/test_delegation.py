@@ -1364,7 +1364,7 @@ async def test_inline_child_binding_factory_preserves_owned_boundaries(change: s
             yield "handled"
 
     def factory(baseline):
-        assert baseline.web is None and baseline.media_reader is None
+        assert baseline.web is None
         assert baseline.skill_selection is None and baseline.client_toolsets is None
         assert baseline.task_state is None
         assert baseline.deferred_tools_supported is False

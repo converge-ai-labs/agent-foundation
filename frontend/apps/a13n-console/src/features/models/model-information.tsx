@@ -6,7 +6,9 @@ type Characteristics = Schema["HarnessModelCharacteristics-Input"];
 const inputCapabilities = [
   ["image_understanding", "Images"],
   ["audio_understanding", "Audio"],
-  ["video_understanding", "Video"],
+  ["video_understanding", "Video files"],
+  ["video_url_understanding", "External video URLs"],
+  ["youtube_url_understanding", "YouTube URLs"],
   ["document_understanding", "PDF documents"],
 ] as const;
 
