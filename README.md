@@ -18,7 +18,7 @@ Agent Foundation is an open-source library and platform for building and running
 
 ## Run Service with Docker Compose
 
-You need **Docker with Docker Compose** and a model provider API key. The stack includes Service, Console, PostgreSQL, Redis, and access to your host Docker Engine for agent execution. No repository clone, Make, Python, Node.js, or source build is needed.
+You need **Docker with Docker Compose** and either a model provider API key or an eligible ChatGPT plan. The stack includes Service, Console, PostgreSQL, Redis, and access to your host Docker Engine for agent execution. No repository clone, Make, Python, Node.js, or source build is needed.
 
 ![Service Console: build agents, try runs, inspect execution traces, and monitor usage](.github/assets/console-workflow.webp)
 
@@ -36,7 +36,7 @@ docker compose -f a13n-service.yaml up -d --wait --pull always
 Then open **<http://127.0.0.1:8080>**:
 
 1. **First launch: register the administrator account.** Enter your email and choose a password of at least **8 characters**. This creates the first administrator, organization, and workspace, and signs you in automatically.
-2. **Connect a model.** Under **Models**, add your model provider and API key, then select a model.
+2. **Connect a model.** Under **Models**, add a provider using an API key or **Sign in with ChatGPT**, then select a model.
 3. **Try an agent.** Create an agent, choose the model, and send your first message with **Try agent**.
 
 The first account created on an uninitialized Service is its administrator. On later visits, sign in with the email and password you registered; restarting preserves your account and data. Additional users join through invitations from an administrator.
@@ -56,11 +56,21 @@ Build your agent stack in Console: choose model providers, web data services, ex
 | Capability       | Explore                                                                                                                                  |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | **Models**       | [14 provider types](docs/a13n-service/models.md#model-providers), including cloud APIs, gateways, and local Ollama endpoints.            |
-| **Web Data**     | [10 search and scrape providers](docs/a13n-service/tools.md#web-tools), including Brave, Exa, Tavily, and TinyFish.                      |
+| **Web Data**     | [10 search and scrape providers](docs/a13n-service/tools.md#web-search-and-scrape), including Brave, Exa, Tavily, and TinyFish.          |
 | **Environments** | [Docker and hosted sandboxes](docs/a13n-service/environments.md#providers), including E2B, Daytona, Modal, Runloop, Sprites, and Vercel. |
 | **Connections**  | [Browse remote MCP servers](docs/a13n-service/tools.md#remote-mcp-servers) or connect your own compatible endpoint.                      |
 
 *Explore the full-size screenshots in the linked guides. The Local directory environment is available only in development.*
+
+## Sign in with ChatGPT
+
+Harness UI and Service support **Sign in with ChatGPT**: use your eligible ChatGPT plan for agent requests without an OpenAI API key. See [Harness UI setup](docs/a13n-harness-ui/models-and-authentication.md#chatgpt-subscription) or [Service setup](docs/a13n-service/models.md#chatgpt-subscription-provider).
+
+<p align="center">
+  <img src=".github/assets/sign-in-with-chatgpt.png" alt="OpenAI sign-in page for Agent Foundation OSS, with account details obscured" width="320">
+</p>
+
+*Sign in with ChatGPT — Authorize Agent Foundation OSS on OpenAI's sign-in page. Account details are obscured.*
 
 ## Use Harness UI
 
