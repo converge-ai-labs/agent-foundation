@@ -18,7 +18,6 @@ Agent 调用一个**模型**：它对应**模型 provider** 账号下的上游�
 | `google_gemini`, `google_vertex`                                   | `google.generate_content`                                                         |
 | `azure_openai`                                                     | `openai.responses`, `openai.chat_completions`                                     |
 | `aws_bedrock`                                                      | `bedrock.converse`, `bedrock_mantle.responses`, `bedrock_mantle.chat_completions` |
-| `mistral`                                                          | `mistral.chat_completions`                                                        |
 | `openrouter`                                                       | `openrouter.chat_completions`                                                     |
 | `fireworks`, `together`, `cerebras`, `sambanova`, `vercel`, `xai`  | `openai.chat_completions`                                                         |
 | `ollama`                                                           | `ollama.chat_completions`                                                         |
@@ -31,17 +30,16 @@ Fireworks AI 和 Together AI 使用 API key 凭据，并支持可选的 `base_ur
 
 模型 provider 还可包含最多 32 个**额外请求头**，用于按请求头路由或计费的网关。请求头值作为密钥加密，永不返回（视图只列出 `header_names`），通过 `PATCH` 按名称编辑（`"X-Team": "..."` 设置值，`null` 移除，省略则保留）。传输、认证和协议请求头名称不可设置。
 
-Cerebras、SambaNova、Vercel AI Gateway、Mistral 和 xAI / Grok 同样使用 API key，并支持可选的 `base_url` 覆盖：
+Cerebras、SambaNova、Vercel AI Gateway 和 xAI / Grok 同样使用 API key，并支持可选的 `base_url` 覆盖：
 
 | Provider 类型 | 默认端点                          | 模型目录渠道  |
 | ------------- | --------------------------------- | ------------- |
 | `cerebras`    | `https://api.cerebras.ai/v1`      | `cerebras`    |
 | `sambanova`   | `https://api.sambanova.ai/v1`     | `sambanova`   |
 | `vercel`      | `https://ai-gateway.vercel.sh/v1` | `vercel`      |
-| `mistral`     | `https://api.mistral.ai`          | `mistral`     |
 | `xai`         | `https://api.x.ai/v1`             | `xai`, `x-ai` |
 
-Vercel 需要填写完整的网关模型 ID，例如 `anthropic/claude-sonnet-4.6`。请通过测试已保存的模型来验证凭据：它的公开模型列表不能用于验证身份。其余四家提供无需推理的连接测试。Mistral 使用原生 SDK、设置和工具调用格式，其基础 URL 不含 `/v1`。xAI / Grok 使用 HTTP Chat Completions。这些 Provider 选项不提供 Responses API 或 xAI 原生服务端搜索工具。
+Vercel 需要填写完整的网关模型 ID，例如 `anthropic/claude-sonnet-4.6`。请通过测试已保存的模型来验证凭据：它的公开模型列表不能用于验证身份。其余三家提供无需推理的连接测试。xAI / Grok 使用 HTTP Chat Completions。这些 Provider 选项不提供 Responses API 或 xAI 原生服务端搜索工具。
 
 ## ChatGPT 订阅 provider
 

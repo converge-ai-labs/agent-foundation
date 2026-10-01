@@ -6,7 +6,6 @@ import httpx2
 import pytest
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.model.definition import ProviderOperationError
-from anyio import create_task_group, sleep
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelRequest, ToolCallPart, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
@@ -70,7 +69,7 @@ def completion(request):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("kind", ["cerebras", "sambanova", "vercel", "mistral", "xai"])
+@pytest.mark.parametrize("kind", ["cerebras", "sambanova", "vercel", "xai"])
 @pytest.mark.parametrize("streaming", [False, True])
 async def test_hosted_chat_preserves_tools_usage_headers_and_caller_client(kind, streaming):
     requests = []
@@ -90,7 +89,7 @@ async def test_hosted_chat_preserves_tools_usage_headers_and_caller_client(kind,
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
         model = await definition(kind).build(
             "fixture-model",
-            configuration={"base_url": "https://gateway.example" + ("" if kind == "mistral" else "/v1")},
+            configuration={"base_url": "https://gateway.example/v1"},
             credential={"api_key": "fixture"},
             http_client=client,
             extra_headers={"x-routing-key": "team", "X-Affinity": "provider"},
@@ -121,38 +120,6 @@ async def test_hosted_chat_preserves_tools_usage_headers_and_caller_client(kind,
         assert not client.is_closed
         assert "x-affinity" not in client.headers
     assert len(requests) == 2  # The adapters must not add SDK retries.
-
-
-@pytest.mark.anyio
-async def test_mistral_concurrent_request_headers_do_not_leak_after_failure():
-    seen = {}
-
-    async def handler(request):
-        name = json.loads(request.content)["messages"][0]["content"]
-        await sleep(0)
-        seen[name] = request.headers.get("x-affinity")
-        if name == "failed":
-            return httpx2.Response(401, json={"message": "invalid key"})
-        return completion(request)
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        model = await definition("mistral").build(
-            "fixture-model", configuration={}, credential={"api_key": "fixture"}, http_client=client
-        )
-
-        async def run(name):
-            await model.request(
-                [ModelRequest(parts=[UserPromptPart(name)])], {"extra_headers": {"x-affinity": name}}, PARAMETERS
-            )
-
-        async with model:
-            async with create_task_group() as group:
-                group.start_soon(run, "first")
-                group.start_soon(run, "second")
-            with pytest.raises(ModelHTTPError):
-                await run("failed")
-            await model.request([ModelRequest(parts=[UserPromptPart("plain")])], None, PARAMETERS)
-    assert seen == {"first": "first", "second": "second", "failed": "failed", "plain": None}
 
 
 @pytest.mark.anyio

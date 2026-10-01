@@ -32,7 +32,6 @@ class _AllowEndpoints:
             for kind, endpoint in [
                 ("cerebras", "https://api.cerebras.ai/v1/models"),
                 ("sambanova", "https://api.sambanova.ai/v1/models"),
-                ("mistral", "https://api.mistral.ai/v1/models"),
                 ("xai", "https://api.x.ai/v1/models"),
             ]
         ],

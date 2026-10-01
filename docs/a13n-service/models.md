@@ -18,7 +18,6 @@ In Console, open **Models → Add model → Connect a new provider**, or manage 
 | `google_gemini`, `google_vertex`                                   | `google.generate_content`                                                         |
 | `azure_openai`                                                     | `openai.responses`, `openai.chat_completions`                                     |
 | `aws_bedrock`                                                      | `bedrock.converse`, `bedrock_mantle.responses`, `bedrock_mantle.chat_completions` |
-| `mistral`                                                          | `mistral.chat_completions`                                                        |
 | `openrouter`                                                       | `openrouter.chat_completions`                                                     |
 | `fireworks`, `together`, `cerebras`, `sambanova`, `vercel`, `xai`  | `openai.chat_completions`                                                         |
 | `ollama`                                                           | `ollama.chat_completions`                                                         |
@@ -31,17 +30,16 @@ Fireworks AI and Together AI support API-key credentials and optional `base_url`
 
 A model provider may also carry up to 32 **extra request headers**, for gateways that route or bill by header. Header values are secrets: they are encrypted, never returned (views list only `header_names`), and edited per name in a `PATCH` (`"X-Team": "..."` sets a value, `null` removes it, omitted names are kept). Transport, authentication and protocol header names are refused.
 
-Cerebras, SambaNova, Vercel AI Gateway, Mistral, and xAI / Grok also accept API-key credentials and optional `base_url` overrides:
+Cerebras, SambaNova, Vercel AI Gateway, and xAI / Grok also accept API-key credentials and optional `base_url` overrides:
 
 | Provider type | Default endpoint                  | Catalog channel |
 | ------------- | --------------------------------- | --------------- |
 | `cerebras`    | `https://api.cerebras.ai/v1`      | `cerebras`      |
 | `sambanova`   | `https://api.sambanova.ai/v1`     | `sambanova`     |
 | `vercel`      | `https://ai-gateway.vercel.sh/v1` | `vercel`        |
-| `mistral`     | `https://api.mistral.ai`          | `mistral`       |
 | `xai`         | `https://api.x.ai/v1`             | `xai`, `x-ai`   |
 
-For Vercel, use the gateway's full model ID, such as `anthropic/claude-sonnet-4.6`. Verify its credentials by testing a saved Model: its public model list is not an authentication check. The other four offer a connection test without inference. Mistral uses its native SDK, settings, and tool-call format; its base URL excludes `/v1`. The xAI / Grok provider uses HTTP Chat Completions. These provider choices do not expose Responses API or xAI's native server-side search tools.
+For Vercel, use the gateway's full model ID, such as `anthropic/claude-sonnet-4.6`. Verify its credentials by testing a saved Model: its public model list is not an authentication check. The other three offer a connection test without inference. The xAI / Grok provider uses HTTP Chat Completions. These provider choices do not expose Responses API or xAI's native server-side search tools.
 
 ## ChatGPT subscription provider
 

@@ -59,7 +59,6 @@ def test_credentials_reject_blank_keys_and_invalid_service_account_pem():
         ("cerebras", "cerebras", "openai.chat_completions", None),
         ("sambanova", "sambanova", "openai.chat_completions", None),
         ("vercel", "vercel", "openai.chat_completions", None),
-        ("mistral", "mistral", "mistral.chat_completions", None),
         ("grok", "xai", "openai.chat_completions", "https://api.x.ai/v1"),
     ],
 )
@@ -95,7 +94,7 @@ async def test_routes_without_a_host_endpoint_use_their_declared_default(monkeyp
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("provider", ["fireworks", "together", "cerebras", "sambanova", "vercel", "grok", "mistral"])
+@pytest.mark.parametrize("provider", ["fireworks", "together", "cerebras", "sambanova", "vercel", "grok"])
 async def test_hosted_open_model_routes_enforce_allowed_hosts_and_own_client_lifetime(provider):
     configuration = RunConfiguration(allowed_hosts=frozenset({"gateway.example"}))
     with pytest.raises(EndpointPolicyError):
@@ -114,10 +113,6 @@ async def test_hosted_open_model_routes_enforce_allowed_hosts_and_own_client_lif
     assert str(model.provider.base_url).rstrip("/") == "https://gateway.example/v1"
     for _ in range(2):
         async with model:
-            if provider == "mistral":
-                client = model.provider.client.sdk_configuration.async_client
-                assert not client.is_closed
-            else:
-                client = model.provider.client
-                assert not client.is_closed()
-        assert client.is_closed if provider == "mistral" else client.is_closed()
+            client = model.provider.client
+            assert not client.is_closed()
+        assert client.is_closed()

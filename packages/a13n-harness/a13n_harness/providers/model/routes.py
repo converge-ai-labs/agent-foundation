@@ -52,7 +52,6 @@ ROUTES = {
     "cerebras": RouteSpec("cerebras", "openai.chat_completions"),
     "sambanova": RouteSpec("sambanova", "openai.chat_completions"),
     "vercel": RouteSpec("vercel", "openai.chat_completions"),
-    "mistral": RouteSpec("mistral", "mistral.chat_completions"),
     "deepseek": RouteSpec("deepseek", "openai.chat_completions"),
     "zai": RouteSpec("zhipu", "openai.chat_completions", "https://api.z.ai/api/paas/v4", _zai_model),
     "moonshotai": RouteSpec("moonshot", "openai.chat_completions", "https://api.moonshot.ai/v1"),

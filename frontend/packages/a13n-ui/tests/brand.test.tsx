@@ -88,7 +88,6 @@ it("prefers an explicit remote logo before the MCP fallback", () => {
 it.each([
   ["cerebras", "cerebras", "https://api.cerebras.ai/v1"],
   ["sambanova", "sambanova", "https://api.sambanova.ai/v1"],
-  ["mistral", "mistralai", "https://api.mistral.ai"],
   ["fireworks", "fireworks-ai", "https://api.fireworks.ai/inference/v1"],
   ["together", "togetherai", "https://api.together.xyz/v1"],
   ["together", "together.ai", "https://api.together.ai/v1"],

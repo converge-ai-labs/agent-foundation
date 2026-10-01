@@ -385,7 +385,6 @@ async def test_the_route_serves_the_catalog_to_signed_in_principals(service: Any
         ("cerebras", "cerebras", "gpt-oss-120b"),
         ("sambanova", "sambanova", "DeepSeek-R1"),
         ("vercel", "vercel", "anthropic/claude-sonnet-4.6"),
-        ("mistral", "mistral", "mistral-small-latest"),
         ("xai", "xai", "grok-4"),
         ("xai", "x-ai", "grok-4"),
         ("fireworks", "fireworks-ai", "accounts/fireworks/models/llama-v3p3-70b-instruct"),

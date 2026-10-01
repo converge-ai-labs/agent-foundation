@@ -15,7 +15,6 @@ from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.bedrock import BedrockConverseModel
 from pydantic_ai.models.bedrock_mantle import BedrockMantleChatModel, BedrockMantleResponsesModel
 from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.models.openrouter import OpenRouterModel
@@ -53,7 +52,6 @@ async def test_every_builtin_constructs_its_declared_native_apis():
         "openrouter.chat_completions": OpenRouterModel,
         "ollama.chat_completions": OllamaModel,
         "typesafe.system_one": TypeSafeModel,
-        "mistral.chat_completions": MistralModel,
     }
     configurations = {
         "aws_bedrock": {"region": "us-east-1"},
@@ -94,7 +92,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
                             assert model.client.max_retries == 0
                         if isinstance(model, BedrockConverseModel):
                             assert model.client.meta.config.retries["total_max_attempts"] == 1
-    assert len(BUILT_IN_MODEL_PROVIDERS) == 22
+    assert len(BUILT_IN_MODEL_PROVIDERS) == 21
 
 
 class Configuration(BaseModel):

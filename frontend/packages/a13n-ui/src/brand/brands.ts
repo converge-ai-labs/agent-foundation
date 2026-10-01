@@ -128,11 +128,6 @@ const curatedBrands: Record<string, Brand> = {
     icon: `${lobeIconsCdn}sambanova-color.svg`,
     hosts: ["sambanova.ai", "cloud.sambanova.ai", "api.sambanova.ai"],
   },
-  mistral: {
-    icon: `${lobeIconsCdn}mistral-color.svg`,
-    aliases: ["mistralai"],
-    hosts: ["mistral.ai", "console.mistral.ai", "api.mistral.ai"],
-  },
   xai: {
     icon: `${lobeIconsCdn}xai.svg`,
     invertInDark: true,

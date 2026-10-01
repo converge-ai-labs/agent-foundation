@@ -48,14 +48,6 @@ MODEL_APIS = MappingProxyType(
             "pydantic_ai.models.openai",
             "OpenAIChatModelSettings",
         ),
-        "mistral.chat_completions": ModelApi(
-            "mistral.chat_completions",
-            "Mistral Chat Completions",
-            "a13n_harness.models.mistral",
-            "MistralModel",
-            "pydantic_ai.models.mistral",
-            "MistralModelSettings",
-        ),
         "anthropic.messages": ModelApi(
             "anthropic.messages",
             "Anthropic Messages",

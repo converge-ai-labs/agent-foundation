@@ -664,8 +664,6 @@ async def test_provider_types_describe_each_registered_definition(service) -> No
     assert openai["credential_schema"]["properties"]["api_key"]
     assert openai["authentication"]["mode"] == "required"
     assert models["vercel"]["supports_test"] is False
-    assert models["mistral"]["model_apis"] == ["mistral.chat_completions"]
-    assert "mistral_prompt_cache_key" in models["mistral"]["settings_schemas"]["mistral.chat_completions"]["properties"]
     # Every calling API of every type describes its native settings, including the unified thinking levels.
     for described in models.values():
         assert set(described["settings_schemas"]) == set(described["model_apis"]) == set(described["model_api_labels"])
@@ -708,11 +706,6 @@ async def test_model_settings_follow_the_schema_of_their_calling_api(service) ->
     check = service.runtime.registry.check_model_settings
     check("openai.responses", {"thinking": "high", "max_tokens": 1024}, field="settings")
     check("bedrock.converse", {"bedrock_guardrail_config": {"guardrailIdentifier": "g"}}, field="settings")
-    check(
-        "mistral.chat_completions",
-        {"mistral_prompt_cache_key": "cache", "extra_headers": {"x-team": "team"}},
-        field="settings",
-    )
     with pytest.raises(ServiceError) as unknown:
         check("anthropic.messages", {"thinkng": True}, field="model_settings")
     assert unknown.value.details["field"] == "model_settings"
@@ -727,8 +720,6 @@ async def test_model_settings_follow_the_schema_of_their_calling_api(service) ->
     for model_api, key, value in (
         ("openai.responses", "extra_body", {"model": "other"}),
         ("openai.chat_completions", "extra_headers", {"authorization": "Bearer other"}),
-        ("mistral.chat_completions", "extra_headers", {"authorization": "Bearer other"}),
-        ("mistral.chat_completions", "openai_store", True),
         ("anthropic.messages", "timeout", 30),
         ("openai.responses", "openai_previous_response_id", "resp_other"),
         ("openai.responses", "openai_conversation_id", "conv_other"),

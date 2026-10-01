@@ -39,7 +39,7 @@ API_PROVIDERS = (
         "moonshotai", "Moonshot AI / Kimi", "https://api.moonshot.ai/v1", "MOONSHOTAI_API_KEY", "openai-client"
     ),
     ApiProvider("groq", "Groq", "https://api.groq.com", "GROQ_API_KEY"),
-    ApiProvider("mistral", "Mistral", "https://api.mistral.ai", "MISTRAL_API_KEY"),
+    ApiProvider("mistral", "Mistral", "https://api.mistral.ai", "MISTRAL_API_KEY", supports_session_affinity=False),
     ApiProvider("together", "Together AI", "https://api.together.xyz/v1", "TOGETHER_API_KEY", "openai-client"),
     ApiProvider(
         "fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY", "openai-client"
