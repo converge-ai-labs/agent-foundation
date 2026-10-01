@@ -6,6 +6,7 @@ from typing import Protocol
 
 from anyio import Lock
 
+from .chatgpt import OpenAIChatGPTCredentials
 from .copilot import CopilotCredentials
 from .models import GrokCredentials
 from .rotation import RotatingCredentials, load_credentials, rotate_grant
@@ -54,6 +55,10 @@ class _ProcessCredentialSource[CredentialT: RotatingCredentials]:
 
 class ProcessGrokCredentialSource(_ProcessCredentialSource[GrokCredentials]):
     """One shared Grok source; process-local exclusion, no restart guarantee."""
+
+
+class ProcessChatGPTCredentialSource(_ProcessCredentialSource[OpenAIChatGPTCredentials]):
+    """Share one source across Models; process-local exclusion, no restart guarantee."""
 
 
 class ProcessCopilotCredentialSource(_ProcessCredentialSource[CopilotCredentials]):

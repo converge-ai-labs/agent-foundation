@@ -253,6 +253,15 @@ def test_feature_facades_export_documented_families() -> None:
 
 def test_model_auth_feature_facade_is_public_without_root_reexports() -> None:
     expected = {
+        "ChatGPTAuthorization",
+        "ChatGPTCallback",
+        "OpenAIChatGPTCredentials",
+        "OpenAIChatGPTCredentialSource",
+        "OpenAIChatGPTOAuthFlow",
+        "OpenAIChatGPTRefresh",
+        "ProcessChatGPTCredentialSource",
+        "refresh_chatgpt_credentials",
+        "revoke_chatgpt_credentials",
         "CodexDeviceAuthorization",
         "CodexDeviceAuthorizationFlow",
         "DeviceAuthorizationError",

@@ -1,3 +1,6 @@
+import { PlusIcon } from "@phosphor-icons/react";
+import { Button } from "a13n-ui";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useClient } from "../../auth/context";
@@ -13,6 +16,8 @@ import { useModelProviderDefinitions } from "./provider-definitions";
 import { ProviderForm } from "./provider-form";
 
 export function Providers() {
+  const { t } = useTranslation();
+  const [creating, setCreating] = useState(false);
   const client = useClient(),
     { workspace, can } = useWorkspace(),
     page = useCursor();
@@ -25,9 +30,16 @@ export function Providers() {
   });
   const definitions = useModelProviderDefinitions();
   const manage = can("write");
-  const add = manage ? <AddProvider /> : undefined;
+  const add = manage ? (
+    <Button type="button" onClick={() => setCreating(true)}>
+      <PlusIcon aria-hidden="true" />
+      {t("Add provider")}
+    </Button>
+  ) : undefined;
   return (
     <>
+      {/* Keep authorization mounted when creation changes the table's empty state. */}
+      {manage && <AddProvider open={creating} onOpenChange={setCreating} />}
       {selected && (
         <EditProvider key={selected.id} provider={selected} {...rows.control} />
       )}

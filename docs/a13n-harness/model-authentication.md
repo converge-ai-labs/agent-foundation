@@ -90,6 +90,17 @@ async def grok_device_login(issuer, client_id, scopes, show_device_code, source)
 
 The model credential manager checks identity across refresh/reload and persists rotation before using it. Handle persistence failure as a failed credential transition, not success merely because the remote token endpoint answered. An injected HTTP client remains caller-owned; the adapter owns clients it creates.
 
+## ChatGPT sign-in and native Model
+
+The portable integration keeps OAuth, Provider and Model dialect independent of Host storage:
+
+- `providers.model.oauth.chatgpt.OpenAIChatGPTOAuthFlow.start(ext_agent_host_id=..., agent_name=..., redirect_uri=..., credentials=None)` creates a bounded PKCE registration or returning authorization. Present `authorization_url()`, then pass the complete URL to `validate_callback()` and `exchange_callback()`. Neither function fetches that URL. The Host must consume a valid pending attempt durably before exchange and persist the verified complete credential result before reporting success.
+- `OpenAIChatGPTCredentials` and `OpenAIChatGPTCredentialSource` define the boundary. A source implements `async load()` and `async rotate(expected, exchange)` with same-account arbitration and durable publication. `refresh_chatgpt_credentials` and `revoke_chatgpt_credentials` perform protocol operations, not storage.
+- `providers.model.chatgpt.OpenAIChatGPTProvider(credential_source=..., http_client=None)` is a native OpenAI Provider with a fixed public endpoint, request-fresh authentication, coordinated rotation and one 401 replay. An injected client remains caller-owned and must not already have authentication.
+- `models.chatgpt.OpenAIChatGPTResponsesModel(model_name, provider=...)` subclasses native Responses rendering and retains its ordinary-request stream collector. It enforces `store=false`, `stream=true`, complete input history, developer instructions, supported tool placement and a natural `response.completed` terminal event. Unsupported SIWC settings and hosted tools fail explicitly.
+
+These APIs neither discover local account files nor embed Harness UI or Service storage. `discover_chatgpt_models(credential_source=..., http_client=None)` returns account-visible slugs/display names in server order; manual IDs remain valid inputs. ChatGPT plan eligibility and model access remain upstream decisions, separate from Codex and API-key authorization.
+
 ## Authentication failures
 
 | Public exception             | Meaning                                                                        |

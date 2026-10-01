@@ -6,6 +6,16 @@ from typing import TYPE_CHECKING, Any
 from a13n_harness._exports import exported_names, load_export
 
 if TYPE_CHECKING:
+    from .chatgpt import (
+        ChatGPTAuthorization,
+        ChatGPTCallback,
+        OpenAIChatGPTCredentials,
+        OpenAIChatGPTCredentialSource,
+        OpenAIChatGPTOAuthFlow,
+        OpenAIChatGPTRefresh,
+        refresh_chatgpt_credentials,
+        revoke_chatgpt_credentials,
+    )
     from .codex_login import CodexDeviceAuthorization, CodexDeviceAuthorizationFlow, CodexLoginFlow
     from .copilot import (
         CopilotCredentials,
@@ -34,10 +44,20 @@ if TYPE_CHECKING:
         RefreshNotDispatched,
     )
     from .runtime import build_grok_model
-    from .source import ProcessCopilotCredentialSource, ProcessGrokCredentialSource
+    from .source import ProcessChatGPTCredentialSource, ProcessCopilotCredentialSource, ProcessGrokCredentialSource
 
 # Credential discovery does not need native provider Models or their SDKs.
 _EXPORTS = {
+    "a13n_harness.providers.model.oauth.chatgpt": (
+        "ChatGPTAuthorization",
+        "ChatGPTCallback",
+        "OpenAIChatGPTCredentials",
+        "OpenAIChatGPTCredentialSource",
+        "OpenAIChatGPTOAuthFlow",
+        "OpenAIChatGPTRefresh",
+        "refresh_chatgpt_credentials",
+        "revoke_chatgpt_credentials",
+    ),
     "a13n_harness.providers.model.oauth.codex_login": (
         "CodexDeviceAuthorization",
         "CodexDeviceAuthorizationFlow",
@@ -70,7 +90,11 @@ _EXPORTS = {
         "refresh_grok_credentials",
     ),
     "a13n_harness.providers.model.oauth.runtime": ("build_grok_model",),
-    "a13n_harness.providers.model.oauth.source": ("ProcessGrokCredentialSource", "ProcessCopilotCredentialSource"),
+    "a13n_harness.providers.model.oauth.source": (
+        "ProcessGrokCredentialSource",
+        "ProcessCopilotCredentialSource",
+        "ProcessChatGPTCredentialSource",
+    ),
 }
 
 

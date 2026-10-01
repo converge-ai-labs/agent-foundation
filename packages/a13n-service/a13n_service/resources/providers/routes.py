@@ -1,10 +1,20 @@
 """One workspace collection per provider kind, and the registered types."""
 
+from a13n_harness.providers.model.chatgpt import ChatGPTModel, discover_chatgpt_models
 from fastapi import APIRouter, Response
 
+from a13n_service.infra.db import short_session
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
+from a13n_service.infra.outbound import open_http
 from a13n_service.providers.registry import ProviderKind
-from a13n_service.resources.providers import service
+from a13n_service.resources.providers import oauth, service
+from a13n_service.resources.providers.oauth import (
+    AuthorizationCallback,
+    AuthorizationDisconnect,
+    AuthorizationStart,
+    AuthorizationStatus,
+    ProviderAuthorizationRequest,
+)
 from a13n_service.resources.providers.schemas import (
     Provider,
     ProviderCreate,
@@ -107,3 +117,68 @@ for _row_type in (ModelProviderRow, EnvironmentProviderRow, ConnectorProviderRow
 @router.get("/provider-types/{kind}", response_model=ProviderTypePage)
 async def list_provider_types(kind: ProviderKind, actor: Actor, runtime: CurrentRuntime) -> ProviderTypePage:
     return service.list_provider_types(runtime.registry, kind)
+
+
+@router.get("/model-providers/{provider_id}/authorization", response_model=AuthorizationStatus)
+async def model_authorization(
+    workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
+) -> AuthorizationStatus:
+    return await oauth.status(runtime.storage, actor, workspace_id, provider_id)
+
+
+@router.post("/model-providers/{provider_id}/authorize", response_model=AuthorizationStart)
+async def authorize_model(
+    workspace_id: WorkspaceId,
+    provider_id: str,
+    body: ProviderAuthorizationRequest,
+    actor: Actor,
+    runtime: CurrentRuntime,
+) -> AuthorizationStart:
+    return await oauth.authorize(runtime.storage, actor, workspace_id, provider_id, body, keys=runtime.keys)
+
+
+@router.post("/model-providers/{provider_id}/authorization/callback", response_model=AuthorizationStatus)
+async def complete_model_authorization(
+    workspace_id: WorkspaceId, provider_id: str, body: AuthorizationCallback, actor: Actor, runtime: CurrentRuntime
+) -> AuthorizationStatus:
+    return await oauth.complete(
+        runtime.storage,
+        actor,
+        workspace_id,
+        provider_id,
+        body,
+        keys=runtime.keys,
+        policy=runtime.endpoint_policy,
+        settings=runtime.settings.providers,
+    )
+
+
+@router.delete("/model-providers/{provider_id}/authorization", response_model=AuthorizationDisconnect)
+async def disconnect_model_authorization(
+    workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
+) -> AuthorizationDisconnect:
+    return await oauth.disconnect(
+        runtime.storage,
+        actor,
+        workspace_id,
+        provider_id,
+        keys=runtime.keys,
+        policy=runtime.endpoint_policy,
+        settings=runtime.settings.providers,
+    )
+
+
+@router.get("/model-providers/{provider_id}/models", response_model=list[ChatGPTModel])
+async def discover_model_provider_models(
+    workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
+) -> tuple[ChatGPTModel, ...]:
+    async with short_session(runtime.storage) as session:
+        provider = await oauth.authorized_provider(session, actor, workspace_id, provider_id, "run")
+        organization_id = provider.organization_id
+    source = oauth.ChatGPTCredentialSource(runtime.storage, runtime.keys, provider_id, organization_id)
+    async with open_http(
+        runtime.endpoint_policy,
+        timeout=runtime.settings.providers.model_timeout,
+        max_bytes=runtime.settings.providers.response_bytes,
+    ) as client:
+        return await discover_chatgpt_models(credential_source=source, http_client=client)

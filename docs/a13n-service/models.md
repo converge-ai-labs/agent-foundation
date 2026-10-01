@@ -27,6 +27,16 @@ Each type's configuration and credential fields come from the Harness; `GET /api
 
 A model provider may also carry up to 32 **extra request headers**, for gateways that route or bill by header. Header values are secrets: they are encrypted, never returned (views list only `header_names`), and edited per name in a `PATCH` (`"X-Team": "..."` sets a value, `null` removes it, omitted names are kept). Transport, authentication and protocol header names are refused.
 
+## ChatGPT subscription provider
+
+Create an `openai_chatgpt` provider without a static credential. In **Workspace settings → Providers**, choose **ChatGPT subscription**, add it, then use **Sign in with ChatGPT**. This authorization belongs to the Provider and is shared by the workspace; it is not a personal Connection.
+
+After authorizing, copy the entire callback URL from the browser address bar into **Complete callback URL**, even if the loopback page shows a connection error. The Service can run remotely: it validates and exchanges the pasted callback without fetching that URL or requiring the browser to reach the server's loopback listener.
+
+API clients use `POST /api/v1/model-providers/{id}/authorize` with `{}` and then `POST …/authorization/callback` with `{"attempt_id": "oauth_...", "callback_url": "http://127.0.0.1:1456/auth/callback?..."}`. Keep the full callback private. Invalid input is retryable; after exchange starts, a failed attempt must be restarted. `GET …/authorization` exposes credential-free status. `DELETE …/authorization` clears tokens before requesting revocation and reports when revocation is unconfirmed. The retained registration supports returning login; `{"new_registration": true}` starts an explicit new registration.
+
+Use `openai.responses` and an account model slug for this Provider. `GET …/models` returns account-visible slugs and display names; manual IDs remain available in Console. Visibility is not proof of inference entitlement. The endpoint is fixed, and tokens/pending authorization are encrypted in Provider-owned state rather than Model configuration or Run snapshots. Every request uses `store: false` and the required stream; native ordinary calls collect that stream. The native profile omits temperature, Top P and output-token limits; previous-response IDs and unsupported hosted tools fail explicitly. This does not translate the request into API-key behavior. Codex credentials are unrelated and cannot replace this authorization.
+
 ## Add a model
 
 In Console, open **Models → Add model**, choose the provider, then pick a model from the model catalog or enter its upstream model ID. The catalog lists recent text models from [models.dev](https://models.dev) that the provider's type serves, one row per model, with a choice of IDs when the provider serves a model under several (such as Bedrock regions). A provider of the generic `openai` type also offers **Other models (compatible)**, for an OpenAI-compatible endpoint serving another vendor's model. Picking a model fills in its upstream model ID, capabilities and prices, which you can change before saving. When models.dev has not been reachable since the Service started, Console says the catalog is unavailable; enter the upstream model ID instead.

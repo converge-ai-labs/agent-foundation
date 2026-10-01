@@ -208,3 +208,46 @@ async def test_jev_is_resolved_as_a_normal_api_key_model(monkeypatch, base_url):
     fresh = await resolver.fresh()(_CONTEXT, recipe.model_id)
     async with fresh:
         assert fresh is not model and fresh.provider is not model.provider
+
+
+async def test_chatgpt_resolution_uses_native_provider_without_loading_credentials(monkeypatch) -> None:
+    from a13n_harness_ui.configuration import ChatGPTSubscriptionAuthentication
+    from a13n_harness_ui.model_runtime import ChatGPTSubscriptionSource
+
+    recipe = ResolvedModelRecipe(
+        model_id="model-chatgpt",
+        route="openai-chatgpt:gpt-test",
+        authentication=ChatGPTSubscriptionAuthentication(kind="chatgpt_subscription"),
+    )
+    source = Mock()
+    provider = Mock()
+    native = object()
+    build_provider = Mock(return_value=provider)
+    build_model = Mock(return_value=native)
+    monkeypatch.setattr("a13n_harness.providers.model.chatgpt.OpenAIChatGPTProvider", build_provider)
+    monkeypatch.setattr("a13n_harness.models.chatgpt.OpenAIChatGPTResponsesModel", build_model)
+    resolver = HarnessUiModelResolver(
+        {recipe.model_id: recipe},
+        subscription_sources={"chatgpt_subscription": ChatGPTSubscriptionSource(source)},
+    )
+    assert await resolver.resolve(recipe.model_id, thread_id="thread-test") is native
+    build_provider.assert_called_once_with(credential_source=source)
+    build_model.assert_called_once_with("gpt-test", provider=provider)
+    source.load.assert_not_called()
+
+
+async def test_chatgpt_resolution_rejects_unenforceable_run_host_restrictions() -> None:
+    from a13n_harness.configuration import RunConfiguration
+    from a13n_harness_ui.configuration import ChatGPTSubscriptionAuthentication
+
+    recipe = ResolvedModelRecipe(
+        model_id="model-chatgpt",
+        route="openai-chatgpt:gpt-test",
+        authentication=ChatGPTSubscriptionAuthentication(kind="chatgpt_subscription"),
+    )
+    resolver = HarnessUiModelResolver(
+        {recipe.model_id: recipe}, configuration=RunConfiguration(allowed_hosts={"api.openai.com"})
+    )
+    with pytest.raises(ModelResolutionError) as caught:
+        await resolver.resolve(recipe.model_id, thread_id="thread-test")
+    assert caught.value.code == "model_configuration_unsupported"

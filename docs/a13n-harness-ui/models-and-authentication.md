@@ -24,7 +24,7 @@ A Model chooses a provider connection, request settings, and context budget. Sto
 
 In the browser, open **Settings → Models** to add, edit or clone a saved Model. First-use setup and an Agent's **Add model** action use the same flow. Saving a Model changes no active Run.
 
-1. Choose **Codex subscription**, **Grok subscription**, or an API connection. Subscriptions keep their native account stores and transports; they are not API-key presets.
+1. Choose **ChatGPT subscription**, **Codex subscription**, **Grok subscription**, **GitHub Copilot subscription**, or an API connection. Subscriptions keep their native account stores and transports; they are not API-key presets.
 2. Connect the shared subscription account, choose a saved API key, save a new key, or name a server environment variable. Credential writes happen independently; cancelling the Model draft does not undo a completed login or key save.
 3. Choose a suggestion or enter a case-sensitive Model ID. Suggestions describe known routes, not your account's entitlement; manual IDs remain available if the directory fails.
 4. Choose **Use this model** and adjust offered reasoning, speed and working context. For an existing connection, **Apply connection & defaults** deliberately changes its preset settings.
@@ -68,17 +68,40 @@ a13n-harness-ui auth status
 a13n-harness-ui login codex
 a13n-harness-ui login grok
 a13n-harness-ui login copilot
+a13n-harness-ui login chatgpt
 a13n-harness-ui login codex --browser
 a13n-harness-ui auth key list
 a13n-harness-ui auth key set key-primary
 a13n-harness-ui auth key delete key-primary
 ```
 
-Device authorization is the default and needs no host callback. Open the printed URL yourself. Use `--browser` only when your browser can reach the host's loopback callback; Codex uses `http://localhost:1455/auth/callback`. There is no automatic fallback to another login method. Authorization expires within fifteen minutes. Replacing a different shared account requires `--allow-account-switch` through the CLI.
+For Codex, Grok and Copilot, device authorization is the default and needs no host callback. Open the printed URL yourself. Use `--browser` only when your browser can reach the host's loopback callback; Codex uses `http://localhost:1455/auth/callback`. There is no automatic fallback to another login method. Authorization expires within fifteen minutes. Replacing a different shared account requires `--allow-account-switch` through the CLI.
 
 For API access, choose **API key** in initial setup, `a13n-harness-ui add model`, or the **Create a new model** branch of `a13n-harness-ui add agent`. Select the provider/protocol, confirm or edit its base URL, enter a key in the hidden credential field, choose a provider-specific model suggestion (or type a custom, case-sensitive model ID), select a settings preset, and review the working context budget. You can instead enter `key:key-primary` for a stored key or `env:OPENAI_API_KEY` for an environment variable available to the Harness UI process. A newly entered key is saved immediately under a fresh reference in the local key store, independently of configuration publication. Never paste an API key into the normal composer.
 
 Stored API keys are plaintext in the data root's independent `auth.json`, with private permissions. Protect the host and backups. Configuration and Run snapshots hold references, not key bytes. A completed credential save/login is independent of setup publication and is not undone by cancelling setup.
+
+## ChatGPT subscription
+
+Choose **ChatGPT subscription** in Add Model, or run `a13n-harness-ui login chatgpt`. The terminal first prints a sign-in link, then asks for the **complete callback URL** in a hidden prompt. After authorizing, copy the entire browser address-bar URL, even if the loopback page cannot be reached. Do not paste it into a conversation or share it: it contains a one-time code. Invalid URLs can be corrected; an exchange failure requires a new login.
+
+WebUI tries the automatic loopback callback first. If the server is remote, expand **Callback cannot reach this server?** and paste the full URL. Both paths use the same validation and exchange. A pasted URL is never fetched. This is an authorization-code callback workflow, not a device verification code.
+
+```yaml
+schema_version: "1"
+kind: model
+id: model-chatgpt
+name: ChatGPT Subscription
+route: openai-chatgpt:YOUR_ACCOUNT_MODEL_SLUG
+authentication:
+  kind: chatgpt_subscription
+settings: {}
+model_configuration: {}
+```
+
+Discover model slugs after login or enter one manually. Account visibility is not a guarantee of inference access. ChatGPT uses the public Responses endpoint with `store: false`, `stream: true`, full input history and developer instructions; ordinary calls collect the required stream through the native Model. It does not support endpoint overrides, static API keys, previous-response IDs, temperature, Top P, output-token limits, or hosted tools other than policy-permitted web search.
+
+Credentials are plaintext in the Host data root's private `auth.json`, alongside but separate from API keys. They never use `~/.codex` or Codex credentials. `a13n-harness-ui auth logout chatgpt` clears tokens, keeps the issued registration for future login, and requests OpenAI revocation; an unconfirmed revocation is reported separately. Replacing the account affects everyone using this Host.
 
 ## GitHub Copilot subscription
 

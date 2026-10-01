@@ -74,7 +74,7 @@ COMMANDS = (
     ),
     Command(
         "usage",
-        "Show recorded Thread usage; subscription/reset inspect Codex limits.",
+        "Show recorded Thread usage; subscription shows plan usage; reset redeems Codex credits.",
         "[details|subscription|reset]",
         maximum=1,
         choices=("details", "subscription", "reset"),
