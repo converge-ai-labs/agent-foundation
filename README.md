@@ -66,9 +66,11 @@ Build your agent stack in Console: choose model providers, web data services, ex
 
 Harness UI and Service support **Sign in with ChatGPT**: use your eligible ChatGPT plan for agent requests without an OpenAI API key. See [Harness UI setup](docs/a13n-harness-ui/models-and-authentication.md#chatgpt-subscription) or [Service setup](docs/a13n-service/models.md#chatgpt-subscription-provider).
 
-![Service Console showing ChatGPT sign-in and callback controls](.github/assets/sign-in-with-chatgpt.png)
+<p align="center">
+  <img src=".github/assets/sign-in-with-chatgpt.png" alt="OpenAI sign-in page for Agent Foundation OSS, with account details obscured" width="320">
+</p>
 
-*Service Console — Authorize ChatGPT for your workspace. Shown in a demo workspace.*
+*Sign in with ChatGPT — Authorize Agent Foundation OSS on OpenAI's sign-in page. Account details are obscured.*
 
 ## Use Harness UI
 
