@@ -204,7 +204,9 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
     }
     if (url.pathname === "/api/threads/memory-global")
       return json({ thread, available_actions: [], continuation_id: "saved" });
-    if (url.pathname.endsWith("/inputs"))
+    if (url.pathname === "/api/threads/memory-global/mcp/inputs")
+      return json([]);
+    if (url.pathname === "/api/threads/memory-global/inputs")
       return json({ turns: [], next_cursor: null });
     if (url.pathname.endsWith("/transcript"))
       return json({

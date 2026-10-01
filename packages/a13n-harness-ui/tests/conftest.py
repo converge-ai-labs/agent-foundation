@@ -37,3 +37,16 @@ def no_model_directory_network(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture
+def terminal_app():
+    """App contract for terminal-only tests, including the live input subscription."""
+    from unittest.mock import Mock
+
+    from a13n_harness_ui.app import HarnessUiApp
+    from a13n_harness_ui.live import HarnessUiSummaryHub
+
+    app = Mock(spec=HarnessUiApp)
+    app.summary_events = HarnessUiSummaryHub(epoch="terminal-test").subscribe
+    return app

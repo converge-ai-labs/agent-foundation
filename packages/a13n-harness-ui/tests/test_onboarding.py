@@ -338,7 +338,7 @@ async def test_landing_choices_use_available_rows_and_reflow_on_resize(monkeypat
 
 
 @pytest.mark.anyio
-async def test_landing_chat_keeps_terminal_and_enables_composer_only_when_ready() -> None:
+async def test_landing_chat_keeps_terminal_and_enables_composer_only_when_ready(terminal_app) -> None:
     import asyncio
     from types import SimpleNamespace
 
@@ -360,6 +360,7 @@ async def test_landing_chat_keeps_terminal_and_enables_composer_only_when_ready(
         return None
 
     backend = SimpleNamespace(
+        app=terminal_app,
         thinking_choices=lambda: (),
         thread_id=None,
         resumed_transcript=None,

@@ -161,7 +161,7 @@ def test_resume_hint_preserves_environment_data_root(
 @pytest.mark.anyio
 @pytest.mark.parametrize("scenario", ["gc", "gc-thread", "exception", "message", "missing-task", "task-exception"])
 async def test_terminal_loop_failures_preserve_only_pending_task_notifications(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str, terminal_app
 ) -> None:
     import gc
 
@@ -179,6 +179,7 @@ async def test_terminal_loop_failures_preserve_only_pending_task_notifications(
         await asyncio.Future()
 
     backend = SimpleNamespace(
+        app=terminal_app,
         thinking_choices=lambda: (),
         thread_id=None,
         resumed_transcript=None,
