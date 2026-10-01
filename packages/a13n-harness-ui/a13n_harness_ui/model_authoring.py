@@ -27,7 +27,9 @@ from a13n_harness_ui.model_presets import (
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl, describe_reasoning_mode
 from a13n_harness_ui.resource_names import model_name
 
-type AuthenticationKind = Literal["api_key", "codex_subscription", "grok_subscription", "copilot_subscription"]
+type AuthenticationKind = Literal[
+    "api_key", "chatgpt_subscription", "codex_subscription", "grok_subscription", "copilot_subscription"
+]
 
 
 class ModelChoice(StrictModel):
@@ -51,9 +53,9 @@ CODEX_CONTEXT_CHOICES = (
 class AccountConnection(StrictModel):
     """Built-in account actions shared by terminal and browser authoring."""
 
-    provider: Literal["codex", "grok", "copilot"]
+    provider: Literal["chatgpt", "codex", "grok", "copilot"]
     label: str
-    login_methods: tuple[Literal["device", "browser"], ...]
+    login_methods: tuple[Literal["device", "browser", "manual_callback"], ...]
     model_discovery: bool = False
     source_selection: bool = False
 
@@ -106,6 +108,21 @@ SUBSCRIPTION_CONNECTIONS = (
             provider="copilot",
             label="GitHub Copilot",
             login_methods=("device",),
+            model_discovery=True,
+            source_selection=True,
+        ),
+        models=(),
+        default_model="",
+    ),
+    ModelConnection(
+        id="chatgpt-subscription",
+        label="ChatGPT subscription",
+        provider="openai-chatgpt",
+        authentication="chatgpt_subscription",
+        account=AccountConnection(
+            provider="chatgpt",
+            label="ChatGPT",
+            login_methods=("manual_callback", "browser"),
             model_discovery=True,
             source_selection=True,
         ),

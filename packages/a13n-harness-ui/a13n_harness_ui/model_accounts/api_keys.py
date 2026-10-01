@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-import json
-import os
-import tempfile
-from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from anyio import to_thread
-from filelock import FileLock, Timeout
 from pydantic import ConfigDict, Field, JsonValue, SecretStr, ValidationError
 
 from a13n_harness_ui.configuration.models import ResourceId, StrictModel
 from a13n_harness_ui.errors import HarnessUiError
+
+from .auth import HostAuthDocument
 
 
 class ApiKeyInput(StrictModel):
@@ -36,70 +32,44 @@ class _Document(StrictModel):
 
 
 class ApiKeyStore:
-    """Serialize read-modify-write operations without retaining credential values."""
+    """API-key projection of the shared Host authentication document."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
+        self.document = HostAuthDocument(path)
 
-    def _read(self) -> _Document:
+    async def _read(self) -> _Document:
         try:
-            with self.path.open("rb") as source:
-                raw = source.read(2 * 1024 * 1024 + 1)
-        except FileNotFoundError:
-            return _Document()
-        if len(raw) > 2 * 1024 * 1024:
-            raise ValueError("oversize")
-        return _Document.model_validate_json(raw)
+            return _Document.model_validate(await self.document.read())
+        except ValidationError:
+            raise HarnessUiError(
+                "The Host authentication store could not be read or updated.", code="api_key_store_unavailable"
+            ) from None
 
     async def list(self) -> tuple[ApiKeyStatus, ...]:
-        document = await self._run(self._read)
+        document = await self._read()
         return tuple(ApiKeyStatus(credential_ref=ref) for ref in sorted(document.keys))
 
     async def load(self, reference: str) -> str | None:
-        document = await self._run(self._read)
+        document = await self._read()
         key = document.keys.get(reference)
         return key.get_secret_value() if key is not None else None
 
     async def put(self, value: ApiKeyInput) -> ApiKeyStatus:
-        await self._run(lambda: self._change(value.credential_ref, value.key))
+        await self._change(value.credential_ref, value.key)
         return ApiKeyStatus(credential_ref=value.credential_ref)
 
     async def delete(self, reference: str) -> None:
-        await self._run(lambda: self._change(reference, None))
+        await self._change(reference, None)
 
-    @staticmethod
-    async def _run[T](operation: Callable[[], T]) -> T:
-        # The worker is not abandoned on cancellation during an atomic publication.
-        try:
-            return await to_thread.run_sync(operation)
-        except (OSError, ValueError, ValidationError, Timeout):
-            raise HarnessUiError(
-                "The Host API-key store could not be read or updated.", code="api_key_store_unavailable"
-            ) from None
-
-    def _change(self, reference: str, key: SecretStr | None) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if os.name != "nt":
-            self.path.parent.chmod(0o700)
-        with FileLock(str(self.path) + ".lock", timeout=10, mode=0o600):
-            document = self._read()
-            keys = dict(document.keys)
+    async def _change(self, reference: str, key: SecretStr | None) -> None:
+        def change(raw: dict[str, Any]) -> None:
+            document = _Document.model_validate(raw)
+            keys = {ref: val.get_secret_value() for ref, val in document.keys.items()}
             if key is None:
                 keys.pop(reference, None)
             else:
-                keys[reference] = key
-            payload = document.model_dump(mode="json")
-            payload["keys"] = {ref: val.get_secret_value() for ref, val in keys.items()}
-            raw = json.dumps(payload, allow_nan=False)
-            if len(raw.encode("utf-8")) > 2 * 1024 * 1024:
-                raise ValueError("oversize")
-            fd, name = tempfile.mkstemp(prefix=".auth-", dir=self.path.parent)
-            temporary = Path(name)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as target:
-                    target.write(raw)
-                    target.flush()
-                    os.fsync(target.fileno())
-                os.replace(temporary, self.path)
-            finally:
-                temporary.unlink(missing_ok=True)
+                keys[reference] = key.get_secret_value()
+            raw["keys"] = keys
+
+        await self.document.update(change)

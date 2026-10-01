@@ -102,7 +102,7 @@ from a13n_harness_ui.mcp_apps.resources import AppResourceRequest
 from a13n_harness_ui.mcp_apps.sandbox import serve_sandbox
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
-from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
+from a13n_harness_ui.model_accounts.login import LoginCallbackInput, LoginRequest, LoginStatus
 from a13n_harness_ui.model_accounts.models import AccountCandidate, AccountSelection
 from a13n_harness_ui.model_authoring import (
     ModelChoice,
@@ -1254,6 +1254,13 @@ def create_webui(
     @server.get("/api/auth/logins/{session_id}", response_model=LoginStatus)
     async def login_status(session_id: str) -> LoginStatus:
         return await app().login_status(session_id)
+
+    @server.post(
+        "/api/auth/logins/{session_id}/callback", response_model=LoginStatus, openapi_extra=_body(LoginCallbackInput)
+    )
+    async def submit_login_callback(session_id: str, request: Request) -> LoginStatus:
+        value = await _document(request, LoginCallbackInput)
+        return await app().submit_login_callback(session_id, value.callback_url.get_secret_value())
 
     @server.delete("/api/auth/logins/{session_id}", response_model=LoginStatus)
     async def cancel_login(session_id: str) -> LoginStatus:

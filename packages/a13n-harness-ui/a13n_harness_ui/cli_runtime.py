@@ -23,7 +23,7 @@ from a13n_harness_ui.configuration import (
     LoadedHarnessUiConfiguration,
 )
 from a13n_harness_ui.content_plugins import ContentPluginStore, InstalledContentPlugin
-from a13n_harness_ui.errors import ConfigurationError
+from a13n_harness_ui.errors import ConfigurationError, HarnessUiError
 from a13n_harness_ui.model_accounts import (
     GrokLoginRequest,
     Provider,
@@ -317,6 +317,38 @@ async def _run_management(
                 {"source": request.account_source, "account_id": request.account_id}
             )
             result = await app.select_model_account(provider, selection)
+        elif request.action == "login" and provider is Provider.CHATGPT:
+            from a13n_harness_ui.model_accounts.login import LoginRequest
+
+            status = await app.start_login(
+                LoginRequest(
+                    provider="chatgpt", method="manual_callback", allow_account_switch=request.allow_account_switch
+                )
+            )
+            displayed = False
+            while status.state in {"starting", "waiting"}:
+                if status.state == "waiting" and not displayed:
+                    _present_login(verification_url=status.verification_url, message=status.message)
+                    callback_url = await asyncio.to_thread(
+                        click.prompt, "Paste the complete callback URL", hide_input=True
+                    )
+                    try:
+                        await app.submit_login_callback(status.session_id, callback_url)
+                    except HarnessUiError as error:
+                        if error.code != "login_callback_invalid":
+                            raise
+                        click.echo(str(error), err=True)
+                    else:
+                        displayed = True
+                    finally:
+                        callback_url = ""
+                await asyncio.sleep(0.2)
+                status = await app.login_status(status.session_id)
+            if status.state != "succeeded":
+                raise HarnessUiError(
+                    status.message or "ChatGPT sign-in failed.", code=status.error_code or "oauth_login_failed"
+                )
+            result = await app.inspect_model_account(provider)
         elif request.action == "login":
             result = await app.login_model_account(
                 provider,

@@ -90,6 +90,17 @@ async def grok_device_login(issuer, client_id, scopes, show_device_code, source)
 
 模型凭据管理器在刷新/重新加载前后检查身份，并在使用前持久保存轮换。持久化失败应视为凭据转换失败，不能仅因远程 token 端点响应就认定成功。注入的 HTTP 客户端仍由调用者管理；适配器管理自己创建的客户端。
 
+## ChatGPT 登录与原生 Model
+
+此集成将 OAuth、Provider 和 Model 请求方言与 Host 存储分离：
+
+- `providers.model.oauth.chatgpt.OpenAIChatGPTOAuthFlow.start(ext_agent_host_id=..., agent_name=..., redirect_uri=..., credentials=None)` 创建有期限的 PKCE 注册或再次授权。显示 `authorization_url()`，再将完整 URL 交给 `validate_callback()` 和 `exchange_callback()`。两者均不请求该 URL。Host 必须在交换前持久化有效待完成授权的消费状态，在报告成功前保存完整且经过验证的凭据。
+- `OpenAIChatGPTCredentials` 和 `OpenAIChatGPTCredentialSource` 定义边界。Source 实现 `async load()` 和 `async rotate(expected, exchange)`，负责同账户仲裁和持久化发布。`refresh_chatgpt_credentials` 与 `revoke_chatgpt_credentials` 执行协议操作，不拥有存储。
+- `providers.model.chatgpt.OpenAIChatGPTProvider(credential_source=..., http_client=None)` 是原生 OpenAI Provider，端点固定，每次请求重新读取身份，通过协调轮换以及一次 401 重放工作。注入的客户端仍由调用者管理，且不能已有身份验证。
+- `models.chatgpt.OpenAIChatGPTResponsesModel(model_name, provider=...)` 继承原生 Responses 渲染，保留普通请求的流收集器。它强制 `store=false`、`stream=true`、完整输入历史、developer 指令、受支持工具位置和自然 `response.completed` 终止事件。不支持的 SIWC 设置与托管工具明确失败。
+
+这些 API 不发现本地账户文件，也不嵌入 Harness UI 或 Service 存储。`discover_chatgpt_models(credential_source=..., http_client=None)` 按服务器顺序返回账户可见 slug 和显示名，仍可手动输入 ID。ChatGPT 订阅资格与模型权限由上游决定，与 Codex 和 API 密钥授权分离。
+
 ## 身份验证失败
 
 | 公开异常                     | 含义                                                   |

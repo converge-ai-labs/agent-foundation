@@ -107,7 +107,8 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         # this is a readiness guard, not an eight-second startup benchmark.
         output = _read_until(master, b"Connect a model", timeout=30)
         assert output.count(b"\x1b[?1049h") == 1
-        os.write(master, b"\x1b[B\x1b[B\x1b[B\r")
+        # Select by stable value, not the subscription catalog's changing position.
+        os.write(master, b"api\r")
         output += _read_until(master, b"API provider")
         os.write(master, b"\r")
         output += _read_until(master, b"Base URL")

@@ -225,6 +225,7 @@ async def open_models(
                 open_model(
                     model,
                     registry=runtime.registry,
+                    storage=runtime.storage,
                     keys=runtime.keys,
                     policy=runtime.endpoint_policy.for_run(configuration or RunConfiguration()),
                     settings=runtime.settings.providers,

@@ -32,8 +32,8 @@
 }
 .loginHeader h3 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 600;
 }
 .loginStatus {
   color: var(--a13n-secondary);
@@ -62,8 +62,8 @@
   width: fit-content;
   max-width: 100%;
   margin-top: 8px;
-  color: var(--info-foreground);
-  font-size: 14px;
+  color: var(--a13n-text);
+  font-size: 13px;
   font-weight: 500;
   text-decoration: underline;
   text-decoration-thickness: 1px;

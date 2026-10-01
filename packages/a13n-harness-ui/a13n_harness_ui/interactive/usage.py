@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from a13n_harness.providers.model.openai_chatgpt import DEFINITION as CHATGPT_DEFINITION
 from pydantic_ai.exceptions import UserError
 
 from a13n_harness_ui.model_accounts.usage import CodexUsage, ResetRequest
@@ -113,7 +114,7 @@ def _usage_details(view: ThreadUsageView) -> str:
             "Cache/audio counters are subsets of input/output, not extra tokens.",
             "Cache rate = cache-read / (input + output), matching the status bar.",
             "Provider receipts are deduplicated across Runs and attributed to first observation.",
-            "Context occupancy: /status. Codex subscription limits: /usage subscription; reset credits: /usage reset.",
+            "Context occupancy: /status. Subscription usage: /usage subscription; Codex reset credits: /usage reset.",
         ]
     )
     return "\n".join(lines)
@@ -194,6 +195,18 @@ def usage_text(usage: CodexUsage, *, now: datetime | None = None) -> str:
     if usage.reset_unavailable:
         lines.append(f"Reset credits unavailable: {usage.reset_unavailable}")
     return "\n".join(lines)
+
+
+async def show_subscription_usage(shell: CliShell) -> str:
+    assert shell.backend is not None
+    if shell.status.model.startswith("openai-chatgpt:"):
+        shell.emit(
+            "ChatGPT subscription usage is unavailable in Harness UI.\n"
+            f"Manage usage in ChatGPT: {CHATGPT_DEFINITION.setup_url}",
+            kind="info",
+        )
+        return ""
+    return await show_codex_usage(shell)
 
 
 async def show_codex_usage(shell: CliShell) -> str:

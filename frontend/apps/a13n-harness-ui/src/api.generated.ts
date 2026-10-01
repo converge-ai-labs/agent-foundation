@@ -1045,6 +1045,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/logins/{session_id}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Login Callback */
+        post: operations["submit_login_callback_api_auth_logins__session_id__callback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/configuration/sources": {
         parameters: {
             query?: never;
@@ -1792,11 +1809,11 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok" | "copilot";
+            provider: "chatgpt" | "codex" | "grok" | "copilot";
             /** Label */
             label: string;
             /** Login Methods */
-            login_methods: ("device" | "browser")[];
+            login_methods: ("device" | "browser" | "manual_callback")[];
             /**
              * Model Discovery
              * @default false
@@ -2234,7 +2251,7 @@ export interface components {
             override_allowed?: boolean;
         };
         /** @enum {string} */
-        AuthenticationKind: "api_key" | "codex_subscription" | "grok_subscription" | "copilot_subscription";
+        AuthenticationKind: "api_key" | "chatgpt_subscription" | "codex_subscription" | "grok_subscription" | "copilot_subscription";
         /**
          * Availability
          * @enum {string}
@@ -2415,6 +2432,14 @@ export interface components {
              * @default null
              */
             comparison?: ("staged" | "unstaged" | "untracked") | null;
+        };
+        /** ChatGPTSubscriptionAuthentication */
+        ChatGPTSubscriptionAuthentication: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "chatgpt_subscription";
         };
         /** ChildActivityView */
         ChildActivityView: {
@@ -3665,12 +3690,12 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok" | "copilot";
+            provider: "chatgpt" | "codex" | "grok" | "copilot";
             /**
              * Method
              * @enum {string}
              */
-            method: "device" | "browser";
+            method: "device" | "browser" | "manual_callback";
             /**
              * State
              * @default starting
@@ -3779,7 +3804,7 @@ export interface components {
              */
             output_tokens?: number;
         };
-        ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
+        ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["ChatGPTSubscriptionAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
         /** ModelCatalogSnapshot */
         ModelCatalogSnapshot: {
             /** Items */
@@ -4287,7 +4312,7 @@ export interface components {
          * Provider
          * @enum {string}
          */
-        Provider: "codex" | "grok" | "copilot";
+        Provider: "codex" | "grok" | "copilot" | "chatgpt";
         /** PublicDestinations */
         PublicDestinations: {
             /**
@@ -4595,7 +4620,7 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok" | "copilot";
+            provider: "chatgpt" | "codex" | "grok" | "copilot";
             /** Available */
             available: boolean;
             /** Selected */
@@ -6388,18 +6413,26 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "codex" | "grok" | "copilot";
+            provider: "chatgpt" | "codex" | "grok" | "copilot";
             /**
              * Method
              * @default device
              * @enum {string}
              */
-            method?: "device" | "browser";
+            method?: "device" | "browser" | "manual_callback";
             /**
              * Allow Account Switch
              * @default false
              */
             allow_account_switch?: boolean;
+        };
+        /** LoginCallbackInput */
+        LoginCallbackInput: {
+            /**
+             * Callback Url
+             * Format: password
+             */
+            callback_url: string;
         };
         /**
          * ResourceMutationRequest
@@ -8666,6 +8699,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_login_callback_api_auth_logins__session_id__callback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginCallbackInput"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -16,6 +16,7 @@ class Provider(StrEnum):
     CODEX = "codex"
     GROK = "grok"
     COPILOT = "copilot"
+    CHATGPT = "chatgpt"
 
 
 class StoreKind(StrEnum):

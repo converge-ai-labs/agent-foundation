@@ -1197,6 +1197,75 @@ export interface paths {
     patch: operations["update_provider_api_v1_model_providers__provider_id__patch"];
     trace?: never;
   };
+  "/api/v1/model-providers/{provider_id}/authorization": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Model Authorization */
+    get: operations["model_authorization_api_v1_model_providers__provider_id__authorization_get"];
+    put?: never;
+    post?: never;
+    /** Disconnect Model Authorization */
+    delete: operations["disconnect_model_authorization_api_v1_model_providers__provider_id__authorization_delete"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-providers/{provider_id}/authorization/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Complete Model Authorization */
+    post: operations["complete_model_authorization_api_v1_model_providers__provider_id__authorization_callback_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-providers/{provider_id}/authorize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Authorize Model */
+    post: operations["authorize_model_api_v1_model_providers__provider_id__authorize_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-providers/{provider_id}/models": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Discover Model Provider Models */
+    get: operations["discover_model_provider_models_api_v1_model_providers__provider_id__models_get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/model-providers/{provider_id}/test": {
     parameters: {
       query?: never;
@@ -3543,6 +3612,26 @@ export interface components {
       field: string;
       mode: components["schemas"]["CredentialMode"];
     };
+    /** AuthorizationCallback */
+    AuthorizationCallback: {
+      /** Attempt Id */
+      attempt_id: string;
+      /**
+       * Callback Url
+       * Format: password
+       */
+      callback_url: string;
+    };
+    /** AuthorizationDisconnect */
+    AuthorizationDisconnect: {
+      /**
+       * Local Tokens Cleared
+       * @default true
+       */
+      local_tokens_cleared?: boolean;
+      /** Revocation Confirmed */
+      revocation_confirmed?: boolean | null;
+    };
     /** AuthorizationRequest */
     AuthorizationRequest: {
       /** Return Url */
@@ -3557,6 +3646,53 @@ export interface components {
       expires_at: string | null;
       /** Redirect Url */
       redirect_url: string | null;
+    };
+    /** AuthorizationStart */
+    AuthorizationStart: {
+      /** Attempt Id */
+      attempt_id: string;
+      /** Authorization Url */
+      authorization_url: string;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /**
+       * Method
+       * @default manual_callback
+       * @constant
+       */
+      method?: "manual_callback";
+    };
+    /** AuthorizationStatus */
+    AuthorizationStatus: {
+      /** Client Id */
+      client_id?: string | null;
+      /** Email */
+      email?: string | null;
+      /** Expires At */
+      expires_at?: string | null;
+      /** Message */
+      message?: string | null;
+      /**
+       * Pending
+       * @default false
+       */
+      pending?: boolean;
+      /** Provider Id */
+      provider_id: string;
+      /**
+       * State
+       * @enum {string}
+       */
+      state:
+        | "disconnected"
+        | "connected"
+        | "refreshing"
+        | "reauthentication_required";
+      /** Subject */
+      subject?: string | null;
     };
     /** BearerCredential */
     BearerCredential: {
@@ -3623,6 +3759,13 @@ export interface components {
     };
     /** @enum {string} */
     Certainty: "not_dispatched" | "known" | "unknown";
+    /** ChatGPTModel */
+    ChatGPTModel: {
+      /** Display Name */
+      display_name: string;
+      /** Slug */
+      slug: string;
+    };
     /**
      * ChildEnvironmentPolicy
      * @description What a child run mounts: no environment, the parent's, or a new one from `template_id`.
@@ -5720,6 +5863,14 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
+    /** ProviderAuthorizationRequest */
+    ProviderAuthorizationRequest: {
+      /**
+       * New Registration
+       * @default false
+       */
+      new_registration?: boolean;
+    };
     /** ProviderCreate */
     ProviderCreate: {
       /** Config */
@@ -5792,6 +5943,8 @@ export interface components {
       } | null;
       /** Model Apis */
       model_apis?: string[] | null;
+      /** Oauth Scheme */
+      oauth_scheme?: string | null;
       /** Operations */
       operations?: components["schemas"]["WebOperation"][] | null;
       /** Settings Schemas */
@@ -10028,6 +10181,149 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Provider"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  model_authorization_api_v1_model_providers__provider_id__authorization_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationStatus"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  disconnect_model_authorization_api_v1_model_providers__provider_id__authorization_delete: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationDisconnect"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  complete_model_authorization_api_v1_model_providers__provider_id__authorization_callback_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AuthorizationCallback"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationStatus"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  authorize_model_api_v1_model_providers__provider_id__authorize_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ProviderAuthorizationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AuthorizationStart"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  discover_model_provider_models_api_v1_model_providers__provider_id__models_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ChatGPTModel"][];
         };
       };
       400: components["responses"]["Error"];
