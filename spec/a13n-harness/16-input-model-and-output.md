@@ -196,6 +196,8 @@ Pydantic AI retains the complete layering:
 
 The projection is a narrow native Model wrapper applied consistently to a concrete definition Model, a `RunModelResolver` result, or a Harness-inferred Model. It preserves the wrapped provider profile and behavior and maps only Harness `context_window_tokens` to native `context_window`. An explicit Harness value wins over a conflicting provider profile because it is managed definition policy; without that value, the original native profile is unchanged. The resulting `Model.context_window` and `Model.profile.context_window` agree, allowing external Pydantic AI Capabilities and first-party Harness Capabilities to share the upstream abstraction. This is interoperability projection, not a claim that the selected provider route supports a larger window; authoring remains responsible for selecting a compatible route.
 
+Chat Completions Models constructed through the calling-API registry enable the native `openai_chat_streaming_requires_finish_reason` profile flag. A naturally exhausted stream without a provider finish reason fails through the existing model-failure and optional recovery flow; native cancellation semantics remain intact. This check does not validate trailing usage frames or cover other protocols, independently inferred Models, or Models reconstructed outside the registry.
+
 For common authoring choices, the Harness exports two parallel synchronous input convenience layers. They preserve the existing separation between Harness lifecycle characteristics and native provider request settings:
 
 ```python

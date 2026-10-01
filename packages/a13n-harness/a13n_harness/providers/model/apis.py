@@ -27,6 +27,14 @@ class ModelApi:
 
     def build(self, model_name: str, provider: Provider[Any]) -> Model[Any]:
         constructor = getattr(import_module(self.model_module), self.model_name)
+        if self.key.endswith(".chat_completions"):
+            from pydantic_ai.profiles.openai import OpenAIModelProfile
+
+            return constructor(
+                model_name,
+                provider=provider,
+                profile=OpenAIModelProfile(openai_chat_streaming_requires_finish_reason=True),
+            )
         return constructor(model_name, provider=provider)
 
 

@@ -85,6 +85,8 @@ async def test_every_builtin_constructs_its_declared_native_apis():
                     )
                     async with model:
                         assert isinstance(model, expected[api])
+                        if isinstance(model, OpenAIChatModel):
+                            assert model.profile["openai_chat_streaming_requires_finish_reason"] is True
                         if isinstance(model, (OpenAIChatModel, OpenAIResponsesModel, AnthropicModel)):
                             assert model.client.max_retries == 0
                         if isinstance(model, BedrockConverseModel):
