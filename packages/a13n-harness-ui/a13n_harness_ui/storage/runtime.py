@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
+from a13n_harness import HarnessState
 from a13n_logging import get_logger
 from anyio import sleep, to_thread
 from pydantic import JsonValue
@@ -13,7 +14,7 @@ from pydantic import JsonValue
 from a13n_harness_ui import __version__
 
 from .comments import OutputCommentRepository
-from .contracts import StoredContinuation
+from .contracts import StoredContinuation, StoredThreadInitialState
 from .database import Database, open_database
 from .inspection import InspectionRepository
 from .layout import StorageLayout
@@ -27,6 +28,7 @@ from .repositories import (
     ThreadRepository,
 )
 from .usage import ThreadUsageRepository
+from .work import WorkRepository
 
 if TYPE_CHECKING:
     from a13n_harness_ui.settings import StorageSettings
@@ -54,6 +56,7 @@ class LocalStore:
         self.project_models = ProjectModelPreferenceRepository(database.sessions)
         self.threads = ThreadRepository(database.sessions)
         self.inspections = InspectionRepository(database.sessions)
+        self.work = WorkRepository(database.sessions)
         self.usage = ThreadUsageRepository(database.sessions)
         self.comments = OutputCommentRepository(database.sessions)
         self.restarts = RestartRepository(database.sessions)
@@ -83,17 +86,38 @@ class LocalStore:
 
         return await self.objects.read(reference)
 
+    async def publish_work(self, thread_id: str, reference: ObjectRef, state: HarnessState) -> bool:
+        """Best-effort derived publication cannot invalidate a selected checkpoint."""
+        from a13n_harness_ui.thread_work import build_work_projection
+
+        try:
+            if state.thread_id != thread_id:
+                raise ValueError("Work state belongs to another Thread")
+            data = await to_thread.run_sync(build_work_projection, state)
+            return await self.work.publish(thread_id, reference, data)
+        except Exception as exc:
+            get_logger("a13n_harness_ui.storage").warning(
+                "Could not publish Thread work projection",
+                extra={"thread_id": thread_id, "error_type": type(exc).__name__},
+            )
+            return False
+
     async def repair_read_models(self) -> tuple[str, ...]:
         """Bounded, resumable maintenance; no object reads on query paths."""
         repaired: list[str] = []
+        work_attempts: set[tuple[str, ObjectRef]] = set()
         after = ""
         while batch := await self.threads.missing_read_models(after=after):
             for thread_id, reference in batch:
+                work_attempts.add((thread_id, reference))
+                value = None
                 try:
                     value = await self.objects.read_model(reference, StoredContinuation)
                     projection = await to_thread.run_sync(project_continuation, value)
                     if await self.threads.repair_read_model(thread_id, reference, projection):
                         repaired.append(thread_id)
+                    await self.publish_work(thread_id, reference, value.harness_state)
+                    del value
                 except Exception as exc:
                     # Decoder diagnostics are already sanitized. Never include
                     # chained validation errors or persisted payloads in logs.
@@ -103,7 +127,30 @@ class LocalStore:
                     )
                 after = thread_id
                 await sleep(0)
-        return tuple(repaired)
+        after = ""
+        while batch := await self.work.missing(after=after):
+            for thread_id, reference in batch:
+                after = thread_id
+                if (thread_id, reference) in work_attempts:
+                    continue
+                value = None
+                try:
+                    value = (
+                        await self.objects.read_model(reference, StoredContinuation)
+                        if reference.object_kind is ObjectKind.continuation
+                        else await self.objects.read_model(reference, StoredThreadInitialState)
+                    )
+                    if await self.publish_work(thread_id, reference, value.harness_state):
+                        repaired.append(thread_id)
+                    del value
+                except Exception as exc:
+                    get_logger("a13n_harness_ui.storage").warning(
+                        "Could not rebuild Thread work projection",
+                        extra={"thread_id": thread_id, "error_type": type(exc).__name__},
+                    )
+                after = thread_id
+                await sleep(0)
+        return tuple(dict.fromkeys(repaired))
 
     async def refresh_object_count(self) -> None:
         self._object_count = len(await self.objects.references())

@@ -82,7 +82,7 @@ def _message_digest(encoded: bytes) -> str:
 
 def saved_display_history(state: HarnessState) -> DisplayHistory | None:
     """Read inspection state without changing the continuation's stored schema."""
-    return _read_display_history(state, state.agent_context_state.entries.get(_STATE_KEY))
+    return _read_display_history(state, state.agent_context_state.get(_STATE_KEY))
 
 
 def _read_display_history(state: HarnessState, entry: CapabilityState | None) -> DisplayHistory | None:

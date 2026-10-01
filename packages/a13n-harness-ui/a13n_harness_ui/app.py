@@ -1851,6 +1851,9 @@ class HarnessUiApp:
                 repaired = await self._store.repair_read_models()
                 for thread_id in repaired:
                     await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+                    await self._summary_hub.publish(
+                        kind="thread_work", thread_id=thread_id, work_sections=("tasks", "notes")
+                    )
                 await self._store.refresh_object_count()
             except Exception as exc:
                 # Query maintenance is repairable, not an App-lifetime task.

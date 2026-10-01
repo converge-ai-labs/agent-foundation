@@ -53,6 +53,39 @@ async def test_capability_state_namespaces_are_typed_and_detached() -> None:
     assert (await state.read("counter", CounterState, version="1")) == CounterState(value=2)
 
 
+@pytest.mark.parametrize("capability_id", ["wanted", "entry", "a13n.example", "model_config", "a/b~c"])
+def test_snapshot_single_namespace_lookup_is_detached(capability_id: str) -> None:
+    snapshot = AgentContextStateSnapshot(entries={capability_id: CapabilityState(version="2", data={"items": [1]})})
+    entry = snapshot.get(capability_id)
+    assert entry is not None and entry.version == "2"
+    data = cast(dict[str, Any], entry.data)
+    cast(list[Any], data["items"]).append(2)
+    assert snapshot.get(capability_id).data == {"items": [1]}
+    assert snapshot.get("missing") is None
+    assert snapshot.get(capability_id) == snapshot.entries[capability_id]
+    assert AgentContextStateSnapshot.model_validate_json(snapshot.model_dump_json()).get(capability_id) == entry
+
+
+def test_snapshot_single_lookup_does_not_materialize_other_namespaces() -> None:
+    import tracemalloc
+
+    snapshot = AgentContextStateSnapshot(
+        entries={
+            "wanted": CapabilityState(version="1", data={"value": 1}),
+            "large": CapabilityState(version="1", data={"text": "x" * (4 * 1024 * 1024)}),
+        }
+    )
+    tracemalloc.start()
+    try:
+        assert snapshot.get("wanted").data == {"value": 1}
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    # A full entries decode allocates over 12 MiB for this fixture. Allow ample
+    # schema/compiler overhead without allowing the unrelated payload copy.
+    assert peak < 1024 * 1024
+
+
 @pytest.mark.parametrize("thread_id", ["thr_hostroot", "thread-" + "a" * 32])
 def test_thread_identity_is_stable_on_copy_and_rotates_on_fork(thread_id: str) -> None:
     state = HarnessState.new(thread_id=thread_id)
