@@ -6,11 +6,9 @@ from typing import TYPE_CHECKING, Any, Literal, Self
 
 import httpx2
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
-from pydantic_ai.exceptions import UserError
 
 from ..authentication import Authentication, AuthenticationCase, CredentialMode
 from .definition import ModelOAuth, ModelProviderDefinition
-from .oauth.chatgpt import DYNAMIC_CLIENT_ID, validate_chatgpt_redirect_uri
 from .types import ProviderConfiguration
 
 if TYPE_CHECKING:
@@ -47,10 +45,17 @@ class Config(ProviderConfiguration):
 
     @model_validator(mode="after")
     def registration(self) -> Self:
-        if self.client_id is not None and (not self.client_id.strip() or self.client_id == DYNAMIC_CLIENT_ID):
-            raise ValueError("Use an explicitly provisioned OAuth client ID")
         if self.token_endpoint_auth_method != "none" and self.client_id is None:
             raise ValueError("A confidential OAuth client requires its client ID")
+        if self.client_id is None and self.redirect_uri is None:
+            return self
+
+        from pydantic_ai.exceptions import UserError
+
+        from .oauth.chatgpt import DYNAMIC_CLIENT_ID, validate_chatgpt_redirect_uri
+
+        if self.client_id is not None and (not self.client_id.strip() or self.client_id == DYNAMIC_CLIENT_ID):
+            raise ValueError("Use an explicitly provisioned OAuth client ID")
         if self.redirect_uri is not None:
             try:
                 validate_chatgpt_redirect_uri(self.redirect_uri, preconfigured_client=True)
