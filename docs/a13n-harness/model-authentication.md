@@ -94,12 +94,29 @@ The model credential manager checks identity across refresh/reload and persists 
 
 The portable integration keeps OAuth, Provider and Model dialect independent of Host storage:
 
-- `providers.model.oauth.chatgpt.OpenAIChatGPTOAuthFlow.start(ext_agent_host_id=..., agent_name=..., redirect_uri=..., credentials=None)` creates a bounded PKCE registration or returning authorization. Present `authorization_url()`, then pass the complete URL to `validate_callback()` and `exchange_callback()`. Neither function fetches that URL. The Host must consume a valid pending attempt durably before exchange and persist the verified complete credential result before reporting success.
+- `providers.model.oauth.chatgpt.OpenAIChatGPTOAuthFlow.start(ext_agent_host_id=..., agent_name=..., redirect_uri=..., client_id=None, credentials=None)` creates a bounded PKCE registration or returning authorization. Present `authorization_url()`, then pass the complete URL to `validate_callback()` and `exchange_callback()`. Neither function fetches that URL. The Host must consume a valid pending attempt durably before exchange and persist the verified complete credential result before reporting success.
 - `OpenAIChatGPTCredentials` and `OpenAIChatGPTCredentialSource` define the boundary. A source implements `async load()` and `async rotate(expected, exchange)` with same-account arbitration and durable publication. `refresh_chatgpt_credentials` and `revoke_chatgpt_credentials` perform protocol operations, not storage.
 - `providers.model.chatgpt.OpenAIChatGPTProvider(credential_source=..., http_client=None)` is a native OpenAI Provider with a fixed public endpoint, request-fresh authentication, coordinated rotation and one 401 replay. An injected client remains caller-owned and must not already have authentication.
 - `models.chatgpt.OpenAIChatGPTResponsesModel(model_name, provider=...)` subclasses native Responses rendering and retains its ordinary-request stream collector. It enforces `store=false`, `stream=true`, complete input history, developer instructions, supported tool placement and a natural `response.completed` terminal event. Unsupported SIWC settings and hosted tools fail explicitly.
 
 These APIs neither discover local account files nor embed Harness UI or Service storage. `discover_chatgpt_models(credential_source=..., http_client=None)` returns account-visible slugs/display names in server order; manual IDs remain valid inputs. ChatGPT plan eligibility and model access remain upstream decisions, separate from Codex and API-key authorization.
+
+### Preconfigured public client
+
+The default OSS flow, including returning sign-in with an issued client ID, requires `http://127.0.0.1:<port>/auth/callback`; only the port may change. To use a different registered callback, explicitly select a separately provisioned **public** client:
+
+```python
+flow = OpenAIChatGPTOAuthFlow.start(
+    ext_agent_host_id=host_id,
+    agent_name="My Agent",
+    client_id="approved-public-client",
+    redirect_uri="https://agent.example.com/auth/openai/callback",
+)
+```
+
+The URI must exactly match the client's OpenAI registration, use HTTPS or HTTP `127.0.0.1`, and contain a path but no userinfo, query or fragment. Restore the complete `flow.authorization`, including its `preconfigured_client` flag, from protected Host storage. Reauthorization may pass credentials only for that same client and host; account switching starts without retained credentials but keeps the explicit `client_id`.
+
+This configuration does not grant ChatGPT plan usage. Identity-only website grants are rejected because the integration still requires renewable tokens and `resource.invoke` / `chatgpt.tokens.use.direct`. Hosted/commercial use needs separate OpenAI approval. For a provisioned confidential client, also pass `token_endpoint_auth_method="client_secret_basic"` and `client_secret` read from protected server-side storage. Public clients use `none` and no secret. Pending attempts and renewable credentials freeze that authentication for code exchange, refresh, and revocation; the secret is never placed in the authorization URL or form body, only the server-side HTTP Basic header. Keep the complete pending value and credential set encrypted at rest. See [Service setup](../a13n-service/models.md#self-hosted-callback) for deployment overrides and the browser receiver.
 
 ## Authentication failures
 

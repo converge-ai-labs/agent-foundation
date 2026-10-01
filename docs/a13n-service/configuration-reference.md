@@ -192,19 +192,21 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `providers`
 
-| Setting                            | Environment variable                     | Type / choices  | Constraints and default                            |
-| ---------------------------------- | ---------------------------------------- | --------------- | -------------------------------------------------- |
-| `providers.http_origins`           | `A13N_PROVIDERS__HTTP_ORIGINS`           | array of string | default=[]                                         |
-| `providers.require_https`          | `A13N_PROVIDERS__REQUIRE_HTTPS`          | boolean         | default=true                                       |
-| `providers.return_urls`            | `A13N_PROVIDERS__RETURN_URLS`            | array of string | default=[]                                         |
-| `providers.mcp_servers`            | `A13N_PROVIDERS__MCP_SERVERS`            | McpServers      | default=[]                                         |
-| `providers.flow_seconds`           | `A13N_PROVIDERS__FLOW_SECONDS`           | integer         | minimum=30; maximum=1800; default=600              |
-| `providers.operation_seconds`      | `A13N_PROVIDERS__OPERATION_SECONDS`      | number          | minimum=2; maximum=30; default=10                  |
-| `providers.operation_scan_seconds` | `A13N_PROVIDERS__OPERATION_SCAN_SECONDS` | number          | maximum=3600; exclusiveMinimum=0; default=30       |
-| `providers.discovery_ttl`          | `A13N_PROVIDERS__DISCOVERY_TTL`          | integer         | minimum=1; maximum=86400; default=300              |
-| `providers.tool_call_seconds`      | `A13N_PROVIDERS__TOOL_CALL_SECONDS`      | number          | maximum=600; exclusiveMinimum=0; default=60        |
-| `providers.model_timeout`          | `A13N_PROVIDERS__MODEL_TIMEOUT`          | number          | maximum=3600; exclusiveMinimum=0; default=300      |
-| `providers.response_bytes`         | `A13N_PROVIDERS__RESPONSE_BYTES`         | integer         | minimum=65536; maximum=268435456; default=16777216 |
+| Setting                            | Environment variable                     | Type / choices  | Constraints and default                                       |
+| ---------------------------------- | ---------------------------------------- | --------------- | ------------------------------------------------------------- |
+| `providers.http_origins`           | `A13N_PROVIDERS__HTTP_ORIGINS`           | array of string | default=[]                                                    |
+| `providers.require_https`          | `A13N_PROVIDERS__REQUIRE_HTTPS`          | boolean         | default=true                                                  |
+| `providers.return_urls`            | `A13N_PROVIDERS__RETURN_URLS`            | array of string | default=[]                                                    |
+| `providers.mcp_servers`            | `A13N_PROVIDERS__MCP_SERVERS`            | McpServers      | default=[]                                                    |
+| `providers.flow_seconds`           | `A13N_PROVIDERS__FLOW_SECONDS`           | integer         | minimum=30; maximum=1800; default=600                         |
+| `providers.operation_seconds`      | `A13N_PROVIDERS__OPERATION_SECONDS`      | number          | minimum=2; maximum=30; default=10                             |
+| `providers.operation_scan_seconds` | `A13N_PROVIDERS__OPERATION_SCAN_SECONDS` | number          | maximum=3600; exclusiveMinimum=0; default=30                  |
+| `providers.discovery_ttl`          | `A13N_PROVIDERS__DISCOVERY_TTL`          | integer         | minimum=1; maximum=86400; default=300                         |
+| `providers.tool_call_seconds`      | `A13N_PROVIDERS__TOOL_CALL_SECONDS`      | number          | maximum=600; exclusiveMinimum=0; default=60                   |
+| `providers.model_timeout`          | `A13N_PROVIDERS__MODEL_TIMEOUT`          | number          | maximum=3600; exclusiveMinimum=0; default=300                 |
+| `providers.response_bytes`         | `A13N_PROVIDERS__RESPONSE_BYTES`         | integer         | minimum=65536; maximum=268435456; default=16777216            |
+| `providers.chatgpt_client_id`      | `A13N_PROVIDERS__CHATGPT_CLIENT_ID`      | string or null  | minLength=1; maxLength=256; default=null                      |
+| `providers.chatgpt_redirect_uri`   | `A13N_PROVIDERS__CHATGPT_REDIRECT_URI`   | string          | maxLength=2048; default="http://127.0.0.1:1456/auth/callback" |
 
 ## `plugins`
 

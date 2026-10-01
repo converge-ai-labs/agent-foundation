@@ -74,8 +74,8 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
             raise ValueError("Model Provider must declare supported native calling APIs")
         if (self.build_provider is None) == (self.oauth is None):
             raise ValueError("Model Provider must declare exactly one static or OAuth constructor")
-        if self.oauth is not None and self.credential_model is not None:
-            raise ValueError("OAuth Model Providers acquire credentials from a Host source, not static input")
+        # OAuth access tokens always come from the Host source. A definition may
+        # separately accept a server-side client-authentication credential.
 
     @property
     def supports_connection_probe(self) -> bool:

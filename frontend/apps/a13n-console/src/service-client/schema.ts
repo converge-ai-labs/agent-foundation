@@ -3661,9 +3661,9 @@ export interface components {
       /**
        * Method
        * @default manual_callback
-       * @constant
+       * @enum {string}
        */
-      method?: "manual_callback";
+      method?: "manual_callback" | "browser_callback";
     };
     /** AuthorizationStatus */
     AuthorizationStatus: {

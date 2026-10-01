@@ -27,7 +27,10 @@ const provider = {
   id: "mprov_test",
   workspace_id: "ws_test",
 } as Schema["Provider"];
-function mount(onSave = vi.fn()) {
+function mount(
+  onSave = vi.fn(),
+  method: Schema["AuthorizationStart"]["method"] = "manual_callback",
+) {
   state.GET.mockResolvedValue({
     data: { state: "disconnected", provider_id: provider.id },
   });
@@ -38,6 +41,7 @@ function mount(onSave = vi.fn()) {
           authorization_url:
             "https://auth.openai.com/api/accounts/authorize?state=synthetic",
           expires_at: "2099-01-01T00:00:00Z",
+          method,
         }
       : { state: "connected" },
   }));
@@ -151,4 +155,34 @@ it("leaves authorization metadata readable but refuses viewer actions", async ()
   });
   expect((button as HTMLButtonElement).disabled).toBe(true);
   expect(state.POST).not.toHaveBeenCalled();
+});
+
+it("polls hosted authorization without posting a callback and waits for the new login claim to finish", async () => {
+  mount(vi.fn(), "browser_callback");
+  const user = userEvent.setup();
+  await screen.findByText("Not connected");
+  state.GET.mockResolvedValue({
+    data: { state: "connected", pending: true, email: "old@example.test" },
+  });
+  await user.click(
+    screen.getByRole("button", { name: "Sign in with ChatGPT" }),
+  );
+  await screen.findByText(
+    "Sign-in completes automatically. Return here after authorizing in the browser.",
+  );
+  await waitFor(() => expect(state.GET.mock.calls.length).toBeGreaterThan(1));
+  expect(screen.getByText("Waiting for sign-in")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "If automatic completion fails, paste the entire callback URL here.",
+    ),
+  ).toBeTruthy();
+  state.GET.mockResolvedValue({
+    data: { state: "connected", pending: false, email: "new@example.test" },
+  });
+  await screen.findByText("new@example.test", {}, { timeout: 4000 });
+  expect(screen.queryByText("Waiting for sign-in")).toBeNull();
+  expect(screen.queryByLabelText("Complete callback URL")).toBeNull();
+  expect(state.POST).toHaveBeenCalledTimes(1);
+  expect(state.POST.mock.calls[0][0]).toContain("/authorize");
 });

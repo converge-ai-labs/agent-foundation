@@ -111,6 +111,7 @@ Login sessions expire after `auth.session_seconds` and roll forward: each authen
 | invitation acceptance                                                                     | client address, invitation |
 | each check of the caller's current password (email change, password change, self-disable) | client address, principal  |
 | the connection authorization callback ([04](04-resources.md#connections))                 | client address             |
+| the hosted Model Provider callback ([04](04-resources.md#model-provider-oauth))           | client address             |
 
 Each flow counts in its own budget. The client address is the peer address, or the forwarded client address when the peer is one of `server.trusted_proxies`. Counters are held in Redis and are best-effort: while Redis is unreachable a check is skipped and logged ([09](09-runtime.md#redis)).
 
@@ -177,7 +178,7 @@ What each verb covers, by example (the owning chapters name the verb of each ope
 
 **Archived workspaces** refuse every verb but `read` with `disabled` (details: kind, id). Removing access is offboarding and stays allowed: administrators can still delete grants at an archived workspace, revoke its invitations, disable or retire its service accounts and revoke API keys confined to it, and a writer can revoke its connections' credentials ([04](04-resources.md#connections)). Resource rows of an archived workspace refuse every change the same way ([04](04-resources.md#rules-every-kind-follows)). Organization and workspace views carry `permissions`, the caller's verbs at that scope (only `read` on an archived workspace); clients shape their UI from it, and the server still authorizes every operation.
 
-**Account operations** (profile and avatar changes, email and password change, login sessions, logout, self-disable, the account's audit trail), every [API-key issuance](#api-keys), every [invitation](#invitations) creation or resend and every browser authorization of a connection ([04](04-resources.md#connections)) require a user's own login session, or a replacement authenticator's unconfined user credential. An API key can read its principal's profile but never changes the account behind it or mints anything that would outlive it; each of these operations refuses it with 403 `forbidden`.
+**Account operations** (profile and avatar changes, email and password change, login sessions, logout, self-disable, the account's audit trail), every [API-key issuance](#api-keys), every [invitation](#invitations) creation or resend and every browser authorization of a connection ([04](04-resources.md#connections)) or hosted Model Provider flow ([04](04-resources.md#model-provider-oauth)) require a user's own login session, or a replacement authenticator's unconfined user credential. An API key can read its principal's profile but never changes the account behind it or mints anything that would outlive it; each of these operations refuses it with 403 `forbidden`.
 
 ### Roles and grant sources
 

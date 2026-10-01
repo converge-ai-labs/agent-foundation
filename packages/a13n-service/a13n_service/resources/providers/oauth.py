@@ -10,6 +10,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from time import monotonic
 from typing import Literal
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
@@ -22,6 +23,7 @@ from a13n_harness.providers.model.oauth.chatgpt import (
 )
 from a13n_harness.providers.model.oauth.models import ModelAuthenticationError, RefreshNotDispatched
 from a13n_harness.providers.model.oauth.rotation import require_same_account
+from a13n_harness.providers.model.openai_chatgpt import Config, Credential
 from anyio import CancelScope, sleep
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter
 from pydantic_ai.exceptions import UserError
@@ -36,7 +38,7 @@ from a13n_service.infra.outbound import open_http
 from a13n_service.resources.providers.tables import ModelProviderOAuthRow, ModelProviderRow
 from a13n_service.resources.rows import audit_row, find_row
 from a13n_service.settings import Providers
-from a13n_service.tenancy.access import workspace_scope
+from a13n_service.tenancy.access import require_login_session, workspace_scope
 from a13n_service.tenancy.authorize import Principal, Verb
 
 _CREDENTIALS = TypeAdapter(OpenAIChatGPTCredentials)
@@ -45,7 +47,7 @@ _PENDING = TypeAdapter(ChatGPTAuthorization)
 
 class ProviderAuthorizationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    # ChatGPT requires a loopback redirect even when the browser cannot reach it.
+    # Clear retained account hints; a configured client remains selected.
     new_registration: bool = False
 
 
@@ -59,7 +61,7 @@ class AuthorizationStart(BaseModel):
     attempt_id: str
     authorization_url: str
     expires_at: datetime
-    method: Literal["manual_callback"] = "manual_callback"
+    method: Literal["manual_callback", "browser_callback"] = "manual_callback"
 
 
 class AuthorizationStatus(BaseModel):
@@ -119,9 +121,11 @@ def _view(row: ModelProviderOAuthRow | None, provider_id: str) -> AuthorizationS
         client_id=row.client_id,
         email=row.email,
         expires_at=row.expires_at,
-        pending=row.pending is not None,
+        pending=row.pending is not None or row.login_claim is not None,
         message="The previous token refresh outcome is unknown. Sign in again."
         if row.refresh_blocked or interrupted
+        else "ChatGPT sign-in is completing. Restart authorization if it does not finish."
+        if row.login_claim is not None
         else None,
     )
 
@@ -151,9 +155,40 @@ async def authorize(
     body: ProviderAuthorizationRequest,
     *,
     keys: KeyRing,
+    settings: Providers,
+    public_origin: str,
 ) -> AuthorizationStart:
     async with transaction(storage) as session:
         provider = await authorized_provider(session, actor, workspace_id, provider_id, "write", lock=True)
+        config = Config.model_validate(provider.config)
+        try:
+            selected = Providers.model_validate(
+                {
+                    **settings.model_dump(),
+                    "chatgpt_client_id": config.client_id or settings.chatgpt_client_id,
+                    "chatgpt_redirect_uri": config.redirect_uri or settings.chatgpt_redirect_uri,
+                }
+            )
+            if selected.chatgpt_browser_callback:
+                parts = urlsplit(selected.chatgpt_redirect_uri)
+                if f"{parts.scheme}://{parts.netloc.lower().removesuffix(':443')}" != public_origin:
+                    raise ValueError("The callback URL must share the Service public URL's origin")
+                require_login_session(actor)
+        except ValueError:
+            raise invalid(
+                "config.redirect_uri",
+                "use a registered callback URL on the Service public origin, or an OSS loopback URL",
+            ) from None
+        client_secret = None
+        if config.token_endpoint_auth_method == "client_secret_basic":
+            if provider.credential is None:
+                raise invalid("credential", "the confidential OAuth client requires its client secret")
+            client_secret = Credential.model_validate_json(
+                keys.reveal(
+                    Envelope.model_validate(provider.credential),
+                    SecretLocation(provider.organization_id, provider.__tablename__, "credential", provider.id),
+                )
+            ).client_secret.get_secret_value()
         row = await session.get(ModelProviderOAuthRow, provider_id, with_for_update=True)
         if row is None:
             row = ModelProviderOAuthRow(
@@ -167,14 +202,19 @@ async def authorize(
         # Only an unregistered host can replace its rejected legacy identifier.
         if row.client_id is None and row.host_id.startswith("host_"):
             row.host_id = uuid4().urn
-        credentials = _credentials(row, keys) if row.tokens is not None and not body.new_registration else None
+        retained_client = selected.chatgpt_client_id is None or row.client_id == selected.chatgpt_client_id
+        reuse_registration = retained_client and not body.new_registration
+        credentials = _credentials(row, keys) if row.tokens is not None and reuse_registration else None
         flow = OpenAIChatGPTOAuthFlow.start(
             ext_agent_host_id=row.host_id,
             agent_name="Agent Foundation OSS",
-            redirect_uri="http://127.0.0.1:1456/auth/callback",
+            redirect_uri=selected.chatgpt_redirect_uri,
+            client_id=selected.chatgpt_client_id,
+            token_endpoint_auth_method=config.token_endpoint_auth_method,
+            client_secret=client_secret,
             credentials=credentials,
         )
-        if credentials is None and row.client_id and not body.new_registration:
+        if credentials is None and row.client_id and reuse_registration:
             flow = OpenAIChatGPTOAuthFlow(
                 replace(flow.authorization, client_id=row.client_id, subject=row.subject, login_hint=row.email)
             )
@@ -187,6 +227,7 @@ async def authorize(
             attempt_id=attempt_id,
             authorization_url=flow.authorization_url(),
             expires_at=flow.authorization.expires_at,
+            method="browser_callback" if selected.chatgpt_browser_callback else "manual_callback",
         )
 
 

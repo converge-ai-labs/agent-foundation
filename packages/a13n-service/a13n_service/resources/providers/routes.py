@@ -1,13 +1,17 @@
 """One workspace collection per provider kind, and the registered types."""
 
+from urllib.parse import parse_qs, urlsplit
+
 from a13n_harness.providers.model.chatgpt import ChatGPTModel, discover_chatgpt_models
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
+from fastapi.responses import HTMLResponse
 
 from a13n_service.infra.db import short_session
-from a13n_service.infra.http import IfMatch, PageLimit, tagged
+from a13n_service.infra.errors import invalid
+from a13n_service.infra.http import IfMatch, PageLimit, answer_headers, tagged
 from a13n_service.infra.outbound import open_http
 from a13n_service.providers.registry import ProviderKind
-from a13n_service.resources.providers import oauth, service
+from a13n_service.resources.providers import callback, oauth, service
 from a13n_service.resources.providers.oauth import (
     AuthorizationCallback,
     AuthorizationDisconnect,
@@ -32,7 +36,7 @@ from a13n_service.resources.providers.tables import (
     WebProviderRow,
 )
 from a13n_service.resources.requests import CurrentRuntime
-from a13n_service.tenancy.requests import Actor, WorkspaceId
+from a13n_service.tenancy.requests import Actor, WorkspaceId, limit_guessing
 
 router = APIRouter(prefix="/api/v1", tags=["providers"])
 
@@ -128,13 +132,65 @@ async def model_authorization(
 
 @router.post("/model-providers/{provider_id}/authorize", response_model=AuthorizationStart)
 async def authorize_model(
+    response: Response,
     workspace_id: WorkspaceId,
     provider_id: str,
     body: ProviderAuthorizationRequest,
     actor: Actor,
     runtime: CurrentRuntime,
 ) -> AuthorizationStart:
-    return await oauth.authorize(runtime.storage, actor, workspace_id, provider_id, body, keys=runtime.keys)
+    result = await oauth.authorize(
+        runtime.storage,
+        actor,
+        workspace_id,
+        provider_id,
+        body,
+        keys=runtime.keys,
+        settings=runtime.settings.providers,
+        public_origin=runtime.settings.server.public_origin,
+    )
+    if result.method == "browser_callback":
+        name, value = callback.browser_cookie(result, actor, workspace_id, provider_id, keys=runtime.keys)
+        response.set_cookie(
+            name,
+            value,
+            max_age=600,
+            path=callback.cookie_path(parse_qs(urlsplit(result.authorization_url).query)["redirect_uri"][0]),
+            secure=True,
+            httponly=True,
+            samesite="lax",
+        )
+    return result
+
+
+@router.get(callback.CALLBACK_PATH.removeprefix("/api/v1"), include_in_schema=False)
+async def complete_browser_model_authorization(request: Request, runtime: CurrentRuntime) -> Response:
+    # Flow-cookie authentication replaces the Strict login cookie on this cross-site GET.
+    # Errors also cannot leak the callback query.
+    answer = answer_headers(request)
+    answer.headers["Cache-Control"] = "no-store"
+    answer.headers["Referrer-Policy"] = "no-referrer"
+    await limit_guessing(request, "model_provider_callback")
+    try:
+        query = request.scope["query_string"].decode("ascii")
+    except UnicodeDecodeError:
+        raise invalid("callback", "invalid authorization response") from None
+    name = callback.cookie_name(request.query_params.get("state", ""))
+    _, redirect_uri = await callback.complete(
+        runtime.storage,
+        runtime.access,
+        query=query,
+        cookie=request.cookies.get(name),
+        keys=runtime.keys,
+        settings=runtime.settings.providers,
+        policy=runtime.endpoint_policy,
+        public_origin=runtime.settings.server.public_origin,
+    )
+    answer.delete_cookie(name, path=callback.cookie_path(redirect_uri), secure=True, httponly=True, samesite="lax")
+    return HTMLResponse(
+        '<!doctype html><html lang="en"><meta charset="utf-8"><title>ChatGPT sign-in complete</title>'
+        "<h1>ChatGPT sign-in complete</h1><p>You can close this tab and return to Agent Foundation.</p></html>"
+    )
 
 
 @router.post("/model-providers/{provider_id}/authorization/callback", response_model=AuthorizationStatus)
