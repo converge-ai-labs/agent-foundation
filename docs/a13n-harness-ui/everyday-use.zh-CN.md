@@ -127,7 +127,7 @@ agent 运行时也可使用这些命令。subagent 总数来自已保存 App 记
 
 Codex 模型在空闲时，`/status` 或 `/usage subscription` 直接显示各订阅窗口的**剩余百分比**、提供方报告的本地重置时间和可用重置额度，不打开菜单。缺失限制标为不可用，不是零。用 `/usage reset` 检查可用额度：兑换需选择权益，并显式确认账户和兑换 ID；**No** 是安全选项。超时或取消可能使结果未知：保留当前终端，用 `/usage reset` 重试相同兑换 ID。`/status` 只报告待处理身份。后续用量刷新失败不会改变已确认结果。OAuth token 过期时间不是配额重置时间。
 
-ChatGPT Model（`openai-chatgpt:`）在空闲时，`/status` 和 `/usage subscription` 显示所选账户及[在 ChatGPT 中管理用量](https://chatgpt.com/settings/usage)链接。Harness UI 暂不能读取剩余额度和重置时间；会话 token 总量与 Codex 限制都不能替代 ChatGPT 订阅额度。请确认浏览器使用的是同一 ChatGPT 账户和工作区。`/usage reset` 仍仅适用于 Codex。
+ChatGPT Model（`openai-chatgpt:`）在空闲时，`/status` 和 `/usage subscription` 只提示订阅用量不可用，并显示[在 ChatGPT 中管理用量](https://chatgpt.com/settings/usage) URL，不查询账户或刷新凭据。Harness UI 暂不能读取剩余额度和重置时间；会话 token 总量与 Codex 限制都不能替代 ChatGPT 订阅额度。请确认浏览器使用的是同一 ChatGPT 账户和工作区。`/usage reset` 仍仅适用于 Codex。
 
 终端响铃通知 Run 完成或出现新决策。空闲时第一次 Ctrl+C 清空草稿并立即说明退出方式；两秒内再次按下会退出。编辑会解除退出确认。执行期间 Ctrl+C 立即确认取消，并等待所属资源清理，不会提前退出。
 

@@ -194,7 +194,7 @@ Every command supports detached text and JSON result rendering. Authorization pr
 
 ## Subscription Usage
 
-For a ChatGPT Model, idle `/status` and `/usage subscription` inspect the selected Host-managed account without refreshing credentials or calling the Codex account API. They show the official ChatGPT usage-management link, identify the selected account when available, and request sign-in when it is unusable. Numeric remaining allowance and reset timestamps are explicitly unavailable; local token totals, credential expiry, and Codex windows never substitute for ChatGPT plan allowance. The browser may use a different account or workspace, so the display asks the user to check that identity. `/usage reset` remains Codex-only.
+For a ChatGPT Model, idle `/status` and `/usage subscription` only report that subscription usage is unavailable and show the official ChatGPT usage-management URL. This display performs no account query, credential inspection, or refresh. Numeric remaining allowance and reset timestamps are not supplied; local token totals, credential expiry, and Codex windows never substitute for ChatGPT plan allowance. `/usage reset` remains Codex-only.
 
 ### Codex Subscription Usage and Reset Credits
 
