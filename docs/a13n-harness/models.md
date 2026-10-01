@@ -99,6 +99,23 @@ An HTTP proxy URL is also valid for HTTPS destinations: the client uses a CONNEC
 
 Provider endpoint validation still applies, including local DNS checks where required. SDK-owned transports that do not use this helper retain their SDK's proxy behavior.
 
+## Outbound TLS verification
+
+Owned HTTP clients verify HTTPS destination certificates and hostnames by default. For a controlled development or interception-proxy environment, the operator can explicitly disable verification before starting the Host:
+
+```bash
+export A13N_OUTBOUND_TLS_VERIFY=false
+a13n-harness-ui
+# Or start each Service control/worker process with the same environment.
+```
+
+Unset the variable or set `true` to keep verification enabled. Only `true` and `false` are accepted, ignoring case and surrounding whitespace; other values fail client construction, and Service rejects them at startup. Restart the process after changing the environment: existing clients keep the policy chosen at construction. This is a process input, not a Model, Agent, Provider, Run, YAML or TOML setting.
+
+The switch covers clients constructed by Harness, Harness UI and Service for Model requests (including adapter-owned Bedrock Converse), Web/media, remote MCP, owned OAuth exchanges, management requests, native HTTP Environment operations and HTTP Envd attachments. It applies to destination TLS on direct, proxy and `NO_PROXY` routes. Explicitly supplied clients/transports/CA contexts retain their own policy. Dependency-created SDK clients, including opaque inferred Model routes, database/object-store/telemetry SDKs, HTTPS proxy-hop TLS and separate Envd daemon/broker processes retain their own TLS configuration.
+
+> [!WARNING]
+> `false` removes server authentication and allows interception of credentials and content. It does not turn HTTPS into plaintext or disable authentication, host allowlists, credential restrictions, redirect checks, time/byte limits or retry rules. Prefer configuring trusted CA certificates in production.
+
 ## Model authoring aliases
 
 Use the two parallel resolvers when an authoring surface wants short, explicit names while keeping concrete values everywhere else. Context budgets resolve to Harness `HarnessModelCharacteristics`; provider request choices resolve independently to native `ModelSettings`:

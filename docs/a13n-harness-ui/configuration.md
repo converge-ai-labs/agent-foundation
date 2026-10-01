@@ -317,6 +317,8 @@ There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `
 
 The legacy `tools.ask_user_question_timeout_seconds` input key remains accepted. Saved configuration uses `tools.interaction_timeout_seconds`. Editing a response does not restart the Host timer; expiry denies rather than approving or inventing a result.
 
+Set `A13N_OUTBOUND_TLS_VERIFY=false` before launch only when intentionally accepting unverified destination certificates. Unset or `true` retains verification. This shared process variable is not a YAML field; see [outbound TLS verification](../a13n-harness/models.md#outbound-tls-verification) for coverage, exclusions and risks.
+
 ## Outbound HTTP proxies
 
 Set standard environment variables before starting Harness UI; no YAML proxy setting is needed:
@@ -329,7 +331,7 @@ export no_proxy=localhost,127.0.0.1,::1
 
 Uppercase forms and `ALL_PROXY` are supported. Selection and bypass matching follow `httpx2`. Host-owned Web search/scrape/fetch/download requests, remote HTTPS MCP connections and update checks honor these variables, alongside the [Model HTTP client](../a13n-harness/models.md#outbound-http-proxies). Restart the process after changing its environment. When running in a container, the proxy address must be reachable from that container.
 
-The proxy you configure is trusted outbound infrastructure and owns destination DNS and network restrictions. Host Web tools use native HTTP connections and never pre-resolve destination hostnames or pin IP addresses, including on direct and `NO_PROXY` routes. This allows proxy-only hosts to work without local destination DNS. HTTP(S) URL validation, TLS verification, redirect checks, deadlines and response limits remain enabled. A failed proxy request does not fall back to direct.
+The proxy you configure is trusted outbound infrastructure and owns destination DNS and network restrictions. Host Web tools use native HTTP connections and never pre-resolve destination hostnames or pin IP addresses, including on direct and `NO_PROXY` routes. This allows proxy-only hosts to work without local destination DNS. HTTP(S) URL validation, redirect checks, deadlines and response limits remain enabled. TLS verification is enabled by default; only the operator-controlled [outbound TLS switch](../a13n-harness/models.md#outbound-tls-verification) can opt out for owned clients. A failed proxy request does not fall back to direct.
 
 `run_configuration` selects one immutable configuration for each accepted root Run and its children:
 

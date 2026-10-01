@@ -11,6 +11,8 @@ Select the file with `a13n-service --config service.toml ...` or the `A13N_SETTI
 
 Unknown settings stop startup rather than falling back to defaults. Validation errors avoid printing secret values.
 
+The shared process variable `A13N_OUTBOUND_TLS_VERIFY` is also recognized outside the section override scheme. Unset or `true` verifies destination certificates; `false` explicitly disables verification for owned HTTP clients. Other values stop startup. It has no TOML field. Set it separately on each control/worker process and restart after changes; see [outbound TLS verification](../a13n-harness/models.md#outbound-tls-verification) for exact coverage, exclusions and interception risks.
+
 Every field that takes a list, a map or a nested section, such as `server.trusted_proxies`, the `providers` lists (`http_origins`, `return_urls`, `mcp_servers`), `encryption.keys`, `plugins.keys` or the nested `auth.mail` section, takes JSON as an environment variable, for example `A13N_PLUGINS__KEYS='["notes"]'` or `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`.
 
 ```toml

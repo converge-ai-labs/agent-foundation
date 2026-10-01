@@ -12,6 +12,8 @@ from pydantic_ai import UserError
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from a13n_harness.http import outbound_tls_verify
+
 from .grok import refresh_grok_credentials
 from .models import (
     CredentialRefreshError,
@@ -188,7 +190,7 @@ def build_grok_model(
     """Build one Grok Responses Model backed by an application credential source."""
 
     owns_http_client = http_client is None
-    client = http_client or httpx2.AsyncClient()
+    client = http_client or httpx2.AsyncClient(verify=outbound_tls_verify())
     if client.auth is not None:
         raise UserError("The Model OAuth HTTP client must not already have authentication configured.")
     client.follow_redirects = False
@@ -206,6 +208,7 @@ def build_grok_model(
 
     def create_http_client() -> httpx2.AsyncClient:
         reopened = httpx2.AsyncClient(
+            verify=outbound_tls_verify(),
             auth=auth,
             follow_redirects=False,
             event_hooks={"response": [auth.protect_redirect]},

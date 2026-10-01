@@ -19,6 +19,7 @@ from a13n_envd_client.websocket import WebSocketConnection
 from a13n_harness import HarnessInstrumentation
 from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment import EnvironmentRunExtensionFactory
+from a13n_harness.http import outbound_tls_verify
 from a13n_harness.input import RunInputValue
 from a13n_harness.plugin_factories import HarnessPluginFactory
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
@@ -2674,7 +2675,7 @@ class HarnessUiApp:
         async with self._operation():
             account = self._account(Provider.CODEX)
             assert isinstance(account, CodexAccountStore)
-            async with httpx2.AsyncClient() as client:
+            async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
                 return await CodexUsageClient(account, client).read()
 
     async def redeem_codex_reset(self, request: ResetRequest) -> ResetResult:
@@ -2682,7 +2683,7 @@ class HarnessUiApp:
         async with self._operation():
             account = self._account(Provider.CODEX)
             assert isinstance(account, CodexAccountStore)
-            async with httpx2.AsyncClient() as client:
+            async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
                 return await CodexUsageClient(
                     account,
                     client,
@@ -3009,7 +3010,7 @@ async def open_harness_ui_app(
             web_push = None
             if host_mode == "webui":
                 push_client = await resources.enter_async_context(
-                    httpx2.AsyncClient(timeout=10, follow_redirects=False)
+                    httpx2.AsyncClient(verify=outbound_tls_verify(), timeout=10, follow_redirects=False)
                 )
                 web_push = WebPush(store, push_client)
 

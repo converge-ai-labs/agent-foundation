@@ -13,6 +13,8 @@ from a13n_envd_client.eip.v1 import DeviceDescriptor, DirectoryListParams, Direc
 from a13n_envd_client.errors import EIPMethodError
 from pydantic import BaseModel
 
+from a13n_harness.http import outbound_tls_verify
+
 from ...authentication import Authentication, CredentialMode
 from ..attachments import DeviceEIPSessionSource
 from ..definition import EnvironmentProviderDefinition
@@ -45,7 +47,7 @@ class HttpEnvdProviderRuntime:
 
     configuration: HttpEnvdConnectionConfiguration
     credential: HttpEnvdCredential = field(repr=False)
-    verify: ssl.SSLContext | str | bool = field(default=True, repr=False)
+    verify: ssl.SSLContext | str | bool = field(default_factory=outbound_tls_verify, repr=False)
 
     credential_resolver: EnvdCredentialResolver = field(default_factory=EnvironmentEnvdCredentialResolver, repr=False)
 
@@ -59,8 +61,6 @@ class HttpEnvdProviderRuntime:
             self.credential, HttpEnvdCredential
         ):
             raise TypeError("HTTP Envd requires validated backend configuration and credential")
-        if self.verify is False:
-            raise ValueError("HTTP TLS verification cannot be disabled")
 
     async def acquire_device(self, *, expected_device_id: str | None) -> EIPDeviceConnection:
         """Use None only for explicit first-contact registration by the Host."""

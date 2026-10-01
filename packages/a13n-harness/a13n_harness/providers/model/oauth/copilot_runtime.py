@@ -9,6 +9,8 @@ from pydantic_ai import UserError
 from pydantic_ai.models.github_copilot import GitHubCopilotModel
 from pydantic_ai.providers.github_copilot import GitHubCopilotProvider
 
+from a13n_harness.http import outbound_tls_verify
+
 from .copilot import (
     CopilotCredentials,
     CopilotCredentialSource,
@@ -109,7 +111,7 @@ def _build_copilot_provider(
     http_client: httpx2.AsyncClient | None = None,
 ) -> _CopilotProvider:
     """Build without loading a source, resolving ambient secrets or making requests."""
-    client = http_client or httpx2.AsyncClient()
+    client = http_client or httpx2.AsyncClient(verify=outbound_tls_verify())
     if client.auth is not None:
         raise UserError("The Model OAuth HTTP client must not already have authentication configured.")
     client.follow_redirects = False
@@ -126,7 +128,10 @@ def _build_copilot_provider(
 
     def factory() -> httpx2.AsyncClient:
         reopened = httpx2.AsyncClient(
-            auth=auth, follow_redirects=False, event_hooks={"response": [auth.protect_redirect]}
+            verify=outbound_tls_verify(),
+            auth=auth,
+            follow_redirects=False,
+            event_hooks={"response": [auth.protect_redirect]},
         )
         auth.client = reopened
         return reopened

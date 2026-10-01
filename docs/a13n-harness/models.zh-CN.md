@@ -99,6 +99,23 @@ HTTP 代理 URL 也可用于 HTTPS 目标：客户端使用 CONNECT 隧道。代
 
 provider 端点验证仍适用，包括需要时的本地 DNS 检查。不使用此 helper 的 SDK 传输保留自己的代理行为。
 
+## 出站 TLS 验证
+
+自有 HTTP 客户端默认验证 HTTPS 目标的证书和主机名。在受控开发环境或拦截代理环境中，运维人员可在启动 Host 前显式关闭验证：
+
+```bash
+export A13N_OUTBOUND_TLS_VERIFY=false
+a13n-harness-ui
+# Or start each Service control/worker process with the same environment.
+```
+
+删除该变量或设为 `true` 即可保持验证。仅接受 `true` 和 `false`，忽略大小写及首尾空白；其他值会使客户端构造失败，Service 也会在启动时拒绝。修改环境后重启进程：已有客户端保留构造时选择的策略。这是进程输入，不是 Model、Agent、Provider、Run、YAML 或 TOML 设置。
+
+开关覆盖 Harness、Harness UI 和 Service 自行构造的客户端，包括 Model 请求（含适配器自建的 Bedrock Converse）、Web/媒体、远程 MCP、自有 OAuth 交换、管理请求、原生 HTTP Environment 操作及 HTTP Envd 连接。直连、代理和 `NO_PROXY` 路径上的目标 TLS 都受其控制。显式传入的客户端、传输和 CA 上下文保留自身策略。依赖内部构造的 SDK 客户端（包括无法检查内部传输的推断 Model 路由）、数据库/对象存储/遥测 SDK、HTTPS 代理节点自身的 TLS，以及独立 Envd daemon/broker 进程保留各自的 TLS 配置。
+
+> [!WARNING]
+> `false` 会移除服务器身份验证，凭据和内容可能被截获。它不会把 HTTPS 变成明文，也不会关闭身份验证、主机白名单、凭据限制、重定向检查、时间/字节上限或重试规则。生产环境应优先配置可信 CA 证书。
+
 ## 模型编写别名
 
 编写界面需要简短、明确的名称，而其他位置都保留具体值时，使用两个平行解析器。上下文预算解析为 Harness `HarnessModelCharacteristics`；provider 请求选项独立解析为原生 `ModelSettings`：

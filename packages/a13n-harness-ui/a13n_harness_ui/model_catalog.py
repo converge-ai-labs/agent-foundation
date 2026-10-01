@@ -8,6 +8,7 @@ from time import monotonic
 from typing import Literal
 
 import httpx2
+from a13n_harness.http import outbound_tls_verify
 from anyio import Lock, fail_after
 from pydantic import Field
 
@@ -139,7 +140,7 @@ def parse_directory(payload: object) -> tuple[CatalogModel, ...]:
 
 
 async def fetch_directory() -> tuple[CatalogModel, ...]:
-    async with httpx2.AsyncClient(timeout=5) as client:
+    async with httpx2.AsyncClient(verify=outbound_tls_verify(), timeout=5) as client:
         async with client.stream("GET", _DIRECTORY_URL) as response:
             response.raise_for_status()
             body = bytearray()

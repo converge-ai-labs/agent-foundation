@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 import httpx2
 from pydantic import BaseModel, JsonValue, ValidationError
 
+from a13n_harness.http import outbound_tls_verify
+
 from ..errors import EnvironmentProviderErrorCategory as Category
 from ..errors import EnvironmentProviderOutcomeCertainty as Certainty
 from .errors import failure
@@ -15,6 +17,7 @@ class NativeHTTP:
     def __init__(self, key: str, url: str, token: str, timeout: float, *, params: dict[str, str] | None = None):
         self.key = key
         self.client = httpx2.AsyncClient(
+            verify=outbound_tls_verify(),
             base_url=url,
             headers={"Authorization": f"Bearer {token}"},
             timeout=timeout,
