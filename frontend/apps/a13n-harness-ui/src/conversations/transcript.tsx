@@ -49,6 +49,7 @@ type PendingInteraction = { requestIds: string[]; content: ReactNode };
 
 type Row = {
   id: string;
+  subagentRunId?: string;
   anchor?: string;
   position?: number;
   readingAnchor?: string;
@@ -56,6 +57,7 @@ type Row = {
   | { kind: "input"; parts: InputPart[]; status?: string }
   | { kind: "thinking"; segments: { id: string; text: string }[] }
   | { kind: "tools"; tools: ToolView[] }
+  | { kind: "origin"; childId: string }
   | { kind: "app"; reference: Schema<"AppReference">; live?: boolean }
   | { kind: "question"; tool?: ToolView; content?: ReactNode }
   | {
@@ -177,6 +179,7 @@ function savedRows(
 
 function liveRows(blocks: DisplayBlock[]): Row[] {
   const rows: Row[] = [];
+  let previousChild: string | undefined;
   for (const block of blocks) {
     if (
       block.diagnostic ||
@@ -184,6 +187,15 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
       block.metadata?.display === false
     )
       continue;
+    const firstRow = rows.length;
+    if (block.subagentRunId && block.subagentRunId !== previousChild) {
+      rows.push({
+        id: `${block.id}:origin`,
+        kind: "origin",
+        childId: block.subagentRunId,
+      });
+    }
+    previousChild = block.subagentRunId;
     if (block.context) {
       rows.push({
         id: block.id,
@@ -245,8 +257,15 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
     for (const reference of block.apps ?? []) {
       rows.push({ id: reference.app_id, kind: "app", reference, live: true });
     }
+    for (let index = firstRow; index < rows.length; index++)
+      rows[index].subagentRunId = block.subagentRunId;
   }
   return rows;
+}
+
+function questionKey(tool: ToolView) {
+  const scope = tool.subagentRunId ? `child:${tool.subagentRunId}:` : "";
+  return `question:${scope}${tool.provider ?? "function"}:${tool.toolCallId}`;
 }
 
 // Resume runs can contain result-only blocks. Correlate within the native Turn,
@@ -263,19 +282,14 @@ function questionRows(rows: Row[], pending?: PendingInteraction): Row[] {
       !row.tools.some(
         (tool) =>
           tool.name === "ask_user_question" ||
-          (tool.toolCallId &&
-            questions.has(
-              `question:${tool.provider ?? "function"}:${tool.toolCallId}`,
-            )),
+          (tool.toolCallId && questions.has(questionKey(tool))),
       )
     ) {
       projected.push(row);
       continue;
     }
     for (const tool of row.tools) {
-      const key = tool.toolCallId
-        ? `question:${tool.provider ?? "function"}:${tool.toolCallId}`
-        : undefined;
+      const key = tool.toolCallId ? questionKey(tool) : undefined;
       const previous = key ? questions.get(key) : undefined;
       if (previous) {
         // A duplicate call/partial frame must not erase an observed result.
@@ -306,6 +320,7 @@ function questionRows(rows: Row[], pending?: PendingInteraction): Row[] {
   const matching = projected.filter(
     (row) =>
       row.kind === "question" &&
+      !row.subagentRunId &&
       row.tool?.toolCallId &&
       pending.requestIds.includes(row.tool.toolCallId),
   );
@@ -329,7 +344,9 @@ function questionRows(rows: Row[], pending?: PendingInteraction): Row[] {
 function groupRows(rows: Row[]) {
   const grouped: Row[] = [];
   for (const row of rows) {
-    const previous = grouped.at(-1);
+    const last = grouped.at(-1);
+    const previous =
+      last?.subagentRunId === row.subagentRunId ? last : undefined;
     if (row.kind === "notifications" && previous?.kind === "notifications") {
       previous.notices.push(...row.notices);
     } else if (row.kind === "thinking" && previous?.kind === "thinking") {
@@ -395,6 +412,7 @@ function Rows({
         row.kind === "input" ? row.id : (row.readingAnchor ?? row.id)
       }
       data-message-id={row.kind === "input" ? row.id : undefined}
+      data-subagent-run-id={row.subagentRunId}
     >
       {row.kind === "input" ? (
         <InputContent
@@ -403,6 +421,12 @@ function Rows({
           status={row.status}
           renderText={(text) => <MessageText text={text} />}
         />
+      ) : row.kind === "origin" ? (
+        <div className={styles.assistantMessage}>
+          <header>
+            Subagent output <small>{row.childId}</small>
+          </header>
+        </div>
       ) : row.kind === "thinking" ? (
         <Reasoning segments={row.segments} />
       ) : row.kind === "question" ? (
@@ -418,10 +442,11 @@ function Rows({
             row.target ? JSON.stringify(row.target) : undefined
           }
         >
-          {((index === 0 && !continuation) ||
-            (index > 0 && all[index - 1].kind === "input")) && (
-            <header>Assistant</header>
-          )}
+          {!row.subagentRunId &&
+            ((index === 0 && !continuation) ||
+              (index > 0 &&
+                (all[index - 1].kind === "input" ||
+                  all[index - 1].subagentRunId))) && <header>Assistant</header>}
           <MessageText text={row.text} />
           {row.truncated && (
             <small>Saved preview truncated by the server.</small>
@@ -767,7 +792,7 @@ function usePresentedRows(rows: Row[], complete: boolean) {
   const ordinals = new Map<string, number>();
   const presented = rows.map((row) => {
     if (row.kind === "input") boundary = row.id;
-    const group = `${boundary}:${row.kind}`;
+    const group = `${boundary}:${row.subagentRunId ?? "root"}:${row.kind}`;
     const ordinal = ordinals.get(group) ?? 0;
     ordinals.set(group, ordinal + 1);
     const slot = `${group}:${ordinal}`;
@@ -883,10 +908,11 @@ function TurnSegments({
   for (const row of rows) {
     appendGap(row.position ?? turn?.end_position ?? previousPosition);
     const kind =
-      row.kind === "input" ||
-      row.kind === "assistant" ||
-      row.kind === "app" ||
-      row.kind === "question"
+      !row.subagentRunId &&
+      (row.kind === "input" ||
+        row.kind === "assistant" ||
+        row.kind === "app" ||
+        row.kind === "question")
         ? "visible"
         : "execution";
     if (row.kind === "input") {

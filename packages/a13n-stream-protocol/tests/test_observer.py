@@ -814,7 +814,9 @@ async def test_real_harness_stream_observes_lifecycle_text_and_terminal_events()
     assert any(isinstance(event, TextMessageStartEvent) for event in events)
     assert any(isinstance(event, TextMessageContentEvent) and event.delta == "hello" for event in events)
     assert any(isinstance(event, TextMessageEndEvent) for event in events)
-    assert not any(isinstance(event, RunStartedEvent) for event in events)
+    assert isinstance(events[0], RunStartedEvent)
+    assert events[0].protocol_version == "1.0"
+    assert sum(isinstance(event, RunStartedEvent) for event in events) == 1
     assert isinstance(events[-1], RunFinishedEvent)
     assert events[-1].thread_id == terminal.thread_id
     assert events[-1].run_id == terminal.run_id
@@ -890,18 +892,19 @@ async def test_terminal_statuses_map_from_explicit_harness_results() -> None:
     )
     opaque_event = HarnessAguiObserver().observe(_result_event(0, opaque))[0]
 
-    assert isinstance(suspended_event, CustomEvent)
-    assert suspended_event.name == "a13n.harness.run_result"
-    deferred = suspended_event.value["event"]["deferred"]
-    assert deferred["calls"][0]["tool_call_id"] == "call-external"
-    assert deferred["approvals"][0]["tool_call_id"] == "call-approval"
+    assert isinstance(suspended_event, RunFinishedEvent)
+    assert suspended_event.outcome.type == "interrupt"
+    assert [(entry.id, entry.tool_call_id, entry.reason) for entry in suspended_event.outcome.interrupts] == [
+        ("call-approval", "call-approval", "approval"),
+        ("call-external", "call-external", "external"),
+    ]
     assert isinstance(failed_event, RunErrorEvent)
     assert failed_event.code == "model_failed"
     assert failed_event.message == "The model failed."
     assert failed_event.usage is not None
     assert failed_event.usage[0].total_tokens == 5
-    assert isinstance(cancelled_event, RunErrorEvent)
-    assert cancelled_event.code == "run_cancelled"
+    assert isinstance(cancelled_event, RunFinishedEvent)
+    assert cancelled_event.outcome.type == "cancelled"
     assert isinstance(opaque_event, RunFinishedEvent)
     assert opaque_event.result is None
     assert opaque_event.raw_event["result_omitted"] is True
@@ -928,7 +931,7 @@ def test_input_projection_preserves_visibility_without_media_payloads() -> None:
     assert len(events) == 3
     bodies = [event.model_dump(mode="json") for event in events]
     for index, body in enumerate(bodies):
-        assert body["role"] == "user"
+        assert body["value"]["event"]["role"] == "user"
         assert body["metadata"]["display"] is (index != 1)
     assert bodies[1]["metadata"]["private"] == "omit"
     assert bodies[1]["value"]["event"]["content"] == "private guidance"
@@ -944,7 +947,7 @@ def test_input_projection_preserves_visibility_without_media_payloads() -> None:
 
     def show_hidden(_source, event):
         if isinstance(event, CustomEvent):
-            event.model_extra["metadata"]["display"] = True
+            event.metadata["display"] = True
         return event
 
     with pytest.raises(AguiObservationError):
@@ -1057,8 +1060,14 @@ def test_input_sources_are_custom_text_events_and_cache_points_are_omitted(sourc
     events = HarnessAguiObserver().observe(_event(0, native[0]))
     assert len(events) == 1 and isinstance(events[0], CustomEvent)
     assert events[0].name == f"a13n.input.{source}"
-    assert events[0].value["event"] == {"input_id": "input-one", "source": source, "content": "source text"}
-    assert events[0].model_extra["role"] == ("user" if source in {"user", "steering"} else "system")
+    assert events[0].value["event"] == {
+        "input_id": "input-one",
+        "source": source,
+        "content": "source text",
+        "message_id": "run-1:input:0",
+        "role": "user" if source in {"user", "steering"} else "system",
+    }
+    assert not events[0].model_extra
 
 
 def test_snapshot_ranges_are_detached_and_keep_a_fixed_boundary() -> None:

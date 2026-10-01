@@ -16,6 +16,7 @@ from a13n_harness_ui.model_presets import (
     API_PROVIDERS,
     SettingsPreset,
     known_model_capabilities,
+    known_model_characteristics,
     validate_base_url,
 )
 from a13n_harness_ui.tool_presets import NATIVE_TOOLS_DOCS, selected_tool_capabilities, tool_choices
@@ -354,6 +355,10 @@ class SetupWizard:
                         else "unknown; no native media enabled"
                     )
                     hint += f"\nNative media input: {media}. Editable in model_characteristics.capabilities."
+                    inputs = known_model_characteristics(f"{route_provider}:{self.values['model']}")
+                    if inputs is not None and inputs.url_input.video:
+                        urls = ", ".join(sorted(kind.value for kind in inputs.url_input.video))
+                        hint += f"\nNative video URL input: {urls}. Editable in model_characteristics.url_input.video."
                 if not self.add_model:
                     hint += "\nAgent tools: " + self.values.get("tools", "recommended") + "."
                 if self.add_agent:

@@ -357,7 +357,9 @@ async def test_inline_children_receive_fresh_search_bindings_without_parent_inhe
     result = await HarnessBuilder().build(parent).run("delegate", bindings=parent_binding)
     assert result.output_or_raise() == "parent-done"
     assert len(created) == 3 and len({id(item) for item in created}) == 3
-    assert dispatched == [created[1].search_backends[0].provider, created[2].search_backends[0].provider]
+    # Independent child calls may dispatch in either order.
+    assert len(dispatched) == 2
+    assert set(dispatched) == {created[1].search_backends[0].provider, created[2].search_backends[0].provider}
 
 
 async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspension(
@@ -843,7 +845,9 @@ async def test_inline_delegation_forwards_child_lifecycle_before_pre_request_fai
     assert result.output_or_raise() == "handled"
     assert result.usage.requests == 2
     child_events = [event for event in events if event.run_id != parent_run_id]
-    assert len(child_events) == 3
+    assert len(child_events) == 4
+    assert child_events[0].event.payload == {"type": "run_started"}
+    child_events = child_events[1:]
     assert all(isinstance(event.event, HarnessExtensionEvent) for event in child_events)
     child_payloads = [event.event.payload for event in child_events if isinstance(event.event, HarnessExtensionEvent)]
     assert child_events[0].event.kind == "delegation"
@@ -1364,7 +1368,7 @@ async def test_inline_child_binding_factory_preserves_owned_boundaries(change: s
             yield "handled"
 
     def factory(baseline):
-        assert baseline.web is None and baseline.media_reader is None
+        assert baseline.web is None
         assert baseline.skill_selection is None and baseline.client_toolsets is None
         assert baseline.task_state is None
         assert baseline.deferred_tools_supported is False

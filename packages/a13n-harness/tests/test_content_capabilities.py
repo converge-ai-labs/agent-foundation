@@ -19,10 +19,6 @@ from a13n_harness.capabilities import (
     DocumentConversionResult,
     DocumentsCapability,
     DocumentsConfiguration,
-    MediaCapability,
-    MediaConfiguration,
-    MediaReadRequest,
-    MediaResource,
     WebBinding,
     WebCapability,
     WebConfiguration,
@@ -56,7 +52,6 @@ from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecis
 from a13n_harness.usage import (
     ProviderUsage,
     ProviderUsageRecord,
-    UsageMeasure,
 )
 from pydantic_ai import BinaryContent
 from pydantic_ai.agent.spec import AgentSpec
@@ -72,16 +67,6 @@ class _Allow:
     async def __call__(self, invocation, metadata, *, context):
         del invocation, metadata, context
         return InvocationPolicyDecision.allow()
-
-
-class _MediaReader:
-    def __init__(self, resource: MediaResource) -> None:
-        self.resource = resource
-        self.requests: list[MediaReadRequest] = []
-
-    async def read(self, request: MediaReadRequest) -> MediaResource:
-        self.requests.append(request)
-        return self.resource
 
 
 class _DocumentConverter:
@@ -249,134 +234,6 @@ def _native_binary(messages: list[list[ModelMessage]]) -> list[BinaryContent]:
 async def _body(*chunks: bytes) -> AsyncIterator[bytes]:
     for chunk in chunks:
         yield chunk
-
-
-async def test_media_capability_returns_native_binary_with_run_scoped_reader(png_image_bytes: bytes) -> None:
-    usage = ProviderUsage(
-        usage_id="media-1",
-        provider="media-provider",
-        product="image-read",
-        timestamp=datetime.now(UTC),
-        measures=(UsageMeasure(unit="request", quantity=Decimal(1)),),
-    )
-    reader = _MediaReader(
-        MediaResource(
-            kind="image",
-            source_url="https://example.com/image.png?variant=large",
-            media_type="image/png",
-            data=png_image_bytes,
-            usage=(usage,),
-        )
-    )
-    seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_one_tool_model(
-            "read_media",
-            {"url": "https://example.com/image.png?variant=large", "instructions": "Read visible text."},
-            seen=seen,
-        ),
-        capabilities=(MediaCapability(MediaConfiguration(max_image_bytes=1024)),),
-    )
-
-    result = await executable.run(
-        "Inspect media",
-        bindings=RunBindings.embedded(capabilities=(_policy(),), media_reader=reader),
-    )
-
-    assert result.output_or_raise() == "done"
-    assert len(reader.requests) == 1
-    assert reader.requests[0].url == "https://example.com/image.png?variant=large"
-    assert reader.requests[0].instructions == "Read visible text."
-    assert reader.requests[0].max_image_bytes == 1024
-    assert reader.requests[0].max_video_bytes == 64 * 1024 * 1024
-    assert reader.requests[0].max_audio_bytes == 64 * 1024 * 1024
-    binaries = _native_binary(seen)
-    assert len(binaries) == 1
-    assert binaries[0].data == png_image_bytes
-    assert binaries[0].media_type == "image/png"
-    assert binaries[0].vendor_metadata is None
-    provider_record = next(record for record in result.usage_records if isinstance(record, ProviderUsageRecord))
-    assert provider_record.source == "media.reader"
-    assert provider_record.usage.usage_id == "media-1"
-
-
-async def test_media_capability_enforces_kind_specific_actual_byte_limit() -> None:
-    reader = _MediaReader(
-        MediaResource(
-            kind="image",
-            source_url="https://example.com/image.png",
-            media_type="image/png",
-            data=b"12345",
-        )
-    )
-    seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_one_tool_model("read_media", {"url": "https://example.com/image.png"}, seen=seen),
-        capabilities=(MediaCapability(MediaConfiguration(max_image_bytes=4)),),
-    )
-
-    result = await executable.run(
-        "Inspect media",
-        bindings=RunBindings.embedded(capabilities=(_policy(),), media_reader=reader),
-    )
-
-    assert result.output_or_raise() == "done"
-    error = next(item for item in _tool_contents(seen) if isinstance(item, dict))
-    assert error["error"]["code"] == "media_too_large"
-    assert _native_binary(seen) == []
-
-
-async def test_media_capability_rejects_credential_provider_url_before_model_history() -> None:
-    # test_web_canonical_urls_fail_closed_for_credential_aliases owns the credential key table.
-    credential_key = "X-Amz-Signature"
-    resource = MediaResource.model_construct(
-        kind="video",
-        source_url="https://example.com/video.mp4",
-        media_type="video/mp4",
-        data=None,
-        direct_url=f"https://cdn.example.com/video.mp4?{credential_key}=provider-secret",
-        usage=(),
-    )
-    reader = _MediaReader(resource)
-    seen: list[list[ModelMessage]] = []
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_one_tool_model("read_media", {"url": "https://example.com/video.mp4"}, seen=seen),
-        capabilities=(MediaCapability(),),
-    )
-
-    result = await executable.run(
-        "Inspect media",
-        bindings=RunBindings.embedded(capabilities=(_policy(),), media_reader=reader),
-    )
-
-    assert result.output_or_raise() == "done"
-    error = next(item for item in _tool_contents(seen) if isinstance(item, dict))
-    assert error["error"]["code"] == "media_response_invalid"
-    assert "provider-secret" not in repr(seen)
-
-
-@pytest.mark.parametrize(("url_field", "credential_key"), [("source_url", "apikey"), ("direct_url", "client_secret")])
-def test_media_resource_fails_closed_for_credential_url_aliases(
-    credential_key: str,
-    url_field: str,
-) -> None:
-    values: dict[str, object] = {
-        "kind": "video",
-        "source_url": "https://example.com/video.mp4?variant=source",
-        "media_type": "video/mp4",
-        "data": None,
-        "direct_url": "https://cdn.example.com/video.mp4?variant=large",
-    }
-    values[url_field] = f"https://example.com/video.mp4?{credential_key}=provider-secret"
-
-    with pytest.raises(ValueError):
-        MediaResource.model_validate(values)
 
 
 async def test_documents_capability_publishes_one_complete_environment_tree(tmp_path: Path) -> None:

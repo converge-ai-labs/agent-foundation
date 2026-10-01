@@ -30,6 +30,7 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
+    "@ag-ui/core": "1.0.1",
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.11.0",
     "@codemirror/lang-javascript": "^6.2.5",

@@ -29,18 +29,18 @@ def _text(transcript: Transcript) -> str:
 
 
 def _tool(renderer: StreamRenderer, name: str, args: dict, result: str = "done") -> None:
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "call-1", "tool_call_name": name})
+    renderer.ingest("TOOL_CALL_START", {"toolCallId": "call-1", "toolCallName": name})
     arguments = json.dumps(args)
     for start in range(0, len(arguments), 127):
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "call-1", "delta": arguments[start : start + 127]})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "call-1"})
-    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "call-1", "content": result})
+        renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "call-1", "delta": arguments[start : start + 127]})
+    renderer.ingest("TOOL_CALL_END", {"toolCallId": "call-1"})
+    renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "call-1", "content": result})
 
 
 def test_thinking_is_separate_and_expanded_in_concise_mode() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("THINKING_TEXT_MESSAGE_CONTENT", {"message_id": "one", "delta": "exposed reasoning"})
-    renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "one", "delta": "answer"})
+    renderer.ingest("REASONING_MESSAGE_CONTENT", {"messageId": "one", "delta": "exposed reasoning"})
+    renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "one", "delta": "answer"})
     blocks = list(renderer.transcript.blocks.values())
     assert len(blocks) == 2
     assert blocks[0].source == "exposed reasoning"
@@ -365,7 +365,7 @@ def test_input_events_hide_context_without_marking_user_as_assistant() -> None:
     renderer.ingest(
         "TEXT_MESSAGE_CONTENT",
         {
-            "message_id": "lost-start",
+            "messageId": "lost-start",
             "role": "user",
             "delta": "HIDDEN",
             "metadata": {"display": False},
@@ -378,13 +378,13 @@ def test_native_shell_preview_prioritizes_command_output_and_failure_with_exit_c
     import json
 
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "shell-one", "tool_call_name": "shell_exec"})
-    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "shell-one", "delta": '{"command":"pytest -q"}'})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "shell-one"})
+    renderer.ingest("TOOL_CALL_START", {"toolCallId": "shell-one", "toolCallName": "shell_exec"})
+    renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "shell-one", "delta": '{"command":"pytest -q"}'})
+    renderer.ingest("TOOL_CALL_END", {"toolCallId": "shell-one"})
     renderer.ingest(
         "TOOL_CALL_RESULT",
         {
-            "tool_call_id": "shell-one",
+            "toolCallId": "shell-one",
             "content": json.dumps(
                 {
                     "ok": True,
@@ -411,15 +411,15 @@ def test_native_shell_preview_prioritizes_command_output_and_failure_with_exit_c
 def test_tools_are_compact_and_question_debug_is_hidden() -> None:
     renderer = StreamRenderer(Status())
     for index in range(3):
-        call = {"tool_call_id": str(index), "tool_call_name": "view"}
+        call = {"toolCallId": str(index), "toolCallName": "view"}
         renderer.ingest("TOOL_CALL_START", call)
         renderer.ingest("TOOL_CALL_RESULT", {**call, "content": "done"})
     renderer.transcript.render(80)
     assert len(renderer.transcript.rows) == 4
     assert "Explored" in _text(renderer.transcript)
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "private-id", "tool_call_name": "ask_user_question"})
-    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "private-id", "delta": '{"questions": []}'})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "private-id"})
+    renderer.ingest("TOOL_CALL_START", {"toolCallId": "private-id", "toolCallName": "ask_user_question"})
+    renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "private-id", "delta": '{"questions": []}'})
+    renderer.ingest("TOOL_CALL_END", {"toolCallId": "private-id"})
     assert "ask_user_question" not in _source(renderer) and "private-id" not in _source(renderer)
     renderer.transcript.close()
 

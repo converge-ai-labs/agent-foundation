@@ -68,9 +68,9 @@ def test_edit_over_comparison_budget_returns_a_plain_fact_with_raw_details(befor
 
 def test_oversized_edit_replaces_call_with_one_borderless_fact_and_preserves_details() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"tool_call_id": "large", "tool_call_name": "edit"})
-    renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "large", "delta": '{"file_path":"file.py"}'})
-    renderer.ingest("TOOL_CALL_END", {"tool_call_id": "large"})
+    renderer.ingest("TOOL_CALL_START", {"toolCallId": "large", "toolCallName": "edit"})
+    renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "large", "delta": '{"file_path":"file.py"}'})
+    renderer.ingest("TOOL_CALL_END", {"toolCallId": "large"})
     before = "x\n" * 6000
     renderer.ingest(
         "CUSTOM",
@@ -81,7 +81,7 @@ def test_oversized_edit_replaces_call_with_one_borderless_fact_and_preserves_det
             },
         },
     )
-    renderer.ingest("TOOL_CALL_RESULT", {"tool_call_id": "large", "content": '{"ok":true}'})
+    renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "large", "content": '{"ok":true}'})
     try:
         renderer.transcript.render(100)
         text = "\n".join("".join(text for _, text in row).rstrip() for row in renderer.transcript.rows)

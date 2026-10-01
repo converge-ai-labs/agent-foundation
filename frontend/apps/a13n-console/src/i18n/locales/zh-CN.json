@@ -1321,6 +1321,8 @@
   "Selected": "已选择",
   "Tokens": "Token 数",
   "Video": "视频",
+  "Video files": "视频文件",
+  "YouTube URLs": "YouTube URL",
   "Vision": "视觉",
   "What agents can rely on when they run this model.": "Agent 运行该模型时可以依赖的能力。",
   "{{count}} models on this page": "本页 {{count}} 个模型",

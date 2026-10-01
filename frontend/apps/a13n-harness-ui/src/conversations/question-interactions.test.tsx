@@ -392,3 +392,65 @@ it.each(["empty history", "partial batch"])(
     });
   },
 );
+
+it("keeps inline child questions and replies inside execution without replacing a root question with the same native ID", () => {
+  const childArgs = {
+    questions: [{ ...args.questions[0], question: "Child scope?" }],
+  };
+  const blocks: DisplayBlock[] = [
+    liveCall,
+    {
+      ...liveCall,
+      id: "run-one:child:q",
+      subagentRunId: "child",
+      text: JSON.stringify(childArgs),
+      result: JSON.stringify({ answers: { "Child scope?": "All" } }),
+      outcome: "success",
+    },
+    {
+      id: "run-one:child:reply",
+      kind: "assistant",
+      text: "Child-only reply",
+      subagentRunId: "child",
+    },
+    { id: "run-one:reply", kind: "assistant", text: "Root reply" },
+  ];
+  const view = render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[input]}
+      turns={[{ ...turn, end_position: 1 }]}
+      localInputs={[]}
+      blocks={blocks}
+    />,
+  );
+  expect(
+    screen.getByText("Which scope?").closest("[data-execution-reader]"),
+  ).toBeNull();
+  expect(screen.queryByText("Child-only reply")).toBeNull();
+  expect(
+    screen.getByText("Root reply").closest("[data-execution-reader]"),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+  expect(
+    screen.getByText("Child-only reply").closest("[data-execution-reader]"),
+  ).not.toBeNull();
+  expect(screen.getByText("Child scope?")).toBeTruthy();
+  expect(screen.getByText("Which scope?")).toBeTruthy();
+  view.rerender(
+    <ConversationTranscript
+      threadId="one"
+      entries={[input]}
+      turns={[{ ...turn, end_position: 1 }]}
+      localInputs={[]}
+      blocks={blocks}
+      pending={{ requestIds: ["q"], content: <div>Root pending decision</div> }}
+    />,
+  );
+  expect(
+    screen
+      .getByText("Root pending decision")
+      .closest("[data-execution-reader]"),
+  ).toBeNull();
+  expect(screen.getByText("Child scope?")).toBeTruthy();
+});

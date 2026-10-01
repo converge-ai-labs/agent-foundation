@@ -38,7 +38,7 @@ def test_local_input_is_immediate_and_deduplicates_only_explicit_source() -> Non
     for source in ("input-one", "input-two"):
         renderer.ingest(
             "TEXT_MESSAGE_CONTENT",
-            {"message_id": source, "role": "user", "delta": "same words", "metadata": {"source_id": source}},
+            {"messageId": source, "role": "user", "delta": "same words", "metadata": {"source_id": source}},
         )
     assert _text(renderer).count("same words") == 2
 
@@ -284,7 +284,7 @@ def test_terminal_is_one_consumer_of_structured_media_input() -> None:
     assert "image/png · 14 bytes" in _text(renderer)
     assert "https://example.test/picture.png" in _text(renderer)
     assert "private pixels" not in _text(renderer)
-    assert observed[0].model_extra["metadata"]["image_object_id"] == "image-one"
+    assert observed[0].metadata["image_object_id"] == "image-one"
 
 
 @pytest.mark.anyio
@@ -427,7 +427,7 @@ async def test_recovered_final_answer_keeps_markdown_separate_from_notices(
     hub = HarnessUiLiveHub()
     renderer = StreamRenderer(Status())
     if gap:
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "partial", "delta": "Incomplete **answer"})
+        renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "partial", "delta": "Incomplete **answer"})
     renderer.gap = gap
     outcome = SimpleNamespace(
         execution=SimpleNamespace(output=answer, output_omitted=output_omitted),
@@ -464,7 +464,7 @@ async def test_recovered_final_answer_keeps_markdown_separate_from_notices(
             assert any("bold" in style and "Important result" in text for style, text in fragments)
             assert "# Recovered heading" not in "".join(text for _, text in fragments)
         # A later normal streamed response still takes the Markdown path.
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "next", "delta": "**Next answer**"})
+        renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "next", "delta": "**Next answer**"})
         assert list(renderer.transcript.blocks.values())[-1].markdown
     finally:
         renderer.transcript.close()

@@ -1,6 +1,8 @@
 import { ArrowRight, CaretRight } from "@phosphor-icons/react/dist/ssr";
+import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import architecture from "../../../../.github/assets/a13n-architecture.webp";
 import { type Locale, localeUrl, messages } from "@/lib/i18n";
 import { icon } from "@/lib/icons";
 
@@ -31,6 +33,22 @@ export function Intro({
         <ArrowRight className="size-4" />
       </Link>
     </header>
+  );
+}
+
+export function ArchitectureOverview({ alt }: { alt: string }) {
+  return (
+    <a
+      href={architecture.src}
+      className="mb-12 block cursor-zoom-in rounded-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-fd-ring"
+    >
+      <Image
+        src={architecture}
+        alt={alt}
+        className="h-auto w-full rounded-xl"
+        preload
+      />
+    </a>
   );
 }
 

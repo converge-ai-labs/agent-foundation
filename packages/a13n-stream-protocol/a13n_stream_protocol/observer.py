@@ -15,9 +15,9 @@ from a13n_harness import (
     HarnessRunResultEvent,
     HarnessStreamEvent,
 )
-from a13n_harness.events import InputMediaEvent, InputTextEvent, ToolExtraEventPayload
+from a13n_harness.events import InlineDelegationPayload, InputMediaEvent, InputTextEvent, ToolExtraEventPayload
 from a13n_harness.tools._output import tool_execution_value
-from ag_ui.core import Event
+from ag_ui.core import Event, Interrupt, RunFinishedCancelledOutcome, RunFinishedInterruptOutcome
 from ag_ui.core.events import (
     BaseEvent,
     CustomEvent,
@@ -28,6 +28,11 @@ from ag_ui.core.events import (
     RunErrorEvent,
     RunFinishedEvent,
     RunFinishedSuccessOutcome,
+    RunStartedEvent,
+    SubagentErrorEvent,
+    SubagentFinishedEvent,
+    SubagentFinishedSuccessOutcome,
+    SubagentStartedEvent,
     TextMessageContentEvent,
     TextMessageEndEvent,
     TextMessageStartEvent,
@@ -56,14 +61,13 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UnknownCapabilityEvent,
 )
-from pydantic_ai.tools import DeferredToolRequests
 
+from a13n_stream_protocol.content import public_tool_value, tool_result_content
 from a13n_stream_protocol.fragments import fragment_custom_event
 
 _AGUI_EVENT_ADAPTER = TypeAdapter(Event)
 _ANY_ADAPTER = TypeAdapter(Any)
 _JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
-_DEFERRED_REQUESTS_ADAPTER = TypeAdapter(DeferredToolRequests)
 _SOURCE_CORRELATION_FIELDS = ("thread_id", "run_id", "sequence", "occurred_at")
 _MUTABLE_FIELDS_BY_EVENT_TYPE: dict[object, frozenset[str]] = {
     TextMessageContentEvent.model_fields["type"].default: frozenset({"delta"}),
@@ -96,6 +100,8 @@ class _PartCursor:
 class _ObserverState:
     request_index: int = 0
     parts: dict[int, _PartCursor] = field(default_factory=dict)
+    children: dict[str, _ObserverState] = field(default_factory=dict)
+    threads: dict[str, str] = field(default_factory=dict)
 
 
 class HarnessAguiObserver:
@@ -133,7 +139,7 @@ class HarnessAguiObserver:
         if self._resume_completed or self._thread_id is not None or self._run_id is not None:
             raise AguiObservationError("Observer resumption requires a fresh observer")
 
-        staged = HarnessAguiObserver(processor=self._processor)
+        staged = type(self)(processor=self._processor)
         self._resuming = True
         try:
             async for item in history:
@@ -175,8 +181,8 @@ class HarnessAguiObserver:
             )
         ]
         stored = _copy_events(framed)
-        self._thread_id = item.thread_id
-        self._run_id = item.run_id
+        self._thread_id = self._thread_id or item.thread_id
+        self._run_id = self._run_id or item.run_id
         self._state = staged_state
         self._events.extend(stored)
         return _copy_events(stored)
@@ -206,11 +212,24 @@ class HarnessAguiObserver:
 
     def _convert(self, item: HarnessStreamEvent[Any], state: _ObserverState) -> list[Event]:
         if isinstance(item, HarnessRunResultEvent):
-            return [self._convert_terminal(item)]
+            return [*_close_parts(item, state), self._convert_terminal(item)]
 
         source = item.event
         events: list[Event]
         if isinstance(source, HarnessExtensionEvent):
+            if (
+                source.kind == "lifecycle"
+                and isinstance(source.payload, dict)
+                and source.payload.get("type") == "run_started"
+            ):
+                return [
+                    RunStartedEvent(
+                        timestamp=_timestamp_ms(item),
+                        thread_id=item.thread_id,
+                        run_id=item.run_id,
+                        protocol_version="1.0",
+                    )
+                ]
             _observe_request_lifecycle(source, state)
             return [_custom_harness_event(item, source)]
         if isinstance(source, InputTextEvent | InputMediaEvent):
@@ -294,21 +313,28 @@ class HarnessAguiObserver:
         if result.status == "suspended":
             deferred = result.deferred
             assert deferred is not None
-            return CustomEvent(
+            return RunFinishedEvent(
                 timestamp=timestamp,
-                name="a13n.harness.run_result",
-                value=_source_value(
-                    item,
-                    {
-                        "status": "suspended",
-                        "suspend_reason": result.suspend_reason,
-                        "deferred": _DEFERRED_REQUESTS_ADAPTER.dump_python(
-                            deferred,
-                            mode="json",
-                            by_alias=True,
-                        ),
-                    },
+                raw_event=raw_event,
+                thread_id=item.thread_id,
+                run_id=item.run_id,
+                outcome=RunFinishedInterruptOutcome(
+                    interrupts=[
+                        Interrupt(
+                            id=call.tool_call_id,
+                            tool_call_id=call.tool_call_id,
+                            reason=reason,
+                            metadata={
+                                "tool_name": call.tool_name,
+                                "args": call.args,
+                                "tool_metadata": deferred.metadata.get(call.tool_call_id),
+                            },
+                        )
+                        for reason, calls in (("approval", deferred.approvals), ("external", deferred.calls))
+                        for call in calls
+                    ]
                 ),
+                usage=usage,
             )
         if result.status == "failed":
             failure = result.failure
@@ -321,11 +347,12 @@ class HarnessAguiObserver:
                 code=failure.code,
                 usage=usage,
             )
-        return RunErrorEvent(
+        return RunFinishedEvent(
             timestamp=timestamp,
             raw_event=raw_event,
-            message="The run was cancelled.",
-            code="run_cancelled",
+            thread_id=item.thread_id,
+            run_id=item.run_id,
+            outcome=RunFinishedCancelledOutcome(),
             usage=usage,
         )
 
@@ -333,7 +360,7 @@ class HarnessAguiObserver:
         if not isinstance(candidate, BaseEvent):
             raise AguiObservationError("The event processor returned a non-AG-UI value")
         try:
-            replacement = _AGUI_EVENT_ADAPTER.validate_python(candidate, strict=True)
+            replacement = _AGUI_EVENT_ADAPTER.validate_python(candidate.model_dump(mode="python"), strict=True)
         except ValueError as exc:
             raise AguiObservationError("The event processor returned an invalid AG-UI event") from exc
         if replacement.type != original.type:
@@ -342,11 +369,110 @@ class HarnessAguiObserver:
         original_data = original.model_dump(mode="python")
         replacement_data = replacement.model_dump(mode="python")
         mutable_fields = _MUTABLE_FIELDS_BY_EVENT_TYPE.get(original.type, frozenset())
-        for field_name, original_value in original_data.items():
-            if field_name not in mutable_fields and replacement_data.get(field_name) != original_value:
+        for field_name in original_data.keys() | replacement_data.keys():
+            if field_name not in mutable_fields and (
+                field_name not in original_data
+                or field_name not in replacement_data
+                or replacement_data[field_name] != original_data[field_name]
+            ):
                 raise AguiObservationError(f"The event processor changed structural field {field_name}")
         _validate_nested_source_correlation(original, replacement)
         return replacement.model_copy(deep=True)
+
+
+class HarnessAguiStreamObserver(HarnessAguiObserver):
+    """Observe a Host's root stream and its forwarded inline children in source order.
+
+    Each Run has independent multipart state. Only the root owns RUN_* events;
+    inline delegation observations own child lifecycle, after child retention.
+    Asynchronous Host executions use their own stream observer.
+    """
+
+    def _validate_correlation(self, item: HarnessStreamEvent[Any]) -> None:
+        expected = self._state.threads.get(item.run_id)
+        if expected is not None and item.thread_id != expected:
+            raise AguiObservationError("Harness Thread correlation changed for a Run")
+
+    def _convert(self, item: HarnessStreamEvent[Any], state: _ObserverState) -> list[Event]:
+        root_run_id = self.run_id or item.run_id
+        state.threads[item.run_id] = item.thread_id
+        is_child = item.run_id != root_run_id
+        cursor = state.children.setdefault(item.run_id, _ObserverState()) if is_child else state
+        source = item.event if isinstance(item, HarnessEvent) else None
+        if (
+            isinstance(item, HarnessEvent)
+            and isinstance(source, HarnessExtensionEvent)
+            and source.kind == "delegation"
+            and isinstance(source.payload, dict)
+            and source.payload.get("type") == "inline_delegation"
+        ):
+            payload = InlineDelegationPayload.model_validate(source.payload)
+            child_id = payload.child_run_id
+            # Preparation may fail before a child Run exists. Preserve that
+            # observation, but do not fabricate a standard child identity.
+            if child_id is None:
+                return [_custom_harness_event(item, source)]
+            child = state.children.setdefault(child_id, _ObserverState())
+            events: list[Event] = []
+            if payload.action == "started":
+                events.append(
+                    SubagentStartedEvent(
+                        timestamp=_timestamp_ms(item),
+                        subagent_run_id=child_id,
+                        name=payload.subagent,
+                        parent_tool_call_id=payload.parent_tool_call_id,
+                        parent_subagent_run_id=payload.parent_run_id if payload.parent_run_id != root_run_id else None,
+                    )
+                )
+            else:
+                events.extend(_attribute(_close_parts(item, child), child_id))
+                if payload.action == "completed":
+                    events.append(
+                        SubagentFinishedEvent(
+                            timestamp=_timestamp_ms(item),
+                            subagent_run_id=child_id,
+                            outcome=SubagentFinishedSuccessOutcome(),
+                        )
+                    )
+                else:
+                    events.append(
+                        SubagentErrorEvent(
+                            timestamp=_timestamp_ms(item),
+                            subagent_run_id=child_id,
+                            message=f"Inline delegation {payload.status}.",
+                            code=payload.status,
+                        )
+                    )
+            # The custom fact retains Harness invocation/ownership details.
+            custom = _custom_harness_event(item, source)
+            events.extend(_attribute([custom], item.run_id) if is_child else [custom])
+            return events
+        events = super()._convert(item, cursor)
+        if not is_child:
+            return events
+        return _attribute(
+            [event for event in events if not isinstance(event, RunStartedEvent | RunFinishedEvent | RunErrorEvent)],
+            item.run_id,
+        )
+
+
+def _attribute(events: list[Event], run_id: str) -> list[Event]:
+    return [
+        event.model_copy(update={"subagent_run_id": run_id}) if "subagent_run_id" in type(event).model_fields else event
+        for event in events
+    ]
+
+
+def _close_parts(item: HarnessStreamEvent[Any], state: _ObserverState) -> list[Event]:
+    """Settle presentation parts only at an authoritative execution boundary."""
+    events: list[Event] = []
+    for cursor in state.parts.values():
+        if cursor.kind == "text":
+            events.append(TextMessageEndEvent(timestamp=_timestamp_ms(item), message_id=cursor.part_id))
+        elif cursor.kind == "reasoning":
+            events.append(ReasoningMessageEndEvent(timestamp=_timestamp_ms(item), message_id=cursor.part_id))
+    state.parts.clear()
+    return events
 
 
 def _convert_input(item: HarnessEvent, source: InputTextEvent | InputMediaEvent) -> Event:
@@ -355,12 +481,16 @@ def _convert_input(item: HarnessEvent, source: InputTextEvent | InputMediaEvent)
             "type": "CUSTOM",
             "timestamp": _timestamp_ms(item),
             "name": "a13n.input.media" if isinstance(source, InputMediaEvent) else f"a13n.input.{source.source}",
-            "message_id": f"{item.run_id}:input:{item.sequence}",
-            "role": "user" if source.source in {"user", "steering"} else "system",
             "metadata": source.metadata.model_dump(mode="json"),
             "value": _source_value(
                 item,
-                {"input_id": source.input_id, "source": source.source, "content": source.content},
+                {
+                    "input_id": source.input_id,
+                    "source": source.source,
+                    "content": source.content,
+                    "message_id": f"{item.run_id}:input:{item.sequence}",
+                    "role": "user" if source.source in {"user", "steering"} else "system",
+                },
             ),
         }
     )
@@ -521,7 +651,7 @@ def _convert_tool_result(
     if not isinstance(part, ToolReturnPart) or part.outcome != "success":
         # Preserve native failure/retry correlation, but not model-only media.
         projected_part = (
-            replace(part, content=tool_execution_value(part.content, part.metadata))
+            replace(part, content=public_tool_value(tool_execution_value(part.content, part.metadata)))
             if isinstance(part, ToolReturnPart)
             else part
         )
@@ -536,7 +666,7 @@ def _convert_tool_result(
             timestamp=_timestamp_ms(item),
             message_id=f"{part.tool_call_id}:result",
             tool_call_id=part.tool_call_id,
-            content=_tool_result_text(tool_execution_value(part.content, part.metadata)),
+            content=tool_result_content(tool_execution_value(part.content, part.metadata)),
             role="tool",
         )
     ]
@@ -666,16 +796,9 @@ def _json_safe_output(value: object) -> tuple[JsonValue, bool]:
         return None, True
 
 
-def _tool_result_text(value: object) -> str:
-    if isinstance(value, str):
-        return value
-    serialized = _ANY_ADAPTER.dump_python(value, mode="json")
-    return json.dumps(serialized, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-
-
 def _agui_usage(usage: Any) -> list[TokenUsage] | None:
     total_tokens = usage.input_tokens + usage.output_tokens
-    if total_tokens == 0 and usage.cache_read_tokens == 0:
+    if total_tokens == 0 and usage.cache_read_tokens == 0 and usage.cache_write_tokens == 0:
         return None
     reasoning_tokens = usage.details.get("reasoning_tokens")
     return [
@@ -685,6 +808,7 @@ def _agui_usage(usage: Any) -> list[TokenUsage] | None:
             total_tokens=total_tokens,
             reasoning_tokens=reasoning_tokens if isinstance(reasoning_tokens, int) else None,
             cached_input_tokens=usage.cache_read_tokens,
+            cache_write_input_tokens=usage.cache_write_tokens,
         )
     ]
 
@@ -713,4 +837,4 @@ def _copy_events(events: Sequence[Event]) -> tuple[Event, ...]:
     return tuple(cast(Event, event.model_copy(deep=True)) for event in events)
 
 
-__all__ = ["AguiEventProcessor", "AguiObservationError", "HarnessAguiObserver"]
+__all__ = ["AguiEventProcessor", "AguiObservationError", "HarnessAguiObserver", "HarnessAguiStreamObserver"]

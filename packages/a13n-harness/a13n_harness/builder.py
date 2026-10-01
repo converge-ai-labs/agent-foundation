@@ -45,6 +45,7 @@ from a13n_harness.capabilities.steering import (
 from a13n_harness.capabilities.tool_proxy import (
     ToolProxyPlan,
 )
+from a13n_harness.capabilities.video_url import VideoUrlCapability
 from a13n_harness.capability_types import (
     CapabilityTypeCatalog,
     first_party_declarative_capability_types,
@@ -687,6 +688,7 @@ class HarnessBuilder:
                 LifecycleEventCapability(),
                 SteeringCapability(),
                 InputCapability(),
+                VideoUrlCapability(),
                 ModelContextCoordinatorCapability(),
                 ResolveModelId(resolve_model),
                 *_cold_start_capabilities(construction_spec),

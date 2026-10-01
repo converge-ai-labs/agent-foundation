@@ -12,10 +12,26 @@ function connectedTransport() {
 }
 import {
   FocusDisplay,
-  focusFrame,
+  focusFrame as parseFocusFrame,
   showFocusedOutput,
   watchThread,
 } from "./stream";
+
+// Fixture envelopes repeat the AG-UI discriminant inside their payload.
+function focusFrame(value: unknown) {
+  const frame = parseFocusFrame(value);
+  const events =
+    frame.kind === "root_stream"
+      ? frame.events
+      : frame.kind === "event"
+        ? [frame.event]
+        : [];
+  for (const event of events) {
+    if (event.payload)
+      event.payload = { type: event.event_type, ...event.payload };
+  }
+  return frame;
+}
 
 const thread = {
   thread_id: "thread-one",
@@ -43,7 +59,7 @@ function snapshot(count?: number) {
       recent_events: [
         {
           event_type: "TEXT_MESSAGE_CONTENT",
-          payload: { delta: "diagnostic only" },
+          payload: { type: "TEXT_MESSAGE_CONTENT", delta: "diagnostic only" },
         },
       ],
       root_stream:
@@ -70,7 +86,11 @@ function event(sequence: number, delta = "live", run_kind = "root") {
       root_thread_id: "thread-one",
       run_id: "run-one",
       event_type: "TEXT_MESSAGE_CONTENT",
-      payload: { message_id: "message-one", delta },
+      payload: {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "message-one",
+        delta,
+      },
       payload_omitted: false,
     },
   });
@@ -88,13 +108,17 @@ it("does not turn diagnostics into conversation output and only saves cursor aft
         {
           index: 0,
           event_type: "TEXT_MESSAGE_START",
-          payload: { message_id: "message-one" },
+          payload: { type: "TEXT_MESSAGE_START", messageId: "message-one" },
           payload_omitted: false,
         },
         {
           index: 1,
           event_type: "TEXT_MESSAGE_CONTENT",
-          payload: { message_id: "message-one", delta: "replay" },
+          payload: {
+            type: "TEXT_MESSAGE_CONTENT",
+            messageId: "message-one",
+            delta: "replay",
+          },
           payload_omitted: false,
         },
       ],
@@ -148,29 +172,29 @@ it("honors display metadata, canonical reasoning events and tool result identity
   const events = [
     [
       "TEXT_MESSAGE_START",
-      { message_id: "hidden", role: "user", metadata: { display: false } },
+      { messageId: "hidden", role: "user", metadata: { display: false } },
     ],
     [
       "TEXT_MESSAGE_CONTENT",
       {
-        message_id: "hidden",
+        messageId: "hidden",
         delta: "hidden guidance",
         metadata: { display: false },
       },
     ],
-    ["REASONING_MESSAGE_START", { message_id: "reason", role: "reasoning" }],
+    ["REASONING_MESSAGE_START", { messageId: "reason", role: "reasoning" }],
     [
       "REASONING_MESSAGE_CONTENT",
-      { message_id: "reason", delta: "reasoning text" },
+      { messageId: "reason", delta: "reasoning text" },
     ],
-    ["REASONING_MESSAGE_END", { message_id: "reason" }],
-    ["TOOL_CALL_START", { tool_call_id: "call-one", tool_call_name: "shell" }],
-    ["TOOL_CALL_ARGS", { tool_call_id: "call-one", delta: "{}" }],
+    ["REASONING_MESSAGE_END", { messageId: "reason" }],
+    ["TOOL_CALL_START", { toolCallId: "call-one", toolCallName: "shell" }],
+    ["TOOL_CALL_ARGS", { toolCallId: "call-one", delta: "{}" }],
     [
       "TOOL_CALL_RESULT",
       {
-        message_id: "call-one:result",
-        tool_call_id: "call-one",
+        messageId: "call-one:result",
+        toolCallId: "call-one",
         content: "done",
       },
     ],
@@ -247,7 +271,11 @@ it("reboots through a root Run and checkpoint race while retaining its authorita
         {
           index: 0,
           event_type: "TEXT_MESSAGE_CONTENT",
-          payload: { message_id: "unsaved", delta: "Retained failed output" },
+          payload: {
+            type: "TEXT_MESSAGE_CONTENT",
+            messageId: "unsaved",
+            delta: "Retained failed output",
+          },
           payload_omitted: false,
         },
       ],
@@ -273,7 +301,7 @@ it("dispatches native custom payloads and folds task/context operations without 
   const display = new FocusDisplay();
   const custom = (name: string, event: unknown, extra = {}) => ({
     event_type: "CUSTOM",
-    payload: { name, value: { event }, ...extra },
+    payload: { type: "CUSTOM", name, value: { event }, ...extra },
     payload_omitted: false,
   });
   const events = [
@@ -284,7 +312,7 @@ it("dispatches native custom payloads and folds task/context operations without 
         input_id: "input-one",
         content: { kind: "binary", size_bytes: 20 },
       },
-      { message_id: "run-one:input:1:0", metadata: { media: true } },
+      { messageId: "run-one:input:1:0", metadata: { media: true } },
     ),
     custom("a13n.harness.state", {
       payload: {
@@ -316,7 +344,11 @@ it("dispatches native custom payloads and folds task/context operations without 
     custom("a13n.harness.lifecycle", { payload: { type: "request_started" } }),
     {
       event_type: "RUN_ERROR",
-      payload: { code: "failed", message: "Provider disconnected" },
+      payload: {
+        type: "RUN_ERROR",
+        code: "failed",
+        message: "Provider disconnected",
+      },
       payload_omitted: false,
     },
   ];
@@ -353,11 +385,13 @@ it("dispatches native custom payloads and folds task/context operations without 
 it("reassembles custom fragments before applying hidden metadata and rejects missing fragments", () => {
   const display = new FocusDisplay();
   const hidden = JSON.stringify({
+    type: "CUSTOM",
     name: "a13n.input.media",
     metadata: { display: false },
     value: { event: { content: { kind: "binary" } } },
   });
   const visible = JSON.stringify({
+    type: "CUSTOM",
     name: "a13n.context.compaction_summary",
     value: { event: { operation_id: "one", summary: "Exact summary" } },
   });
@@ -369,6 +403,7 @@ it("reassembles custom fragments before applying hidden metadata and rejects mis
   ) => ({
     event_type: "CUSTOM",
     payload: {
+      type: "CUSTOM",
       name: "a13n.stream.fragment",
       value: { id, data, index, count },
     },
@@ -414,12 +449,12 @@ it("retains unsaved initial output and only cuts over after replacement history 
 it("folds native applied edits and failed results by exact ID without guessing proxy identities", () => {
   const display = new FocusDisplay();
   const events = [
-    ["TOOL_CALL_START", { tool_call_id: "outer", tool_call_name: "call" }],
+    ["TOOL_CALL_START", { toolCallId: "outer", toolCallName: "call" }],
     [
       "TOOL_CALL_ARGS",
-      { tool_call_id: "outer", delta: '{"group":"filesystem","tool":"edit"}' },
+      { toolCallId: "outer", delta: '{"group":"filesystem","tool":"edit"}' },
     ],
-    ["TOOL_CALL_END", { tool_call_id: "outer" }],
+    ["TOOL_CALL_END", { toolCallId: "outer" }],
     [
       "CUSTOM",
       {
@@ -451,7 +486,7 @@ it("folds native applied edits and failed results by exact ID without guessing p
         },
       },
     ],
-    ["TOOL_CALL_START", { tool_call_id: "retry", tool_call_name: "view" }],
+    ["TOOL_CALL_START", { toolCallId: "retry", toolCallName: "view" }],
     [
       "CUSTOM",
       {
@@ -467,7 +502,14 @@ it("folds native applied edits and failed results by exact ID without guessing p
         },
       },
     ],
-    ["RUN_ERROR", { code: "run_cancelled" }],
+    [
+      "RUN_FINISHED",
+      {
+        threadId: "thread-one",
+        runId: "run-one",
+        outcome: { type: "cancelled" },
+      },
+    ],
   ];
   display.accept(snapshot(events.length));
   display.accept(
@@ -552,8 +594,8 @@ it("folds provider-native search snapshots once, retaining final arguments and s
   native("part_start", returned);
   native("part_end", returned);
   emit("TOOL_CALL_START", {
-    tool_call_id: "same",
-    tool_call_name: "web_search",
+    toolCallId: "same",
+    toolCallName: "web_search",
   });
   expect(display.blocks.size).toBe(2);
   const provider = [...display.blocks.values()].find((block) => block.provider);
@@ -568,7 +610,7 @@ it("folds provider-native search snapshots once, retaining final arguments and s
 function childEvent(
   sequence: number,
   execution = "execution-one",
-  payload = { message_id: "text", delta: "child text" },
+  payload = { messageId: "text", delta: "child text" },
 ) {
   return focusFrame({
     kind: "event",
@@ -637,7 +679,7 @@ it("bounds observed child text and events without pretending it is complete save
   display.accept(snapshot());
   display.accept(
     childEvent(101, "execution-one", {
-      message_id: "text",
+      messageId: "text",
       delta: "x".repeat(200_000),
     }),
   );
@@ -649,7 +691,7 @@ it("bounds observed child text and events without pretending it is complete save
   for (let i = 0; i < 200; i++)
     display.accept(
       childEvent(102 + i, "execution-one", {
-        message_id: `text-${i}`,
+        messageId: `text-${i}`,
         delta: "next",
       }),
     );
@@ -674,6 +716,7 @@ it("keeps task activity in its transcript without mixing private child tasks int
     if (frame.kind !== "event") throw new Error("Expected event");
     frame.event.event_type = "CUSTOM";
     frame.event.payload = {
+      type: "CUSTOM",
       name: "a13n.harness.state",
       value: {
         event: {
@@ -711,6 +754,7 @@ it.each(["a13n.harness_ui.checkpoint", "plugin.test.fact"])(
   "keeps %s out of conversation blocks in live delivery and replay",
   (name) => {
     const payload = {
+      type: "CUSTOM",
       name,
       value: {
         event: {
@@ -761,33 +805,51 @@ it("cuts over only the saved checkpoint prefix and reconstructs boundaries on re
   const events = [
     {
       event_type: "TEXT_MESSAGE_CONTENT",
-      payload: { message_id: "input", delta: "First input" },
+      payload: {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "input",
+        delta: "First input",
+      },
     },
     {
       event_type: "CUSTOM",
       payload: {
+        type: "CUSTOM",
         name: "a13n.harness_ui.checkpoint",
         value: { event: { continuation_id: "checkpoint-a" } },
       },
     },
     {
       event_type: "TEXT_MESSAGE_CONTENT",
-      payload: { message_id: "answer", delta: "First answer" },
+      payload: {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "answer",
+        delta: "First answer",
+      },
     },
     {
       event_type: "TEXT_MESSAGE_CONTENT",
-      payload: { message_id: "steer", delta: "Instruction" },
+      payload: {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "steer",
+        delta: "Instruction",
+      },
     },
     {
       event_type: "CUSTOM",
       payload: {
+        type: "CUSTOM",
         name: "a13n.harness_ui.checkpoint",
         value: { event: { continuation_id: "checkpoint-b" } },
       },
     },
     {
       event_type: "TEXT_MESSAGE_CONTENT",
-      payload: { message_id: "suffix", delta: "Still streaming" },
+      payload: {
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "suffix",
+        delta: "Still streaming",
+      },
     },
   ];
   const display = new FocusDisplay();
@@ -959,7 +1021,11 @@ it("publishes a replacement snapshot only after its complete replay, retaining t
         {
           index: 0,
           event_type: "TEXT_MESSAGE_CONTENT",
-          payload: { message_id: "new", delta: "Replacement " },
+          payload: {
+            type: "TEXT_MESSAGE_CONTENT",
+            messageId: "new",
+            delta: "Replacement ",
+          },
           payload_omitted: false,
         },
       ],
@@ -974,7 +1040,11 @@ it("publishes a replacement snapshot only after its complete replay, retaining t
         {
           index: 1,
           event_type: "TEXT_MESSAGE_CONTENT",
-          payload: { message_id: "new", delta: "complete output" },
+          payload: {
+            type: "TEXT_MESSAGE_CONTENT",
+            messageId: "new",
+            delta: "complete output",
+          },
           payload_omitted: false,
         },
       ],
@@ -1013,13 +1083,13 @@ it("hides recovery instructions and waits for visible progress before marking re
   };
   emit("CUSTOM", retry);
   emit("TEXT_MESSAGE_CONTENT", {
-    message_id: "recovery",
+    messageId: "recovery",
     delta: "Internal instruction",
     metadata: { display: false },
   });
   expect(display.blocks.size).toBe(0);
   expect(display.recovery?.state).toBe("retrying");
-  emit("TEXT_MESSAGE_CONTENT", { message_id: "answer", delta: "Continuing" });
+  emit("TEXT_MESSAGE_CONTENT", { messageId: "answer", delta: "Continuing" });
   expect(display.recovery?.state).toBe("resumed");
   emit("RUN_FINISHED", {});
   expect(display.recovery).toMatchObject({ state: "resumed", retries: 1 });
@@ -1116,14 +1186,19 @@ it("folds root replay and child shell observations into the shared process inspe
         {
           index: 0,
           event_type: "TOOL_CALL_START",
-          payload: { tool_call_id: "shell", tool_call_name: "shell_exec" },
+          payload: {
+            type: "TOOL_CALL_START",
+            toolCallId: "shell",
+            toolCallName: "shell_exec",
+          },
           payload_omitted: false,
         },
         {
           index: 1,
           event_type: "TOOL_CALL_ARGS",
           payload: {
-            tool_call_id: "shell",
+            type: "TOOL_CALL_ARGS",
+            toolCallId: "shell",
             delta: JSON.stringify({ command: "pnpm dev" }),
           },
           payload_omitted: false,
@@ -1132,7 +1207,9 @@ it("folds root replay and child shell observations into the shared process inspe
           index: 2,
           event_type: "TOOL_CALL_RESULT",
           payload: {
-            tool_call_id: "shell",
+            type: "TOOL_CALL_RESULT",
+            messageId: "shell:result",
+            toolCallId: "shell",
             content: JSON.stringify({
               process_id: "process-one",
               status: { phase: "running" },
@@ -1203,7 +1280,11 @@ it("folds root replay and child shell observations into the shared process inspe
     },
     true,
   );
-  send(103, "RUN_FINISHED", {});
+  send(103, "RUN_FINISHED", {
+    threadId: "thread-one",
+    runId: "run-one",
+    outcome: { type: "success" },
+  });
   expect(display.processes.background.map((item) => item.phase)).toEqual([
     "unavailable",
     "exited",
@@ -1272,11 +1353,16 @@ it("preserves screenshot attachments through native tool result folding and stre
   const events = [
     {
       event_type: "TOOL_CALL_START",
-      payload: { tool_call_id: "capture", tool_call_name: "computer_observe" },
+      payload: {
+        type: "TOOL_CALL_START",
+        toolCallId: "capture",
+        toolCallName: "computer_observe",
+      },
     },
     {
       event_type: "CUSTOM",
       payload: {
+        type: "CUSTOM",
         name: "a13n.harness-ui.tool_images",
         value: {
           event: {
@@ -1290,6 +1376,7 @@ it("preserves screenshot attachments through native tool result folding and stre
     {
       event_type: "CUSTOM",
       payload: {
+        type: "CUSTOM",
         name: "a13n.pydantic_ai.function_tool_result",
         value: {
           event: {
@@ -1337,12 +1424,17 @@ it("renders only authored custom input as user text in live and replay views", (
   ].map((source, index) => ({
     event_type: "CUSTOM",
     payload: {
+      type: "CUSTOM",
       name: `a13n.input.${source}`,
-      message_id: `run-one:input:${index}`,
-      role: source === "user" || source === "steering" ? "user" : "system",
       metadata: { display: true, source_id: "input-one" },
       value: {
-        event: { input_id: "input-one", source, content: `${source} text` },
+        event: {
+          message_id: `run-one:input:${index}`,
+          role: source === "user" || source === "steering" ? "user" : "system",
+          input_id: "input-one",
+          source,
+          content: `${source} text`,
+        },
       },
     },
     payload_omitted: false,
@@ -1386,4 +1478,81 @@ it("renders only authored custom input as user text in live and replay views", (
     ["user", "user text"],
     ["user", "steering text"],
   ]);
+});
+
+it("isolates inline standard and custom tools without treating child progress as root progress", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let sequence = 100;
+  const send = (payload: Record<string, unknown>) => {
+    const frame = event(++sequence);
+    if (frame.kind !== "event") throw new Error("fixture");
+    frame.event.event_type = String(payload.type);
+    frame.event.payload = payload;
+    display.accept(frame);
+  };
+  send({ type: "TOOL_CALL_START", toolCallId: "same", toolCallName: "root" });
+  send({
+    type: "TOOL_CALL_START",
+    toolCallId: "same",
+    toolCallName: "child",
+    subagentRunId: "child-a",
+  });
+  send({
+    type: "CUSTOM",
+    name: "a13n.filesystem.edit_applied",
+    subagentRunId: "child-a",
+    value: {
+      event: {
+        tool_call_id: "same",
+        file_path: "/app",
+        before: "a",
+        after: "b",
+      },
+    },
+  });
+  send({
+    type: "CUSTOM",
+    name: "a13n.harness.recovery",
+    subagentRunId: "child-a",
+    value: {
+      event: { payload: { type: "model_retry_scheduled", attempt: 2 } },
+    },
+  });
+  send({
+    type: "TOOL_CALL_RESULT",
+    toolCallId: "same",
+    messageId: "result",
+    content: [
+      {
+        type: "image",
+        source: { type: "url", value: "https://example.com/a.png" },
+      },
+    ],
+    subagentRunId: "child-a",
+  });
+  expect(display.blocks.get("run-one:same")?.edit).toBeUndefined();
+  expect(display.blocks.get("run-one:child-a:same")).toMatchObject({
+    subagentRunId: "child-a",
+    edit: { after: "b" },
+    resultParts: [{ type: "image" }],
+  });
+  expect(display.recovery).toBeUndefined();
+  send({
+    type: "SUBAGENT_FINISHED",
+    subagentRunId: "child-a",
+    outcome: { type: "suspended" },
+  });
+  expect(display.blocks.get("run-one:inline:child-a")?.text).toBe("Suspended");
+  expect(display.blocks.get("run-one:child-a:same")?.stopped).toBe(true);
+  expect(display.blocks.get("run-one:same")?.stopped).toBeUndefined();
+  expect(display.gap).toBe(false);
+  send({
+    type: "TOOL_CALL_RESULT",
+    toolCallId: "bad",
+    content: "missing required message identity",
+  });
+  expect(display.gap).toBe(true);
+  expect(display.blocks.has("run-one:bad")).toBe(false);
 });

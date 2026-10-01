@@ -4,7 +4,9 @@
 
 `a13n-stream-protocol` is the shared process-local adapter from public Harness stream items to Agent User Interaction Protocol events. One `HarnessAguiObserver` converts the items for one Harness Run, uses standard AG-UI events where their semantics match directly, falls back to `CUSTOM` for every other public observation, applies an optional Host processor, and accumulates the resulting events in observation order. A fresh observer can atomically reconstruct that process-local state by folding a finite Host-supplied history of the same public source items before live observation continues.
 
-The package does not define another execution or lifecycle layer. It does not run or resume an Agent, manufacture missing Harness lifecycle observations, accept application commands, retain or select durable history, assign Host event identities, or own a transport. A Host consumes each live Harness item once, routes each Run to one observer, and decides whether and how to retain source history, persist, broadcast, filter, compact, or render the returned AG-UI events.
+The wire contract is AG-UI 1.0, using canonical camelCase standard fields and upstream content parts. Optional absent fields are omitted; required payload values such as `CUSTOM.value: null` are retained. There is no 0.x negotiation, dual decoding, or legacy event alias layer. Hosts retain their own transport and continuation APIs; adopting AG-UI does not make them `HttpAgent` endpoints.
+
+The package does not define another execution or lifecycle layer. It does not run or resume an Agent, manufacture missing Harness lifecycle observations, accept application commands, retain or select durable history, assign Host event identities, or own a transport. A Host consumes each live Harness item once, routes each root stream to one stream observer (or a strictly single-Run source to one single-Run observer), and decides whether and how to retain source history, persist, broadcast, filter, compact, or render the returned AG-UI events.
 
 ## Boundaries
 
@@ -39,7 +41,7 @@ Harness and Agent Stream Protocol are one release group. A `release/a13n-harness
 
 ## Observer Contract
 
-The public contract is intentionally small:
+The single-Run observer contract is intentionally small; `HarnessAguiStreamObserver` exposes the same API for a root stream with inline children:
 
 ```python
 type AguiEventProcessor = Callable[
@@ -79,11 +81,13 @@ class HarnessAguiObserver:
 
 `event_count` counts accumulated post-processor frames. `snapshot` returns detached frames in the half-open range `[start, stop)`; omission of `stop` uses the current count, and the no-argument call returns all frames. Invalid ranges fail explicitly. A Host can capture the count once and read that fixed prefix in bounded batches while later events accumulate. These positions are local to one observer, not Harness source sequence numbers or Host transport cursors. The Host still owns publication visibility and replay-to-live cutover.
 
-The first successfully observed item binds the observer to the source `thread_id` and `run_id`. Later items must carry the same correlation. A root Run and each exposed child Run therefore use separate observers even when their source items were delivered through one parent Harness stream.
+The first successfully observed item binds `HarnessAguiObserver` to the source `thread_id` and `run_id`. Later items must carry the same correlation.
 
-`resume()` is valid only on a fresh, unbound observer. Its `history` is a finite asynchronous iterable containing the exact ordered public source-item prefix selected by the Host for one Harness Run. The Host owns history retention and decoding, cursor and gap semantics, duplicate exclusion, the finite replay boundary, and the subsequent replay-to-live cutover; the observer imports no storage or transport type and does not acknowledge the history source.
+`HarnessAguiStreamObserver` provides the same observation, processor, snapshot, and atomic resumption API for a root Harness stream containing forwarded inline child observations. The first item binds the root identity. Each source Run has independent multipart conversion state and stable Thread correlation, while one accumulator preserves the Host's ordered stream. Child text, reasoning, tool results, and custom facts carry `subagentRunId`; their native message and tool-call IDs remain unchanged. Hosts namespace display identity by that attribution rather than treating it as a new execution or continuation ID. Child logical Run-start observations do not emit nested `RUN_STARTED` events in the parent stream. Host-managed asynchronous executions use independent stream observers and retain their own checkpoint and Environment publication boundaries.
 
-Each historical item follows the same conversion, processor, validation, and accumulation path as `observe()`, but `resume()` returns no historical events for republication. After successful exhaustion, `snapshot()` contains the reconstructed post-processor sequence and later `observe()` calls continue from the reconstructed multipart state. A non-empty history binds the fresh observer to its source `thread_id` and `run_id`; resumption never rewrites that source correlation, crosses into another Harness Run, reconstructs a Harness execution, or treats AG-UI events and display snapshots as source history.
+`resume()` is valid only on a fresh, unbound observer. Its `history` is a finite asynchronous iterable containing the exact ordered public source-item prefix selected by the Host: one Run for `HarnessAguiObserver`, or one root stream and its inline children for `HarnessAguiStreamObserver`. The Host owns history retention and decoding, cursor and gap semantics, duplicate exclusion, the finite replay boundary, and the subsequent replay-to-live cutover; the observer imports no storage or transport type and does not acknowledge the history source.
+
+Each historical item follows the same conversion, processor, validation, and accumulation path as `observe()`, but `resume()` returns no historical events for republication. After successful exhaustion, `snapshot()` contains the reconstructed post-processor sequence and later `observe()` calls continue from the reconstructed multipart state. A non-empty history binds the fresh observer to its source `thread_id` and `run_id`; resumption never rewrites source correlation, combines unrelated root Runs, reconstructs a Harness execution, or treats AG-UI events and display snapshots as source history.
 
 The complete resumption is atomic with respect to observer state. The observer stages reconstruction separately and adopts it only after the history iterable exhausts successfully. An iteration failure, invalid source item, changed correlation, conversion failure, processor failure, or cancellation leaves the original observer fresh. Calling `resume()` after any successful observation or resumption is an error.
 
@@ -110,20 +114,24 @@ A Host persists incrementally from the values returned by live `observe()` calls
 
 The observer uses standard AG-UI events for direct semantic matches:
 
-| Public source observation                            | AG-UI representation                                                                    |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Assistant `TextPart` start, delta, and end           | `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, and `TEXT_MESSAGE_END`                    |
-| `ThinkingPart` start, delta, signature, and end      | Reasoning message events and `REASONING_ENCRYPTED_VALUE`                                |
-| Completed `ToolCallPart` at its end observation      | `TOOL_CALL_START`, complete `TOOL_CALL_ARGS`, and `TOOL_CALL_END`                       |
-| Successful function or output tool return            | `TOOL_CALL_RESULT`                                                                      |
-| Completed terminal `HarnessRunResultEvent`           | `RUN_FINISHED` with success outcome and a JSON-safe result when available               |
-| Failed or cancelled terminal `HarnessRunResultEvent` | `RUN_ERROR` with the Harness-owned public failure or cancellation code                  |
-| Suspension, non-success tool return, or retry prompt | Namespaced `CUSTOM` preserving the authoritative Harness correlation and public payload |
-| Other native Pydantic AI `CapabilityEvent`           | Namespaced `CUSTOM` preserving Capability, Tool-call, Harness correlation, and payload  |
+| Public source observation                        | AG-UI representation                                                                     |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Assistant `TextPart` start, delta, and end       | `TEXT_MESSAGE_START`, `TEXT_MESSAGE_CONTENT`, and `TEXT_MESSAGE_END`                     |
+| `ThinkingPart` start, delta, signature, and end  | Reasoning message events and `REASONING_ENCRYPTED_VALUE`                                 |
+| Completed `ToolCallPart` at its end observation  | `TOOL_CALL_START`, complete `TOOL_CALL_ARGS`, and `TOOL_CALL_END`                        |
+| Successful function or output tool return        | `TOOL_CALL_RESULT`                                                                       |
+| Logical `run_started` observation                | `RUN_STARTED` with `protocolVersion: "1.0"`                                              |
+| Completed terminal `HarnessRunResultEvent`       | `RUN_FINISHED` with success outcome and a JSON-safe result when available                |
+| Cancelled terminal `HarnessRunResultEvent`       | `RUN_FINISHED` with cancelled outcome                                                    |
+| Suspended terminal `HarnessRunResultEvent`       | `RUN_FINISHED` with interrupt outcome and one interrupt per native deferred tool-call ID |
+| Failed terminal `HarnessRunResultEvent`          | `RUN_ERROR` with the Harness-owned public failure                                        |
+| Inline delegation lifecycle in a stream observer | `SUBAGENT_STARTED`, `SUBAGENT_FINISHED`, or `SUBAGENT_ERROR`                             |
+| Non-success tool return or retry prompt          | Namespaced `CUSTOM` preserving authoritative Harness correlation and public payload      |
+| Other native Pydantic AI `CapabilityEvent`       | Namespaced `CUSTOM` preserving Capability, Tool-call, Harness correlation, and payload   |
 
-Successful tool results use the execution value explicitly identified by Harness tool-content annotations, or the complete native `ToolReturnPart.content` when no such marker exists, as their readable `TOOL_CALL_RESULT` payload. They retain `role: tool` and the original tool-call ID. Supplemental media remains native tool content; it neither replaces the readable execution value nor generates user-input events. The native `DeferredToolResultsEvent` custom projection carries only `event_kind`, resolved `call_ids`, and `approval_ids`; each result is observed separately, without serializing the batch's media payloads.
+Successful tool results use the execution value explicitly identified by Harness tool-content annotations, or the complete native `ToolReturnPart.content` when no such marker exists, as their readable `TOOL_CALL_RESULT` payload. They retain `role: tool` and the original tool-call ID. Ordinary JSON execution values remain text. Explicit native content in the execution value becomes an ordered list of AG-UI `TextPart`, `ImagePart`, `AudioPart`, `VideoPart`, or `DocumentPart` values. HTTP(S) URLs use `UrlSource`; provider file handles use `FileSource` without inventing a downloadable URL. Binary data and unsafe URLs become payload-omitted descriptors, never inline bytes or base64. Order, duplicate attachments, and `display: false` annotations are preserved. The exported `tool_result_content` projection can also serve explicit saved-content adapters. Supplemental media remains model-only even when it is a transportable URL or provider handle; it neither replaces the readable execution value nor generates user-input events. Host-authenticated screenshot materialization remains separate from this IO-free projection. The native `DeferredToolResultsEvent` custom projection carries only `event_kind`, resolved `call_ids`, and `approval_ids`; each result is observed separately, without serializing the batch's media payloads.
 
-Harness `InputTextEvent` maps to source-specific custom names: `a13n.input.user`, `a13n.input.steering`, `a13n.input.context`, `a13n.input.recovery`, `a13n.input.async_subagent`, or `a13n.input.background_process`. Its source envelope has `event.input_id`, `event.source`, and `event.content: str`, not a serialized `TextContent`. `InputMediaEvent` maps to `a13n.input.media` with the same grouping and source fields. Input observations do not produce standard `TEXT_MESSAGE_*` events. Each custom event carries top-level `role` (`user` for authored input or steering, otherwise `system`), `message_id`, and `metadata`. Message IDs derive from the source Run and sequence; multipart groups share their `input_id`. No history reconstruction, text matching, hashes, or timestamp matching identifies display content. Cache markers are model-only and produce no presentation event.
+Harness `InputTextEvent` maps to source-specific custom names: `a13n.input.user`, `a13n.input.steering`, `a13n.input.context`, `a13n.input.recovery`, `a13n.input.async_subagent`, or `a13n.input.background_process`. Its source envelope has `event.input_id`, `event.source`, and `event.content: str`, not a serialized `TextContent`. `InputMediaEvent` maps to `a13n.input.media` with the same grouping and source fields. Input observations do not produce standard `TEXT_MESSAGE_*` events. Each custom event carries `role` (`user` for authored input or steering, otherwise `system`) and `message_id` inside `value.event`, with standard top-level `metadata`. Message IDs derive from the source Run and sequence; multipart groups share their `input_id`. No history reconstruction, text matching, hashes, or timestamp matching identifies display content. Cache markers are model-only and produce no presentation event.
 
 The package root exports `AUTHORED_INPUT_EVENT_NAMES`, the immutable set containing `a13n.input.user` and `a13n.input.steering`, for consumers selecting authored text observations.
 
@@ -166,7 +174,7 @@ The `CUSTOM.value` is:
 
 A Harness extension uses `model_dump(mode="json", by_alias=True)`. A Pydantic AI-compatible event uses the concrete runtime value's Pydantic JSON-mode serializer with aliases enabled; the observer does not snapshot the installed `AgentStreamEvent` union or maintain an event-kind registry. A native `CapabilityEvent` uses its concrete `kind` as the custom name and retains `kind`, `capability_id`, optional Tool-call correlation, and its public payload inside `CUSTOM.value.event`. Unknown native Capability events use the native event-family serializer to recover the original flattened payload. User-defined kinds require no first-party converter or allowlist. Serialization warnings are conversion failures rather than permission to emit a partial representation. A value may satisfy the Harness process-local `AgentStreamEventProtocol` while lacking a Pydantic-compatible JSON serializer; such a value fails conversion atomically, and the observer does not invent a serializer for it. The shared Harness/Protocol release defines these source fields; the fallback does not introduce a manual event allowlist, custom schema registry, or independent version negotiation.
 
-A source item with a direct standard mapping is not duplicated as a second custom event. The processor receives both the source item and each converted event, and a Host can separately retain source records when its product requires them.
+A source item with a direct standard mapping is not duplicated as a second custom event, except inline delegation: its custom fact retains Harness invocation and ownership details absent from the standard child lifecycle. The processor receives both the source item and each converted event, and a Host can separately retain source records when its product requires them.
 
 ### Large Custom Events
 
@@ -178,7 +186,11 @@ All oversized custom events use a generic lossless framing codec after whole-eve
 
 Agent Stream Protocol translates explicit lifecycle facts; it does not create them from local control flow. Constructing or resuming an observer, opening a subscriber, catching an exception, losing a transport, or committing Host state does not by itself emit a run lifecycle event.
 
-Model-request lifecycle extensions emitted by the Harness use the generic custom fallback because they are not equivalent to AG-UI Run lifecycle. Completed, failed, and cancelled terminal results have direct standard AG-UI terminal mappings. A suspended result remains `a13n.harness.run_result` with its exact deferred calls and approvals because one aggregate AG-UI interrupt would invent continuation correlation. If a reusable Run-start observation is required, the Harness must first expose that fact publicly; the Protocol does not infer `RUN_STARTED` from the first token or model request.
+Model-request lifecycle extensions use the generic custom fallback because they are not equivalent to AG-UI Run lifecycle. Harness publishes one logical Run-start fact after preparation and at the beginning of public iteration, including Runs with no model request. The observer translates that fact, not the first token, model request, Host admission, or connection.
+
+Suspended results carry one interrupt for each deferred call or approval. Both `id` and `toolCallId` use the native tool-call ID. Reasons are `external` or `approval`; metadata retains the tool name, arguments, and deferred metadata. These observations do not replace Host pending-request validation, continuation selection, or partial-answer policy. Terminal usage includes cache-read and cache-write input counters; it remains presentation, never a replacement for usage reports or the accounting ledger. Provider/model attribution is absent when the aggregate does not establish it.
+
+On a real terminal result, open text and reasoning presentations end before the terminal event; incomplete tool calls are not fabricated as completed. Inline child completion derives from the delegation lifecycle after output projection and state retention, not the private child result consumed by Harness. The stream observer closes that child's open presentations before its standard terminal child event. Failed or cancelled inline invocations use `SUBAGENT_ERROR` only when the corresponding failure observation exists. Preparation failures without a child Run ID retain custom facts without inventing an identity.
 
 A Harness stream that ends through an unhandled exception or cleanup failure without a terminal item does not gain a synthetic terminal event. Host acceptance, persistence commit, cancellation request, reconnect, and external delivery remain separate Host facts.
 
@@ -190,7 +202,7 @@ Host persistence wraps AG-UI events in any IDs, sequence numbers, timestamps, tr
 
 The observer's in-memory accumulation and history reconstruction are conveniences for process-local continuation, inspection, and snapshot access, not a durable event log or replay authority. A Host that starts a new Harness Run after worker takeover creates a new observer for that new `run_id`; it may retain earlier Run projections in the same Host timeline without feeding them into the new observer.
 
-A Host can derive a compact child display with one observer per child Run. Its replay-stable processor may drop encrypted reasoning and unrelated custom events, redact or truncate declared Tool content fields, and clear `RUN_FINISHED.result` when closed text already represents the final answer. The Host then compacts only closed message, reasoning, and completed Tool lifecycles. Open multipart state and running Tool calls remain observer state and are not publishable as a closed checkpoint. These are Host retention choices; Agent Stream Protocol owns neither the compact display schema nor its persistence or checkpoint acknowledgement.
+A Host can derive a compact display with one stream observer per independently executed root or asynchronous child Run, preserving inline-child attribution within that stream. Its replay-stable processor may drop encrypted reasoning and unrelated custom events, redact or truncate declared Tool content fields, and clear `RUN_FINISHED.result` when closed text already represents the final answer. The Host then compacts only closed message, reasoning, and completed Tool lifecycles. Open multipart state and running Tool calls remain observer state and are not publishable as a closed checkpoint. These are Host retention choices; Agent Stream Protocol owns neither the compact display schema nor its persistence or checkpoint acknowledgement.
 
 ## Failure and Schema Boundary
 
@@ -201,7 +213,7 @@ Standard AG-UI names and fields retain their upstream meaning. The selected Harn
 ## Invariants
 
 1. Agent Stream Protocol observes public Harness stream items; observer resumption reconstructs observation state and never executes or resumes an Agent.
-2. One observer binds to exactly one Harness Thread and Run, including every source item supplied during resumption.
+2. A single-Run observer binds to exactly one Harness Thread and Run. A stream observer binds to one root and maintains independent correlated state for its inline children, including during resumption.
 3. A fresh observer atomically adopts a successfully exhausted finite source history or remains fresh after resumption failure.
 4. Lifecycle facts originate in the Harness source stream; the observer does not infer them from Host or transport behavior.
 5. A successfully converted direct semantic match uses standard AG-UI meaning, and every other successfully converted public observation falls back to `CUSTOM`.

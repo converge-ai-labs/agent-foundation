@@ -183,3 +183,24 @@ def test_inspection_reuses_native_history_and_preserves_display_context_split(ki
     assert metadata.latest_request_tokens == (None if kind == "cleared" else 10)
     entries = [TranscriptEntry.model_validate_json(value) for value in inspection.entries]
     assert [part.text for entry in entries for part in entry.parts] == ["Saved input", "Saved answer"]
+
+
+def test_saved_tool_media_retains_order_and_never_reveals_supplements() -> None:
+    from pydantic_ai.messages import ImageUrl
+
+    (part,) = _request_parts(
+        ToolReturnPart(
+            tool_name="view",
+            tool_call_id="media-call",
+            content=[
+                ["before", ImageUrl("https://example.com/public.png"), "after"],
+                ImageUrl("https://example.com/private.png"),
+            ],
+            metadata={"a13n.tool-content": {"result_index": 0, "items": [{"display": False}]}},
+        )
+    )
+    restored = TranscriptPart.model_validate_json(part.model_dump_json())
+    assert restored.content_parts is not None
+    assert [item["type"] for item in restored.content_parts] == ["text", "image", "text"]
+    assert restored.content_parts[1]["source"]["value"] == "https://example.com/public.png"
+    assert "private.png" not in restored.model_dump_json()

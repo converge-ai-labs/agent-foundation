@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 from pydantic import JsonValue
 
 if TYPE_CHECKING:
-    from a13n_harness.spec import ModelCapability
+    from a13n_harness.spec import HarnessModelCharacteristics, ModelCapability
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +95,11 @@ def known_context_window(provider: str, model_id: str, base_url: str) -> int | N
 
 
 def known_model_capabilities(route: str) -> frozenset[ModelCapability] | None:
+    characteristics = known_model_characteristics(route)
+    return characteristics.capabilities if characteristics is not None else None
+
+
+def known_model_characteristics(route: str) -> HarnessModelCharacteristics | None:
     """Materialize reviewed input facts for the selected transport, without I/O.
 
     Exact IDs remain case-sensitive, including behind custom base URLs. A URL
@@ -102,7 +107,7 @@ def known_model_capabilities(route: str) -> frozenset[ModelCapability] | None:
     undeclared catalog facts return None, not a claim of text-only support.
     """
     from a13n_harness.model_catalog import get_official_model_catalog
-    from a13n_harness.spec import ModelCapability
+    from a13n_harness.spec import HarnessModelCharacteristics, ModelCapability, UrlInputSupport
 
     provider, _, model_id = route.partition(":")
     catalog_provider = {
@@ -135,15 +140,24 @@ def known_model_capabilities(route: str) -> frozenset[ModelCapability] | None:
     entry = get_official_model_catalog().get(catalog_key)
     if entry is None or "capabilities" not in entry.characteristics.model_fields_set:
         return None
-    # The Google adapter accepts native image, audio, video and document bytes. The other
-    # setup transports are reviewed here for image input only, not video URLs,
-    # frame extraction, live voice, or provider-native tools.
+    # Native URL facts are selected separately from binary input modalities.
+    # Compatible transports are reviewed for image input only.
     supported = (
-        frozenset(ModelCapability)
+        frozenset(
+            {
+                ModelCapability.IMAGE_UNDERSTANDING,
+                ModelCapability.AUDIO_UNDERSTANDING,
+                ModelCapability.VIDEO_UNDERSTANDING,
+                ModelCapability.DOCUMENT_UNDERSTANDING,
+            }
+        )
         if provider in {"google", "google-gla"}
         else frozenset({ModelCapability.IMAGE_UNDERSTANDING})
     )
-    return entry.characteristics.capabilities & supported
+    return HarnessModelCharacteristics(
+        capabilities=entry.characteristics.capabilities & supported,
+        url_input=entry.characteristics.url_input if provider in {"google", "google-gla"} else UrlInputSupport(),
+    )
 
 
 def starter_tool_capabilities(

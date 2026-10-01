@@ -12,7 +12,7 @@ FRAGMENT_EVENT_NAME = "a13n.stream.fragment"
 
 def fragment_custom_event(event: CustomEvent, *, identity: str) -> list[CustomEvent]:
     """Keep small events intact; split oversized JSON without changing its schema."""
-    encoded = event.model_dump_json(by_alias=False)
+    encoded = event.model_dump_json(by_alias=True)
     if len(encoded.encode("utf-8")) <= 48 * 1024:
         return [event]
     # Double JSON escaping and non-ASCII still leave room below 64 KiB per frame.
@@ -21,6 +21,7 @@ def fragment_custom_event(event: CustomEvent, *, identity: str) -> list[CustomEv
     return [
         CustomEvent(
             timestamp=event.timestamp,
+            subagent_run_id=event.subagent_run_id,
             name=FRAGMENT_EVENT_NAME,
             value={"id": identity, "index": index, "count": count, "data": encoded[offset : offset + size]},
         )
@@ -104,4 +105,4 @@ class CustomEventAssembler:
         if event.name == FRAGMENT_EVENT_NAME:
             self.gap = True
             return None
-        return event.model_dump(mode="json", by_alias=False)
+        return event.model_dump(mode="json", by_alias=True)

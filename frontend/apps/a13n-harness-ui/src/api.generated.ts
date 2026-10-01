@@ -2602,6 +2602,15 @@ export interface components {
         };
         /** ChildToolCallView */
         ChildToolCallView: {
+            /** Subagent Run Id */
+            subagent_run_id?: string | null;
+            /**
+             * Content Parts
+             * @default []
+             */
+            content_parts?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            }[];
             /** Tool Call Id */
             tool_call_id: string;
             /** Tool Name */
@@ -3553,6 +3562,8 @@ export interface components {
             capabilities?: components["schemas"]["ModelCapability"][];
             /** @description Image preparation policy; omitted uses native defaults, null disables automatic preparation. */
             image_input?: components["schemas"]["ImageInputPolicy"] | null;
+            url_input?: components["schemas"]["UrlInputSupport"];
+            video_input?: components["schemas"]["VideoInputPolicy"];
             /** Context Window Tokens */
             context_window_tokens?: number | null;
             /**
@@ -5604,6 +5615,13 @@ export interface components {
              * @default false
              */
             tool_image_unavailable?: boolean;
+            /**
+             * Content Parts
+             * @default []
+             */
+            content_parts?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            }[];
             value?: components["schemas"]["JsonValue"] | null;
             /**
              * Value Omitted
@@ -5648,6 +5666,14 @@ export interface components {
              */
             steering_count?: number;
         };
+        /**
+         * UrlInputSupport
+         * @description URL subtypes consumed natively by the selected transport.
+         */
+        UrlInputSupport: {
+            /** Video */
+            video?: components["schemas"]["VideoUrlType"][];
+        };
         /** UsageTotals */
         UsageTotals: {
             /** Model Requests */
@@ -5685,6 +5711,18 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * VideoInputPolicy
+         * @description Base64-after byte budget for both one video and all inline videos in a request.
+         */
+        VideoInputPolicy: {
+            /**
+             * Max Video Bytes
+             * @description Maximum Base64-encoded bytes per video and in aggregate per model request.
+             * @default 10485760
+             */
+            max_video_bytes?: number;
         };
         /** WorkbenchPage */
         WorkbenchPage: {
@@ -6347,6 +6385,11 @@ export interface components {
          * @enum {string}
          */
         ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding" | "document_understanding";
+        /**
+         * VideoUrlType
+         * @enum {string}
+         */
+        VideoUrlType: "youtube";
         /** ModelRecipeRequest */
         ModelRecipeRequest: {
             /** Connection */

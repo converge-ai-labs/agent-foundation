@@ -36,7 +36,7 @@ bindings = RunBindings.embedded(configuration=configuration)
 
 插件和工具通过 `AgentContext.configuration` 读取配置（原生工具上下文中为 `ctx.deps.configuration`）。消费者显式验证自己的命名空间扩展，例如 `context.configuration.extensions.get("example.reader")`；嵌套值是独立副本，修改它们不会改变接受的快照。Harness 不会自动将 extensions 合并到 Capabilities，也不注册扩展 schema。
 
-`allowed_hosts=None` 不限制目标，空集合拒绝全部目标。普通条目精确匹配规范化后的域名/IP；需要匹配一组主机时，使用下文说明的显式 `regex:` 条目。端口和 CIDR 不是主机规则。在每个自有 HTTP(S) 请求及重定向跳转前调用 `configuration.authorize_url(url)`；它检查声明的主机名，不解析 DNS，也不固定 IP。第一方 Host 传输显式接入。限制性配置使用 Host Web 工具代替原生搜索，避免直接转发视频 URL，并拒绝无法检查的原生 Model/MCP 路由。限制性配置还会在 SDK 下载或 provider 转发前拒绝原生 Model 的媒体 URL，包括历史和工具返回中的 URL；请将已授权的内容物化为 `BinaryContent`。注入的 Model resolver 或媒体 reader 必须为自身请求执行该快照。任意 shell 和插件的网络流量仍需部署或 Environment 隔离。Host 为持久恢复和异步子 Run 捕获配置；Harness 在内部恢复及内联子 Run 中复用它。
+`allowed_hosts=None` 不限制目标，空集合拒绝全部目标。普通条目精确匹配规范化后的域名/IP；需要匹配一组主机时，使用下文说明的显式 `regex:` 条目。端口和 CIDR 不是主机规则。在每个自有 HTTP(S) 请求及重定向跳转前调用 `configuration.authorize_url(url)`；它检查声明的主机名，不解析 DNS，也不固定 IP。第一方 Host 传输显式接入。限制性配置使用 Host Web 工具代替原生搜索，避免直接转发视频 URL，并拒绝无法检查的原生 Model/MCP 路由。限制性配置还会在 SDK 下载或 provider 转发前拒绝原生 Model 的媒体 URL，包括历史和工具返回中的 URL；请将已授权的内容物化为 `BinaryContent`。注入的 Model resolver 必须为自身请求执行该快照。任意 shell 和插件的网络流量仍需部署或 Environment 隔离。Host 为持久恢复和异步子 Run 捕获配置；Harness 在内部恢复及内联子 Run 中复用它。
 
 ### 主机规则与正则表达式
 
@@ -116,7 +116,7 @@ Notes 保存结构化的会话事实，Tasks 保存执行状态，`summarize` �
 
 ## 过滤器
 
-`MessageIntegrityFilterCapability` 是必需组件，由 builder 管理。`ContentFilterCapability` 可选。冷启动过滤通过 `AgentSpec.cold_start_filter` 默认启用，空闲间隔为一小时：
+`MessageIntegrityFilterCapability` 是必需组件，由 builder 管理。视频输入投影也是内置行为：不兼容的视频或超出编码后 10 MiB 单个／总量预算的内联视频只在 provider 请求中替换；普通 `VideoUrl` 要求通过 `read_video_url` 有界下载，YouTube 则要求 `url_input.video: [youtube]`。即使视频未超限，也会分离请求消息，以避免 413 或明确 payload 超限错误触发 self-healing 时改变保存的历史。self-healing 移除内联图像／视频后最多重试一次；原始文件、元数据和注释不变。`ContentFilterCapability` 可选。冷启动过滤通过 `AgentSpec.cold_start_filter` 默认启用，空闲间隔为一小时：
 
 ```python
 from a13n_harness import AgentSpec
