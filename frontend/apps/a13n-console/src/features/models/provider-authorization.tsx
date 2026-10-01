@@ -87,7 +87,10 @@ export function ProviderAuthorization({
     connected =
       status.data?.state === "connected" || status.data?.state === "refreshing";
   return (
-    <section className="grid gap-3" aria-label={t("ChatGPT authorization")}>
+    <section
+      className="grid min-w-0 gap-4"
+      aria-label={t("ChatGPT authorization")}
+    >
       <div>
         <strong>{t("ChatGPT authorization")}</strong>
         <p className="text-sm text-muted-foreground">
@@ -95,7 +98,12 @@ export function ProviderAuthorization({
         </p>
       </div>
       <p role="status">
-        {status.data?.email ?? t(connected ? "Connected" : "Not connected")}
+        {attempt
+          ? t("Waiting for sign-in")
+          : status.isPending
+            ? t("Checking authorization…")
+            : (status.data?.email ??
+              t(connected ? "Connected" : "Not connected"))}
       </p>
       {status.data?.message && <p className="text-sm">{status.data.message}</p>}
       {attempt && (
@@ -116,9 +124,19 @@ export function ProviderAuthorization({
               spellCheck={false}
               maxLength={16384}
               value={callback}
+              disabled={busy || !writable}
               onChange={(event) => setCallback(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                if (callback.trim() && !busy && writable) complete.mutate();
+              }}
             />
           </FormField>
+        </>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {attempt && (
           <Button
             type="button"
             variant="outline"
@@ -128,12 +146,10 @@ export function ProviderAuthorization({
           >
             {t("Complete sign-in")}
           </Button>
-        </>
-      )}
-      <div className="flex flex-wrap gap-2">
+        )}
         <Button
           type="button"
-          variant="outline"
+          variant={attempt ? "ghost" : "outline"}
           disabled={busy || !writable}
           loading={start.isPending}
           onClick={() => {
@@ -170,7 +186,7 @@ export function ProviderAuthorization({
             loading={disconnect.isPending}
             onClick={() => disconnect.mutate()}
           >
-            {t("Disconnect")}
+            {t(attempt && !connected ? "Cancel authorization" : "Disconnect")}
           </Button>
         )}
       </div>

@@ -27,7 +27,7 @@ const provider = {
   id: "mprov_test",
   workspace_id: "ws_test",
 } as Schema["Provider"];
-function mount() {
+function mount(onSave = vi.fn()) {
   state.GET.mockResolvedValue({
     data: { state: "disconnected", provider_id: provider.id },
   });
@@ -52,7 +52,14 @@ function mount() {
         })
       }
     >
-      <ProviderAuthorization provider={provider} />
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSave();
+        }}
+      >
+        <ProviderAuthorization provider={provider} />
+      </form>
     </QueryClientProvider>,
   );
 }
@@ -69,6 +76,8 @@ it("starts workspace authorization, posts the full callback, clears secret input
   );
   const input = await screen.findByLabelText("Complete callback URL");
   expect(input.getAttribute("type")).toBe("password");
+  expect(screen.getByText("Waiting for sign-in")).toBeTruthy();
+  expect(screen.queryByText("Not connected")).toBeNull();
   expect(
     screen
       .getByRole("link", { name: "Continue authorization" })
@@ -101,6 +110,39 @@ it("starts workspace authorization, posts the full callback, clears secret input
     "Local tokens were cleared. OpenAI revocation was not confirmed.",
   );
 });
+it("submits callback Enter without saving provider edits and can cancel pending authorization", async () => {
+  const onSave = vi.fn();
+  mount(onSave);
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Sign in with ChatGPT" }),
+  );
+  const input = await screen.findByLabelText("Complete callback URL");
+  await user.click(input);
+  await user.keyboard("{Enter}");
+  expect(state.POST).toHaveBeenCalledTimes(1);
+  expect(onSave).not.toHaveBeenCalled();
+  await user.type(input, "http://127.0.0.1:1456/auth/callback?code=synthetic");
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(state.POST).toHaveBeenCalledTimes(2));
+  expect(onSave).not.toHaveBeenCalled();
+  expect(state.POST.mock.calls[1][1].body.callback_url).toContain(
+    "code=synthetic",
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "Sign in with ChatGPT" }),
+  );
+  state.DELETE.mockResolvedValue({ data: { local_tokens_cleared: true } });
+  await user.click(
+    await screen.findByRole("button", { name: "Cancel authorization" }),
+  );
+  await waitFor(() =>
+    expect(screen.queryByLabelText("Complete callback URL")).toBeNull(),
+  );
+  expect(screen.queryByText("Waiting for sign-in")).toBeNull();
+  expect(screen.getByText("Not connected")).toBeTruthy();
+});
+
 it("leaves authorization metadata readable but refuses viewer actions", async () => {
   state.writable = false;
   mount();

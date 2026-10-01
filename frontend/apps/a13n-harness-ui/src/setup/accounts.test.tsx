@@ -232,7 +232,7 @@ it("defaults ChatGPT to automatic callback and posts a private full-URL fallback
   fireEvent.change(input, {
     target: { value: "http://127.0.0.1:1456/auth/callback?code=synthetic" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Complete sign-in" }));
+  expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
   await waitFor(() =>
     expect(completed).toHaveBeenCalledWith({
       callback_url: "http://127.0.0.1:1456/auth/callback?code=synthetic",

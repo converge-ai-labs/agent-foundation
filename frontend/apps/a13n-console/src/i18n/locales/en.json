@@ -1,5 +1,8 @@
 {
   "Not connected": "Not connected",
+  "Waiting for sign-in": "Waiting for sign-in",
+  "Checking authorization…": "Checking authorization…",
+  "Cancel authorization": "Cancel authorization",
   "Disconnect": "Disconnect",
   "ChatGPT authorization": "ChatGPT authorization",
   "ChatGPT subscription": "ChatGPT subscription",

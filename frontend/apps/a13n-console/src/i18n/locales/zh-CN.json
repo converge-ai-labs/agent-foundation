@@ -1,5 +1,8 @@
 {
   "Not connected": "未连接",
+  "Waiting for sign-in": "等待完成登录",
+  "Checking authorization…": "正在检查授权…",
+  "Cancel authorization": "取消本次授权",
   "Disconnect": "断开授权",
   "ChatGPT authorization": "ChatGPT 授权",
   "ChatGPT subscription": "ChatGPT 订阅",
