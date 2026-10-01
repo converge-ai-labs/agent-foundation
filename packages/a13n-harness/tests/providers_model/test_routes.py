@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from a13n_harness.configuration import RunConfiguration
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.providers.model import routes
 from a13n_harness.providers.model.credentials import ApiKeyCredential, GoogleServiceAccount
 from a13n_harness.providers.model.routes import ROUTE_ALIASES, ROUTES, build_api_key_model
@@ -52,6 +54,8 @@ def test_credentials_reject_blank_keys_and_invalid_service_account_pem():
         ("anthropic", "anthropic", "anthropic.messages", None),
         ("zai", "zhipu", "openai.chat_completions", "https://api.z.ai/api/paas/v4"),
         ("moonshotai", "moonshot", "openai.chat_completions", "https://api.moonshot.ai/v1"),
+        ("fireworks", "fireworks", "openai.chat_completions", None),
+        ("together", "together", "openai.chat_completions", None),
         ("grok", "openai", "openai.chat_completions", "https://api.x.ai/v1"),
     ],
 )
@@ -84,3 +88,28 @@ async def test_routes_without_a_host_endpoint_use_their_declared_default(monkeyp
         assert type(model).__name__ == model_type
         assert model.provider is not None
         assert str(model.provider.base_url).rstrip("/") == ROUTES[name].default_base_url
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("provider", ["fireworks", "together"])
+async def test_hosted_open_model_routes_enforce_allowed_hosts_and_own_client_lifetime(provider):
+    configuration = RunConfiguration(allowed_hosts=frozenset({"gateway.example"}))
+    with pytest.raises(EndpointPolicyError):
+        await build_api_key_model(
+            f"{provider}:test-model", ApiKeyCredential(api_key="fixture"), configuration=configuration
+        )
+
+    model = await build_api_key_model(
+        f"{provider}:test-model",
+        ApiKeyCredential(api_key="fixture"),
+        base_url="https://gateway.example/v1",
+        configuration=configuration,
+    )
+    assert model.provider is not None
+    assert model.provider.name == provider
+    assert str(model.provider.base_url).rstrip("/") == "https://gateway.example/v1"
+    for _ in range(2):
+        async with model:
+            client = model.provider.client
+            assert not client.is_closed()
+        assert client.is_closed()

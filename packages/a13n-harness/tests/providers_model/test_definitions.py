@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import httpx2
@@ -8,6 +9,8 @@ from a13n_harness.providers.authentication import Authentication, Authentication
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from google.auth.credentials import AnonymousCredentials
 from pydantic import BaseModel
+from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.models.bedrock import BedrockConverseModel
 from pydantic_ai.models.bedrock_mantle import BedrockMantleChatModel, BedrockMantleResponsesModel
@@ -16,6 +19,8 @@ from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.models.typesafe import TypeSafeModel
+from pydantic_ai.providers.fireworks import FireworksProvider
+from pydantic_ai.providers.together import TogetherProvider
 
 
 class UnusedOAuthSource:
@@ -84,7 +89,7 @@ async def test_every_builtin_constructs_its_declared_native_apis():
                             assert model.client.max_retries == 0
                         if isinstance(model, BedrockConverseModel):
                             assert model.client.meta.config.retries["total_max_attempts"] == 1
-    assert len(BUILT_IN_MODEL_PROVIDERS) == 15
+    assert len(BUILT_IN_MODEL_PROVIDERS) == 17
 
 
 class Configuration(BaseModel):
@@ -171,3 +176,72 @@ async def test_owned_bedrock_client_respects_operator_tls_without_overriding_def
         async with model:
             assert isinstance(model, BedrockConverseModel)
     assert captured == [expected]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("base_url", [None, "https://gateway.example/custom/v1"])
+@pytest.mark.parametrize(
+    ("provider_type", "native_type", "model_name", "default_endpoint"),
+    [
+        (
+            "fireworks",
+            FireworksProvider,
+            "accounts/fireworks/models/deepseek-r1",
+            "https://api.fireworks.ai/inference/v1",
+        ),
+        (
+            "together",
+            TogetherProvider,
+            "deepseek-ai/DeepSeek-R1",
+            "https://api.together.xyz/v1",
+        ),
+    ],
+)
+async def test_hosted_open_models_preserve_native_profiles_and_request_wiring(
+    provider_type, native_type, model_name, default_endpoint, base_url
+):
+    definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == provider_type)
+    endpoint = base_url or default_endpoint
+    requests = []
+
+    async def handler(request):
+        requests.append(request)
+        assert str(request.url) == f"{endpoint}/chat/completions"
+        assert request.headers["authorization"] == "Bearer fixture-key"
+        assert request.headers["x-routing-key"] == "team-1"
+        assert json.loads(request.content)["model"] == model_name
+        return httpx2.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 0,
+                "model": model_name,
+                "choices": [
+                    {"index": 0, "message": {"role": "assistant", "content": "Hello"}, "finish_reason": "stop"}
+                ],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        model = await definition.build(
+            model_name,
+            configuration={"base_url": base_url} if base_url else {},
+            credential={"api_key": "fixture-key"},
+            http_client=client,
+            extra_headers={"x-routing-key": "team-1"},
+        )
+        assert isinstance(model, OpenAIChatModel)
+        assert isinstance(model.provider, native_type)
+        assert model.system == provider_type
+        assert str(model.provider.base_url).rstrip("/") == endpoint
+        native_profile = native_type.model_profile(model_name)
+        assert native_profile
+        assert all(model.profile[key] == value for key, value in native_profile.items())
+        assert model.client.max_retries == 0
+        async with model:
+            response = await model.request([ModelRequest(parts=[UserPromptPart("Hi")])], None, ModelRequestParameters())
+        assert response.parts[0].content == "Hello"
+        assert not client.is_closed
+    assert len(requests) == 1

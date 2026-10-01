@@ -110,6 +110,15 @@ const curatedBrands: Record<string, Brand> = {
   azure_openai: { icon: `${lobeIconsCdn}azure-color.svg` },
   aws_bedrock: { icon: `${lobeIconsCdn}bedrock-color.svg` },
   openrouter: { icon: `${lobeIconsCdn}openrouter-color.svg` },
+  fireworks: {
+    icon: `${lobeIconsCdn}fireworks-color.svg`,
+    aliases: ["fireworks-ai", "fireworks_ai", "fireworksai"],
+    hosts: ["fireworks.ai", "app.fireworks.ai", "api.fireworks.ai"],
+  },
+  together: {
+    icon: `${lobeIconsCdn}together-color.svg`,
+    hosts: ["together.ai", "api.together.ai", "api.together.xyz"],
+  },
   ollama: { icon: `${lobeIconsCdn}ollama.svg`, invertInDark: true },
   alibaba_model_studio: { icon: `${lobeIconsCdn}qwen-color.svg` },
   deepseek: { icon: `${lobeIconsCdn}deepseek-color.svg` },

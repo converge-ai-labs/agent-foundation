@@ -84,3 +84,20 @@ it("prefers an explicit remote logo before the MCP fallback", () => {
   fireEvent.error(logo);
   expect(container.querySelector("img")?.src).toBe(brands.mcp.icon);
 });
+
+it.each([
+  ["fireworks", "fireworks-ai", "https://api.fireworks.ai/inference/v1"],
+  ["together", "togetherai", "https://api.together.xyz/v1"],
+  ["together", "together.ai", "https://api.together.ai/v1"],
+])(
+  "resolves %s provider and catalog identities to SVG logos",
+  (identity, alias, endpoint) => {
+    const brand = brands[identity];
+    expect(resolveBrand({ identity })).toBe(brand);
+    expect(resolveBrand({ alias })).toBe(brand);
+    expect(resolveBrand({ endpoint })).toBe(brand);
+    expect(brand.icon).toBe(
+      `https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.95.0/icons/${identity}-color.svg`,
+    );
+  },
+);

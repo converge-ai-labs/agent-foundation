@@ -19,11 +19,14 @@ Agent 调用一个**模型**：它对应**模型 provider** 账号下的上游�
 | `azure_openai`                                                     | `openai.responses`, `openai.chat_completions`                                     |
 | `aws_bedrock`                                                      | `bedrock.converse`, `bedrock_mantle.responses`, `bedrock_mantle.chat_completions` |
 | `openrouter`                                                       | `openrouter.chat_completions`                                                     |
+| `fireworks`, `together`                                            | `openai.chat_completions`                                                         |
 | `ollama`                                                           | `ollama.chat_completions`                                                         |
 | `alibaba_model_studio`, `deepseek`, `moonshot`, `minimax`, `zhipu` | `openai.chat_completions`                                                         |
 | `typesafe`                                                         | `typesafe.system_one`                                                             |
 
 各类型的配置和凭据字段来自 Harness；`GET /api/v1/provider-types/model` 以 JSON Schema 返回。多数类型接受可选 `base_url` 和 `api_key` 凭据。各类型选项请参阅 [Harness 模型](../a13n-harness/models.md)和[模型认证](../a13n-harness/model-authentication.md)。
+
+Fireworks AI 和 Together AI 使用 API key 凭据，并支持可选的 `base_url` 覆盖。Fireworks 默认使用 `https://api.fireworks.ai/inference/v1`，Together 默认使用 `https://api.together.xyz/v1`。请填写完整的上游模型 ID，例如 `accounts/fireworks/models/llama-v3p3-70b-instruct` 或 `meta-llama/Llama-3.3-70B-Instruct-Turbo`。模型目录渠道分别为 `fireworks-ai` 和 `togetherai`；实际可用性取决于账户权限。两者均提供无需运行推理的连接测试。
 
 模型 provider 还可包含最多 32 个**额外请求头**，用于按请求头路由或计费的网关。请求头值作为密钥加密，永不返回（视图只列出 `header_names`），通过 `PATCH` 按名称编辑（`"X-Team": "..."` 设置值，`null` 移除，省略则保留）。传输、认证和协议请求头名称不可设置。
 

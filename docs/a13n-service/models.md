@@ -19,11 +19,14 @@ In Console, open **Models → Add model → Connect a new provider**, or manage 
 | `azure_openai`                                                     | `openai.responses`, `openai.chat_completions`                                     |
 | `aws_bedrock`                                                      | `bedrock.converse`, `bedrock_mantle.responses`, `bedrock_mantle.chat_completions` |
 | `openrouter`                                                       | `openrouter.chat_completions`                                                     |
+| `fireworks`, `together`                                            | `openai.chat_completions`                                                         |
 | `ollama`                                                           | `ollama.chat_completions`                                                         |
 | `alibaba_model_studio`, `deepseek`, `moonshot`, `minimax`, `zhipu` | `openai.chat_completions`                                                         |
 | `typesafe`                                                         | `typesafe.system_one`                                                             |
 
 Each type's configuration and credential fields come from the Harness; `GET /api/v1/provider-types/model` returns them as JSON Schema. Most types take an optional `base_url` and an `api_key` credential. See [Harness models](../a13n-harness/models.md) and [model authentication](../a13n-harness/model-authentication.md) for each type's options.
+
+Fireworks AI and Together AI support API-key credentials and optional `base_url` overrides. Fireworks defaults to `https://api.fireworks.ai/inference/v1`; Together defaults to `https://api.together.xyz/v1`. Use the full upstream model ID, for example `accounts/fireworks/models/llama-v3p3-70b-instruct` or `meta-llama/Llama-3.3-70B-Instruct-Turbo`. Their catalog channels are `fireworks-ai` and `togetherai`; availability depends on your account. Both offer a connection test without running inference.
 
 A model provider may also carry up to 32 **extra request headers**, for gateways that route or bill by header. Header values are secrets: they are encrypted, never returned (views list only `header_names`), and edited per name in a `PATCH` (`"X-Team": "..."` sets a value, `null` removes it, omitted names are kept). Transport, authentication and protocol header names are refused.
 

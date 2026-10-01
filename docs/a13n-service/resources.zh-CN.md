@@ -39,13 +39,13 @@ description: 工作空间资源的共同规则：生命周期、修订版本、�
 
 Provider 是外部服务的一个已配置账号，分为五类：
 
-| 类别          | 类型                                                                                                                                                                                           | 用途                                            |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `model`       | `openai`, `anthropic`, `google_gemini`, `google_vertex`, `azure_openai`, `aws_bedrock`, `openrouter`, `ollama`, `alibaba_model_studio`, `deepseek`, `moonshot`, `minimax`, `zhipu`, `typesafe` | [模型](models.md)                               |
-| `web`         | `duckduckgo`, `brave`, `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `perplexity`, `serpapi`, `tinyfish`                                                                                   | [Web 工具集](tools.md#web-search-and-scrape)    |
-| `environment` | `docker`, `e2b`, `daytona`, `modal`, `vercel`, `sprites`, `runloop`（部署启用开发模式时还包括 `local`）                                                                                        | [环境](environments.md)                         |
-| `connector`   | `composio`                                                                                                                                                                                     | [Connector 连接](tools.md#composio-connections) |
-| `memory`      | `mem0_platform`, `mem0_oss`                                                                                                                                                                    | [记录型记忆](memory.md#record-memories)         |
+| 类别          | 类型                                                                                                                                                                                                                    | 用途                                            |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `model`       | `openai`, `anthropic`, `google_gemini`, `google_vertex`, `azure_openai`, `aws_bedrock`, `openrouter`, `fireworks`, `together`, `ollama`, `alibaba_model_studio`, `deepseek`, `moonshot`, `minimax`, `zhipu`, `typesafe` | [模型](models.md)                               |
+| `web`         | `duckduckgo`, `brave`, `exa`, `parallel`, `tavily`, `firecrawl`, `jina`, `perplexity`, `serpapi`, `tinyfish`                                                                                                            | [Web 工具集](tools.md#web-search-and-scrape)    |
+| `environment` | `docker`, `e2b`, `daytona`, `modal`, `vercel`, `sprites`, `runloop`（部署启用开发模式时还包括 `local`）                                                                                                                 | [环境](environments.md)                         |
+| `connector`   | `composio`                                                                                                                                                                                                              | [Connector 连接](tools.md#composio-connections) |
+| `memory`      | `mem0_platform`, `mem0_oss`                                                                                                                                                                                             | [记录型记忆](memory.md#record-memories)         |
 
 `GET /api/v1/provider-types/{kind}` 描述各已安装类型：`configuration_schema` 和 `credential_schema`（JSON Schema）、是否需要凭据，以及获取凭据的 `setup_url`。模型类型还提供模型 API 和各 API 的设置 schema；web 类型列出支持的操作；环境类型描述环境 schema，以及是否支持托管实例、停止和销毁。Console 使用该端点构建 provider 表单。
 
