@@ -1,9 +1,10 @@
 """Synthetic SIWC issuer and Responses transport; never read real credentials."""
 
+import base64
 import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from urllib.parse import parse_qs, urlencode, urlsplit
+from urllib.parse import parse_qs, quote_plus, urlencode, urlsplit
 
 import anyio
 import httpx2
@@ -18,6 +19,8 @@ from a13n_harness.providers.model.oauth.chatgpt import (
     ChatGPTAuthorization,
     OpenAIChatGPTCredentials,
     OpenAIChatGPTOAuthFlow,
+    refresh_chatgpt_credentials,
+    revoke_chatgpt_credentials,
 )
 from a13n_harness.providers.model.oauth.models import CredentialRefreshError, ModelAuthenticationError
 from a13n_harness.providers.model.oauth.source import ProcessChatGPTCredentialSource
@@ -62,13 +65,13 @@ def callback(flow, **changes):
     return flow.authorization.redirect_uri + "?" + urlencode(values)
 
 
-def flow(client=None, credentials=None):
+def flow(client=None, credentials=None, **kwargs):
     return OpenAIChatGPTOAuthFlow.start(
         ext_agent_host_id="urn:uuid:39c5c744-23fa-4e9d-8be9-350c2fcaf520",
         agent_name="Test Agent",
-        redirect_uri="http://127.0.0.1:18455/auth/callback",
         http_client=client,
         credentials=credentials,
+        **{"redirect_uri": "http://127.0.0.1:18455/auth/callback", **kwargs},
     )
 
 
@@ -140,8 +143,9 @@ async def test_reauthorization_uses_saved_client_hints_and_rejects_registration_
         expired.validate_callback(callback(current))
 
 
+@pytest.mark.parametrize("preconfigured", [False, True, "confidential"])
 @pytest.mark.parametrize("invalid", [None, "signature", "nonce", "aud", "iss", "exp", "sub", "scope"])
-async def test_signed_identity_and_direct_scope_are_required(invalid):
+async def test_signed_identity_and_direct_scope_are_required(invalid, preconfigured):
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     jwk = {**json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key())), "kid": "key-1", "use": "sig"}
     requests = []
@@ -155,15 +159,30 @@ async def test_signed_identity_and_direct_scope_are_required(invalid):
                 json={
                     "issuer": ISSUER,
                     "jwks_uri": ISSUER + "/.well-known/jwks.json",
+                    "revocation_endpoint": ISSUER + "/revoke",
                     "id_token_signing_alg_values_supported": ["RS256"],
                 },
             )
         if request.url.path.endswith("jwks.json"):
             return httpx2.Response(200, json={"keys": [jwk]})
-        assert request.url.path == "/api/accounts/oauth/token"
+        if preconfigured == "confidential":
+            encoded = base64.b64encode(f"oaiapp_test:{quote_plus('synthetic+secret:/')}".encode()).decode()
+            assert request.headers["authorization"] == "Basic " + encoded
+        else:
+            assert "authorization" not in request.headers
         form = parse_qs(request.content.decode())
+        assert "client_secret" not in form
+        if request.url.path == "/revoke":
+            assert form["token_type_hint"] == ["refresh_token"]
+            return httpx2.Response(200)
+        assert request.url.path == "/api/accounts/oauth/token"
         assert form["client_id"] == ["oaiapp_test"] and form["resource"] == [RESOURCE]
-        assert form["code_verifier"] == [current.authorization.code_verifier]
+        if form["grant_type"] == ["authorization_code"]:
+            assert form["code_verifier"] == [current.authorization.code_verifier]
+            assert form["redirect_uri"] == [current.authorization.redirect_uri]
+        else:
+            assert form["grant_type"] == ["refresh_token"]
+            assert "scope" not in form
         claims = {
             "sub": "subject-1",
             "iss": ISSUER,
@@ -190,17 +209,95 @@ async def test_signed_identity_and_direct_scope_are_required(invalid):
         )
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
-        current = flow(client)
+        current = flow(
+            client,
+            **(
+                {"token_endpoint_auth_method": "client_secret_basic", "client_secret": "synthetic+secret:/"}
+                if preconfigured == "confidential"
+                else {}
+            ),
+            **(
+                {"client_id": "oaiapp_test", "redirect_uri": "https://service.test/custom/callback"}
+                if preconfigured
+                else {}
+            ),
+        )
         if invalid:
             with pytest.raises(CredentialRefreshError):
                 await current.exchange_callback(callback(current))
         else:
             result = await current.exchange_callback(callback(current))
             assert result.subject == "subject-1" and result.client_id == "oaiapp_test"
+            assert result.client_secret == ("synthetic+secret:/" if preconfigured == "confidential" else None)
+            assert "synthetic+secret:/" not in repr(result) and "synthetic+secret:/" not in current.authorization_url()
+            renewed = await refresh_chatgpt_credentials(result, http_client=client)
+            assert renewed.client_secret == result.client_secret
+            await revoke_chatgpt_credentials(renewed, http_client=client)
             assert (
                 result.ext_agent_host_id == "urn:uuid:39c5c744-23fa-4e9d-8be9-350c2fcaf520" and result.scopes == SCOPES
             )
     assert all(request.url.host == "auth.openai.com" for request in requests)
+
+
+@pytest.mark.parametrize("redirect", ["https://service.test/custom/callback", "http://127.0.0.1:18455/custom/callback"])
+async def test_preconfigured_client_survives_restore_and_keeps_exact_redirect(redirect):
+    current = flow(client_id="oaiapp_test", redirect_uri=redirect)
+    params = parse_qs(urlsplit(current.authorization_url()).query)
+    assert params["client_id"] == ["oaiapp_test"] and params["redirect_uri"] == [redirect]
+    assert "agent_name_hint" not in params
+    restored = OpenAIChatGPTOAuthFlow(
+        TypeAdapter(ChatGPTAuthorization).validate_json(
+            TypeAdapter(ChatGPTAuthorization).dump_json(current.authorization)
+        )
+    )
+    assert restored.authorization.preconfigured_client
+    assert restored.validate_callback(callback(current, client_id="")).client_id == "oaiapp_test"
+    for changed in (callback(current, client_id="other"), callback(current).replace("/custom/", "/different/")):
+        with pytest.raises(UserError):
+            restored.validate_callback(changed)
+
+
+@pytest.mark.parametrize("credentials", [None, "returning"])
+@pytest.mark.parametrize(
+    "redirect",
+    ["https://service.test/auth/callback", "http://localhost:1456/auth/callback", "http://127.0.0.1:1456/custom"],
+)
+async def test_oss_issued_client_does_not_unlock_website_callbacks(credentials, redirect):
+    with pytest.raises(UserError, match="OSS registration"):
+        flow(credentials=grant() if credentials else None, redirect_uri=redirect)
+
+
+@pytest.mark.parametrize(
+    "redirect",
+    [
+        "https://user:password@service.test/callback",
+        "https://service.test/callback?",
+        "https://service.test/callback#",
+        "https://service.test/callback?x=1",
+        "https://service.test/callback#fragment",
+        "http://service.test/callback",
+        "https://service.test:0/callback",
+        "https://service.test:65536/callback",
+        "https://service.test",
+        "https://service.test/\ncallback",
+    ],
+)
+async def test_preconfigured_callback_syntax_is_strict(redirect):
+    with pytest.raises(UserError):
+        flow(client_id="oaiapp_test", redirect_uri=redirect)
+
+
+async def test_preconfigured_client_cannot_rebind_existing_credentials():
+    with pytest.raises(UserError, match="another client"):
+        flow(client_id="another-client", credentials=grant())
+    with pytest.raises(UserError, match="another host"):
+        flow(client_id="oaiapp_test", credentials=replace(grant(), ext_agent_host_id="another-host"))
+    with pytest.raises(UserError):
+        flow(client_id="dynamic_agent_client")
+    pending = TypeAdapter(ChatGPTAuthorization).dump_python(flow(credentials=grant()).authorization, mode="json")
+    pending.pop("preconfigured_client")
+    restored = OpenAIChatGPTOAuthFlow(TypeAdapter(ChatGPTAuthorization).validate_python(pending))
+    assert not restored.authorization.preconfigured_client
 
 
 def stream_events(terminal="response.completed"):
@@ -381,3 +478,16 @@ async def test_unauthorized_request_replays_once_after_persisted_rotation():
         result = await client.get(RESOURCE + "/models")
     assert result.status_code == 401 and len(exchanges) == len(store.saved) == 1
     assert requests == ["Bearer synthetic-access-old", "Bearer synthetic-access-new"]
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"client_id": "oaiapp_test", "token_endpoint_auth_method": "client_secret_basic"},
+        {"token_endpoint_auth_method": "client_secret_basic", "client_secret": "secret"},
+        {"client_id": "oaiapp_test", "client_secret": "secret"},
+    ],
+)
+async def test_client_authentication_never_falls_back_to_public_mode(kwargs):
+    with pytest.raises(UserError, match="registered token endpoint"):
+        flow(**kwargs)

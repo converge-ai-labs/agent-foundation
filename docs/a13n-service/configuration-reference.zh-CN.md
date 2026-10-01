@@ -191,19 +191,21 @@ description: 全部 Service 设置的环境变量、类型、范围和默认值�
 
 ## `providers`
 
-| 设置                               | 环境变量                                 | 类型 / 选项 | 约束与默认值                                       |
-| ---------------------------------- | ---------------------------------------- | ----------- | -------------------------------------------------- |
-| `providers.http_origins`           | `A13N_PROVIDERS__HTTP_ORIGINS`           | 字符串数组  | default=[]                                         |
-| `providers.require_https`          | `A13N_PROVIDERS__REQUIRE_HTTPS`          | 布尔值      | default=true                                       |
-| `providers.return_urls`            | `A13N_PROVIDERS__RETURN_URLS`            | 字符串数组  | default=[]                                         |
-| `providers.mcp_servers`            | `A13N_PROVIDERS__MCP_SERVERS`            | McpServers  | default=[]                                         |
-| `providers.flow_seconds`           | `A13N_PROVIDERS__FLOW_SECONDS`           | 整数        | minimum=30; maximum=1800; default=600              |
-| `providers.operation_seconds`      | `A13N_PROVIDERS__OPERATION_SECONDS`      | 数值        | minimum=2; maximum=30; default=10                  |
-| `providers.operation_scan_seconds` | `A13N_PROVIDERS__OPERATION_SCAN_SECONDS` | 数值        | maximum=3600; exclusiveMinimum=0; default=30       |
-| `providers.discovery_ttl`          | `A13N_PROVIDERS__DISCOVERY_TTL`          | 整数        | minimum=1; maximum=86400; default=300              |
-| `providers.tool_call_seconds`      | `A13N_PROVIDERS__TOOL_CALL_SECONDS`      | 数值        | maximum=600; exclusiveMinimum=0; default=60        |
-| `providers.model_timeout`          | `A13N_PROVIDERS__MODEL_TIMEOUT`          | 数值        | maximum=3600; exclusiveMinimum=0; default=300      |
-| `providers.response_bytes`         | `A13N_PROVIDERS__RESPONSE_BYTES`         | 整数        | minimum=65536; maximum=268435456; default=16777216 |
+| 设置                               | 环境变量                                 | 类型 / 选项   | 约束与默认值                                                  |
+| ---------------------------------- | ---------------------------------------- | ------------- | ------------------------------------------------------------- |
+| `providers.http_origins`           | `A13N_PROVIDERS__HTTP_ORIGINS`           | 字符串数组    | default=[]                                                    |
+| `providers.require_https`          | `A13N_PROVIDERS__REQUIRE_HTTPS`          | 布尔值        | default=true                                                  |
+| `providers.return_urls`            | `A13N_PROVIDERS__RETURN_URLS`            | 字符串数组    | default=[]                                                    |
+| `providers.mcp_servers`            | `A13N_PROVIDERS__MCP_SERVERS`            | McpServers    | default=[]                                                    |
+| `providers.flow_seconds`           | `A13N_PROVIDERS__FLOW_SECONDS`           | 整数          | minimum=30; maximum=1800; default=600                         |
+| `providers.operation_seconds`      | `A13N_PROVIDERS__OPERATION_SECONDS`      | 数值          | minimum=2; maximum=30; default=10                             |
+| `providers.operation_scan_seconds` | `A13N_PROVIDERS__OPERATION_SCAN_SECONDS` | 数值          | maximum=3600; exclusiveMinimum=0; default=30                  |
+| `providers.discovery_ttl`          | `A13N_PROVIDERS__DISCOVERY_TTL`          | 整数          | minimum=1; maximum=86400; default=300                         |
+| `providers.tool_call_seconds`      | `A13N_PROVIDERS__TOOL_CALL_SECONDS`      | 数值          | maximum=600; exclusiveMinimum=0; default=60                   |
+| `providers.model_timeout`          | `A13N_PROVIDERS__MODEL_TIMEOUT`          | 数值          | maximum=3600; exclusiveMinimum=0; default=300                 |
+| `providers.response_bytes`         | `A13N_PROVIDERS__RESPONSE_BYTES`         | 整数          | minimum=65536; maximum=268435456; default=16777216            |
+| `providers.chatgpt_client_id`      | `A13N_PROVIDERS__CHATGPT_CLIENT_ID`      | 字符串或 null | minLength=1; maxLength=256; default=null                      |
+| `providers.chatgpt_redirect_uri`   | `A13N_PROVIDERS__CHATGPT_REDIRECT_URI`   | 字符串        | maxLength=2048; default="http://127.0.0.1:1456/auth/callback" |
 
 ## `plugins`
 

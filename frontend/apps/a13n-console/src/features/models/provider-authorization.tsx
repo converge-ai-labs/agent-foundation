@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, FormField, Input } from "a13n-ui";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -12,8 +12,10 @@ import { modelApi } from "./api";
 /** Provider-wide authorization; callback material lives only in this mounted editor. */
 export function ProviderAuthorization({
   provider,
+  configurationDirty = false,
 }: {
   provider: Schema["Provider"];
+  configurationDirty?: boolean;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -21,6 +23,7 @@ export function ProviderAuthorization({
     { can } = useWorkspace(),
     api = modelApi(client, provider.workspace_id),
     [attempt, setAttempt] = useState<Schema["AuthorizationStart"]>(),
+    [attemptStartedAt, setAttemptStartedAt] = useState(0),
     [callback, setCallback] = useState(""),
     [revocationUnconfirmed, setRevocationUnconfirmed] = useState(false);
   const queryKey = [
@@ -31,7 +34,23 @@ export function ProviderAuthorization({
   const status = useQuery({
     queryKey,
     queryFn: ({ signal }) => api.authorization(provider.id, signal),
+    refetchInterval:
+      attempt?.method === "browser_callback" &&
+      Date.parse(attempt.expires_at) > Date.now()
+        ? 1500
+        : false,
   });
+  useEffect(() => {
+    if (
+      attempt?.method === "browser_callback" &&
+      status.dataUpdatedAt > attemptStartedAt &&
+      !status.data?.pending &&
+      status.data?.state === "connected"
+    ) {
+      setAttempt(undefined);
+      setCallback("");
+    }
+  }, [attempt, attemptStartedAt, status.data, status.dataUpdatedAt]);
   const refresh = () => cache.invalidateQueries({ queryKey });
   const start = useMutation({
     gcTime: 0,
@@ -43,6 +62,7 @@ export function ProviderAuthorization({
       setRevocationUnconfirmed(false);
     },
     onSuccess: (value) => {
+      setAttemptStartedAt(Date.now());
       setAttempt(value);
       void refresh();
     },
@@ -82,7 +102,7 @@ export function ProviderAuthorization({
       void refresh();
     },
   });
-  const writable = can("write"),
+  const writable = can("write") && !configurationDirty,
     busy = start.isPending || complete.isPending || disconnect.isPending,
     connected =
       status.data?.state === "connected" || status.data?.state === "refreshing";
@@ -97,6 +117,13 @@ export function ProviderAuthorization({
           {t("Shared by this workspace, not a personal connection.")}
         </p>
       </div>
+      {configurationDirty && (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            "Save configuration changes before starting or completing sign-in.",
+          )}
+        </p>
+      )}
       <p role="status">
         {attempt
           ? t("Waiting for sign-in")
@@ -112,10 +139,19 @@ export function ProviderAuthorization({
             url={attempt.authorization_url}
             expiresAt={attempt.expires_at}
           />
+          {attempt.method === "browser_callback" && (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                "Sign-in completes automatically. Return here after authorizing in the browser.",
+              )}
+            </p>
+          )}
           <FormField
             label={t("Complete callback URL")}
             description={t(
-              "After signing in, copy the entire URL from the browser address bar, even if the loopback page cannot be reached.",
+              attempt.method === "browser_callback"
+                ? "If automatic completion fails, paste the entire callback URL here."
+                : "After signing in, copy the entire URL from the browser address bar, even if the loopback page cannot be reached.",
             )}
           >
             <Input

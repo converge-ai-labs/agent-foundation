@@ -12,8 +12,8 @@ import secrets
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
-from urllib.parse import parse_qs, urlencode, urlsplit
+from typing import Literal, Protocol
+from urllib.parse import parse_qs, quote_plus, urlencode, urlsplit
 
 import httpx2
 import jwt
@@ -44,6 +44,8 @@ class OpenAIChatGPTCredentials:
     issuer: str = ISSUER
     email: str | None = None
     earliest_refresh_at: datetime | None = None
+    token_endpoint_auth_method: Literal["none", "client_secret_basic"] = "none"
+    client_secret: str | None = field(default=None, repr=False)
 
     @property
     def provider(self) -> str:
@@ -79,6 +81,10 @@ class ChatGPTAuthorization:
     nonce: str = field(repr=False)
     code_verifier: str = field(repr=False)
     client_id: str = DYNAMIC_CLIENT_ID
+    # Explicit Host configuration, not an issued ID from OSS dynamic registration.
+    preconfigured_client: bool = False
+    token_endpoint_auth_method: Literal["none", "client_secret_basic"] = "none"
+    client_secret: str | None = field(default=None, repr=False)
     subject: str | None = None
     id_token_hint: str | None = field(default=None, repr=False)
     login_hint: str | None = None
@@ -94,7 +100,14 @@ class OpenAIChatGPTOAuthFlow:
     """One PKCE attempt. Pasted and automatic callbacks use `validate_callback`."""
 
     def __init__(self, authorization: ChatGPTAuthorization, *, http_client: httpx2.AsyncClient | None = None):
-        _validate_redirect(authorization.redirect_uri)
+        validate_chatgpt_redirect_uri(
+            authorization.redirect_uri, preconfigured_client=authorization.preconfigured_client
+        )
+        if authorization.preconfigured_client and authorization.client_id == DYNAMIC_CLIENT_ID:
+            raise UserError("A preconfigured ChatGPT client must have its own client ID.")
+        validate_client_authentication(
+            authorization.client_id, authorization.token_endpoint_auth_method, authorization.client_secret
+        )
         self.authorization = authorization
         self._http_client = http_client
         self._consumed = False
@@ -106,11 +119,21 @@ class OpenAIChatGPTOAuthFlow:
         ext_agent_host_id: str,
         agent_name: str,
         redirect_uri: str,
+        client_id: str | None = None,
+        token_endpoint_auth_method: Literal["none", "client_secret_basic"] = "none",
+        client_secret: str | None = None,
         credentials: OpenAIChatGPTCredentials | None = None,
         http_client: httpx2.AsyncClient | None = None,
     ) -> OpenAIChatGPTOAuthFlow:
-        if credentials is not None and credentials.ext_agent_host_id != ext_agent_host_id:
-            raise UserError("The ChatGPT registration belongs to another host.")
+        if client_id is not None:
+            client_id = nonempty(client_id, "client_id")
+            if client_id == DYNAMIC_CLIENT_ID:
+                raise UserError("A preconfigured ChatGPT client must have its own client ID.")
+        if credentials is not None:
+            if credentials.ext_agent_host_id != ext_agent_host_id:
+                raise UserError("The ChatGPT registration belongs to another host.")
+            if client_id is not None and credentials.client_id != client_id:
+                raise UserError("The ChatGPT registration belongs to another client.")
         return cls(
             ChatGPTAuthorization(
                 ext_agent_host_id=nonempty(ext_agent_host_id, "ext_agent_host_id"),
@@ -120,7 +143,10 @@ class OpenAIChatGPTOAuthFlow:
                 state=secrets.token_urlsafe(32),
                 nonce=secrets.token_urlsafe(32),
                 code_verifier=secrets.token_urlsafe(64),
-                client_id=credentials.client_id if credentials is not None else DYNAMIC_CLIENT_ID,
+                client_id=client_id or (credentials.client_id if credentials is not None else DYNAMIC_CLIENT_ID),
+                preconfigured_client=client_id is not None,
+                token_endpoint_auth_method=token_endpoint_auth_method,
+                client_secret=client_secret,
                 subject=credentials.subject if credentials is not None else None,
                 id_token_hint=credentials.id_token if credentials is not None else None,
                 login_hint=credentials.email if credentials is not None else None,
@@ -203,6 +229,7 @@ class OpenAIChatGPTOAuthFlow:
                 "resource": RESOURCE,
             },
             http_client=self._http_client,
+            client_secret=self.authorization.client_secret,
         )
         return await _credentials(
             document,
@@ -212,26 +239,42 @@ class OpenAIChatGPTOAuthFlow:
             nonce=self.authorization.nonce,
             subject=self.authorization.subject,
             http_client=self._http_client,
+            token_endpoint_auth_method=self.authorization.token_endpoint_auth_method,
+            client_secret=self.authorization.client_secret,
         )
 
 
-def _validate_redirect(value: str) -> None:
+def validate_chatgpt_redirect_uri(value: str, *, preconfigured_client: bool = False) -> None:
+    """Validate syntax only; the Host must use an exact URI registered with OpenAI.
+
+    An OSS-issued client ID never opts into website redirects. Only an explicitly
+    preconfigured client can use HTTPS or its own loopback callback path.
+    """
     try:
         parsed = urlsplit(value)
+        loopback = parsed.scheme == "http" and parsed.hostname == "127.0.0.1" and parsed.port is not None
         valid = (
-            parsed.scheme == "http"
-            and parsed.hostname == "127.0.0.1"
-            and parsed.port is not None
-            and parsed.path == "/auth/callback"
-            and not parsed.username
-            and not parsed.password
+            (loopback or (preconfigured_client and parsed.scheme == "https" and bool(parsed.hostname)))
+            and (parsed.port is None or 1 <= parsed.port <= 65535)
+            and (parsed.path.startswith("/") if preconfigured_client else parsed.path == "/auth/callback")
+            and parsed.username is None
+            and parsed.password is None
             and not parsed.query
             and not parsed.fragment
+            and "?" not in value
+            and "#" not in value
+            and not any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value)
         )
     except ValueError:
         valid = False
     if not valid:
-        raise UserError("ChatGPT requires http://127.0.0.1:<port>/auth/callback as its callback URI.")
+        message = (
+            "A preconfigured ChatGPT client requires an absolute HTTPS or HTTP 127.0.0.1 callback URI without "
+            "userinfo, query or fragment."
+            if preconfigured_client
+            else "ChatGPT OSS registration requires http://127.0.0.1:<port>/auth/callback as its callback URI."
+        )
+        raise UserError(message)
 
 
 async def _discovery(http_client: httpx2.AsyncClient | None) -> dict[str, object]:
@@ -290,8 +333,32 @@ async def _identity(
         raise CredentialRefreshError("openai-chatgpt", "The ChatGPT ID token could not be verified.") from None
 
 
-async def _token(form: dict[str, str], *, http_client: httpx2.AsyncClient | None) -> dict[str, object]:
-    response = await oauth_request("POST", f"{ISSUER}/api/accounts/oauth/token", data=form, http_client=http_client)
+def validate_client_authentication(client_id: str | None, method: str, client_secret: str | None) -> None:
+    if (
+        method not in ("none", "client_secret_basic")
+        or (method == "client_secret_basic" and (not client_id or client_id == DYNAMIC_CLIENT_ID or not client_secret))
+        or (method == "none" and client_secret is not None)
+    ):
+        raise UserError("Use the registered token endpoint authentication method and client secret.")
+
+
+def _client_headers(client_id: str, client_secret: str | None) -> dict[str, str]:
+    if client_secret is None:
+        return {}
+    encoded = base64.b64encode(f"{quote_plus(client_id)}:{quote_plus(client_secret)}".encode()).decode()
+    return {"Authorization": f"Basic {encoded}"}
+
+
+async def _token(
+    form: dict[str, str], *, http_client: httpx2.AsyncClient | None, client_secret: str | None = None
+) -> dict[str, object]:
+    response = await oauth_request(
+        "POST",
+        f"{ISSUER}/api/accounts/oauth/token",
+        data=form,
+        http_client=http_client,
+        headers=_client_headers(form["client_id"], client_secret),
+    )
     if response.status_code != 200:
         raise CredentialRefreshError("openai-chatgpt", f"ChatGPT token exchange failed (HTTP {response.status_code}).")
     return json_object(response, provider="openai-chatgpt")
@@ -306,6 +373,8 @@ async def _credentials(
     nonce: str | None,
     subject: str | None,
     http_client: httpx2.AsyncClient | None,
+    token_endpoint_auth_method: Literal["none", "client_secret_basic"] = "none",
+    client_secret: str | None = None,
 ) -> OpenAIChatGPTCredentials:
     provider = "openai-chatgpt"
     id_token = required_string(document, "id_token", provider)
@@ -338,12 +407,17 @@ async def _credentials(
         ),
         email=email if isinstance(email, str) else None,
         earliest_refresh_at=earliest_at,
+        token_endpoint_auth_method=token_endpoint_auth_method,
+        client_secret=client_secret,
     )
 
 
 async def refresh_chatgpt_credentials(
     credentials: OpenAIChatGPTCredentials, *, http_client: httpx2.AsyncClient | None = None
 ) -> OpenAIChatGPTCredentials:
+    validate_client_authentication(
+        credentials.client_id, credentials.token_endpoint_auth_method, credentials.client_secret
+    )
     try:
         discovery = await _discovery(http_client)
     except Exception:
@@ -356,6 +430,7 @@ async def refresh_chatgpt_credentials(
             "resource": RESOURCE,
         },
         http_client=http_client,
+        client_secret=credentials.client_secret,
     )
     return await _credentials(
         document,
@@ -365,12 +440,17 @@ async def refresh_chatgpt_credentials(
         nonce=None,
         subject=credentials.subject,
         http_client=http_client,
+        token_endpoint_auth_method=credentials.token_endpoint_auth_method,
+        client_secret=credentials.client_secret,
     )
 
 
 async def revoke_chatgpt_credentials(
     credentials: OpenAIChatGPTCredentials, *, http_client: httpx2.AsyncClient | None = None
 ) -> None:
+    validate_client_authentication(
+        credentials.client_id, credentials.token_endpoint_auth_method, credentials.client_secret
+    )
     discovery = await _discovery(http_client)
     endpoint = required_string(discovery, "revocation_endpoint", "openai-chatgpt")
     parsed = urlsplit(endpoint)
@@ -379,6 +459,7 @@ async def revoke_chatgpt_credentials(
     response = await oauth_request(
         "POST",
         endpoint,
+        headers=_client_headers(credentials.client_id, credentials.client_secret),
         data={
             "token": credentials.refresh_token,
             "token_type_hint": "refresh_token",

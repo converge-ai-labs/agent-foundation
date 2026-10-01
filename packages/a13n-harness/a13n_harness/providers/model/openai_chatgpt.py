@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 import httpx2
-from pydantic import Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic_ai.exceptions import UserError
 
+from ..authentication import Authentication, AuthenticationCase, CredentialMode
 from .definition import ModelOAuth, ModelProviderDefinition
+from .oauth.chatgpt import DYNAMIC_CLIENT_ID, validate_chatgpt_redirect_uri
 from .types import ProviderConfiguration
 
 if TYPE_CHECKING:
@@ -23,11 +26,53 @@ class Config(ProviderConfiguration):
         default=None, exclude=True, json_schema_extra={"enum": [None, "https://api.openai.com/v1"]}
     )
 
+    client_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+        title="OAuth client ID",
+        description="Leave blank to use deployment defaults or OSS registration.",
+    )
+    redirect_uri: str | None = Field(
+        default=None,
+        max_length=2048,
+        title="Callback URL",
+        description="Exact registered callback URL. Leave blank to use deployment defaults.",
+    )
+    token_endpoint_auth_method: Literal["none", "client_secret_basic"] = Field(
+        default="none",
+        title="Token endpoint authentication",
+        description="Use the method provisioned for your OAuth client.",
+    )
+
+    @model_validator(mode="after")
+    def registration(self) -> Self:
+        if self.client_id is not None and (not self.client_id.strip() or self.client_id == DYNAMIC_CLIENT_ID):
+            raise ValueError("Use an explicitly provisioned OAuth client ID")
+        if self.token_endpoint_auth_method != "none" and self.client_id is None:
+            raise ValueError("A confidential OAuth client requires its client ID")
+        if self.redirect_uri is not None:
+            try:
+                validate_chatgpt_redirect_uri(self.redirect_uri, preconfigured_client=True)
+            except UserError as error:
+                raise ValueError(str(error)) from None
+        return self
+
     @model_validator(mode="after")
     def fixed_endpoint(self) -> Self:
         if self.base_url not in (None, "https://api.openai.com/v1"):
             raise ValueError("ChatGPT plan usage requires the public OpenAI endpoint")
         return self
+
+
+class Credential(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+    client_secret: SecretStr = Field(
+        min_length=1,
+        max_length=4096,
+        title="OAuth client secret",
+        description="Stored encrypted; used only for server-side OAuth token requests.",
+    )
 
 
 def _provider(
@@ -48,6 +93,15 @@ DEFINITION = ModelProviderDefinition(
     type="openai_chatgpt",
     display_name="ChatGPT",
     configuration_model=Config,
+    credential_model=Credential,
+    authentication=Authentication(
+        mode=CredentialMode.forbidden,
+        cases=(
+            AuthenticationCase(
+                field="token_endpoint_auth_method", equals="client_secret_basic", mode=CredentialMode.required
+            ),
+        ),
+    ),
     supported_model_apis=("openai.responses",),
     oauth=ModelOAuth(scheme="openai-chatgpt", build_provider=_provider),
     build_model=_model,

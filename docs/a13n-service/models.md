@@ -29,13 +29,31 @@ A model provider may also carry up to 32 **extra request headers**, for gateways
 
 ## ChatGPT subscription provider
 
-Create an `openai_chatgpt` provider without a static credential. In **Workspace settings → Providers**, choose **ChatGPT subscription**, add it, then use **Sign in with ChatGPT**. This authorization belongs to the Provider and is shared by the workspace; it is not a personal Connection.
+Create an `openai_chatgpt` provider; the default OSS flow needs no static credential. In **Workspace settings → Providers**, choose **ChatGPT subscription**, add it, then use **Sign in with ChatGPT**. This authorization belongs to the Provider and is shared by the workspace; it is not a personal Connection.
 
-After authorizing, copy the entire callback URL from the browser address bar into **Complete callback URL**, even if the loopback page shows a connection error. The Service can run remotely: it validates and exchanges the pasted callback without fetching that URL or requiring the browser to reach the server's loopback listener.
+With the default OSS flow, after authorizing, copy the entire callback URL from the browser address bar into **Complete callback URL**, even if the loopback page shows a connection error. The Service can run remotely: it validates and exchanges the pasted callback without fetching that URL or requiring the browser to reach the server's loopback listener.
 
-API clients use `POST /api/v1/model-providers/{id}/authorize` with `{}` and then `POST …/authorization/callback` with `{"attempt_id": "oauth_...", "callback_url": "http://127.0.0.1:1456/auth/callback?..."}`. Keep the full callback private. Invalid input is retryable; after exchange starts, a failed attempt must be restarted. `GET …/authorization` exposes credential-free status. `DELETE …/authorization` clears tokens before requesting revocation and reports when revocation is unconfirmed. The retained registration supports returning login; `{"new_registration": true}` starts an explicit new registration.
+API clients use `POST /api/v1/model-providers/{id}/authorize` with `{}` and then `POST …/authorization/callback` with `{"attempt_id": "oauth_...", "callback_url": "http://127.0.0.1:1456/auth/callback?..."}`. Keep the full callback private. Invalid input is retryable; after exchange starts, a failed attempt must be restarted. `GET …/authorization` exposes credential-free status. `DELETE …/authorization` clears tokens before requesting revocation and reports when revocation is unconfirmed. The retained registration supports returning login; `{"new_registration": true}` starts a fresh account selection (a new OSS registration, or the same configured client without retained account hints).
 
 Use `openai.responses` and an account model slug for this Provider. `GET …/models` returns account-visible slugs and display names; manual IDs remain available in Console. Visibility is not proof of inference entitlement. The endpoint is fixed, and tokens/pending authorization are encrypted in Provider-owned state rather than Model configuration or Run snapshots. Every request uses `store: false` and the required stream; native ordinary calls collect that stream. The native profile omits temperature, Top P and output-token limits; previous-response IDs and unsupported hosted tools fail explicitly. This does not translate the request into API-key behavior. Codex credentials are unrelated and cannot replace this authorization.
+
+### Self-hosted callback
+
+The default dynamic-registration flow stays on HTTP `127.0.0.1`, even after OpenAI issues a client ID; only the port can change. For an independently provisioned client, configure **OAuth client ID**, **Callback URL**, and **Token endpoint authentication** when creating or editing the ChatGPT Provider. Public clients use `none` with no secret; confidential clients use `client_secret_basic` and require **OAuth client secret**. Save changes before restarting sign-in. The Provider's `config.client_id` and `config.redirect_uri` override deployment defaults; blank fields inherit them. The secret is stored in the existing encrypted `credential.client_secret`, never in ordinary configuration or returned API data.
+
+Deployment-wide public-client defaults can be configured before starting the Service:
+
+```sh
+export A13N_SERVER__PUBLIC_URL="https://agent.example.com"
+export A13N_PROVIDERS__CHATGPT_CLIENT_ID="approved-public-client"
+export A13N_PROVIDERS__CHATGPT_REDIRECT_URI="https://agent.example.com/api/v1/model-providers/oauth/callback"
+```
+
+These variables override `[providers] chatgpt_client_id` and `chatgpt_redirect_uri` in Service TOML. HTTPS callbacks must share the Service's configured public origin, so the initiating browser's cookie can return. Console reports automatic completion and refreshes status while the attempt is active; signing in must start from a user login session, not an API key. Manual callback paste remains available. To customize the public path, register that exact URI, set it on the Provider or in `CHATGPT_REDIRECT_URI`, and reverse-proxy map the path to Service's `GET /api/v1/model-providers/oauth/callback`, preserving the query and cookies. The callback never trusts Host/forwarded headers to choose its exchange URI. Exclude callback query strings from proxy/access logs.
+
+Changing the client ID starts a new login without reusing another client's account binding; configuration or secret changes cancel pending/in-flight sign-ins; existing grants still refresh with their saved client authentication. **Use another ChatGPT account** keeps the configured client. Without a custom client, `CHATGPT_REDIRECT_URI` can override only the loopback port, not its scheme, host or `/auth/callback` path.
+
+A website identity client is not permission to spend ChatGPT subscription quota. This integration still requires renewable tokens with direct-plan invocation scopes; hosted/commercial use needs separate OpenAI approval. Confidential clients send their secret only in the server-side HTTP Basic header, retaining PKCE; code exchange, refresh, and revocation use the authentication frozen with that grant. Issuer, protocol endpoints, resource, and required scopes are fixed by this integration, not user-configurable OAuth parameters.
 
 ## Add a model
 

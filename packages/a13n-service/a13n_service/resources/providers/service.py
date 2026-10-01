@@ -39,7 +39,7 @@ from a13n_service.resources.providers.schemas import (
     ProviderTypePage,
     ProviderUpdate,
 )
-from a13n_service.resources.providers.tables import ProviderRow
+from a13n_service.resources.providers.tables import ModelProviderOAuthRow, ModelProviderRow, ProviderRow
 from a13n_service.resources.rows import audit_row, find_row, given, record_update, usable_row
 from a13n_service.settings import Providers
 from a13n_service.tenancy.access import workspace_scope
@@ -198,9 +198,18 @@ async def update_provider[R: ProviderRow](
                 raise invalid("credential", "a configuration change must replace or remove the credential")
             if not row.extra_headers.keys() <= body.extra_headers.keys():
                 raise invalid("extra_headers", "a configuration change must replace or remove every stored header")
+        oauth_config_changed = bool(changed) or replaces_credential
         if replaces_credential and (body.credential is not None or row.credential is not None):
             row.credential = None if body.credential is None else _protect(keys, row, body.credential)
             changed.append("credential")
+        if oauth_config_changed and isinstance(row, ModelProviderRow) and row.type == "openai_chatgpt":
+            oauth_row = await session.get(ModelProviderOAuthRow, row.id, with_for_update=True)
+            if oauth_row is not None:
+                # A changed registration supersedes both unconsumed and in-flight sign-ins.
+                # Existing grants retain their own client authentication for renewal.
+                oauth_row.pending = None
+                oauth_row.pending_id = None
+                oauth_row.login_claim = None
         changed += assign(row, {"extra_headers": headers, **given(body, "name", "enabled")})
         if record_update(session, actor, row, changed):
             await session.flush()

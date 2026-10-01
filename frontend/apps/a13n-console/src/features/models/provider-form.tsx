@@ -90,7 +90,15 @@ export function ProviderForm({
         />
       </ProviderGroup>
       {definition?.oauth_scheme && original && (
-        <ProviderAuthorization provider={original.value} />
+        <ProviderAuthorization
+          provider={original.value}
+          configurationDirty={
+            JSON.stringify(draft.configuration) !==
+              JSON.stringify(original.value.config) ||
+            Object.keys(draft.section.credential).length > 0 ||
+            draft.section.removing
+          }
+        />
       )}
       {definition && !definition.oauth_scheme && (
         <ProviderConnection

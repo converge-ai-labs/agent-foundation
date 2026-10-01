@@ -173,3 +173,33 @@ def test_invalid_operator_tls_environment_is_rejected_at_service_startup(
     monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", value)
     with pytest.raises(ValueError, match=r"^A13N_OUTBOUND_TLS_VERIFY must be true or false$"):
         load_settings()
+
+
+def test_chatgpt_client_and_callback_environment_overrides(tmp_path, monkeypatch, clean_environment):
+    config = tmp_path / "chatgpt.toml"
+    config.write_text('[providers]\nchatgpt_redirect_uri = "http://127.0.0.1:1555/auth/callback"\n')
+    assert load_settings(config).providers.chatgpt_redirect_uri == "http://127.0.0.1:1555/auth/callback"
+    monkeypatch.setenv("A13N_SERVER__PUBLIC_URL", "https://service.test")
+    monkeypatch.setenv("A13N_PROVIDERS__CHATGPT_CLIENT_ID", "approved-client")
+    monkeypatch.setenv("A13N_PROVIDERS__CHATGPT_REDIRECT_URI", "https://service.test/custom/callback")
+    loaded = load_settings(config)
+    assert loaded.providers.chatgpt_client_id == "approved-client"
+    assert loaded.providers.chatgpt_redirect_uri == "https://service.test/custom/callback"
+    assert loaded.providers.chatgpt_browser_callback
+
+
+@pytest.mark.parametrize(
+    "providers",
+    [
+        {"chatgpt_redirect_uri": "https://service.test/callback"},
+        {"chatgpt_redirect_uri": "http://localhost:1555/auth/callback"},
+        {"chatgpt_redirect_uri": "http://127.0.0.1:1555/custom/callback"},
+        {"chatgpt_client_id": "dynamic_agent_client"},
+        {"chatgpt_client_id": " "},
+        {"chatgpt_client_id": "approved-client", "chatgpt_redirect_uri": "https://other.test/callback"},
+        {"chatgpt_client_id": "approved-client", "chatgpt_redirect_uri": "https://service.test/callback?x=1"},
+    ],
+)
+def test_invalid_chatgpt_callback_configuration_fails_at_startup(providers):
+    with pytest.raises(ValueError, match="chatgpt"):
+        Settings.model_validate({"server": {"public_url": "https://service.test"}, "providers": providers})
