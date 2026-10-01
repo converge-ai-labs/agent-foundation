@@ -10,6 +10,8 @@
 
 Agent Foundation is an open-source library and platform for building and running your own agent systems. Managed agents, memory, sandboxes, computer use, and durable execution come together in a self-hosted service, ready to integrate into your applications.
 
+![a13n Service and Harness connect SDKs, HTTP API, Console, and Harness UI with environments, memory, models, web data, and MCP connections](.github/assets/a13n-architecture.webp)
+
 - **Build with Service.** Configure agents and connect them to your product through APIs, with resource management, permissions, and execution recovery already in place.
 - **Extend with Harness.** Embed the runtime directly and shape its behavior through plugins, custom tools, and providers.
 - **Explore with Harness UI.** Try models, tools, and agent configurations in a terminal and web playground—without building an application first.
