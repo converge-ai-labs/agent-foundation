@@ -50,6 +50,7 @@ def callback(flow: OpenAIChatGPTOAuthFlow) -> str:
 async def signed_in(path: Path, monkeypatch: pytest.MonkeyPatch) -> ChatGPTAccountStore:
     store = ChatGPTAccountStore(path)
     flow = await store.begin("first", "http://127.0.0.1:43111/auth/callback")
+    assert flow.authorization.agent_name == "Agent Foundation OSS"
     host_id = flow.authorization.ext_agent_host_id
     assert UUID(host_id).version == 4 and UUID(host_id).urn == host_id
 

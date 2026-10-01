@@ -90,7 +90,7 @@ class ChatGPTAccountStore:
                 selected = state.registrations.get(state.selected or "") if not new_registration else None
                 flow = OpenAIChatGPTOAuthFlow.start(
                     ext_agent_host_id=state.host_id,
-                    agent_name="Harness UI",
+                    agent_name="Agent Foundation OSS",
                     redirect_uri=redirect_uri,
                     credentials=selected.credentials if selected else None,
                 )

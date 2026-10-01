@@ -170,7 +170,7 @@ async def authorize(
         credentials = _credentials(row, keys) if row.tokens is not None and not body.new_registration else None
         flow = OpenAIChatGPTOAuthFlow.start(
             ext_agent_host_id=row.host_id,
-            agent_name="a13n Service",
+            agent_name="Agent Foundation OSS",
             redirect_uri="http://127.0.0.1:1456/auth/callback",
             credentials=credentials,
         )

@@ -79,6 +79,7 @@ async def connect(service, monkeypatch, no_task_connection, *, legacy_host=False
     assert started.status_code == 200, started.text
     start = started.json()
     query = parse_qs(urlsplit(start["authorization_url"]).query)
+    assert query["agent_name_hint"] == ["Agent Foundation OSS"]
     host_id = query["ext_agent_host_id"][0]
     assert UUID(host_id).version == 4 and UUID(host_id).urn == host_id
     url = (
