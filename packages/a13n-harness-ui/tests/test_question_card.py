@@ -105,13 +105,14 @@ def test_cell_wrapping_preserves_cjk_paragraphs_and_whitespace():
 
 
 @pytest.mark.anyio
-async def test_real_keys_require_explicit_confirmation_and_preserve_custom_draft():
+@pytest.mark.parametrize("newline", ["\n", "\x1b\r"], ids=["ctrl-j", "alt-enter"])
+async def test_real_keys_require_explicit_confirmation_and_preserve_custom_draft(newline):
     async with running_card() as (card, pipe, answers, cancelled):
         await keys(pipe, "\r")
         assert not answers and card.error
         await keys(pipe, "2")
         assert card.selection.cursor == 1 and not answers
-        await keys(pipe, "\tmy draft\x1b\rnext line")  # Alt+Enter is a newline.
+        await keys(pipe, "\tmy draft" + newline + "next line")
         assert card.editing and card.editor.text == "my draft\nnext line"
         await keys(pipe, "\t")
         assert not card.editing

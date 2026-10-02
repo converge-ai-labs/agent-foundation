@@ -111,7 +111,7 @@ class DecisionInteraction:
                 "result": "Enter the actual tool result as JSON. Providing a result does not execute the tool.",
                 "arguments": "Enter the complete replacement arguments as a JSON object. Submitting approves this request with those arguments.",
             }[self.editor]
-            return f"{heading}\n{instruction}\nEnter submits · Alt+Enter adds a line · Esc or /cancel returns to choices. The original {self.timeout_seconds:g}s timeout continues."
+            return f"{heading}\n{instruction}\nEnter submits · Ctrl+J or Alt+Enter adds a line · Esc or /cancel returns to choices. The original {self.timeout_seconds:g}s timeout continues."
         if isinstance(request, StructuredQuestionRequestView):
             question = request.questions[self.question_index]
             options = "\n".join(

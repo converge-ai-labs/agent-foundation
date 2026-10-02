@@ -223,7 +223,7 @@ class CommandRegistry:
                 "",
                 "### Shortcuts",
                 "",
-                "`Enter` send or guide · `Alt+Enter` newline · `Tab` complete",
+                "`Enter` send or guide · `Ctrl+J` / `Alt+Enter` newline · `Tab` complete",
                 "`Ctrl+C` stop / twice to exit · `Ctrl+D` exit · `Ctrl+O` details",
                 "`Ctrl+V` paste image · `Alt+E` expand paste · `PgUp/PgDn` scroll · `Ctrl+End` latest · `/mouse off` copy",
                 "`Ctrl+T` browse retained messages · `$` complete available skills · `/` commands",
