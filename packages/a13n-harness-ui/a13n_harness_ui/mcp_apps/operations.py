@@ -477,6 +477,14 @@ class AppOperations:
             else:
                 self._remember_resources(view, payload)
                 self._set(view, operation, status="completed", result=payload)
+        except asyncio.CancelledError:
+            self._set(
+                view,
+                operation,
+                status="failed",
+                reason="The App operation was cancelled; its remote outcome may be unknown. It will not be retried.",
+            )
+            raise
         except Exception as exc:
             self._fail(view, operation, exc)
 

@@ -209,6 +209,48 @@ async def test_approval_is_bound_consumed_once_and_rechecked_against_current_pol
     assert (await _settle(operations, view.view_id, "accepted")).result["structuredContent"]["count"] == 2
 
 
+@pytest.mark.parametrize("apps", [True], indirect=True)
+@pytest.mark.parametrize("approval_required", [False, True])
+async def test_close_integration_finishes_cancelled_app_input_without_replay(apps, approval_required) -> None:
+    operations, reference = apps
+    if approval_required:
+        await _policy(operations, "ask")
+    view = await operations.activate(reference)
+    request = AppToolRequest(request_key="close-pending", name="counter", arguments={"confirm": True})
+    initial = await operations.call_tool("thread-1", view.view_id, request)
+    if approval_required:
+        assert (await _settle(operations, view.view_id, request.request_key)).status == "approval_required"
+        operations.decide("thread-1", view.view_id, request.request_key, approve=True)
+    connections = operations.snapshots.connections
+    connection = connections.get("thread-1", "mcp-docs")
+    assert connection is not None
+    inputs = connections.input_handler
+    assert isinstance(inputs, Inputs)
+    async with asyncio.timeout(10):
+        while not any(item.state == "pending" for item in inputs.requests({"thread-1"})):
+            await asyncio.sleep(0.01)
+    pending = next(item for item in inputs.requests({"thread-1"}) if item.state == "pending")
+    task = connection._active_task
+    assert task is not None
+    assert operations.get_operation("thread-1", view.view_id, request.request_key).status == "running"
+
+    await connections.close_integration("thread-1", "mcp-docs")
+
+    terminal = operations.get_operation("thread-1", view.view_id, request.request_key)
+    assert terminal.operation_id == initial.operation_id
+    assert terminal.status == "failed" and terminal.result is None
+    assert "cancelled" in terminal.reason and "remote outcome may be unknown" in terminal.reason
+    assert "not be retried" in terminal.reason
+    assert task.cancelled(), "Publishing a terminal operation must preserve task cancellation"
+    assert not connection.connected and not operations._tasks
+    assert inputs.requests({"thread-1"})[0].state == "unavailable"
+    with pytest.raises(HarnessUiError, match="no longer pending"):
+        await inputs.respond({"thread-1"}, pending.request_id, McpInputResponse(action="decline"))
+    assert await operations.call_tool("thread-1", view.view_id, request) == terminal
+    assert not operations._tasks, "Reconciling the same request must not restart its business call"
+    assert (await operations.snapshots.read(reference)).snapshot.result["structuredContent"]["count"] == 1
+
+
 async def test_close_invalidates_pending_approval_without_closing_session(apps) -> None:
     operations, reference = apps
     await _policy(operations, "ask")
