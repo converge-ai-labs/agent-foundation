@@ -24,6 +24,8 @@ sessions
 log_streams
   id, session_id, run_id NULL          # NULL run_id identifies the control stream
   head_seq, archived_seq
+  checkpoint NULL, checkpoint_requested_seq NULL  # Run streams only
+  checkpoint_lease_token NULL, checkpoint_lease_expires_at NULL
   pending_bytes, oldest_pending_at NULL
   archive_requested, archive_lease_token NULL, archive_lease_expires_at NULL
   UNIQUE(run_id) WHERE run_id IS NOT NULL
@@ -48,10 +50,8 @@ run_checkpoints
 runs
   ... execution fields ...
   base_state                          # fixed source Run/position, or initial seed
-  checkpoint NULL                     # latest published checkpoint ID and coverage
-  checkpoint_requested_seq NULL
-  checkpoint_lease_token NULL, checkpoint_lease_expires_at NULL
-  terminal_state_seq NULL
+  sealed_state_seq NULL                # execution cut fixed at Run seal
+  resume NULL                          # accepted answers owned by a successor
 
 run_attempts
   ... existing fields ...
@@ -60,7 +60,7 @@ run_attempts
 
 `payload` contains the full event envelope described in [the journal model](01-journal-model.md#event-envelope); indexed envelope fields are ordinary columns as needed. These tables do not require a generic object catalog or an event payload GIN index. Use the stream/sequence keys for Run reads and Session sequence range metadata for merged reads. Session-range lookup also needs an efficient join through `log_streams.session_id`.
 
-The separate stream row lets archive progress and late accounting advance without modifying a sealed Run. Current checkpoint and base references are bounded fields. The `display` pointer and `usage_at_seal` snapshot are removed; Display comes from events and current totals come from the ledger. Historical checkpoint entries are retained in `run_checkpoints`, not an array on `runs`.
+The separate stream row lets archive progress, latest-checkpoint publication, and late accounting advance without modifying a sealed Run. The Run API exposes its latest checkpoint through this joined metadata. Latest-checkpoint and base references are bounded fields. The `display` pointer and `usage_at_seal` snapshot are removed; Display comes from events and current totals come from the ledger. Historical checkpoint entries are retained in `run_checkpoints`, not an array on `runs`.
 
 The directory is a physical lookup structure, not an index of latest Display card states:
 
@@ -82,7 +82,7 @@ An event may refer to a separately stored large result or attachment. Chunk clea
 
 ## Archival algorithm
 
-Archive when pending encoded bytes reach a configured threshold, the oldest unarchived event reaches a maximum age, or Run termination requests a flush. The age trigger also archives short Session control streams and late accounting tails. A new tail after a completed flush starts a new age deadline. A full chunk is not required before writing a final or aged tail.
+Archive when pending encoded bytes reach a configured threshold, the oldest unarchived event reaches a maximum age, or Run sealing, including a deferred wait, requests a flush. The age trigger also archives short Session control streams and late accounting tails. A new tail after a completed flush starts a new age deadline. A full chunk is not required before writing a final or aged tail.
 
 For one stream:
 
@@ -133,7 +133,7 @@ Let `C` be the latest checkpoint's covered Run sequence, `A` the stream's archiv
 | `C=100, A=80, H=100` | Checkpoint 100                                     | Events 81–100 stay for future archival     |
 | `C=64, A=100, H=100` | Checkpoint 64 + S3 events 65–100                   | All covered PG event copies may be removed |
 
-No trigger forces `C` and `A` to match. Terminal execution requests both jobs for their separate purposes; neither job waits for the other.
+No trigger forces `C` and `A` to match. Sealing a Run requests both jobs for their separate purposes, including when it seals waiting; neither job waits for the other. Execution resources can be released once continuation and pending requests have committed to PG, without holding them until either S3 job finishes.
 
 ## PostgreSQL cost and failures
 

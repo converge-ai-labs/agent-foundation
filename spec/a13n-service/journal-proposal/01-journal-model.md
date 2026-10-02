@@ -8,16 +8,20 @@
 | ------- | ---------------------------------------------------------------------------------- | ---------------------------------------- |
 | Session | Groups related Threads, their execution history, and Session control operations    | One permanent agent or model             |
 | Thread  | Owns a sequential continuation history and selects the state base for its next Run | One permanent agent or model             |
-| Run     | One logical execution with an immutable accepted selection                         | One worker process or one attempt        |
+| Run     | One accepted execution with an immutable selection; a deferred wait seals it       | One worker process or one attempt        |
 | Attempt | A fenced worker ownership interval within a Run                                    | New conversation history or new bindings |
 
-A Run freezes the agent revision, model selection, execution options, environment and memory mounts, and other continuation-relevant bindings at acceptance. Provider credentials may refresh without changing that selection. Replacing a model, agent, or mount is a next-Run operation, including when the current Run is paused. The proposal introduces no mid-Run configuration switch or fallback to a different model. Child Runs make their own frozen selections from the accepted child binding.
+A Service Run freezes the agent revision, model selection, execution options, environment and memory mounts, and other continuation-relevant selections at acceptance. A normal subsequent Run may accept a different selection; a deferred-resume successor inherits the waiting Run's selection under the existing Service contract. Fresh Harness `RunBindings` reconstruct the selected collaborators and recheck current authority; they are not permission to retarget a pending approved action. Credentials may refresh without changing the selection. Child Runs make their own frozen selections from the accepted child binding.
 
-A Thread has at most one open Run. The proposed Run states are `accepted`, `running`, `waiting`, `completed`, `failed`, and `cancelled`. Only the last three are terminal and sealed. `waiting` retains the open Run, its frozen selection, and a bounded pending continuation descriptor. Answering an approval or receiving a synchronous child result makes that Run claimable again. A worker handoff or crash also continues the same Run under a new fenced Attempt.
+Preserve the current Service lifecycle. A Thread has at most one current `accepted` or `running` Run. `waiting`, `completed`, `failed`, and `cancelled` are sealed outcomes. A deferred wait records the exact pending requests and committed continuation, finishes the Attempt, and clears the Thread's current Run. The waiting Run remains an immutable history head. Validated resume input creates a new successor Run in that Thread, linked to the exact waiting Run; it never changes the old Run back to `running`.
 
-This intentionally replaces today's rule that `waiting` is sealed and resumed through a successor Run. It avoids introducing two different persistence models for waiting on a child and waiting on an approval. The Thread's current pointer retains an open waiting Run. Its history head advances only to a completed Run; a failed or cancelled Run remains inspectable but is not selected automatically as the next state base.
+The [Harness resume contract](../../a13n-harness/10-snapshot-and-resume.md#import-and-resume) constructs a new logical Harness Run from persisted state and fresh bindings. Preserve that boundary. Distinguish deferred resume from worker recovery: a crash or handoff replaces the Attempt of an unsealed Service Run, preserving its Service Run ID, but still constructs a fresh Harness invocation. The Thread history head may be a completed or waiting Run, as today; failed/cancelled Runs remain inspectable without becoming the automatic base.
 
-Terminal Runs accept no further execution-state mutations. Accounting reports may arrive later and append accounting events without changing the terminal outcome. The separate journal metadata row remains mutable for such appends and for archival progress; neither operation changes the sealed Run. Checkpoint materialization metadata, including its lease and latest pointer, may still advance when a background writer materializes the already committed terminal state. That storage-metadata update is the only new exception to sealed Run immutability; it cannot change selection, state coverage beyond the terminal position, or outcome.
+Long waits retain no worker slot, active Attempt lease, database connection, coroutine stack, or live Harness context. The worker flushes the pending descriptor and state events before acknowledging the wait, then closes its execution resources. A later approval or child result is durably recorded and wakes the scheduler; a sweep recovers a lost wakeup. Replaying a waiting snapshot alone never grants approval or starts execution. The original process may have disappeared days earlier. Mounted resources follow their existing Host lifecycle policy; releasing the worker does not promise to destroy every environment.
+
+Preserve exact pending-call coverage, idempotent resume acceptance, and accepted-result incorporation. The successor owns its accepted `resume` batch until journal evidence shows incorporation. If its worker dies before incorporation, recover that batch alongside state without repeating consumed results or old approval grants. A failed successor does not automatically replay the approval; the existing waiting-head and explicit-resume rules still apply.
+
+Sealed Runs accept no further execution-state mutations. Late accounting appends to their journals without changing the sealed outcome. Mutable stream metadata holds archive progress and checkpoint materialization leases/pointers, so background storage work never rewrites a sealed Run. `sealed_state_seq` fixes the final execution-state position, including a waiting outcome; each successor has its own stream and positions.
 
 ## Streams and order
 
@@ -34,15 +38,17 @@ Use a single lock order: acquire required domain locks first, then the Session j
 
 For example:
 
-| `session_seq` | Stream     | `seq` | Event                       |
-| ------------- | ---------- | ----- | --------------------------- |
-| 401           | Parent Run | 20    | Synchronous child requested |
-| 402           | Child Run  | 1     | Child started               |
-| 403           | Child Run  | 2     | Assistant message appended  |
-| 404           | Child Run  | 3     | Child completed             |
-| 405           | Parent Run | 21    | Child result accepted       |
+| `session_seq` | Stream                 | `seq` | Event                                   |
+| ------------- | ---------------------- | ----- | --------------------------------------- |
+| 401           | Parent Run A           | 20    | Synchronous child requested             |
+| 402           | Parent Run A           | 21    | Parent sealed waiting                   |
+| 403           | Child Run B            | 1     | Child started                           |
+| 404           | Child Run B            | 2     | Assistant message appended              |
+| 405           | Child Run B            | 3     | Child completed                         |
+| 406           | Successor parent Run C | 1     | Resume accepted from Run A              |
+| 407           | Successor parent Run C | 2     | Original child-call result incorporated |
 
-A Session view can show this as one timeline. Parent state replay still reads only the parent stream; it never applies child state mutations to the parent.
+A Session view can show this as one timeline. Parent reconstruction follows its selected state bases and parent/successor Run streams; it never applies child state mutations to the parent.
 
 ## Event envelope
 
@@ -96,9 +102,11 @@ The proposed state event vocabulary is small:
 | `tool.started`                                    | Add a bounded pending call descriptor                                                 |
 | `tool.completed` or `tool.failed`                 | Settle that descriptor and record its complete outcome                                |
 | `child.requested` or `child.result_received`      | Add or settle a parent-to-child continuation reference                                |
-| `run.waiting` or `run.resumed`                    | Set or clear the bounded wait descriptor                                              |
+| `run.waiting`                                     | Seal this Run with exact pending requests; a successor incorporates their answers     |
 | `run.completed`, `run.failed`, or `run.cancelled` | Record terminal execution status and settle remaining continuation descriptors        |
 | `recovery.boundary`                               | Mark a validated continuation boundary; no model or tool is executed by replay        |
+
+A successor's `run.accepted` identifies its waiting source and immutable accepted resume input. `resume.input_consumed` advances incorporation in the successor's state; neither event modifies the source Run.
 
 Model dispatch also records `model.started` and `model.finished` events with a bounded pending request identity and outcome status. The complete resulting message is owned by `messages.appended`; neither model completion nor a tool outcome inserts that message a second time. A tool result can therefore be recorded before the corresponding model history update, with a later `recovery.boundary` identifying the resumable state. Every individual event position remains inspectable; not every such position is safe for execution.
 

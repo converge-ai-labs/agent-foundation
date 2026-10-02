@@ -44,8 +44,8 @@ Here and below, “S3” means the Service's existing object-store abstraction, 
 | Chunk locations                   | One PostgreSQL `log_chunks` row per chunk; no growing JSON array on a Run                   |
 | Display                           | A projection of individual events; no full Display snapshot or persistent latest-card index |
 | Execution state                   | Bounded checkpoint plus ordered state changes from the journal                              |
-| Checkpoint timing                 | Recovery-cost thresholds at safe boundaries, completed compaction, and terminal execution   |
-| Archival timing                   | Buffered bytes, oldest unarchived event age, and a terminal flush request                   |
+| Checkpoint timing                 | Recovery-cost thresholds, completed compaction, and Run sealing, including waiting          |
+| Archival timing                   | Buffered bytes, oldest unarchived event age, and a seal-triggered flush request             |
 | Relationship between those timers | Independent; a checkpoint does not also request archival                                    |
 | Usage                             | Existing `usage_records` ledger; a fresh Harness accounting scope after takeover            |
 | Hosted subagents                  | Independent child Threads for both synchronous and asynchronous calls                       |
@@ -61,8 +61,8 @@ This proposal replaces those rules where stated. In particular:
 - A durable boundary commits new events and execution progress, not two complete object uploads.
 - A completed tool interaction adds an event. It does not rewrite a growing Display file or amend a previously archived event.
 - A checkpoint contains continuation state, not historical Usage or full child state.
-- A synchronous child wait releases the parent worker slot and later resumes the same Run with the same bindings.
-- Waiting for a resumable approval or child result is a pause, not a terminal seal; this is an explicit lifecycle change described in [execution ownership](01-journal-model.md#execution-identity-and-lifecycle).
+- A synchronous hosted child remains in its own Thread. Its parent records a durable deferred wait, seals, and releases the worker. Completion supplies the original call result to a successor parent Run.
+- Preserve the existing deferred-resume lifecycle: seal a waiting Run, release execution resources, and create a successor Run when the required approval or result is durably accepted. No long wait depends on an in-process task or live Harness instance. See [execution ownership](01-journal-model.md#execution-identity-and-lifecycle).
 - Replaced checkpoints and archived journal chunks are retained for historical inspection. The current Run-prefix cleanup rule cannot be reused unchanged.
 
 ## Scope limits

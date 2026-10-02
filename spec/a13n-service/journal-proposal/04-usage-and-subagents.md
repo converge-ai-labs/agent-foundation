@@ -53,6 +53,7 @@ The parent state contains a bounded continuation reference such as:
 
 ```json
 {
+  "origin_run_id": "run_parent_example",
   "call_id": "call_delegate_example",
   "child_thread_id": "thr_child_example",
   "child_run_id": "run_child_example",
@@ -61,44 +62,50 @@ The parent state contains a bounded continuation reference such as:
 }
 ```
 
-It does not contain the child's complete message history, Usage accumulator, Capability state, or nested descendants. Once the result has been incorporated, remove the pending descriptor. The journal retains the relationship and result history; the child Thread retains its own state.
+It does not contain the child's complete message history, Usage accumulator, Capability state, or nested descendants. Once the successor incorporates the result, remove the pending descriptor from that successor's active state. The old waiting Run stays unchanged. The journal retains the relationship and result history; the child Thread retains its own state.
 
 ```mermaid
 flowchart TD
     S["Session"] --> P["Parent Thread"]
     S --> C["Child Thread"]
-    P --> PR["Parent Run: own log and state"]
-    C --> CR["Child Run: own log and state"]
+    P --> PR["Parent Run A: seals waiting"]
+    P --> SR["Successor parent Run C: fresh execution"]
+    C --> CR["Child Run B: own log and state"]
     PR -->|"call ID and child reference"| CR
-    CR -->|"bounded result or content reference"| PR
+    PR -->|"persisted state and pending call"| SR
+    CR -->|"durably accepted result"| SR
 ```
 
 ## Synchronous and asynchronous behavior
 
-| Concern                          | Synchronous child                                     | Asynchronous child                                     |
-| -------------------------------- | ----------------------------------------------------- | ------------------------------------------------------ |
-| Delegation tool's initial result | Pending until the child settles                       | Returns a child handle                                 |
-| Parent's next model step         | Waits for the child result                            | May proceed immediately                                |
-| Result delivery                  | Completes the original pending tool call              | Queues one later child-result notification             |
-| Worker while waiting             | Released; no occupied execution slot                  | No parent wait required                                |
-| Parent cancellation              | Requests cancellation of the awaited child by default | Does not implicitly cancel independent child execution |
-| Persistence and ownership        | Own Thread/Run/journal/checkpoint                     | Own Thread/Run/journal/checkpoint                      |
+| Concern                          | Synchronous child                                                  | Asynchronous child                                     |
+| -------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
+| Delegation tool's initial result | Pending until the child settles                                    | Returns a child handle                                 |
+| Parent's next model step         | Waits for the child result                                         | May proceed immediately                                |
+| Result delivery                  | A successor parent Run incorporates the original tool-call result  | Queues one later child-result notification             |
+| Worker while waiting             | Released; no occupied execution slot                               | No parent wait required                                |
+| Parent cancellation              | Explicit parent stop or Thread archive requests child cancellation | Does not implicitly cancel independent child execution |
+| Persistence and ownership        | Own Thread/Run/journal/checkpoint                                  | Own Thread/Run/journal/checkpoint                      |
 
 These differences are real even though storage is unified. In particular, an asynchronous notification is not a second completion of a tool call that already returned a handle.
 
 ## Durable delegation sequence
 
-Creating a child and waiting for it follows a bounded transactional flow:
+A synchronous hosted delegation is a deferred tool call, not a Python task that remains alive while another worker runs the child. Use the existing export-and-resume boundary:
 
-1. Use `(origin_run_id, origin_tool_call_id)` as the durable child-creation identity. Repeating the originating call finds the same child Thread instead of launching another one.
-2. Commit the child relationship, initial Run/input, and corresponding journal facts together with the parent's pending reference. For synchronous delegation, commit the parent's waiting state before releasing the Attempt's worker slot.
-3. Execute the child normally under its own worker lease. Journal and checkpoint its changes only in the child stream.
-4. On child completion, durably schedule result delivery. Its delivery transaction either makes the synchronous parent claimable or enqueues the asynchronous notification, and records that handoff exactly once.
-5. On parent recovery, inspect the existing child and delivery evidence. Consume the committed result into the pending call or input exactly once; do not spawn again or produce both delivery modes.
+1. Use `(origin_run_id, origin_tool_call_id)` as the durable child-creation identity. Store that original identity with the child reference. Successor parent Runs retain it; their new Run IDs must not cause duplicate child creation.
+2. Commit the child Thread and initial Run/input, parent pending reference, and related journal facts. Seal the parent Run `waiting` with its exact pending call and state cut, finish its Attempt, then close the Harness and release its worker slot and process-local resources.
+3. Execute the child under its own worker lease and journal only its own state. If the child also needs approval, it seals waiting and later resumes through a successor child Run. The parent awaits the linked child continuation's result; a child `waiting` outcome is not completion.
+4. Child completion durably schedules result delivery. For synchronous delegation, match the original parent waiting Run and call, validate that this is still the eligible waiting head, and accept the result into a new successor parent Run. For asynchronous delegation, enqueue the existing child-result notification instead. Persist acceptance and idempotency before sending any wakeup.
+5. A worker claims the successor, reconstructs the selected waiting state, and invokes a fresh Harness Run with the accepted deferred result. The old parent Run stays sealed. A lost wakeup is recovered by a sweep; no worker, process, coroutine, or connection has to survive the wait.
 
-Scheduling and result delivery are distinct from applying the result to model history. Each has durable evidence and idempotency. An unavailable/full inbox defers asynchronous delivery rather than discarding it. If the originating Run has completed, an asynchronous result can become queued input for a subsequent Run through normal Thread acceptance. Cancellation and delivery races are decided under the parent's lifecycle/continuation checks; a failed/cancelled origin or archived parent does not automatically start another Run from its late child result. The child remains directly inspectable.
+The successor stores the accepted result batch until its committed state incorporates it. Retry of result delivery returns the already accepted successor; Attempt recovery uses its unincorporated batch rather than spawning a child or consuming a result twice. Later independent child continuations do not complete the old pending call again.
 
-Process failure is not user cancellation. A lost parent worker leaves a synchronous child's identity and wait intact. An explicit cancellation propagates according to the mode policy. Child failure supplies an explicit failed tool outcome or notification, allowing the parent's configured error handling; it is not silently converted to a successful result.
+Preserve complete native pending-batch coverage. Results of Service-owned child calls come from trusted durable child delivery, not client-supplied substitutes. If a suspension contains several child calls or also external approvals, keep arrived results durably and construct the complete correlated resume batch only when the required inputs are present. This does not require partial public approval submissions or a live aggregate waiter.
+
+Scheduling, successor acceptance, and model-history incorporation are separate acknowledged steps. An unavailable/full inbox defers asynchronous delivery. If an asynchronous origin has completed, its result can become queued input for a subsequent Run through normal Thread acceptance. Failed/cancelled origins and archived Threads do not automatically start another Run from a late notification.
+
+Process failure is not user cancellation. It leaves durable child identity, waiting state, and pending delivery available for another process. Explicit cancellation of an active parent or archive of its Thread requests cancellation of linked synchronous children by default; asynchronous children remain independent. A sealed waiting Run is never rewritten as running or cancelled to implement this policy. Child failure supplies an explicit failed tool outcome or notification, not a fabricated successful result.
 
 ## State, environments, and permissions
 
@@ -106,4 +113,4 @@ Parent and child communicate through explicit inputs, results, and references. T
 
 The child uses frozen agent/model/resource selection and authority appropriate to its accepted binding, never broader permissions inferred from being in the same Session. Synchronous hosting must retain equivalent tool access and constraints where supported. Unsupported reliance on borrowed mutable Python objects is rejected or replaced by an explicit input/result contract; do not recreate nested checkpoints to preserve that behavior.
 
-Child depth and concurrency remain bounded. A synchronous waiting parent releases its execution slot so that children can run even when the worker pool is small. Session ordering gives a combined timeline for parent and child without duplicating all child events into the parent's log.
+Child depth and concurrency remain bounded. A sealed waiting parent uses no execution slot, so its child can run even with a small worker pool. Parent and successor remain in one Thread, the child has a separate Thread, and Session ordering provides a combined timeline without copying child events into a parent journal.

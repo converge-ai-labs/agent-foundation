@@ -69,11 +69,11 @@ For example, `after=149&before=181&direction=forward&limit=20` asks for the firs
   ],
   "upper_seq": 100,
   "next_cursor": "opaque-cursor",
-  "execution_complete": false
+  "run_sealed": false
 }
 ```
 
-This response abbreviates item data. `execution_complete` describes the Run's terminal state; it does not mean every future late fee has already arrived. Display history has no global item cap or `dropped` prefix. There are only per-event, per-page, and per-request work limits.
+This response abbreviates item data. `run_sealed` describes the selected Run, including a waiting outcome; it does not mean the overall work is complete or that every late fee has arrived. A resume successor has a different Run ID and journal. Thread/Session views join those Runs through their recorded lineage and ordering. Display history has no global item cap or `dropped` prefix, only per-event, per-page, and per-request work limits.
 
 An event filter can require scanning records that produce no item. Advance the cursor by scanned position, not just the last rendered entry, and permit a short or empty page with a continuation cursor when a work limit is reached. Never loop indefinitely to fill `limit`. An individually large content part returns a bounded preview and an authorized content reference, rather than forcing the client to download an entire result.
 
@@ -97,7 +97,7 @@ Keep token streaming provisional. A Redis-backed live channel can carry current 
 
 A committed aggregate supersedes the corresponding local provisional bubble. On reconnect, the client pages events after its last durable position and deduplicates stable event IDs. A Redis gap, trimming, or Redis restart does not require a new Display snapshot; the client catches up from PG/S3 immediately, without waiting for checkpoint generation or archival.
 
-An Attempt change discards only provisional output from the superseded Attempt. Committed earlier events remain visible. The live handler holds no database session across its stream wait. Periodic durable-head checks cover missed wakeups; Redis availability never decides whether a Run has completed.
+An Attempt change discards only provisional output from the superseded Attempt. Committed earlier events remain visible. A deferred wait closes the current invocation; later input creates a successor Run, whose events are read from its own stream. The live handler holds no database session across transport waits. Periodic durable-head checks cover missed wakeups; Redis availability never decides whether a Run is sealed or a successor is eligible.
 
 This is a breaking Service transport change. The generic Harness may still emit its supported streaming protocol, but the Service adapter, exported stream schema, Console, and SDK consumers must agree on the new durable-event/catch-up contract. Do not layer it onto the old snapshot/fold reset behavior through a compatibility branch.
 
@@ -118,6 +118,6 @@ Separate intent from actual execution selection:
 | Run: `run.accepted`                        | Records the actual agent revision, model, options, and mounts frozen for this Run |
 | Run: `run.started`                         | Execution began under those accepted bindings                                     |
 
-These events carry enough permitted names, identities, and effective scope to explain the change without looking up a mutable current configuration. A later rename does not rewrite what the historical event said. Secrets are never copied into the journal. Changing desired configuration while a Run is waiting does not change the waiting Run's selection; it affects a later Run.
+These events carry enough permitted names, identities, and effective scope to explain a change without looking up mutable current configuration. Secrets are never copied into the journal. Desired configuration changes do not rewrite an already accepted or sealed waiting Run. Normal subsequent Runs may select them; approval/deferred-resume successors inherit the waiting selection and reconstruct fresh authorized bindings under the existing resume contract.
 
 The same protocol covers user operations and execution events, but they retain different authorities. A logged request does not itself authorize a worker to use a new model or mount.
