@@ -18,7 +18,7 @@ flowchart LR
 | 操作                           | 命令或按键                                                         |
 | ------------------------------ | ------------------------------------------------------------------ |
 | 发送草稿                       | Enter                                                              |
-| 换行                           | Alt+Enter                                                          |
+| 换行                           | Ctrl+J 或 Alt+Enter                                                |
 | 补全斜杠命令或支持的参数       | Tab                                                                |
 | 清空空闲草稿；取消当前任务     | Ctrl+C                                                             |
 | 在草稿为空时退出               | Ctrl+D                                                             |
@@ -91,7 +91,7 @@ WebUI 输入框的 **Goal** 开关采用同一策略，在桌面和窄屏的标�
 
 CLI Agent 继承默认冷启动过滤：3600 秒没有模型活动后，原生冷压缩可缩短已消费的工具结果。这与对话记录的显示限制不同。
 
-带括号的多行粘贴会留在草稿中，直到按 Enter。Alt+Enter 支持因终端而异；通常编码为 Escape 后接 Enter。完整命令名（如 `/ps`）作为命令执行，并显示简短接受提示。未匹配输入（如 `/ps-like output needs clearer colors`）原样保留，并提示按普通文本处理。按照普通文本规则，空闲时成为消息，任务运行时成为指导，通用交互中成为回答。[问题卡片](#answer-a-question)有自己的受限控件和独立答案编辑器，不提供普通输入框，也不会从回答中运行任意聊天命令。已知命令参数无效或当前不可用时，仍显示错误并保留草稿，绝不静默变成模型提示。
+带括号的多行粘贴会留在草稿中，直到按 Enter。Ctrl+J 可直接换行，无需使用某些终端保留为全屏快捷键的 Alt+Enter。Alt+Enter 支持因终端而异；通常编码为 Escape 后接 Enter。完整命令名（如 `/ps`）作为命令执行，并显示简短接受提示。未匹配输入（如 `/ps-like output needs clearer colors`）原样保留，并提示按普通文本处理。按照普通文本规则，空闲时成为消息，任务运行时成为指导，通用交互中成为回答。[问题卡片](#answer-a-question)有自己的受限控件和独立答案编辑器，不提供普通输入框，也不会从回答中运行任意聊天命令。已知命令参数无效或当前不可用时，仍显示错误并保留草稿，绝不静默变成模型提示。
 
 **空闲时 Enter 发送消息，agent 运行时 Enter 补充文本指导。** 输入提示会随当前状态改变。仍可使用 `/steer <message>` 显式操作。指导通过当前 Harness Run 的原生输入队列添加；CLI 不重排消息，也不维护独立的下一轮队列。CLI 先简短确认发送，等模型边界应用后再将指导显示为输入。不显示队列回执或原始入队事件。发送不保证立即中断正在运行的工具或请求。普通空闲输入在受理前立即显示；拒绝会明确标记，草稿仍可恢复。
 
@@ -160,7 +160,7 @@ CodeAct 默认开启，提供 Harness 受限 Python `run_code` 和 `run_program`
 
 设置向导为 shell 启动初始化根 `security.shell_review`，采用 `extra_high` 阈值，并对标记调用请求审批。适用于所有 Agent，包括 API 密钥连接。只有非超时审查错误不会单独触发审批；其他工具策略要求仍适用。现有根设置和 Agent 文件保留。关闭快捷配置不会改变显式 Agent 策略。见 [shell 审查配置](configuration-recipes.md#configure-tool-review)。
 
-审批提供 **Approve once**、**Deny** 和 **Deny with reason** 。输入显示编号，或用方向键和 Enter 选择。**Deny with reason** 打开文本编辑器；Enter 提交原因，Alt+Enter 换行，Esc 或 `/cancel` 返回选择。支持时，**Approve with edited arguments** 打开完整 JSON 对象编辑器。绑定的 shell 审批不允许替换参数；应拒绝并说明原因，以请求其他命令。参数省略时移除审批动作，因此按显示编号操作。不预选任何项，普通自由文本不能批准。shell 审查先显示风险和原因，再显示突出命令；通用工具显示可用目标、原因、风险和参数。`/review request-id` 查看保留详情。
+审批提供 **Approve once**、**Deny** 和 **Deny with reason** 。输入显示编号，或用方向键和 Enter 选择。**Deny with reason** 打开文本编辑器；Enter 提交原因，Ctrl+J 或 Alt+Enter 换行，Esc 或 `/cancel` 返回选择。支持时，**Approve with edited arguments** 打开完整 JSON 对象编辑器。绑定的 shell 审批不允许替换参数；应拒绝并说明原因，以请求其他命令。参数省略时移除审批动作，因此按显示编号操作。不预选任何项，普通自由文本不能批准。shell 审查先显示风险和原因，再显示突出命令；通用工具显示可用目标、原因、风险和参数。`/review request-id` 查看保留详情。
 
 需要真实外部结果的请求提供 **Provide result**，而不是审批。它打开 JSON 编辑器；无效 JSON 保持可编辑。选择此动作不会运行工具或编造结果。两种流程都支持 **Deny** 和 **Deny with reason** 。
 
@@ -182,7 +182,7 @@ CodeAct 默认开启，提供 Harness 受限 Python `run_code` 和 `run_program`
 | 切换多选问题中的选项           | Space                                   |
 | 滚动卡片而不改变答案           | PageUp / PageDown                       |
 | 编写自定义回答                 | 选择自定义回答动作，或 Tab / Ctrl+Space |
-| 在答案编辑器中换行             | Alt+Enter                               |
+| 在答案编辑器中换行             | Ctrl+J 或 Alt+Enter                     |
 | 提交输入的答案                 | 在编辑器中按 Enter                      |
 | 从编辑器返回选择并保留答案草稿 | Tab / Ctrl+Space / Esc                  |
 | 取消本地收集，保持请求待处理   | 在选择界面按 Esc                        |

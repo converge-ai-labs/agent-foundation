@@ -131,7 +131,7 @@ def cli(
     """An interactive coding agent in your terminal.
 
     Start in the current directory. Use /help inside a session.
-    Enter submits; Alt+Enter inserts a newline; Ctrl+D exits.
+    Enter submits; Ctrl+J or Alt+Enter inserts a newline; Ctrl+D exits.
     Configuration: ~/.a13n-harness-ui/a13n-harness-ui.yaml. Use `a13n-harness-ui webui` for the browser UI."""
 
     ctx.obj = _CliContext(

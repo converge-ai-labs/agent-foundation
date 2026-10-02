@@ -170,7 +170,7 @@ class QuestionCard:
         total = len(self.rows(max(1, get_app().output.get_size().columns)))
         position = f"{self.top + 1}-{min(total, self.top + self.height().max)}/{total}"
         keys = (
-            "Enter submit · Tab/Esc choices · Alt+Enter newline"
+            "Enter submit · Tab/Esc choices · Ctrl+J newline"
             if self.editing
             else "↑↓/1-4 choose · Enter confirm · Tab text · Esc cancel"
         )
@@ -268,6 +268,7 @@ class QuestionCard:
         def cancel(event: KeyPressEvent) -> None:
             self.cancel()
 
+        @keys.add("c-j")
         @keys.add("escape", "enter")
         def newline(event: KeyPressEvent) -> None:
             self.edit(True)

@@ -55,6 +55,7 @@ def test_command_registry_has_one_grammar_and_rejects_collisions() -> None:
     registry.thinking_choices = (("default", "Configured native value"), ("off", "Disable thinking"))
     assert registry.completions("/thinking o") == (("off", "Disable thinking"),)
     assert registry.completions("/thinking h") == ()
+    assert "Ctrl+J" in registry.help()
     assert "Alt+Enter" in registry.help()
     for invalid in ("/unknown", "/model a b", "/mode invalid", '/attach "unclosed'):
         with pytest.raises(ValueError):

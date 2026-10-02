@@ -266,7 +266,8 @@ asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=lambda
         output = _read_until(master, b"Enter sends a message", timeout=30)
         assert output.count(b"\x1b[?1049h") == 1
         assert b"\x1b[?1049l" not in output
-        os.write(master, b"draft")
+        os.write(master, b"draft\nsecond\x1b\rthird")
+        output += _read_until(master, b"third")
         assert not (tmp_path / "submitted.json").exists()
         os.write(master, b"\x1b[200~" + pasted.encode() + b"\x1b[201~")
         # Wait for the bracketed paste to render, not a guessed input delay.
@@ -274,7 +275,7 @@ asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=lambda
         assert not (tmp_path / "submitted.json").exists()
         os.write(master, b"\r")
         output += _read_until(master, b"fixture-stream")
-        assert json.loads((tmp_path / "submitted.json").read_text()) == "draft" + pasted
+        assert json.loads((tmp_path / "submitted.json").read_text()) == "draft\nsecond\nthird" + pasted
         os.write(master, b"/mode detailed\r")
         output += _read_until(master, b"Display \xc2\xb7 detailed")
         os.write(master, b"change direction\r")

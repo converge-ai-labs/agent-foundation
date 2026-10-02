@@ -555,14 +555,14 @@ class CliShell:
                 "/notes",
                 "Esc select" if self.mouse else "Esc scroll",
             ]
-            hints += ["Alt+Enter newline", action, "PgUp/PgDn scroll" if self.view.follow else "Ctrl+End latest"]
+            hints += ["Ctrl+J newline", action, "PgUp/PgDn scroll" if self.view.follow else "Ctrl+End latest"]
             if size.columns < 60:
                 hints = [
                     "Ctrl+T history",
                     "/notes",
                     "Esc select" if self.mouse else "Esc scroll",
                     "/help",
-                    "Alt+Enter newline",
+                    "Ctrl+J newline",
                     action,
                 ]
 
@@ -894,6 +894,7 @@ class CliShell:
                 return
             event.app.create_background_task(self.cancel())
 
+        @keys.add("c-j")
         @keys.add("escape", "enter")
         def newline(event: KeyPressEvent) -> None:
             event.current_buffer.insert_text("\n")

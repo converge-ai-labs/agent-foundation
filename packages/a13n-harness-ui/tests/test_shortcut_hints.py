@@ -52,7 +52,7 @@ def test_chat_hints_prioritize_history_without_repeating_submission(
         assert len(hints.splitlines()) <= 2
         assert all(get_cwidth(row) <= width for row in hints.splitlines())
         if width >= 60:
-            for shortcut in ("Alt+Enter newline", "Ctrl+O details", "F2 tasks"):
+            for shortcut in ("Ctrl+J newline", "Ctrl+O details", "F2 tasks"):
                 assert shortcut in hints
             assert ("Ctrl+C cancel" if shell.busy else "Ctrl+C twice exit") in hints
             assert ("Esc select" if mouse else "Esc scroll") in hints
