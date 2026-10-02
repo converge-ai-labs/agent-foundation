@@ -308,10 +308,11 @@ async def test_failed_admission_preserves_images_and_next_draft_is_not_overwritt
 
 
 @pytest.mark.anyio
-async def test_menu_escape_and_multiline_paste_preserve_draft_and_images() -> None:
+async def test_menu_escape_and_multiline_paste_preserve_draft_and_images(terminal_app) -> None:
     initialized = asyncio.Event()
 
     class Backend:
+        app = terminal_app
         thread_id = None
         resumed_transcript = None
 
@@ -522,10 +523,11 @@ async def test_first_page_key_scrolls_visible_viewport_and_freezes_new_output() 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("key", ["\x03", "\x1b"])
-async def test_cancel_key_stops_pending_menu_query_without_consuming_next_draft(key: str) -> None:
+async def test_cancel_key_stops_pending_menu_query_without_consuming_next_draft(key: str, terminal_app) -> None:
     initialized, entered = asyncio.Event(), asyncio.Event()
 
     class Backend:
+        app = terminal_app
         thread_id = None
         resumed_transcript = None
 

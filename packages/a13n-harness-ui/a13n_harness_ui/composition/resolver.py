@@ -148,6 +148,8 @@ class AgentCompositionResolver:
                 transport=source.mcp_servers[item].transport,
                 apps_enabled=self._host_mode == "webui" and apps.enabled and item in apps.servers,
                 generic_selected=item in generic_ids,
+                host_owned=item in source.document.mcp.host_owned_servers,
+                protocol=source.document.mcp.protocol_overrides.get(item, "auto"),
             )
             for item in self.effective_mcp_server_ids(source, generic_ids)
         )

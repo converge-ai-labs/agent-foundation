@@ -32,7 +32,7 @@ async def counter(ctx: Context, delay: float = 0) -> ToolResult:
     count += 1
     return ToolResult(
         content=[TextContent(type="text", text=f"count={count}")],
-        structured_content={"count": count, "pid": os.getpid(), "capabilities": ctx.session.client_params.capabilities.model_dump(mode="json", by_alias=True, exclude_none=True)},
+        structured_content={"count": count, "pid": os.getpid(), "capabilities": ctx.session.client_capabilities.model_dump(mode="json", by_alias=True, exclude_none=True)},
         meta={"private": "not-for-the-model"},
     )
 @server.tool(meta={"ui": {"visibility": ["app"]}})
@@ -56,10 +56,13 @@ def _server(tmp_path: Path) -> StdioTransport:
     return StdioTransport(command=sys.executable, args=[str(script)], keep_alive=False)
 
 
-async def test_stdio_connection_outlives_toolsets_and_explicit_close_stops_it(tmp_path: Path) -> None:
+@pytest.mark.parametrize("protocol", ["2026-07-28", "legacy"])
+async def test_stdio_connection_outlives_toolsets_and_explicit_close_stops_it(tmp_path: Path, protocol: str) -> None:
     connections = Connections()
     try:
-        connection = await connections.acquire("thread-one", "mcp-counter", "recipe", _server(tmp_path))
+        connection = await connections.acquire(
+            "thread-one", "mcp-counter", "recipe", _server(tmp_path), protocol=protocol
+        )
         async with AppToolset(connection, connections.captures) as first:
             assert {tool.name for tool in await first.list_tools()} == {"counter"}
             initial = await first.direct_call_tool("counter", {})
@@ -68,7 +71,9 @@ async def test_stdio_connection_outlives_toolsets_and_explicit_close_stops_it(tm
             later = await second.direct_call_tool("counter", {})
         assert initial["count"] == 1
         assert later["count"] == 2
-        assert connection.client.initialize_result is not None
+        if protocol == "legacy":
+            assert connection.client.server_info is not None
+        # Pinned modern mode skips discovery; optional server identity is not a handshake requirement.
         assert initial["capabilities"].get("extensions", {}).get("io.modelcontextprotocol/ui") == {
             "mimeTypes": [MIME_TYPE]
         }
@@ -86,7 +91,10 @@ async def test_stdio_connection_outlives_toolsets_and_explicit_close_stops_it(tm
         await connections.close()
 
 
-async def test_http_session_preserves_original_capture_and_stays_usable_between_runs(tmp_path: Path) -> None:
+@pytest.mark.parametrize("protocol", ["2026-07-28", "legacy"])
+async def test_http_session_preserves_original_capture_and_stays_usable_between_runs(
+    tmp_path: Path, protocol: str
+) -> None:
     from fastmcp import FastMCP
     from fastmcp.client.transports import StreamableHttpTransport
     from mcp.types import TextContent
@@ -113,13 +121,17 @@ async def test_http_session_preserves_original_capture_and_stays_usable_between_
     async with _http_mcp(server) as url:
         connections = Connections()
         try:
-            connection = await connections.acquire("thread-one", "counter", "recipe", StreamableHttpTransport(url))
+            connection = await connections.acquire(
+                "thread-one", "counter", "recipe", StreamableHttpTransport(url), protocol=protocol
+            )
             for expected in (1, 2):
                 async with AppToolset(connection, connections.captures) as toolset:
                     assert (await toolset.direct_call_tool("counter", {}))["count"] == expected
                 assert connection.connected
-            assert connection.client.initialize_result is not None
-            assert (await connection.client.call_tool_mcp("counter", {})).meta == {"private": "original"}
+            if protocol == "legacy":
+                assert connection.client.server_info is not None
+            raw = await connection.client.call_tool_mcp("counter", {})
+            assert raw.meta["private"] == "original"
             assert (await connection.client.read_resource_mcp("ui://http/app.html")).contents[0].mime_type == MIME_TYPE
             assert count == 3
         finally:
@@ -186,7 +198,7 @@ async def test_real_agent_captures_complete_result_without_changing_model_output
         assert result.status == "completed"
         captures = connections.captures.take(result.run_id, "counter-call")
         assert len(captures) == 1
-        assert captures[0].result.meta == {"private": "not-for-the-model"}
+        assert captures[0].result.meta["private"] == "not-for-the-model"
         assert captures[0].result.structured_content["count"] == 1
         assert captures[0].connection.connected
         later = await captures[0].connection.client.call_tool_mcp("counter", {})
@@ -228,7 +240,8 @@ async def test_original_snapshot_is_retained_without_replaying_tools(tmp_path: P
             assert compactor.snapshot().mcp_apps == (reference,)
             assert (await snapshots.read(reference)).connected
             saved = await store.objects.read_model(reference.snapshot, AppSnapshot)
-            assert saved.result["_meta"] == {"private": "not-for-the-model"}
+            assert saved.result["_meta"] == raw.meta
+            assert saved.result["_meta"]["private"] == "not-for-the-model"
             assert saved.result["structuredContent"]["count"] == 1
             assert bool(saved.unavailable) is missing_resource
             if not missing_resource:
@@ -632,4 +645,72 @@ async def test_retirement_drains_an_admitted_app_call_without_reauthorizing_late
         release.set()
         if pending is not None:
             await asyncio.gather(pending, return_exceptions=True)
+        await connections.close()
+
+
+async def test_modern_input_is_not_captured_until_native_terminal_tool_return(tmp_path: Path) -> None:
+    from a13n_harness_ui.mcp_apps.connections import AppMCP
+    from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputResponse
+
+    from .test_mcp_runtime import _SERVER as input_server
+    from .test_mcp_runtime import _pending
+
+    script = tmp_path / "input_app.py"
+    script.write_text(
+        input_server.replace(
+            "@server.tool\nasync def confirm",
+            '@server.tool(meta={"ui": {"resourceUri": "ui://confirm/app.html"}})\nasync def confirm',
+        )
+    )
+
+    async def changed(thread_id: str) -> None:
+        pass
+
+    inputs = Inputs(changed)
+    connections = Connections(input_handler=inputs)
+    try:
+        connection = await connections.acquire(
+            "thread-one",
+            "mcp-input",
+            "recipe",
+            StdioTransport(command=sys.executable, args=[str(script)], keep_alive=False),
+            protocol="2026-07-28",
+        )
+
+        async def model(messages, info):
+            returns = [
+                part
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, ToolReturnPart)
+            ]
+            if returns:
+                assert "round-one" in str(returns[-1].content)
+                yield "done"
+            else:
+                yield {0: DeltaToolCall(name="confirm", json_args="{}", tool_call_id="call-confirm")}
+
+        executable = HarnessBuilder().build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=model),
+            capabilities=(AppMCP(id="mcp-input", local=AppToolset(connection, connections.captures)),),
+        )
+        task = asyncio.create_task(executable.run("Confirm once", bindings=RunBindings.embedded()))
+        request = await _pending(inputs)
+        assert connections.captures._pending == {}
+        await inputs.respond(
+            {"thread-one"}, request.request_id, McpInputResponse(action="accept", content={"name": "Ada"})
+        )
+        result = await task
+        assert result.output_or_raise() == "done"
+        captured = connections.captures.take(result.run_id, "call-confirm")
+        assert len(captured) == 1
+        assert captured[0].result.structured_content["count"] == 1
+        assert captured[0].result.structured_content["state"] == "round-one"
+        assert captured[0].tool.meta["ui"]["resourceUri"] == "ui://confirm/app.html"
+        assert connections.captures._pending == {} and connection.connected
+    finally:
+        await inputs.close()
         await connections.close()

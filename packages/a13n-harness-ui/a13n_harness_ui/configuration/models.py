@@ -284,6 +284,22 @@ class MemoryConfiguration(ConfigurationModel):
     auto_organize: MemoryOrganizationConfiguration = Field(default_factory=MemoryOrganizationConfiguration)
 
 
+class McpConfiguration(ConfigurationModel):
+    """Client lifetime and protocol policy, independent of Agent tool selection."""
+
+    host_owned_servers: tuple[ResourceId, ...] = Field(default=(), max_length=128)
+    protocol_overrides: dict[ResourceId, Literal["auto", "legacy", "2026-07-28"]] = Field(
+        default_factory=dict, max_length=128
+    )
+
+    @field_validator("host_owned_servers")
+    @classmethod
+    def _unique_servers(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) != len(set(values)):
+            raise ValueError("Host-owned MCP server IDs must be unique")
+        return values
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
@@ -297,6 +313,10 @@ class HarnessUiDocument(ConfigurationModel):
     run_configuration: RunConfiguration = Field(default_factory=RunConfiguration)
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
     webui: WebUiConfiguration = Field(default_factory=WebUiConfiguration)
+    mcp: McpConfiguration = Field(
+        default_factory=McpConfiguration,
+        exclude_if=lambda value: not value.host_owned_servers and not value.protocol_overrides,
+    )
     media_understanding: MediaUnderstandingConfiguration = Field(
         default_factory=MediaUnderstandingConfiguration, exclude_if=lambda value: not value.selections()
     )
@@ -829,6 +849,10 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     @model_validator(mode="after")
     def _validate_graph(self) -> Self:
         defaults = self.document.defaults
+        for item in self.document.mcp.host_owned_servers:
+            _require_reference(item, self.mcp_servers, "mcp.host_owned_servers")
+        for item in self.document.mcp.protocol_overrides:
+            _require_reference(item, self.mcp_servers, "mcp.protocol_overrides")
         _require_reference(self.document.memory.auto_organize.model, self.models, "memory.auto_organize.model")
         _require_reference(defaults.project, self.projects, "defaults.project")
         _require_reference(defaults.agent, self.agents, "defaults.agent")

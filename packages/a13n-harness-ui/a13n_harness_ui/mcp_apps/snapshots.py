@@ -12,9 +12,10 @@ from pydantic import ValidationError
 from pydantic_ai.messages import FunctionToolResultEvent, ToolReturnPart
 
 from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.mcp_runtime.connections import Connection
 from a13n_harness_ui.storage.objects import ImmutableObjectStore, ObjectKind
 
-from .connections import MIME_TYPE, CapturedCall, Connection, Connections, resource_uri
+from .connections import MIME_TYPE, CapturedCall, Connections, resource_uri
 from .models import AppPresentation, AppReference, AppResource, AppSnapshot
 
 METADATA_KEY = "a13n.harness-ui.mcp_apps"

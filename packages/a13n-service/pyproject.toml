@@ -19,6 +19,7 @@ dependencies = [
     "click>=8.2,<9",
     "cryptography>=50,<51",
     "fastapi>=0.116,<1",
+    "fastmcp-slim[client]>=4.0,<5",
     "httpx2>=2.5,<3",
     "jsonschema>=4.25,<5",
     "mcp>=2.2,<3",
@@ -64,7 +65,7 @@ DEP002 = ["psycopg", "python-multipart"]
 
 [tool.deptry]
 known_first_party = ["a13n_service"]
-package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "argon2-cffi" = "argon2", "pyyaml" = "yaml" }
+package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "argon2-cffi" = "argon2", "fastmcp-slim" = "fastmcp", "pyyaml" = "yaml" }
 
 [tool.a13n.release-dependencies]
 a13n-logging = ">=0.2.0,<0.3.0"

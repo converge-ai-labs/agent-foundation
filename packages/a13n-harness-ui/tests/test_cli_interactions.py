@@ -264,7 +264,7 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
 
 
 @pytest.mark.anyio
-async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path) -> None:
+async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path, terminal_app) -> None:
     """Real prompt-toolkit input dispatch, also runnable on Windows without a PTY."""
     ready = asyncio.Event()
     submitted = asyncio.Event()
@@ -272,6 +272,7 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path) -
     responses = []
 
     class Backend:
+        app = terminal_app
         thread_id = None
         resumed_transcript = None
 
@@ -368,7 +369,7 @@ async def test_cancel_discards_partial_native_decision_drafts() -> None:
 
 
 @pytest.mark.anyio
-async def test_same_input_batch_cancellation_prevents_admission(tmp_path: Path) -> None:
+async def test_same_input_batch_cancellation_prevents_admission(tmp_path: Path, terminal_app) -> None:
     from unittest.mock import AsyncMock, Mock
 
     from a13n_harness_ui.app import HarnessUiApp
@@ -376,6 +377,7 @@ async def test_same_input_batch_cancellation_prevents_admission(tmp_path: Path) 
     from a13n_harness_ui.interactive.rendering import Status
 
     app = Mock(spec=HarnessUiApp)
+    app.summary_events = terminal_app.summary_events
     backend = SessionBackend(app, CliRequest(), tmp_path, Status())
     backend.initialize = AsyncMock(return_value=True)
     backend.interaction = AsyncMock(return_value=None)

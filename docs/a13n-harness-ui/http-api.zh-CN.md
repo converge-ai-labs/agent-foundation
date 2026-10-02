@@ -48,6 +48,19 @@ curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/submit" \
 
 每个 Thread 只允许一个活跃根操作，第二次提交会被拒绝，不会排队。这里没有 Service 式持久接收或幂等约定。确认响应丢失后，先读取当前 Thread 和根操作活动，再决定下一步，不要盲目重复提交。进程重启后，旧回执可能不可用，但保存的 continuation 仍可读取。
 
+## MCP 输入与集成控制
+
+这些需要认证的路由独立于延迟决策和根 Run 受理：
+
+| 路由                                                               | 行为                                 |
+| ------------------------------------------------------------------ | ------------------------------------ |
+| `GET /api/threads/{thread_id}/mcp/integrations`                    | 当前保留的连接代，不尝试建立连接     |
+| `POST /api/threads/{thread_id}/mcp/integrations/{server_id}/close` | 显式关闭所属 Thread 的代，返回 204   |
+| `GET /api/threads/{thread_id}/mcp/inputs`                          | 该 Thread 及后代子 Thread 的输入状态 |
+| `POST /api/threads/{thread_id}/mcp/inputs/{request_id}/response`   | 回答确切实时请求，不启动另一次 Run   |
+
+表单响应为 `{"action":"accept","content":{"name":"Ada"}}`，URL 确认为 `{"action":"accept"}`，也可使用 `{"action":"decline"}` / `{"action":"cancel"}`。检查请求模式和原 schema。响应视图只确认输入已接受，不代表业务完成；继续观测原操作。完全相同的重复答案核实结果，冲突答案失败。过期、已退役或不可用请求不能授权后续发送。交付不确定时，查询并仅重试确切答案，不要重新提交业务操作。MCP 请求状态属于进程内状态，重启后消失。见[人工输入](mcp.md#human-input-from-mcp-servers)和 [Python 适配器](embedding.md#mcp-input-and-integration-control)。
+
 ## 记忆观测
 
 `GET /api/threads?memory=true` 只选择 Memory Thread，默认列表不包含它们。Project 筛选和分页保持常规语义；`projectless=true` 选择 Global 记忆。`POST /api/threads/lookup` 接受相同的 `memory` 区分字段。Memory Thread 暴露 `memory_scope`，支持现有的对话记录、实时、配置检查和用量读取；修改或执行控制返回 `memory_thread_read_only`。

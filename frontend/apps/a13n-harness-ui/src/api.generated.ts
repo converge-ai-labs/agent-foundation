@@ -271,6 +271,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/mcp/integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mcp Status */
+        get: operations["mcp_status_api_threads__thread_id__mcp_integrations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/mcp/integrations/{server_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close Mcp Integration */
+        post: operations["close_mcp_integration_api_threads__thread_id__mcp_integrations__server_id__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/mcp/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Mcp Inputs */
+        get: operations["mcp_inputs_api_threads__thread_id__mcp_inputs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/mcp/inputs/{request_id}/response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Respond Mcp Input */
+        post: operations["respond_mcp_input_api_threads__thread_id__mcp_inputs__request_id__response_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/apps/activate": {
         parameters: {
             query?: never;
@@ -3729,6 +3797,73 @@ export interface components {
             /** Id */
             id: string;
         };
+        /** McpInputRequestView */
+        McpInputRequestView: {
+            /** Request Id */
+            request_id: string;
+            /** Thread Id */
+            thread_id: string;
+            /** Server Id */
+            server_id: string;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id?: string | null;
+            /**
+             * Tool Call Id
+             * @default null
+             */
+            tool_call_id?: string | null;
+            /**
+             * View Id
+             * @default null
+             */
+            view_id?: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "form" | "url";
+            /** Message */
+            message: string;
+            /**
+             * Schema
+             * @default null
+             */
+            schema?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Url
+             * @default null
+             */
+            url?: string | null;
+            /**
+             * State
+             * @default pending
+             * @enum {string}
+             */
+            state?: "pending" | "accepted" | "declined" | "cancelled" | "expired" | "unavailable";
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** McpIntegrationView */
+        McpIntegrationView: {
+            /** Thread Id */
+            thread_id: string;
+            /** Server Id */
+            server_id: string;
+            /** Generation */
+            generation: string;
+            /** Connected */
+            connected: boolean;
+            /** Retired */
+            retired: boolean;
+        };
         /**
          * MemoryAgentSource
          * @description Application-owned organizer; not a selectable Agent resource.
@@ -6001,6 +6136,11 @@ export interface components {
             /** @default null */
             root_operation?: components["schemas"]["RootOperationView"] | null;
             /**
+             * Mcp Inputs
+             * @default []
+             */
+            mcp_inputs?: components["schemas"]["McpInputRequestView"][];
+            /**
              * Recent Events
              * @default []
              */
@@ -6249,6 +6389,18 @@ export interface components {
             device_id: string;
             /** Name */
             name: string;
+        };
+        /** McpInputResponse */
+        McpInputResponse: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "accept" | "decline" | "cancel";
+            /** Content */
+            content?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
         };
         /** AppToolRequest */
         AppToolRequest: {
@@ -7165,6 +7317,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AppPresentation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_status_api_threads__thread_id__mcp_integrations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpIntegrationView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_mcp_integration_api_threads__thread_id__mcp_integrations__server_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_inputs_api_threads__thread_id__mcp_inputs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpInputRequestView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    respond_mcp_input_api_threads__thread_id__mcp_inputs__request_id__response_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpInputResponse"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpInputRequestView"];
                 };
             };
             /** @description Validation Error */

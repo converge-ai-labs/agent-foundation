@@ -13,6 +13,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.http import outbound_tls_verify
 from anyio import to_thread
+from fastmcp import Client
 from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability
@@ -29,6 +30,9 @@ from a13n_harness_ui.configuration.models import (
 )
 from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.mcp_apps.connections import AppMCP, AppToolset, Connections
+from a13n_harness_ui.mcp_runtime.connections import Connection, HostClient
+from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
+from a13n_harness_ui.mcp_runtime.projection import HostToolset
 
 
 class HarnessUiMCP(MCP[AgentContext]):
@@ -40,12 +44,14 @@ class HarnessUiMCP(MCP[AgentContext]):
         *,
         configuration_root: Path | None = None,
         apps: Connections | None = None,
+        connections: HostConnections | None = None,
     ) -> None:
         if not isinstance(recipe, ResolvedMcpRecipe):
             raise TypeError("recipe must be a ResolvedMcpRecipe")
         self._recipe = recipe.model_copy(deep=True)
         self._configuration_root = configuration_root
         self._apps = apps
+        self._connections = apps or connections
         transport = recipe.transport
         self.url = transport.url if isinstance(transport, McpRemoteTransport) else None
         self.id = recipe.server_id
@@ -73,18 +79,38 @@ class HarnessUiMCP(MCP[AgentContext]):
             self._configuration_root,
             configuration=ctx.deps.configuration,
         )
-        if self._apps is not None:
-            connection = await self._apps.acquire(
+        if self._connections is not None and (self._recipe.host_owned or self._apps is not None):
+            connection = await self._connections.acquire(
                 ctx.deps.thread_id,
                 self._recipe.server_id,
                 # Effective credentials are compared only in process memory, never persisted.
                 effective_recipe,
                 client_transport,
-                binding=self._recipe.transport.model_dump_json(),
+                binding=repr((self._recipe.transport.model_dump_json(), self._recipe.protocol, self._apps is not None)),
+                protocol=self._recipe.protocol,
+                client_factory=None if self._apps is not None else HostClient,
+                extensions=None if self._apps is not None else (),
             )
-            toolset = AppToolset(connection, self._apps.captures)
+            toolset = AppToolset(connection, self._apps.captures) if self._apps is not None else HostToolset(connection)
+        elif self._connections is not None and self._connections.input_handler is not None:
+            connection = Connection(
+                ctx.deps.thread_id,
+                self._recipe.server_id,
+                effective_recipe,
+                client_transport,
+                protocol=self._recipe.protocol,
+                input_handler=self._connections.input_handler,
+                init_timeout=init_timeout,
+                cleanup_timeout_seconds=self._connections.cleanup_timeout_seconds,
+            )
+            # Logical-Run cleanup spans internal Agent attempts, but never retains
+            # a default Run-local client beyond the enclosing Harness Run.
+            ctx.deps._register_run_cleanup(cache_id, connection.close)
+            await connection.start()
+            toolset = HostToolset(connection)
         else:
-            toolset = MCPToolset[AgentContext](client_transport, id=self._recipe.server_id, init_timeout=init_timeout)
+            client = Client(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
+            toolset = MCPToolset[AgentContext](client, id=self._recipe.server_id)
         capability = AppMCP if self._apps is not None else MCP[AgentContext]
         replacement = capability(
             id=self._recipe.server_id,
@@ -122,7 +148,19 @@ async def prepare_mcp_transport(
     else:
         raise TypeError("unsupported MCP transport")
     # Selection provenance does not change the live server binding.
-    return client_transport, repr((transport.model_dump(), values, configuration.model_dump(mode="json"))), init_timeout
+    return (
+        client_transport,
+        repr(
+            (
+                transport.model_dump(),
+                values,
+                configuration.model_dump(mode="json"),
+                recipe.protocol,
+                recipe.apps_enabled,
+            )
+        ),
+        init_timeout,
+    )
 
 
 async def resolve_mcp_values(

@@ -5,19 +5,28 @@ connection's authentication; this module only speaks MCP over it.
 """
 
 import re
-from collections.abc import Awaitable, Callable, Mapping
-from typing import Annotated, Literal, Self
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import replace
+from typing import Annotated, Any, Literal, Self, Unpack
 
 import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.providers.connector.bounds import DISCOVERY_MAX_TOOLS
+from fastmcp import Client
+from fastmcp.client.transports import ClientTransport
+from fastmcp.client.transports.base import SessionKwargs, TransportOptions
+from mcp import ClientSession
+from mcp.types import CallToolRequest
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP
+from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
+from pydantic_ai.toolsets import AbstractToolset, DynamicToolset, ToolsetTool
 
-from a13n_service.providers.tools import MAX_TOOLS, CheckedToolset, DispatchCheck, ToolInfo, unique
+from a13n_service.providers.tools import MAX_TOOLS, CheckedToolset, DispatchCheck, ToolDispatch, ToolInfo, unique
 
 MAX_HEADERS = 32
 
@@ -138,31 +147,109 @@ async def list_mcp_tools(url: str, connection_id: str, client: httpx2.AsyncClien
     ]
 
 
+# Native MRTR runs in the calling task. Carry its original model identity through
+# every SDK round, without using server-supplied metadata as execution authority.
+_dispatch: ContextVar[tuple[ToolDispatch, DispatchCheck] | None] = ContextVar("mcp_dispatch", default=None)
+
+
+class DispatchTransport(ClientTransport):
+    """Authorize every native business round through the public session seam."""
+
+    def __init__(self, wrapped: ClientTransport, connection_id: str):
+        self.wrapped, self.connection_id = wrapped, connection_id
+        self.legacy_only = wrapped.legacy_only
+
+    @asynccontextmanager
+    async def connect_session(
+        self, *, transport_options: TransportOptions | None = None, **session_kwargs: Unpack[SessionKwargs]
+    ) -> AsyncIterator[ClientSession]:
+        options = transport_options or TransportOptions()
+        connection_id = self.connection_id
+
+        class DispatchSession(options.session_class):
+            async def send_request(self, request: Any, *args: Any, **kwargs: Any) -> Any:
+                if isinstance(request, CallToolRequest):
+                    current = _dispatch.get()
+                    if current is None or current[0].connection_id != connection_id:
+                        raise ToolFailed("The MCP request has no dispatch identity and was not sent.")
+                    dispatch, check = current
+                    await check(dispatch)
+                return await super().send_request(request, *args, **kwargs)
+
+        async with self.wrapped.connect_session(
+            transport_options=replace(options, session_class=DispatchSession), **session_kwargs
+        ) as session:
+            yield session
+
+    async def close(self) -> None:
+        await self.wrapped.close()
+
+    def get_session_id(self) -> str | None:
+        return self.wrapped.get_session_id()
+
+
+def mcp_client(url: str, connection_id: str, http: httpx2.AsyncClient, *, timeout: float) -> Client[ClientTransport]:
+    """Use the upstream adapter; its transport enters the attempt's configured HTTP client."""
+    client = _toolset(url, connection_id, http, timeout=timeout).client
+    client.transport = DispatchTransport(client.transport, connection_id)
+    return client
+
+
+class DispatchToolset(CheckedToolset):
+    async def call_tool(
+        self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
+    ) -> Any:
+        if ctx.tool_call_id is None:
+            raise ToolFailed("The tool call has no call identity and was not sent.")
+        token = _dispatch.set((ToolDispatch(self.connection_id, None, name, ctx.tool_call_id), self.check))
+        try:
+            # DispatchSession performs the check immediately before each send;
+            # a logical-call-only check would miss state-only SDK continuations.
+            return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+        finally:
+            _dispatch.reset(token)
+
+
+class AttemptToolset(MCPToolset[AgentContext]):
+    async def __aenter__(self) -> Self:
+        if not self.client.is_connected():
+            raise RuntimeError("The attempt-owned MCP client disconnected; the business call will not be replayed.")
+        return await super().__aenter__()
+
+
 def mcp_capability(
-    url: str,
     connection_id: str,
-    open_client: Callable[[], Awaitable[httpx2.AsyncClient]],
+    open_client: Callable[[], Awaitable[Client[ClientTransport]]],
     *,
     tools: tuple[str, ...] | None,
-    caller_headers: Mapping[str, str],
     defer_loading: bool,
     check: DispatchCheck,
-    timeout: float,
 ) -> MCP[AgentContext]:
-    """Compose native MCP with fresh authenticated clients and Toolsets per native run.
+    """Fresh native projections borrow one entered client from the worker attempt.
 
-    Native MCP owns client entry/exit; the Service also closes clients when setup fails.
-    Filtering precedes the dispatch check's catalog bound.
+    Filtering precedes the dispatch check's catalog bound. No human input handler
+    is advertised without a durable Service response channel.
     """
 
     async def local(_ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
         client = await open_client()
-        client.headers.update(caller_headers)
-        listed: AbstractToolset[AgentContext] = _toolset(url, connection_id, client, timeout=timeout)
+        listed: AbstractToolset[AgentContext] = AttemptToolset(
+            client,
+            id=connection_id,
+            max_retries=0,
+            tool_error_behavior="failed",
+            prefer_tasks=False,
+            # A prebuilt client cannot replace its stable Host notification handler
+            # with each projection's cache callback. Refresh the live catalog.
+            cache_tools=False,
+            cache_resources=False,
+            cache_prompts=False,
+            include_instructions=False,
+        )
         if tools is not None:
             selected = frozenset(tools)
             listed = listed.filtered(lambda _ctx, tool: tool.name in selected)
-        return CheckedToolset(listed, connection_id, None, check)
+        return DispatchToolset(listed, connection_id, None, check)
 
     return MCP(
         id=connection_id,

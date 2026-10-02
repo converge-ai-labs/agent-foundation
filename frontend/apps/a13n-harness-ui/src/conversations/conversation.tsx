@@ -26,6 +26,7 @@ import { ComposerStatus } from "./composer-status";
 import { RunActivity } from "./run-activity";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
+import { McpInputs } from "./mcp-inputs";
 import { ConversationDetails } from "./details";
 import {
   canPromoteCoordinator,
@@ -743,6 +744,7 @@ function ConversationContent({
                   }
                 />
                 {decisions.portal}
+                <McpInputs threadId={threadId} />
               </PauseConversationFollowing>
               {hasLater && (
                 <div className={styles.historyActions}>

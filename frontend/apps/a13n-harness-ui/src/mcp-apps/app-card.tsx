@@ -7,7 +7,7 @@ import {
 } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { refreshThread } from "../conversations/refresh";
-import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolResultSchema } from "@modelcontextprotocol/core";
 import { McpUiResourceCspSchema } from "@modelcontextprotocol/ext-apps/app-bridge";
 import { Button } from "a13n-ui";
 import { AppFrame, type AppHandlers } from "./app-frame";

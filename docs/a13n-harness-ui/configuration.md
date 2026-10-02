@@ -91,6 +91,9 @@ defaults:
   harness_plugins: []
   environment_run_extensions: []
   mcp_servers: []
+mcp:
+  host_owned_servers: []
+  protocol_overrides: {}
 display:
   theme: auto
   mode: concise
@@ -157,6 +160,10 @@ webui:
 To explicitly disable address restrictions, use `allowed_origins: ["*"]`. This does not disable API-key authentication or the browser's same-origin check, and it is not a CORS allowlist. Even two configured origins cannot make cross-origin API requests to each other. Prefer exact entries when public addresses are known; `"*"` removes the Host restriction, including its protection against DNS rebinding. Existing bind-address and loopback access remains allowed independently of these entries.
 
 The listener captures this setting at startup. Restart WebUI after editing it; accepting a configuration reload does not change an active listener's access boundary. See [reverse proxies](webui.md#reverse-proxies-and-public-addresses) for HTTPS forwarding and proxy trust.
+
+### MCP lifetime and protocol
+
+Root `mcp.host_owned_servers` selects server IDs whose clients outlive a logical Run in CLI and WebUI; it does not add them to Agent tool selections. `mcp.protocol_overrides` maps existing server IDs to `auto`, `legacy`, or `2026-07-28`; omitted IDs use SDK automatic negotiation. Defaults are `[]` and `{}`, preserving existing configuration. See [MCP connection lifetime](mcp.md#connection-lifetime-and-protocol) and [human input](mcp.md#human-input-from-mcp-servers). These settings are captured for later Runs; live clients and input answers are not configuration or continuation state.
 
 ### WebUI MCP Apps
 

@@ -16,6 +16,7 @@ from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, Lo
 from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
 from a13n_harness_ui.mcp_apps.models import AppReference
+from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView
 from a13n_harness_ui.model_controls import ModelControlSelection
 from a13n_harness_ui.model_fast import FastControl
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl
@@ -641,6 +642,7 @@ class ThreadFocusSnapshot(SurfaceModel):
     cutover_sequence: int = Field(ge=0)
     thread: ThreadDetail
     root_operation: RootOperationView | None = None
+    mcp_inputs: tuple[McpInputRequestView, ...] = ()
     recent_events: tuple[LiveEvent, ...] = ()
     root_stream: RootStreamSummary | None = None
 

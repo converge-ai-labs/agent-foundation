@@ -43,5 +43,6 @@ async def _session(
         source.settings,
         configuration_path=source.path,
         configuration_error=source.candidate_error,
+        mcp_input_enabled=True,
     ) as app:
         yield SessionBackend(app, request, directory, status)

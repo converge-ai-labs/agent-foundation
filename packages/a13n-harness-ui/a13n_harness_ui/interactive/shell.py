@@ -55,6 +55,7 @@ from .inline_attachments import (
     InlineAttachments,
 )
 from .local_shell import run_local_shell, validate_local_shell_support
+from .mcp_inputs import McpInteraction
 from .pastes import PendingPastes
 from .questions import QuestionCard
 from .rendering import Status, StreamRenderer, terminal_text
@@ -110,6 +111,7 @@ class CliShell:
         self.job_kind: str | None = None
         self._input_task: asyncio.Task[None] | None = None
         self.interaction: DecisionInteraction | None = None
+        self.mcp_input: McpInteraction | None = None
         self.selection: Selection | None = None
         self.question_card: QuestionCard | None = None
         self.selector_focused = True
@@ -619,7 +621,7 @@ class CliShell:
             self._notes_thread = thread_id
 
     async def _activate_decisions(self) -> None:
-        if self.backend is None or self.closing or self.menu_handler is not None:
+        if self.backend is None or self.closing or self.menu_handler is not None or self.mcp_input is not None:
             return
         pending = await self.backend.interaction()
         if pending is None:
@@ -635,6 +637,61 @@ class CliShell:
         self.status.state = "waiting for you"
         self._emit_decision()
         self.bell()
+
+    async def _watch_mcp_inputs(self) -> None:
+        assert self.backend is not None
+        async with self.backend.app.summary_events() as events:
+            await self._activate_mcp_inputs()
+            async for event in events:
+                if event.kind in {"thread", "root_operation", "child_execution"}:
+                    await self._activate_mcp_inputs()
+
+    async def _activate_mcp_inputs(self) -> None:
+        backend = self.backend
+        if backend is None or backend.thread_id is None or self.closing:
+            return
+        requests = await backend.app.mcp_input_requests(backend.thread_id)
+        pending = next((item for item in requests if item.state == "pending"), None)
+        if self.mcp_input is not None:
+            if any(
+                item.request_id == self.mcp_input.request.request_id and item.state == "pending" for item in requests
+            ):
+                return
+            self.mcp_input = None
+            self._restore_draft()
+        if pending is None or self.menu_handler is not None or self.interaction is not None:
+            return
+        self._save_draft()
+        self.mcp_input = McpInteraction(pending)
+        self.selector_focused = False
+        self.status.state = "waiting for you"
+        self.emit(
+            f"MCP input · {pending.server_id} · {pending.thread_id}\n{pending.message}\nDo not enter passwords or access tokens here."
+        )
+        self.emit(self.mcp_input.prompt())
+        self.app.layout.focus(self.composer)
+        self.bell()
+
+    async def _answer_mcp_input(self, text: str) -> None:
+        interaction, backend = self.mcp_input, self.backend
+        if interaction is None or backend is None or backend.thread_id is None:
+            return
+        try:
+            response = interaction.answer(text)
+            if response is None:
+                self.emit(interaction.prompt())
+                return
+            await backend.app.respond_mcp_input(backend.thread_id, interaction.request.request_id, response)
+            if self.mcp_input is interaction:
+                self.mcp_input = None
+                self._restore_draft()
+            self.emit("MCP response accepted. The active operation remains owned by the App.")
+            await self._activate_mcp_inputs()
+        except Exception as exc:
+            self.emit(f"MCP response failed: {exc}. Check the pending request before explicitly retrying.")
+            if self.mcp_input is interaction:
+                self.composer.buffer.document = Document(text, len(text))
+            await self._activate_mcp_inputs()
 
     def _emit_decision(self) -> None:
         from a13n_harness_ui.surfaces import StructuredQuestionRequestView
@@ -769,6 +826,11 @@ class CliShell:
                     return
                 event.current_buffer.complete_state = None
             text = event.current_buffer.text
+            if self.mcp_input is not None and not (text.startswith("/") and self.registry.lookup(text) is not None):
+                if self._input_task is None or self._input_task.done():
+                    event.current_buffer.reset()
+                    self._input_task = asyncio.create_task(self._answer_mcp_input(self.pastes.expand(text)))
+                return
             steering_receipt: str | None = None
             if self.selection is not None and self.selector_focused and not text.strip():
                 try:
@@ -1186,6 +1248,7 @@ class CliShell:
         self.app.invalidate()
         flusher = self.app.create_background_task(self._flusher())
         activity_refresher = self.app.create_background_task(self._activity_refresher())
+        mcp_watcher = self.app.create_background_task(self._watch_mcp_inputs())
         loop = asyncio.get_running_loop()
         previous_handler = loop.get_exception_handler()
 
@@ -1253,12 +1316,16 @@ class CliShell:
                     await asyncio.gather(self._clipboard_task, return_exceptions=True)
                 flusher.cancel()
                 activity_refresher.cancel()
-                await asyncio.gather(flusher, activity_refresher, return_exceptions=True)
+                mcp_watcher.cancel()
+                await asyncio.gather(flusher, activity_refresher, mcp_watcher, return_exceptions=True)
                 self.renderer.finish()
                 self.renderer.transcript.close()
                 self.backend = None
 
     async def cancel(self) -> None:
+        if self.mcp_input is not None and not self.closing:
+            await self._answer_mcp_input("cancel")
+            return
         if self.interaction is not None and not self.busy and self.interaction.back():
             if self.interaction.expired:
                 self._finish_decision(self.interaction.expire())

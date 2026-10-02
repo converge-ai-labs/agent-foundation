@@ -214,8 +214,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from a13n_harness_ui.cli import CliRequest
 from a13n_harness_ui.interactive.startup import run_terminal
+from a13n_harness_ui.live import HarnessUiSummaryHub
+from types import SimpleNamespace
 
 class Backend:
+    app = SimpleNamespace(summary_events=HarnessUiSummaryHub(epoch="pty-test").subscribe)
     thread_id = None
     resumed_transcript = None
 

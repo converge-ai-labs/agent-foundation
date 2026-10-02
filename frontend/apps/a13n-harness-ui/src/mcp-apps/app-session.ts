@@ -1,8 +1,8 @@
 import {
   CallToolResultSchema,
   ReadResourceResultSchema,
-  type CallToolResult,
-} from "@modelcontextprotocol/sdk/types.js";
+} from "@modelcontextprotocol/core";
+import type { CallToolResult } from "@modelcontextprotocol/client";
 import { result, type Schema, type Transport } from "../transport/client";
 import { AppMessage } from "./app-message";
 

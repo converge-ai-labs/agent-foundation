@@ -88,6 +88,14 @@ Thread 列表默认每页 20 项，对话记录默认每页 50 项；后续游�
 
 验证回答者或执行者的身份，并提交当前完整决策集。普通提示不能回答待处理决策。子 Run 不会创建持久化的延迟任务。
 
+## MCP 输入与集成控制
+
+WebUI 和交互式 CLI 开启 [MCP 人工输入](mcp.md#human-input-from-mcp-servers)。无界面的 `open_harness_ui_app()` 默认 `mcp_input_enabled=False`。能够回答请求的嵌入适配器可以显式传入 `mcp_input_enabled=True`；须在操作运行时并行消费请求，不能先等待完成。
+
+`mcp_input_requests(thread_id)` 读取该 Thread 及其后代的进程内表单/URL 请求。`respond_mcp_input(thread_id, request_id, McpInputResponse(...))` 接受 `accept`、`decline` 或 `cancel`；从 `a13n_harness_ui.mcp_runtime.inputs` 导入 `McpInputResponse`。接受表单时传入 `content` 对象；URL 确认不包含表单数据。完全相同的重复答案核实结果，冲突答案失败。这不需要续接 ID，也不受理新 Run。`ThreadWatch.snapshot.mcp_inputs` 消除初始查询竞态，摘要失效通知要求重新获取。答案和待处理请求不跨重启保留。
+
+`mcp_status(thread_id)` 报告当前保留的连接代，不建立连接。`close_mcp_integration(thread_id, server_id)` 显式关闭该 Thread 的代，不移除服务器选择，也不保证已派发的远程写入无副作用。连接生命周期遵循[根 MCP 策略](mcp.md#connection-lifetime-and-protocol)，与是否启用人工输入通道独立。
+
 ## 附加文件
 
 从 `a13n_harness_ui.thread_files` 使用 `AttachmentUpload`，为已有 Thread 暂存附件。提交时，将返回 ID 放入 `attachment_ids` 元组。每次输入最多八个附件，每个 10 MiB，合计 20 MiB。

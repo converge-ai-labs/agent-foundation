@@ -74,7 +74,13 @@ def create_app(database: Path) -> FastAPI:
         method = body.get("method")
         if "id" not in body:
             return Response(status_code=202)
-        if method == "initialize":
+        modern = request.headers.get("mcp-protocol-version") == "2026-07-28" or method == "server/discover"
+        if method == "server/discover":
+            result = {
+                "supportedVersions": ["2026-07-28", "2025-11-25"],
+                "capabilities": {"tools": {}},
+            }
+        elif method == "initialize":
             result = {
                 "protocolVersion": body["params"]["protocolVersion"],
                 "capabilities": {"tools": {}},
@@ -205,6 +211,11 @@ def create_app(database: Path) -> FastAPI:
             return JSONResponse(
                 {"jsonrpc": "2.0", "id": body["id"], "error": {"code": -32601, "message": "Unsupported method"}}
             )
+        if modern:
+            if method in {"server/discover", "tools/list"}:
+                result.update(cacheScope="private", ttlMs=0)
+            result["resultType"] = "complete"
+            result["_meta"] = {"serverInfo": {"name": "counted-fixture", "version": "1"}}
         return JSONResponse({"jsonrpc": "2.0", "id": body["id"], "result": result})
 
     @app.get("/{auth}/mcp")

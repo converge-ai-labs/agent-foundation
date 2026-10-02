@@ -213,6 +213,11 @@ export function seedThreadSnapshot(
   snapshot: Schema<"ThreadFocusSnapshot">,
 ) {
   if (snapshot.thread.thread.thread_id !== threadId) return;
+  const inputKey = ["thread", threadId, "mcp-inputs"];
+  if (!client.getQueryData(inputKey)) {
+    void client.cancelQueries({ queryKey: inputKey, exact: true });
+    client.setQueryData(inputKey, snapshot.mcp_inputs ?? []);
+  }
   const key = ["thread", threadId, "detail"];
   if (client.getQueryData(key)) return;
   // Cancel before publishing so a slower initial GET cannot overwrite the prefix.

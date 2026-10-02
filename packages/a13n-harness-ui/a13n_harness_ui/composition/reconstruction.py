@@ -48,6 +48,7 @@ from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from a13n_harness_ui.mcp_apps.connections import Connections
+from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
 from a13n_harness_ui.media_understanding import FileMediaUnderstanding
 from a13n_harness_ui.memory import MemoryOrganizationRun, bind_memory
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
@@ -185,9 +186,11 @@ class AgentReconstructor:
         configuration_root: Path | None = None,
         instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
         mcp_apps: Connections | None = None,
+        mcp_connections: HostConnections | None = None,
     ) -> None:
         self._instrumentation: HarnessInstrumentation | Literal["environment"] | None = instrumentation
         self._mcp_apps = mcp_apps
+        self._mcp_connections = mcp_connections or mcp_apps
         self._api_keys = api_keys
         self._configuration_root = configuration_root
         self._catalog = catalog or HarnessUiExtensionCatalog()
@@ -361,6 +364,7 @@ class AgentReconstructor:
                 item,
                 configuration_root=self._configuration_root,
                 apps=self._mcp_apps if item.apps_enabled else None,
+                connections=self._mcp_connections,
             )
             for item in node.mcp_servers
         }

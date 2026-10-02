@@ -569,6 +569,191 @@
         }
       }
     },
+    "/api/threads/{thread_id}/mcp/integrations": {
+      "get": {
+        "summary": "Mcp Status",
+        "operationId": "mcp_status_api_threads__thread_id__mcp_integrations_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/McpIntegrationView"
+                  },
+                  "title": "Response Mcp Status Api Threads  Thread Id  Mcp Integrations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/mcp/integrations/{server_id}/close": {
+      "post": {
+        "summary": "Close Mcp Integration",
+        "operationId": "close_mcp_integration_api_threads__thread_id__mcp_integrations__server_id__close_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/mcp/inputs": {
+      "get": {
+        "summary": "Mcp Inputs",
+        "operationId": "mcp_inputs_api_threads__thread_id__mcp_inputs_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/McpInputRequestView"
+                  },
+                  "title": "Response Mcp Inputs Api Threads  Thread Id  Mcp Inputs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/mcp/inputs/{request_id}/response": {
+      "post": {
+        "summary": "Respond Mcp Input",
+        "operationId": "respond_mcp_input_api_threads__thread_id__mcp_inputs__request_id__response_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpInputRequestView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpInputResponse"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/apps/activate": {
       "post": {
         "summary": "Activate Mcp App",
@@ -10811,6 +10996,161 @@
         ],
         "title": "MarkdownSubagentSource"
       },
+      "McpInputRequestView": {
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "server_id": {
+            "title": "Server Id",
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Call Id"
+          },
+          "view_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "View Id"
+          },
+          "mode": {
+            "enum": [
+              "form",
+              "url"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 8192,
+            "title": "Message",
+            "type": "string"
+          },
+          "schema": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Url"
+          },
+          "state": {
+            "default": "pending",
+            "enum": [
+              "pending",
+              "accepted",
+              "declined",
+              "cancelled",
+              "expired",
+              "unavailable"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "thread_id",
+          "server_id",
+          "mode",
+          "message",
+          "expires_at"
+        ],
+        "title": "McpInputRequestView",
+        "type": "object"
+      },
+      "McpIntegrationView": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "server_id": {
+            "type": "string",
+            "title": "Server Id"
+          },
+          "generation": {
+            "type": "string",
+            "title": "Generation"
+          },
+          "connected": {
+            "type": "boolean",
+            "title": "Connected"
+          },
+          "retired": {
+            "type": "boolean",
+            "title": "Retired"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "server_id",
+          "generation",
+          "connected",
+          "retired"
+        ],
+        "title": "McpIntegrationView"
+      },
       "MemoryAgentSource": {
         "properties": {
           "kind": {
@@ -16848,6 +17188,14 @@
             ],
             "default": null
           },
+          "mcp_inputs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/McpInputRequestView"
+            },
+            "title": "Mcp Inputs",
+            "type": "array"
+          },
           "recent_events": {
             "default": [],
             "items": {
@@ -17422,6 +17770,39 @@
           "name"
         ],
         "title": "PairingRequest"
+      },
+      "McpInputResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "accept",
+              "decline",
+              "cancel"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "McpInputResponse",
+        "type": "object"
       },
       "AppToolRequest": {
         "additionalProperties": false,
