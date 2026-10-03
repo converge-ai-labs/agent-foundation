@@ -873,7 +873,8 @@ async def test_inline_delegation_forwards_child_lifecycle_before_pre_request_fai
     assert len(child_events) == 5
     observed_input = [event.event for event in child_events if isinstance(event.event, InputTextEvent)]
     assert len(observed_input) == 1
-    assert observed_input[0].source == "user" and observed_input[0].content == "work"
+    assert observed_input[0].source == "user"
+    assert json.loads(observed_input[0].content) == {"delegated_task": "work", "parent_task": "start"}
     child_events = [event for event in child_events if not isinstance(event.event, InputTextEvent)]
     assert child_events[0].event.payload == {"type": "run_started"}
     child_events = child_events[1:]
