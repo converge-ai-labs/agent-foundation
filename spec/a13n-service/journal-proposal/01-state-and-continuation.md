@@ -15,7 +15,7 @@ A Run's continuation state remains today's `RunState` around a `HarnessState`: m
 - **`a13n.usage`** is removed from every state the Service persists. The Service never restores accounting from a checkpoint (`resume_usage=False`), and `usage_records` already holds every contribution. Harness UI still restores usage from state, so the Harness default does not change.
 - **Inline subagent states** move to separate objects; see [inline subagent state](#inline-subagent-state).
 - **Large binary content parts** move to separate objects; see [large content](#large-content).
-- **Compression.** State objects are compressed with zstd. The pointer records the format, so readers know how to decode it.
+- **Compression.** State objects are compressed with zstd.
 
 What remains is message text, small Capability state, environment states, and the Service's progress fields. Text compresses well, so a boundary uploads a fraction of the text context.
 
@@ -49,7 +49,7 @@ A tool result's screenshot reaches history before the next model request. The ex
 
 Inline subagents keep executing inside the parent's tool call, in the same worker, with no Thread or Run of their own in the Service. Their events stream into the parent Run's visible items, tagged with `subagentRunId`, and their usage is charged to the parent Run. Only their storage changes ([`delegation.py`](../../../packages/a13n-harness/a13n_harness/toolsets/delegation.py), [`subagents.py`](../../../packages/a13n-harness/a13n_harness/capabilities/subagents.py)).
 
-The parent's `a13n.subagents` namespace becomes a registry of references, at namespace version 2:
+The parent's `a13n.subagents` namespace becomes a registry of references:
 
 ```text
 InlineSubagentEntry
@@ -69,6 +69,8 @@ InlineSubagentEntry
 A child's progress while it runs is not checkpointed, as today. The Harness receives a child's state only when the child ends, and the Service checkpoints only the parent's boundaries. If the worker fails during a delegation, the recovered parent repeats the tool call from its last checkpoint: `delegate` starts a new child, and `resume_subagent` continues from the child's last saved state. A state saved before the failure but never referenced by a committed checkpoint is removed by the seal cleanup.
 
 Asynchronous subagents are already separate Threads and Runs. Their states and visible items follow this proposal as ordinary Runs.
+
+The registry changes the Harness state format for every Host, so [Harness state and resume](../../a13n-harness/10-snapshot-and-resume.md) changes accordingly. With the default store nothing leaves Harness state.
 
 ## Continuing after a failed or cancelled Run
 

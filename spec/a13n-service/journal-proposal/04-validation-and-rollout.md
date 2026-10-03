@@ -45,7 +45,6 @@ Agreed in the #849 discussion:
 - Every sealed Run becomes the head. Fork accepts failed and cancelled Runs. A Run that starts from a failed or cancelled Run uses the Harness's existing `never` tool recovery, so unfinished tool calls get an interrupted result and none runs again. Automatic advancement still pauses after a failed or cancelled Run.
 - Objects belong to the Run that writes them. The seal scan keeps the final state, its reference closure, the final tail, and the pages.
 - This proposal owns the items API change and Console paging; #788 is not a prerequisite.
-- The change is a clean breaking cutover for the Service and Harness state formats ([cutover](03-storage-and-apis.md#cutover)).
 - Initial values: 256 items or 1 MiB per page and a 64 KiB large-content threshold, tuned by the load test.
 
 ## Incremental state (deferred)

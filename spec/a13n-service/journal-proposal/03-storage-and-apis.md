@@ -8,13 +8,13 @@ These are logical schemas, not generated DDL. Every table follows the existing t
 
 ```text
 run_item_pages            # permanent history page catalog
-  run_id, first_ordinal, last_ordinal, item_count, key, digest, size, format
+  run_id, first_ordinal, last_ordinal, item_count, key, digest, size
   PRIMARY KEY (run_id, first_ordinal)
 ```
 
 Changes to existing rows:
 
-- `runs.checkpoint` keeps its meaning: the Run's latest complete state object. It also records the compression format and `refs`, the state's [reference closure](01-state-and-continuation.md#the-storage-binding), for cleanup: every content and subagent object the state needs, including those referenced only from saved subagent states.
+- `runs.checkpoint` keeps its meaning: the Run's latest complete state object. It also records `refs`, the state's [reference closure](01-state-and-continuation.md#the-storage-binding), for cleanup: every content and subagent object the state needs, including those referenced only from saved subagent states.
 - `runs.display` keeps its meaning, but now names the tail object rather than a complete Display.
 - `threads.head_run_id` may name any sealed Run, and its database check changes accordingly ([continuation](01-state-and-continuation.md#continuing-after-a-failed-or-cancelled-run)).
 
@@ -57,11 +57,3 @@ The seal scan is safe because nothing writes under a Run's prefix after its seal
 
 - `worker.display_bytes` and the 4096-item limit no longer bound visible history.
 - New settings, with initial values tuned by the load test: items per page (256), bytes per page (1 MiB), the large-content threshold (64 KiB), and the zstd compression level.
-
-## Cutover
-
-This is a clean breaking change, with no compatibility readers, conversions, or mixed-version operation:
-
-- The Service state format, Display format, Run columns, head rule, and items API change together. State objects, Display objects, and subagent entries written before the cutover are not read.
-- The Harness state format changes for every Host, because `a13n.subagents` entries now hold references ([Harness state and resume](../../a13n-harness/10-snapshot-and-resume.md)). With the default binding nothing leaves Harness state, but Harness UI conversations stored before the cutover are not converted either.
-- Deployments back up existing data and start from a fresh store. Old and new versions never run against the same database.

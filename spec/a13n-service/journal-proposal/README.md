@@ -53,7 +53,6 @@ flowchart LR
 - A semantic event journal, historical state inspection between checkpoints, and Session-wide timelines.
 - Hosting synchronous subagents in separate Threads, and durability of an inline child's progress while it runs.
 - The Harness usage-scope capacity of 10,000 records per attempt.
-- Reading or converting data written before the cutover. The change is a clean breaking cutover; deployments start from a fresh store.
 
 ## Reading order
 
@@ -61,5 +60,5 @@ flowchart LR
 | ---------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | [01: State and continuation](01-state-and-continuation.md) | State contents, the storage binding, compression, continuing after failed Runs     |
 | [02: Visible history](02-visible-history.md)               | Items, history pages, the tail, final items, reads                                 |
-| [03: Storage and APIs](03-storage-and-apis.md)             | Object keys, Run columns, cleanup, API and settings, cutover                       |
+| [03: Storage and APIs](03-storage-and-apis.md)             | Object keys, Run columns, cleanup, API and settings                                |
 | [04: Validation and rollout](04-validation-and-rollout.md) | Capacity, tests, delivery order, decisions, deferred work, dropped earlier designs |
