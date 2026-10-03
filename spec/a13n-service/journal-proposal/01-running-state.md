@@ -23,16 +23,16 @@ The rows hold the current version, not a history of changes. Their size is bound
 
 ## Each boundary
 
-The worker keeps the canonical bytes of each committed message. At a boundary it encodes each message and compares them from the first position:
+The worker keeps the canonical bytes of each committed message. At a boundary the Harness export provides the canonical bytes of each current message, and the worker compares them from the first position:
 
 | Comparison result                                                           | Action                                           |
 | --------------------------------------------------------------------------- | ------------------------------------------------ |
 | Only appended messages, optionally with the last committed message replaced | Stage those positions and the changed namespaces |
 | Any earlier message changed, or the history became shorter                  | [Merge](#merges): write a new start object       |
 
-The last committed message may change because the model-context coordinator commits request overlays after the boundary's export ([`model_context.py`](../../../packages/a13n-harness/a13n_harness/model_context.py)).
+The last committed message may change after the boundary's export: the model-context coordinator replaces it with the request overlay ([`model_context.py`](../../../packages/a13n-harness/a13n_harness/model_context.py)), and Pydantic AI stamps run metadata and instructions on the outgoing request in place.
 
-The rule inspects bytes, not causes. Compaction, idle-time trimming by the default cold-start filter, system-prompt reconciliation, adjacent-request merging, and any future rewrite are caught without being enumerated. The comparison uses persisted bytes rather than Python object identity because some code edits history objects in place ([`self_healing.py`](../../../packages/a13n-harness/a13n_harness/models/self_healing.py)). A spurious difference only causes an extra merge. The worst case is a complete state write at every boundary, which is today's behavior.
+The rule inspects bytes, not causes. Compaction, idle-time trimming by the default cold-start filter, system-prompt reconciliation, adjacent-request merging, and any future rewrite are caught without being enumerated. It compares bytes rather than Python object identity because history objects are also edited in place; see [change-detection cost](#change-detection-cost). A spurious difference only causes an extra merge. The worst case is a complete state write at every boundary, which is today's behavior.
 
 Staged rows commit in the existing fenced boundary transaction together with input consumption, steer assignment, and the Run's progress columns.
 
@@ -61,6 +61,15 @@ Asynchronous subagents are already separate Threads and Runs. Their own states a
 
 ## Change-detection cost
 
-The first version encodes every message once per boundary, replacing the whole-history encoding that `export_state` performs today. On synthetic histories, encoding takes about 9 ms per MB and comparison less than 0.5 ms; today's boundary already encodes the history more than once ([measurements](04-validation-and-rollout.md#measurements)).
+The Service compares bytes; the Harness produces them. The first version encodes every message at every boundary. This replaces, rather than adds to, the whole-history encoding that `export_state` performs today, and the boundary no longer re-serializes and hashes the state or serializes Display. On synthetic histories, encoding takes about 9 ms per MB and comparison less than 0.5 ms ([measurements](04-validation-and-rollout.md#measurements)).
 
-Encoding only changed messages requires a Harness invariant: history message objects are never edited in place, so an unchanged object identity implies unchanged bytes. That needs the self-healing transformation to copy before editing, a guard test, and verification against complete encoding at every merge. Whether the first version adopts this is an [open question](04-validation-and-rollout.md#open-questions).
+Object identity cannot replace the bytes yet, because history objects are edited in place after they are committed:
+
+- Self-healing repairs edit earlier messages, reassigning parts and clearing provider fields ([`self_healing.py`](../../../packages/a13n-harness/a13n_harness/models/self_healing.py)). The model call chain receives a shallow copy of the history list, so these edits reach the canonical messages.
+- Pydantic AI stamps run metadata and instructions on the outgoing request after the boundary's export. When it resumes without a prompt, it also stamps instructions on the earlier request whose instructions the continuation reuses.
+
+If measurements show that encoding matters, the Harness may reuse the encodings of unchanged message objects behind the same export. This is a Harness-internal optimization: the Service rule, the schema, and recovery do not change. It requires:
+
+1. Self-healing repairs that replace messages in the canonical history instead of editing them.
+1. Removal of the earlier-request stamping upstream, or complete encoding for an attempt that resumes without a prompt.
+1. Verification against complete encoding at every boundary in tests, and at every merge in production with a mismatch metric.

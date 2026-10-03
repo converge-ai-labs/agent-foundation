@@ -59,12 +59,9 @@ Agreed in the #849 discussion:
 - The change is a clean breaking cutover: no compatibility readers, conversions, or mixed-version operation. Deployments start from a fresh store ([cutover](03-storage-and-apis.md#cutover)).
 - The items API changes once, coordinated with #815.
 - Rewrites of earlier history, including compaction, merge directly to a new start object. Rewritten context is never staged.
+- Change detection compares canonical bytes in the Service. The first version encodes every message at every boundary. Reusing the encodings of unchanged messages is a Harness-internal optimization, adopted only when measured change-detection time shows that encoding matters ([change-detection cost](01-running-state.md#change-detection-cost)).
 - Running-state staging and visible-item staging stay in separate tables, because their keys, lifetimes, and readers differ.
 - Initial values: 256 items or 1 MiB per page, content objects over 256 KiB, and a 32 MiB staged-state cap per Run, tuned by the load test.
-
-## Open questions
-
-- **Change-detection cost.** Keep complete per-message encoding at every boundary in the first version, or adopt the no-in-place-edit invariant and encode only changed messages. See [01](01-running-state.md#change-detection-cost).
 
 ## Dropped from the earlier draft
 
