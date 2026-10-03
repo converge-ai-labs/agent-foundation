@@ -30,13 +30,13 @@ async def test_interrupt_cancels_a_running_run_once(stack) -> None:  # type: ign
     items = await api.items(run_id)
     assert items["complete"] and transcript(items) == [("user", "[poem] Write a long poem")]
 
-    # There is no retry: the next message starts from the unchanged baseline, and the poem is not asked again.
+    # There is no retry: the next message continues the cancelled run's history, the unanswered poem request first.
     await model.say("Hello again.", to="[after]")
     follow = (await api.send(thread_id, agent, "[after] Just say hello"))["run"]
     fresh = await api.sealed(follow["id"])
-    assert (fresh["status"], fresh["lineage"], fresh["parent_run_id"]) == ("completed", "root", None)
+    assert (fresh["status"], fresh["lineage"], fresh["parent_run_id"]) == ("completed", "continue", run_id)
     [request] = await model.requests("[after]")
-    assert user_texts(request) == ["[after] Just say hello"]
+    assert user_texts(request) == ["[poem] Write a long poem", "[after] Just say hello"]
     refused = await api.interrupt(fresh["id"])
     assert expect(refused, 409)["error"]["code"] == "conflict"
 

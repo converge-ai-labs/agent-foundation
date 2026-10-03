@@ -48,7 +48,7 @@ async def test_a_resume_replays_its_key_and_answers_a_wait_once(service, scripte
     reused = await service.client.post(resume, json=other, headers={"idempotency-key": "resume-1"})
     assert reused.status_code == 409 and reused.json()["error"]["details"]["reason"] == "idempotency_key_reused"
     again = await service.client.post(resume, json=ANSWER, headers={"idempotency-key": "resume-2"})
-    assert again.status_code == 409 and again.json()["error"]["details"]["reason"] == "not_idle_waiting_run"
+    assert again.status_code == 409 and again.json()["error"]["details"]["reason"] == "not_idle_waiting_head"
 
 
 async def test_a_resume_explicitly_skips_a_question(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

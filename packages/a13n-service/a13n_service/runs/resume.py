@@ -96,7 +96,7 @@ async def resume(
                 # A concurrent request may have committed this same intent while we waited for the thread.
                 if found := await _replay(session, scope.workspace_id, actor, request_key, digest):
                     return await run_view(session, found), False
-                raise conflict("run", waiting.id, "not_idle_waiting_run")
+                raise conflict("run", waiting.id, "not_idle_waiting_head")
             answers = normalize(Pending.model_validate(waiting.pending), request)
             if answers.input is not None:
                 await require_usable(session, scope.workspace_id, asset_fields(answers.input))

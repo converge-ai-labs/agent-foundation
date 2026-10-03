@@ -51,6 +51,15 @@ class InlineSubagentState(BaseModel):
     # The saved state's own references, so the parent's export lists them without loading it.
     refs: tuple[StoredRef, ...] = ()
 
+    @model_validator(mode="before")
+    @classmethod
+    def _earlier_record(cls, data: object) -> object:
+        """An earlier Harness retained the child's state inline without naming its Thread; the child continues in
+        the Thread of that state."""
+        if isinstance(data, dict) and "child_thread_id" not in data and isinstance(state := data.get("state"), dict):
+            return {**data, "child_thread_id": state.get("thread_id")}
+        return data
+
     @model_validator(mode="after")
     def _validate_identity(self) -> InlineSubagentState:
         match = _CHILD_ID_PATTERN.fullmatch(self.child_instance_id)

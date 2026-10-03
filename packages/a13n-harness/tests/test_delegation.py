@@ -52,6 +52,7 @@ from a13n_harness.pricing import (
     ModelCostInput,
     ModelCostQuote,
 )
+from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
     InvocationPolicyCapability,
@@ -449,37 +450,40 @@ async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspe
     assert "deferred_tools_unsupported" in child_failures[0]
 
 
-async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:
-    async def parent_stream(
-        messages: list[ModelMessage],
-        info: AgentInfo,
-    ) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        if not _returns_after_latest_user(messages):
-            execution_id = _previous_child_id(messages)
-            if execution_id is None:
-                name = "delegate"
-                arguments = {"subagent": "reviewer", "prompt": _latest_user_text(messages) or "continue"}
-            else:
-                name = "resume_subagent"
-                arguments = {"execution_id": execution_id, "prompt": _latest_user_text(messages) or "continue"}
-            yield {
-                0: DeltaToolCall(
-                    name=name,
-                    json_args=json.dumps(arguments),
-                    tool_call_id=f"{name}-{len(messages)}",
-                )
-            }
-            return
-        yield "parent-done"
+async def _delegating_parent(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+    """Delegate each new user message to the reviewer, resuming the child it already has."""
+    del info
+    if not _returns_after_latest_user(messages):
+        execution_id = _previous_child_id(messages)
+        if execution_id is None:
+            name = "delegate"
+            arguments = {"subagent": "reviewer", "prompt": _latest_user_text(messages) or "continue"}
+        else:
+            name = "resume_subagent"
+            arguments = {"execution_id": execution_id, "prompt": _latest_user_text(messages) or "continue"}
+        yield {
+            0: DeltaToolCall(
+                name=name,
+                json_args=json.dumps(arguments),
+                tool_call_id=f"{name}-{len(messages)}",
+            )
+        }
+        return
+    yield "parent-done"
 
-    executable = HarnessBuilder().build(
+
+def _delegating_executable():
+    return HarnessBuilder().build(
         _parent_definition(
             _child_definition(),
-            FunctionModel(stream_function=parent_stream),
+            FunctionModel(stream_function=_delegating_parent),
             subagent_capability=_inline_subagents(),
         )
     )
+
+
+async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:
+    executable = _delegating_executable()
     bindings = _bindings_factory()
 
     events = []
@@ -558,6 +562,37 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
     assert set(continued.children) == {child_id}
     assert continued.children[child_id].state.thread_id == child_record.state.thread_id
     assert continued.children[child_id].state.thread_id != second.state.thread_id
+    assert "child-turn-2" in json.dumps(second.all_messages(), default=str)
+
+
+async def test_a_child_retained_by_an_earlier_harness_resumes_in_its_own_thread() -> None:
+    executable = _delegating_executable()
+    limits = UsageLimits(request_limit=9, total_tokens_limit=100_000)
+    first = await executable.run("start", bindings=_bindings_factory(), usage_limits=limits)
+    assert first.state is not None
+    entry = first.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID]
+    assert isinstance(entry.data, dict) and isinstance(entry.data["children"], dict)
+    # An earlier Harness kept each child's state inline, naming neither its Thread nor references beside it.
+    earlier = {
+        child_id: {key: value for key, value in record.items() if key not in ("child_thread_id", "refs")}
+        for child_id, record in entry.data["children"].items()
+        if isinstance(record, dict)
+    }
+    entries = first.state.agent_context_state.entries
+    entries[SUBAGENT_CAPABILITY_ID] = CapabilityState(version=entry.version, data={"children": earlier})
+    previous = first.state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
+
+    second = await executable.run(
+        "continue", bindings=_bindings_factory(), previous_state=previous, usage_limits=limits
+    )
+
+    assert second.output_or_raise() == "parent-done"
+    assert second.state is not None
+    [(child_id, record)] = InlineSubagentCollectionState.model_validate(
+        second.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
+    ).children.items()
+    assert isinstance(record.state, HarnessState)
+    assert record.child_thread_id == record.state.thread_id == earlier[child_id]["state"]["thread_id"]
     assert "child-turn-2" in json.dumps(second.all_messages(), default=str)
 
 

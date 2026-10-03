@@ -319,7 +319,7 @@ The seal transaction stages durable reclamation of objects outside the run's fin
 
 **Replies to questions.** A question response names the exact waiting Run and `tool_call_id` through resume. A returned `ask_user_question` value follows the Harness `UserQuestionAnswers` contract: `answers` maps question text to a selection or selections, and optional `response` supplies a general free-text answer. The Service uses the Harness validator against that call's exact arguments before creating a successor. Malformed question values are `invalid_argument` with `field: calls`, `reason: invalid_question_response` and the call ID as `id`. Intentional skipping is an explicit failed call result with a message explaining that no response was given.
 
-**Resume** (`POST …/runs/{run}/resume`) resolves the exact wait of the thread's idle waiting run. It needs `run`, an open thread and an `Idempotency-Key`. If the run is not the thread's last run or the thread has a current run, it is `conflict` (`not_idle_waiting_run`) and nothing is stored. The waiting run, not a tool-call ID, identifies the suspension, so a result for a superseded wait conflicts.
+**Resume** (`POST …/runs/{run}/resume`) resolves the exact wait of the thread's idle waiting run. It needs `run`, an open thread and an `Idempotency-Key`. If the run is not the thread's last run or the thread has a current run, it is `conflict` (`not_idle_waiting_head`) and nothing is stored. The waiting run, not a tool-call ID, identifies the suspension, so a result for a superseded wait conflicts.
 
 The request has two required maps keyed by nonblank `tool_call_id` (at most 1024 characters):
 
