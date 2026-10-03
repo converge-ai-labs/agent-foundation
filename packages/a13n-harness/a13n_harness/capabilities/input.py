@@ -14,6 +14,7 @@ from pydantic_ai.models import ModelRequestContext
 from a13n_harness.content import annotate_prompt
 from a13n_harness.context import AgentContext
 from a13n_harness.events import input_events
+from a13n_harness.model_context import ModelContextCoordinatorCapability
 
 INPUT_CAPABILITY_ID = "a13n.input"
 
@@ -25,7 +26,7 @@ class InputCapability(AbstractCapability[AgentContext]):
     id = INPUT_CAPABILITY_ID
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="outermost")
+        return CapabilityOrdering(position="outermost", wraps=(ModelContextCoordinatorCapability,))
 
     async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Callable[[], Awaitable[Any]]) -> Any:
         state = ctx.deps._model_input
@@ -38,8 +39,11 @@ class InputCapability(AbstractCapability[AgentContext]):
         return await handler()
 
     async def before_model_request(
-        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+        self,
+        ctx: RunContext[AgentContext],
+        request_context: ModelRequestContext,
     ) -> ModelRequestContext:
+        # Bind primary input before context appends its own user-role parts.
         state = ctx.deps._model_input
         if (
             state.attempt_id is not None

@@ -20,6 +20,7 @@ from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness.content import replace_request_parts, request_parts
 from a13n_harness.context import AgentContext
+from a13n_harness.model_context import ModelContextCoordinatorCapability
 
 MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID = "a13n.filter.message-integrity"
 
@@ -35,19 +36,19 @@ class MessageIntegrityFilterCapability(AbstractCapability[AgentContext]):
             raise ValueError(f"MessageIntegrityFilterCapability.id must be {MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID!r}")
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="innermost")
+        return CapabilityOrdering(position="innermost", wraps=(ModelContextCoordinatorCapability,))
 
     async def before_model_request(
         self,
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
-        del ctx
         filtered, changed = _filter_tool_result_pairs(request_context.messages)
         if not changed:
             return request_context
         updated = copy(request_context)
         updated.messages = deepcopy(filtered)
+        ctx.messages[:] = updated.messages
         return updated
 
 

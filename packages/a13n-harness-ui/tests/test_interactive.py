@@ -273,6 +273,13 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         assert sum(source == "> Do the task" for source in sources) == 1, sources
         page = await app.get_thread_transcript(thread_id=backend.thread_id, limit=50)
         hidden = [part for entry in page.entries for part in entry.parts if not part.metadata.display]
+        visible_input = [
+            part.text for entry in page.entries for part in entry.parts if part.kind == "user" and part.metadata.display
+        ]
+        assert visible_input == ["Do the task"]
+        assert page.turns[0].preview == "Do the task"
+        detail = await app.get_thread(thread_id=backend.thread_id)
+        assert detail.thread.excerpt.latest_input == "Do the task"
         assert any("GLOBAL GUIDANCE" in (part.text or "") for part in hidden)
         assert any("Harness UI TUI" in (part.text or "") for part in hidden)
         assert any("FINAL REPOSITORY RULE" in (part.text or "") for part in hidden)

@@ -78,17 +78,26 @@ class SteeringBridge:
     def retained_requests(self) -> tuple[ModelRequest, ...]:
         return deepcopy(self._retained_requests)
 
-    def replay_requests(self, native_run_id: str | None) -> tuple[ModelRequest, ...]:
+    def replay_requests(
+        self, native_run_id: str | None, conversation_id: str | None = None
+    ) -> tuple[ModelRequest, ...]:
         """Return retained inputs with current logical-run provenance restored."""
         requests = deepcopy(self._retained_requests)
         if native_run_id is None:
             return requests
-        return tuple(
-            replace(request, run_id=native_run_id)
-            if request.metadata is not None and request.metadata.get(_SOURCE_RUN_METADATA_KEY) == self._run_id
-            else request
-            for request in requests
-        )
+        replayed = []
+        for request in requests:
+            if request.metadata is not None and request.metadata.get(_SOURCE_RUN_METADATA_KEY) == self._run_id:
+                part = request.parts[0]
+                assert isinstance(part, UserPromptPart)
+                request = replace(
+                    request,
+                    timestamp=request.timestamp or part.timestamp,
+                    run_id=native_run_id,
+                    conversation_id=request.conversation_id or conversation_id,
+                )
+            replayed.append(request)
+        return tuple(replayed)
 
     async def prepare(self, input: SemanticRunInput, *, restore_retained: bool) -> None:
         """Start this logical run's retained-input ledger."""

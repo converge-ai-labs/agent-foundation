@@ -55,7 +55,6 @@ class ColdStartFilterCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
-        del ctx
         last_response = _last_response(request_context.messages)
         if last_response is None or _idle_seconds(last_response[1].timestamp) < self.configuration.idle_seconds:
             return request_context
@@ -66,6 +65,7 @@ class ColdStartFilterCapability(AbstractCapability[AgentContext]):
             return request_context
         updated = copy(request_context)
         updated.messages = deepcopy(messages)
+        ctx.messages[:] = updated.messages
         return updated
 
 

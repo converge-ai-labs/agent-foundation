@@ -10,8 +10,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapModelRequestHandler
-from pydantic_ai.messages import ModelResponse
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.settings import ModelSettings
 
@@ -119,16 +118,14 @@ class ModelRequestHeadersCapability(AbstractCapability[AgentContext]):
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="innermost", wrapped_by=(AbstractCapability,))
 
-    async def wrap_model_request(
+    async def before_model_request(
         self,
         ctx: RunContext[AgentContext],
-        *,
         request_context: ModelRequestContext,
-        handler: WrapModelRequestHandler,
-    ) -> ModelResponse:
+    ) -> ModelRequestContext:
         configuration = self._configuration
         if configuration.session_affinity_header is None and not configuration.openai_prompt_cache_key_enabled:
-            return await handler(request_context)
+            return request_context
 
         affinity_id = derive_model_affinity_id(ctx.deps.thread_id)
         settings: dict[str, Any] = dict(request_context.model_settings or {})
@@ -147,7 +144,7 @@ class ModelRequestHeadersCapability(AbstractCapability[AgentContext]):
 
         updated = copy(request_context)
         updated.model_settings = cast(ModelSettings, settings)
-        return await handler(updated)
+        return updated
 
 
 __all__ = [

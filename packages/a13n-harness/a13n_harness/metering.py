@@ -15,7 +15,7 @@ from uuid import uuid4
 import anyio
 from a13n_logging import get_logger
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, WrapModelRequestHandler
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import ModelRequestContext, ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.wrapper import WrapperModel
@@ -114,28 +114,36 @@ class ModelUsageCapability(UsageCapability):
     async def for_run(self, ctx: RunContext[Any]) -> AbstractCapability[Any]:
         return self
 
-    async def wrap_model_request(
-        self, ctx: RunContext[Any], *, request_context: ModelRequestContext, handler: WrapModelRequestHandler
-    ) -> ModelResponse:
-        return await meter_request(self.binding, ctx, request_context, handler)
+    async def before_model_request(
+        self, ctx: RunContext[Any], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        return meter_request(self.binding, ctx, request_context)
 
 
-async def meter_request(
-    binding: ModelUsageBinding, ctx: RunContext[Any], request: ModelRequestContext, handler: WrapModelRequestHandler
-) -> ModelResponse:
+def meter_request(
+    binding: ModelUsageBinding, ctx: RunContext[Any], request: ModelRequestContext
+) -> ModelRequestContext:
     if isinstance(request.model, SelfHealingModel):
         selected = copy(request.model)
         model = MeteredModel(replace(request, model=selected.wrapped), binding, ctx.run_id)
         selected.wrapped = model
     else:
         selected = model = MeteredModel(request, binding, ctx.run_id)
-    response = await handler(replace(request, model=selected))
-    # Preserve the existing logical-request trace enrichment after native stream finalization.
-    if model.pricing is not None:
-        from a13n_harness.usage import summarize_usage
+    return replace(request, model=selected)
 
-        response.usage.cost = summarize_usage(model.records.values()).cost
-        _enrich_current_model_span(response, model.pricing)
+
+def enrich_metered_response(request: ModelRequestContext, response: ModelResponse) -> ModelResponse:
+    """Enrich the committed response after the final selected model has completed."""
+    model = request.model
+    while isinstance(model, WrapperModel):
+        if isinstance(model, MeteredModel):
+            if model.pricing is not None:
+                from a13n_harness.usage import summarize_usage
+
+                response.usage.cost = summarize_usage(model.records.values()).cost
+                _enrich_current_model_span(response, model.pricing)
+            break
+        model = model.wrapped
     return response
 
 

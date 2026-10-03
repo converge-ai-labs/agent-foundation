@@ -127,20 +127,18 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
     id = MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="outermost")
+        return CapabilityOrdering(position="innermost")
 
-    async def wrap_model_request(
+    async def before_model_request(
         self,
         ctx: RunContext[AgentContext],
-        *,
         request_context: ModelRequestContext,
-        handler: Callable[[ModelRequestContext], Awaitable[ModelResponse]],
-    ) -> ModelResponse:
-        if _requires_exact_boundary(ctx, request_context.messages):
-            return await handler(request_context)
+    ) -> ModelRequestContext:
+        if _requires_exact_boundary(ctx, request_context.messages) or _requires_exact_boundary(ctx, ctx.messages):
+            return request_context
         request = _classify_request(ctx, request_context.messages)
         if request is None:
-            return await handler(request_context)
+            return request_context
 
         async def terminal(current: ModelContextProjectionRequest) -> ModelContextProjection:
             return await ctx.deps.project_model_context(current)
@@ -190,7 +188,7 @@ class ModelContextCoordinatorCapability(AbstractCapability[AgentContext]):
             input_id=f"context-{ctx.run_id}-{ctx.run_step}",
         ):
             await ctx.emit(event)
-        return await handler(_replace_messages(request_context, committed))
+        return _replace_messages(request_context, committed)
 
 
 def _classify_request(

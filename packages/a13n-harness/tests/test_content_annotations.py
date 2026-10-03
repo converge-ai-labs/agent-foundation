@@ -16,6 +16,76 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ToolRet
 from pydantic_ai.models.function import FunctionModel
 
 
+@pytest.mark.anyio
+async def test_primary_annotations_precede_context_and_survive_repeated_preparation() -> None:
+    from types import SimpleNamespace
+    from typing import cast
+
+    from a13n_harness import AgentContext
+    from a13n_harness.capabilities.input import InputCapability
+    from a13n_harness.input import ModelInputState
+    from a13n_harness.model_context import (
+        ModelContextBlock,
+        ModelContextCoordinatorCapability,
+        ModelContextPlacement,
+        ModelContextProjection,
+        ModelContextProjectionRequest,
+        ModelContextRequestKind,
+        _commit_projection,
+    )
+    from pydantic_ai import RunContext
+    from pydantic_ai.messages import ModelResponse, TextContent, TextPart, UserPromptPart
+    from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
+
+    content = (
+        ContentItem("same", ContentMetadata(source_id="authored")),
+        ContentItem("hidden surface", ContentMetadata(display=False, source_id="surface")),
+    )
+    state = ModelInputState()
+    state.begin("attempt-one", content, recovery=False)
+    history = [ModelRequest(parts=[UserPromptPart([item.value for item in content])])]
+    ctx = cast(
+        RunContext[AgentContext],
+        SimpleNamespace(deps=SimpleNamespace(_model_input=state), messages=history, run_id="attempt-one", run_step=1),
+    )
+    request_context = ModelRequestContext(
+        model=FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("unused")])),
+        messages=list(history),
+        model_settings={},
+        model_request_parameters=ModelRequestParameters(),
+    )
+    capability = InputCapability()
+    assert ModelContextCoordinatorCapability in capability.get_ordering().wraps
+    request_context = await capability.before_model_request(ctx, request_context)
+
+    async def project_then_run_native_hooks(request_context: ModelRequestContext) -> ModelResponse:
+        # The context deliberately duplicates authored text: provenance must not
+        # be recovered by matching strings or by selecting the final prompt.
+        projected = _commit_projection(
+            request_context.messages,
+            ModelContextProjectionRequest(kind=ModelContextRequestKind.INPUT),
+            ModelContextProjection(
+                blocks=(ModelContextBlock("guidance", ModelContextPlacement.REQUEST_EPILOGUE, "same"),)
+            ),
+        )
+        ctx.messages[:] = projected
+        request_context.messages = projected
+        request_context = await capability.before_model_request(ctx, request_context)
+        restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(request_context.messages))
+        items = request_input_content(restored[0])
+        assert [item.metadata.source_id for item in items] == ["authored", "surface", "guidance"]
+        assert [item.metadata.display for item in items] == [True, False, False]
+        assert [item.value.content if isinstance(item.value, TextContent) else item.value for item in items] == [
+            "same",
+            "hidden surface",
+            "same",
+        ]
+        return ModelResponse(parts=[TextPart("done")])
+
+    response = await project_then_run_native_hooks(request_context)
+    assert response.parts == [TextPart("done")]
+
+
 def test_annotations_follow_duplicate_values_through_canonical_merge_and_codec() -> None:
     image = BinaryContent(b"same", media_type="image/png", vendor_metadata={"detail": "high"})
     first = input_request([ContentItem(image, ContentMetadata(source_id="first"))])

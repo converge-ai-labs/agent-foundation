@@ -20,8 +20,9 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from a13n_harness import AgentContext, HarnessState
+from a13n_harness.model_context import ModelContextCoordinatorCapability
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapRunHandler
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ValidatedToolArgs, WrapRunHandler
 from pydantic_ai.messages import CapabilityEvent, ModelMessage, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
@@ -59,6 +60,9 @@ class Boundaries(AbstractCapability[AgentContext]):
         # The history length of the latest staged boundary; a boundary without new history is not staged again.
         self.staged_length = -1
 
+    def get_ordering(self) -> CapabilityOrdering:
+        return CapabilityOrdering(position="innermost", wrapped_by=(ModelContextCoordinatorCapability,))
+
     def take(self, token: int) -> Staged:
         return self.states.pop(token)
 
@@ -80,7 +84,7 @@ class Boundaries(AbstractCapability[AgentContext]):
         self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         if ctx.run_id == self.primary:
-            await self._stage(ctx, request_context.messages, "model")
+            await self._stage(ctx, ctx.messages, "model")
         return request_context
 
     async def before_tool_execute(
