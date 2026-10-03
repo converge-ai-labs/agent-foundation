@@ -20,8 +20,8 @@ export interface RunExecution extends Execution {
   coverage: ExecutionCoverage;
 }
 
-/** How long an active Run may go unconfirmed while its Thread reports no change. */
-const SEAL_CHECK_MS = 10_000;
+/** Refresh quiet checkpoints even if their provisional transport marker was lost. */
+const CHECKPOINT_REFRESH_MS = 10_000;
 
 /** The committed display and its live suffix as last published. */
 interface Published {
@@ -121,19 +121,19 @@ export function useRunDisplay(
         ),
       ]);
       signal.throwIfAborted();
-      read = next;
       known = list;
-      cache.setQueryData(queries.run(runId).queryKey, next.run);
       buffer.reconcile(
         next,
         Math.max(0, ...list.map((attempt) => attempt.number)),
         discard,
       );
-      omitted = next.items.some((item) => isOmitted(item.content));
+      read = buffer.read!;
+      cache.setQueryData(queries.run(runId).queryKey, read.run);
+      omitted = read.items.some((item) => isOmitted(item.content));
       setIncomplete(omitted);
       setGap(omitted || buffer.incomplete);
       publish();
-      return next;
+      return read;
     }
     async function receive(delta: ThreadDelta, cursor: string) {
       if (delta.attempt < buffer.attempt || read?.complete) return;
@@ -154,12 +154,8 @@ export function useRunDisplay(
       // attachment; its Run reports a seal the stream would never announce.
       const check = setInterval(() => {
         if (!read || read.complete) return;
-        void current(() =>
-          cache.fetchQuery({ ...queries.run(runId), staleTime: 0 }),
-        )
-          .then((run) => (run.sealed_at ? reconcile() : undefined))
-          .catch(() => undefined);
-      }, SEAL_CHECK_MS);
+        void reconcile().catch(() => undefined);
+      }, CHECKPOINT_REFRESH_MS);
       try {
         for await (const next of client.streamThread(workspace.id, threadId, {
           signal,

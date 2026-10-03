@@ -1,10 +1,8 @@
-"""Primary-attempt input annotation and source-typed observation."""
+"""Primary-attempt input annotation before model-context projection."""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
@@ -13,7 +11,6 @@ from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness.content import annotate_prompt
 from a13n_harness.context import AgentContext
-from a13n_harness.events import input_events
 from a13n_harness.model_context import ModelContextCoordinatorCapability
 
 INPUT_CAPABILITY_ID = "a13n.input"
@@ -27,16 +24,6 @@ class InputCapability(AbstractCapability[AgentContext]):
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="outermost", wraps=(ModelContextCoordinatorCapability,))
-
-    async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Callable[[], Awaitable[Any]]) -> Any:
-        state = ctx.deps._model_input
-        attempt_id = state.attempt_id
-        if attempt_id is not None and attempt_id == ctx.run_id and not state.observed:
-            state.observed = True
-            if state.content is not None:
-                for event in input_events(state.content, source=state.source, input_id=attempt_id):
-                    await ctx.emit(event)
-        return await handler()
 
     async def before_model_request(
         self,

@@ -26,6 +26,8 @@ from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.selection import SelectionState
 from pydantic_ai.messages import BinaryContent, TextContent
 
+from .display_fixture import feed_display
+
 
 def _image() -> AttachmentUpload:
     stream = BytesIO()
@@ -238,16 +240,16 @@ def test_live_and_history_combine_parts_without_internal_details_or_duplicate_ec
         )
     )
     for item in events:
-        renderer.ingest(item.type.value, item.model_dump(mode="json"))
+        feed_display(renderer, item.type.value, item.model_dump(mode="json"))
     expected = "> before " + "x" * 17000 + "[image#1] using [file#2: requirements.md] after"
     assert _source(renderer) == expected
     for item in events:
-        renderer.ingest(item.type.value, item.model_dump(mode="json"))
+        feed_display(renderer, item.type.value, item.model_dump(mode="json"))
     assert _source(renderer) == expected
     local = StreamRenderer(Status())
     local.local_input("input-inline", expected[2:])
     for item in events:
-        local.ingest(item.type.value, item.model_dump(mode="json"))
+        feed_display(local, item.type.value, item.model_dump(mode="json"))
     assert _source(local) == expected
     parts = []
     for item in content:

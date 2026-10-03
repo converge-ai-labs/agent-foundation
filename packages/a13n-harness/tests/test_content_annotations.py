@@ -86,6 +86,44 @@ async def test_primary_annotations_precede_context_and_survive_repeated_preparat
     assert response.parts == [TextPart("done")]
 
 
+@pytest.mark.anyio
+async def test_primary_input_is_observed_once_when_native_preparation_fails() -> None:
+    from a13n_harness import HarnessEvent
+    from a13n_harness.events import InputTextEvent
+    from pydantic_ai.capabilities import AbstractCapability
+
+    class UnavailableInstructions(AbstractCapability):
+        def get_instructions(self):
+            async def instructions(ctx):
+                raise RuntimeError("instructions unavailable")
+
+            return instructions
+
+    async def model(messages, info):
+        pytest.fail("preparation failure must not dispatch the model")
+        yield "unreachable"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=[UnavailableInstructions()],
+    )
+    observed = []
+    async with executable.stream(
+        [ContentItem("Authored input", ContentMetadata(source_id="submission"))],
+        bindings=RunBindings.embedded(),
+    ) as stream:
+        async for item in stream:
+            if isinstance(item, HarnessEvent) and isinstance(item.event, InputTextEvent):
+                observed.append(item.event)
+        assert stream.result is not None and stream.result.status == "failed"
+    assert len(observed) == 1
+    assert observed[0].content == "Authored input"
+    assert observed[0].source == "user"
+    assert observed[0].metadata.source_id == "submission"
+
+
 def test_annotations_follow_duplicate_values_through_canonical_merge_and_codec() -> None:
     image = BinaryContent(b"same", media_type="image/png", vendor_metadata={"detail": "high"})
     first = input_request([ContentItem(image, ContentMetadata(source_id="first"))])

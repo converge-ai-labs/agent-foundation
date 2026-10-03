@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from a13n_harness.configuration import RunConfiguration
+from a13n_stream_protocol.display import Item
 from pydantic import (
     AfterValidator,
     AwareDatetime,
@@ -25,7 +26,6 @@ from a13n_service.infra.labels import Labels
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.connections.headers import normalize_headers
 from a13n_service.resources.memories.schemas import MemoryMount, MemoryMounts
-from a13n_service.runs.display import Item
 from a13n_service.runs.environments.schemas import MAX_MOUNTS, MountCreate
 from a13n_service.runs.history import MessageHistory
 

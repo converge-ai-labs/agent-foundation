@@ -1,6 +1,15 @@
 import { afterEach, expect, it, vi } from "vitest";
+import type { ItemChange } from "a13n-ui/display";
 import { createTransport, type Schema } from "../transport/client";
 import { mockWebSocket, FakeWebSocket } from "../../tests/fake-websocket";
+import {
+  FocusDisplay,
+  focusFrame,
+  focusRefresh,
+  showFocusedOutput,
+  watchThread,
+} from "./stream";
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -10,29 +19,6 @@ function connectedTransport() {
   const socket = mockWebSocket();
   return { socket, transport: createTransport("", vi.fn()) };
 }
-import {
-  FocusDisplay,
-  focusFrame as parseFocusFrame,
-  showFocusedOutput,
-  watchThread,
-} from "./stream";
-
-// Fixture envelopes repeat the AG-UI discriminant inside their payload.
-function focusFrame(value: unknown) {
-  const frame = parseFocusFrame(value);
-  const events =
-    frame.kind === "root_stream"
-      ? frame.events
-      : frame.kind === "event"
-        ? [frame.event]
-        : [];
-  for (const event of events) {
-    if (event.payload)
-      event.payload = { type: event.event_type, ...event.payload };
-  }
-  return frame;
-}
-
 const thread = {
   thread_id: "thread-one",
   created_at: "2026-09-12",
@@ -47,7 +33,7 @@ const thread = {
   continuation_state: "initial",
   root_activity: { state: "inactive" },
 } as Schema<"ThreadSummary">;
-function snapshot(count?: number) {
+function snapshot(count?: number, checkpoints: Record<string, number> = {}) {
   return focusFrame({
     kind: "snapshot",
     resume_cursor: count === undefined ? "cursor-one" : null,
@@ -59,7 +45,7 @@ function snapshot(count?: number) {
       recent_events: [
         {
           event_type: "TEXT_MESSAGE_CONTENT",
-          payload: { type: "TEXT_MESSAGE_CONTENT", delta: "diagnostic only" },
+          payload: { delta: "diagnostic only" },
         },
       ],
       root_stream:
@@ -70,547 +56,59 @@ function snapshot(count?: number) {
               run_id: "run-one",
               base_continuation_id: null,
               event_count: count,
+              checkpoints,
             },
     },
   });
 }
-function event(sequence: number, delta = "live", run_kind = "root") {
-  return focusFrame({
-    kind: "event",
-    resume_cursor: `cursor-${sequence}`,
-    event: {
-      sequence,
-      epoch: "epoch-one",
-      run_kind,
-      thread_id: "thread-one",
-      root_thread_id: "thread-one",
-      run_id: "run-one",
-      event_type: "TEXT_MESSAGE_CONTENT",
-      payload: {
-        type: "TEXT_MESSAGE_CONTENT",
-        messageId: "message-one",
-        delta,
-      },
-      payload_omitted: false,
-    },
+function item(
+  id: string,
+  position: number,
+  content: Record<string, unknown>,
+  kind: Schema<"Item">["kind"] = "text_message",
+  state: Schema<"Item">["state"] = "completed",
+): Schema<"Item"> {
+  return {
+    id,
+    ordinal: position,
+    kind,
+    state,
+    first_stream_id: `1-${position}`,
+    last_stream_id: `1-${position}`,
+    started_at: "2026-01-01T00:00:00Z",
+    ended_at: null,
+    content,
+  };
+}
+function text(id: string, position: number, value: string, extra = {}) {
+  return item(id, position, {
+    messageId: id,
+    role: "assistant",
+    text: value,
+    ...extra,
   });
 }
-it("does not turn diagnostics into conversation output and only saves cursor after ready", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(2));
-  expect(display.cursor).toBeUndefined();
-  expect(display.blocks.size).toBe(0);
-  display.accept(
-    focusFrame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: [
-        {
-          index: 0,
-          event_type: "TEXT_MESSAGE_START",
-          payload: { type: "TEXT_MESSAGE_START", messageId: "message-one" },
-          payload_omitted: false,
-        },
-        {
-          index: 1,
-          event_type: "TEXT_MESSAGE_CONTENT",
-          payload: {
-            type: "TEXT_MESSAGE_CONTENT",
-            messageId: "message-one",
-            delta: "replay",
-          },
-          payload_omitted: false,
-        },
-      ],
-    }),
+function observation(
+  id: string,
+  position: number,
+  name: string,
+  source: Record<string, unknown>,
+  extra = {},
+) {
+  return item(
+    id,
+    position,
+    { name, value: { event: source }, ...extra },
+    "observation",
   );
-  expect(display.cursor).toBeUndefined();
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "cursor-ready" }));
-  display.accept(event(105));
-  display.accept(event(105, "duplicate"));
-  expect([...display.blocks.values()][0].text).toBe("replaylive");
-  expect(display.cursor).toBe("cursor-105");
-});
-it("rejects incomplete replay rather than publishing its cutover cursor", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(2));
-  expect(() =>
-    display.accept(focusFrame({ kind: "ready", resume_cursor: "bad" })),
-  ).toThrow("Incomplete");
-  expect(display.cursor).toBeUndefined();
-});
-it("reset discards provisional output without making a new saved transcript", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(0));
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-  display.accept(event(110));
-  display.accept(focusFrame({ kind: "reset", reason: "live_cursor_expired" }));
-  expect(display.blocks.size).toBe(0);
-  expect(display.ready).toBe(false);
-  expect(display.cursor).toBeUndefined();
-});
-it("a child event advances the shared cursor but does not become root text", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot());
-  display.accept(event(110, "child", "child"));
-  expect(display.cursor).toBe("cursor-110");
-  expect(display.blocks.size).toBe(0);
-});
-it("rejects incompatible frame envelopes at the boundary", () => {
-  for (const value of [
-    null,
-    { kind: "snapshot" },
-    { kind: "event", event: {} },
-    { kind: "ready", resume_cursor: 1 },
-  ])
-    expect(() => focusFrame(value)).toThrow("Invalid");
-});
-
-it("honors display metadata, canonical reasoning events and tool result identity", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(8));
-  const events = [
-    [
-      "TEXT_MESSAGE_START",
-      { messageId: "hidden", role: "user", metadata: { display: false } },
-    ],
-    [
-      "TEXT_MESSAGE_CONTENT",
-      {
-        messageId: "hidden",
-        delta: "hidden guidance",
-        metadata: { display: false },
-      },
-    ],
-    ["REASONING_MESSAGE_START", { messageId: "reason", role: "reasoning" }],
-    [
-      "REASONING_MESSAGE_CONTENT",
-      { messageId: "reason", delta: "reasoning text" },
-    ],
-    ["REASONING_MESSAGE_END", { messageId: "reason" }],
-    ["TOOL_CALL_START", { toolCallId: "call-one", toolCallName: "shell" }],
-    ["TOOL_CALL_ARGS", { toolCallId: "call-one", delta: "{}" }],
-    [
-      "TOOL_CALL_RESULT",
-      {
-        messageId: "call-one:result",
-        toolCallId: "call-one",
-        content: "done",
-      },
-    ],
-  ];
-  display.accept(
-    focusFrame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: events.map(([event_type, payload], index) => ({
-        event_type,
-        payload,
-        index,
-        payload_omitted: false,
-      })),
-    }),
-  );
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-  expect([...display.blocks.values()]).toEqual([
-    {
-      id: "run-one:reason",
-      kind: "thinking",
-      text: "reasoning text",
-      done: true,
-    },
-    {
-      id: "run-one:call-one",
-      toolCallId: "call-one",
-      kind: "tool",
-      name: "shell",
-      text: "{}",
-      result: "done",
-      done: true,
-    },
-  ]);
-});
-
-it("reboots through a root Run and checkpoint race while retaining its authoritative unsaved base", async () => {
-  vi.useFakeTimers();
-  const display = new FocusDisplay();
-  const first = snapshot(0);
-  if (first.kind !== "snapshot") throw new Error("fixture");
-  first.snapshot.thread.continuation_id = "C0";
-  first.snapshot.root_stream!.base_continuation_id = "C0";
-  const next = event(120);
-  if (next.kind !== "event") throw new Error("fixture");
-  next.event.run_id = "run-two";
-  const second = snapshot(1);
-  if (second.kind !== "snapshot") throw new Error("fixture");
-  second.snapshot.thread.continuation_id = "C1";
-  second.snapshot.root_stream!.base_continuation_id = "C1";
-  second.snapshot.root_stream!.run_id = "run-two";
-  const { socket, transport } = connectedTransport();
-  const close = watchThread(
-    transport,
-    "thread-one",
-    display,
-    vi.fn(),
-    vi.fn(),
-    vi.fn(),
-  );
-  try {
-    socket().open();
-    socket().frame(first);
-    socket().frame({ kind: "ready", resume_cursor: "C0-ready" });
-    socket().frame(next);
-    await vi.advanceTimersByTimeAsync(1);
-    socket().frame({ kind: "reset", reason: "live_snapshot_changed" });
-    await vi.advanceTimersByTimeAsync(1);
-    socket().frame(second);
-    socket().frame({
-      kind: "root_stream",
-      run_id: "run-two",
-      events: [
-        {
-          index: 0,
-          event_type: "TEXT_MESSAGE_CONTENT",
-          payload: {
-            type: "TEXT_MESSAGE_CONTENT",
-            messageId: "unsaved",
-            delta: "Retained failed output",
-          },
-          payload_omitted: false,
-        },
-      ],
-    });
-    socket().frame({ kind: "ready", resume_cursor: "C1-ready" });
-    expect(FakeWebSocket.instances).toHaveLength(1);
-    expect(
-      socket().sent.filter((item) => item.kind === "subscribe"),
-    ).toHaveLength(3);
-    expect(display.runId).toBe("run-two");
-    expect(display.baseContinuation).toBe("C1");
-    expect(display.snapshot!.thread.thread.root_activity.state).toBe(
-      "inactive",
-    );
-    expect([...display.blocks.values()][0].text).toBe("Retained failed output");
-  } finally {
-    close();
-    vi.useRealTimers();
-  }
-});
-
-it("dispatches native custom payloads and folds task/context operations without diagnostic spam", () => {
-  const display = new FocusDisplay();
-  const custom = (name: string, event: unknown, extra = {}) => ({
-    event_type: "CUSTOM",
-    payload: { type: "CUSTOM", name, value: { event }, ...extra },
-    payload_omitted: false,
-  });
-  const events = [
-    custom(
-      "a13n.input.media",
-      {
-        source: "user",
-        input_id: "input-one",
-        content: { kind: "binary", size_bytes: 20 },
-      },
-      { messageId: "run-one:input:1:0", metadata: { media: true } },
-    ),
-    custom("a13n.harness.state", {
-      payload: {
-        type: "task_changed",
-        task: { id: "task-one", status: "pending", subject: "Inspect code" },
-      },
-    }),
-    custom("a13n.harness.state", {
-      payload: {
-        type: "task_changed",
-        task: {
-          id: "task-one",
-          status: "in_progress",
-          subject: "Inspect code",
-          active_form: "Inspecting code",
-        },
-      },
-    }),
-    custom("a13n.harness.context", {
-      payload: { type: "compaction_started", operation_id: "compact-one" },
-    }),
-    custom("a13n.context.compaction_summary", {
-      operation_id: "compact-one",
-      summary: "Keep this context",
-    }),
-    custom("a13n.harness.context", {
-      payload: { type: "compaction_completed", operation_id: "compact-one" },
-    }),
-    custom("a13n.harness.lifecycle", { payload: { type: "request_started" } }),
-    {
-      event_type: "RUN_ERROR",
-      payload: {
-        type: "RUN_ERROR",
-        code: "failed",
-        message: "Provider disconnected",
-      },
-      payload_omitted: false,
-    },
-  ];
-  display.accept(snapshot(events.length));
-  display.accept(
-    focusFrame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: events.map((event, index) => ({ ...event, index })),
-    }),
-  );
-  const blocks = [...display.blocks.values()];
-  expect(blocks.filter((block) => block.kind === "media")[0].value).toEqual({
-    kind: "binary",
-    size_bytes: 20,
-  });
-  expect(blocks.filter((block) => block.kind === "task")).toHaveLength(1);
-  expect(blocks.find((block) => block.kind === "task")!.text).toBe(
-    "Inspecting code",
-  );
-  expect(
-    blocks.find((block) => block.id.endsWith("context:compact-one")),
-  ).toMatchObject({
-    name: "Compact Summary",
-    context: "compaction",
-    result: "Keep this context",
-  });
-  expect(blocks.filter((block) => block.diagnostic)).toHaveLength(1);
-  expect(display.terminalFailure).toBe("Provider disconnected");
-  expect(blocks.find((block) => block.id.endsWith(":execution"))).toMatchObject(
-    { name: "Execution failed", text: "Provider disconnected" },
-  );
-});
-it("reassembles custom fragments before applying hidden metadata and rejects missing fragments", () => {
-  const display = new FocusDisplay();
-  const hidden = JSON.stringify({
-    type: "CUSTOM",
-    name: "a13n.input.media",
-    metadata: { display: false },
-    value: { event: { content: { kind: "binary" } } },
-  });
-  const visible = JSON.stringify({
-    type: "CUSTOM",
-    name: "a13n.context.compaction_summary",
-    value: { event: { operation_id: "one", summary: "Exact summary" } },
-  });
-  const fragment = (
-    id: string,
-    data: string,
-    index: number,
-    count: number,
-  ) => ({
-    event_type: "CUSTOM",
-    payload: {
-      type: "CUSTOM",
-      name: "a13n.stream.fragment",
-      value: { id, data, index, count },
-    },
-    payload_omitted: false,
-  });
-  const events = [
-    fragment("hidden", hidden.slice(0, 20), 0, 2),
-    fragment("hidden", hidden.slice(20), 1, 2),
-    fragment("visible", visible, 0, 1),
-    fragment("gap", "{}", 1, 2),
-  ];
-  display.accept(snapshot(events.length));
-  display.accept(
-    focusFrame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: events.map((event, index) => ({ ...event, index })),
-    }),
-  );
-  expect(display.blocks.size).toBe(1);
-  expect([...display.blocks.values()][0].result).toBe("Exact summary");
-  expect(display.gap).toBe(true);
-});
-
-it("retains unsaved initial output and only cuts over after replacement history is rendered", () => {
-  const display = new FocusDisplay();
-  display.runId = "run-one";
-  display.baseContinuation = null;
-  expect(showFocusedOutput(display, "initial:immutable-state", null)).toBe(
-    true,
-  );
-  expect(showFocusedOutput(display, undefined, null)).toBe(true);
-  expect(showFocusedOutput(display, "C1", null)).toBe(false);
-  display.runId = "run-two";
-  display.baseContinuation = "C1";
-  expect(
-    showFocusedOutput(display, "initial:immutable-state", null, true),
-  ).toBe(true);
-  expect(showFocusedOutput(display, "C1", null)).toBe(true);
-  expect(showFocusedOutput(display, "C2", null)).toBe(false);
-});
-
-it("folds native applied edits and failed results by exact ID without guessing proxy identities", () => {
-  const display = new FocusDisplay();
-  const events = [
-    ["TOOL_CALL_START", { toolCallId: "outer", toolCallName: "call" }],
-    [
-      "TOOL_CALL_ARGS",
-      { toolCallId: "outer", delta: '{"group":"filesystem","tool":"edit"}' },
-    ],
-    ["TOOL_CALL_END", { toolCallId: "outer" }],
-    [
-      "CUSTOM",
-      {
-        name: "a13n.filesystem.edit_applied",
-        value: {
-          event: {
-            tool_call_id: "inner",
-            file_path: "/native/a",
-            before: "old",
-            after: "new",
-          },
-        },
-      },
-    ],
-    [
-      "CUSTOM",
-      {
-        name: "a13n.pydantic_ai.function_tool_result",
-        value: {
-          event: {
-            part: {
-              part_kind: "tool-return",
-              tool_name: "edit",
-              tool_call_id: "inner",
-              outcome: "failed",
-              content: "Failed after write",
-            },
-          },
-        },
-      },
-    ],
-    ["TOOL_CALL_START", { toolCallId: "retry", toolCallName: "view" }],
-    [
-      "CUSTOM",
-      {
-        name: "a13n.pydantic_ai.function_tool_result",
-        value: {
-          event: {
-            part: {
-              part_kind: "retry-prompt",
-              tool_call_id: "retry",
-              content: "Invalid input",
-            },
-          },
-        },
-      },
-    ],
-    [
-      "RUN_FINISHED",
-      {
-        threadId: "thread-one",
-        runId: "run-one",
-        outcome: { type: "cancelled" },
-      },
-    ],
-  ];
-  display.accept(snapshot(events.length));
-  display.accept(
-    focusFrame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: events.map(([event_type, payload], index) => ({
-        index,
-        event_type,
-        payload,
-        payload_omitted: false,
-      })),
-    }),
-  );
-  expect(display.blocks.get("run-one:outer")).toMatchObject({
-    done: true,
-    stopped: true,
-  });
-  expect(display.blocks.get("run-one:outer")?.result).toBeUndefined();
-  expect(display.blocks.get("run-one:outer")?.edit).toBeUndefined();
-  expect(display.blocks.get("run-one:inner")).toMatchObject({
-    outcome: "failed",
-    result: "Failed after write",
-    edit: { before: "old", after: "new" },
-    stopped: true,
-  });
-  expect(display.blocks.get("run-one:retry")?.failure).toBe("Invalid input");
-  expect(display.blocks.get("run-one:retry")?.retry).toBe(true);
-  expect(
-    [...display.blocks.values()].filter((block) => block.diagnostic),
-  ).toHaveLength(0);
-});
-
-it("folds provider-native search snapshots once, retaining final arguments and separate local call identity", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(0));
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "cursor-ready" }));
-  let sequence = 101;
-  const emit = (event_type: string, payload: Record<string, unknown>) =>
-    display.accept(
-      focusFrame({
-        kind: "event",
-        resume_cursor: `cursor-${sequence}`,
-        event: {
-          sequence: sequence++,
-          epoch: "epoch-one",
-          run_kind: "root",
-          thread_id: "thread-one",
-          root_thread_id: "thread-one",
-          run_id: "run-one",
-          event_type,
-          payload,
-        },
-      }),
-    );
-  const part = {
-    part_kind: "builtin-tool-call",
-    tool_name: "web_search",
-    tool_call_id: "same",
-    provider_name: "openai",
-    args: null,
-  };
-  const native = (name: string, value: Record<string, unknown>) =>
-    emit("CUSTOM", {
-      name: `a13n.pydantic_ai.${name}`,
-      value: { event: { index: 0, part: value } },
-    });
-  native("part_start", part);
-  expect([...display.blocks.values()][0].result).toBeUndefined();
-  native("part_end", {
-    ...part,
-    args: { type: "search", query: "final query" },
-  });
-  expect([...display.blocks.values()][0].text).toContain("final query");
-  expect([...display.blocks.values()][0].result).toBeUndefined();
-  const returned = {
-    ...part,
-    part_kind: "builtin-tool-return",
-    content: { status: "completed", sources: [] },
-    outcome: "success",
-  };
-  native("part_start", returned);
-  native("part_end", returned);
-  emit("TOOL_CALL_START", {
-    toolCallId: "same",
-    toolCallName: "web_search",
-  });
-  expect(display.blocks.size).toBe(2);
-  const provider = [...display.blocks.values()].find((block) => block.provider);
-  expect(provider?.outcome).toBe("success");
-  expect(provider?.text).toContain("final query");
-  expect(provider?.result).toContain("completed");
-  expect([...display.blocks.values()].every((block) => !block.diagnostic)).toBe(
-    true,
-  );
-});
-
-function childEvent(
+}
+function set(value: Schema<"Item">): ItemChange<Schema<"Item">> {
+  return { type: "set", item: value };
+}
+function live(
   sequence: number,
-  execution = "execution-one",
-  payload = { messageId: "text", delta: "child text" },
+  changes: ItemChange<Schema<"Item">>[],
+  overrides = {},
 ) {
   return focusFrame({
     kind: "event",
@@ -618,530 +116,660 @@ function childEvent(
     event: {
       sequence,
       epoch: "epoch-one",
-      run_kind: "child",
+      run_kind: "root",
       root_thread_id: "thread-one",
-      parent_thread_id: "thread-one",
-      thread_id: `thread-${execution}`,
-      run_id: `run-${execution}`,
-      execution_id: execution,
-      event_type: "TEXT_MESSAGE_CONTENT",
-      payload,
+      thread_id: "thread-one",
+      run_id: "run-one",
+      event_type: "CUSTOM",
+      payload: null,
       payload_omitted: false,
+      changes,
+      ...overrides,
     },
   });
 }
-it("isolates interleaved child output by execution, run and parent, and clears it on reset", () => {
+function replay(items: Schema<"Item">[]) {
+  return focusFrame({
+    kind: "root_stream",
+    run_id: "run-one",
+    events: items.map((value, index) => ({ index, changes: [set(value)] })),
+  });
+}
+function ready() {
+  return focusFrame({ kind: "ready", resume_cursor: "ready" });
+}
+function boot(
+  items: Schema<"Item">[] = [],
+  checkpoints: Record<string, number> = {},
+) {
   const display = new FocusDisplay();
-  display.accept(snapshot(0));
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-  display.accept(childEvent(101));
-  display.accept(childEvent(102, "execution-two"));
-  display.accept(childEvent(102, "execution-two"));
-  const bad = childEvent(103);
-  if (bad.kind !== "event") throw new Error("Expected event");
-  bad.event.parent_thread_id = "wrong-parent";
-  display.accept(bad);
-  const nextRun = childEvent(104);
-  if (nextRun.kind !== "event") throw new Error("Expected event");
-  nextRun.event.run_id = "different-run";
-  display.accept(nextRun);
-  const unrelated = childEvent(105, "unrelated");
-  if (unrelated.kind !== "event") throw new Error("Expected event");
-  unrelated.event.root_thread_id = "another-root";
-  display.accept(unrelated);
-  display.accept(event(106, "root text"));
-  expect([...display.blocks.values()].map((block) => block.text)).toEqual([
-    "root text",
-  ]);
-  expect(display.children.size).toBe(2);
-  for (const child of display.children.values())
-    expect(
-      [...child.display.blocks.values()].map((block) => block.text),
-    ).toEqual(["child text"]);
-  const child = {
-    execution_id: "execution-one",
-    parent_thread_id: "thread-one",
-    child_thread_id: "thread-execution-one",
-    child_run_id: "run-execution-one",
-  } as Schema<"ChildExecutionView">;
-  expect(display.childOutput(child)).toBeDefined();
-  // The saved head can still identify the preceding deferred checkpoint.
-  expect(display.childOutput(child)?.runId).toBe("different-run");
-  expect(display.childOutput(child)?.gap).toBe(true);
-  expect(
-    display.childOutput({ ...child, parent_thread_id: "wrong-parent" }),
-  ).toBeUndefined();
-  display.accept(focusFrame({ kind: "reset", reason: "epoch_changed" }));
-  expect(display.children.size).toBe(0);
-});
-it("bounds observed child text and events without pretending it is complete saved history", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot());
-  display.accept(
-    childEvent(101, "execution-one", {
-      messageId: "text",
-      delta: "x".repeat(200_000),
-    }),
-  );
-  const child = display.children.get("execution-one")!.display;
-  expect(child.gap).toBe(true);
-  expect([...child.blocks.values()][0].text.length).toBeLessThanOrEqual(
-    128 * 1024,
-  );
-  for (let i = 0; i < 200; i++)
-    display.accept(
-      childEvent(102 + i, "execution-one", {
-        messageId: `text-${i}`,
-        delta: "next",
-      }),
-    );
-  expect(child.blocks.size).toBeLessThanOrEqual(128);
-  expect([...child.blocks.values()].at(-1)?.id).toContain("text-199");
-});
-it("keeps task activity in its transcript without mixing private child tasks into root", () => {
-  const display = new FocusDisplay();
-  const prefix = snapshot(0);
-  if (prefix.kind !== "snapshot") throw new Error("Expected snapshot");
-  display.accept(prefix);
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-  let sequence = 101;
-  function emit(
-    id: string,
-    state: number,
-    version: number,
-    subject: string,
-    child = false,
-  ) {
-    const frame = child ? childEvent(sequence++) : event(sequence++);
-    if (frame.kind !== "event") throw new Error("Expected event");
-    frame.event.event_type = "CUSTOM";
-    frame.event.payload = {
-      type: "CUSTOM",
-      name: "a13n.harness.state",
-      value: {
-        event: {
-          payload: {
-            type: "task_changed",
-            task_state_version: state,
-            task: {
-              id,
-              version,
-              subject,
-              status: "completed",
-              blocks: ["task-next"],
-            },
-          },
-        },
-      },
-    };
-    display.accept(frame);
-  }
-  emit("task-one", 4, 3, "Updated");
-  emit("task-two", 4, 1, "Reciprocal update");
-  emit("child-task", 5, 1, "Child task", true);
-  expect(
-    [...display.blocks.values()]
-      .filter((block) => block.kind === "task")
-      .map((block) => block.text),
-  ).toEqual(["Updated", "Reciprocal update"]);
-  expect([...display.children.values()][0].display.blocks.size).toBeGreaterThan(
-    0,
-  );
-  display.accept(snapshot());
-});
+  display.accept(snapshot(items.length, checkpoints));
+  display.accept(replay(items));
+  display.accept(ready());
+  return display;
+}
+const child = {
+  run_kind: "child",
+  execution_id: "exec-one",
+  parent_thread_id: "thread-one",
+  thread_id: "child-one",
+  run_id: "child-run",
+};
 
-it.each(["a13n.harness_ui.checkpoint", "plugin.test.fact"])(
-  "keeps %s out of conversation blocks in live delivery and replay",
-  (name) => {
-    const payload = {
-      type: "CUSTOM",
-      name,
-      value: {
-        event: {
-          event_kind: "capability",
-          continuation_id: "checkpoint-one",
-          message: "internal fact",
+it("publishes a compact baseline only after complete replay and never renders diagnostics", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(1));
+  expect(display.cursor).toBeUndefined();
+  expect(display.blocks.size).toBe(0);
+  display.accept(replay([text("m", 1, "before")]));
+  expect(display.cursor).toBeUndefined();
+  display.accept(ready());
+  const frame = live(101, [
+    {
+      type: "append",
+      id: "m",
+      field: "text",
+      text: " after",
+      last_stream_id: "1-2",
+      state: "completed",
+      ended_at: null,
+    },
+  ]);
+  display.accept(frame);
+  display.accept(frame);
+  expect([...display.blocks.values()].map((block) => block.text)).toEqual([
+    "before after",
+  ]);
+  expect(display.cursor).toBe("cursor-101");
+});
+it("rejects incomplete replay without selecting its cutover cursor", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(2));
+  display.accept(replay([text("m", 1, "one")]));
+  expect(() => display.accept(ready())).toThrow("Incomplete");
+  expect(display.cursor).toBeUndefined();
+});
+it("rejects missing compact baseline atomically without advancing the cursor", () => {
+  const display = boot();
+  expect(() =>
+    display.accept(
+      live(101, [
+        set(text("one", 1, "not yet")),
+        {
+          type: "append",
+          id: "missing",
+          field: "text",
+          text: "suffix",
+          last_stream_id: "1-2",
+          state: "in_progress",
+          ended_at: null,
         },
-      },
-    };
-    for (const replay of [false, true]) {
-      const display = new FocusDisplay();
-      display.accept(snapshot(replay ? 1 : 0));
-      if (replay) {
-        display.accept(
-          focusFrame({
-            kind: "root_stream",
-            run_id: "run-one",
-            events: [
-              {
-                index: 0,
-                event_type: "CUSTOM",
-                payload,
-                payload_omitted: false,
-              },
-            ],
-          }),
-        );
-      }
-      display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-      if (!replay) {
-        const frame = event(101);
-        if (frame.kind !== "event") throw new Error("Expected event");
-        frame.event.event_type = "CUSTOM";
-        frame.event.payload = payload;
-        display.accept(frame);
-      }
-      expect(display.blocks.size).toBe(0);
-      expect(display.blocksAfter(null)).toEqual([]);
-      expect(display.gap).toBe(false);
-      expect(display.checkpoints.has("checkpoint-one")).toBe(
-        name === "a13n.harness_ui.checkpoint",
-      );
-    }
+      ]),
+    ),
+  ).toThrow("Missing compact display baseline");
+  expect(display.blocks.size).toBe(0);
+  expect(display.cursor).toBe("ready");
+});
+it("does not fall back to raw AG-UI events after the compact protocol cutover", () => {
+  const display = boot();
+  expect(() =>
+    display.accept(
+      live(101, [], {
+        changes: null,
+        event_type: "TEXT_MESSAGE_CONTENT",
+        payload: { messageId: "raw", delta: "wrong" },
+      }),
+    ),
+  ).toThrow("Missing compact");
+  expect(display.blocks.size).toBe(0);
+  expect(display.cursor).toBe("ready");
+});
+it("reset discards provisional output without manufacturing saved history", () => {
+  const display = boot([text("m", 1, "answer")]);
+  display.accept(focusFrame({ kind: "reset", reason: "live_cursor_expired" }));
+  expect(display.blocks.size).toBe(0);
+  expect(display.ready).toBe(false);
+  expect(display.cursor).toBeUndefined();
+});
+it("validates envelopes and rejects run or epoch changes before cursor advancement", () => {
+  for (const value of [
+    null,
+    { kind: "snapshot" },
+    { kind: "event", event: {} },
+    { kind: "ready", resume_cursor: 1 },
+  ])
+    expect(() => focusFrame(value)).toThrow("Invalid");
+  const display = boot();
+  expect(() => display.accept(live(101, [], { epoch: "other" }))).toThrow(
+    "epoch",
+  );
+  expect(() => display.accept(live(101, [], { run_id: "new" }))).toThrow(
+    "Root Run changed",
+  );
+  expect(display.sequence).toBe(100);
+});
+it("uses Host input visibility and preserves reasoning and media without replaying native parts", () => {
+  const display = boot([
+    text("hidden", 1, "hidden", { metadata: { display: false }, role: "user" }),
+    text("user", 2, "authored", {
+      role: "user",
+      metadata: { source_id: "input" },
+    }),
+    item(
+      "reason",
+      3,
+      { messageId: "reason", text: "plan" },
+      "reasoning_message",
+    ),
+    item("media", 4, {
+      messageId: "media",
+      role: "user",
+      input_media: { url: "image" },
+    }),
+    observation("native", 5, "a13n.pydantic_ai.part_start", {
+      part: { part_kind: "text", content: "duplicate" },
+    }),
+    observation("system", 6, "a13n.input.recovery", { content: "internal" }),
+  ]);
+  expect([...display.blocks.values()].map((block) => block.kind)).toEqual([
+    "user",
+    "thinking",
+    "media",
+  ]);
+  expect(display.blocks.get("run-one:user")?.metadata).toEqual({
+    source_id: "input",
+  });
+});
+it.each(["success", "failed", "denied", "interrupted"] as const)(
+  "renders canonical tool outcome %s and complete evidence with exact scope",
+  (outcome) => {
+    const before = "x".repeat(300_000);
+    const display = boot([
+      item(
+        "root",
+        1,
+        { toolCallId: "call", toolCallName: "root", arguments: "{}" },
+        "tool_call",
+        "in_progress",
+      ),
+      item(
+        "inline",
+        2,
+        {
+          toolCallId: "call",
+          toolCallName: "edit",
+          arguments: "{}",
+          subagentRunId: "inline",
+          value: { ok: true },
+          outcome,
+          applied_edit: { file_path: "file.py", before, after: before + "!" },
+          result_parts: [
+            {
+              type: "image",
+              source: { type: "url", value: "https://example.com/a.png" },
+            },
+          ],
+        },
+        "tool_call",
+        outcome === "success" ? "completed" : "failed",
+      ),
+    ]);
+    expect(display.blocks.get("run-one:call")?.edit).toBeUndefined();
+    expect(display.blocks.get("run-one:inline:call")).toMatchObject({
+      outcome,
+      edit: { before, after: before + "!" },
+      resultParts: [{ type: "image" }],
+    });
+    expect(display.blocks.get("run-one:inline:call")?.result).toContain("ok");
   },
 );
-
-it("cuts over only the saved checkpoint prefix and reconstructs boundaries on replay", () => {
-  const events = [
-    {
-      event_type: "TEXT_MESSAGE_CONTENT",
-      payload: {
-        type: "TEXT_MESSAGE_CONTENT",
-        messageId: "input",
-        delta: "First input",
-      },
+it("keeps native provider identities separate and renders retry, images and Apps from the item", () => {
+  const image = {
+    thread_id: "thread-one",
+    attachment: {
+      attachment_id: "screen",
+      name: "desktop.png",
+      media_type: "image/png",
+      size: 128,
     },
-    {
-      event_type: "CUSTOM",
-      payload: {
-        type: "CUSTOM",
-        name: "a13n.harness_ui.checkpoint",
-        value: { event: { continuation_id: "checkpoint-a" } },
-      },
-    },
-    {
-      event_type: "TEXT_MESSAGE_CONTENT",
-      payload: {
-        type: "TEXT_MESSAGE_CONTENT",
-        messageId: "answer",
-        delta: "First answer",
-      },
-    },
-    {
-      event_type: "TEXT_MESSAGE_CONTENT",
-      payload: {
-        type: "TEXT_MESSAGE_CONTENT",
-        messageId: "steer",
-        delta: "Instruction",
-      },
-    },
-    {
-      event_type: "CUSTOM",
-      payload: {
-        type: "CUSTOM",
-        name: "a13n.harness_ui.checkpoint",
-        value: { event: { continuation_id: "checkpoint-b" } },
-      },
-    },
-    {
-      event_type: "TEXT_MESSAGE_CONTENT",
-      payload: {
-        type: "TEXT_MESSAGE_CONTENT",
-        messageId: "suffix",
-        delta: "Still streaming",
-      },
-    },
-  ];
-  const display = new FocusDisplay();
-  const replay = () => {
-    display.accept(snapshot(events.length));
-    display.accept(
-      focusFrame({
-        kind: "root_stream",
-        run_id: "run-one",
-        events: events.map((event, index) => ({
-          ...event,
-          index,
-          payload_omitted: false,
-        })),
-      }),
-    );
-    display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
   };
-  replay();
-  const text = (head: string | null) =>
-    display.blocksAfter(head).map((block) => block.text);
-  expect(text(null)).toEqual([
-    "First input",
-    "First answer",
-    "Instruction",
-    "Still streaming",
-  ]);
-  // A slow response for A must not suppress the output that only B saved.
-  expect(text("checkpoint-a")).toEqual([
-    "First answer",
-    "Instruction",
-    "Still streaming",
-  ]);
-  expect(text("checkpoint-b")).toEqual(["Still streaming"]);
-  expect(showFocusedOutput(display, "checkpoint-b", "run-one")).toBe(true);
-  // A failed terminal save retains its unsaved suffix, even after activity clears.
-  expect(showFocusedOutput(display, "checkpoint-b", null)).toBe(true);
-  expect(showFocusedOutput(display, "terminal-head", null)).toBe(false);
-  expect(showFocusedOutput(display, "unobserved-checkpoint", "run-one")).toBe(
-    false,
-  );
-  replay();
-  expect(text("checkpoint-b")).toEqual(["Still streaming"]);
-  display.reset();
-  expect(display.checkpoints.size).toBe(0);
-});
-
-it("updates context from the latest attributed root request, not cumulative or child usage", () => {
-  const display = new FocusDisplay();
-  const record = (
-    response_ordinal: number,
-    input_tokens: number,
-    extra = {},
-  ) => ({
-    kind: "model",
+  const app = {
+    app_id: "app",
+    thread_id: "thread-one",
     run_id: "run-one",
-    response_ordinal,
-    request_usage: { input_tokens, output_tokens: 20 },
+    tool_call_id: "call",
+    server_id: "mcp",
+    tool_name: "counter",
+  };
+  const display = boot([
+    item(
+      "native",
+      1,
+      {
+        toolCallId: "call",
+        toolCallName: "search",
+        provider: "provider",
+        arguments: "query",
+        value: "found",
+      },
+      "tool_call",
+    ),
+    item(
+      "local",
+      2,
+      {
+        toolCallId: "call",
+        toolCallName: "view",
+        arguments: "{}",
+        value: "Retry this",
+        retry: true,
+        tool_images: [image],
+        mcp_apps: [app],
+        tool_image_unavailable: true,
+      },
+      "tool_call",
+      "failed",
+    ),
+  ]);
+  expect(display.blocks.size).toBe(2);
+  expect(display.blocks.get("run-one:native:provider:call")).toMatchObject({
+    provider: "provider",
+    result: "found",
+  });
+  expect(display.blocks.get("run-one:call")).toMatchObject({
+    retry: true,
+    failure: "Retry this",
+    images: [image],
+    apps: [app],
+    imageUnavailable: true,
+  });
+});
+it("applies a child set followed by an append in the same batch", () => {
+  const display = boot();
+  display.accept(
+    live(
+      101,
+      [
+        set(text("m", 1, "first")),
+        {
+          type: "append",
+          id: "m",
+          field: "text",
+          text: " second",
+          last_stream_id: "1-2",
+          state: "completed",
+          ended_at: null,
+        },
+      ],
+      child,
+    ),
+  );
+  const output = display.children.get("exec-one")!.display;
+  expect(output.blocks.get("child-run:m")?.text).toBe("first second");
+  expect(output.gap).toBe(false);
+});
+it("isolates child output by execution, run and parent and does not label it root output", () => {
+  const display = boot();
+  display.accept(live(101, [set(text("m", 1, "child"))], child));
+  expect(display.blocks.size).toBe(0);
+  expect(display.cursor).toBe("cursor-101");
+  expect(
+    display.children.get("exec-one")?.display.blocks.get("child-run:m")?.text,
+  ).toBe("child");
+  display.accept(
+    live(102, [set(text("wrong", 2, "wrong parent"))], {
+      ...child,
+      parent_thread_id: "other",
+    }),
+  );
+  expect(display.children.get("exec-one")?.display.blocks.size).toBe(1);
+  display.accept(
+    live(103, [set(text("m", 1, "new segment"))], {
+      ...child,
+      run_id: "child-next",
+    }),
+  );
+  expect(
+    [...display.children.get("exec-one")!.display.blocks.values()].map(
+      (block) => block.text,
+    ),
+  ).toEqual(["new segment"]);
+  display.reset();
+  expect(display.children.size).toBe(0);
+});
+it("bounds child presentation and marks omissions instead of claiming complete history", () => {
+  const display = boot();
+  display.accept(live(101, [set(text("long", 1, "x".repeat(300_000)))], child));
+  const observed = display.children.get("exec-one")!.display;
+  expect(observed.gap).toBe(true);
+  expect([...observed.blocks.values()][0].text.length).toBeLessThanOrEqual(
+    128 * 1024,
+  );
+  for (let i = 2; i < 150; i++)
+    display.accept(live(101 + i, [set(text(`m-${i}`, i, "child"))], child));
+  expect(observed.blocks.size).toBeLessThanOrEqual(128);
+});
+it("keeps task and context activity scoped while preserving the complete summary", () => {
+  const summary = "# Summary\n\n" + "full ".repeat(20_000);
+  const display = boot([
+    observation("task", 1, "a13n.harness.state", {
+      payload: {
+        type: "task_changed",
+        task: {
+          id: "one",
+          subject: "Root task",
+          status: "in_progress",
+          active_form: "Working",
+        },
+      },
+    }),
+    observation(
+      "child-task",
+      2,
+      "a13n.harness.state",
+      {
+        payload: {
+          type: "task_changed",
+          task: { id: "one", subject: "Child task", status: "pending" },
+        },
+      },
+      { subagentRunId: "inline" },
+    ),
+    observation("context", 3, "a13n.context.handoff_summary", {
+      operation_id: "op",
+      summary,
+    }),
+    observation("snapshot", 4, "a13n.harness.context", {
+      payload: { type: "context_snapshot" },
+    }),
+  ]);
+  expect(display.blocks.get("run-one:task:one")?.text).toBe("Working");
+  expect(display.blocks.get("run-one:inline:task:one")?.subagentRunId).toBe(
+    "inline",
+  );
+  expect(display.blocks.get("context:op")?.result).toBe(summary);
+  expect(display.blocks.size).toBe(3);
+});
+it("cuts over only checkpoint-covered blocks on both reconnect and live delivery", () => {
+  const display = boot(
+    [text("saved", 2, "saved"), text("later", 5, "unsaved")],
+    { checkpoint: 3 },
+  );
+  expect(display.blocksAfter("checkpoint").map((block) => block.text)).toEqual([
+    "unsaved",
+  ]);
+  display.accept(
+    live(101, [
+      set(
+        observation("checkpoint", 6, "a13n.harness_ui.checkpoint", {
+          continuation_id: "new",
+        }),
+      ),
+    ]),
+  );
+  display.accept(live(102, [set(text("last", 7, "last"))]));
+  expect(display.blocksAfter("new").map((block) => block.text)).toEqual([
+    "last",
+  ]);
+  expect(showFocusedOutput(display, "new", "run-one")).toBe(true);
+  expect(showFocusedOutput(display, "new", "other-run")).toBe(false);
+});
+it("keeps unsaved initial output until replacement saved history is selected", () => {
+  const display = boot([text("m", 1, "answer")]);
+  expect(showFocusedOutput(display, "initial:state")).toBe(true);
+  expect(showFocusedOutput(display, "saved")).toBe(false);
+  expect(showFocusedOutput(display, "saved", undefined, true)).toBe(true);
+});
+it("updates context using latest root request attribution, including resumed generations", () => {
+  const display = boot();
+  const usage = (position: number, records: unknown[], resumed = false) => {
+    const value = observation(
+      `usage-${position}`,
+      position,
+      "a13n.harness.usage",
+      {
+        payload: {
+          type: "usage_report",
+          records,
+          ...(resumed ? { usage_id: "generation" } : {}),
+        },
+      },
+    );
+    if (resumed)
+      (value.content.value as Record<string, unknown>).run_id = "run-one";
+    return value;
+  };
+  const record = (ordinal: number, run = "run-one", extra = {}) => ({
+    kind: "model",
+    run_id: run,
+    source: "agent",
+    response_ordinal: ordinal,
+    request_usage: { input_tokens: ordinal * 10, output_tokens: 2 },
     ...extra,
   });
-  const reports = [
-    [record(0, 100)],
-    [record(1, 200), record(9, 999, { parent_agent_instance_id: "parent" })],
-    [record(0, 100), record(1, 200)],
-    [
-      record(10, 999, { run_id: "other" }),
-      record(11, 999, { delegation_id: "child" }),
-      record(12, 999, { source: "files.media_understanding" }),
-    ],
-  ];
-  display.accept(snapshot(reports.length));
   display.accept(
-    focusFrame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: reports.map((records, index) => ({
-        index,
-        event_type: "CUSTOM",
-        payload_omitted: false,
-        payload: {
-          name: "a13n.harness.usage",
-          value: { event: { payload: { type: "usage_report", records } } },
-        },
-      })),
-    }),
+    live(101, [
+      set(
+        usage(1, [
+          record(2),
+          record(20, "child"),
+          record(21, "run-one", { delegation_id: "child" }),
+        ]),
+      ),
+    ]),
   );
-  expect(display.contextUsage).toEqual({ tokens: 220, ordinal: 1 });
-  expect(display.blocks.size).toBe(0);
-  display.reset();
-  expect(display.contextUsage).toBeUndefined();
-});
-
-it("updates a resumed root generation without accepting forwarded child usage", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(3));
-  const records = [
-    { sourceRun: "run-one", tokens: 100 },
-    { sourceRun: "run-one", tokens: 200 },
-    { sourceRun: "child-run", tokens: 999 },
-  ];
+  expect(display.contextUsage).toEqual({ ordinal: 2, tokens: 22 });
+  display.accept(live(102, [set(usage(2, [record(1)]))]));
+  expect(display.contextUsage?.ordinal).toBe(2);
   display.accept(
-    focusFrame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: records.map(({ sourceRun, tokens }, index) => ({
-        index,
-        event_type: "CUSTOM",
-        payload_omitted: false,
-        payload: {
-          name: "a13n.harness.usage",
-          value: {
-            run_id: sourceRun,
-            event: {
-              payload: {
-                type: "usage_report",
-                usage_id: "original-scope",
-                records: [
-                  {
-                    kind: "model",
-                    run_id: "original-run",
-                    response_ordinal: 2,
-                    request_usage: { input_tokens: tokens, output_tokens: 20 },
-                  },
-                ],
+    live(103, [
+      set(
+        usage(
+          3,
+          [
+            record(3, "previous"),
+            record(30, "previous", { parent_agent_instance_id: "parent" }),
+          ],
+          true,
+        ),
+      ),
+    ]),
+  );
+  expect(display.contextUsage).toEqual({ ordinal: 3, tokens: 32 });
+});
+it("marks recovery resumed only for visible root progress and renders terminal interruption", () => {
+  const display = boot([
+    observation("retry", 1, "a13n.harness.recovery", {
+      payload: { type: "model_retry_scheduled", attempt: 2 },
+    }),
+  ]);
+  expect(display.recovery?.state).toBe("retrying");
+  display.accept(
+    live(101, [
+      set(text("hidden", 2, "hidden", { metadata: { display: false } })),
+      set(text("inline", 3, "child", { subagentRunId: "inline" })),
+    ]),
+  );
+  expect(display.recovery?.state).toBe("retrying");
+  display.accept(live(102, [set(text("root", 4, "resumed"))]));
+  expect(display.recovery?.state).toBe("resumed");
+  display.accept(
+    live(103, [
+      set(
+        item(
+          "end",
+          5,
+          { event: { type: "RUN_FINISHED", outcome: { type: "interrupt" } } },
+          "observation",
+        ),
+      ),
+    ]),
+  );
+  expect(display.blocks.get("run-one:execution")?.name).toBe(
+    "Execution suspended",
+  );
+});
+it("projects lifecycle after compact tools and keeps inline suspension separate", () => {
+  const display = boot([
+    item(
+      "root",
+      1,
+      { toolCallId: "same", toolCallName: "root" },
+      "tool_call",
+      "in_progress",
+    ),
+    item(
+      "child",
+      2,
+      { toolCallId: "same", toolCallName: "child", subagentRunId: "inline" },
+      "tool_call",
+      "in_progress",
+    ),
+    item(
+      "end",
+      3,
+      {
+        event: {
+          type: "SUBAGENT_FINISHED",
+          subagentRunId: "inline",
+          name: "Explorer",
+          outcome: { type: "suspended" },
+        },
+      },
+      "observation",
+    ),
+  ]);
+  expect(display.blocks.get("run-one:inline:inline")?.text).toBe("Suspended");
+  expect(display.blocks.get("run-one:inline:same")?.stopped).toBe(true);
+  expect(display.blocks.get("run-one:same")?.stopped).not.toBe(true);
+});
+it("shares process inspection across root and child item results and closes exact scopes", () => {
+  const display = boot([
+    item(
+      "shell",
+      1,
+      {
+        toolCallId: "shell",
+        toolCallName: "shell_exec",
+        arguments: JSON.stringify({ command: "pnpm dev" }),
+        value: { process_id: "process-one", status: { phase: "running" } },
+      },
+      "tool_call",
+    ),
+  ]);
+  display.accept(
+    live(
+      101,
+      [
+        set(
+          item(
+            "child-shell",
+            1,
+            {
+              toolCallId: "shell",
+              toolCallName: "shell_exec",
+              arguments: "{}",
+              value: {
+                process_id: "process-one",
+                status: { phase: "running" },
               },
             },
-          },
-        },
-      })),
-    }),
+            "tool_call",
+          ),
+        ),
+      ],
+      child,
+    ),
   );
-  expect(display.contextUsage).toEqual({ tokens: 220, ordinal: 2 });
+  expect(display.processes.background).toHaveLength(2);
+  expect(display.processes.background[0].command).toBe("pnpm dev");
+  display.accept(
+    live(
+      102,
+      [
+        set(
+          observation("exit", 2, "a13n.shell.status", {
+            process_id: "process-one",
+            phase: "exited",
+            exit_code: 2,
+          }),
+        ),
+      ],
+      child,
+    ),
+  );
+  display.accept(
+    live(103, [
+      set(
+        item(
+          "end",
+          3,
+          { event: { type: "RUN_FINISHED", outcome: { type: "success" } } },
+          "observation",
+        ),
+      ),
+    ]),
+  );
+  expect(display.processes.background.map((value) => value.phase)).toEqual([
+    "unavailable",
+    "exited",
+  ]);
+  display.reset();
+  expect(display.processes.background).toEqual([]);
 });
-
-it("publishes a replacement snapshot only after its complete replay, retaining the last good presentation", async () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(0));
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "original" }));
-  display.accept(event(110, "Original complete output"));
-  vi.useFakeTimers();
+it("keeps refresh reasons independent of compact presentation", () => {
+  expect(focusRefresh(live(101, [], { event_type: "RUN_FINISHED" }))).toBe(
+    "lifecycle",
+  );
+  expect(
+    focusRefresh(
+      live(102, [], { payload: { name: "a13n.harness_ui.checkpoint" } }),
+    ),
+  ).toBe("checkpoint");
+  expect(
+    focusRefresh(
+      live(103, [], {
+        payload: { value: { event: { payload: { type: "usage_report" } } } },
+      }),
+    ),
+  ).toBe("usage");
+});
+it("publishes replacement snapshots only after replay completes and retains last good presentation", () => {
+  const display = boot([text("old", 1, "visible")]);
   const { socket, transport } = connectedTransport();
-  const changed = vi.fn();
   const invalidate = vi.fn();
   const close = watchThread(
     transport,
     "thread-one",
     display,
-    changed,
+    vi.fn(),
     vi.fn(),
     invalidate,
   );
-  const frame = async (value: unknown) => {
-    socket().frame(value);
-  };
   try {
     socket().open();
-    await frame({ kind: "reset", reason: "expired" });
-    await vi.advanceTimersByTimeAsync(1000);
-    changed.mockClear();
-    await frame(snapshot(2));
-    expect([...display.blocks.values()][0].text).toBe(
-      "Original complete output",
-    );
-    expect(changed).not.toHaveBeenCalled();
-    await frame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: [
-        {
-          index: 0,
-          event_type: "TEXT_MESSAGE_CONTENT",
-          payload: {
-            type: "TEXT_MESSAGE_CONTENT",
-            messageId: "new",
-            delta: "Replacement ",
-          },
-          payload_omitted: false,
-        },
-      ],
-    });
-    expect([...display.blocks.values()][0].text).toBe(
-      "Original complete output",
-    );
-    await frame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: [
-        {
-          index: 1,
-          event_type: "TEXT_MESSAGE_CONTENT",
-          payload: {
-            type: "TEXT_MESSAGE_CONTENT",
-            messageId: "new",
-            delta: "complete output",
-          },
-          payload_omitted: false,
-        },
-      ],
-    });
-    expect(changed).not.toHaveBeenCalled();
-    await frame({ kind: "ready", resume_cursor: "replacement" });
-    expect([...display.blocks.values()][0].text).toBe(
-      "Replacement complete output",
-    );
-    expect(changed).toHaveBeenCalledTimes(1);
-    expect(display.cursor).toBe("replacement");
+    socket().frame(snapshot(1));
+    expect(display.blocks.get("run-one:old")?.text).toBe("visible");
+    socket().frame(replay([text("new", 2, "replacement")]));
+    expect(display.blocks.get("run-one:old")?.text).toBe("visible");
+    socket().frame(ready());
+    expect(display.blocks.get("run-one:new")?.text).toBe("replacement");
     expect(invalidate).toHaveBeenCalledWith("reconcile");
   } finally {
     close();
-    transport.close();
   }
 });
-
-it("hides recovery instructions and waits for visible progress before marking recovery resumed", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(0));
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-  let sequence = 110;
-  const emit = (event_type: string, payload: unknown) => {
-    const frame = event(sequence++);
-    if (frame.kind !== "event") throw new Error("Expected event");
-    display.accept(
-      focusFrame({ ...frame, event: { ...frame.event, event_type, payload } }),
-    );
-  };
-  const retry = {
-    name: "a13n.harness.recovery",
-    value: {
-      event: { payload: { type: "model_retry_scheduled", attempt: 2 } },
-    },
-  };
-  emit("CUSTOM", retry);
-  emit("TEXT_MESSAGE_CONTENT", {
-    messageId: "recovery",
-    delta: "Internal instruction",
-    metadata: { display: false },
-  });
-  expect(display.blocks.size).toBe(0);
-  expect(display.recovery?.state).toBe("retrying");
-  emit("TEXT_MESSAGE_CONTENT", { messageId: "answer", delta: "Continuing" });
-  expect(display.recovery?.state).toBe("resumed");
-  emit("RUN_FINISHED", {});
-  expect(display.recovery).toMatchObject({ state: "resumed", retries: 1 });
-});
-
-it("does not resume an interrupted replacement using the old cursor", async () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(0));
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "old" }));
-  display.accept(event(110, "Retained"));
-  vi.useFakeTimers();
-  const { socket, transport } = connectedTransport();
-  const close = watchThread(
-    transport,
-    "thread-one",
-    display,
-    vi.fn(),
-    vi.fn(),
-    vi.fn(),
-  );
-  try {
-    socket().open();
-    socket().frame(snapshot(2));
-    expect(display.cursor).toBeUndefined();
-    expect([...display.blocks.values()][0].text).toBe("Retained");
-    socket().close();
-    await vi.advanceTimersByTimeAsync(1000);
-    socket().open();
-    expect(socket().sent.at(-1)?.after).toBeNull();
-  } finally {
-    close();
-  }
-});
-
 it.each([false, true])(
-  "retains visible output until replacement saved history arrives (next run: %s)",
-  async (nextRun) => {
-    const display = new FocusDisplay();
-    display.accept(snapshot(0));
-    display.accept(focusFrame({ kind: "ready", resume_cursor: "old" }));
-    display.accept(event(110, "Already visible answer"));
+  "retains output until replacement history arrives (next Run: %s)",
+  (nextRun) => {
+    const display = boot([text("old", 1, "visible")]);
     const replacement = snapshot(nextRun ? 0 : undefined);
-    if (replacement.kind !== "snapshot") throw new Error("Expected snapshot");
+    if (replacement.kind !== "snapshot") throw new Error("fixture");
     replacement.snapshot.thread.continuation_id = "saved-new";
     if (replacement.snapshot.root_stream) {
       replacement.snapshot.root_stream.run_id = "run-two";
       replacement.snapshot.root_stream.base_continuation_id = "saved-new";
     }
-    const frames = [
-      replacement,
-      ...(nextRun ? [{ kind: "ready", resume_cursor: "new-ready" }] : []),
-    ];
     const { socket, transport } = connectedTransport();
     const invalidate = vi.fn();
     const close = watchThread(
@@ -1154,164 +782,62 @@ it.each([false, true])(
     );
     try {
       socket().open();
-      frames.forEach((frame) => socket().frame(frame));
-      expect(invalidate).toHaveBeenCalledWith("reconcile");
-      expect(display.cursor).toBe(nextRun ? "new-ready" : "cursor-one");
-      expect(display.runId).toBe(nextRun ? "run-two" : undefined);
-      // Deferred and failed history reads still select the last successful page.
-      for (const staleRead of ["deferred", "failed"]) {
-        const shown = display.presentationFor("initial:thread-one");
-        expect(
-          shown.blocksAfter(null).map((block) => block.text),
-          staleRead,
-        ).toEqual(["Already visible answer"]);
-      }
+      socket().frame(replacement);
+      if (nextRun) socket().frame(ready());
+      expect(
+        display
+          .presentationFor("initial:state")
+          .blocksAfter(null)
+          .map((block) => block.text),
+      ).toEqual(["visible"]);
       expect(display.presentationFor("saved-new")).toBe(display);
       expect(display.retainedPresentation).toBeUndefined();
-      expect(display.blocksAfter("saved-new")).toEqual([]);
     } finally {
       close();
     }
   },
 );
-
-it("folds root replay and child shell observations into the shared process inspector", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(3));
-  display.accept(
-    focusFrame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: [
-        {
-          index: 0,
-          event_type: "TOOL_CALL_START",
-          payload: {
-            type: "TOOL_CALL_START",
-            toolCallId: "shell",
-            toolCallName: "shell_exec",
-          },
-          payload_omitted: false,
-        },
-        {
-          index: 1,
-          event_type: "TOOL_CALL_ARGS",
-          payload: {
-            type: "TOOL_CALL_ARGS",
-            toolCallId: "shell",
-            delta: JSON.stringify({ command: "pnpm dev" }),
-          },
-          payload_omitted: false,
-        },
-        {
-          index: 2,
-          event_type: "TOOL_CALL_RESULT",
-          payload: {
-            type: "TOOL_CALL_RESULT",
-            messageId: "shell:result",
-            toolCallId: "shell",
-            content: JSON.stringify({
-              process_id: "process-one",
-              status: { phase: "running" },
-            }),
-          },
-          payload_omitted: false,
-        },
-      ],
-    }),
-  );
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-  const send = (
-    sequence: number,
-    event_type: string,
-    payload: Record<string, unknown>,
-    child = false,
-  ) =>
-    display.accept(
-      focusFrame({
-        kind: "event",
-        resume_cursor: `cursor-${sequence}`,
-        event: {
-          sequence,
-          epoch: "epoch-one",
-          run_kind: child ? "child" : "root",
-          thread_id: child ? "child-one" : "thread-one",
-          root_thread_id: "thread-one",
-          run_id: child ? "child-run" : "run-one",
-          parent_thread_id: child ? "thread-one" : null,
-          execution_id: child ? "exec-one" : null,
-          event_type,
-          payload,
-          payload_omitted: false,
-        },
-      }),
-    );
-  send(
-    101,
-    "CUSTOM",
-    {
-      name: "a13n.pydantic_ai.function_tool_result",
-      value: {
-        event: {
-          part: {
-            part_kind: "tool-return",
-            tool_name: "shell_exec",
-            tool_call_id: "child-shell",
-            content: {
-              process_id: "process-one",
-              status: { phase: "running" },
-            },
-          },
-        },
-      },
-    },
-    true,
-  );
-  expect(display.processes.background).toHaveLength(2);
-  expect(display.processes.background[0].command).toBe("pnpm dev");
-  send(
-    102,
-    "CUSTOM",
-    {
-      name: "a13n.shell.status",
-      value: {
-        event: { process_id: "process-one", phase: "exited", exit_code: 2 },
-      },
-    },
-    true,
-  );
-  send(103, "RUN_FINISHED", {
-    threadId: "thread-one",
-    runId: "run-one",
-    outcome: { type: "success" },
-  });
-  expect(display.processes.background.map((item) => item.phase)).toEqual([
-    "unavailable",
-    "exited",
-  ]);
-  expect(display.processes.background[1].exitCode).toBe(2);
-  display.reset();
-  expect(display.processes.background).toEqual([]);
-});
-
-it("backs off repeated snapshot races after one immediate retry while retaining visible output", async () => {
+it("reboots a root Run race without reconnecting the physical socket", async () => {
   vi.useFakeTimers();
-  const display = new FocusDisplay();
-  display.accept(snapshot(0));
-  display.accept({ kind: "ready", resume_cursor: "ready" });
-  display.blocks.set("kept", {
-    id: "kept",
-    kind: "assistant",
-    text: "Keep this output",
-  });
+  const display = boot();
   const { socket, transport } = connectedTransport();
-  const connection = vi.fn();
+  const invalidate = vi.fn();
   const close = watchThread(
     transport,
     "thread-one",
     display,
     vi.fn(),
-    connection,
+    vi.fn(),
+    invalidate,
+  );
+  try {
+    socket().open();
+    socket().frame(live(101, [], { run_id: "run-two" }));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(socket().sent.at(-1)?.after).toBeNull();
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    const replacement = snapshot(0);
+    if (replacement.kind !== "snapshot") throw new Error("fixture");
+    replacement.snapshot.root_stream!.run_id = "run-two";
+    replacement.snapshot.root_stream!.base_continuation_id = "saved";
+    socket().frame(replacement);
+    socket().frame(ready());
+    expect(display.runId).toBe("run-two");
+    expect(display.baseContinuation).toBe("saved");
+  } finally {
+    close();
+  }
+});
+it("backs off repeated snapshot races while retaining visible output", async () => {
+  vi.useFakeTimers();
+  const display = boot([text("kept", 1, "visible")]);
+  const { socket, transport } = connectedTransport();
+  const close = watchThread(
+    transport,
+    "thread-one",
+    display,
+    vi.fn(),
+    vi.fn(),
     vi.fn(),
   );
   try {
@@ -1319,12 +845,12 @@ it("backs off repeated snapshot races after one immediate retry while retaining 
     const reset = () =>
       socket().frame({ kind: "reset", reason: "live_snapshot_changed" });
     const count = () =>
-      socket().sent.filter((item) => item.kind === "subscribe").length;
+      socket().sent.filter((value) => value.kind === "subscribe").length;
     reset();
     await vi.advanceTimersByTimeAsync(1);
     expect(count()).toBe(2);
     reset();
-    expect(display.blocks.get("kept")?.text).toBe("Keep this output");
+    expect(display.blocks.get("run-one:kept")?.text).toBe("visible");
     await vi.advanceTimersByTimeAsync(1000);
     expect(count()).toBe(3);
     reset();
@@ -1332,227 +858,29 @@ it("backs off repeated snapshot races after one immediate retry while retaining 
     expect(count()).toBe(3);
     await vi.advanceTimersByTimeAsync(1000);
     expect(count()).toBe(4);
-    expect(FakeWebSocket.instances).toHaveLength(1);
   } finally {
     close();
-    vi.useRealTimers();
   }
 });
 
-it("preserves screenshot attachments through native tool result folding and stream replay", () => {
-  const display = new FocusDisplay();
-  const image = {
-    thread_id: "thread-one",
-    attachment: {
-      attachment_id: "attachment-screen",
-      name: "desktop.png",
-      media_type: "image/png",
-      size: 128,
-    },
-  };
-  const events = [
-    {
-      event_type: "TOOL_CALL_START",
-      payload: {
-        type: "TOOL_CALL_START",
-        toolCallId: "capture",
-        toolCallName: "computer_observe",
-      },
-    },
-    {
-      event_type: "CUSTOM",
-      payload: {
-        type: "CUSTOM",
-        name: "a13n.harness-ui.tool_images",
-        value: {
-          event: {
-            tool_call_id: "capture",
-            images: [image],
-            unavailable: false,
-          },
-        },
-      },
-    },
-    {
-      event_type: "CUSTOM",
-      payload: {
-        type: "CUSTOM",
-        name: "a13n.pydantic_ai.function_tool_result",
-        value: {
-          event: {
-            part: {
-              part_kind: "tool-return",
-              tool_name: "computer_observe",
-              tool_call_id: "capture",
-              content: { ok: true, observation_id: "obs-one" },
-            },
-          },
-        },
-      },
-    },
-  ];
-  display.accept(snapshot(events.length));
-  display.accept(
-    focusFrame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: events.map((item, index) => ({
-        ...item,
-        index,
-        payload_omitted: false,
-      })),
-    }),
+it("refreshes durable checkpoint state during a quiet tail and stops when unsubscribed", async () => {
+  vi.useFakeTimers();
+  const display = boot([text("visible", 1, "answer")]);
+  const { socket, transport } = connectedTransport();
+  const invalidate = vi.fn();
+  const close = watchThread(
+    transport,
+    "thread-one",
+    display,
+    vi.fn(),
+    vi.fn(),
+    invalidate,
   );
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-  expect(display.blocks.size).toBe(1);
-  expect(display.blocks.get("run-one:capture")).toMatchObject({
-    images: [image],
-    imageUnavailable: false,
-    name: "computer_observe",
-  });
-  expect(display.blocks.get("run-one:capture")?.result).toContain("obs-one");
-});
-
-it("renders only authored custom input as user text in live and replay views", () => {
-  const events = [
-    "user",
-    "steering",
-    "context",
-    "recovery",
-    "async_subagent",
-    "background_process",
-  ].map((source, index) => ({
-    event_type: "CUSTOM",
-    payload: {
-      type: "CUSTOM",
-      name: `a13n.input.${source}`,
-      metadata: { display: true, source_id: "input-one" },
-      value: {
-        event: {
-          message_id: `run-one:input:${index}`,
-          role: source === "user" || source === "steering" ? "user" : "system",
-          input_id: "input-one",
-          source,
-          content: `${source} text`,
-        },
-      },
-    },
-    payload_omitted: false,
-  }));
-  const replay = new FocusDisplay();
-  replay.accept(snapshot(events.length));
-  replay.accept(
-    focusFrame({
-      kind: "root_stream",
-      run_id: "run-one",
-      events: events.map((event, index) => ({ index, ...event })),
-      next_index: events.length,
-      complete: true,
-    }),
-  );
-  const live = new FocusDisplay();
-  live.accept(snapshot(0));
-  live.accept(focusFrame({ kind: "ready", resume_cursor: "cursor-ready" }));
-  for (const [index, input] of events.entries()) {
-    const sequence = index + 101;
-    live.accept(
-      focusFrame({
-        kind: "event",
-        resume_cursor: `cursor-${sequence}`,
-        event: {
-          sequence,
-          epoch: "epoch-one",
-          run_kind: "root",
-          thread_id: "thread-one",
-          root_thread_id: "thread-one",
-          run_id: "run-one",
-          ...input,
-        },
-      }),
-    );
-  }
-  expect([...live.blocks.values()]).toEqual([...replay.blocks.values()]);
-  expect(
-    [...live.blocks.values()].map((block) => [block.kind, block.text]),
-  ).toEqual([
-    ["user", "user text"],
-    ["user", "steering text"],
-  ]);
-});
-
-it("isolates inline standard and custom tools without treating child progress as root progress", () => {
-  const display = new FocusDisplay();
-  display.accept(snapshot(0));
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-  let sequence = 100;
-  const send = (payload: Record<string, unknown>) => {
-    const frame = event(++sequence);
-    if (frame.kind !== "event") throw new Error("fixture");
-    frame.event.event_type = String(payload.type);
-    frame.event.payload = payload;
-    display.accept(frame);
-  };
-  send({ type: "TOOL_CALL_START", toolCallId: "same", toolCallName: "root" });
-  send({
-    type: "TOOL_CALL_START",
-    toolCallId: "same",
-    toolCallName: "child",
-    subagentRunId: "child-a",
-  });
-  send({
-    type: "CUSTOM",
-    name: "a13n.filesystem.edit_applied",
-    subagentRunId: "child-a",
-    value: {
-      event: {
-        tool_call_id: "same",
-        file_path: "/app",
-        before: "a",
-        after: "b",
-      },
-    },
-  });
-  send({
-    type: "CUSTOM",
-    name: "a13n.harness.recovery",
-    subagentRunId: "child-a",
-    value: {
-      event: { payload: { type: "model_retry_scheduled", attempt: 2 } },
-    },
-  });
-  send({
-    type: "TOOL_CALL_RESULT",
-    toolCallId: "same",
-    messageId: "result",
-    content: [
-      {
-        type: "image",
-        source: { type: "url", value: "https://example.com/a.png" },
-      },
-    ],
-    subagentRunId: "child-a",
-  });
-  expect(display.blocks.get("run-one:same")?.edit).toBeUndefined();
-  expect(display.blocks.get("run-one:child-a:same")).toMatchObject({
-    subagentRunId: "child-a",
-    edit: { after: "b" },
-    resultParts: [{ type: "image" }],
-  });
-  expect(display.recovery).toBeUndefined();
-  send({
-    type: "SUBAGENT_FINISHED",
-    subagentRunId: "child-a",
-    outcome: { type: "suspended" },
-  });
-  expect(display.blocks.get("run-one:inline:child-a")?.text).toBe("Suspended");
-  expect(display.blocks.get("run-one:child-a:same")?.stopped).toBe(true);
-  expect(display.blocks.get("run-one:same")?.stopped).toBeUndefined();
-  expect(display.gap).toBe(false);
-  send({
-    type: "TOOL_CALL_RESULT",
-    toolCallId: "bad",
-    content: "missing required message identity",
-  });
-  expect(display.gap).toBe(true);
-  expect(display.blocks.has("run-one:bad")).toBe(false);
+  socket().open();
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(invalidate).toHaveBeenCalledWith("checkpoint");
+  invalidate.mockClear();
+  close();
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(invalidate).not.toHaveBeenCalled();
 });

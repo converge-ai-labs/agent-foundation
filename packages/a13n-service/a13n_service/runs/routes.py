@@ -2,13 +2,13 @@
 
 from typing import Annotated
 
+from a13n_stream_protocol.display import StreamPosition
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
 from a13n_service.runs import archive, entries, resume, runs, sessions, stream, submit, threads
-from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
     Attempts,

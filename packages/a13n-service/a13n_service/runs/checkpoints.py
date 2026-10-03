@@ -23,6 +23,7 @@ import anyio
 import zstandard
 from a13n_harness import HarnessState, StateStore, StoredRef
 from a13n_harness.state import StoredKind
+from a13n_stream_protocol.display import Page, Snapshot, StreamPosition, Tail
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from sqlalchemy import ColumnElement, and_, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +36,6 @@ from a13n_service.infra.outbox import Claim, OutboxKind, OutboxRow, enqueue, set
 from a13n_service.infra.telemetry import meter
 from a13n_service.runs import inbox
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost
-from a13n_service.runs.display import Page, Snapshot, StreamPosition, Tail
 from a13n_service.runs.tables import AttemptRow, RunItemPageRow, RunRow
 from a13n_service.runs.usage import UsageReport, ingest
 

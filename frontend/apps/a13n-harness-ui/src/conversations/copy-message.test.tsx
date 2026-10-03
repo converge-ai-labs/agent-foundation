@@ -184,8 +184,9 @@ it("copies all final Markdown parts once, excluding execution details and resume
         {
           turn_id: "turn",
           input_position: 0,
-          end_position: 3,
-          output_position: 2,
+          end_position: 5,
+          output_position: 4,
+          output_positions: [2, 4],
           preview: "Prompt",
         },
       ]}
@@ -195,8 +196,15 @@ it("copies all final Markdown parts once, excluding execution details and resume
           { kind: "assistant", text: "Progress update" },
           { kind: "thinking", text: "Thinking" },
         ]),
-        entry(2, [
-          { kind: "assistant", text: "# Final\n\n**Exact** source" },
+        entry(2, [{ kind: "assistant", text: "# Final\n\n**Exact** source" }]),
+        entry(3, [
+          {
+            kind: "assistant",
+            text: "Inline child output",
+            subagent_run_id: "child-one",
+          },
+        ]),
+        entry(4, [
           { kind: "assistant", text: "Second [part](https://example.com)" },
         ]),
       ]}
@@ -217,7 +225,15 @@ it("copies all final Markdown parts once, excluding execution details and resume
     name: /Execution details/,
   }))
     fireEvent.click(toggle);
-  for (const text of ["Progress update", "Thinking", "Resumed progress"]) {
+  expect(screen.getByText("child-one").closest("header")?.textContent).toBe(
+    "Subagent output child-one",
+  );
+  for (const text of [
+    "Progress update",
+    "Thinking",
+    "Resumed progress",
+    "Inline child output",
+  ]) {
     const section = screen.getByText(text).closest("section, details")!;
     expect(
       within(section as HTMLElement).queryByRole("button", {
@@ -268,7 +284,7 @@ it("only adds final output copying after saved-history cutover and labels trunca
       localInputs={[]}
       blocks={[]}
       entries={entries}
-      turns={[{ ...turn, final_position: 1 }]}
+      turns={[{ ...turn, final_position: 1, output_positions: [1] }]}
     />,
   );
   expect(

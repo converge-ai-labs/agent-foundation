@@ -5,12 +5,11 @@ from pathlib import Path
 
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
-from a13n_harness_ui.display_history import saved_display_history
 from a13n_harness_ui.errors import RunCoordinationError, StoreConflictError, ThreadError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.storage import StoredContinuation
 from a13n_harness_ui.surfaces import RootOperationStatus, ThreadMetadataMutation, ThreadMetadataPatch
-from anyio import Event, fail_after
+from anyio import Event, fail_after, sleep
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -92,8 +91,8 @@ async def test_clear_context_retains_history_but_restarts_model_and_working_stat
         assert selected is not None and selected.continuation is not None
         stored = await app._store.objects.read_model(selected.continuation, StoredContinuation)
         assert not stored.harness_state.message_history
-        assert set(stored.harness_state.agent_context_state.entries) == {"a13n.harness-ui.display-history"}
-        assert saved_display_history(stored.harness_state) is not None
+        assert not stored.harness_state.agent_context_state.entries
+        assert stored.display_history.items
         with pytest.raises(ThreadError, match="context changed"):
             await app.clear_thread_context(thread_id=thread.thread_id, expected_continuation_id=before.continuation_id)
 
@@ -122,6 +121,7 @@ async def test_clear_context_rejects_active_initial_and_archived_threads(tmp_pat
 
     async def resolve(self, context, model_id):
         async def model(messages, info):
+            yield "working"
             started.set()
             await release.wait()
             yield "done"
@@ -138,8 +138,9 @@ async def test_clear_context_rejects_active_initial_and_archived_threads(tmp_pat
         try:
             with fail_after(10):
                 await started.wait()
-            detail = await app.get_thread(thread.thread_id)
-            assert detail.continuation_id is not None
+            with fail_after(10):
+                while (detail := await app.get_thread(thread.thread_id)).continuation_id is None:
+                    await sleep(0)
             assert "clear_context" not in detail.available_actions
             with pytest.raises(RunCoordinationError) as error:
                 await app.clear_thread_context(

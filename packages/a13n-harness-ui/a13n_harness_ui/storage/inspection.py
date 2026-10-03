@@ -12,7 +12,7 @@ from a13n_harness_ui.errors import ThreadError
 from .database import DatabaseSessions, short_session, transaction
 from .models import ThreadInspectionRecord, ThreadRecord, TranscriptEntryRecord, TranscriptTurnRecord
 
-INSPECTION_VERSION = 2
+INSPECTION_VERSION = 3
 
 
 @dataclass(frozen=True)

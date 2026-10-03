@@ -208,7 +208,10 @@ main(["setup"])
 @pytest.mark.xdist_group("harness-ui-pty-chat")
 def test_chat_paste_enter_steering_mode_switch_and_cancel_use_one_terminal(tmp_path: Path) -> None:
     pasted = "long pasted text\n" * 100
-    script = r"""
+    fixture = f"import runpy\nfeed_display = runpy.run_path({str(Path(__file__).with_name('display_fixture.py'))!r})['feed_display']\n"
+    script = (
+        fixture
+        + r"""
 import asyncio, json
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -241,11 +244,11 @@ class Backend:
         if admitted is not None:
             admitted()
         self.receipt_id = "receipt-fixture"
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "fixture-stream\n"})
+        feed_display(renderer, "TEXT_MESSAGE_CONTENT", {"delta": "fixture-stream\n"})
         await self.steered.wait()
-        renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit", "tool_call_name": "view"})
-        renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "edit", "delta": '{"file_path":"fixture.py"}'})
-        renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit"})
+        feed_display(renderer, "TOOL_CALL_START", {"tool_call_id": "edit", "tool_call_name": "view"})
+        feed_display(renderer, "TOOL_CALL_ARGS", {"tool_call_id": "edit", "delta": '{"file_path":"fixture.py"}'})
+        feed_display(renderer, "TOOL_CALL_END", {"tool_call_id": "edit"})
         await self.stop.wait()
         Path("cancelled").touch()
         return "fixture-cancelled"
@@ -264,6 +267,7 @@ async def factory(request, directory, status, emit):
 
 asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=lambda: factory))
 """
+    )
     process, master = _spawn(script, tmp_path)
     try:
         output = _read_until(master, b"Enter sends a message", timeout=30)

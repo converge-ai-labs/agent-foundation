@@ -16,7 +16,8 @@ from a13n_harness.filters import ContentFilterCapability, ContentFilterConfigura
 from a13n_harness.tools._output import TOOL_CONTENT_METADATA_KEY, tool_execution_value
 from a13n_harness.toolsets.codeact import CodeActPolicyToolset, CodeActToolPolicy
 from a13n_harness_ui.conversation import ConversationExcerpt, checkpoint_excerpt
-from a13n_harness_ui.display_history import DisplayHistoryCollector, saved_display_history, with_display_history
+from a13n_harness_ui.display_history import DisplayHistory
+from a13n_harness_ui.display_projection import display_turns
 from a13n_harness_ui.thread_projection import _message_entry, _transcript_turns
 from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiObserver
 from PIL import Image
@@ -136,11 +137,13 @@ async def test_supplemental_content_never_becomes_authored_input(runner: bool, s
         model=FunctionModel(stream_function=model),
         capabilities=capabilities,
     )
-    observer = HarnessAguiObserver()
+    fold = DisplayHistory().start("run", resume=False)
     events = []
     async with executable.stream("same", bindings=RunBindings.embedded()) as run:
         async for item in run:
-            events.extend(event.model_dump(mode="json") for event in observer.observe(item))
+            batch = fold.events(item)
+            fold.fold(batch, source=item)
+            events.extend(batch)
     result = run.result
     assert result is not None
     assert result.output_or_raise() == "done"
@@ -154,12 +157,20 @@ async def test_supplemental_content_never_becomes_authored_input(runner: bool, s
 
     # Canonical continuation and the separate retained display survive export/reload.
     state = HarnessState.model_validate_json(result.state.model_dump_json())
-    collector = DisplayHistoryCollector([])
-    display = collector.capture(state.message_history, completed=True)
-    saved = HarnessState.model_validate_json(with_display_history(state, display).model_dump_json())
-    restored = saved_display_history(saved)
-    assert restored is not None
-    for history in (state.message_history, restored.messages):
+    display = DisplayHistory().capture(fold, completed=True)
+    restored = DisplayHistory.model_validate_json(display.model_dump_json())
+    # The second authored item is steering, not a new ordinary turn.
+    assert [turn.preview for turn in display_turns(restored)] == ["same"]
+    assert display_turns(restored)[0].steering_count == 1
+    assert [
+        item.content["text"]
+        for item in restored.items
+        if item.kind == "text_message"
+        and item.content.get("role") == "user"
+        and item.content.get("metadata", {}).get("display", True)
+    ] == ["same", "same"]
+    assert any(item.kind == "tool_call" and item.state == "completed" for item in restored.items)
+    for history in (state.message_history,):
         assert [turn.preview for turn in _transcript_turns(history)] == ["same", "same"]
         assert checkpoint_excerpt(ConversationExcerpt(), history).latest_input == "same"
         parts = [part for index, message in enumerate(history) for part in _message_entry(index, message).parts]

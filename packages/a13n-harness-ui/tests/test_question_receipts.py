@@ -11,6 +11,8 @@ from a13n_harness_ui.interactive.theme import resolve_theme
 from a13n_harness_ui.surfaces import QuestionOptionView, QuestionView, StructuredQuestionRequestView
 from prompt_toolkit.utils import get_cwidth
 
+from .display_fixture import feed_display
+
 
 @pytest.fixture
 def renderer():
@@ -46,7 +48,8 @@ def render(renderer, *, detailed=False, width=120):
 
 def result(renderer, value, *, native=False, outcome="success", call_id="question-1", run_id="response-run"):
     if native:
-        renderer.ingest(
+        feed_display(
+            renderer,
             "CUSTOM",
             {
                 "name": "a13n.pydantic_ai.function_tool_result",
@@ -65,16 +68,18 @@ def result(renderer, value, *, native=False, outcome="success", call_id="questio
             run_id=run_id,
         )
     else:
-        renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": call_id, "content": json.dumps(value)}, run_id=run_id)
+        feed_display(renderer, "TOOL_CALL_RESULT", {"toolCallId": call_id, "content": json.dumps(value)}, run_id=run_id)
 
 
 def streamed_request(renderer, pending, *, run_id="question-run"):
-    renderer.ingest(
+    feed_display(
+        renderer,
         "TOOL_CALL_START",
         {"toolCallId": pending.request_id, "toolCallName": pending.tool_name},
         run_id=run_id,
     )
-    renderer.ingest(
+    feed_display(
+        renderer,
         "TOOL_CALL_ARGS",
         {
             "toolCallId": pending.request_id,
@@ -82,12 +87,12 @@ def streamed_request(renderer, pending, *, run_id="question-run"):
         },
         run_id=run_id,
     )
-    renderer.ingest("TOOL_CALL_END", {"toolCallId": pending.request_id}, run_id=run_id)
+    feed_display(renderer, "TOOL_CALL_END", {"toolCallId": pending.request_id}, run_id=run_id)
 
 
 def test_registration_and_run_finish_do_not_claim_an_answer(renderer):
     renderer.register_questions(request())
-    renderer.ingest("RUN_FINISHED", {}, run_id="question-run")
+    feed_display(renderer, "RUN_FINISHED", {}, run_id="question-run")
     assert render(renderer) == ""
     assert renderer.drain() == ""
 
@@ -99,7 +104,7 @@ def test_typed_question_survives_fresh_response_run(renderer, native, legacy_win
 
     monkeypatch.setattr(module, "Console", partial(module.Console, legacy_windows=legacy_windows))
     renderer.register_questions(request())
-    renderer.ingest("RUN_FINISHED", {}, run_id="question-run")
+    feed_display(renderer, "RUN_FINISHED", {}, run_id="question-run")
     result(renderer, {"answers": {request().questions[0].question: "Python"}}, native=native)
     concise = render(renderer)
     assert "Questions" in concise
@@ -127,7 +132,8 @@ def test_native_and_protocol_results_share_one_receipt_and_preserve_raw_details(
     assert renderer.drain().count("Answered · Language") == 1
     details = render(renderer, detailed=True)
     assert details.count("Native result") == 1
-    assert details.count("Tool result") == 1
+    # A later protocol projection does not duplicate the authoritative native value.
+    assert details.count("Tool result") == (0 if first_native else 1)
     assert '"outcome": "success"' in details
 
 
@@ -240,7 +246,8 @@ def test_question_panel_wraps_options_and_preserves_selection(renderer, theme, w
 
 def test_question_correlation_is_root_only(renderer):
     renderer.register_questions(request())
-    renderer.ingest(
+    feed_display(
+        renderer,
         "TOOL_CALL_RESULT",
         {"toolCallId": "question-1", "content": json.dumps({"answers": {request().questions[0].question: "Python"}})},
         child=True,
@@ -272,7 +279,8 @@ def test_receipt_payload_is_literal_and_control_sequences_are_removed(renderer):
 
 def test_native_retry_is_not_an_answer(renderer):
     renderer.register_questions(request())
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.pydantic_ai.function_tool_result",
@@ -295,7 +303,8 @@ def test_native_retry_is_not_an_answer(renderer):
 
 def test_unknown_explicit_tool_name_does_not_match_registered_question(renderer):
     renderer.register_questions(request())
-    renderer.ingest(
+    feed_display(
+        renderer,
         "TOOL_CALL_RESULT",
         {
             "toolCallId": "question-1",

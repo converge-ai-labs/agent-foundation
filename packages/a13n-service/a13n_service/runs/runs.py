@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from a13n_stream_protocol.display import Page, Tail
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +14,6 @@ from a13n_service.infra.errors import ServiceError, conflict, invalid
 from a13n_service.infra.http import require_match
 from a13n_service.runs import checkpoints
 from a13n_service.runs.checkpoints import PageRef, TailPointer
-from a13n_service.runs.display import Page, Tail
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Attempts, AttemptView, RunItems, RunLabels, RunPage, RunView
 from a13n_service.runs.seal import stop

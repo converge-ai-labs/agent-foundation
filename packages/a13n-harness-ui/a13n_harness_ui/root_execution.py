@@ -29,7 +29,7 @@ from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot
 from a13n_logging import get_logger
-from a13n_stream_protocol import HarnessAguiStreamObserver
+from a13n_stream_protocol.display import DisplayFold, Observed
 from anyio import CancelScope, get_cancelled_exc_class, to_thread
 from opentelemetry.trace import StatusCode
 from pydantic_ai import ToolDenied, ToolFailed
@@ -48,13 +48,7 @@ from a13n_harness_ui.composition import (
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
 from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector, checkpoint_excerpt
 from a13n_harness_ui.diagnostics import exception_feedback
-from a13n_harness_ui.display_history import (
-    DisplayHistory,
-    DisplayHistoryCollector,
-    detach_display_history,
-    saved_display_history,
-    with_display_history,
-)
+from a13n_harness_ui.display_history import DisplayHistory, import_display_history
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
@@ -125,6 +119,7 @@ class RootRunAdmission:
     memory_positions: dict[str, str | None] = field(default_factory=dict)
     organization: MemoryOrganizationRun | None = None
     resume_usage: bool = False
+    display_history: DisplayHistory = field(default_factory=DisplayHistory)
 
 
 class RootRunExecutor:
@@ -210,24 +205,27 @@ class RootRunExecutor:
                 raise ThreadError("Memory Threads are observation-only.", code="memory_thread_read_only")
             source = organization.source
             published = await self._compositions.publish_memory(source, thread)
-            previous, _, _, _, _ = await self._load_run_state(thread)
-
-            def prepare_memory_history() -> HarnessState:
-                saved = saved_display_history(previous)
-                display = DisplayHistoryCollector(
-                    (), DisplayHistory(messages=previous.message_history if saved is None else saved.messages)
-                ).capture(())
-                return with_display_history(HarnessState.new(thread_id=thread_id), display)
-
-            fresh = await to_thread.run_sync(prepare_memory_history)
-            return RootRunAdmission(thread, source, published, fresh, None, prompt, None, organization=organization)
+            _, _, _, _, _, display = await self._load_run_state(thread)
+            return RootRunAdmission(
+                thread,
+                source,
+                published,
+                HarnessState.new(thread_id=thread_id),
+                None,
+                prompt,
+                None,
+                organization=organization,
+                display_history=display,
+            )
         if organization is not None:
             raise ThreadError("Organization requires a Memory Thread.", code="memory_thread_required")
         if mutation is not None:
             thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
         if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
             raise RunCoordinationError("The saved restart continuation changed.", code="restart_conflict")
-        previous_state, deferred, previous_composition, accepted, positions = await self._load_run_state(thread)
+        previous_state, deferred, previous_composition, accepted, positions, display = await self._load_run_state(
+            thread
+        )
         if prompt is not None and deferred is not None:
             assert thread.continuation is not None
             response = ThreadDeferredResponse(
@@ -313,6 +311,7 @@ class RootRunExecutor:
             response,
             positions,
             resume_usage=restart is not None and UsageSnapshot.from_state(previous_state) is not None,
+            display_history=display,
         )
 
     async def execute(
@@ -334,21 +333,18 @@ class RootRunExecutor:
                 {"prepare.input_kind": "deferred_response" if admission.response is not None else "prompt"},
             )
 
-            def prepare_history() -> tuple[HarnessState, GoalView | None, DisplayHistoryCollector]:
-                # Admission without a prompt is an explicit deferred/planned continuation;
-                # an ordinary prompt can never reactivate a checkpointed Goal.
-                selected_goal = saved_goal(previous_state) if admission.prompt is None else goal
-                state, saved = detach_display_history(previous_state)
-                display = DisplayHistoryCollector(state.message_history, saved)
-                # The collector owns inspection history during execution. Native
-                # snapshots need not repeatedly decode and serialize that history;
-                # _select_state reattaches it at every durable root boundary.
-                state = with_goal(state, selected_goal)
-                return state, selected_goal, display
+            # Only native state is supplied to Harness. Display belongs to the
+            # Host consumer and cannot be mutated by model/Capability producers.
+            goal = saved_goal(previous_state) if admission.prompt is None else goal
+            previous_state = await to_thread.run_sync(with_goal, previous_state, goal)
+            display = admission.display_history
+            display_fold: DisplayFold | None = None
 
-            # These detached snapshots can be large. Join preparation before any
-            # stream or Capability hook can access the collector, even on cancellation.
-            previous_state, goal, display = await to_thread.run_sync(prepare_history)
+            async def capture_display(*, completed: bool = False) -> DisplayHistory:
+                if display_fold is None:
+                    return display
+                return await to_thread.run_sync(partial(display.capture, display_fold, completed=completed))
+
             goal_capability = GoalCapability(goal, changed=on_goal)
             base_continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
 
@@ -364,7 +360,7 @@ class RootRunExecutor:
                     memory_positions=reconstructed.memory_cursors.snapshot(),
                     accepted=stream.pending_deferred_input,
                     state=state,
-                    display=display,
+                    display=await capture_display(),
                     excerpt=excerpt,
                     activity_changed=excerpt != thread.excerpt,
                 )
@@ -376,6 +372,7 @@ class RootRunExecutor:
                     await self._summary_hub.publish(kind="thread", thread_id=thread_id)
                 return selected.reference.logical_digest
 
+            checkpoints = RootCheckpointCapability(save_checkpoint)
             preparation_span.set_attribute("a13n.phase.step", "reconstruction")
             pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
             reconstructed = self._agents.reconstruct(
@@ -386,8 +383,7 @@ class RootRunExecutor:
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
                     goal_capability,
-                    display,
-                    RootCheckpointCapability(save_checkpoint),
+                    checkpoints,
                     *(
                         (RestartPauseCapability(self._restart, thread_id),)
                         if self._restart is not None and admission.organization is None
@@ -481,7 +477,9 @@ class RootRunExecutor:
             tool_images = ToolImageCollector(run_id=stream.run_id, thread_id=thread.thread_id, files=self._thread_files)
             if on_stream is not None:
                 await on_stream(stream, input_files)
-            observer = HarnessAguiStreamObserver()
+            display_fold = await to_thread.run_sync(
+                partial(display.start, stream.run_id, resume=admission.prompt is None or deferred_resume is not None)
+            )
             async with self._bind_subagent_parent(
                 thread_id=thread.thread_id,
                 run_id=stream.run_id,
@@ -491,6 +489,7 @@ class RootRunExecutor:
                 stream_entry_attempted = True
                 async with stream:
                     async for item in stream:
+                        item = await checkpoints.consume(item)
                         record_skill_event(item)
                         excerpts.observe(item)
                         tool_evidence.observe(item)
@@ -501,13 +500,21 @@ class RootRunExecutor:
                             else ()
                         )
                         await self._store.usage.observe(thread_id=thread.thread_id, item=item)
+                        events = display_fold.observer.observe(item)
+                        supplements = (*image_events, *app_events)
+                        observed = display_fold.fold(
+                            [event.model_dump(mode="json", by_alias=True) for event in events], source=item
+                        )
+                        observed.extend(
+                            display_fold.fold([event.model_dump(mode="json", by_alias=True) for event in supplements])
+                        )
                         try:
                             await self._publish_live(
                                 thread_id=thread.thread_id,
                                 run_id=stream.run_id,
-                                events=observer.observe(item),
-                                supplements=(*image_events, *app_events),
-                                observer=observer,
+                                events=events,
+                                supplements=supplements,
+                                observed=observed,
                                 base_continuation_id=base_continuation_id,
                             )
                         except Exception:
@@ -567,7 +574,7 @@ class RootRunExecutor:
                         memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=paused_state,
-                        display=display,
+                        display=await capture_display(),
                         excerpt=checkpoint_excerpt(thread.excerpt, paused_state.message_history),
                         activity_changed=True,
                     )
@@ -612,7 +619,7 @@ class RootRunExecutor:
                         memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=result.state,
-                        display=display,
+                        display=await capture_display(completed=result.status == "completed" and run_error is None),
                         deferred=result.deferred,
                         completed_run_id=(
                             stream.run_id
@@ -638,7 +645,7 @@ class RootRunExecutor:
                             memory_positions=reconstructed.memory_cursors.snapshot(),
                             accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                             state=state,
-                            display=display,
+                            display=await capture_display(),
                             excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
                             activity_changed=excerpts is not None and excerpts.changed,
                         )
@@ -742,7 +749,12 @@ class RootRunExecutor:
     async def _load_run_state(
         self, thread: Thread
     ) -> tuple[
-        HarnessState, DeferredToolRequests | None, ObjectRef | None, StoredDeferredInput | None, dict[str, str | None]
+        HarnessState,
+        DeferredToolRequests | None,
+        ObjectRef | None,
+        StoredDeferredInput | None,
+        dict[str, str | None],
+        DisplayHistory,
     ]:
         accepted = None
         positions: dict[str, str | None] = {}
@@ -751,6 +763,7 @@ class RootRunExecutor:
             state = stored.harness_state
             deferred = None
             composition = None
+            display = await to_thread.run_sync(import_display_history, thread.thread_id, state.message_history)
         else:
             stored_continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
             state = stored_continuation.harness_state
@@ -758,12 +771,13 @@ class RootRunExecutor:
             composition = stored_continuation.run_composition
             accepted = stored_continuation.accepted_input
             positions = stored_continuation.memory_cursors
+            display = stored_continuation.display_history
         if state.thread_id != thread.thread_id:
             raise ThreadError(
                 "The selected Thread state belongs to another Thread.",
                 code="thread_continuation_incompatible",
             )
-        return state, deferred, composition, accepted, positions
+        return state, deferred, composition, accepted, positions, display
 
     async def _select_state(
         self,
@@ -771,7 +785,7 @@ class RootRunExecutor:
         thread: Thread,
         composition: ObjectRef,
         state: HarnessState | None,
-        display: DisplayHistoryCollector | None = None,
+        display: DisplayHistory,
         deferred: DeferredToolRequests | None = None,
         accepted: DeferredToolResume | None = None,
         excerpt: ConversationExcerpt,
@@ -788,11 +802,8 @@ class RootRunExecutor:
                 harness_release=harness_version,
                 run_composition=composition,
                 memory_cursors=dict(memory_positions or {}),
-                harness_state=with_display_history(
-                    state, display.capture(state.message_history, completed=completed_run_id is not None)
-                )
-                if display is not None
-                else state,
+                harness_state=state,
+                display_history=display,
                 excerpt=excerpt,
                 deferred_requests=deferred,
                 accepted_input=StoredDeferredInput.capture(accepted, state),
@@ -801,8 +812,8 @@ class RootRunExecutor:
             return continuation, project_continuation(continuation)
 
         try:
-            # The request checkpoint joins this work before model execution or
-            # cancellation; terminal saving starts only after stream teardown.
+            # The consumer joins checkpoint selection before further display
+            # folding or cancellation; terminal saving follows stream teardown.
             # Never abandon a worker that still owns mutable display collection.
             continuation, read_model = await to_thread.run_sync(prepare_continuation)
             published_ref = (
@@ -838,7 +849,7 @@ class RootRunExecutor:
         thread_id: str,
         run_id: str,
         events: tuple[Any, ...],
-        observer: HarnessAguiStreamObserver,
+        observed: list[Observed],
         base_continuation_id: str | None,
         supplements: tuple[Any, ...] = (),
     ) -> None:
@@ -852,7 +863,7 @@ class RootRunExecutor:
             run_id=run_id,
             events=events,
             supplements=supplements,
-            observer=observer,
+            observed=observed,
             base_continuation_id=base_continuation_id,
         )
 

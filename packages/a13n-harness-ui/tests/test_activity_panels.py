@@ -17,6 +17,8 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.utils import get_cwidth
 
+from .display_fixture import feed_display
+
 
 class SizedOutput(DummyOutput):
     def __init__(self, width: int) -> None:
@@ -100,7 +102,8 @@ def test_nonzero_process_exit_is_failed_not_a_green_completion(callback: bool) -
         running = json.dumps({"process_id": "process-one", "status": {"phase": "running"}})
         renderer._observe_shell_result(running, "pytest", "run-one")
         if callback:
-            renderer.ingest(
+            feed_display(
+                renderer,
                 "CUSTOM",
                 {
                     "name": "a13n.shell.status",

@@ -21,13 +21,12 @@ from typing import Any, Literal
 
 from a13n_harness import AgentContext, HarnessState
 from a13n_harness.model_context import ModelContextCoordinatorCapability
+from a13n_stream_protocol.display import open_tool_calls
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ValidatedToolArgs, WrapRunHandler
-from pydantic_ai.messages import CapabilityEvent, ModelMessage, ToolCallPart
+from pydantic_ai.messages import CapabilityEvent, ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
-
-from a13n_service.runs.display import open_tool_calls
 
 
 @dataclass(kw_only=True)
@@ -57,8 +56,9 @@ class Boundaries(AbstractCapability[AgentContext]):
         self.states: dict[int, Staged] = {}
         self.acknowledged: dict[int, asyncio.Future[None]] = {}
         self.tokens = 0
-        # The history length of the latest staged boundary; a boundary without new history is not staged again.
-        self.staged_length = -1
+        # Parallel tools share their complete response boundary, not a history
+        # length. Context replacement and recovery can keep that length equal.
+        self.tool_response: ModelResponse | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="innermost", wrapped_by=(ModelContextCoordinatorCapability,))
@@ -99,11 +99,14 @@ class Boundaries(AbstractCapability[AgentContext]):
     async def _stage(
         self, ctx: RunContext[AgentContext], messages: list[ModelMessage], at: Literal["model", "tool"]
     ) -> int:
-        """Stage the state at this boundary once per history length and return its token."""
-        if len(messages) == self.staged_length:
+        """Stage every model boundary and one boundary per tool response."""
+        response = next((message for message in reversed(messages) if isinstance(message, ModelResponse)), None)
+        if at == "tool" and response is not None and response is self.tool_response:
             return self.tokens
-        # Registered before the first await, so a parallel call of the same response waits for this commit.
-        self.staged_length, self.tokens = len(messages), self.tokens + 1
+        # Registered before the first await, so parallel calls of this response
+        # share the same commit even while state export yields.
+        self.tool_response = response if at == "tool" else None
+        self.tokens += 1
         token = self.tokens
         self.acknowledged[token] = asyncio.get_running_loop().create_future()
         # Taken with `messages`, before the export awaits.

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-`a13n-stream-protocol` is the shared process-local adapter from public Harness stream items to Agent User Interaction Protocol events. One `HarnessAguiObserver` converts the items for one Harness Run, uses standard AG-UI events where their semantics match directly, falls back to `CUSTOM` for every other public observation, applies an optional Host processor, and accumulates the resulting events in observation order. A fresh observer can atomically reconstruct that process-local state by folding a finite Host-supplied history of the same public source items before live observation continues.
+`a13n-stream-protocol` is the shared process-local adapter from public Harness stream items to Agent User Interaction Protocol events. One `HarnessAguiObserver` converts the items for one Harness Run, uses standard AG-UI events where their semantics match directly, falls back to `CUSTOM` for every other public observation, applies an optional Host processor, and optionally accumulates the resulting events in observation order. The shared compact display fold turns those observations into typed items and changes for Host persistence and surface presentation. A fresh observer can atomically reconstruct that process-local state by folding a finite Host-supplied history of the same public source items before live observation continues.
 
 The wire contract is AG-UI 1.0, using canonical camelCase standard fields and upstream content parts. Optional absent fields are omitted; required payload values such as `CUSTOM.value: null` are retained. There is no 0.x negotiation, dual decoding, or legacy event alias layer. Hosts retain their own transport and continuation APIs; adopting AG-UI does not make them `HttpAgent` endpoints.
 
@@ -20,7 +20,8 @@ The package does not define another execution or lifecycle layer. It does not ru
 | History retention, selection, and live cutover | Host                           | Supplies an exact finite source prefix and selects where subsequent live observation begins              |
 | Persistence, event IDs, replay, and fan-out    | Host                           | Stores or delivers returned events under its own Session or Execution contract                           |
 | HTTP, SSE, WebSocket, or in-process delivery   | Host transport                 | Serializes and carries AG-UI events without becoming their execution authority                           |
-| Display state                                  | Renderer                       | Interprets AG-UI events for one surface                                                                  |
+| Compact display semantics                      | Agent Stream Protocol fold     | Interprets AG-UI once; emits typed items and changes for all surfaces                                    |
+| Presentation                                   | Renderer                       | Applies typed changes and formats items without reinterpreting source events                             |
 
 The [Harness event contract](../a13n-harness/12-events-observability-and-usage.md) owns the source stream. [Harness UI local storage and recovery](../a13n-harness-ui/03-local-storage-and-recovery.md) own local retention. [Service facts and delivery](../a13n-service/07-facts-and-delivery.md) owns hosted run facts, display and the thread stream.
 
@@ -55,6 +56,7 @@ class HarnessAguiObserver:
         self,
         *,
         processor: AguiEventProcessor | None = None,
+        retain_events: bool = True,
     ) -> None: ...
 
     @property
@@ -79,7 +81,7 @@ class HarnessAguiObserver:
     def snapshot(self, *, start: int = 0, stop: int | None = None) -> tuple[Event, ...]: ...
 ```
 
-`event_count` counts accumulated post-processor frames. `snapshot` returns detached frames in the half-open range `[start, stop)`; omission of `stop` uses the current count, and the no-argument call returns all frames. Invalid ranges fail explicitly. A Host can capture the count once and read that fixed prefix in bounded batches while later events accumulate. These positions are local to one observer, not Harness source sequence numbers or Host transport cursors. The Host still owns publication visibility and replay-to-live cutover.
+With `retain_events=True` (the default), `event_count` counts accumulated post-processor frames. With `retain_events=False`, conversion and source correlation are unchanged, returned events are not retained, `event_count` stays zero, and `snapshot()` fails explicitly. Hosts using the compact fold select non-retaining observation rather than keeping a second raw journal. Completed inline-child conversion state is released; active multipart correlation remains available. `snapshot` returns detached frames in the half-open range `[start, stop)`; omission of `stop` uses the current count, and the no-argument call returns all frames. Invalid ranges fail explicitly. A Host can capture the count once and read that fixed prefix in bounded batches while later events accumulate. These positions are local to one observer, not Harness source sequence numbers or Host transport cursors. The Host still owns publication visibility and replay-to-live cutover.
 
 The first successfully observed item binds `HarnessAguiObserver` to the source `thread_id` and `run_id`. Later items must carry the same correlation.
 
@@ -109,6 +111,21 @@ Without a processor, every converted event is retained unchanged. A replacement 
 All events produced from one source item are converted and processed before the observer changes its state or accumulator. A conversion failure, invalid processor replacement, or processor exception leaves the current source item unaccumulated. `snapshot()` returns detached copies of the complete post-processor event sequence. The observer does not compact chunks, remove lifecycle boundaries, create cursors, or apply a retention limit.
 
 A Host persists incrementally from the values returned by live `observe()` calls rather than injecting a storage callback into the observer. Historical events reconstructed by `resume()` are accumulated for state and snapshot continuity but are not returned for duplicate publication. This keeps event conversion and reconstruction independent from asynchronous databases, brokers, and transports.
+
+## Compact Display
+
+The shared fold owns message, reasoning, authored input, tool, context and observation semantics. Hosts supply logical Run identity, ordered attempt/sequence positions and a retention policy. An item has a stable scoped identity, dense 1-based ordinal, kind, lifecycle state, first/last stream position, timestamps and content. Inline child identity includes `subagentRunId`; native message and tool-call IDs alone are not globally unique. Independent async children use independent folds.
+
+A fold emits ordered typed changes:
+
+- `set`: insert or replace one complete item;
+- `append`: append only new `text` or `arguments` to an existing item, carrying its resulting state, last stream position and completion time.
+
+A batch applies atomically. Appending to a missing item is a coverage gap, not permission to invent a baseline. Transport owners deduplicate positions and establish contiguous coverage before applying changes. Pure Python and shared TypeScript application consume these changes without an AG-UI interpretation path. Raw observations may accompany delivery for diagnostics or usage, but do not drive a second display fold.
+
+The default bounded policy retains explicit truncation markers, final pages and a mutable tail; [Service display](../a13n-service/07-facts-and-delivery.md#checkpoints-and-display) owns its budgets and publication. The complete-retention policy keeps full UI inspection content while sharing the same semantic owner. It records tool-argument completion, native authoritative result evidence, and per-scope model-response grouping so multipart final responses remain distinct from earlier responses and inline children. Retention does not establish execution success. [Harness UI storage](../a13n-harness-ui/03-local-storage-and-recovery.md#run-composition-and-continuation) owns successful completion markers, imports and stable output addresses.
+
+Compact snapshots cover exactly the events consumed before their Host checkpoint boundary. They are display evidence, never `HarnessState`, acceptance receipts or execution authority. No renderer reconstructs native model messages from them. Bounded live caches and delivery queues do not imply bounded total saved history or incremental checkpoint serialization.
 
 ## Standard Event Conversion
 

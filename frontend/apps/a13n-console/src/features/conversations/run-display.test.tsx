@@ -135,8 +135,25 @@ const delta = (
     run_id: "run_one",
     attempt,
     sequence,
-    event: { type: "TEXT_MESSAGE_CONTENT", messageId: item, delta: text },
-    item: { id: item, kind: "text_message", state: "in_progress" },
+    changes:
+      sequence === 1
+        ? [
+            {
+              type: "set",
+              item: { ...message(text, `${attempt}-1`), id: item },
+            },
+          ]
+        : [
+            {
+              type: "append",
+              id: item,
+              field: "text",
+              text,
+              last_stream_id: `${attempt}-${sequence}`,
+              state: "in_progress",
+              ended_at: null,
+            },
+          ],
   },
 });
 const boundary = (attempt: number, sequence: number): ThreadFrame => ({
@@ -498,8 +515,19 @@ const observed = (
     run_id: "run_one",
     attempt: 1,
     sequence,
-    event: { type: "CUSTOM", name, value },
-    item: { id: `obs_${sequence}`, kind: "observation", state: "completed" },
+    changes: [
+      {
+        type: "set",
+        item: {
+          ...message("", `1-${sequence}`),
+          id: `obs_${sequence}`,
+          ordinal: sequence,
+          kind: "observation",
+          state: "completed",
+          content: { name, value },
+        },
+      },
+    ],
   },
 });
 
@@ -524,13 +552,16 @@ it("reads the execution from the observations the stream delivers", async () => 
   );
 });
 
-it("waits for the next boundary's display to hold an event the stream fragmented", async () => {
+it("recovers a missing append baseline from the next committed display", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
   expect(pathRequests("/items")).toHaveLength(1);
   await act(async () => {
-    frames.push(observed(2, "a13n.stream.fragment", { part: 1 }));
+    frames.push(delta(1, 2, "suffix", "missing"));
   });
+  // A missing baseline first triggers an immediate read, which is still behind.
+  await waitFor(() => expect(pathRequests("/items")).toHaveLength(2));
+  expect(screen.getByTestId("gap").textContent).toBe("true");
   display = {
     ...display,
     items: [
@@ -552,7 +583,10 @@ it("waits for the next boundary's display to hold an event the stream fragmented
   await act(async () => {
     frames.push(boundary(1, 2));
   });
-  await waitFor(() => expect(pathRequests("/items")).toHaveLength(2));
+  await waitFor(() => expect(pathRequests("/items")).toHaveLength(3));
+  await waitFor(() =>
+    expect(screen.getByTestId("gap").textContent).toBe("false"),
+  );
 });
 
 it("reconciles the sealed display once the Thread's current Run moves on", async () => {

@@ -153,6 +153,7 @@ def test_saved_work_does_not_persist_provider_observations() -> None:
 
 
 async def test_work_repair_rechecks_head_after_object_loading(tmp_path: Path, monkeypatch) -> None:
+    from a13n_harness_ui.display_history import DisplayHistory
     from a13n_harness_ui.storage import StoredContinuation
 
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
@@ -172,6 +173,7 @@ async def test_work_repair_rechecks_head_after_object_loading(tmp_path: Path, mo
                     object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="c" * 64
                 ),
                 harness_state=state("thr_work", WorkingState(notes={"value": "new"})),
+                display_history=DisplayHistory(),
             ),
         )
         read = store.objects.read_model

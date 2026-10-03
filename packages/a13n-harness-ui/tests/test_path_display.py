@@ -14,6 +14,8 @@ from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+from .display_fixture import feed_display
+
 
 @pytest.mark.parametrize(
     "directory, path, expected",
@@ -49,13 +51,13 @@ def test_running_and_completed_tool_labels_keep_raw_payloads(name: str, key: str
     result = {"ok": True, key: path, "content": f"literal output {path}"}
     renderer = StreamRenderer(Status(directory=tmp_path))
     try:
-        renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": name})
-        renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "one", "delta": json.dumps(arguments)})
-        renderer.ingest("TOOL_CALL_END", {"toolCallId": "one"})
+        feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "one", "toolCallName": name})
+        feed_display(renderer, "TOOL_CALL_ARGS", {"toolCallId": "one", "delta": json.dumps(arguments)})
+        feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "one"})
         block = next(iter(renderer.transcript.blocks.values()))
         assert block.preview == f"{dict(view='Read', write='Call write', ls='List')[name]} {Path('src/file.py')} …"
         assert json.dumps(arguments, ensure_ascii=False, indent=2) in block.source
-        renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "one", "content": json.dumps(result)})
+        feed_display(renderer, "TOOL_CALL_RESULT", {"toolCallId": "one", "content": json.dumps(result)})
         assert str(tmp_path) not in (block.preview or "")
         assert str(Path("src/file.py")) in (block.preview or "")
         assert json.dumps(arguments, ensure_ascii=False, indent=2) in block.source
@@ -96,12 +98,16 @@ def test_interleaved_child_paths_keep_invocation_base_and_run_identity(tmp_path:
                 ("ARGS", {"delta": json.dumps({"file_path": str(path)})}),
                 ("END", {}),
             ):
-                renderer.ingest(
-                    f"TOOL_CALL_{kind}", {"toolCallId": "same", **payload}, run_id=run, child=run == "child"
+                feed_display(
+                    renderer, f"TOOL_CALL_{kind}", {"toolCallId": "same", **payload}, run_id=run, child=run == "child"
                 )
         for run in reversed(paths):
-            renderer.ingest(
-                "TOOL_CALL_RESULT", {"toolCallId": "same", "content": "done"}, run_id=run, child=run == "child"
+            feed_display(
+                renderer,
+                "TOOL_CALL_RESULT",
+                {"toolCallId": "same", "content": "done"},
+                run_id=run,
+                child=run == "child",
             )
         root, child = renderer.transcript.blocks.values()
         assert root.preview == "Read file.py"
@@ -142,7 +148,8 @@ def test_shell_passes_explicit_directory_and_rendering_does_not_follow_chdir(
         try:
             monkeypatch.chdir(elsewhere)
             assert shell.status.directory == tmp_path
-            shell.renderer.ingest(
+            feed_display(
+                shell.renderer,
                 "CUSTOM",
                 {
                     "name": "a13n.filesystem.edit_applied",
@@ -164,12 +171,12 @@ def test_long_tool_paths_wrap_without_losing_the_relative_path(width, name, key,
     path = str(tmp_path / relative)
     renderer = StreamRenderer(Status(directory=tmp_path))
     try:
-        renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": name})
-        renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "one", "delta": json.dumps({key: path})})
-        renderer.ingest("TOOL_CALL_END", {"toolCallId": "one"})
+        feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "one", "toolCallName": name})
+        feed_display(renderer, "TOOL_CALL_ARGS", {"toolCallId": "one", "delta": json.dumps({key: path})})
+        feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "one"})
         for completed in (False, True):
             if completed:
-                renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "one", "content": '{"ok":true}'})
+                feed_display(renderer, "TOOL_CALL_RESULT", {"toolCallId": "one", "content": '{"ok":true}'})
             renderer.transcript.render(width)
             rows = ["".join(text for _, text in row) for row in renderer.transcript.rows]
             assert len(rows) > 1

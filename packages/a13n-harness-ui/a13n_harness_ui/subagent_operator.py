@@ -53,7 +53,8 @@ from a13n_harness.input import RunInputValue
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot, intersect_usage_limits
 from a13n_logging import get_logger
-from a13n_stream_protocol import ContentMetadata, HarnessAguiStreamObserver
+from a13n_stream_protocol import ContentMetadata
+from a13n_stream_protocol.display import DisplayFold, Tail
 from ag_ui.core import Event as AguiEvent
 from ag_ui.core.events import (
     CustomEvent,
@@ -1106,7 +1107,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
         expected_checkpoint: ObjectRef | None = None
         try:
             while True:
-                result, display, terminal_events = await self._consume_run(current, active)
+                live_display = DisplayFold(
+                    current.stream.run_id, Tail(), attempt=1, page_items=128, page_bytes=262144, retain_complete=True
+                )
+                result, display, terminal_events = await self._consume_run(current, active, live_display)
                 if await self._finish_restart(current, active, expected_checkpoint):
                     return
                 if result.status == "suspended":
@@ -1169,7 +1173,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     memory_positions=current.reconstructed.memory_cursors.snapshot(),
                 )
                 await self._publish_summary(current.head)
-                await self._publish_live(current, durable_events)
+                await self._publish_live(current, durable_events, live_display)
                 terminal_error = next((event for event in durable_events if isinstance(event, RunErrorEvent)), None)
                 finish_operation(
                     span,
@@ -1296,8 +1300,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self,
         prepared: _PreparedSegment,
         active: _ActiveSegment,
+        live_display: DisplayFold,
     ) -> tuple[HarnessRunResult[Any], CompactChildDisplay, tuple[AguiEvent, ...]]:
-        observer = HarnessAguiStreamObserver()
+        observer = live_display.observer
         tool_images = ToolImageCollector(
             run_id=prepared.stream.run_id, thread_id=prepared.state.thread_id, files=self._thread_files
         )
@@ -1341,7 +1346,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                             result = item.result
                             terminal_events = events
                         else:
-                            await self._publish_live(prepared, events)
+                            await self._publish_live(prepared, events, live_display)
         except BaseException as exc:
             run_error = exc
 
@@ -1648,6 +1653,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self,
         prepared: _PreparedSegment,
         events: Sequence[AguiEvent],
+        display: DisplayFold,
     ) -> None:
         if self._live_hub is None or not events:
             return
@@ -1660,6 +1666,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 run_id=prepared.stream.run_id,
                 execution_id=prepared.head.execution_id,
                 events=events,
+                observed=display.fold([event.model_dump(mode="json", by_alias=True) for event in events]),
             )
         except Exception:
             return

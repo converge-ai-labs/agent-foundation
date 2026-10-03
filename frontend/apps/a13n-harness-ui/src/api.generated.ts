@@ -5712,6 +5712,8 @@ export interface components {
         };
         /** TranscriptPart */
         TranscriptPart: {
+            /** Subagent Run Id */
+            subagent_run_id?: string | null;
             comment_target?: components["schemas"]["SavedOutputTarget"] | null;
             /**
              * Text Truncated
@@ -5779,6 +5781,11 @@ export interface components {
             final_position?: number | null;
             /** Output Position */
             output_position?: number | null;
+            /**
+             * Output Positions
+             * @default []
+             */
+            output_positions?: number[];
             /** Output Preview */
             output_preview?: string | null;
             /**
@@ -5916,6 +5923,31 @@ export interface components {
              */
             after?: string | null;
         };
+        /**
+         * AppendItem
+         * @description Append only new text, without retransmitting the growing item.
+         */
+        AppendItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "append";
+            /** Id */
+            id: string;
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "text" | "arguments";
+            /** Text */
+            text: string;
+            /** Last Stream Id */
+            last_stream_id: string;
+            state: components["schemas"]["ItemState"];
+            /** Ended At */
+            ended_at: string | null;
+        };
         /** FocusEventFrame */
         FocusEventFrame: {
             /**
@@ -5960,6 +5992,38 @@ export interface components {
             /** Resume Cursor */
             resume_cursor: string | null;
         };
+        /** Item */
+        Item: {
+            /** Id */
+            id: string;
+            /** Ordinal */
+            ordinal: number;
+            kind: components["schemas"]["ItemKind"];
+            state: components["schemas"]["ItemState"];
+            /** First Stream Id */
+            first_stream_id: string;
+            /** Last Stream Id */
+            last_stream_id: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Ended At
+             * @default null
+             */
+            ended_at?: string | null;
+            /** Content */
+            content: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        ItemChange: components["schemas"]["SetItem"] | components["schemas"]["AppendItem"];
+        /** @enum {string} */
+        ItemKind: "text_message" | "reasoning_message" | "tool_call" | "observation";
+        /** @enum {string} */
+        ItemState: "in_progress" | "completed" | "interrupted" | "failed";
         /**
          * LiveEvent
          * @description Detached bounded AG-UI event correlated to one complete root lineage.
@@ -5998,6 +6062,11 @@ export interface components {
             } | null;
             /** Payload Omitted */
             payload_omitted: boolean;
+            /**
+             * Changes
+             * @default null
+             */
+            changes?: components["schemas"]["ItemChange"][] | null;
         };
         /** ResetFrame */
         ResetFrame: {
@@ -6025,14 +6094,8 @@ export interface components {
         RootStreamEvent: {
             /** Index */
             index: number;
-            /** Event Type */
-            event_type: string;
-            /** Payload */
-            payload: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
-            /** Payload Omitted */
-            payload_omitted: boolean;
+            /** Changes */
+            changes: components["schemas"]["ItemChange"][];
         };
         /**
          * RootStreamSummary
@@ -6047,6 +6110,22 @@ export interface components {
             base_continuation_id: string | null;
             /** Event Count */
             event_count: number;
+            /** Checkpoints */
+            checkpoints?: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * SetItem
+         * @description Insert or replace one compact item; the Host assigns its stable identity.
+         */
+        SetItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "set";
+            item: components["schemas"]["Item"];
         };
         /** SummaryCursor */
         SummaryCursor: {

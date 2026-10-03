@@ -1669,6 +1669,15 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 tuple(content_items(current_input.value)) if current_input.value is not None else None,
                 recovery=attempt_index > 0,
             )
+            # Primary input belongs to the Harness attempt, not the native
+            # model stream. Native preparation can fail before draining events
+            # buffered by wrap_run, so publish it before entering that stream.
+            model_input = exchange.context._model_input
+            if model_input.content is not None and not self._cancel_event.is_set():
+                for observed in input_events(
+                    model_input.content, source=model_input.source, input_id=recovery.attempt_id
+                ):
+                    yield self._adapt_event(observed)
             recovery.request_error = None
             response_tracker = InterruptedResponseTracker()
             attempt_token = self._observation.record_model_attempt() if self._observation is not None else None

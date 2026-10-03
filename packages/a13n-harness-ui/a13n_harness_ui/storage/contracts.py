@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
 from a13n_harness_ui.conversation import ConversationExcerpt
-from a13n_harness_ui.display_history import DisplayHistory, saved_display_history
+from a13n_harness_ui.display_history import DisplayHistory
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
 
@@ -213,7 +213,7 @@ class StoredDeferredInput(StoredContract):
 
 
 class StoredContinuation(StoredContract):
-    schema_version: Literal["1"] = "1"
+    schema_version: Literal["2"] = "2"
     harness_release: str = Field(min_length=1, max_length=128)
     run_composition: ObjectRef
     harness_state: HarnessState
@@ -223,9 +223,7 @@ class StoredContinuation(StoredContract):
     memory_cursors: dict[str, str | None] = Field(default_factory=dict, exclude_if=lambda value: not value)
     created_at: datetime
 
-    @property
-    def display_history(self) -> DisplayHistory | None:
-        return saved_display_history(self.harness_state)
+    display_history: DisplayHistory
 
     @field_validator("created_at")
     @classmethod

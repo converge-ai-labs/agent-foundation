@@ -43,6 +43,7 @@ from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
+from a13n_stream_protocol.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from pydantic import JsonValue
 from pydantic_ai.messages import UserContent
 from pydantic_ai.usage import UsageLimits
@@ -69,7 +70,6 @@ from a13n_service.runs.boundaries import Boundaries, SafeBoundary
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.coalesce import Coalescer
-from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from a13n_service.runs.environments.execution import PreparedMount, open_mounts, prepare_mounts
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial

@@ -12,13 +12,13 @@ frames, so a client can always fall back to the durable view:
 """
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from a13n_logging import exception_details, get_logger
-from pydantic import BaseModel, Field
+from a13n_stream_protocol.display import ItemChange, Observed, StreamPosition
+from pydantic import BaseModel, Field, TypeAdapter
 from pydantic.json_schema import JsonSchemaMode, models_json_schema
 from redis.asyncio import Redis
 from sqlalchemy import func, select
@@ -27,7 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.redis import StreamEntry, append, last_id, read, read_entry, read_range, trim
-from a13n_service.runs.display import ItemRef, Observed, StreamPosition
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import AttemptRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread
@@ -57,14 +56,16 @@ def stream_key(thread_id: str) -> str:
     return STREAM_PREFIX + thread_id
 
 
+_CHANGES = TypeAdapter(list[ItemChange])
+
+
 class Delta(BaseModel):
-    """A data frame: one AG-UI event of a run's attempt at its per-attempt sequence, and the item it changed."""
+    """One contiguous batch of compact display changes, already interpreted by the shared fold."""
 
     run_id: str
     attempt: int
     sequence: int
-    event: dict[str, Any]
-    item: ItemRef | None
+    changes: list[ItemChange]
 
 
 class Boundary(BaseModel):
@@ -158,13 +159,10 @@ class ThreadStream:
             self.writer.cancel()
 
     def delta(self, observed: Observed) -> None:
-        event = json.dumps(observed.event, separators=(",", ":"))
-        if len(event) > MAX_DELTA_BYTES:
+        changes = _CHANGES.dump_json(observed.changes)
+        if len(changes) > MAX_DELTA_BYTES:
             return
-        fields = {"sequence": str(observed.sequence), "event": event}
-        if observed.item is not None:
-            fields["item"] = observed.item.model_dump_json()
-        self._put(fields)
+        self._put({"sequence": str(observed.sequence), "changes": changes.decode("utf-8")})
 
     def boundary(self, sequence: int) -> None:
         self._put({"sequence": str(sequence), "boundary": "1"})
@@ -444,8 +442,7 @@ class _View:
             run_id=run_id,
             attempt=attempt,
             sequence=sequence,
-            event=json.loads(fields["event"]),
-            item=ItemRef.model_validate_json(fields["item"]) if "item" in fields else None,
+            changes=_CHANGES.validate_json(fields["changes"]),
         )
         return [*frames, _frame("delta", delta, entry.id)]
 

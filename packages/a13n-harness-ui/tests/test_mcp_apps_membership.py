@@ -6,14 +6,14 @@ from unittest.mock import AsyncMock
 import pytest
 from a13n_harness import HarnessEvent, HarnessState
 from a13n_harness_ui.app import open_harness_ui_app
-from a13n_harness_ui.display_history import DisplayHistory, DisplayHistoryCollector, with_display_history
+from a13n_harness_ui.display_history import import_display_history
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.live import HarnessUiLiveHub
 from a13n_harness_ui.mcp_apps.models import AppReference, AppSnapshot
 from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY
 from a13n_harness_ui.storage import ObjectKind, ObjectRef, StoredContinuation
 from a13n_harness_ui.storage.contracts import ThreadReadModel
-from a13n_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol.display import DisplayFold, Tail
 from ag_ui.core import CustomEvent
 from pydantic_ai.messages import ModelRequest, PartStartEvent, TextPart, ToolReturnPart, UserPromptPart
 
@@ -56,8 +56,12 @@ async def _original(app, thread_id, *, count=1):
     )
 
 
-async def _publish(hub, observer, reference, *, sequence=1, apps=True):
-    events = observer.observe(
+def _display(run_id):
+    return DisplayFold(run_id, Tail(), attempt=1, page_items=128, page_bytes=65536, retain_complete=True)
+
+
+async def _publish(hub, display, reference, *, sequence=1, apps=True):
+    events = display.observer.observe(
         HarnessEvent(
             thread_id=reference.thread_id,
             run_id=reference.run_id,
@@ -66,15 +70,17 @@ async def _publish(hub, observer, reference, *, sequence=1, apps=True):
             event=PartStartEvent(index=sequence, part=TextPart(content=f"answer-{sequence}")),
         )
     )
+    supplements = (_event(reference),) if apps else ()
+    observed = display.fold([event.model_dump(mode="json", by_alias=True) for event in (*events, *supplements)])
     await hub.publish(
         run_kind="root",
         root_thread_id=reference.thread_id,
         parent_thread_id=None,
         thread_id=reference.thread_id,
         run_id=reference.run_id,
-        observer=observer,
+        observed=observed,
         events=events,
-        supplements=(_event(reference),) if apps else (),
+        supplements=supplements,
     )
 
 
@@ -90,7 +96,7 @@ async def test_public_open_and_activation_reject_orphans_before_connection_acqui
             with pytest.raises(HarnessUiError, match="not in retained"):
                 await method(thread.thread_id, reference)
         assert acquire.await_count == 0
-        await _publish(app._live_hub, HarnessAguiObserver(), reference)
+        await _publish(app._live_hub, _display(reference.run_id), reference)
         assert (await app.open_mcp_app(thread.thread_id, reference)).reference == reference
         substituted = await _original(app, thread.thread_id, count=2)
         with pytest.raises(HarnessUiError, match="not in retained"):
@@ -109,25 +115,27 @@ async def test_live_replay_keeps_supplements_ordered_and_membership_outlives_rin
         server_id="mcp-1",
         tool_name="counter",
     )
-    observer = HarnessAguiObserver()
-    await _publish(hub, observer, reference)
+    display = _display(reference.run_id)
+    await _publish(hub, display, reference)
     async with hub.subscribe(root_thread_id=reference.thread_id) as subscription:
         captured = subscription.root_stream
         assert captured is not None
         prefix = [event for batch in captured.batches() for event in batch]
-        assert prefix[-1].payload["name"] == METADATA_KEY
-        assert captured.summary.event_count == observer.event_count + 1
+        assert prefix[-1].changes[0].item.content["mcp_apps"] == [reference.model_dump(mode="json")]
+        assert captured.summary.event_count == len(display.items)
         for sequence in range(2, 10):
-            await _publish(hub, observer, reference, sequence=sequence, apps=False)
+            await _publish(hub, display, reference, sequence=sequence, apps=False)
         assert [event for batch in captured.batches() for event in batch] == prefix
     assert await hub.retains_mcp_app(reference)
     assert not any(event.payload.get("name") == METADATA_KEY for event in await hub.snapshot())
     async with hub.subscribe(root_thread_id=reference.thread_id) as subscription:
         replay = subscription.root_stream
         events = [event for batch in replay.batches() for event in batch]
-        assert len(events) == replay.summary.event_count == observer.event_count + 1
+        assert len(events) == replay.summary.event_count == len(display.items)
         assert [event.index for event in events] == list(range(len(events)))
-        assert [event.payload["name"] for event in events if event.event_type == "CUSTOM"] == [METADATA_KEY]
+        assert [
+            event.changes[0].item.content["mcp_apps"] for event in events if event.changes[0].item.kind == "tool_call"
+        ] == [[reference.model_dump(mode="json")]]
     await hub.finish_root(thread_id=reference.thread_id, run_id=reference.run_id, saved_continuation_id="saved")
     assert not await hub.retains_mcp_app(reference)
     await hub.close()
@@ -153,10 +161,7 @@ async def test_saved_display_membership_survives_clear_context_pagination_and_re
             ),
             *(ModelRequest(parts=[UserPromptPart(f"later-{i}")]) for i in range(110)),
         )
-        state = with_display_history(
-            HarnessState.new(thread_id=thread.thread_id),
-            DisplayHistoryCollector((), DisplayHistory(messages=messages)).capture(()),
-        )
+        state = HarnessState.new(thread_id=thread.thread_id)
         saved = await app._store.objects.publish_model(
             object_kind=ObjectKind.continuation,
             value=StoredContinuation(
@@ -165,10 +170,11 @@ async def test_saved_display_membership_survives_clear_context_pagination_and_re
                     object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64
                 ),
                 harness_state=state,
+                display_history=import_display_history(thread.thread_id, messages),
                 created_at=datetime.now(UTC),
             ),
         )
-        await _publish(app._live_hub, HarnessAguiObserver(), reference)
+        await _publish(app._live_hub, _display(reference.run_id), reference)
         await app._store.threads.select_continuation(
             thread_id=thread.thread_id, expected=None, replacement=saved.ref, read_model=ThreadReadModel()
         )

@@ -45,8 +45,11 @@ def _user_text(messages: Sequence[ModelMessage]) -> str:
     )
 
 
-async def _consume(run: HarnessRunStream[str], events: list[HarnessEvent]) -> None:
+async def _consume(
+    run: HarnessRunStream[str], events: list[HarnessEvent], checkpoint: RootCheckpointCapability
+) -> None:
     async for item in run:
+        item = await checkpoint.consume(item)
         if isinstance(item, HarnessEvent):
             events.append(item)
 
@@ -62,8 +65,6 @@ async def test_checkpoint_exports_committed_handoff_and_context_not_provider_mer
 
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         calls.append(messages)
-        # The actual Pydantic wrapper must save before dispatch, not after output.
-        assert len(saved) == len(calls)
         if len(calls) == 1:
             yield {
                 0: DeltaToolCall(
@@ -75,11 +76,12 @@ async def test_checkpoint_exports_committed_handoff_and_context_not_provider_mer
         else:
             yield "done"
 
+    checkpoint = RootCheckpointCapability(save)
     executable = HarnessBuilder().build(
         AgentSpec(instructions="Keep the standing instruction."),
         output_type=str,
         model=FunctionModel(stream_function=model),
-        capabilities=(RootCheckpointCapability(save), RuntimeContextCapability(), HandoffCapability()),
+        capabilities=(checkpoint, RuntimeContextCapability(), HandoffCapability()),
     )
     previous = HarnessState.new(
         message_history=(
@@ -92,7 +94,7 @@ async def test_checkpoint_exports_committed_handoff_and_context_not_provider_mer
         bindings=RunBindings.embedded(),
         previous_state=previous,
     ) as run:
-        await _consume(run, events)
+        await _consume(run, events, checkpoint)
         result = run.result
 
     assert result is not None
@@ -143,7 +145,6 @@ async def test_checkpoint_excludes_nested_compaction_and_rebinds_after_outer_exi
             yield "Compacted continuation"
         else:
             provider_calls.append("root")
-            assert saved
             yield "done"
 
     checkpoint = RootCheckpointCapability(save)
@@ -164,7 +165,7 @@ async def test_checkpoint_excludes_nested_compaction_and_rebinds_after_outer_exi
         bindings=RunBindings.embedded(),
         previous_state=previous,
     ) as run:
-        consumer = asyncio.create_task(_consume(run, events))
+        consumer = asyncio.create_task(_consume(run, events, checkpoint))
         try:
             await asyncio.wait_for(helper_started.wait(), timeout=5)
             assert saved == []
@@ -198,13 +199,16 @@ async def test_checkpoint_excludes_nested_compaction_and_rebinds_after_outer_exi
     # Reusing this same run-bound object must bind the next outer native run,
     # even when the previous outer run exited by cancellation inside its helper.
     before = len(saved)
-    second = await executable.run("New outer request", bindings=RunBindings.embedded())
+    async with executable.stream("New outer request", bindings=RunBindings.embedded()) as run:
+        await _consume(run, events, checkpoint)
+        second = run.result
+    assert second is not None
     assert second.output_or_raise() == "done"
     assert len(saved) == before + 1
     assert "New outer request" in _user_text(saved[-1].message_history)
 
 
-async def test_failed_checkpoint_emits_no_marker_or_model_request_and_can_be_reused() -> None:
+async def test_failed_consumer_checkpoint_emits_no_success_marker_and_can_be_reused() -> None:
     events: list[HarnessEvent] = []
     attempts: list[HarnessState] = []
     calls = 0
@@ -224,23 +228,23 @@ async def test_failed_checkpoint_emits_no_marker_or_model_request_and_can_be_reu
     executable = HarnessBuilder().build(
         AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=(checkpoint,)
     )
-    async with executable.stream("Unsaved input", bindings=RunBindings.embedded()) as run:
-        await _consume(run, events)
-        failed = run.result
+    with pytest.raises(OSError, match="checkpoint disk unavailable"):
+        async with executable.stream("Unsaved input", bindings=RunBindings.embedded()) as run:
+            await _consume(run, events, checkpoint)
 
-    assert failed is not None
-    assert failed.status == "failed"
     assert len(attempts) == 1
-    assert calls == 0
+    # Model execution may start before the Host drains the marker. Its output
+    # must not pass the failed checkpoint to presentation or terminal success.
+    before = calls
     assert not any(isinstance(event.event, ThreadCheckpointEvent) for event in events)
 
     events.clear()
     async with executable.stream("Retry input", bindings=RunBindings.embedded()) as run:
-        await _consume(run, events)
+        await _consume(run, events, checkpoint)
         recovered = run.result
     assert recovered is not None
     assert recovered.output_or_raise() == "done"
-    assert calls == 1
+    assert calls == before + 1
     assert len(attempts) == 2
     assert [event.event.continuation_id for event in events if isinstance(event.event, ThreadCheckpointEvent)] == [
         "selected-after-failure"
@@ -262,7 +266,6 @@ async def test_consumed_steering_is_saved_once_before_its_native_checkpoint_mark
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         nonlocal calls
         calls += 1
-        assert len(saved) == calls
         if calls == 1:
             first_started.set()
             await release_first.wait()
@@ -270,26 +273,25 @@ async def test_consumed_steering_is_saved_once_before_its_native_checkpoint_mark
         else:
             yield "steered answer"
 
+    checkpoint = RootCheckpointCapability(save)
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=(
-            RootCheckpointCapability(save),
+            checkpoint,
             HandoffCapability(),
             *((CompactionCapability(CompactionPolicy(trigger_tokens=1_000_000)),) if compaction_enabled else ()),
         ),
     )
     async with executable.stream("Initial task", bindings=RunBindings.embedded()) as run:
-        consumer = asyncio.create_task(_consume(run, events))
+        consumer = asyncio.create_task(_consume(run, events, checkpoint))
         try:
             await asyncio.wait_for(first_started.wait(), timeout=5)
             enqueue_id = await run.steer("Focus on correctness")
             assert enqueue_id
-            # Accepted but not consumed steering is deliberately outside this
-            # boundary: it must not appear in the already selected checkpoint.
-            assert len(saved) == 1
-            assert "Focus on correctness" not in _user_text(saved[0].message_history)
+            # The model can start before its staged marker is delivered.
+            # Accepted but unconsumed steering remains outside that state cut.
             release_first.set()
             await asyncio.wait_for(consumer, timeout=5)
         finally:
@@ -302,6 +304,7 @@ async def test_consumed_steering_is_saved_once_before_its_native_checkpoint_mark
     assert result is not None
     assert result.output_or_raise() == "steered answer"
     assert calls == len(saved) == 2
+    assert "Focus on correctness" not in _user_text(saved[0].message_history)
     assert _user_text(saved[-1].message_history).count("Focus on correctness") == 1
     retained = saved[-1].agent_context_state.entries["a13n.steering"].data["retained_requests"]
     assert len(retained) == 2
@@ -330,16 +333,16 @@ async def test_checkpoint_rebinds_to_native_recovery_attempt_in_the_same_harness
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         nonlocal calls
         calls += 1
-        assert len(saved) == calls
         if calls == 1:
             raise ConnectionResetError("stream disconnected before the first response")
         yield "recovered"
 
+    checkpoint = RootCheckpointCapability(save)
     executable = HarnessBuilder().build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
-        capabilities=(RootCheckpointCapability(save),),
+        capabilities=(checkpoint,),
         model_recovery=ModelRecoveryPolicy(
             enabled=True,
             max_attempts=2,
@@ -348,7 +351,7 @@ async def test_checkpoint_rebinds_to_native_recovery_attempt_in_the_same_harness
         ),
     )
     async with executable.stream("Recover this request", bindings=RunBindings.embedded()) as run:
-        await _consume(run, events)
+        await _consume(run, events, checkpoint)
         result = run.result
 
     assert result is not None
@@ -359,3 +362,87 @@ async def test_checkpoint_rebinds_to_native_recovery_attempt_in_the_same_harness
     markers = [event for event in events if isinstance(event.event, ThreadCheckpointEvent)]
     assert len({event.run_id for event in markers}) == 1
     assert [event.event.continuation_id for event in markers] == ["checkpoint-1", "checkpoint-2"]
+
+
+async def test_slow_consumer_keeps_context_replacement_and_display_at_the_same_cut() -> None:
+    from a13n_stream_protocol.display import DisplayFold, Tail
+
+    display = DisplayFold("root", Tail(), attempt=1, page_items=128, page_bytes=65536, retain_complete=True)
+    cuts = []
+    calls = 0
+
+    async def save(state: HarnessState) -> str:
+        items = [item.model_copy(deep=True) for item in display.items.values()]
+        await asyncio.sleep(0.02)
+        assert items == list(display.items.values())  # One consumer owns all mutation.
+        cuts.append((state, items))
+        return f"checkpoint-{len(cuts)}"
+
+    checkpoint = RootCheckpointCapability(save)
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="summarize", json_args=json.dumps({"content": "Keep the useful facts"}), tool_call_id="summary"
+                )
+            }
+        else:
+            yield "after replacement"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(checkpoint, HandoffCapability()),
+    )
+    async with executable.stream("Original question", bindings=RunBindings.embedded()) as run:
+        async for item in run:
+            await asyncio.sleep(0.005)
+            item = await checkpoint.consume(item)
+            display.fold(display.events(item), item)
+        assert run.result is not None and run.result.output_or_raise() == "after replacement"
+    assert len(cuts) == 2
+    first_state, first_items = cuts[0]
+    last_state, last_items = cuts[-1]
+    assert "Original question" in _user_text(first_state.message_history)
+    assert any(item.content.get("text") == "Original question" for item in first_items)
+    assert not any(item.kind == "tool_call" for item in first_items)
+    assert "Keep the useful facts" in _user_text(last_state.message_history)
+    assert any(item.kind == "tool_call" and item.content.get("toolCallId") == "summary" for item in last_items)
+    assert not any(item.content.get("text") == "after replacement" for item in last_items)
+    assert any(item.content.get("text") == "after replacement" for item in display.items.values())
+
+
+async def test_consumer_cancellation_joins_checkpoint_selection() -> None:
+    saving = asyncio.Event()
+    release = asyncio.Event()
+    selected = asyncio.Event()
+
+    async def save(state: HarnessState) -> str:
+        saving.set()
+        await release.wait()
+        selected.set()
+        return "saved"
+
+    checkpoint = RootCheckpointCapability(save)
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        yield "answer"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=(checkpoint,)
+    )
+    async with executable.stream("question", bindings=RunBindings.embedded()) as run:
+        consumer = asyncio.create_task(_consume(run, [], checkpoint))
+        await asyncio.wait_for(saving.wait(), 5)
+        consumer.cancel()
+        await asyncio.sleep(0)
+        assert not consumer.done()
+        assert not selected.is_set()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(consumer, 5)
+        assert selected.is_set()

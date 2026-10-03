@@ -10,10 +10,10 @@ import pytest
 from a13n_harness import HarnessEvent
 from a13n_service.runs import stream as stream_module
 from a13n_service.runs.coalesce import MAX_MERGED_CHARS, Coalescer
-from a13n_service.runs.display import DisplayFold, Observed, Tail
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import ThreadStream, WrittenPosition, stream_key
 from a13n_service.settings import Settings
+from a13n_stream_protocol.display import DisplayFold, Observed, Tail
 from pydantic_ai.messages import (
     FunctionToolResultEvent,
     PartDeltaEvent,
@@ -78,15 +78,37 @@ async def _entries(redis: Redis, thread_id: str) -> list[tuple[str, dict[str, st
 
 
 def _events(entries: list[tuple[str, dict[str, str]]]) -> list[dict[str, Any]]:
-    return [json.loads(fields["event"]) for _, fields in entries if "event" in fields]
+    return [change for _, fields in entries if "changes" in fields for change in json.loads(fields["changes"])]
 
 
 def _contents(events: list[dict[str, Any]], kind: str = "TEXT_MESSAGE_CONTENT") -> list[str]:
-    return [event["delta"] for event in events if event["type"] == kind]
+    from a13n_stream_protocol.display import ItemChange, apply_changes
+    from pydantic import TypeAdapter
+
+    adapter = TypeAdapter(ItemChange)
+    items = {}
+    result = []
+    expected = "reasoning_message" if kind == "REASONING_MESSAGE_CONTENT" else "text_message"
+    for event in events:
+        change = adapter.validate_python(event)
+        key = event["item"]["id"] if event["type"] == "set" else event["id"]
+        before = str(items[key].content.get("text", "")) if key in items else ""
+        apply_changes(items, [change])
+        item = items[key]
+        text = str(item.content.get("text", ""))
+        if item.kind == expected and text.startswith(before) and text != before:
+            result.append(text[len(before) :])
+    return result
 
 
 def _streamed_arguments(events: list[dict[str, Any]]) -> list[str]:
-    return [event["value"]["event"]["delta"]["args_delta"] for event in events if event.get("name") == PART_DELTA]
+    return [
+        event["item"]["content"]["value"]["event"]["delta"]["args_delta"]
+        for event in events
+        if event["type"] == "set"
+        and event["item"]["content"].get("name") == PART_DELTA
+        and event["item"]["content"]["value"] != {"omitted": True}
+    ]
 
 
 def _argument_items(display: Tail) -> list[str | None]:
@@ -101,11 +123,14 @@ def _argument_items(display: Tail) -> list[str | None]:
 
 def _replies(events: list[dict[str, Any]]) -> list[str]:
     """The streamed text deltas of assistant messages."""
-    replies = {event["messageId"] for event in events if event["type"] == "TEXT_MESSAGE_START"}
-    replies &= {event["messageId"] for event in events if event.get("role") == "assistant"}
-    return [
-        event["delta"] for event in events if event["type"] == "TEXT_MESSAGE_CONTENT" and event["messageId"] in replies
-    ]
+    replies = {
+        event["item"]["id"]
+        for event in events
+        if event["type"] == "set" and event["item"]["content"].get("role") == "assistant"
+    }
+    return _contents(
+        [event for event in events if (event["item"]["id"] if event["type"] == "set" else event["id"]) in replies]
+    )
 
 
 async def _coalesce(
@@ -167,7 +192,7 @@ async def test_fragments_merge_and_fold_the_same_display(runtime: Runtime) -> No
     assert _contents(events) == ["Looking ", "it up", "It is x"]
     assert len(_contents(_events(each))) == 7
     # A tool call's streamed arguments merge per part, as one observation item each.
-    assert _streamed_arguments(_events(each)) == ['{"q":', '"x"}', "{}", '{"r":', "1}"]
+    assert _streamed_arguments(_events(each)) == ['{"q":', '{"q":"x"}', "{}", '{"r":', '{"r":1}']
     assert _streamed_arguments(events) == ['{"q":"x"}', "{}", '{"r":1}']
     assert _argument_items(merged) == ['{"q":"x"}', "{}", '{"r":1}']
     # Sequences stay dense, and the boundary covers every event observed before it.
@@ -190,9 +215,9 @@ async def test_a_long_streamed_tool_call_is_one_item_and_few_entries(runtime: Ru
     each, unmerged = await _coalesce(runtime, sources, window=0)
     merged_entries, merged = await _coalesce(runtime, sources, window=60)
 
-    assert len(_streamed_arguments(_events(each))) == 3002
-    assert len(_streamed_arguments(_events(merged_entries))) == 4
-    assert "".join(_streamed_arguments(_events(merged_entries))[:2]) == "".join(pieces)
+    assert len(_streamed_arguments(_events(each))) == 3001
+    assert len(_streamed_arguments(_events(merged_entries))) == 3
+    assert _streamed_arguments(_events(merged_entries))[1] == "".join(pieces)
     assert _argument_items(merged) == ["".join(pieces), None]
     assert _positionless(merged) == _positionless(unmerged)
     # Per tool call: its start observation, its argument observation and the call.
@@ -513,7 +538,7 @@ async def test_a_live_reader_skipped_past_removed_entries_gets_a_gap(service, sc
     fields = {"run_id": run["id"], "attempt": "1"}
 
     def delta(sequence: int) -> dict[str, str]:
-        return {**fields, "sequence": str(sequence), "event": json.dumps(_delta(sequence).event)}
+        return {**fields, "sequence": str(sequence), "changes": "[]"}
 
     first = await redis.xadd(key, delta(1))
     headers = await runs_kit.bearer(service)
@@ -576,7 +601,7 @@ async def test_snapshot_position_filters_replay_and_ignores_unsafe_hints(
                 "run_id": run["id"],
                 "attempt": "1",
                 "sequence": str(sequence),
-                "event": json.dumps(_delta(sequence).event),
+                "changes": "[]",
                 **extra,
             },
         )
@@ -615,7 +640,7 @@ async def test_snapshot_position_reports_only_the_missing_suffix(service, script
             "run_id": run["id"],
             "attempt": "1",
             "sequence": "151",
-            "event": json.dumps(_delta(151).event),
+            "changes": "[]",
         },
     )
     async with listen(service.app) as base:
@@ -667,14 +692,10 @@ async def test_resuming_an_older_attempt_resets_before_the_new_attempt_tail(
     second = (await claim(service.runtime, worker_id="resume-test-2", worker_build="test", limit=1))[0]
     assert second.number == 2
     redis, key = service.runtime.redis, stream_key(run["thread_id"])
-    await redis.xadd(
-        key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "event": json.dumps(_delta(100).event)}
-    )
-    await redis.xadd(key, {"run_id": run["id"], "attempt": "2", "sequence": "1", "event": json.dumps(_delta(1).event)})
+    await redis.xadd(key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "changes": "[]"})
+    await redis.xadd(key, {"run_id": run["id"], "attempt": "2", "sequence": "1", "changes": "[]"})
     # A fenced-out worker can finish an old Redis write after the new attempt starts.
-    cursor = await redis.xadd(
-        key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "event": json.dumps(_delta(100).event)}
-    )
+    cursor = await redis.xadd(key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "changes": "[]"})
     headers = {**await runs_kit.bearer(service), "Last-Event-ID": cursor}
     async with listen(service.app) as base:
         url = f"{base}{service.api}/threads/{run['thread_id']}/stream?run={run['id']}&position=1-100"

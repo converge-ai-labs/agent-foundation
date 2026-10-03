@@ -1,13 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from a13n_harness import HarnessState
-from a13n_harness_ui.display_history import (
-    DisplayHistory,
-    DisplayHistoryCollector,
-    saved_display_history,
-    with_display_history,
-)
+from a13n_harness_ui.display_history import DisplayHistory, import_display_history
+from a13n_harness_ui.display_projection import display_turns
 from a13n_harness_ui.thread_projection import _transcript_turns
 from pydantic_ai.messages import (
     ModelRequest,
@@ -64,19 +59,23 @@ def test_only_successful_saved_completion_marks_final_and_survives_reload():
         ModelRequest(parts=[ToolReturnPart("read", "ok")]),
         ModelResponse(parts=[ThinkingPart("Plan"), TextPart("First part"), TextPart("Second part")]),
     ]
-    collector = DisplayHistoryCollector([])
-    assert collector.capture(messages).completed_responses == ()
-    completed = collector.capture(messages, completed=True)
-    assert completed.completed_responses == (3,)
-    state = with_display_history(HarnessState.new(message_history=messages), completed)
-    reopened = saved_display_history(HarnessState.model_validate_json(state.model_dump_json()))
-    assert reopened is not None
-    assert _transcript_turns(reopened.messages, reopened.completed_responses)[0].final_position == 3
-    assert collector.capture(messages, completed=True).completed_responses == (3,)
-    # Further work without another ordinary input stays in the same turn, but
-    # its old final is not evidence that the new work completed.
-    more = collector.capture([*messages, ModelRequest(parts=[ToolReturnPart("read", "resume")])])
-    assert _transcript_turns(more.messages, more.completed_responses)[0].final_position is None
+    imported = import_display_history("thread-one", messages)
+    assert imported.completed == ()
+    fold = DisplayHistory().start("run-one", resume=False)
+    fold.fold(
+        [
+            {"type": "TEXT_MESSAGE_START", "messageId": "answer", "role": "assistant"},
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "answer", "delta": "Second part"},
+            {"type": "TEXT_MESSAGE_END", "messageId": "answer"},
+        ]
+    )
+    completed = DisplayHistory().capture(fold, completed=True)
+    assert completed.completed == (completed.items[-1].id,)
+    reopened = DisplayHistory.model_validate_json(completed.model_dump_json())
+    assert reopened == completed
+    # Further work without another ordinary input invalidates the old final.
+    more = reopened.capture(reopened.start("run-two", resume=True))
+    assert more.completed == ()
 
 
 def test_steering_context_and_hidden_input_do_not_start_turns():
@@ -138,17 +137,18 @@ def test_multiple_parts_and_attachment_only_input_are_single_turns():
     ],
 )
 def test_suspended_or_synthetic_responses_are_not_final(response):
-    assert DisplayHistoryCollector([]).capture([response], completed=True).completed_responses == ()
+    imported = import_display_history("thread-one", [response])
+    assert imported.completed == ()
+    assert display_turns(imported) == ()
 
 
-def test_completion_preserves_legacy_envelope_and_never_changes_model_messages():
-    old = DisplayHistory(messages=[input_message("Old", "old")])
-    assert old.completed_responses == ()
+def test_import_never_claims_host_completion_or_changes_model_messages():
     messages = [input_message("New", "new"), ModelResponse(parts=[TextPart("Answer")])]
-    completed = DisplayHistoryCollector([]).capture(messages, completed=True)
-    assert completed.model_dump().keys() == old.model_dump().keys()
+    imported = import_display_history("thread-one", messages)
     assert messages[-1].metadata is None
-    assert DisplayHistory.model_validate_json(completed.model_dump_json()).completed_responses == (1,)
+    reopened = DisplayHistory.model_validate_json(imported.model_dump_json())
+    assert reopened.completed == ()
+    assert display_turns(reopened)[0].output_preview == "Answer"
 
 
 def test_legacy_closing_output_is_readable_without_claiming_success():

@@ -1,18 +1,15 @@
-import { EventSchema } from "@ag-ui/core/schemas";
+import type { ItemChange } from "a13n-ui/display";
 import { ApiError, isRecord, ProtocolError } from "../errors.js";
 import type { components } from "../schema.js";
 import { delay, workspaceHeaders, type Transport } from "../transport.js";
 import { decodeSse } from "./sse.js";
 
-type ItemRef = Pick<components["schemas"]["Item"], "id" | "kind" | "state">;
-
-/** One AG-UI event of a run attempt at its per-attempt sequence, and the display item it changed. */
+/** One server-folded compact display batch at its per-attempt sequence. */
 export interface ThreadDelta {
   run_id: string;
   attempt: number;
   sequence: number;
-  event: Record<string, unknown> & { type: string };
-  item: ItemRef | null;
+  changes: ItemChange<components["schemas"]["Item"]>[];
 }
 
 /**
@@ -61,6 +58,40 @@ function json(text: string): Record<string, unknown> {
 const isCount = (value: unknown): value is number =>
   Number.isInteger(value) && (value as number) >= 0;
 
+const isPosition = (value: unknown) =>
+  typeof value === "string" && /^(0|[1-9]\d*)-(0|[1-9]\d*)$/.test(value);
+const isState = (value: unknown) =>
+  ["in_progress", "completed", "interrupted", "failed"].includes(String(value));
+
+function isItemChange(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.type === "append")
+    return (
+      typeof value.id === "string" &&
+      (value.field === "text" || value.field === "arguments") &&
+      typeof value.text === "string" &&
+      isPosition(value.last_stream_id) &&
+      isState(value.state) &&
+      (value.ended_at === null || typeof value.ended_at === "string")
+    );
+  if (value.type !== "set" || !isRecord(value.item)) return false;
+  const item = value.item;
+  return (
+    typeof item.id === "string" &&
+    isCount(item.ordinal) &&
+    item.ordinal > 0 &&
+    ["text_message", "reasoning_message", "tool_call", "observation"].includes(
+      String(item.kind),
+    ) &&
+    isState(item.state) &&
+    isPosition(item.first_stream_id) &&
+    isPosition(item.last_stream_id) &&
+    typeof item.started_at === "string" &&
+    (item.ended_at == null || typeof item.ended_at === "string") &&
+    isRecord(item.content)
+  );
+}
+
 function parseFrame(event: string, id: string, text: string): ThreadFrame {
   const data = json(text);
   const runId = typeof data.run_id === "string" ? data.run_id : undefined;
@@ -97,15 +128,11 @@ function parseFrame(event: string, id: string, text: string): ThreadFrame {
         attempt: data.attempt,
         sequence: data.sequence,
       };
-    if (
-      isRecord(data.event) &&
-      EventSchema.safeParse(data.event).success &&
-      (data.item === null || isRecord(data.item))
-    )
+    if (Array.isArray(data.changes) && data.changes.every(isItemChange))
       return {
         type: "delta",
         cursor: id,
-        // Validate canonical AG-UI 1.0 inside the Host-owned envelope.
+        // Only the Host interprets native events; clients apply compact changes.
         delta: data as unknown as ThreadDelta,
       };
   }

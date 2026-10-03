@@ -11,8 +11,8 @@ import asyncio
 from typing import Any
 
 from a13n_harness import HarnessStreamEvent
+from a13n_stream_protocol.display import DisplayFold, Observed, extend, fragment
 
-from a13n_service.runs.display import DisplayFold, Observed, extend, fragment
 from a13n_service.runs.stream import ThreadStream
 
 # The size in which the observer splits long input text: merging never rebuilds what it split, and a merged event

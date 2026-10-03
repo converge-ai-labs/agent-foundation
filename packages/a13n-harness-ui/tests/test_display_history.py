@@ -2,23 +2,21 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 
 import pytest
 from a13n_harness import HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.capabilities import CompactionCapability, CompactionPolicy, HandoffCapability
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
 from a13n_harness.model_context import user_prompt_content
-from a13n_harness_ui.display_history import (
-    DisplayHistory,
-    DisplayHistoryCollector,
-    detach_display_history,
-    saved_display_history,
-    with_display_history,
-)
+from a13n_harness_ui.display_history import DisplayHistory, import_display_history
+from a13n_harness_ui.display_projection import display_turns
 from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
-from a13n_harness_ui.thread_projection import _message_entry
+from a13n_harness_ui.storage.contracts import StoredContinuation
+from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
+from pydantic import ValidationError
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolCallPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.usage import RequestUsage
 
@@ -27,50 +25,42 @@ pytestmark = pytest.mark.anyio
 
 def visible(history: DisplayHistory) -> list[str]:
     return [
-        part.text
-        for index, message in enumerate(history.messages)
-        for part in _message_entry(index, message).parts
-        if part.text and part.metadata.display is not False and part.kind != "system"
+        str(item.content["text"])
+        for item in history.items
+        if "text" in item.content
+        and not item.content.get("subagentRunId")
+        and not (isinstance(metadata := item.content.get("metadata"), dict) and metadata.get("display") is False)
     ]
 
 
-def test_removing_runtime_display_preserves_every_other_namespace_and_the_input(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
-
-    native = HarnessState.new(
-        message_history=[ModelRequest(parts=[UserPromptPart("Native context")])],
-        agent_context_state=AgentContextStateSnapshot(
-            entries={
-                "unknown.capability": CapabilityState(version="future", data={"nested": [1, {"keep": True}]}),
-                "a13n.harness-ui.other": CapabilityState(version="7", data=["retain this UI namespace"]),
-            }
+def continuation(state: HarnessState, display: DisplayHistory) -> StoredContinuation:
+    return StoredContinuation(
+        harness_release="test",
+        harness_state=state,
+        display_history=display,
+        run_composition=ObjectRef(
+            object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64
         ),
+        created_at=datetime.now(UTC),
     )
-    display = DisplayHistoryCollector(native.message_history).capture(native.message_history)
-    saved = with_display_history(native, display)
-    original = saved.model_dump_json()
-    reads = 0
-    getter = AgentContextStateSnapshot.entries.fget
 
-    def counted(snapshot):
-        nonlocal reads
-        if snapshot is saved.agent_context_state:
-            reads += 1
-        return getter(snapshot)
 
-    monkeypatch.setattr(AgentContextStateSnapshot, "entries", property(counted))
-    runtime, restored = detach_display_history(saved)
-    assert restored == display
-    assert reads == 1
-    assert runtime == native
-    assert runtime.message_history_json is saved.message_history_json
-    assert runtime.environment_states_json is saved.environment_states_json
-    assert saved.model_dump_json() == original
-    unchanged, absent = detach_display_history(runtime)
-    assert unchanged is runtime and absent is None
-    assert with_display_history(runtime, restored) == saved
+def test_display_is_a_versioned_sibling_not_native_capability_state() -> None:
+    state = HarnessState.new(message_history=[ModelRequest(parts=[UserPromptPart("Input")])])
+    display = import_display_history(state.thread_id, state.message_history)
+    saved = continuation(state, display)
+    decoded = StoredContinuation.model_validate_json(saved.model_dump_json())
+    assert decoded.harness_state == state
+    assert decoded.display_history == display
+    assert "display-history" not in decoded.harness_state.model_dump_json()
+    old = saved.model_dump(mode="json")
+    old["schema_version"] = "1"
+    with pytest.raises(ValidationError):
+        StoredContinuation.model_validate(old)
+    bad = display.model_dump(mode="json")
+    bad["version"] = "future"
+    with pytest.raises(ValidationError):
+        DisplayHistory.model_validate(bad)
 
 
 @pytest.mark.parametrize("kind", ["handoff", "compaction"])
@@ -81,14 +71,14 @@ async def test_display_history_survives_repeated_context_replacement_and_reload(
             ModelResponse(parts=[TextPart("Original answer")], usage=RequestUsage(input_tokens=1000)),
         ]
     )
-    display: DisplayHistory | None = None
+    display = import_display_history(previous.thread_id, previous.message_history)
     for round_number in range(2):
-        collector = DisplayHistoryCollector(previous.message_history, display)
-        snapshots: list[DisplayHistory] = []
+        fold = display.start(f"run-{round_number}", resume=False)
+        snapshots: list[tuple[HarnessState, DisplayHistory]] = []
         requests = 0
 
-        async def save(state: HarnessState, *, snapshots=snapshots, collector=collector) -> str:
-            snapshots.append(collector.capture(state.message_history))
+        async def save(state: HarnessState, *, fold=fold, snapshots=snapshots, display=display) -> str:
+            snapshots.append((state, display.capture(fold)))
             return f"checkpoint-{len(snapshots)}"
 
         async def model(
@@ -117,13 +107,13 @@ async def test_display_history_survives_repeated_context_replacement_and_reload(
             else:
                 yield f"Answer {round_number}"
 
+        checkpoints = RootCheckpointCapability(save)
         executable = HarnessBuilder().build(
             AgentSpec(),
             output_type=str,
             model=FunctionModel(stream_function=model),
             capabilities=(
-                collector,
-                RootCheckpointCapability(save),
+                checkpoints,
                 HandoffCapability(),
                 *((CompactionCapability(CompactionPolicy(trigger_tokens=1)),) if kind == "compaction" else ()),
             ),
@@ -131,142 +121,96 @@ async def test_display_history_survives_repeated_context_replacement_and_reload(
         async with executable.stream(
             f"Request {round_number}", bindings=RunBindings.embedded(), previous_state=previous
         ) as run:
-            async for _ in run:
-                pass
+            async for item in run:
+                item = await checkpoints.consume(item)
+                fold.fold(fold.events(item), source=item)
             result = run.result
         assert result is not None and result.state is not None
         result.output_or_raise()
         assert snapshots
-        display = collector.capture(result.state.message_history)
+        display = display.capture(fold, completed=True)
         text = visible(display)
         assert text.count("Original user request") == 1
         assert text.count("Original answer") == 1
         for number in range(round_number + 1):
             assert text.count(f"Request {number}") == 1
             assert text.count(f"Answer {number}") == 1
-        summaries = [message for message in display.messages if (message.metadata or {}).get("operation_id")]
+        summaries = [item for item in display.items if item.content.get("name") == f"a13n.context.{kind}_summary"]
         assert len(summaries) == round_number + 1
-        assert len({message.metadata["operation_id"] for message in summaries if message.metadata}) == len(summaries)
         assert not any(_COMPACTION_PROMPT in item for item in text)
         assert not any(
             isinstance(message, ModelResponse)
             and any(isinstance(part, TextPart) and part.content == "Original answer" for part in message.parts)
             for message in result.state.message_history
         )
-        # Reopen exactly the serialized display and native state; display never
-        # becomes the model's execution history.
-        stored = with_display_history(result.state, display)
-        assert stored.message_history == result.state.message_history
-        previous = HarnessState.model_validate_json(stored.model_dump_json())
-        display = saved_display_history(previous)
-        assert display is not None
+        stored = StoredContinuation.model_validate_json(continuation(result.state, display).model_dump_json())
+        previous, display = stored.harness_state, stored.display_history
+        assert len(display_turns(display)) == round_number + 2
+        assert display_turns(display)[-1].final_position is not None
 
 
-async def test_repeated_identical_messages_keep_distinct_positions_and_detached_snapshots() -> None:
-    message = ModelRequest(parts=[UserPromptPart("Same input")])
-    collector = DisplayHistoryCollector([])
-    snapshot = collector.capture([message, message])
-    message.parts = [UserPromptPart("Updated input")]
-    assert visible(snapshot) == ["Same input", "Same input"]
-    messages = [message, message, ModelResponse(parts=[TextPart("Answer")])]
-    updated = collector.capture(messages)
-    assert visible(updated) == ["Updated input", "Updated input", "Answer"]
-    assert visible(snapshot) == ["Same input", "Same input"]
-    native = HarnessState.new(message_history=messages)
-    stored = with_display_history(native, updated)
-    assert saved_display_history(stored) == updated
-    # Old writers can keep unknown state while advancing model history. The
-    # stale UI mapping must not corrupt their next transcript or block resume.
-    advanced = HarnessState.new(
-        message_history=[*native.message_history, ModelRequest(parts=[UserPromptPart("New")])],
-        agent_context_state=stored.agent_context_state,
-    )
-    assert saved_display_history(advanced) is None
+def test_snapshots_are_detached_and_identical_inputs_keep_distinct_positions() -> None:
+    original = DisplayHistory()
+    fold = original.start("run", resume=False)
+    for identity in ("a", "b"):
+        fold.fold(
+            [
+                {
+                    "type": "CUSTOM",
+                    "name": "a13n.input.user",
+                    "value": {
+                        "event": {
+                            "message_id": identity,
+                            "input_id": identity,
+                            "content": "same",
+                            "source": "user",
+                        }
+                    },
+                }
+            ]
+        )
+    saved = original.capture(fold)
+    fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "output", "delta": "x" * 300000}])
+    updated = original.capture(fold, completed=True)
+    assert visible(saved) == ["same", "same"]
+    assert len(updated.items[-1].content["text"]) == 300000
+    assert len(display_turns(updated)) == 2
+    assert display_turns(updated)[-1].final_position is not None
+    restored = DisplayHistory.model_validate_json(updated.model_dump_json())
+    resumed = restored.start("resume", resume=True)
+    assert resumed.run_id == "run"
+    assert restored.capture(resumed).completed == ()
+    assert updated.completed
 
 
-async def test_restore_decodes_saved_messages_once_and_keeps_copies_detached(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from a13n_harness_ui import display_history
+async def test_deferred_tool_keeps_identity_and_sends_baseline_before_suffix() -> None:
+    from a13n_stream_protocol.display import SetItem, apply_changes
 
-    history = [ModelRequest(parts=[UserPromptPart("Input")]), ModelResponse(parts=[TextPart("Answer")])]
-    saved = DisplayHistoryCollector([]).capture(history, completed=True)
-    decode = display_history.decode_messages
-    calls = 0
-
-    def counted_decode(value: bytes) -> tuple[ModelMessage, ...]:
-        nonlocal calls
-        calls += 1
-        return decode(value)
-
-    monkeypatch.setattr(display_history, "decode_messages", counted_decode)
-    collector = DisplayHistoryCollector(history, saved)
-    assert calls == 1
-    history[-1].parts = [TextPart("Changed answer")]
-    updated = collector.capture(history)
-    assert visible(updated) == ["Input", "Changed answer"]
-    assert updated.completed_responses == (1,)
-    assert visible(saved) == ["Input", "Answer"]
-    assert saved.completed_responses == (1,)
-    assert history[-1].metadata is None
-
-
-@pytest.mark.parametrize("kind", ["plain", "handoff", "compaction"])
-async def test_collection_hooks_do_not_serialize_unused_snapshots(kind: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    from a13n_harness_ui import display_history
-
-    collector = DisplayHistoryCollector([])
-    encode = display_history.encode_messages
-    encoded = 0
-
-    def counted_encode(messages: object) -> bytes:
-        nonlocal encoded
-        encoded += 1
-        return encode(messages)
-
-    monkeypatch.setattr(display_history, "encode_messages", counted_encode)
-    requests = 0
-
-    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        nonlocal requests
-        requests += 1
-        if kind == "handoff" and requests == 1:
-            yield {0: DeltaToolCall(name="summarize", json_args='{"content":"Keep input"}', tool_call_id="s")}
-        else:
-            yield "Answer"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=model),
-        capabilities=[
-            collector,
-            HandoffCapability(),
-            *([CompactionCapability(CompactionPolicy(trigger_tokens=1))] if kind == "compaction" else []),
-        ],
-    )
-    previous = HarnessState.new(
-        message_history=[
-            ModelRequest(parts=[UserPromptPart("Original")]),
-            ModelResponse(parts=[TextPart("Old answer")], usage=RequestUsage(input_tokens=1000)),
+    original = DisplayHistory()
+    fold = original.start("run", resume=False)
+    fold.fold(
+        [
+            {"type": "TOOL_CALL_START", "toolCallId": "call", "toolCallName": "edit"},
+            {"type": "TOOL_CALL_ARGS", "toolCallId": "call", "delta": '{"file": "x"}'},
         ]
     )
-    result = await executable.run("Input", bindings=RunBindings.embedded(), previous_state=previous)
-    result.output_or_raise()
-    assert result.state is not None
-    assert encoded == 0
-    snapshot = collector.capture(result.state.message_history, completed=True)
-    assert encoded == 2  # Display messages and the unchanged native-history digest.
-    assert "Input" in visible(snapshot)
-    assert visible(snapshot)[-1] == "Answer"
-    assert snapshot.completed_responses
+    saved = original.capture(fold)
+    resumed = saved.start("new-native-run", resume=True)
+    events = resumed.fold([{"type": "TOOL_CALL_RESULT", "toolCallId": "call", "content": "ok"}])
+    assert isinstance(events[0].changes[0], SetItem)
+    client = {}
+    apply_changes(client, events[0].changes)
+    updated = saved.capture(resumed)
+    assert len(updated.items) == 1
+    assert updated.items[0].id == saved.items[0].id
+    assert updated.items[0].ordinal == saved.items[0].ordinal
+    assert updated.items[0].content["arguments"] == '{"file": "x"}'
+    assert updated.items[0].state == "completed"
+    assert saved.items[0].state == "in_progress"
 
 
-@pytest.mark.parametrize("checkpoint", [False, True])
 @pytest.mark.parametrize("adjacent_requests", [False, True])
-async def test_suspended_response_replaces_its_display_slot_on_resume(
-    checkpoint: bool, adjacent_requests: bool
-) -> None:
+async def test_suspended_response_keeps_partial_display_on_resume(adjacent_requests: bool) -> None:
     previous = HarnessState.new(
         message_history=[
             *([ModelRequest(parts=[UserPromptPart("First")], run_id="old")] if adjacent_requests else []),
@@ -274,134 +218,132 @@ async def test_suspended_response_replaces_its_display_slot_on_resume(
             ModelResponse(parts=[TextPart("partial ")], state="suspended", run_id="old"),
         ]
     )
-    collector = DisplayHistoryCollector(previous.message_history)
-    snapshots: list[tuple[HarnessState, DisplayHistory]] = []
+    display = import_display_history(previous.thread_id, previous.message_history)
+    fold = display.start("new", resume=True)
+    snapshots = []
 
-    async def save(state: HarnessState) -> str:
-        snapshots.append((state, collector.capture(state.message_history)))
+    async def save(state):
+        snapshots.append(display.capture(fold))
         return "saved"
 
-    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+    async def model(messages, info):
         yield "finished"
 
+    checkpoint = RootCheckpointCapability(save)
     executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=model),
-        capabilities=[collector, *([RootCheckpointCapability(save)] if checkpoint else [])],
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=[checkpoint]
     )
-    result = await executable.run(None, bindings=RunBindings.embedded(), previous_state=previous)
-    result.output_or_raise()
-    assert result.state is not None
-    final = collector.capture(result.state.message_history)
-    inputs = ["First", "Continue"] if adjacent_requests else ["Continue"]
-    assert visible(final) == [*inputs, "partial ", "finished"]
-    assert len(final.messages) == len(inputs) + 1
-    assert isinstance(final.messages[-1], ModelResponse)
-    assert final.messages[-1].state == "complete"
-    assert final.pending_response_position is None
-    if checkpoint:
-        state, saved = snapshots[0]
-        assert visible(saved) == [*inputs, "partial "]
-        assert len(saved.model_positions) == len(state.message_history)
-        assert saved.pending_response_position == len(inputs)
-        # A crash after the provider-boundary checkpoint must not strand the
-        # partial response in display history alongside the retried response.
-        reopened = DisplayHistoryCollector(
-            state.message_history, DisplayHistory.model_validate_json(saved.model_dump_json())
-        )
-        retry = HarnessBuilder().build(
-            AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=[reopened]
-        )
-        retried = await retry.run(None, bindings=RunBindings.embedded(), previous_state=state)
-        retried.output_or_raise()
-        assert retried.state is not None
-        assert visible(reopened.capture(retried.state.message_history)) == [*inputs, "finished"]
+    async with executable.stream(None, bindings=RunBindings.embedded(), previous_state=previous) as run:
+        async for item in run:
+            item = await checkpoint.consume(item)
+            fold.fold(fold.events(item), source=item)
+        result = run.result
+    assert result.output_or_raise() == "partial finished"
+    assert visible(snapshots[0]) == (
+        ["First", "Continue", "partial "] if adjacent_requests else ["Continue", "partial "]
+    )
+    assert visible(display.capture(fold))[-2:] == ["partial ", "finished"]
 
 
-@pytest.mark.parametrize("kind", ["handoff", "compaction"])
-async def test_context_summary_projection_keeps_complete_markdown(kind: str) -> None:
+def test_initial_import_preserves_part_identity_provenance_and_context() -> None:
     from pydantic_ai.messages import TextContent
 
-    content = "# Decisions\n\n" + "**Keep this complete.**\n\n" * 4000
-    metadata = {"a13n.context": kind, "operation_id": "summary-long"}
-    message = (
-        ModelRequest(parts=[UserPromptPart([TextContent(content, metadata=metadata)])], metadata=metadata)
-        if kind == "handoff"
-        else ModelResponse(parts=[TextPart(content)], metadata={**metadata, "keep": "compact"})
-    )
-    entry = _message_entry(0, message)
-    assert entry.parts[0].text == content
-    assert type(entry).model_validate_json(entry.model_dump_json()) == entry
-
-
-@pytest.mark.parametrize("history_kind", ["handoff", "two_requests", "three_requests"])
-async def test_preparation_failure_preserves_saved_display_after_native_request_merging(history_kind: str) -> None:
-    from pydantic_ai.capabilities import AbstractCapability
-
-    collector = DisplayHistoryCollector([])
-    calls = 0
-
-    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            yield {
-                0: DeltaToolCall(
-                    name="summarize", json_args=json.dumps({"content": "Keep the decision"}), tool_call_id="s"
+    messages = [
+        ModelRequest(
+            parts=[
+                UserPromptPart(
+                    [
+                        TextContent("First", metadata={"source_id": "input-one"}),
+                        TextContent("Second", metadata={"source_id": "input-one"}),
+                    ]
                 )
-            }
-        else:
-            yield "Saved answer"
-
-    async def save(state: HarnessState) -> str:
-        collector.capture(state.message_history)
-        return "saved"
-
-    if history_kind == "handoff":
-        executable = HarnessBuilder().build(
-            AgentSpec(),
-            output_type=str,
-            model=FunctionModel(stream_function=model),
-            capabilities=[collector, RootCheckpointCapability(save), HandoffCapability()],
-        )
-        result = await executable.run("Original input", bindings=RunBindings.embedded())
-        assert result.output_or_raise() == "Saved answer" and result.state is not None
-        state = result.state
-    else:
-        count = 2 if history_kind == "two_requests" else 3
-        state = HarnessState.new(
-            message_history=[
-                *[ModelRequest(parts=[UserPromptPart(f"Old input {number}")]) for number in range(count)],
-                ModelResponse(parts=[TextPart("Saved answer")]),
             ]
-        )
-    display = collector.capture(state.message_history, completed=True)
-    previous = HarnessState.model_validate_json(with_display_history(state, display).model_dump_json())
-    reopened = DisplayHistoryCollector(previous.message_history, saved_display_history(previous))
+        ),
+        ModelRequest(parts=[UserPromptPart("Steer")], metadata={"a13n.steering-run": "run-one"}),
+        ModelRequest(
+            parts=[UserPromptPart("Hidden")],
+            metadata={"a13n.steering-run": "run-one", "a13n.steering-source": "background_process"},
+        ),
+        ModelRequest(
+            parts=[UserPromptPart("# Handoff\n\nKeep this"), UserPromptPart("Internal instructions")],
+            metadata={"a13n.context": "handoff"},
+        ),
+        ModelResponse(
+            parts=[TextPart("# Compact\n\nKeep that")], metadata={"keep": "compact", "operation_id": "compact-one"}
+        ),
+        ModelResponse(parts=[TextPart("Answer")]),
+    ]
+    saved = import_display_history("thread-one", messages)
+    reopened = DisplayHistory.model_validate_json(saved.model_dump_json())
+    assert visible(reopened) == ["First", "Second", "Steer", "Answer"]
+    (turn,) = display_turns(reopened)
+    assert turn.preview == "First Second" and turn.steering_count == 1
+    assert turn.output_preview == "Answer" and turn.final_position is None
+    summaries = [
+        item
+        for item in reopened.items
+        if item.content.get("name") in {"a13n.context.handoff_summary", "a13n.context.compaction_summary"}
+    ]
+    assert [item.content["value"]["event"]["summary"] for item in summaries] == [
+        "# Handoff\n\nKeep this",
+        "# Compact\n\nKeep that",
+    ]
+    assert "Internal instructions" not in reopened.model_dump_json()
 
-    class FailInstructions(AbstractCapability):
-        def get_instructions(self):
-            async def instructions(ctx):
-                raise RuntimeError("instruction backend unavailable")
 
-            return instructions
-
-    async def unexpected_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        pytest.fail("Preparation must fail before model dispatch")
-        yield "unreachable"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=unexpected_model),
-        capabilities=[reopened, FailInstructions()],
+def test_initial_import_keeps_native_tools_retry_and_visible_media_only() -> None:
+    from pydantic_ai.messages import (
+        ImageUrl,
+        NativeToolCallPart,
+        NativeToolReturnPart,
+        RetryPromptPart,
+        ToolCallPart,
+        ToolReturnPart,
     )
-    failed = await executable.run("New input", bindings=RunBindings.embedded(), previous_state=previous)
-    assert failed.status == "failed" and failed.state is not None
-    updated = reopened.capture(failed.state.message_history)
-    assert visible(updated) == [*visible(display), "New input"]
-    assert updated.completed_responses == display.completed_responses
-    assert all(isinstance(updated.messages[position], ModelResponse) for position in updated.completed_responses)
-    saved = HarnessState.model_validate_json(with_display_history(failed.state, updated).model_dump_json())
-    assert saved_display_history(saved) == updated
+
+    saved = import_display_history(
+        "thread-one",
+        [
+            ModelRequest(parts=[UserPromptPart("Search")]),
+            ModelResponse(
+                parts=[
+                    NativeToolCallPart("web_search", {"query": "fact"}, "native-call", provider_name="provider"),
+                    ToolCallPart("view", {}, "local-call"),
+                ]
+            ),
+            ModelResponse(
+                parts=[NativeToolReturnPart("web_search", {"answer": "found"}, "native-call", provider_name="provider")]
+            ),
+            ModelRequest(parts=[RetryPromptPart("Try again", tool_name="view", tool_call_id="local-call")]),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        "view",
+                        ["Visible", ImageUrl("https://example.com/private.png")],
+                        "media-call",
+                        metadata={"a13n.tool-content": {"result_index": 0, "items": [{"display": False}]}},
+                    )
+                ]
+            ),
+        ],
+    )
+    saved = DisplayHistory.model_validate_json(saved.model_dump_json())
+    tools = {item.content["toolCallId"]: item for item in saved.items if item.kind == "tool_call"}
+    assert tools["native-call"].content["provider"] == "provider"
+    assert tools["native-call"].content["value"] == {"answer": "found"}
+    assert tools["local-call"].state == "failed" and tools["local-call"].content["retry"] is True
+    assert tools["media-call"].content["value"] == "Visible"
+    assert "private.png" not in saved.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        ModelResponse(parts=[TextPart("Working"), ToolCallPart("read", {})]),
+        ModelResponse(parts=[TextPart("Partial")], state="suspended"),
+        ModelResponse(parts=[TextPart("Summary")], metadata={"keep": "compact"}),
+    ],
+)
+def test_import_does_not_promote_intermediate_output_to_closing_preview(response) -> None:
+    imported = import_display_history("thread-one", [ModelRequest(parts=[UserPromptPart("Question")]), response])
+    assert display_turns(imported)[0].output_position is None
