@@ -8,32 +8,31 @@ Visible items keep today's model: identity, kind, state, stream positions, times
 
 Per-field limits stay: 262144 characters per message text, tool arguments, or tool result. The whole-Display limits of 4096 items and `worker.display_bytes` no longer discard history.
 
-## Staging
+## Pages and the tail
 
-At each boundary, the items changed since the previous boundary are upserted into `run_items` in the same fenced transaction as the [staged state](01-running-state.md#start-object-and-staged-changes), so the visible history still covers exactly the committed state. The stream position and Redis resume hint, today stored with the Display pointer, move to a Run column.
+Display becomes two kinds of objects:
 
-A failed or cancelled seal marks the Run's unfinished items `interrupted` in its own transaction. No Display object is uploaded.
+- **History pages.** Immutable objects of finished items in ordinal order, written once and kept permanently.
+- **The tail.** The items not yet in a page. It takes the place of today's Display object: the worker writes it with each checkpoint, and the checkpoint transaction moves the Run's display pointer to it.
 
-## Finished items never change
+When the oldest items of the tail form a full page of finished (`completed` or `failed`) items, initially 256 items or 1 MiB, the worker writes them as a page in the same publication. The checkpoint transaction records the page and the new tail together, so every item is in exactly one place.
 
-`completed`, `failed`, and `interrupted` items are final. When a later attempt continues an interrupted tool call, it appends a new item instead of reopening the old one. A written history page therefore never changes.
+Unfinished items (`in_progress` and `interrupted`) never enter a page while the Run executes, because a later attempt may still continue an interrupted item, as today. Pages hold only items that can no longer change, so a written page never changes.
 
-## History pages
+The tail stays small. The Service commits only at the primary Run's boundaries, and an inline child's items are committed when its delegation returns. At any checkpoint, the only unfinished items are therefore the tool calls of the latest model response. The tail holds those, plus less than one page of finished items.
 
-The [background job](03-storage-and-apis.md#background-job) moves finished items from PostgreSQL to object storage:
+## Sealed Runs
 
-1. When a Run has accumulated a page of finished items (initially 256 items or 1 MiB), or when it ends, the job reads the next contiguous finished items by ordinal.
-1. It uploads them as one immutable page object.
-1. One transaction records the page in `run_item_pages` and deletes the corresponding `run_items` rows.
-
-Because the page record and the row deletion share one transaction, every item is in exactly one place: staged in PostgreSQL or in one page. PostgreSQL holds only recent items of executing Runs. Pages are kept permanently; like other history today, they have no deletion policy.
+A Run's tail freezes when it seals. A worker sealing a failed or cancelled Run may first publish a tail with its unfinished items marked `interrupted`, as today; other seals write nothing. Readers show any unfinished item of a sealed Run as `interrupted` ([`runs.py`](../../../packages/a13n-service/a13n_service/runs/runs.py)). A waiting Run's approval-pending tool call stays in its tail.
 
 ## Reads
 
-`GET …/runs/{run}/items` returns the newest page by default and pages backward or forward by ordinal with `before`, `after`, and `limit`. It keeps `position`, `resume_after`, and `complete`; `dropped` disappears. A read takes one short snapshot of the page catalog and the staged rows for the requested range, then fetches only the pages it needs.
+`GET …/runs/{run}/items` pages by ordinal with `before`, `after`, and `limit`. By default it returns the newest items: the tail and, to fill the limit, the end of the last page. It keeps `position`, `resume_after`, and `complete`; `dropped` disappears.
 
-The live thread stream is unchanged. Console loads the newest page, applies live output from its position, and loads earlier pages on demand.
+A read takes the display pointer and the page catalog in one short snapshot, then fetches the tail and only the pages it needs. Every item that a later live event can change is in the tail, so a client that applies the live stream from the returned position always has the item an event names.
 
-## Relationship to #815
+The live thread stream is unchanged. Console loads the newest items, applies live output from their position, and loads earlier pages on demand.
 
-#815 owns the shared display projector, typed live deltas, and the browser applicator. This proposal owns how the Service persists and pages visible items. The items API should change once, coordinated with #815, so SDK consumers see a single breaking revision.
+## Ownership
+
+This proposal owns the items API change and Console paging, on today's item model. #788 proposed a shared display projector; its implementation PR #815 was closed without merging, and no replacement is open. #788 is not a prerequisite. If it is picked up again, it builds on this paged storage.

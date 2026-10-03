@@ -7,68 +7,59 @@ These are logical schemas, not generated DDL. Every table follows the existing t
 ## PostgreSQL
 
 ```text
-run_messages              # staged state: messages that differ from the start object
-  run_id, position, body
-  PRIMARY KEY (run_id, position)
-
-run_namespaces            # staged state: namespaces that differ from the start object
-  run_id, name, version NULL, body NULL     # NULL body removes the namespace
-  PRIMARY KEY (run_id, name)
-
-run_items                 # staged visible items
-  run_id, ordinal, item_id, kind, state, content,
-  first_stream_id, last_stream_id, started_at, ended_at
-  PRIMARY KEY (run_id, ordinal)
-  UNIQUE (run_id, item_id)
-
 run_item_pages            # permanent history page catalog
-  run_id, first_ordinal, last_ordinal, item_count, key, digest, size
+  run_id, first_ordinal, last_ordinal, item_count, key, digest, size, format
   PRIMARY KEY (run_id, first_ordinal)
 ```
 
-Changes to `runs`:
+Changes to existing rows:
 
-- `staged_state` (new): the staged header `{format, seq, attempt, message_count, resume_input_consumed, environment_states}`, null when nothing is staged.
-- `display` becomes `stream_position` `{attempt, sequence, resume_after}`. The `outcome_state` check drops its Display condition, and the progress-column list of the Run trigger changes accordingly.
-- `checkpoint` keeps its meaning: the Run's latest complete state object.
-- A Run sealed while state is still staged may move `checkpoint` and clear `staged_state` once, through the background job. The Run trigger allows exactly this post-seal update besides labels.
+- `runs.checkpoint` keeps its meaning: the Run's latest complete state object. It also records the compression format and `refs`, the content and subagent objects of this Run that the state references, for cleanup.
+- `runs.display` keeps its meaning, but now names the tail object rather than a complete Display.
+- `threads.head_run_id` may name any sealed Run, and its database check changes accordingly ([continuation](01-state-and-continuation.md#continuing-after-a-failed-or-cancelled-run)).
 
-Content parts larger than a threshold (initially 256 KiB), such as images, files, and large tool results, are written once as objects. Staged rows, state objects, and history pages hold references to them.
+There are no staging tables. A checkpoint transaction moves the two pointers and inserts any new page rows, as today's checkpoint moves the state and Display pointers.
 
 ## Object store
 
-| Key                                                | Writer                 | Lifetime                                                   |
-| -------------------------------------------------- | ---------------------- | ---------------------------------------------------------- |
-| `orgs/{org}/runs/{run}/state/{attempt}/{random}`   | Merges                 | Replaced objects of the same Run are reclaimed; final kept |
-| `orgs/{org}/runs/{run}/pages/{random}`             | Background job         | Permanent                                                  |
-| `orgs/{org}/sessions/{session}/subagents/{random}` | Subagent state binding | Permanent, never deleted individually                      |
-| `orgs/{org}/sessions/{session}/contents/{random}`  | Large content parts    | Permanent, never deleted individually                      |
+| Key                                                  | Written by                             | Kept                                       |
+| ---------------------------------------------------- | -------------------------------------- | ------------------------------------------ |
+| `orgs/{org}/runs/{run}/state/{attempt}/{random}`     | Checkpoints                            | Final object kept; replaced ones reclaimed |
+| `orgs/{org}/runs/{run}/tail/{attempt}/{random}`      | Checkpoints                            | Final object kept; replaced ones reclaimed |
+| `orgs/{org}/runs/{run}/pages/{attempt}/{random}`     | Checkpoints                            | Permanently, once in the page catalog      |
+| `orgs/{org}/runs/{run}/contents/{attempt}/{random}`  | Storage binding: large binary content  | While the Run's final state references it  |
+| `orgs/{org}/runs/{run}/subagents/{attempt}/{random}` | Storage binding: inline subagent state | While the Run's final state references it  |
 
-`orgs/{org}/runs/{run}/display/…` disappears. `checkpoint_cleanup` scans cover only the `state/` subprefix of a Run, so pages are never treated as orphans.
+`orgs/{org}/runs/{run}/display/…` disappears. Every key is still written once, and only committed references make bytes reachable, as the existing object contract requires. State, tail, and page objects are compressed with zstd.
 
-## Background job
+A value inherited from an earlier Run keeps that Run's key. It lives under the earlier Run's prefix and is kept by the earlier Run's final state.
 
-One new outbox kind, `run_archive`, moves staged data to object storage outside execution:
+## Cleanup
 
-- **History pages.** A boundary transaction stages a job when a Run has accumulated a page of finished items; every seal stages one to flush the remaining items. Jobs are keyed by Run and first ordinal.
-- **Staged state of sealed Runs.** When a Run sealed without a final state object (a sweep seal, or a worker without lease time to write one), the job merges its start object and staged rows into a state object and applies the post-seal update above.
+Cleanup stays owner-driven, as today ([object reclamation](../07-facts-and-delivery.md#objects)):
 
-The job uses the outbox's existing leases, retries, deferral, and dead-delivery handling. Its backlog appears in the existing `a13n.backlog.size` and `a13n.backlog.oldest_age` metrics.
+1. A checkpoint stages reclamation of the state and tail objects it replaced.
+1. A takeover scans the Run's `state/` and `tail/` objects and deletes those of earlier attempts that the committed pointers do not name.
+1. Every seal stages one scan of the Run's prefix. It keeps the final state, the final tail, every page in the catalog, and the objects listed in the final checkpoint's `refs`, and deletes everything else: replaced objects not yet reclaimed, uploads whose commit failed, and content or subagent states the final state no longer references.
+
+The seal scan is safe because nothing writes under a Run's prefix after its seal, and a later Run or fork reaches this Run's objects only through its final state, which keeps them. As today, the scan runs after the seal has frozen the references.
 
 ## API
 
-- `GET …/runs/{run}/items` pages by ordinal with `before`, `after`, and `limit`, returning the newest page by default. `dropped` is removed. See [reads](02-visible-history.md#reads).
-- The OpenAPI export changes, which notifies the SDK repositories. The change is coordinated with #815 so that it happens once.
+- `GET …/runs/{run}/items` pages by ordinal with `before`, `after`, and `limit`, returning the newest items by default. `dropped` is removed. See [reads](02-visible-history.md#reads).
+- `POST …/runs/{run}/fork` accepts failed and cancelled Runs.
+- The OpenAPI export changes, which notifies the SDK repositories.
 - The thread stream frames are unchanged.
 
 ## Settings
 
-- `worker.display_bytes` and the 4096-item limit no longer bound the whole visible history.
-- New settings, with initial values tuned by the load test: items per page (256), bytes per page (1 MiB), content object threshold (256 KiB), and staged-state cap per Run (32 MiB).
+- `worker.display_bytes` and the 4096-item limit no longer bound visible history.
+- New settings, with initial values tuned by the load test: items per page (256), bytes per page (1 MiB), the large-content threshold (64 KiB), and the zstd compression level.
 
 ## Cutover
 
 This is a clean breaking change, with no compatibility readers, conversions, or mixed-version operation:
 
-- The state object format, the `a13n.subagents` namespace version, the Run columns, and the items API change together. State objects, Display objects, and subagent entries written before the cutover are not read.
+- The Service state format, Display format, Run columns, head rule, and items API change together. State objects, Display objects, and subagent entries written before the cutover are not read.
+- The Harness state format changes for every Host, because `a13n.subagents` entries now hold references ([Harness state and resume](../../a13n-harness/10-snapshot-and-resume.md)). With the default binding nothing leaves Harness state, but Harness UI conversations stored before the cutover are not converted either.
 - Deployments back up existing data and start from a fresh store. Old and new versions never run against the same database.
