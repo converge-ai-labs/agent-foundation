@@ -6,7 +6,7 @@ from a13n_harness.content import (
     ContentItem,
     ContentMetadata,
     input_request,
-    normalize_request_history,
+    merge_request_history,
     request_input_content,
 )
 from a13n_harness.filters import ContentFilterCapability, ContentFilterConfiguration
@@ -20,7 +20,7 @@ def test_annotations_follow_duplicate_values_through_canonical_merge_and_codec()
     image = BinaryContent(b"same", media_type="image/png", vendor_metadata={"detail": "high"})
     first = input_request([ContentItem(image, ContentMetadata(source_id="first"))])
     second = input_request([ContentItem(image, ContentMetadata(source_id="second", display=False))])
-    merged = normalize_request_history([first, second])
+    merged = merge_request_history([first, second])
     assert len(merged) == 1
     restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(list(merged)))
     request = restored[0]
@@ -134,11 +134,11 @@ async def test_media_steering_and_new_run_preserve_annotations_with_changed_syst
     ] == ["new system", "second block"]
 
 
-@pytest.mark.parametrize("repair", ["orphan", "dangling", "interrupted", "deferred"])
-def test_native_history_repair_keeps_annotation_slots_and_is_initialization_safe(repair: str) -> None:
+@pytest.mark.anyio
+@pytest.mark.parametrize("repair", ["orphan", "dangling", "interrupted"])
+async def test_native_execution_repairs_history_without_annotation_reconstruction(repair: str) -> None:
     from dataclasses import replace
 
-    from pydantic_ai import _agent_graph
     from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 
     image = BinaryContent(b"same", media_type="image/png")
@@ -149,8 +149,6 @@ def test_native_history_repair_keeps_annotation_slots_and_is_initialization_safe
         ]
     )
     if repair == "orphan":
-        # In imported native history, the user part's original annotation index
-        # is one; native orphan removal moves it to zero.
         request = replace(
             request,
             parts=[ToolReturnPart("missing", "orphan", "gone"), *request.parts],
@@ -162,38 +160,64 @@ def test_native_history_repair_keeps_annotation_slots_and_is_initialization_safe
             parts=[ToolCallPart("missing", "{}", "call-one")],
             state="interrupted" if repair == "interrupted" else "complete",
         )
-        history = [response, request]
-        if repair == "dangling":
-            history.append(ModelResponse(parts=[TextPart("later")], model_name="test"))
-        elif repair == "interrupted":
-            history = [request, response]
-    normalized = normalize_request_history(
-        history, has_new_prompt=repair == "interrupted", has_deferred_results=repair == "deferred"
-    )
-    restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(list(normalized)))
-    # Native initialization must be a no-op for prompt annotations, including
-    # after a second JSON serialization. No equality matching identifies items.
-    cleaned = _agent_graph._clean_message_history(restored)
-    items = [
-        item for message in cleaned if isinstance(message, ModelRequest) for item in request_input_content(message)
-    ]
-    assert [item.metadata.source_id for item in items] == ["first", "second"]
-    assert [item.metadata.display for item in items] == [False, True]
-    assert items[1].metadata.model_extra == {"attachment_id": "two"}
-    tool_results = [
-        part
-        for message in cleaned
-        if isinstance(message, ModelRequest)
-        for part in message.parts
-        if isinstance(part, ToolReturnPart)
-    ]
-    assert len(tool_results) == (1 if repair in {"dangling", "interrupted"} else 0)
-    assert (
-        normalize_request_history(
-            normalized, has_new_prompt=repair == "interrupted", has_deferred_results=repair == "deferred"
+        history = (
+            [response, request, ModelResponse(parts=[TextPart("later")], model_name="test")]
+            if repair == "dangling"
+            else [request, response]
         )
-        == normalized
+
+    async def model(messages, info):
+        tool_results = [
+            part
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        assert [part.tool_call_id for part in tool_results] == ([] if repair == "orphan" else ["call-one"])
+        yield "done"
+
+    executable = HarnessBuilder().build(AgentSpec(), model=FunctionModel(stream_function=model), output_type=str)
+    previous = HarnessState.new(message_history=tuple(history))
+    original = previous.model_dump_json()
+    result = await executable.run("Continue", previous_state=HarnessState.model_validate_json(original))
+    assert result.output_or_raise() == "done"
+    restored = HarnessState.model_validate_json(result.state.model_dump_json())
+    items = [
+        item
+        for message in restored.message_history
+        if isinstance(message, ModelRequest)
+        for item in request_input_content(message)
+        if isinstance(item.value, BinaryContent)
+    ]
+    assert [(item.value.data, item.value.media_type) for item in items] == [(b"same", "image/png")] * 2
+    if repair == "orphan":
+        # Native removal moves the prompt. Missing annotations use normal
+        # defaults rather than reconstructing the old positional association.
+        assert [item.metadata for item in items] == [ContentMetadata(), ContentMetadata()]
+    assert previous.model_dump_json() == original
+
+
+@pytest.mark.parametrize(
+    "annotations",
+    [None, [], {"0": "invalid"}, {"0": []}, {"0": [{"display": False}, {}]}, {"0": [{"display": []}]}],
+)
+def test_unusable_prompt_annotations_use_native_defaults(annotations: object) -> None:
+    from dataclasses import replace
+
+    request = replace(input_request("hello"), metadata={"a13n.content": annotations})
+    assert request_input_content(request) == [ContentItem("hello")]
+
+
+def test_request_merge_leaves_tool_pairing_and_response_repair_to_native_execution() -> None:
+    from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+
+    history = (
+        ModelRequest(parts=[ToolReturnPart("missing", "orphan", "gone")]),
+        ModelResponse(parts=[TextPart("partial")]),
+        ModelResponse(parts=[ToolCallPart("pending", "{}", "call-one")], state="interrupted"),
     )
+    assert merge_request_history(history) == history
 
 
 def test_adjacent_serialized_steering_requests_keep_all_delivered_ids() -> None:
@@ -205,7 +229,7 @@ def test_adjacent_serialized_steering_requests_keep_all_delivered_ids() -> None:
         )
         for input_id in ("input-one", "input-two")
     ]
-    normalized = normalize_request_history(requests)
+    normalized = merge_request_history(requests)
     restored = ModelMessagesTypeAdapter.validate_json(ModelMessagesTypeAdapter.dump_json(list(normalized)))
     assert steering_input_ids(restored) == ("input-one", "input-two")
     assert [item.metadata.source_id for item in request_input_content(restored[0])] == ["input-one", "input-two"]

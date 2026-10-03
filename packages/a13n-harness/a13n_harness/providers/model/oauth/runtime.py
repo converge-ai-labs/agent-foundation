@@ -169,7 +169,7 @@ class _GrokProvider(OpenAIProvider):
             api_key=f"{provider_name}-subscription-auth",
             http_client=http_client,
         )
-        self._client.max_retries = 0
+        self.client.max_retries = 0
         if owns_http_client:
             self._own_http_client = http_client
             self._http_client_factory = http_client_factory

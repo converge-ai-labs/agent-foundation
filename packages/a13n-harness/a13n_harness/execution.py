@@ -42,8 +42,8 @@ from a13n_harness.capabilities.steering import (
 )
 from a13n_harness.content import (
     content_items,
+    merge_request_history,
     native_content,
-    normalize_request_history,
     replace_request_parts,
     request_input_content,
     request_parts,
@@ -1655,11 +1655,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._latest_messages = current_history
 
         while True:
-            current_history = normalize_request_history(
-                current_history,
-                has_new_prompt=current_input.value is not None,
-                has_deferred_results=deferred_results is not None and attempt_index == 0,
-            )
+            current_history = merge_request_history(current_history)
             self._latest_messages = current_history
             await exchange.context._steering.resolve_delivered(current_history)
             retry_error: BaseException | None = None
