@@ -53,7 +53,7 @@ Inline subagents keep executing inside the parent's tool call. Only their storag
 - When a child run ends, the Harness saves its state through a Host-provided save/load binding and records a registry entry in the parent's `a13n.subagents` namespace: child instance ID, subagent name, definition ID, child Thread ID, and the stored state reference. The saved state omits `a13n.usage`; continuing a child never restores it.
 - `resume_subagent` loads the referenced state and validates its definition at that point. An incompatible child fails that resume, not every later Run of the parent Thread.
 - Fork rewrites the Thread IDs in registry entries. A child's stored state is forked when it is next loaded.
-- Without a binding, the Harness keeps today's inline storage, so other embedders are unaffected.
+- Registry entries always hold references. Without a Host store, the Harness default binding keeps saved states inside Harness state.
 
 The Service stores each saved child state as an object written once and never deleted individually, so registries in earlier Runs' final states keep resolving.
 

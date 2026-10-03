@@ -66,9 +66,9 @@ The job uses the outbox's existing leases, retries, deferral, and dead-delivery 
 - `worker.display_bytes` and the 4096-item limit no longer bound the whole visible history.
 - New settings, with initial values tuned by the load test: items per page (256), bytes per page (1 MiB), content object threshold (256 KiB), and staged-state cap per Run (32 MiB).
 
-## Migration and compatibility
+## Cutover
 
-- Existing complete state objects remain valid start objects. Their `a13n.usage` is ignored, as it is today.
-- Existing Threads that used inline subagents hold version-1 `a13n.subagents` entries with complete child states. Whether the capability keeps reading that version is an [open question](04-validation-and-rollout.md#open-questions).
-- Existing Display objects are not converted automatically. Their visible history is unavailable through the new API unless a one-time script converts them to history pages.
-- During rolling deploys, a Run with staged state is claimable only by workers that read its staged format, extending today's `claimable()` rule.
+This is a clean breaking change, with no compatibility readers, conversions, or mixed-version operation:
+
+- The state object format, the `a13n.subagents` namespace version, the Run columns, and the items API change together. State objects, Display objects, and subagent entries written before the cutover are not read.
+- Deployments back up existing data and start from a fresh store. Old and new versions never run against the same database.

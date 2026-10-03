@@ -42,7 +42,6 @@ Today's boundary also serializes up to 8 MiB of Display and uploads both objects
 - **Merge crash points.** Before upload, after upload and before commit, and after commit.
 - **Fencing.** A stale attempt or lost lease never writes staged rows.
 - **History pages.** Reads racing page publication, job crashes before and after its commit, and continuation of an interrupted item as a new item.
-- **Rolling deploy.** Runs with staged state are not claimed by older workers.
 - **Load.** PostgreSQL at the capacity model above.
 
 ## Delivery order
@@ -57,7 +56,7 @@ Agreed in the #849 discussion:
 - All three parts are in scope now, in the order above.
 - Visible history is kept permanently in history pages.
 - An interrupted item that a later attempt continues becomes a new item.
-- Existing Display objects are not converted automatically.
+- The change is a clean breaking cutover: no compatibility readers, conversions, or mixed-version operation. Deployments start from a fresh store ([cutover](03-storage-and-apis.md#cutover)).
 - The items API changes once, coordinated with #815.
 - Rewrites of earlier history, including compaction, merge directly to a new start object. Rewritten context is never staged.
 - Running-state staging and visible-item staging stay in separate tables, because their keys, lifetimes, and readers differ.
@@ -66,7 +65,6 @@ Agreed in the #849 discussion:
 ## Open questions
 
 - **Change-detection cost.** Keep complete per-message encoding at every boundary in the first version, or adopt the no-in-place-edit invariant and encode only changed messages. See [01](01-running-state.md#change-detection-cost).
-- **Existing inline subagent state.** Keep reading version-1 `a13n.subagents` entries so existing Threads continue, or reject them as part of the breaking change.
 
 ## Dropped from the earlier draft
 

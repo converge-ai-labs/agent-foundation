@@ -58,6 +58,7 @@ After this change, a boundary is one PostgreSQL transaction that writes only cha
 - A semantic event journal, historical state inspection at arbitrary positions, Session-wide timelines or control journals, and usage events in a journal.
 - Hosting synchronous subagents in separate Threads, or recording asynchronous subagents in parent state.
 - The Harness usage-scope capacity of 10,000 records per attempt, and durability of an inline child's progress while it runs. Both are left for separate proposals.
+- Reading or converting data written before the cutover. The change is a clean breaking cutover; deployments start from a fresh store.
 
 ## Reading order
 
@@ -65,5 +66,5 @@ After this change, a boundary is one PostgreSQL transaction that writes only cha
 | ---------------------------------------------------------- | --------------------------------------------------------------------------- |
 | [01: Running state](01-running-state.md)                   | State contents, staging, change detection, merges, recovery, subagent state |
 | [02: Visible history](02-visible-history.md)               | Visible items, history pages, reads, interruption                           |
-| [03: Storage and APIs](03-storage-and-apis.md)             | Tables, object keys, background job, cleanup, API and settings, migration   |
+| [03: Storage and APIs](03-storage-and-apis.md)             | Tables, object keys, background job, cleanup, API and settings, cutover     |
 | [04: Validation and rollout](04-validation-and-rollout.md) | Capacity model, measurements, guardrails, tests, order, decisions           |
