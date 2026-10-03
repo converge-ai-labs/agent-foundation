@@ -280,7 +280,7 @@ def test_fork_moves_inline_children_to_new_threads_without_reading_their_states(
         agent_context_state=AgentContextStateSnapshot(
             entries={
                 "plugin.private": opaque,
-                SUBAGENT_CAPABILITY_ID: CapabilityState(version="1", data=registry.model_dump(mode="json")),
+                SUBAGENT_CAPABILITY_ID: CapabilityState(version="2", data=registry.model_dump(mode="json")),
             }
         ),
         refs=registry.refs,

@@ -565,21 +565,21 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
     assert "child-turn-2" in json.dumps(second.all_messages(), default=str)
 
 
-async def test_a_child_retained_by_an_earlier_harness_resumes_in_its_own_thread() -> None:
+async def test_a_version_1_inline_registry_resumes_each_child_in_its_own_thread() -> None:
     executable = _delegating_executable()
     limits = UsageLimits(request_limit=9, total_tokens_limit=100_000)
     first = await executable.run("start", bindings=_bindings_factory(), usage_limits=limits)
     assert first.state is not None
     entry = first.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID]
     assert isinstance(entry.data, dict) and isinstance(entry.data["children"], dict)
-    # An earlier Harness kept each child's state inline, naming neither its Thread nor references beside it.
+    # Version 1 kept each child's state inline, naming neither its Thread nor references beside it.
     earlier = {
         child_id: {key: value for key, value in record.items() if key not in ("child_thread_id", "refs")}
         for child_id, record in entry.data["children"].items()
         if isinstance(record, dict)
     }
     entries = first.state.agent_context_state.entries
-    entries[SUBAGENT_CAPABILITY_ID] = CapabilityState(version=entry.version, data={"children": earlier})
+    entries[SUBAGENT_CAPABILITY_ID] = CapabilityState(version="1", data={"children": earlier})
     previous = first.state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
 
     second = await executable.run(
@@ -588,9 +588,9 @@ async def test_a_child_retained_by_an_earlier_harness_resumes_in_its_own_thread(
 
     assert second.output_or_raise() == "parent-done"
     assert second.state is not None
-    [(child_id, record)] = InlineSubagentCollectionState.model_validate(
-        second.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID].data
-    ).children.items()
+    current = second.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID]
+    assert current.version == entry.version == "2"
+    [(child_id, record)] = InlineSubagentCollectionState.model_validate(current.data).children.items()
     assert isinstance(record.state, HarnessState)
     assert record.child_thread_id == record.state.thread_id == earlier[child_id]["state"]["thread_id"]
     assert "child-turn-2" in json.dumps(second.all_messages(), default=str)

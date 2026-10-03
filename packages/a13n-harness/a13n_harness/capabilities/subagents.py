@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator, model_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import AbstractToolset
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 SUBAGENT_CAPABILITY_ID = "a13n.subagents"
 MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS = 32 * 1024
-_INLINE_SUBAGENT_STATE_VERSION = "1"
+_INLINE_SUBAGENT_STATE_VERSION = "2"
 _CHILD_ID_PATTERN = re.compile(r"^(?P<name>[a-z][a-z0-9_-]{0,62})-(?P<suffix>[0-9a-f]{4})$")
 _MAX_PROMPT_LENGTH = 1024 * 1024
 _MAX_EXECUTION_PAGE = 100
@@ -50,15 +50,6 @@ class InlineSubagentState(BaseModel):
     state: StoredRef | HarnessState
     # The saved state's own references, so the parent's export lists them without loading it.
     refs: tuple[StoredRef, ...] = ()
-
-    @model_validator(mode="before")
-    @classmethod
-    def _earlier_record(cls, data: object) -> object:
-        """An earlier Harness retained the child's state inline without naming its Thread; the child continues in
-        the Thread of that state."""
-        if isinstance(data, dict) and "child_thread_id" not in data and isinstance(state := data.get("state"), dict):
-            return {**data, "child_thread_id": state.get("thread_id")}
-        return data
 
     @model_validator(mode="after")
     def _validate_identity(self) -> InlineSubagentState:
@@ -93,6 +84,38 @@ class InlineSubagentCollectionState(BaseModel):
             for ref in (*((child.state,) if isinstance(child.state, StoredRef) else ()), *child.refs)
         }
         return tuple(refs.values())
+
+
+class _InlineSubagentStateV1(BaseModel):
+    """A child in version 1 of the registry, which held its state inline and named no Thread beside it."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    child_instance_id: str
+    subagent_name: str
+    child_definition_id: str
+    state: HarnessState
+
+
+class _InlineSubagentCollectionStateV1(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    children: dict[str, _InlineSubagentStateV1] = Field(default_factory=dict)
+
+    def upgraded(self) -> InlineSubagentCollectionState:
+        """The same children, each continuing in the Thread of its state."""
+        return InlineSubagentCollectionState(
+            children={
+                child_id: InlineSubagentState(
+                    child_instance_id=child.child_instance_id,
+                    subagent_name=child.subagent_name,
+                    child_definition_id=child.child_definition_id,
+                    child_thread_id=child.state.thread_id,
+                    state=child.state,
+                )
+                for child_id, child in self.children.items()
+            }
+        )
 
 
 class SubagentToolCallSnapshot(BaseModel):
@@ -422,14 +445,7 @@ class SubagentCapability(AbstractCapability[AgentContext]):
                 operator=self.operator,
             )
         else:
-            state = (
-                await ctx.deps.state.read(
-                    SUBAGENT_CAPABILITY_ID,
-                    InlineSubagentCollectionState,
-                    version=_INLINE_SUBAGENT_STATE_VERSION,
-                )
-                or InlineSubagentCollectionState()
-            )
+            state = _inline_subagents(await ctx.deps.state.snapshot()) or InlineSubagentCollectionState()
             replacement = _InlineSubagentCapability(context=ctx.deps, state=state)
         ctx.deps._record_run_capability(SUBAGENT_CAPABILITY_ID, replacement)
         return replacement
@@ -485,12 +501,25 @@ class _AsyncSubagentCapability(_SubagentActiveCapability):
 
 
 def _inline_subagents(snapshot: AgentContextStateSnapshot) -> InlineSubagentCollectionState | None:
+    """The state's retained inline children; a version 1 registry reads as the current version."""
     entry = snapshot.get(SUBAGENT_CAPABILITY_ID)
     if entry is None:
         return None
-    if entry.version != _INLINE_SUBAGENT_STATE_VERSION:
-        raise StateError("Inline subagent State has an unsupported version.", code="subagent_state_incompatible")
-    return InlineSubagentCollectionState.model_validate(entry.data)
+    details: dict[str, JsonValue] = {"capability_id": SUBAGENT_CAPABILITY_ID}
+    if entry.version not in (_INLINE_SUBAGENT_STATE_VERSION, "1"):
+        raise StateError(
+            "Capability state version is not supported.",
+            code="capability_state_version_unsupported",
+            details={**details, "expected_version": _INLINE_SUBAGENT_STATE_VERSION, "actual_version": entry.version},
+        )
+    try:
+        if entry.version == "1":
+            return _InlineSubagentCollectionStateV1.model_validate(entry.data).upgraded()
+        return InlineSubagentCollectionState.model_validate(entry.data)
+    except ValidationError as exc:
+        raise StateError(
+            "Capability state payload is invalid.", code="capability_state_invalid", details=details
+        ) from exc
 
 
 def _inline_subagent_refs(snapshot: AgentContextStateSnapshot) -> tuple[StoredRef, ...]:
