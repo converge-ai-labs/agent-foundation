@@ -37,12 +37,12 @@ from a13n_harness.providers.environment.models import EnvironmentChange, Environ
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
-from a13n_harness.usage import intersect_usage_limits
+from a13n_harness.usage import intersect_usage_limits, without_usage
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
 
 if TYPE_CHECKING:
-    from a13n_harness.capabilities.subagents import InlineSubagentCollectionState
+    from a13n_harness.capabilities.subagents import InlineSubagentCollectionState, InlineSubagentState
 
 _SUBAGENT_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,62}$")
 _JSON_ADAPTER = TypeAdapter(JsonValue)
@@ -160,28 +160,27 @@ class DelegationToolset:
 
         continuation = child_instance_id is not None
         baseline: HarnessState | None = None
-        selected_state: HarnessState | None = None
+        retained: InlineSubagentState | None = None
         reserved_id: str
         async with self._active_lock:
             if continuation:
                 assert child_instance_id is not None
-                record = self._state.children.get(child_instance_id)
-                if record is None:
+                retained = self._state.children.get(child_instance_id)
+                if retained is None:
                     raise ToolFailed("Unknown inline child instance ID.")
-                if record.subagent_name != subagent or record.child_definition_id != child.definition.definition_id:
+                if retained.subagent_name != subagent or retained.child_definition_id != child.definition.definition_id:
                     raise ToolFailed("Inline child instance does not match the selected subagent.")
                 if child_instance_id in self._active_children:
                     raise ToolFailed("Inline child instance is already active.")
                 reserved_id = child_instance_id
-                selected_state = record.state.model_copy(deep=True)
             else:
                 reserved_id = self._allocate_child_id(subagent)
                 baseline = HarnessState.new()
-                selected_state = baseline.model_copy(deep=True)
             self._active_children.add(reserved_id)
 
         try:
             try:
+                selected_state = baseline if retained is None else await self._load_child(retained)
                 child_input = _build_child_input(ctx, child, prompt)
                 limits = intersect_usage_limits(
                     child.executable.definition_usage_limits(),
@@ -419,6 +418,13 @@ class DelegationToolset:
             )
             raise ToolFailed(f"Inline child {child_instance_id} state could not be retained.") from exc
 
+    async def _load_child(self, retained: InlineSubagentState) -> HarnessState:
+        """The child's latest state, moved to the Thread its parent's fork gave it."""
+        state = await self._context._storage.load_state(retained.state)
+        if state.thread_id != retained.child_thread_id:
+            state = state.fork(thread_id=retained.child_thread_id)
+        return state
+
     async def _store_child(
         self,
         child_instance_id: str,
@@ -430,20 +436,21 @@ class DelegationToolset:
             SUBAGENT_CAPABILITY_ID,
             InlineSubagentCollectionState,
             InlineSubagentState,
-            _validate_inline_subagent_state,
         )
 
+        retained = _retained_child_state(state)
         record = InlineSubagentState(
             child_instance_id=child_instance_id,
             subagent_name=child.declaration.name,
             child_definition_id=child.definition.definition_id,
-            state=_without_borrowed_environment_state(state),
+            child_thread_id=retained.thread_id,
+            state=await self._context._storage.save_state(retained),
+            refs=retained.refs,
         )
         async with self._state_lock:
             children = dict(self._state.children)
             children[child_instance_id] = record
             candidate = InlineSubagentCollectionState(children=children)
-            _validate_inline_subagent_state(candidate, self._context)
             await self._context.state.write(
                 SUBAGENT_CAPABILITY_ID,
                 candidate,
@@ -574,6 +581,7 @@ def _create_inline_child_bindings(
         ),
         environment=_BorrowedEnvironmentRuntime(parent.environment),
         tool_result_directory=parent.tool_result_directory,
+        state_store=parent._storage.store,
         model_resolver=parent.model_resolver,
         model_call_check=parent.model_call_check,
         usage_reporter=parent.usage_reporter,
@@ -604,6 +612,8 @@ def _create_inline_child_bindings(
         raise DefinitionError("Child bindings cannot replace the model call check.", code="subagent_binding_invalid")
     if resolved.usage_reporter is not bindings.usage_reporter:
         raise DefinitionError("Child bindings cannot replace the usage reporter.", code="subagent_binding_invalid")
+    if resolved.state_store is not bindings.state_store:
+        raise DefinitionError("Child bindings cannot replace the state store.", code="subagent_binding_invalid")
     if invocation_policy is not None and not any(item is invocation_policy for item in resolved.capabilities):
         raise DefinitionError(
             "Child run bindings factory cannot remove or replace the inherited invocation policy.",
@@ -612,14 +622,10 @@ def _create_inline_child_bindings(
     return resolved
 
 
-def _without_borrowed_environment_state(state: HarnessState) -> HarnessState:
-    return HarnessState(
-        schema_version=state.schema_version,
-        thread_id=state.thread_id,
-        message_history=state.message_history,
-        agent_context_state=state.agent_context_state,
-        environment_states={},
-    )
+def _retained_child_state(state: HarnessState) -> HarnessState:
+    """A child's state as its parent retains it: without the borrowed Environment's state, and without accounting,
+    which a resumed child starts fresh."""
+    return without_usage(state).model_copy(update={"environment_states_json": b"{}"})
 
 
 def _build_child_input(

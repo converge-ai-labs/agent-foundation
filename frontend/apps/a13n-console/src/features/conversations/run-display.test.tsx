@@ -62,9 +62,11 @@ function message(
   first: string,
   last = first,
   state: Schema["ItemState"] = "in_progress",
+  ordinal = 1,
 ): Schema["Item"] {
   return {
     id: `item_${first}`,
+    ordinal,
     kind: "text_message",
     state,
     first_stream_id: first,
@@ -175,7 +177,7 @@ function Live({ live }: { live: boolean }) {
       </output>
       <output data-testid="gap">{String(stream.gap)}</output>
       <output data-testid="incomplete">{String(stream.incomplete)}</output>
-      <output data-testid="dropped">{stream.dropped}</output>
+      <button onClick={stream.earlier.load}>Earlier</button>
       <button onClick={stream.reconnect}>Reconnect</button>
     </>
   );
@@ -207,7 +209,6 @@ beforeEach(() => {
     items: [message("Hello", "1-0", "1-1")],
     position: "1-1",
     complete: false,
-    dropped: 0,
   };
   thread = fixtureThread({
     id: "thread_one",
@@ -298,7 +299,6 @@ it("times a reloaded Run's Items from its display", async () => {
     run: run({ status: "completed" }),
     items: [message("Hello", "1-0", "1-1", "completed")],
     complete: true,
-    dropped: 0,
   };
   render(<View live={false} />);
   await waitFor(() =>
@@ -385,15 +385,90 @@ it("reports content the display omitted as incomplete", async () => {
   expect(screen.getByTestId("gap").textContent).toBe("true");
 });
 
-it("counts the Items the display dropped without calling its content incomplete", async () => {
-  display = { ...display, dropped: 12 };
+it("reads earlier Items on request until the first, completing the execution facts", async () => {
+  display = {
+    ...display,
+    items: [message("Hello", "1-4", "1-5", "in_progress", 3)],
+  };
+  // Each earlier page holds the one Item before `before`.
+  read = async (request) => {
+    const before = Number(new URL(request.url).searchParams.get("before"));
+    if (!before) return response(request);
+    const first = `1-${before - 2}`;
+    return Response.json({
+      ...display,
+      items: [
+        message(`Item ${before - 1}`, first, first, "completed", before - 1),
+      ],
+    });
+  };
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
-  expect(screen.getByTestId("dropped").textContent).toBe("12");
-  // The execution facts of dropped Items are gone with them.
+  // Unread Items take their execution facts with them, though nothing is missing.
   expect(screen.getByTestId("coverage").textContent).toBe("partial");
-  expect(screen.getByTestId("incomplete").textContent).toBe("false");
   expect(screen.getByTestId("gap").textContent).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  await waitFor(() => expect(text()).toBe("Item 2|Hello"));
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  await waitFor(() => expect(text()).toBe("Item 1|Item 2|Hello"));
+  expect(screen.getByTestId("coverage").textContent).toBe("complete");
+  expect(
+    pathRequests("/items").map((request) =>
+      new URL(request.url).searchParams.get("before"),
+    ),
+  ).toEqual([null, "3", "2"]);
+});
+
+it("keeps earlier Items as the newest window moves on and reads those it leaves behind", async () => {
+  const item = (ordinal: number) =>
+    message(
+      `Item ${ordinal}`,
+      `1-${ordinal}`,
+      `1-${ordinal}`,
+      "completed",
+      ordinal,
+    );
+  display = { ...display, items: [item(3)] };
+  // A page before `before` holds one Item; a page after `after` holds `limit`.
+  read = async (request) => {
+    const query = new URL(request.url).searchParams;
+    const before = Number(query.get("before")),
+      after = Number(query.get("after"));
+    if (before) return Response.json({ ...display, items: [item(before - 1)] });
+    if (!after) return response(request);
+    const limit = Number(query.get("limit"));
+    return Response.json({
+      ...display,
+      items: Array.from({ length: limit }, (_, index) =>
+        item(after + 1 + index),
+      ),
+    });
+  };
+  const view = render(<View />);
+  await waitFor(() => expect(text()).toBe("Item 3"));
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  await waitFor(() => expect(text()).toBe("Item 2|Item 3"));
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  await waitFor(() => expect(text()).toBe("Item 1|Item 2|Item 3"));
+
+  display = { ...display, items: [item(6)] };
+  await act(async () => {
+    frames.push({ type: "reset", run_id: "run_one" });
+  });
+  const all = "Item 1|Item 2|Item 3|Item 4|Item 5|Item 6";
+  await waitFor(() => expect(text()).toBe(all));
+  expect(screen.getByTestId("coverage").textContent).toBe("complete");
+  const windows = () =>
+    pathRequests("/items")
+      .map((request) => new URL(request.url).search)
+      .filter(Boolean);
+  expect(windows()).toEqual(["?before=3", "?before=2", "?after=2&limit=3"]);
+
+  // The Run keeps them for its next reader.
+  view.rerender(<View mounted={false} />);
+  view.rerender(<View />);
+  await waitFor(() => expect(text()).toBe(all));
+  expect(windows()).toHaveLength(3);
 });
 
 it("learns a new attempt's identity once before folding its deltas", async () => {
@@ -462,6 +537,7 @@ it("waits for the next boundary's display to hold an event the stream fragmented
       message("Hello", "1-0", "1-1"),
       {
         id: "obs_2",
+        ordinal: 2,
         kind: "observation",
         state: "completed",
         first_stream_id: "1-2",
@@ -488,7 +564,6 @@ it("reconciles the sealed display once the Thread's current Run moves on", async
     items: [message("Hello", "1-0", "1-2", "completed")],
     position: "1-2",
     complete: true,
-    dropped: 0,
   };
   await act(async () => {
     frames.push({ type: "changed", version: 5 });
@@ -549,7 +624,6 @@ it("re-reads the display on reconnect even when cached reads remain fresh", asyn
     position: "1-3",
     resume_after: "1720000000001-0",
     complete: true,
-    dropped: 0,
   };
   fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
   await waitFor(() => expect(text()).toBe("Hello again"));

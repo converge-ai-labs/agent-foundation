@@ -64,6 +64,8 @@ parent = HarnessBuilder().build(
 
 `delegate(subagent, prompt)` 创建新的内联续接并返回 `execution_id`。`resume_subagent(execution_id, prompt)` 只推进该确切、兼容的嵌套 `HarnessState`。内联子状态绝不独立发布借用的 Environment 状态；子级不能挂载、替换、卸载或改变默认 Environment。
 
+Harness `0.6` 改变了状态保留内联子级的方式。由更早的 Harness 保存、且保留了内联子级的状态，在恢复或分叉时会以 `capability_state_version_unsupported` 失败，这些子级无法继续；请新建 Thread。不含内联子级的状态不受影响，包括只运行异步子级的 Host 所保存的状态。
+
 ### 异步子级
 
 可能在父 Run 结束后继续运行的子级，需要 Host 管理的 `SubagentOperator`：

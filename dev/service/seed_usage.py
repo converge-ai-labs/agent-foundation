@@ -14,15 +14,14 @@ from decimal import Decimal
 
 from a13n_harness import HarnessState
 from a13n_harness.pricing import ModelCostInput, ModelPricingEntry
-from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, UsageSnapshot
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.objects.local import LocalObjects
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.runs.attempts import Lease
-from a13n_service.runs.checkpoints import DisplayPointer, RunState, StatePointer, publish
-from a13n_service.runs.display import Display, Item, StreamPosition
+from a13n_service.runs.checkpoints import RunState, StatePointer, TailPointer, publish
+from a13n_service.runs.display import Item, StreamPosition, Tail
 from a13n_service.runs.schemas import canonical_json
 from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunRow, SessionRow, ThreadRow, UsageRecordRow
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
@@ -176,10 +175,10 @@ async def _run(
     snapshot = _snapshot(profile, model[1], thread_id, started, ended, ordinal)
     harness_run_id = snapshot.run_id
     records = snapshot.records
-    state, display = _checkpoint(snapshot, profile.key, prompt, answer, started, ended)
+    state, tail = _checkpoint(snapshot, profile.key, prompt, answer, started, ended)
     lease = Lease(run_id, attempt_id, thread_id, organization_id, workspace_id, 1, "seed", "seed")
-    state_ref = await publish(objects, lease, "state", state.model_dump_json().encode())
-    display_ref = await publish(objects, lease, "display", display.model_dump_json().encode())
+    state_ref = await publish(objects, lease, "state", state.model_dump_json().encode(), level=3)
+    tail_ref = await publish(objects, lease, "tail", tail.model_dump_json().encode(), level=3)
     scope = {"organization_id": organization_id, "workspace_id": workspace_id}
     payload = {"content": [{"type": "text", "text": prompt}]}
     async with transaction(storage) as session:
@@ -235,12 +234,14 @@ async def _run(
                 checkpoint=StatePointer(
                     key=state_ref.key, digest=state_ref.digest, size=state_ref.size, format=1, seq=1, attempt=1
                 ).model_dump(),
-                display=DisplayPointer(
-                    key=display_ref.key,
-                    digest=display_ref.digest,
-                    size=display_ref.size,
+                tail=TailPointer(
+                    key=tail_ref.key,
+                    digest=tail_ref.digest,
+                    size=tail_ref.size,
                     format=1,
-                    position=display.position,
+                    position=tail.position,
+                    first=1,
+                    count=len(tail.items),
                 ).model_dump(),
                 output=answer,
                 usage_at_seal={
@@ -327,7 +328,7 @@ async def _run(
             )
         )
         thread = await session.get_one(ThreadRow, thread_id)
-        thread.head_run_id = thread.last_run_id = run_id
+        thread.last_run_id = run_id
         (await session.get_one(SessionRow, session_id)).last_run_id = run_id
     return run_id
 
@@ -396,7 +397,7 @@ def _snapshot(
 
 def _checkpoint(
     snapshot: UsageSnapshot, model: str, prompt: str, answer: str, started: datetime, ended: datetime
-) -> tuple[RunState, Display]:
+) -> tuple[RunState, Tail]:
     """Keep historical Runs inspectable through their normal checkpoint and display APIs."""
     messages = [ModelRequest(parts=[UserPromptPart(content=prompt, timestamp=started)])]
     history = [
@@ -415,19 +416,14 @@ def _checkpoint(
     state = RunState(
         seq=1,
         attempt=1,
-        harness=HarnessState.new(
-            thread_id=snapshot.thread_id,
-            message_history=history,
-            agent_context_state=AgentContextStateSnapshot(
-                entries={"a13n.usage": CapabilityState(version="1", data=snapshot.model_dump(mode="json"))}
-            ),
-        ),
+        harness=HarnessState.new(thread_id=snapshot.thread_id, message_history=history),
     )
-    display = Display(
+    tail = Tail(
         position=StreamPosition(attempt=1, sequence=2),
         items=[
             Item(
                 id=new_object_id("msg"),
+                ordinal=1,
                 kind="text_message",
                 state="completed",
                 first_stream_id="1-1",
@@ -438,6 +434,7 @@ def _checkpoint(
             ),
             Item(
                 id=new_object_id("obs"),
+                ordinal=2,
                 kind="observation",
                 state="completed",
                 first_stream_id="1-2",
@@ -454,4 +451,4 @@ def _checkpoint(
             ),
         ],
     )
-    return state, display
+    return state, tail

@@ -65,7 +65,6 @@ export function fixtureThread(
     archived_at: null,
     created_at: START,
     current_run_id: null,
-    head_run_id: "run_2",
     id: "thr_1",
     labels: {},
     last_run_id: "run_2",
@@ -115,7 +114,6 @@ export const fixtureChildThread = fixtureThread({
   origin_run_id: "run_2",
   origin_tool_call_id: "call_delegate",
   subagent: "researcher",
-  head_run_id: "run_child",
   last_run_id: "run_child",
 });
 export const fixtureForkThread = fixtureThread({
@@ -123,7 +121,6 @@ export const fixtureForkThread = fixtureThread({
   origin: "fork",
   origin_thread_id: "thr_1",
   origin_run_id: "run_2",
-  head_run_id: "run_fork",
   last_run_id: "run_fork",
 });
 

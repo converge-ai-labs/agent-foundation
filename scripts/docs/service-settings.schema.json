@@ -1452,18 +1452,39 @@
           "title": "Delivery Bytes",
           "type": "integer"
         },
-        "display_bytes": {
-          "default": 8388608,
-          "maximum": 67108864,
-          "minimum": 65536,
-          "title": "Display Bytes",
-          "type": "integer"
-        },
         "output_bytes": {
           "default": 1048576,
           "maximum": 16777216,
           "minimum": 1024,
           "title": "Output Bytes",
+          "type": "integer"
+        },
+        "page_items": {
+          "default": 256,
+          "maximum": 4096,
+          "minimum": 16,
+          "title": "Page Items",
+          "type": "integer"
+        },
+        "page_bytes": {
+          "default": 1048576,
+          "maximum": 16777216,
+          "minimum": 65536,
+          "title": "Page Bytes",
+          "type": "integer"
+        },
+        "content_bytes": {
+          "default": 65536,
+          "maximum": 16777216,
+          "minimum": 1024,
+          "title": "Content Bytes",
+          "type": "integer"
+        },
+        "compression_level": {
+          "default": 3,
+          "maximum": 19,
+          "minimum": 1,
+          "title": "Compression Level",
           "type": "integer"
         },
         "stream_length": {

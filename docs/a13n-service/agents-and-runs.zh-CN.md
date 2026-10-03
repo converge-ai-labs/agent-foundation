@@ -196,7 +196,7 @@ Thread 保留不可变导入内容供回读，但不会据此生成历史 Run、
 以下情况线程不接收新运行：
 
 - 已有活跃运行；
-- 历史头运行因任一 pending 项处于 `waiting`，包括问题；必须先恢复该精确 Run；
+- 最后一个运行因任一 pending 项处于 `waiting`，包括问题；必须先恢复该精确 Run；
 - 最近运行 `failed` 或 `cancelled`：排队消息等待，只有此刻新提交的消息会启动运行。该运行结束后队列继续。
 
 无法执行的消息，例如 agent 已归档或覆盖设置不再有效，会原地以 `failure` 失败，不阻塞后面的消息。
@@ -295,7 +295,7 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 
 两份结果映射都必需，且必须精确覆盖各自 pending 组。结果缺失、未知 ID 或类别错误会拒绝整个请求，等待状态不变。没有默认回答，也不接受部分提交。在 Console 中逐项检查并提交完整结果；**Continue without feedback** 在确认后显式提交拒绝和失败结果。
 
-响应为后继运行（首次 `201`，幂等重放 `200`）。结果保存在其已有 `resume` 字段，不创建额外收件箱消息。只有没有其他运行活跃时，才能恢复线程等待中的历史头运行；过期请求返回 `409 conflict`，原因为 `not_idle_waiting_head`。后继运行失败后，请再次显式恢复仍在等待的头运行。
+响应为后继运行（首次 `201`，幂等重放 `200`）。结果保存在其已有 `resume` 字段，不创建额外收件箱消息。只能恢复线程的最后一个运行，且它处于等待、没有其他运行活跃；过期请求返回 `409 conflict`，原因为 `not_idle_waiting_head`。后继运行失败后，它与其他运行一样成为线程历史，等待随之结束：下一条消息从它继续，它未得到结果的调用显示为已中断。
 
 要随结果补充说明或附件，在同一恢复请求中包含可选 `input`：
 
@@ -314,17 +314,17 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 ## 中断、分叉与归档
 
 - **中断：** `POST …/runs/{run_id}/interrupt` 取消运行。尚未启动的运行立即变为 `cancelled`；执行中的运行在下一个安全点停止，此前显示 `cancel_requested_at`。中断已取消运行会返回该运行；已完成、等待或失败运行返回 `409`（`run_completed` 等）。Console 的 **Stop** 中断当前运行。
-- **分叉：** `POST …/runs/{run_id}/fork` 在同一会话中创建新线程，其首次运行携新消息（与提交请求体相同）从 `completed` 或 `waiting` 运行继续，需要 `Idempotency-Key`。等待运行的分叉会在新分支处理新消息前，自动拒绝审批并将其他调用标为无响应。原始等待不变。分叉共享源线程环境挂载，除非 `fresh_environments` 为 `true`，`environments` 可添加更多挂载。它复制源线程记忆挂载，`memories` 可添加更多。失败或取消运行不能分叉。
+- **分叉：** `POST …/runs/{run_id}/fork` 在同一会话中创建新线程，其首次运行携新消息（与提交请求体相同）从任一已结束运行继续，需要 `Idempotency-Key`。等待运行的分叉会在新分支处理新消息前，自动拒绝审批并将其他调用标为无响应。原始等待不变。分叉共享源线程环境挂载，除非 `fresh_environments` 为 `true`，`environments` 可添加更多挂载。它复制源线程记忆挂载，`memories` 可添加更多。分叉失败或取消的运行时，从其最后一个检查点继续，未完成的工具调用标为已中断。
 - **归档：** `POST …/threads/{thread_id}/archive` 使用线程 `If-Match` 永久结束线程：撤回 pending 消息，移除挂载，中断活跃运行。历史仍可读取。
 
-失败或取消运行永不成为历史头；继续时使用最后一个完成或等待运行。如果头运行仍等待，必须显式恢复；普通消息继续排队。
+每个已结束运行都是其线程继续的历史，与结果无关。失败或取消运行之后，下一个运行从它的最后一个检查点继续；若它在首个检查点前失败，则从它开始时的状态继续。它未完成的工具调用显示为已中断，不会再次执行。如果失败由历史本身导致，例如模型服务拒绝该历史，请改为分叉更早的运行。
 
 ## 结果
 
 `GET …/runs/{run_id}` 返回运行：`status`、`trigger`、`lineage`（`root`、`continue` 或 `fork`）、`parent_run_id`、启动运行的 `input` 或 `resume`、`options`、`environment_mounts`、`memory_mounts`、`pending`、`output`、`failure {code, message}`、`usage_at_seal`、`labels` 和时间戳。`output` 为 agent 最终文本，或符合 `output_spec` 的 JSON。
 
-- `GET …/threads/{thread_id}/runs` 按从新到旧列出线程运行。`head_run_id` 是最近完成或等待运行，`current_run_id` 是活跃运行。
-- `GET …/runs/{run_id}/items` 返回运行显示项（文本、推理消息、工具调用和观测），包含 `position`、可选 `resume_after` 和 `complete`。运行结束时尚在进行的项显示为 `interrupted`。显示数据最多 4096 项；`dropped` 记录超限后移除的最旧项数量。
+- `GET …/threads/{thread_id}/runs` 按从新到旧列出线程运行。`last_run_id` 是最后结束的运行，下一个运行从它的历史继续；`current_run_id` 是活跃运行。
+- `GET …/runs/{run_id}/items` 按顺序返回运行显示项（文本、推理消息、工具调用和观测），每项带 `ordinal`，并包含 `position`、可选 `resume_after` 和 `complete`。默认返回最新的 `limit` 项（默认 200，最多 500）；以首项的 ordinal 作为 `before` 可读取更早的项，以 `after` 可从某个 ordinal 往后读取。运行结束时尚在进行的项显示为 `interrupted`。
 - `GET …/runs/{run_id}/lineage` 返回运行及其祖先，可跨分叉，按最近到最远排列。
 - `GET …/runs/{run_id}/attempts` 列出执行尝试及其 `start_reason`（`initial`、worker 丢失后的 `recovery`、worker 关闭时的 `handoff`）和结果。非 handoff 尝试达到 `max_attempts` 后运行失败。
 

@@ -21,6 +21,7 @@ from a13n_harness import (
     HarnessExtensionEvent,
     HarnessRunResult,
     HarnessRunResultEvent,
+    HarnessState,
     PluginError,
     RunBindings,
     SubagentDefinition,
@@ -41,6 +42,7 @@ from a13n_harness.content import request_input_content
 from a13n_harness.environment.advanced import (
     EmptyEnvironmentRuntime,
 )
+from a13n_harness.errors import StateError
 from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
@@ -51,12 +53,14 @@ from a13n_harness.pricing import (
     ModelCostInput,
     ModelCostQuote,
 )
+from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from a13n_harness.tools import (
     HARNESS_TOOL_METADATA_KEY,
     InvocationPolicyCapability,
     InvocationPolicyDecision,
 )
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
+from a13n_harness.usage import USAGE_CAPABILITY_ID
 from pydantic import BaseModel
 from pydantic_ai import Tool
 from pydantic_ai.agent.spec import AgentSpec
@@ -447,37 +451,40 @@ async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspe
     assert "deferred_tools_unsupported" in child_failures[0]
 
 
-async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:
-    async def parent_stream(
-        messages: list[ModelMessage],
-        info: AgentInfo,
-    ) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        if not _returns_after_latest_user(messages):
-            execution_id = _previous_child_id(messages)
-            if execution_id is None:
-                name = "delegate"
-                arguments = {"subagent": "reviewer", "prompt": _latest_user_text(messages) or "continue"}
-            else:
-                name = "resume_subagent"
-                arguments = {"execution_id": execution_id, "prompt": _latest_user_text(messages) or "continue"}
-            yield {
-                0: DeltaToolCall(
-                    name=name,
-                    json_args=json.dumps(arguments),
-                    tool_call_id=f"{name}-{len(messages)}",
-                )
-            }
-            return
-        yield "parent-done"
+async def _delegating_parent(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+    """Delegate each new user message to the reviewer, resuming the child it already has."""
+    del info
+    if not _returns_after_latest_user(messages):
+        execution_id = _previous_child_id(messages)
+        if execution_id is None:
+            name = "delegate"
+            arguments = {"subagent": "reviewer", "prompt": _latest_user_text(messages) or "continue"}
+        else:
+            name = "resume_subagent"
+            arguments = {"execution_id": execution_id, "prompt": _latest_user_text(messages) or "continue"}
+        yield {
+            0: DeltaToolCall(
+                name=name,
+                json_args=json.dumps(arguments),
+                tool_call_id=f"{name}-{len(messages)}",
+            )
+        }
+        return
+    yield "parent-done"
 
-    executable = HarnessBuilder().build(
+
+def _delegating_executable():
+    return HarnessBuilder().build(
         _parent_definition(
             _child_definition(),
-            FunctionModel(stream_function=parent_stream),
+            FunctionModel(stream_function=_delegating_parent),
             subagent_capability=_inline_subagents(),
         )
     )
+
+
+async def test_inline_delegation_persists_child_thread_and_forwards_events() -> None:
+    executable = _delegating_executable()
     bindings = _bindings_factory()
 
     events = []
@@ -557,6 +564,22 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
     assert continued.children[child_id].state.thread_id == child_record.state.thread_id
     assert continued.children[child_id].state.thread_id != second.state.thread_id
     assert "child-turn-2" in json.dumps(second.all_messages(), default=str)
+
+
+async def test_an_earlier_inline_registry_version_is_rejected_not_reinterpreted() -> None:
+    executable = _delegating_executable()
+    limits = UsageLimits(request_limit=9, total_tokens_limit=100_000)
+    first = await executable.run("start", bindings=_bindings_factory(), usage_limits=limits)
+    assert first.state is not None
+    entries = first.state.agent_context_state.entries
+    entries[SUBAGENT_CAPABILITY_ID] = CapabilityState(version="1", data=entries[SUBAGENT_CAPABILITY_ID].data)
+    earlier = first.state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
+
+    with pytest.raises(StateError) as resumed:
+        await executable.run("continue", bindings=_bindings_factory(), previous_state=earlier, usage_limits=limits)
+    with pytest.raises(StateError) as forked:
+        earlier.fork()
+    assert resumed.value.code == forked.value.code == "capability_state_version_unsupported"
 
 
 async def test_inline_delegation_intersects_child_agent_spec_usage_limits(
@@ -1052,7 +1075,11 @@ async def test_inline_cleanup_failure_retains_child_state_without_reporting_succ
     stored_id, record = next(iter(restored.children.items()))
     if continuation:
         assert stored_id == execution_id
-    assert record.state.model_dump(mode="json") == retained_state.model_dump(mode="json")
+    assert isinstance(record.state, HarnessState)
+    assert record.state.thread_id == record.child_thread_id == retained_state.thread_id
+    assert record.state.message_history == retained_state.message_history
+    assert USAGE_CAPABILITY_ID not in record.state.agent_context_state.entries
+    assert record.state.environment_states == {}
 
     fail_cleanup = False
     execution_id = stored_id
@@ -1408,7 +1435,7 @@ async def test_summary_delegation_reads_the_context_summary_not_replayed_input(
 ) -> None:
     from dataclasses import replace
 
-    from a13n_harness import DelegationContextPolicy, HarnessState
+    from a13n_harness import DelegationContextPolicy
     from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
     from a13n_harness.capabilities.context import _COMPACTION_PROMPT
     from a13n_harness.model_context import user_prompt_content

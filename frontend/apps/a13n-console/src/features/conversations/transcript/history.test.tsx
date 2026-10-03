@@ -35,6 +35,7 @@ vi.mock("../agents/queries", () => ({ useAgent: () => ({ data: null }) }));
 vi.mock("../run-display", () => ({
   useRunDisplay: () => ({
     items: [],
+    earlier: { items: [], more: false, loading: false, error: null },
     state: "connected",
     execution: {
       steps: [],
@@ -383,7 +384,6 @@ it("preserves the same anchor when older history is already cached", async () =>
       items: [],
       complete: true,
       position: "1-0",
-      dropped: 0,
     });
   });
   await screen.findByText("Latest recent-5 message");

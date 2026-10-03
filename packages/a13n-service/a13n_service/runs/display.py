@@ -1,16 +1,21 @@
 """What viewers see of a run: ordered display items folded from Harness events, never from message history.
 
-Items keep the shape the Console renders: `{id, kind, state, first_stream_id, last_stream_id, started_at, ended_at,
-content}`. Stream IDs are `"{attempt}-{sequence}"` positions, so a committed item and a live delta of the same item order and deduplicate
-by comparing positions. The worker folds every AG-UI event it streams, so the display written at a checkpoint
-covers exactly the stream up to that checkpoint's position. Each Harness observation is one item, except that the
-consecutive argument deltas of one streamed tool-call part share one.
+Items keep the shape the Console renders: `{id, ordinal, kind, state, first_stream_id, last_stream_id, started_at,
+ended_at, content}`. Stream IDs are `"{attempt}-{sequence}"` positions, so a committed item and a live delta of the same
+item order and deduplicate by comparing positions. The worker folds every AG-UI event it streams, so the display
+written at a checkpoint covers exactly the stream up to that checkpoint's position. Each Harness observation is one
+item, except that the consecutive argument deltas of one streamed tool-call part share one.
+
+The display is written as immutable history pages of final items and a tail of the items after them. An item is
+final once no later event of the run can change it: at a checkpoint only the unanswered tool calls of the primary
+run's latest model response can still change, so every other unfinished item is interrupted, and full pages are cut
+from the front of the tail.
 """
 
 import copy
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
@@ -21,7 +26,15 @@ from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiStreamOb
 from a13n_stream_protocol.fragments import CustomEventAssembler
 from ag_ui.core import Event, TextPart, ToolCallArgsEvent, ToolCallResultEvent
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
-from pydantic_ai.messages import FunctionToolResultEvent, OutputToolResultEvent, ToolReturnPart
+from pydantic_ai.messages import (
+    FunctionToolResultEvent,
+    ModelMessage,
+    ModelResponse,
+    OutputToolResultEvent,
+    RetryPromptPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 
 type ItemKind = Literal["text_message", "reasoning_message", "tool_call", "observation"]
 type ItemState = Literal["in_progress", "completed", "interrupted", "failed"]
@@ -30,8 +43,6 @@ type ItemState = Literal["in_progress", "completed", "interrupted", "failed"]
 MAX_OBSERVATION_BYTES = 32768
 # A message text, tool arguments or tool result keeps this many characters; the full value stays in the state.
 MAX_FIELD_CHARS = 262144
-# A display keeps this many items; older ones are dropped and counted, while the state keeps every message.
-MAX_ITEMS = 4096
 
 _MESSAGE_KINDS: dict[str, ItemKind] = {
     "TEXT_MESSAGE_START": "text_message",
@@ -70,6 +81,8 @@ class StreamPosition(BaseModel):
 class Item(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
+    # The item's place in the run's display: 1 for the first item, dense after it.
+    ordinal: int = Field(ge=1)
     kind: ItemKind
     state: ItemState
     first_stream_id: str
@@ -88,16 +101,31 @@ class ItemRef(BaseModel):
     state: ItemState
 
 
-class Display(BaseModel):
-    """The display of a run at one checkpoint and the stream position it covers."""
+class Tail(BaseModel):
+    """The items of a run's display not in a page at one checkpoint, and the stream position the display covers."""
 
     model_config = ConfigDict(extra="forbid")
+    # The ordinal of the first item, or of the next one when there is none: every earlier item is in a page.
+    first: int = Field(default=1, ge=1)
     items: list[Item] = Field(default_factory=list)
     position: StreamPosition = StreamPosition(attempt=0, sequence=0)
-    # Optional Redis resume hint; older displays and attempts without confirmed writes have none.
+    # Optional Redis resume hint; attempts without confirmed writes have none.
     resume_after: str | None = None
-    # Items dropped from the front over the item limit.
-    dropped: int = Field(default=0, ge=0)
+
+
+class Page(BaseModel):
+    """Consecutive final items of a run's display, written once."""
+
+    model_config = ConfigDict(extra="forbid")
+    items: list[Item]
+
+
+@dataclass(frozen=True, slots=True)
+class Snapshot:
+    """What one checkpoint writes of the display: the pages it filled and the tail after them."""
+
+    pages: list[Page]
+    tail: Tail
 
 
 class Observed(BaseModel):
@@ -177,6 +205,19 @@ def item_id(run_id: str, kind: ItemKind, source_id: str) -> str:
     return "itm_" + hashlib.sha256(f"{run_id}\0{kind}\0{source_id}".encode()).hexdigest()[:32]
 
 
+def open_tool_calls(messages: Sequence[ModelMessage]) -> frozenset[str]:
+    """The tool calls of the latest model response that no later request answers."""
+    answered: set[str] = set()
+    for message in reversed(messages):
+        if isinstance(message, ModelResponse):
+            calls = (part.tool_call_id for part in message.parts if isinstance(part, ToolCallPart))
+            return frozenset(call for call in calls if call not in answered)
+        answered.update(
+            part.tool_call_id for part in message.parts if isinstance(part, ToolReturnPart | RetryPromptPart)
+        )
+    return frozenset()
+
+
 def _occurred(payload: Mapping[str, object]) -> datetime:
     """The event's own time in epoch milliseconds, or the worker's clock for an event that carries none."""
     timestamp = payload.get("timestamp")
@@ -225,12 +266,17 @@ def _bound_payloads(source: HarnessStreamEvent[Any], event: Event) -> Event:
 
 
 class DisplayFold:
-    """A run's display in memory during one attempt, continuing the committed display it restored."""
+    """A run's display tail in memory during one attempt, continuing the committed tail it restored. A page holds
+    `page_items` items, or fewer that reach `page_bytes`."""
 
-    def __init__(self, run_id: str, display: Display, *, attempt: int, max_bytes: int):
-        self.run_id, self.attempt, self.max_bytes = run_id, attempt, max_bytes
-        self.items = {item.id: item for item in display.items}
-        self.dropped = display.dropped
+    def __init__(self, run_id: str, tail: Tail, *, attempt: int, page_items: int, page_bytes: int):
+        self.run_id, self.attempt = run_id, attempt
+        self.page_items, self.page_bytes = page_items, page_bytes
+        self.first = tail.first
+        self.items = {item.id: item for item in tail.items}
+        self.next = tail.first + len(tail.items)
+        # The items this attempt moved to pages, which no later event may change.
+        self.paged: set[str] = set()
         # Each item's serialized size as of the last snapshot; a snapshot measures only the items changed since.
         self.sizes: dict[str, int] = {}
         self.changed: set[str] = set(self.items)
@@ -266,34 +312,40 @@ class DisplayFold:
                 observed[-1] = observed[-1].model_copy(update={"item": ref})
         return observed
 
-    def snapshot(self) -> Display:
-        """The display to commit. Over its item limit the oldest items are dropped; over its byte limit the oldest
-        remaining ones give up their content.
+    def snapshot(self, open_calls: Collection[str] = ()) -> Snapshot:
+        """The display to commit with a state whose open tool calls are `open_calls`: every other unfinished item
+        is interrupted, and the final items before the first unfinished one fill as many pages as they can.
 
-        The display is a view, so its limits never fail the run: the state still holds every message.
+        The items stay in the fold until `committed` confirms their pages were. Only a snapshot interrupts items: it
+        alone knows which calls the state leaves open, and a takeover continues those in place.
         """
+        kept = {item_id(self.run_id, "tool_call", call) for call in open_calls}
+        for key, item in self.items.items():
+            if item.state == "in_progress" and key not in kept:
+                self.items[key] = item.model_copy(update={"state": "interrupted"})
+                self.changed.add(key)
         for key in self.changed & self.items.keys():
             self.sizes[key] = _size(self.items[key])
         self.changed.clear()
-        for key in list(self.items)[: max(0, len(self.items) - MAX_ITEMS)]:
-            del self.items[key], self.sizes[key]
-            self.dropped += 1
-        excess = sum(self.sizes.values()) - self.max_bytes
-        for key, item in self.items.items():
-            if excess <= 0:
-                break
-            if item.content != _OMITTED:
-                omitted = item.model_copy(update={"content": _OMITTED})
-                excess -= self.sizes[key] - (size := _size(omitted))
-                self.items[key], self.sizes[key] = omitted, size
-        return Display(items=list(self.items.values()), position=self.position, dropped=self.dropped)
-
-    def interrupt(self) -> None:
-        """Unfinished items of an attempt that ends without finishing them."""
-        for key, item in self.items.items():
+        items = list(self.items.values())
+        pages: list[Page] = []
+        start, size = 0, 0
+        for end, item in enumerate(items, 1):
             if item.state == "in_progress":
-                self.items[key] = item.model_copy(update={"state": "interrupted"})
-                self.changed.add(key)
+                break
+            size += self.sizes[item.id]
+            if end - start == self.page_items or size >= self.page_bytes:
+                pages.append(Page(items=items[start:end]))
+                start, size = end, 0
+        return Snapshot(pages, Tail(first=self.first + start, items=items[start:], position=self.position))
+
+    def committed(self, snapshot: Snapshot) -> None:
+        """The snapshot's pages were committed: their items leave the tail for good."""
+        for page in snapshot.pages:
+            for item in page.items:
+                del self.items[item.id], self.sizes[item.id]
+                self.paged.add(item.id)
+        self.first = snapshot.tail.first
 
     def _fold(self, payload: dict[str, Any]) -> ItemRef | None:
         event_type = payload["type"]
@@ -328,13 +380,11 @@ class DisplayFold:
                     content["truncated"] = True
             else:
                 _bounded(content, "result", str(result))
-        state: ItemState = "completed" if event_type in _ENDS else self._continued(previous)
+        if event_type in _ENDS:
+            state: ItemState = "completed"
+        else:
+            state = "in_progress" if previous is None else previous.state
         return self._put(key, kind, state, content, at=_occurred(payload))
-
-    @staticmethod
-    def _continued(previous: Item | None) -> ItemState:
-        """A later event keeps a finished item's state; one an earlier attempt left interrupted resumes."""
-        return "in_progress" if previous is None or previous.state == "interrupted" else previous.state
 
     def _observation(self, payload: dict[str, Any]) -> ItemRef | None:
         if (streamed := fragment(payload)) is not None:
@@ -405,10 +455,17 @@ class DisplayFold:
         *,
         at: datetime,
     ) -> ItemRef:
+        if key in self.paged:
+            raise RuntimeError("An event changed a display item that is already in a page")
         position = str(self.position)
         previous = self.items.get(key)
+        if previous is None:
+            ordinal, self.next = self.next, self.next + 1
+        else:
+            ordinal = previous.ordinal
         self.items[key] = Item(
             id=key,
+            ordinal=ordinal,
             kind=kind,
             state=state,
             first_stream_id=previous.first_stream_id if previous is not None else position,

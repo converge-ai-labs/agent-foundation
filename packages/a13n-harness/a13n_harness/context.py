@@ -22,7 +22,8 @@ from a13n_harness.input import ModelInputState
 from a13n_harness.model_calls import ModelCallCheck
 from a13n_harness.observation import HarnessObservationContext
 from a13n_harness.recovery import ModelRecoveryState
-from a13n_harness.state import AgentContextState, HarnessState
+from a13n_harness.state import AgentContextState, HarnessState, StateStore
+from a13n_harness.storage import RunStorage
 
 if TYPE_CHECKING:
     from a13n_harness.builder import AgentDefinition, SubagentDefinition
@@ -159,6 +160,7 @@ class RunBindings:
     usage_reporter: UsageReporter | UsageDeltaReporter | None = None
     observation: HarnessObservationContext | None = None
     tool_result_directory: str | None = None
+    state_store: StateStore | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,
         repr=False,
@@ -185,6 +187,8 @@ class RunBindings:
             raise TypeError("toolset_instructions must be a boolean or None")
         if self.observation is not None and not isinstance(self.observation, HarnessObservationContext):
             raise TypeError("observation must be a HarnessObservationContext or None")
+        if self.state_store is not None and not isinstance(self.state_store, StateStore):
+            raise TypeError("RunBindings.state_store must implement StateStore")
         from a13n_harness.capabilities.skills import _validate_skill_selection
         from a13n_harness.capabilities.web import WebBinding
         from a13n_harness.capabilities.working_state import TaskStateBinding
@@ -235,6 +239,7 @@ class RunBindings:
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
         tool_result_directory: str | None = None,
+        state_store: StateStore | None = None,
     ) -> RunBindings:
         """Create fresh trusted bindings for one embedded run."""
         instance_id = str(uuid4())
@@ -262,6 +267,7 @@ class RunBindings:
             tool_result_directory=tool_result_directory,
             metadata=metadata or {},
             observation=observation,
+            state_store=state_store,
         )
 
 
@@ -415,6 +421,9 @@ class AgentContext:
         compare=False,
     )
     tool_result_directory: str | None = None
+    _storage: RunStorage = field(default_factory=lambda: RunStorage(None), repr=False, compare=False)
+    # The restored state's fields this Harness does not know, which every export keeps.
+    _state_extensions: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
     _tool_result_spill_store: _ToolResultSpillStore | None = field(
         default=None,
         repr=False,
@@ -562,16 +571,19 @@ class AgentContext:
         )
 
     async def export_state(self, message_history: Sequence[ModelMessage]) -> HarnessState:
-        """Export a detached continuation envelope without persistence side effects."""
+        """Export a detached continuation envelope, through the run's storage, which saves large content and lists
+        what the state references."""
         # A request-boundary export can precede consumption of the native input
         # event. Reconcile delivered steering from the same canonical history
         # before snapshotting capability state; pending input stays unretained.
         await self._steering.resolve_delivered(message_history)
         await self.usage_attribution.save()
-        return HarnessState(
+        state = HarnessState(
             schema_version="1",
             thread_id=self.thread_id,
             message_history=tuple(message_history),
             agent_context_state=await self.state.snapshot(),
             environment_states=self.environment.dump_states(),
+            **self._state_extensions,
         )
+        return await self._storage.export(state)

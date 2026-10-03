@@ -162,20 +162,23 @@ Other `providers` settings bound provider work: `model_timeout` (each read of on
 
 ## Execution
 
-| Setting                                            | Effect                                                                                                                      |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `worker.slots`                                     | Attempts one worker process runs concurrently.                                                                              |
-| `worker.max_attempts`                              | Attempts a run may be charged before it fails.                                                                              |
-| `worker.lease_seconds`, `worker.authority_seconds` | How long an attempt's lease lasts, and how often the worker renews it and rechecks cancellation and the principal's access. |
-| `worker.drain_seconds`                             | How long a stopping worker waits for its attempts to hand off.                                                              |
-| `worker.child_depth`, `worker.child_count`         | Depth and count bounds for subagent runs.                                                                                   |
-| `worker.stream_coalesce_seconds`                   | How long consecutive text, reasoning or tool-argument deltas are merged into one live stream event.                         |
-| `worker.stream_trim_seconds`                       | How long live stream entries a checkpoint covers stay in Redis, so a briefly disconnected client resumes without a gap.     |
-| `worker.stream_length`, `worker.stream_ttl`        | Backstop length cap and idle lifetime of one thread's live stream in Redis.                                                 |
-| `worker.display_bytes`, `worker.output_bytes`      | Bounds of a run's display and result.                                                                                       |
-| `control.inbox_count`, `control.inbox_bytes`       | Capacity of one thread's inbox (`inbox_bytes` defaults to 2 MiB).                                                           |
-| `control.subscriptions`                            | Webhook subscriptions per workspace.                                                                                        |
-| `environments.*`                                   | Environment maintenance cadence, provider-call bounds and how long an attempt waits for its environments.                   |
+| Setting                                            | Effect                                                                                                                          |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `worker.slots`                                     | Attempts one worker process runs concurrently.                                                                                  |
+| `worker.max_attempts`                              | Attempts a run may be charged before it fails.                                                                                  |
+| `worker.lease_seconds`, `worker.authority_seconds` | How long an attempt's lease lasts, and how often the worker renews it and rechecks cancellation and the principal's access.     |
+| `worker.drain_seconds`                             | How long a stopping worker waits for its attempts to hand off.                                                                  |
+| `worker.child_depth`, `worker.child_count`         | Depth and count bounds for subagent runs.                                                                                       |
+| `worker.stream_coalesce_seconds`                   | How long consecutive text, reasoning or tool-argument deltas are merged into one live stream event.                             |
+| `worker.stream_trim_seconds`                       | How long live stream entries a checkpoint covers stay in Redis, so a briefly disconnected client resumes without a gap.         |
+| `worker.stream_length`, `worker.stream_ttl`        | Backstop length cap and idle lifetime of one thread's live stream in Redis.                                                     |
+| `worker.output_bytes`                              | Bound of a run's result.                                                                                                        |
+| `worker.page_items`, `worker.page_bytes`           | Size of one page of a run's display history: up to `page_items` items, or fewer that reach `page_bytes`.                        |
+| `worker.content_bytes`                             | Images, documents and other binary content larger than this are saved once as their own objects instead of in every checkpoint. |
+| `worker.compression_level`                         | zstd level of the run objects a worker writes.                                                                                  |
+| `control.inbox_count`, `control.inbox_bytes`       | Capacity of one thread's inbox (`inbox_bytes` defaults to 2 MiB).                                                               |
+| `control.subscriptions`                            | Webhook subscriptions per workspace.                                                                                            |
+| `environments.*`                                   | Environment maintenance cadence, provider-call bounds and how long an attempt waits for its environments.                       |
 
 `provisioning.local.enabled = true` offers the `local` environment provider, which runs commands directly on the worker host with no isolation. Use it only for development.
 

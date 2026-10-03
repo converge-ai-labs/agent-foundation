@@ -385,7 +385,7 @@ class ThreadView(BaseModel):
     # The subagent edge that spawned a child thread; NULL unless `origin` is `child`.
     subagent: str | None
     current_run_id: str | None
-    head_run_id: str | None
+    # The most recently sealed run: the history the thread's next run continues.
     last_run_id: str | None
     mcp_headers: dict[str, dict[str, str]]
     labels: dict[str, str]
@@ -479,16 +479,15 @@ class RunLabels(_Frozen):
 
 
 class RunItems(BaseModel):
-    """A run's committed display with the run it describes. Live output continues after `position`."""
+    """Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,
+    so the first item's ordinal tells whether earlier ones exist. Live output continues after `position`."""
 
     run: RunView
     items: list[Item]
-    # The "{attempt}-{sequence}" stream position the items cover; None until the first checkpoint.
+    # The "{attempt}-{sequence}" stream position the display covers; None until the first checkpoint.
     position: str | None
     # A confirmed Redis delta ID covered by this display, usable as SSE Last-Event-ID while retained.
     resume_after: str | None = None
-    # Earlier items the display dropped over its item limit.
-    dropped: int
     # Execution sealed: the items are final and live output no longer applies.
     complete: bool
 

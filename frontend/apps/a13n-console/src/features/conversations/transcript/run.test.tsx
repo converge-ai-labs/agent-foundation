@@ -32,14 +32,20 @@ vi.mock("react-i18next", () => ({
 }));
 const stream = vi.hoisted(() => ({
   calls: [] as { live?: boolean }[],
-  dropped: 0,
+  earlier: {
+    items: [],
+    more: false,
+    loading: false,
+    error: null,
+    load: () => {},
+  },
 }));
 vi.mock("../run-display", () => ({
   useRunDisplay: (_runId: string, options: { live?: boolean } = {}) => {
     stream.calls.push(options);
     return {
       items: [],
-      dropped: stream.dropped,
+      earlier: stream.earlier,
       state: "connected",
       execution: {
         steps: [],
@@ -58,7 +64,7 @@ vi.mock("./inbox", () => ({ ThreadInbox: () => <p>Thread inbox</p> }));
 beforeEach(() => {
   requests.length = 0;
   stream.calls.length = 0;
-  stream.dropped = 0;
+  stream.earlier = { ...stream.earlier, more: false, load: vi.fn() };
   labels = { "a13n.console": "debug" };
   vi.stubGlobal(
     "ResizeObserver",
@@ -80,7 +86,6 @@ beforeEach(() => {
           fixtureThread({
             id: "thread",
             session_id: "session",
-            head_run_id: "run",
             last_run_id: "run",
           }),
         );
@@ -182,11 +187,16 @@ it("reads the level from the URL and follows the Thread at either level", async 
   );
   expect(panels).toEqual([]);
 });
-it("says how many earlier items the run's display dropped, at either level", async () => {
-  stream.dropped = 3;
+it("offers the run's earlier items at either level", async () => {
+  stream.earlier = { ...stream.earlier, more: true };
   show();
-  expect(await screen.findByText("3 earlier items not shown")).toBeTruthy();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Show earlier items" }),
+  );
+  expect(stream.earlier.load).toHaveBeenCalledTimes(1);
   cleanup();
   show("/?view=debug");
-  expect(await screen.findByText("3 earlier items not shown")).toBeTruthy();
+  expect(
+    await screen.findByRole("button", { name: "Show earlier items" }),
+  ).toBeTruthy();
 });

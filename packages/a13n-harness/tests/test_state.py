@@ -13,6 +13,7 @@ from a13n_harness.state import (
     AgentContextState,
     AgentContextStateSnapshot,
     CapabilityState,
+    StoredRef,
 )
 from a13n_harness.usage import RunUsageSummary
 from pydantic import BaseModel, ValidationError
@@ -108,6 +109,15 @@ def test_thread_identity_is_stable_on_copy_and_rotates_on_fork(thread_id: str) -
 
     with pytest.raises(ValueError, match="must differ"):
         state.fork(thread_id=state.thread_id)
+
+
+def test_fields_a_later_harness_adds_are_kept_through_serialization_and_fork() -> None:
+    later = {"memory": {"note": "kept"}}
+    state = HarnessState.model_validate(HarnessState.new().model_dump(mode="json") | later)
+    restored = HarnessState.model_validate_json(state.model_dump_json())
+
+    for value in (state, restored, state.fork()):
+        assert value.model_extra == later
 
 
 def test_independent_states_receive_distinct_thread_identities() -> None:
@@ -240,7 +250,7 @@ async def test_capability_state_rejects_an_unsupported_version() -> None:
         raise AssertionError("Expected an unsupported state version to fail.")
 
 
-def test_fork_recursively_reidentifies_inline_threads_and_preserves_references() -> None:
+def test_fork_moves_inline_children_to_new_threads_without_reading_their_states() -> None:
     from a13n_harness.capabilities.subagents import (
         SUBAGENT_CAPABILITY_ID,
         InlineSubagentCollectionState,
@@ -249,50 +259,53 @@ def test_fork_recursively_reidentifies_inline_threads_and_preserves_references()
 
     opaque = CapabilityState(version="private", data={"thread_id": "thr_opaque"})
     history = [ModelRequest(parts=[UserPromptPart(content="resume worker-abcd")])]
-
-    def parent_of(child: HarnessState) -> HarnessState:
-        collection = InlineSubagentCollectionState(
-            children={
-                "worker-abcd": InlineSubagentState(
-                    child_instance_id="worker-abcd",
-                    subagent_name="worker",
-                    child_definition_id="worker",
-                    state=child,
-                )
-            }
-        )
-        return HarnessState.new(
-            message_history=history,
-            agent_context_state=AgentContextStateSnapshot(
-                entries={
-                    "plugin.private": opaque,
-                    SUBAGENT_CAPABILITY_ID: CapabilityState(version="1", data=collection.model_dump(mode="json")),
-                }
+    inline = HarnessState.new()
+    saved = StoredRef(key="subagents/worker", digest="1" * 64, size=10)
+    screenshot = StoredRef(key="contents/screenshot", digest="2" * 64, size=20)
+    registry = InlineSubagentCollectionState(
+        children={
+            "worker-abcd": InlineSubagentState(
+                child_instance_id="worker-abcd",
+                subagent_name="worker",
+                child_definition_id="worker",
+                child_thread_id=inline.thread_id,
+                state=inline,
             ),
-        )
-
-    original = parent_of(parent_of(HarnessState.new()))
+            "worker-beef": InlineSubagentState(
+                child_instance_id="worker-beef",
+                subagent_name="worker",
+                child_definition_id="worker",
+                child_thread_id="thr_saved",
+                state=saved,
+                refs=(screenshot,),
+            ),
+        }
+    )
+    assert registry.refs == (saved, screenshot)
+    original = HarnessState(
+        schema_version="1",
+        thread_id="thr_parent",
+        message_history=history,
+        agent_context_state=AgentContextStateSnapshot(
+            entries={
+                "plugin.private": opaque,
+                SUBAGENT_CAPABILITY_ID: CapabilityState(version="2", data=registry.model_dump(mode="json")),
+            }
+        ),
+        refs=registry.refs,
+    )
     restored = HarnessState.model_validate_json(original.model_dump_json())
+    assert restored == original
+
     forked = restored.fork(thread_id="thr_fork")
-    original_ids: set[str] = set()
-    forked_ids: set[str] = set()
-    for _ in range(3):
-        original_ids.add(restored.thread_id)
-        forked_ids.add(forked.thread_id)
-        assert restored.message_history == forked.message_history
-        assert forked.environment_states == {}
-        before = restored.agent_context_state.entries
-        after = forked.agent_context_state.entries
-        if SUBAGENT_CAPABILITY_ID not in before:
-            break
-        assert before["plugin.private"] == after["plugin.private"] == opaque
-        old_children = InlineSubagentCollectionState.model_validate(before[SUBAGENT_CAPABILITY_ID].data)
-        new_children = InlineSubagentCollectionState.model_validate(after[SUBAGENT_CAPABILITY_ID].data)
-        assert old_children.children.keys() == new_children.children.keys()
-        old_record = old_children.children["worker-abcd"]
-        new_record = new_children.children["worker-abcd"]
-        assert old_record.child_definition_id == new_record.child_definition_id
-        restored, forked = old_record.state, new_record.state
-    assert len(forked_ids) == 3
-    assert original_ids.isdisjoint(forked_ids)
-    assert original == HarnessState.model_validate_json(original.model_dump_json())
+
+    assert forked.message_history == original.message_history
+    assert forked.environment_states == {}
+    assert forked.refs == original.refs
+    entries = forked.agent_context_state.entries
+    assert entries["plugin.private"] == opaque
+    children = InlineSubagentCollectionState.model_validate(entries[SUBAGENT_CAPABILITY_ID].data).children
+    threads = {child.child_thread_id for child in children.values()}
+    assert len(threads) == 2 and threads.isdisjoint({inline.thread_id, "thr_saved", "thr_fork"})
+    assert children["worker-abcd"].state == inline
+    assert children["worker-beef"].state == saved and children["worker-beef"].refs == (screenshot,)

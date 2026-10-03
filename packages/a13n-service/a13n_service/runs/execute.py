@@ -4,18 +4,21 @@
 run persistence, and no database session survives an external call.
 
 1. Plan: revalidate the run's principal, authority, revision and model in one short session, then restore its
-   checkpoint or start from its parent's state.
+   checkpoint or start from the last checkpoint of its nearest ancestor that has one.
 2. Stream: offer the entries assigned to the run as the input; at every boundary the `Boundaries` capability
    marks, commit a checkpoint and assign compatible pending steers in one transaction, then offer them.
 3. End: seal a completed or waiting outcome in the transaction that commits it as the final checkpoint; seal a
-   failure or cancellation with the display's interrupted tail; give the run back on handoff or a transient
-   failure.
+   failure or cancellation with the display's unfinished items interrupted; give the run back on handoff or a
+   transient failure.
 """
 
 import asyncio
+import time
+from collections.abc import Collection
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, replace
 from functools import partial
+from typing import Literal
 
 import anyio
 from a13n_harness import (
@@ -38,10 +41,12 @@ from a13n_harness.capabilities.steering import steering_input_ids
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
+from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 from pydantic_ai.messages import UserContent
 from pydantic_ai.usage import UsageLimits
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
@@ -62,9 +67,9 @@ from a13n_service.runs.attempts import (
 )
 from a13n_service.runs.boundaries import Boundaries, SafeBoundary
 from a13n_service.runs.calls import CallCheck
-from a13n_service.runs.checkpoints import Committed, RunState
+from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.coalesce import Coalescer
-from a13n_service.runs.display import Display, DisplayFold
+from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from a13n_service.runs.environments.execution import PreparedMount, open_mounts, prepare_mounts
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
@@ -112,7 +117,9 @@ class _Plan:
     state: HarnessState
     resume: DeferredToolResume | None
     resume_input: Offered | None
-    display: Display
+    # A run that starts from a failed or cancelled one never repeats that run's unanswered tool calls.
+    tool_recovery: Literal["declared", "never"]
+    tail: Tail
     committed: Committed | None
     seq: int
 
@@ -220,24 +227,25 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         used = (await totals(session, run.id))["requests"]
         root = (await delegation(session, thread, run.id)).root_run_id
         parent = await session.get(RunRow, run.parent_run_id) if run.parent_run_id is not None else None
-        checkpoint = checkpoints.StatePointer.model_validate(run.checkpoint) if run.checkpoint else None
-        display_pointer = checkpoints.DisplayPointer.model_validate(run.display) if run.display else None
+        checkpoint = checkpoints.require_compatible(run)
+        tail_pointer = checkpoints.TailPointer.model_validate(run.tail) if run.tail else None
         committed = Committed.of(run)
-        parent_id = parent.id if parent is not None else None
-        parent_checkpoint = checkpoints.require_compatible(parent.id, parent.checkpoint) if parent is not None else None
+        baseline = await _baseline(session, parent)
+        baseline_checkpoint = checkpoints.require_compatible(baseline) if baseline is not None else None
         pending = Pending.model_validate(parent.pending) if parent is not None and parent.pending is not None else None
         answers = Resume.model_validate(run.resume) if run.resume is not None else None
         history = HISTORY.validate_python(thread.message_history)
-        fork = run.lineage != "continue"
+        # Until its own first checkpoint the run continues its parent's; a takeover after it repeats its own calls.
+        unknown_outcomes = checkpoint is None and parent is not None and parent.status in {"failed", "cancelled"}
         session_id, source_entry_id = run.session_id, run.source_entry_id
         mounts = tuple(EnvironmentMount.model_validate(mount) for mount in run.environment_mounts)
         memory_cursors = dict(run.memory_cursors)
-    own, base, display = await asyncio.gather(
-        checkpoints.load_state(runtime.objects, lease.run_id, checkpoint),
-        checkpoints.load_state(runtime.objects, parent_id or lease.run_id, parent_checkpoint),
-        checkpoints.load_display(runtime.objects, display_pointer),
+    own, base, tail = await asyncio.gather(
+        checkpoints.load_state(runtime.objects, checkpoint),
+        checkpoints.load_state(runtime.objects, baseline_checkpoint),
+        checkpoints.load_tail(runtime.objects, tail_pointer),
     )
-    state, resume = _initial(lease.thread_id, base, fork=fork, pending=pending, answers=answers, history=history)
+    state, resume = _initial(lease.thread_id, base, pending=pending, answers=answers, history=history)
     resume_input = (
         Offered(lease.run_id, "message", lease.workspace_id, answers.input.model_dump(mode="json"))
         if answers is not None and answers.input is not None and not (own and own.resume_input_consumed)
@@ -263,24 +271,34 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         state=state,
         resume=resume,
         resume_input=resume_input,
-        display=display or Display(),
+        tool_recovery="never" if unknown_outcomes else "declared",
+        tail=tail,
         committed=committed,
         seq=own.seq if own is not None else 0,
     )
+
+
+async def _baseline(session: AsyncSession, run: RunRow | None) -> RunRow | None:
+    """The nearest of `run` and its ancestors that has a checkpoint: a run sealed before its first checkpoint
+    leaves the state it started from."""
+    while run is not None and run.checkpoint is None:
+        run = await session.get(RunRow, run.parent_run_id) if run.parent_run_id is not None else None
+    return run
 
 
 def _initial(
     thread_id: str,
     base: RunState | None,
     *,
-    fork: bool,
     pending: Pending | None,
     answers: Resume | None,
     history: MessageHistory | None = None,
 ) -> tuple[HarnessState, DeferredToolResume | None]:
-    """Continue or fork the parent's history, resolving its wait before the successor consumes input."""
+    """Continue the baseline's history, forking it when it belongs to another thread, and resolve the parent's wait
+    before the successor consumes input."""
     if base is None:
         return HarnessState.new(thread_id=thread_id, message_history=initial(history or [])), None
+    fork = base.harness.thread_id != thread_id
     state = base.harness.fork(thread_id=thread_id) if fork else base.harness
     if pending is None:
         return state, None
@@ -320,9 +338,9 @@ class _Attempt:
         self.runtime, self.lease, self.control, self.plan = runtime, lease, control, plan
         self.committed, self.seq = plan.committed, plan.seq
         worker = runtime.settings.worker
-        self.fold = DisplayFold(lease.run_id, plan.display, attempt=lease.number, max_bytes=worker.display_bytes)
-        # What an earlier attempt left unfinished continues only if this attempt streams it again.
-        self.fold.interrupt()
+        self.fold = DisplayFold(
+            lease.run_id, plan.tail, attempt=lease.number, page_items=worker.page_items, page_bytes=worker.page_bytes
+        )
         self.offers = _Offers(plan.assigned)
         self.recipient = Recipient(
             plan.agent.model.config.characteristics.capabilities,
@@ -418,7 +436,7 @@ class _Attempt:
                 # Recovery creates a new writer/attempt, not a serialized same-writer accounting resume.
                 resume_usage=False,
                 deferred_resume=self.plan.resume,
-                tool_recovery="declared",
+                tool_recovery=self.plan.tool_recovery,
                 bindings=host.bindings(root, self._bindings(agent.model_resolver(root, models))),
                 # The call check enforces the run's own request limit across attempts.
                 usage_limits=UsageLimits(request_limit=None),
@@ -485,7 +503,7 @@ class _Attempt:
             self.offers.requested = True
         output.flush()  # The checkpoint's display covers every event observed before the boundary.
         staged = self.boundaries.take(boundary.token)
-        steers = await self._commit(staged.state, cursors=staged.cursors)
+        steers = await self._commit(staged.state, cursors=staged.cursors, open_calls=staged.open_calls)
         output.boundary()
         if boundary.at == "model" and self.control.handoff.is_set():
             # Yield where the request in flight is simply sent again; at a tool boundary recovery would have to
@@ -502,39 +520,45 @@ class _Attempt:
         state: HarnessState,
         *,
         cursors: dict[str, str | None],
+        open_calls: Collection[str],
         outcome: Outcome | None = None,
         deferred: JsonValue = None,
     ) -> list[Offered]:
         """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
-        the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned."""
-        display = self._display()
-        if self._near_deadline():
+        the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned.
+
+        `open_calls` are the tool calls the state leaves unanswered, whose display items stay unfinished."""
+        snapshot = self._snapshot(open_calls)
+        if near_deadline(self.runtime, self.control):
             raise LeaseLost()
+        started = time.monotonic()
         consumed = self.offers.incorporated(state)
         usage = self.usage.pending()
-        committed = await checkpoints.publish_checkpoint(
+        pointer, display = await checkpoints.publish_checkpoint(
             self.runtime,
             self.lease,
             RunState(
-                harness=state,
+                # The Service never restores accounting from state: every charge is in its usage records.
+                harness=without_usage(state),
                 seq=self.seq + 1,
                 attempt=self.lease.number,
                 deferred=deferred,
                 resume_input_consumed=self.plan.resume_input is None or self.offers.requested,
             ),
-            display,
+            snapshot,
         )
         worker = self.runtime.settings.worker
         steers: list[Offered] = []
         async with transaction(self.runtime.storage) as session:
             # Thread first: consuming entries fires the thread-version trigger, which updates the thread row.
             thread, run, attempt, current = await lock_thread_lease(session, self.lease)
-            await checkpoints.commit(
+            committed = await checkpoints.commit(
                 session,
                 run,
                 attempt,
                 previous=self.committed,
-                committed=committed,
+                state=pointer,
+                display=display,
                 memory_cursors=cursors,
                 consumed=consumed,
                 usage=usage,
@@ -553,7 +577,9 @@ class _Attempt:
                     scan=self.runtime.settings.control.inbox_count,
                 )
                 steers = [Offered.of(entry) for entry in entries]
+        CHECKPOINT_DURATION.record(time.monotonic() - started)
         self.committed, self.seq = committed, self.seq + 1
+        self.fold.committed(snapshot)
         self.offers.consumed(consumed)
         self.usage.ingested(usage)
         if outcome is not None:
@@ -645,47 +671,44 @@ class _Attempt:
             else:
                 await self._seal_interrupted(refusal or self.control.outcome)
             return
-        # Completed and suspended results always carry their state.
+        # Completed and suspended results always carry their state; a waiting one leaves its pending calls open.
         assert result.state is not None
+        open_calls = open_tool_calls(result.all_messages())
         if result.status == "completed":
             outcome = Outcome(status="completed", output=self._output(result.output))
-            await self._commit(result.state, cursors=self.cursors.snapshot(), outcome=outcome)
+            await self._commit(result.state, cursors=self.cursors.snapshot(), open_calls=open_calls, outcome=outcome)
         else:
             assert result.deferred is not None
             outcome = Outcome(status="waiting", pending=deferred.pending(result.deferred))
             await self._commit(
                 result.state,
                 cursors=self.cursors.snapshot(),
+                open_calls=open_calls,
                 outcome=outcome,
                 deferred=deferred.dump(result.deferred),
             )
 
     async def _seal_interrupted(self, outcome: Outcome) -> None:
         """Seal a failure or cancellation with the display this attempt folded, its unfinished items interrupted."""
-        self.fold.interrupt()
         display = None
-        if not self._near_deadline():
-            display = await checkpoints.publish_display(self.runtime, self.lease, self._display())
+        if not near_deadline(self.runtime, self.control):
+            display = await checkpoints.publish_display(self.runtime, self.lease, self._snapshot())
         await seal_attempt(self.runtime, self.lease, outcome, display=display)
 
-    def _display(self) -> Display:
-        """Capture a safe resume hint without waiting for queued Redis writes.
+    def _snapshot(self, open_calls: Collection[str] = ()) -> Snapshot:
+        """The display to commit, with a safe resume hint captured without waiting for queued Redis writes.
 
         The writer replaces one immutable value on the same event loop. Terminal callers read it after close.
         """
-        display = self.fold.snapshot()
-        written = self.live.last_written if self.live is not None else None
+        snapshot = self.fold.snapshot(open_calls)
+        tail, written = snapshot.tail, self.live.last_written if self.live is not None else None
         if (
             written is not None
-            and written.attempt == display.position.attempt
-            and written.sequence <= display.position.sequence
+            and written.attempt == tail.position.attempt
+            and written.sequence <= tail.position.sequence
         ):
-            display.resume_after = written.redis_id
-        return display
-
-    def _near_deadline(self) -> bool:
-        """An object write must land before a takeover could clean the run's prefix, so none starts near it."""
-        return self.control.expiring(self.runtime.settings.objects.timeout)
+            tail.resume_after = written.redis_id
+        return snapshot
 
     def _refusal(self) -> Outcome | None:
         """What a refused call means for the run: the outcome to seal, or none when nothing was refused.
@@ -751,6 +774,7 @@ class _Attempt:
             model_resolver=resolver,
             model_call_check=self.check,
             usage_reporter=self.usage_reporter,
+            state_store=RunObjects(self.runtime, self.lease, self.control),
             observation=attempt_observation(
                 organization_id=lease.organization_id,
                 workspace_id=lease.workspace_id,

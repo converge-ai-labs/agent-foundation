@@ -1,4 +1,4 @@
-"""Sessions, threads, queued input, runs, attempts and usage facts.
+"""Sessions, threads, queued input, runs, their display pages, attempts and usage facts.
 
 Per-row states are CHECK constraints. Rules comparing old and new values (legal transitions, frozen
 selections, immutable facts) and cross-row pointer agreement are the triggers declared with each table.
@@ -22,7 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from a13n_service.infra.db import Base, Stamped, rules, trigger
+from a13n_service.infra.db import Base, Stamped, immutable, rules, trigger
 from a13n_service.runs.schemas import EntryStatus, RunStatus
 
 _TOUCH_THREADS = """
@@ -50,8 +50,6 @@ BEGIN
     SELECT * INTO t FROM threads WHERE id = target;
     IF t.current_run_id IS DISTINCT FROM (
             SELECT id FROM runs WHERE thread_id = target AND status IN ('accepted', 'running'))
-        OR (t.head_run_id IS NOT NULL AND NOT EXISTS (
-            SELECT 1 FROM runs WHERE id = t.head_run_id AND status IN ('completed', 'waiting')))
         OR (t.last_run_id IS NOT NULL AND NOT EXISTS (
             SELECT 1 FROM runs WHERE id = t.last_run_id AND sealed_at IS NOT NULL))
     THEN RAISE EXCEPTION 'thread % run pointers disagree with run status', target; END IF;
@@ -112,7 +110,7 @@ class ThreadRow(Stamped, Base):
                 deferrable=True,
                 initially="DEFERRED",
             )
-            for pointer in ("current_run_id", "head_run_id", "last_run_id")
+            for pointer in ("current_run_id", "last_run_id")
         ),
         CheckConstraint("origin IN ('new', 'fork', 'child')", name="origin"),
         CheckConstraint(
@@ -141,14 +139,8 @@ class ThreadRow(Stamped, Base):
             "id",
             postgresql_where=text("origin = 'child'"),
         ),
-        # advance_threads evidence: idle threads whose automatic advancement is not paused by a failed run.
-        Index(
-            "ix_threads_advanceable",
-            "id",
-            postgresql_where=text(
-                "current_run_id IS NULL AND archived_at IS NULL AND last_run_id IS NOT DISTINCT FROM head_run_id"
-            ),
-        ),
+        # advance_threads evidence: idle threads; the sweep then excludes those whose last run waits or paused them.
+        Index("ix_threads_advanceable", "id", postgresql_where=text("current_run_id IS NULL AND archived_at IS NULL")),
         rules(
             _CHECK_THREAD_POINTERS,
             _thread_pointer_check("threads"),
@@ -177,9 +169,8 @@ class ThreadRow(Stamped, Base):
     message_history: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
     # The name of the async subagent edge that spawned a child thread, as its parent's graph declared it then.
     subagent: Mapped[str | None]
-    # current: accepted or running. head: latest completed or waiting. last: most recently sealed.
+    # current: accepted or running. last: most recently sealed, the history a successor continues.
     current_run_id: Mapped[str | None] = mapped_column(String(72))
-    head_run_id: Mapped[str | None] = mapped_column(String(72))
     last_run_id: Mapped[str | None] = mapped_column(String(72))
     mcp_headers: Mapped[dict] = mapped_column(JSONB)
     labels: Mapped[dict] = mapped_column(JSONB)
@@ -317,7 +308,7 @@ class InboxEntryRow(Base):
 
 _RUN_PROGRESS = (
     "'status', 'wait_reason', 'pending', 'cancel_requested_at', 'current_attempt_id', 'available_at', 'attempts',"
-    " 'checkpoint', 'display', 'memory_cursors', 'output', 'failure', 'usage_at_seal', 'labels', 'started_at',"
+    " 'checkpoint', 'tail', 'memory_cursors', 'output', 'failure', 'usage_at_seal', 'labels', 'started_at',"
     " 'sealed_at', 'version', 'updated_at'"
 )
 
@@ -396,7 +387,7 @@ class RunRow(Stamped, Base):
         ),
         CheckConstraint("(status IN ('failed', 'cancelled')) = (failure IS NOT NULL)", name="failure"),
         CheckConstraint(
-            "status NOT IN ('waiting', 'completed') OR (checkpoint IS NOT NULL AND display IS NOT NULL)",
+            "status NOT IN ('waiting', 'completed') OR (checkpoint IS NOT NULL AND tail IS NOT NULL)",
             name="outcome_state",
         ),
         CheckConstraint("(status = 'waiting') = (wait_reason IS NOT NULL AND pending IS NOT NULL)", name="waiting"),
@@ -463,9 +454,9 @@ class RunRow(Stamped, Base):
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     attempts: Mapped[int] = mapped_column(server_default=text("0"))
     max_attempts: Mapped[int]
-    # Typed pointers to the latest committed state and display objects; only fenced commits move them.
+    # Typed pointers to the latest committed state and display tail objects; only fenced commits move them.
     checkpoint: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
-    display: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    tail: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     # Each mounted memory's change cursor its context has delivered, by memory ID, committed with `checkpoint`; a
     # null cursor gives the next run the memory's full context.
     memory_cursors: Mapped[dict] = mapped_column(JSONB, server_default=text("'{}'::jsonb"))
@@ -476,6 +467,27 @@ class RunRow(Stamped, Base):
     labels: Mapped[dict] = mapped_column(JSONB)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RunItemPageRow(Base):
+    """A history page of a run's display: its consecutive final items, written once and kept with the run."""
+
+    __tablename__ = "run_item_pages"
+    __table_args__ = (
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(["workspace_id", "run_id"], ["runs.workspace_id", "runs.id"]),
+        CheckConstraint("first_ordinal >= 1 AND last_ordinal >= first_ordinal", name="ordinals"),
+        CheckConstraint("size >= 0", name="size"),
+        rules(immutable("run_item_pages")),
+    )
+    run_id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    first_ordinal: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    workspace_id: Mapped[str]
+    last_ordinal: Mapped[int] = mapped_column(BigInteger)
+    key: Mapped[str]
+    digest: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(BigInteger)
 
 
 _ATTEMPT_PROGRESS = (

@@ -136,8 +136,11 @@ The complete machine-readable validation schema, including named enum/union defi
 | `worker.drain_seconds`           | `A13N_WORKER__DRAIN_SECONDS`           | number         | maximum=300; exclusiveMinimum=0; default=10      |
 | `worker.delivery_count`          | `A13N_WORKER__DELIVERY_COUNT`          | integer        | minimum=1; maximum=128; default=8                |
 | `worker.delivery_bytes`          | `A13N_WORKER__DELIVERY_BYTES`          | integer        | minimum=1024; maximum=16777216; default=262144   |
-| `worker.display_bytes`           | `A13N_WORKER__DISPLAY_BYTES`           | integer        | minimum=65536; maximum=67108864; default=8388608 |
 | `worker.output_bytes`            | `A13N_WORKER__OUTPUT_BYTES`            | integer        | minimum=1024; maximum=16777216; default=1048576  |
+| `worker.page_items`              | `A13N_WORKER__PAGE_ITEMS`              | integer        | minimum=16; maximum=4096; default=256            |
+| `worker.page_bytes`              | `A13N_WORKER__PAGE_BYTES`              | integer        | minimum=65536; maximum=16777216; default=1048576 |
+| `worker.content_bytes`           | `A13N_WORKER__CONTENT_BYTES`           | integer        | minimum=1024; maximum=16777216; default=65536    |
+| `worker.compression_level`       | `A13N_WORKER__COMPRESSION_LEVEL`       | integer        | minimum=1; maximum=19; default=3                 |
 | `worker.stream_length`           | `A13N_WORKER__STREAM_LENGTH`           | integer        | minimum=16; maximum=100000; default=10000        |
 | `worker.stream_ttl`              | `A13N_WORKER__STREAM_TTL`              | integer        | minimum=1; maximum=86400; default=600            |
 | `worker.stream_coalesce_seconds` | `A13N_WORKER__STREAM_COALESCE_SECONDS` | number         | minimum=0; maximum=1; default=0.1                |

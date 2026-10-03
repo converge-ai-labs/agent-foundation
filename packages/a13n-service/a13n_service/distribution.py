@@ -76,7 +76,15 @@ from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.routes import router as runs_router
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.seal import expire_leases
-from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunRow, SessionRow, ThreadRow, UsageRecordRow
+from a13n_service.runs.tables import (
+    AttemptRow,
+    InboxEntryRow,
+    RunItemPageRow,
+    RunRow,
+    SessionRow,
+    ThreadRow,
+    UsageRecordRow,
+)
 from a13n_service.runs.trace_routes import router as traces_router
 from a13n_service.settings import Section
 from a13n_service.tenancy.access import Access, Authenticator, GrantSource
@@ -297,6 +305,7 @@ OSS = Distribution(
         ThreadMemoryRow,
         InboxEntryRow,
         RunRow,
+        RunItemPageRow,
         AttemptRow,
         UsageRecordRow,
     ),
