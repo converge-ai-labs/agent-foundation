@@ -7,11 +7,12 @@
 - one stable `thread_id` for the independently advancing message history;
 - detached public Pydantic AI message history;
 - detached JSON state namespaced by stable Capability ID;
-- portable provider-owned Environment states under one direct mount-name mapping.
+- portable provider-owned Environment states under one direct mount-name mapping;
+- references to the values a [Host state store](#host-state-store) saved for it.
 
 It contains no executable definition, plugin object, model, Toolset, provider client, Environment mount definition, desired mount set, provider launch state, current authority, usage history, event log, Host execution record, lease, queue, or delivery state. A Host may persist the value or embed it in a larger durable record, but the Harness does not choose or commit a durable checkpoint.
 
-The mandatory `a13n.usage` Capability namespace contains the latest detached [Context usage snapshot](12-events-observability-and-usage.md#context-usage-snapshot), not a native accumulator or historical ledger. Default resume starts fresh accounting; only explicit `resume_usage=True` continues matching single-writer accounting. A Host can overlay newer matching accounting without moving the selected execution history.
+The mandatory `a13n.usage` Capability namespace contains the latest detached [Context usage snapshot](12-events-observability-and-usage.md#context-usage-snapshot), not a native accumulator or historical ledger. Default resume starts fresh accounting; only explicit `resume_usage=True` continues matching single-writer accounting. A Host can overlay newer matching accounting without moving the selected execution history, or store state without the namespace through `without_usage(state)` when it keeps accounting elsewhere.
 
 Resume creates a new logical Harness Run with fresh `RunBindings`. State preserves Thread identity, messages, explicitly stored Capability data, and provider-defined portable data for already authorized mounts; it never restores authority, desired mounts, or a live Python resource.
 
@@ -44,6 +45,7 @@ class HarnessState(BaseModel):
         AgentContextStateSnapshot()
     )
     environment_states: Mapping[str, EnvironmentState] = {}
+    refs: tuple[StoredRef, ...] = ()
 
     @classmethod
     def new(*, thread_id: str | None = None, ...) -> HarnessState: ...
@@ -55,7 +57,7 @@ class HarnessState(BaseModel):
 
 `thread_id` is an opaque provider-neutral correlation value for one independently advancing history. A generated value consists of the `thread-` prefix and 32 lowercase hexadecimal characters. A trusted Host may instead select a stable Foundation object ID in `<kind-prefix>_<lowercase-alphanumeric-suffix>` form, up to 256 characters. `HarnessState.new(thread_id=...)` selects that identity explicitly; omitting it generates one. Serialization, ordinary copies, exports, and resume preserve the value exactly; `RunBindings`, metadata, and run arguments do not duplicate or override State-owned identity.
 
-`HarnessState.fork(thread_id=...)` copies messages and Capability state into a new envelope under the distinct Host-selected identity and resets `environment_states` to an empty mapping. Omitting the argument derives a fresh generated ID. Passing the source identity is invalid. Forking also recursively assigns fresh Thread IDs to retained inline children and clears their Environment state, while preserving compact child references, definition IDs, message history, and opaque unrelated Capability namespaces. Host-owned async children are not part of this copied tree. A fork is a new Thread and does not inherit backing-target selection by default. This is the required core path for intentionally creating an independently advancing history or changing identity from an existing checkpoint; a fresh binding cannot silently retarget prior State. The ID is not cryptographic integrity or authority.
+`HarnessState.fork(thread_id=...)` copies messages, Capability state and `refs` into a new envelope under the distinct Host-selected identity and resets `environment_states` to an empty mapping. Omitting the argument derives a fresh generated ID. Passing the source identity is invalid. Forking also assigns fresh Thread IDs to retained inline children, whose states fork into them when next loaded, while preserving compact child references, definition IDs, message history, and opaque unrelated Capability namespaces. Host-owned async children are not part of this copied tree. A fork is a new Thread and does not inherit backing-target selection by default. This is the required core path for intentionally creating an independently advancing history or changing identity from an existing checkpoint; a fresh binding cannot silently retarget prior State. The ID is not cryptographic integrity or authority.
 
 `schema_version` versions only the Harness envelope and is `1` for this contract. Import requires the exact supported envelope version and a valid required `thread_id`; validation never invents a replacement identity for malformed input. Each Capability entry has an independent non-blank version owned by that Capability's codec; each `environment_states` value has an independent provider-owned codec version. [Environment Integration](08-environment-integration.md#portable-environment-state) owns the direct mapping and its authority boundary.
 
@@ -109,9 +111,34 @@ async def export_state(
 ) -> HarnessState: ...
 ```
 
-The method calls provider-defined `dump_state()` but performs no persistence side effect. Each call is an infallible synchronous process-local read of the adapter's last validated cache; it performs no target refresh. The method captures the current mount set under the aggregate operation fence, so `environment_states` contains entries from one complete mount-set observation rather than a mixture before and after mutation. Values are imported `EnvironmentState` envelopes; mounts that return `None` are omitted. Export cancellation, an adapter contract violation, invalid canonical JSON, an invalid state envelope, or a Host-admitted size violation fails the complete export rather than silently dropping a stateful mount. Host unconditional finalization can still read each adapter cache independently from this continuation export. While active, `HarnessRunStream.export_state()` selects the latest complete message view owned by the stream and delegates to this method. Shutdown retains a validated result state or attempts a final complete export after execution stops and before state-owning resources close. Closed-stream export returns this detached checkpoint without invoking closed adapters; a failed capture remains an explicit export failure, never a silently incomplete state.
+The method calls provider-defined `dump_state()`; its only persistence side effect is saving large content through a bound [Host state store](#host-state-store). Each call is an infallible synchronous process-local read of the adapter's last validated cache; it performs no target refresh. The method captures the current mount set under the aggregate operation fence, so `environment_states` contains entries from one complete mount-set observation rather than a mixture before and after mutation. Values are imported `EnvironmentState` envelopes; mounts that return `None` are omitted. Export cancellation, an adapter contract violation, invalid canonical JSON, an invalid state envelope, or a Host-admitted size violation fails the complete export rather than silently dropping a stateful mount. Host unconditional finalization can still read each adapter cache independently from this continuation export. While active, `HarnessRunStream.export_state()` selects the latest complete message view owned by the stream and delegates to this method. Shutdown retains a validated result state or attempts a final complete export after execution stops and before state-owning resources close. Closed-stream export returns this detached checkpoint without invoking closed adapters; a failed capture remains an explicit export failure, never a silently incomplete state.
 
 State export does not require `HarnessState.message_history` to equal a result object's private message view. Normal inner execution produces aligned values, but trusted result middleware may intentionally transfer or replace state. Structural validity is enforced; semantic provenance is part of the trusted plugin contract. A plugin that replaces `environment_states` remains trusted code but cannot make the mapping authorize or construct an Environment on resume.
+
+## Host State Store
+
+```python
+class StoredRef(BaseModel):
+    key: str
+    digest: str  # SHA-256 of the saved bytes
+    size: int
+
+
+class StateStore(ABC):
+    content_threshold: int = 65536
+
+    async def save(
+        self, data: bytes, kind: Literal["subagent_state", "content"]
+    ) -> StoredRef: ...
+
+    async def load(self, ref: StoredRef) -> bytes: ...
+```
+
+`RunBindings.state_store` optionally binds a Host store for what exported state references instead of holding: each retained inline child's state ([Delegation and Subagents](11-delegation-and-subagents.md#inline-execution)) and each binary content part larger than `content_threshold` bytes. A state then stays small however long its history grows, and an unchanged image or document is written once rather than at every export. Without a store, child states and content stay inside the state.
+
+Export walks the whole state, its messages and every Capability namespace such as retained steering input, and saves each binary content part above the threshold, once per Run for the same bytes. The part stays where it was as binary content without data, its `StoredRef` under `vendor_metadata["a13n.stored"]`. A Run loads saved parts again where they are needed: Capability state when its context is created, message history before it reaches the model, so neither a Capability nor a model sees a placeholder. A part already saved keeps its reference at later exports.
+
+`refs` is the closure of saved values the state needs, those its own parts and children reference and those only saved child states reference, so a Host keeps and cleans saved values from the state alone without loading any child. The Harness treats a reference as opaque; the Host owns keys, verifies digest and size on load, and decides retention. A failed load fails the Run, and a state that references saved values without a bound store fails with `state_store_missing`.
 
 ## Complete Message Boundaries
 
@@ -200,10 +227,10 @@ A new run receives `previous_state` separately from fresh `RunBindings`. Stream 
 2. validates that portable `environment_states` is observation only and does not restore or replace adapter state after entry;
 3. invokes the optional `RunInputFactory` against that entered Environment;
 4. restores the selected `thread_id` into a read-only field on the fresh `AgentContext`;
-5. creates one `AgentContextState` initialized from the imported Capability snapshot;
+5. creates one `AgentContextState` initialized from the imported Capability snapshot, with saved content parts loaded;
 6. creates the remaining fresh `AgentContext` dependencies and plugin graph;
 7. reconciles non-empty imported history with the current definition-owned system prompt before a new model request, while leaving provider-suspended continuation unchanged;
-8. passes the resulting messages to the first `ModelAttempt`;
+8. passes the resulting messages, with saved content parts loaded, to the first `ModelAttempt`;
 9. lets each Capability read and validate only the namespaces it understands.
 
 Initial Environment entry and complete mount publication finish before input production and never overlap mount mutation. Harness does not apply saved Environment state to an entered adapter: the Host must select state before constructing each Environment. An unmatched portable mapping entry is inert; an explicit unmanaged/import flow can adopt it only before Run construction. The Harness does not require every Capability entry to be consumed before model work. A stateful Capability that requires validation before its own behavior must perform that validation in its Pydantic lifecycle or before invoking the dependent operation.

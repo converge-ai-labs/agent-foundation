@@ -64,27 +64,20 @@ export function RunDock({
   // The Thread's latest Run: the active one, else the one sealed last.
   const latest = thread.current_run_id ?? thread.last_run_id;
   const latestRun = useRun(latest);
-  const headRun = useRun(thread.head_run_id);
   const current =
     latest === run.id || (!!pendingRunId && latest === pendingRunId);
   const active = isActiveRun(run.status);
-  const head = thread.head_run_id === run.id ? run : headRun.data;
-  // A failed successor leaves the waiting head resumable. Show its exact
-  // questions from either the latest Run or the waiting head itself.
+  // Only the Thread's last Run can wait; show its exact questions.
+  const last = latest === run.id ? run : latestRun.data;
   const waiting =
-    !thread.current_run_id &&
-    (current || thread.head_run_id === run.id) &&
-    head?.status === "waiting"
-      ? head
+    !thread.current_run_id && current && last?.status === "waiting"
+      ? last
       : null;
   const interactive = isInteractive(thread);
   // After a failed or cancelled Run the inbox advances only when someone
-  // starts its next message; any waiting head must be resumed first.
+  // starts its next message.
   const canRunNext =
-    !!latestRun.data &&
-    ["failed", "cancelled"].includes(latestRun.data.status) &&
-    (!thread.head_run_id ||
-      (!!headRun.data && headRun.data.status !== "waiting"));
+    !!latestRun.data && ["failed", "cancelled"].includes(latestRun.data.status);
   // Guidance is an inbox entry; its own status says whether the run took it,
   // and it is read again whenever the Thread reports a change.
   const [guidance, setGuidance] = useState<{

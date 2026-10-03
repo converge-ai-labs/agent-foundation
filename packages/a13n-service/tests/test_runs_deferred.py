@@ -92,7 +92,7 @@ async def test_incomplete_or_misclassified_batches_leave_no_successor(service, s
         )
         assert response.status_code == 400, (mistake, response.text)
         thread = await runs_kit.get_thread(service, waiting["thread_id"])
-        assert thread["head_run_id"] == waiting["id"] and thread["current_run_id"] is None, mistake
+        assert thread["last_run_id"] == waiting["id"] and thread["current_run_id"] is None, mistake
         runs = (await service.client.get(f"{service.api}/threads/{waiting['thread_id']}/runs")).json()["items"]
         assert len(runs) == 1, mistake
 
@@ -141,7 +141,7 @@ async def test_fork_discards_inherited_wait_only_in_the_new_branch(service, scri
     assert (await runs_kit.get_run(service, forked["id"]))["status"] == "completed"
     assert (await runs_kit.get_run(service, waiting["id"]))["pending"] == waiting["pending"]
     original = await runs_kit.get_thread(service, waiting["thread_id"])
-    assert original["head_run_id"] == waiting["id"] and original["current_run_id"] is None
+    assert original["last_run_id"] == waiting["id"] and original["current_run_id"] is None
     await scripted_model.request()
     request = await scripted_model.request()
     tool_results = {m["tool_call_id"]: m["content"] for m in request["messages"] if m["role"] == "tool"}

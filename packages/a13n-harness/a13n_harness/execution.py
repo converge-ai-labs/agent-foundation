@@ -117,6 +117,7 @@ from a13n_harness.result import HarnessRunResult, SafeFailure
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
 from a13n_harness.spec import _default_usage_limits
 from a13n_harness.state import AgentContextState, HarnessState
+from a13n_harness.storage import RunStorage
 from a13n_harness.tools.deferred import (
     DeferredInputState,
     DeferredToolResume,
@@ -804,7 +805,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         bindings = self._bindings
         agent_spec = self._executable.definition.agent
         plugin_context = BoundPluginContext()
-        context_state = AgentContextState(self._previous_state.agent_context_state)
+        storage = RunStorage(bindings.state_store)
+        context_state = AgentContextState(await storage.resolve_context(self._previous_state.agent_context_state))
         usage_attribution = RunUsageLedger(
             run_id=self.run_id,
             instance=bindings.instance,
@@ -852,6 +854,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             _deferred_input=self._deferred_input,
             deferred_tools_supported=bindings.deferred_tools_supported,
             _tool_recovery=self._tool_recovery,
+            _storage=storage,
             metadata=bindings.metadata,
             _steering=SteeringBridge(
                 context_state,
@@ -1638,7 +1641,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         max_attempts = policy.max_attempts if policy.enabled else 1
         attempt_index = 0
         recovery = exchange.context._model_recovery
-        current_history = (
+        current_history = await exchange.context._storage.resolve_messages(
             self._tool_recovery.messages if self._tool_recovery is not None else self._previous_state.message_history
         )
         deferred_results = (

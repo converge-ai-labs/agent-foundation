@@ -9,24 +9,34 @@ export const AUTHORED_INPUT_EVENT_NAMES: ReadonlySet<string> = new Set([
 /**
  * One item of a Run's display: a committed item as the Service returned it, or
  * one the thread stream changed since. A live event that carried no time
- * leaves its item's times unknown.
+ * leaves its item's times unknown, and an item the stream started has no
+ * ordinal until a committed display numbers it.
  */
-export type DisplayItem = Omit<Schema["Item"], "started_at" | "ended_at"> & {
+export type DisplayItem = Omit<
+  Schema["Item"],
+  "started_at" | "ended_at" | "ordinal"
+> & {
+  ordinal?: number;
   started_at: string | null;
   ended_at?: string | null;
 };
 
-/** The whole committed display of a Run, with the Run it describes. */
+/**
+ * A Run's committed display Items with the Run they describe: by default the
+ * newest, with every Item that can still change, else those before ordinal
+ * `before`, which are paged and never change.
+ */
 export function readDisplay(
   client: Client,
   workspaceId: string,
   runId: string,
   signal: AbortSignal,
+  before?: number,
 ) {
   return client
     .workspace(workspaceId)
     .GET("/api/v1/runs/{run_id}/items", {
-      params: { path: { run_id: runId } },
+      params: { path: { run_id: runId }, query: { before } },
       signal,
     })
     .then(data);
@@ -65,7 +75,7 @@ export function isFragment(delta: ThreadDelta) {
   );
 }
 
-/** The display dropped the content of its oldest Items to stay within its limit. */
+/** The display omitted an observation's value beyond its size limit. */
 export function isOmitted(content: unknown) {
   return (
     isRecord(content) &&
@@ -140,6 +150,7 @@ function put(
   const finished = ref.state === "completed" || ref.state === "failed";
   items.set(ref.id, {
     id: ref.id,
+    ordinal: previous?.ordinal,
     kind: ref.kind,
     state: ref.state,
     first_stream_id: previous?.first_stream_id ?? position,

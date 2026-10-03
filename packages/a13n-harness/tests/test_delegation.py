@@ -21,6 +21,7 @@ from a13n_harness import (
     HarnessExtensionEvent,
     HarnessRunResult,
     HarnessRunResultEvent,
+    HarnessState,
     PluginError,
     RunBindings,
     SubagentDefinition,
@@ -57,6 +58,7 @@ from a13n_harness.tools import (
     InvocationPolicyDecision,
 )
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
+from a13n_harness.usage import USAGE_CAPABILITY_ID
 from pydantic import BaseModel
 from pydantic_ai import Tool
 from pydantic_ai.agent.spec import AgentSpec
@@ -1052,7 +1054,11 @@ async def test_inline_cleanup_failure_retains_child_state_without_reporting_succ
     stored_id, record = next(iter(restored.children.items()))
     if continuation:
         assert stored_id == execution_id
-    assert record.state.model_dump(mode="json") == retained_state.model_dump(mode="json")
+    assert isinstance(record.state, HarnessState)
+    assert record.state.thread_id == record.child_thread_id == retained_state.thread_id
+    assert record.state.message_history == retained_state.message_history
+    assert USAGE_CAPABILITY_ID not in record.state.agent_context_state.entries
+    assert record.state.environment_states == {}
 
     fail_cleanup = False
     execution_id = stored_id
@@ -1408,7 +1414,7 @@ async def test_summary_delegation_reads_the_context_summary_not_replayed_input(
 ) -> None:
     from dataclasses import replace
 
-    from a13n_harness import DelegationContextPolicy, HarnessState
+    from a13n_harness import DelegationContextPolicy
     from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
     from a13n_harness.capabilities.context import _COMPACTION_PROMPT
     from a13n_harness.model_context import user_prompt_content

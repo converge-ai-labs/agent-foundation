@@ -175,6 +175,38 @@ async def test_a_parent_steers_its_usage_limited_child(service, scripted_model, 
     assert (steered["status"], steered["assigned_run_id"]) == ("consumed", child_run_id), steered
 
 
+async def test_a_failed_origin_stays_history_for_its_child_result(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    coordinator = await runs_kit.delegating(service, scripted_model, "async")
+    scripted_model.call("delegate", DELEGATE, call_id="call_d", to="Role: coordinator")
+    # The origin spawns the child, then fails at its next request.
+    submitted = await runs_kit.start_thread(service, coordinator, "delegate", options={"max_usage": {"requests": 1}})
+    thread_id, origin_id = submitted["thread"]["id"], submitted["run"]["id"]
+    await (await runs_kit.attempt(service))
+    origin = await runs_kit.get_run(service, origin_id)
+    assert (origin["status"], origin["failure"]["code"]) == ("failed", "usage_limit_exceeded"), origin
+    scripted_model.say("42", to="Role: worker")
+    await (await runs_kit.attempt(service))
+    await _deliver(service)
+
+    # After a failure only an explicit message continues the thread; the result joins that run or follows it.
+    await accept_module.ThreadAdvancer(service.runtime, batch=1)()
+    assert (await runs_kit.get_thread(service, thread_id))["current_run_id"] is None
+    scripted_model.say("Continuing", to="Role: coordinator")
+    scripted_model.say("The helper said 42", to="Role: coordinator")
+    resumed = await runs_kit.submit(service, thread_id, runs_kit.message(coordinator, "go on"))
+    assert resumed.status_code == 201, resumed.text
+    await (await runs_kit.attempt(service))
+    if (await runs_kit.inbox(service, thread_id))[1]["status"] == "pending":
+        await accept_module.ThreadAdvancer(service.runtime, batch=1)()
+        await (await runs_kit.attempt(service))
+    assert [entry["status"] for entry in await runs_kit.inbox(service, thread_id)] == ["consumed"] * 3
+    # Each continues the failed origin's history, so the model reads its spawning call's result.
+    requests = [json.dumps(scripted_model.requests.get_nowait()) for _ in range(scripted_model.requests.qsize())]
+    following = [request for request in requests if "go on" in request]
+    assert following and all("call_d" in request for request in following) and "42" in following[-1]
+
+
 async def test_a_refused_subagent_call_fails_only_that_tool_call(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     coordinator = await runs_kit.delegating(service, scripted_model, "async")

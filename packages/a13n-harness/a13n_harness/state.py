@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -73,6 +74,35 @@ _CAPABILITY_ENTRIES_ADAPTER = TypeAdapter(dict[str, CapabilityState])
 _EMPTY_ENTRIES_JSON = _CAPABILITY_ENTRIES_ADAPTER.dump_json({})
 
 
+type StoredKind = Literal["subagent_state", "content"]
+
+
+class StoredRef(BaseModel):
+    """A Host reference to bytes its state store saved; opaque to the Harness."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str = Field(min_length=1, max_length=1024)
+    # SHA-256 of the saved bytes, for the Host to verify on load.
+    digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size: int = Field(ge=0)
+
+
+class StateStore(ABC):
+    """Host storage for what exported state references instead of holding: inline subagent states and large binary
+    content parts. Without a store, both stay inside the state."""
+
+    def __init__(self, *, content_threshold: int = 65536) -> None:
+        # Binary content parts larger than this many bytes are saved once and referenced from the state.
+        self.content_threshold = content_threshold
+
+    @abstractmethod
+    async def save(self, data: bytes, kind: StoredKind) -> StoredRef: ...
+
+    @abstractmethod
+    async def load(self, ref: StoredRef) -> bytes: ...
+
+
 class AgentContextStateSnapshot(BaseModel):
     """Immutable encoded copy of all Capability namespaces."""
 
@@ -133,6 +163,9 @@ class HarnessState(BaseModel):
         exclude=True,
         repr=False,
     )
+    # Every value saved through a Host state store that this state needs, including those only saved subagent states
+    # reference, so the Host knows what to keep without reading them.
+    refs: tuple[StoredRef, ...] = ()
 
     @classmethod
     def new(
@@ -190,11 +223,12 @@ class HarnessState(BaseModel):
         selected_thread_id = thread_id if thread_id is not None else _new_thread_id()
         if selected_thread_id == self.thread_id:
             raise ValueError("fork thread_id must differ from the source Thread")
-        return HarnessState.new(
+        return HarnessState(
+            schema_version="1",
             thread_id=selected_thread_id,
             message_history=self.message_history,
             agent_context_state=_fork_inline_subagent_state(self.agent_context_state),
-            environment_states={},
+            refs=self.refs,
         )
 
 

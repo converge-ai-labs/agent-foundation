@@ -73,7 +73,7 @@ if TYPE_CHECKING:
         VideoInputPolicy,
         VideoUrlType,
     )
-    from a13n_harness.state import HarnessState
+    from a13n_harness.state import HarnessState, StateStore, StoredRef
     from a13n_harness.tools.deferred import DeferredToolResume
 
 _EXPORTS = {
@@ -162,7 +162,7 @@ _EXPORTS = {
         "VideoInputPolicy",
         "VideoUrlType",
     ),
-    "a13n_harness.state": ("HarnessState",),
+    "a13n_harness.state": ("HarnessState", "StateStore", "StoredRef"),
     "a13n_harness.tools.deferred": ("DeferredToolResume",),
 }
 

@@ -93,6 +93,21 @@ export function conversationQueries(client: Client, workspaceId: string) {
           readDisplay(client, workspaceId, run_id, signal),
       }),
     /**
+     * The Items before ordinal `before`, nearest first, a page at a time as
+     * the reader reaches further back.
+     */
+    earlierItems: (run_id: string, before: number) =>
+      infiniteQueryOptions({
+        queryKey: [...keys.items(run_id), "before", before],
+        initialPageParam: before,
+        queryFn: ({ signal, pageParam }) =>
+          readDisplay(client, workspaceId, run_id, signal, pageParam),
+        getNextPageParam: (page) => {
+          const first = page.items[0]?.ordinal;
+          return first !== undefined && first > 1 ? first : undefined;
+        },
+      }),
+    /**
      * The Run and its ancestors, nearest first, across fork origins. Pages are
      * read as the reader reaches further back, never all up front.
      */

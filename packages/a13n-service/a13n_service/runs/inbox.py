@@ -299,8 +299,9 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
     compare as submitted: the run froze its own at acceptance, so it keeps the digest of what its source submitted.
     """
     if entry.kind == "child_result":
-        # The origin must be this run or already in its history; a later failure never revives it.
-        return origin is not None and (origin.id == run.id or origin.status in {"completed", "waiting"})
+        # The origin must be this run or a sealed one this run continues: its spawning call was committed before the
+        # child could exist, so it is in the origin's last checkpoint.
+        return origin is not None and (origin.id == run.id or origin.sealed_at is not None)
     options = RunOptions.model_validate(entry.options)
     configuration = RunOptions.model_validate(run.options).configuration
     return (

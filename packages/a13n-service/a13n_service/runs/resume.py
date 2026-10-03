@@ -1,4 +1,4 @@
-"""Resume: answering the exact wait of a thread's idle waiting head with a successor run.
+"""Resume: answering the exact wait of a thread's idle waiting run with a successor run.
 
 The waiting run, not a tool call ID, identifies the suspension: an answer for a superseded wait conflicts
 instead of landing on a newer one. Answers are normalized against the complete sealed pending set, so the
@@ -92,11 +92,11 @@ async def resume(
             waiting = await get_run(session, scope.workspace_id, run_id)
             thread = await get_thread(session, scope.workspace_id, waiting.thread_id, lock=True)
             require_open(thread)
-            if not (waiting.status == "waiting" and thread.head_run_id == waiting.id and thread.current_run_id is None):
+            if not (waiting.status == "waiting" and thread.last_run_id == waiting.id and thread.current_run_id is None):
                 # A concurrent request may have committed this same intent while we waited for the thread.
                 if found := await _replay(session, scope.workspace_id, actor, request_key, digest):
                     return await run_view(session, found), False
-                raise conflict("run", waiting.id, "not_idle_waiting_head")
+                raise conflict("run", waiting.id, "not_idle_waiting_run")
             answers = normalize(Pending.model_validate(waiting.pending), request)
             if answers.input is not None:
                 await require_usable(session, scope.workspace_id, asset_fields(answers.input))

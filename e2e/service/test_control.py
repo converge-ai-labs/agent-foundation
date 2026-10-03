@@ -141,7 +141,7 @@ async def test_messages_queue_behind_a_client_tool_wait(stack) -> None:  # type:
     # A wait with a client-tool request continues only by resume; messages stay queued meanwhile.
     queued = await api.send(thread_id, agent, "[wait] Then summarize", delivery="next_run")
     assert queued["run"] is None and queued["entry"]["status"] == "pending"
-    assert (await api.thread(thread_id))["head_run_id"] == waiting["id"]
+    assert (await api.thread(thread_id))["last_run_id"] == waiting["id"]
 
     await model.say("It is 42.", to="[wait]")
     answer = {"approvals": {}, "calls": {"call_lookup": {"status": "returned", "value": {"value": 42}}}}

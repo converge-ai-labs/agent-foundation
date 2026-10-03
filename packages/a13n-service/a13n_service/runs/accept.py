@@ -40,9 +40,9 @@ RUNS_ACCEPTED = meter.create_counter("a13n.runs.accepted", unit="{run}", descrip
 SCAN = 16
 
 
-def eligible(thread: ThreadRow, head: RunRow | None) -> bool:
+def eligible(thread: ThreadRow, last: RunRow | None) -> bool:
     """Ordinary queued input cannot resolve a wait; only an explicit resume can."""
-    return thread.archived_at is None and thread.current_run_id is None and (head is None or head.status != "waiting")
+    return thread.archived_at is None and thread.current_run_id is None and (last is None or last.status != "waiting")
 
 
 def paused(last: RunRow | None) -> bool:
@@ -186,12 +186,10 @@ async def _run(session: AsyncSession, run_id: str | None) -> RunRow | None:
 async def parent_of(
     session: AsyncSession, thread: ThreadRow
 ) -> tuple[RunRow | None, Literal["root", "continue", "fork"]]:
-    """Initial history has one rule: this thread's head, else a fork's origin, else empty.
-
-    A failed run is never a baseline, so a fork keeps its origin until the thread has its own head.
-    """
-    if thread.head_run_id is not None:
-        return await _run(session, thread.head_run_id), "continue"
+    """Initial history has one rule: this thread's last sealed run, whatever its outcome, else a fork's origin, else
+    empty."""
+    if thread.last_run_id is not None:
+        return await _run(session, thread.last_run_id), "continue"
     if thread.origin == "fork":
         return await _run(session, thread.origin_run_id), "fork"
     return None, "root"
@@ -338,9 +336,8 @@ async def _source(
         return explicit
     if entry.kind == "message":
         return await Source.load(session, runtime, thread, entry, "queued")
-    origin = await _run(session, entry.origin_run_id)
-    if origin is None or origin.status not in {"completed", "waiting"}:
-        return Failure(code="origin_not_committed", message="The spawning run never became thread history")
+    # The thread is idle, so the origin is sealed; it committed its spawning call before the child could exist.
+    origin = await session.get_one(RunRow, entry.origin_run_id)
     return await Source.inherited(session, runtime, origin, "child_result", entry=entry)
 
 
@@ -353,10 +350,10 @@ async def accept(
     refusal (`unavailable`) is not the entry's fault: it aborts the transaction, so a retry of the caller's
     operation or the advance sweep can still start the entry.
     """
-    head = await _run(session, thread.head_run_id)
-    if not eligible(thread, head):
+    last = await _run(session, thread.last_run_id)
+    if not eligible(thread, last):
         return None
-    if paused(await _run(session, thread.last_run_id)):
+    if paused(last):
         # An explicit submission may start that new message; unrelated pending entries never replace it.
         entries = [explicit.entry] if explicit is not None and explicit.entry is not None else []
     else:
@@ -398,8 +395,8 @@ async def advance(runtime: Runtime, thread_id: str, *, skip_locked: bool = False
 class ThreadAdvancer:
     """The advance_threads sweep: idle, unpaused threads with pending input, visited in rotating ID order.
 
-    Waiting heads are excluded before the batch limit. Rotation keeps a thread that fails to advance
-    from holding up the others; it is logged and retried by a later pass.
+    Threads whose last run waits, failed or was cancelled are excluded before the batch limit. Rotation keeps a
+    thread that fails to advance from holding up the others; it is logged and retried by a later pass.
     """
 
     def __init__(self, runtime: Runtime, *, batch: int):
@@ -421,9 +418,10 @@ class ThreadAdvancer:
             .where(
                 ThreadRow.id == pending.c.thread_id,
                 ThreadRow.current_run_id.is_(None),
-                ~exists().where(RunRow.id == ThreadRow.head_run_id, RunRow.status == "waiting"),
                 ThreadRow.archived_at.is_(None),
-                ThreadRow.last_run_id.is_not_distinct_from(ThreadRow.head_run_id),
+                ~exists().where(
+                    RunRow.id == ThreadRow.last_run_id, RunRow.status.in_(("waiting", "failed", "cancelled"))
+                ),
             )
             .limit(1)
             .lateral()

@@ -5,8 +5,11 @@ import json
 from dataclasses import replace
 
 import pytest
-from a13n_service.runs import display
+from a13n_harness.recovery import INTERRUPTED_TOOL_RESULT
+from a13n_service.infra.db import short_session
 from a13n_service.runs.accept import ThreadAdvancer, advance
+from a13n_service.runs.tables import RunItemPageRow
+from sqlalchemy import select
 
 pytestmark = pytest.mark.anyio
 
@@ -45,7 +48,7 @@ async def test_a_resume_replays_its_key_and_answers_a_wait_once(service, scripte
     reused = await service.client.post(resume, json=other, headers={"idempotency-key": "resume-1"})
     assert reused.status_code == 409 and reused.json()["error"]["details"]["reason"] == "idempotency_key_reused"
     again = await service.client.post(resume, json=ANSWER, headers={"idempotency-key": "resume-2"})
-    assert again.status_code == 409 and again.json()["error"]["details"]["reason"] == "not_idle_waiting_head"
+    assert again.status_code == 409 and again.json()["error"]["details"]["reason"] == "not_idle_waiting_run"
 
 
 async def test_a_resume_explicitly_skips_a_question(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
@@ -99,8 +102,53 @@ async def test_a_fork_continues_a_runs_history_in_a_new_thread(service, scripted
     assert order == sorted(order) and sum("remember seven" in message for message in messages) == 1
 
 
+async def test_a_cancelled_runs_history_continues_with_its_open_calls_interrupted(
+    executing, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    service = executing
+    agent = await runs_kit.delegating(service, scripted_model, "inline")
+    scripted_model.call(
+        "delegate", {"subagent": "helper", "prompt": "compute"}, call_id="call_d", to="Role: coordinator"
+    )
+    gate = asyncio.Event()
+    scripted_model.say("too late", gate=gate, to="Role: worker")
+    started = await runs_kit.start_thread(service, agent, "ask the helper")
+    thread_id, run_id = started["thread"]["id"], started["run"]["id"]
+    await scripted_model.request()
+    # The worker's request means the delegate call is committed and executing.
+    await scripted_model.request()
+    interrupted = await service.client.post(f"{service.api}/runs/{run_id}/interrupt")
+    assert interrupted.status_code == 200, interrupted.text
+    assert (await runs_kit.sealed(service, run_id))["status"] == "cancelled"
+    gate.set()
+    assert (await runs_kit.get_thread(service, thread_id))["last_run_id"] == run_id
+
+    async def continued(text: str) -> tuple[list[object], bool]:
+        """The next request's tool results after the delegate call, and whether a later message holds `text`."""
+        messages = (await scripted_model.request())["messages"]
+        start = next(i for i, message in enumerate(messages) if message.get("tool_calls"))
+        results = [json.loads(message["content"]) for message in messages[start + 1 :] if message["role"] == "tool"]
+        return results, any(text in str(message["content"]) for message in messages[start + 1 :])
+
+    # The thread and a fork both continue from the cancelled run's checkpoint; neither repeats the delegation.
+    interrupted_only = ([{"error": INTERRUPTED_TOOL_RESULT}], True)
+    scripted_model.say("Continued", to="Role: coordinator")
+    submitted = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "what happened?"))
+    assert submitted.status_code == 201, submitted.text
+    successor = await runs_kit.sealed(service, submitted.json()["run"]["id"])
+    assert (successor["status"], successor["parent_run_id"]) == ("completed", run_id), successor
+    assert await continued("what happened?") == interrupted_only
+    scripted_model.say("Forked", to="Role: coordinator")
+    forked = await service.client.post(
+        f"{service.api}/runs/{run_id}/fork", json=runs_kit.message(agent, "and here?"), headers=runs_kit.fresh_key()
+    )
+    assert forked.status_code == 201, forked.text
+    assert (await runs_kit.sealed(service, forked.json()["run"]["id"]))["status"] == "completed"
+    assert await continued("and here?") == interrupted_only
+
+
 class _MissingOnce:
-    """An object store that misses one display object, as a read racing a checkpoint commit that replaced it."""
+    """An object store that misses one tail object, as a read racing a checkpoint commit that replaced it."""
 
     def __init__(self, objects) -> None:  # type: ignore[no-untyped-def]
         self.objects, self.missed = objects, False
@@ -109,7 +157,7 @@ class _MissingOnce:
         return await self.objects.put(key, data, content_type=content_type)
 
     async def get(self, key: str) -> bytes | None:
-        if "/display/" in key and not self.missed:
+        if "/tail/" in key and not self.missed:
             self.missed = True
             return None
         return await self.objects.get(key)
@@ -121,7 +169,7 @@ class _MissingOnce:
         await self.objects.delete(key)
 
 
-async def test_run_items_follow_a_replaced_display(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+async def test_run_items_follow_a_replaced_tail(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     agent = await runs_kit.create_agent(service, scripted_model)
     run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
     scripted_model.say("Hello")
@@ -189,22 +237,44 @@ async def test_sessions_list_most_recently_updated_first_and_refuse_malformed_fi
         assert (response.status_code, response.json()["error"]["code"]) == (400, "invalid_argument"), malformed
 
 
-async def test_run_items_keep_the_newest_over_their_limit(service, scripted_model, runs_kit, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    agent = await runs_kit.create_agent(service, scripted_model)
-    run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
-    scripted_model.say("Hello")
-    await (await runs_kit.attempt(service))
-    complete = await runs_kit.items(service, run_id)
-    assert complete["dropped"] == 0 and len(complete["items"]) > 2
+async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    agent = await runs_kit.create_agent(service, scripted_model, toolsets={"configuration": {"tools": {"find": {}}}})
+    for number in range(16):
+        scripted_model.call("find_resources", {"kind": "model"}, call_id=f"call_{number}")
+    scripted_model.say("Found them")
+    run_id = (await runs_kit.start_thread(service, agent, "find"))["run"]["id"]
+    settings = service.runtime.settings
+    worker = settings.worker.model_copy(update={"page_items": 16})
+    runtime = replace(service.runtime, settings=settings.model_copy(update={"worker": worker}))
+    await (await runs_kit.attempt(service, runtime=runtime))
 
-    # Over its item limit the display keeps the newest items and counts the others.
-    monkeypatch.setattr(display, "MAX_ITEMS", 2)
-    bounded = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
-    scripted_model.say("Hello")
-    await (await runs_kit.attempt(service))
-    listing = await runs_kit.items(service, bounded)
-    assert listing["dropped"] == len(complete["items"]) - 2, listing
-    assert [item["kind"] for item in listing["items"]] == [item["kind"] for item in complete["items"]][-2:]
+    newest = await runs_kit.items(service, run_id)
+    count = len(newest["items"])
+    assert [item["ordinal"] for item in newest["items"]] == list(range(1, count + 1)) and count > 32, newest
+    async with short_session(service.runtime.storage) as session:
+        pages = (
+            await session.execute(
+                select(RunItemPageRow.first_ordinal, RunItemPageRow.last_ordinal)
+                .where(RunItemPageRow.run_id == run_id)
+                .order_by(RunItemPageRow.first_ordinal)
+            )
+        ).all()
+    assert [tuple(page) for page in pages] == [(first, first + 15) for first in range(1, count - 15, 16)]
+
+    async def window(**params: int) -> list[int]:
+        response = await service.client.get(f"{service.api}/runs/{run_id}/items", params=params)
+        assert response.status_code == 200, response.text
+        return [item["ordinal"] for item in response.json()["items"]]
+
+    # The newest items, then each earlier window, until the first item.
+    windows, before = [await window(limit=10)], None
+    while (before := windows[-1][0]) > 1:
+        windows.append(await window(before=before, limit=10))
+    assert [ordinal for part in reversed(windows) for ordinal in part] == list(range(1, count + 1))
+    assert await window(after=10, limit=20) == list(range(11, 31))
+    assert await window(after=count) == []
+    both = await service.client.get(f"{service.api}/runs/{run_id}/items", params={"before": 5, "after": 1})
+    assert both.status_code == 400 and both.json()["error"]["details"]["field"] == "before"
 
 
 async def test_invalid_question_results_leave_the_wait_unchanged(service, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
@@ -229,7 +299,7 @@ async def test_invalid_question_results_leave_the_wait_unchanged(service, script
             "id": "call_ask",
         }, result
         thread = await runs_kit.get_thread(service, waiting["thread_id"])
-        assert thread["head_run_id"] == waiting["id"] and thread["current_run_id"] is None, result
+        assert thread["last_run_id"] == waiting["id"] and thread["current_run_id"] is None, result
         assert len(await runs_kit.inbox(service, waiting["thread_id"])) == 1, result
 
 

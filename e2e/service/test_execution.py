@@ -70,7 +70,7 @@ async def test_setup_submission_and_continuation(stack) -> None:  # type: ignore
     assert (continued["lineage"], continued["parent_run_id"]) == ("continue", run_id)
     assert [entry["status"] for entry in await api.inbox(thread_id)] == ["consumed", "consumed"]
     thread = await api.thread(thread_id)
-    assert thread["head_run_id"] == thread["last_run_id"] == continued["id"] and thread["current_run_id"] is None
+    assert thread["last_run_id"] == continued["id"] and thread["current_run_id"] is None
 
     [request] = await model.requests("[second]")
     assert user_texts(request) == ["[first] Say hello", "[second] Continue"]

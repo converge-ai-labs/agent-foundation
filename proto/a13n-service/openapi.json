@@ -4931,6 +4931,11 @@
             "title": "Last Stream Id",
             "type": "string"
           },
+          "ordinal": {
+            "minimum": 1.0,
+            "title": "Ordinal",
+            "type": "integer"
+          },
           "started_at": {
             "format": "date-time",
             "title": "Started At",
@@ -4942,6 +4947,7 @@
         },
         "required": [
           "id",
+          "ordinal",
           "kind",
           "state",
           "first_stream_id",
@@ -9454,15 +9460,11 @@
         "type": "object"
       },
       "RunItems": {
-        "description": "A run's committed display with the run it describes. Live output continues after `position`.",
+        "description": "Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,\nso the first item's ordinal tells whether earlier ones exist. Live output continues after `position`.",
         "properties": {
           "complete": {
             "title": "Complete",
             "type": "boolean"
-          },
-          "dropped": {
-            "title": "Dropped",
-            "type": "integer"
           },
           "items": {
             "items": {
@@ -9501,7 +9503,6 @@
           "run",
           "items",
           "position",
-          "dropped",
           "complete"
         ],
         "title": "RunItems",
@@ -12250,17 +12251,6 @@
             ],
             "title": "Current Run Id"
           },
-          "head_run_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Head Run Id"
-          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -12378,7 +12368,6 @@
           "origin_tool_call_id",
           "subagent",
           "current_run_id",
-          "head_run_id",
           "last_run_id",
           "mcp_headers",
           "labels",
@@ -23461,6 +23450,7 @@
     },
     "/api/v1/runs/{run_id}/items": {
       "get": {
+        "description": "A run's committed display items by ordinal. By default the newest, always including the unpaged tail whose\nitems live output can still change; `before` and `after` page from an ordinal and exclude each other.",
         "operationId": "run_items_api_v1_runs__run_id__items_get",
         "parameters": [
           {
@@ -23470,6 +23460,56 @@
             "schema": {
               "title": "Run Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Return the items just before this ordinal",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return the items just before this ordinal",
+              "title": "Before"
+            }
+          },
+          {
+            "description": "Return the items just after this ordinal",
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Return the items just after this ordinal",
+              "title": "After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
             }
           },
           {

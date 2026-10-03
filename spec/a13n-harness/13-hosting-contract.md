@@ -64,6 +64,7 @@ For each logical run the Host can construct `RunBindings` with:
 - an optional fresh `RunModelResolver`;
 - an optional awaited `ModelCallCheck` for current authority and admission before native invocation;
 - optional model-context middleware;
+- an optional [state store](10-snapshot-and-resume.md#host-state-store) for large content and retained inline child states;
 - fresh run Capabilities required by definition-selected features;
 - bounded non-authoritative metadata.
 

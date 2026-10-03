@@ -5,13 +5,13 @@ from dataclasses import replace
 from functools import partial
 
 import pytest
-from a13n_harness import HarnessState
+from a13n_harness import HarnessState, StoredRef
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.outbox import Delivery, OutboxRow, claim
 from a13n_service.runs import checkpoints
 from a13n_service.runs.attempts import Lease
-from a13n_service.runs.checkpoints import CLEANUP, Committed, DisplayPointer, RunState, StatePointer
-from a13n_service.runs.display import StreamPosition
+from a13n_service.runs.checkpoints import CLEANUP, Committed, RunState, StatePointer, TailPointer
+from a13n_service.runs.display import Snapshot, StreamPosition, Tail
 from a13n_service.runs.tables import RunRow
 from sqlalchemy import func, select, update
 
@@ -26,12 +26,14 @@ def _committed(tenant, sequence: int) -> Committed:  # type: ignore[no-untyped-d
 
     return Committed(
         state=StatePointer(key=key("state"), digest=f"{sequence:064x}", size=0, format=1, seq=sequence, attempt=1),
-        display=DisplayPointer(
-            key=key("display"),
+        tail=TailPointer(
+            key=key("tail"),
             digest=f"{sequence + 100:064x}",
             size=0,
             format=1,
             position=StreamPosition(attempt=1, sequence=sequence),
+            first=1,
+            count=0,
         ),
     )
 
@@ -42,7 +44,7 @@ def _run(tenant, committed: Committed | None = None) -> RunRow:  # type: ignore[
         organization_id=tenant.organization_id,
         workspace_id=tenant.workspace_id,
         checkpoint=committed.state.model_dump() if committed else None,
-        display=committed.display.model_dump() if committed else None,
+        tail=committed.tail.model_dump() if committed else None,
     )
 
 
@@ -58,18 +60,18 @@ async def _deliver(runtime) -> None:  # type: ignore[no-untyped-def]
 async def test_commit_retires_replaced_objects_and_seal_keeps_the_pointers(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
     previous, committed = _committed(tenant, 1), _committed(tenant, 2)
     run = _run(tenant, committed)
-    for pointer in (previous.state, previous.display, committed.state, committed.display):
+    for pointer in (previous.state, previous.tail, committed.state, committed.tail):
         await runtime.objects.put(pointer.key, b"", content_type="application/json")
     async with transaction(runtime.storage) as session:
         checkpoints.retire(session, run, previous, committed)
     await _deliver(runtime)
     assert await runtime.objects.get(previous.state.key) is None
-    assert await runtime.objects.get(previous.display.key) is None
+    assert await runtime.objects.get(previous.tail.key) is None
     async with transaction(runtime.storage) as session:
-        checkpoints.reclaim(session, run)
+        await checkpoints.reclaim(session, run)
     # A new sender can deliver the committed intent without any memory from the producer.
     await _deliver(replace(runtime))
-    for pointer in (committed.state, committed.display):
+    for pointer in (committed.state, committed.tail):
         assert await runtime.objects.get(pointer.key) == b""
 
 
@@ -79,12 +81,12 @@ async def test_rollback_does_not_delete_and_expired_claim_is_recovered(runtime, 
     await runtime.objects.put(key, b"", content_type="application/json")
     with pytest.raises(ValueError):
         async with transaction(runtime.storage) as session:
-            checkpoints.reclaim(session, run)
+            await checkpoints.reclaim(session, run)
             raise ValueError("rollback")
     await _deliver(runtime)
     assert await runtime.objects.get(key) == b""
     async with transaction(runtime.storage) as session:
-        checkpoints.reclaim(session, run)
+        await checkpoints.reclaim(session, run)
     (abandoned,) = await claim(
         runtime.storage, CLEANUP, owner="dead-process", limit=1, lease_seconds=60, max_attempts=12
     )
@@ -97,16 +99,16 @@ async def test_rollback_does_not_delete_and_expired_claim_is_recovered(runtime, 
         assert (row.status, row.attempts) == ("delivered", 2)
 
 
-async def test_scan_continues_past_a_page_and_keeps_display_without_state(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
+async def test_scan_continues_past_a_page_and_keeps_the_tail_without_state(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
     run = _run(tenant)
-    run.display = _committed(tenant, 1).display.model_dump(mode="json")
-    prefix = checkpoints.prefix(run.organization_id, run.id, "display")
-    kept = run.display["key"]
+    run.tail = _committed(tenant, 1).tail.model_dump(mode="json")
+    prefix = checkpoints.prefix(run.organization_id, run.id, "tail")
+    kept = run.tail["key"]
     await runtime.objects.put(kept, b"", content_type="application/json")
     for i in range(1005):
         await runtime.objects.put(f"{prefix}/1/orphan-{i:04d}", b"", content_type="application/json")
     async with transaction(runtime.storage) as session:
-        checkpoints.reclaim(session, run)
+        await checkpoints.reclaim(session, run)
     await _deliver(runtime)
     async with short_session(runtime.storage) as session:
         row = await session.scalar(select(OutboxRow).where(OutboxRow.kind == CLEANUP))
@@ -121,24 +123,29 @@ async def test_scan_continues_past_a_page_and_keeps_display_without_state(runtim
 async def test_takeover_scan_deletes_only_earlier_attempts_unreferenced_objects(runtime, tenant) -> None:  # type: ignore[no-untyped-def]
     run = _run(tenant)
 
-    async def publish(attempt: int, kind: checkpoints.ObjectKind) -> str:
+    async def publish(attempt: int, kind: checkpoints.ObjectKind) -> StoredRef:
         lease = Lease(run.id, f"rat_{attempt}", "thr_test", run.organization_id, run.workspace_id, attempt, "w", "t")
-        return (await checkpoints.publish(runtime.objects, lease, kind, b"{}")).key
+        ref = await checkpoints.publish(runtime.objects, lease, kind, b"{}", level=3)
+        return StoredRef(key=ref.key, digest=ref.digest, size=ref.size)
 
-    kept, orphan_state, orphan_display = (
+    kept, content, orphan_state, orphan_tail, orphan_content = (
         await publish(1, "state"),
+        await publish(1, "contents"),
         await publish(1, "state"),
-        await publish(1, "display"),
+        await publish(1, "tail"),
+        await publish(1, "subagents"),
     )
-    run.checkpoint = StatePointer(key=kept, digest="0" * 64, size=2, format=1, seq=1, attempt=1).model_dump()
+    run.checkpoint = StatePointer(
+        key=kept.key, digest=kept.digest, size=kept.size, format=1, seq=1, attempt=1, refs=(content,)
+    ).model_dump(mode="json")
     async with transaction(runtime.storage) as session:
-        checkpoints.reclaim(session, run, before_attempt=2)
-    new = await publish(2, "display")  # Published after the intent, not yet referenced by a row.
+        await checkpoints.reclaim(session, run, before_attempt=2)
+    new = await publish(2, "tail")  # Published after the intent, not yet referenced by a row.
     await _deliver(runtime)
-    assert await runtime.objects.get(orphan_state) is None
-    assert await runtime.objects.get(orphan_display) is None
-    assert await runtime.objects.get(kept) is not None
-    assert await runtime.objects.get(new) is not None
+    for orphan in (orphan_state, orphan_tail, orphan_content):
+        assert await runtime.objects.get(orphan.key) is None
+    for live in (kept, content, new):
+        assert await checkpoints.load(runtime.objects, live) == b"{}"
 
 
 async def test_scan_budget_persists_progress_and_a_stalled_store_uses_retry_budget(
@@ -163,7 +170,7 @@ async def test_scan_budget_persists_progress_and_a_stalled_store_uses_retry_budg
 
     monkeypatch.setattr(runtime.objects, "delete", slow)
     async with transaction(runtime.storage) as session:
-        checkpoints.reclaim(session, run)
+        await checkpoints.reclaim(session, run)
     async with asyncio.timeout(2):
         await _deliver(runtime)
     async with short_session(runtime.storage) as session:
@@ -183,7 +190,6 @@ async def test_scan_budget_persists_progress_and_a_stalled_store_uses_retry_budg
 
 async def test_a_failed_publication_cannot_leave_another_write_behind_seal(runtime, tenant, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     from a13n_service.infra.errors import ServiceError
-    from a13n_service.runs.display import Display
 
     started, release = asyncio.Event(), asyncio.Event()
     original = runtime.objects.put
@@ -198,7 +204,7 @@ async def test_a_failed_publication_cannot_leave_another_write_behind_seal(runti
     monkeypatch.setattr(runtime.objects, "put", put)
     lease = Lease("run_test", "rat_test", "thr_test", tenant.organization_id, tenant.workspace_id, 1, "worker", "token")
     state = RunState(harness=HarnessState.new(thread_id=lease.thread_id), seq=1, attempt=1)
-    publishing = asyncio.create_task(checkpoints.publish_checkpoint(runtime, lease, state, Display()))
+    publishing = asyncio.create_task(checkpoints.publish_checkpoint(runtime, lease, state, Snapshot([], Tail())))
     try:
         await started.wait()
         await asyncio.sleep(0)
@@ -208,11 +214,7 @@ async def test_a_failed_publication_cannot_leave_another_write_behind_seal(runti
             await publishing
         # The caller can now seal knowing all this publication's bytes have landed.
         assert (
-            len(
-                await runtime.objects.keys(
-                    checkpoints.prefix(tenant.organization_id, lease.run_id, "display"), limit=10
-                )
-            )
+            len(await runtime.objects.keys(checkpoints.prefix(tenant.organization_id, lease.run_id, "tail"), limit=10))
             == 1
         )
     finally:

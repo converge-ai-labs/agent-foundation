@@ -501,8 +501,8 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
 @pytest.mark.parametrize(
     ("component", "version", "requirement"),
     [
-        ("a13n-service", "0.1.0", ">=0.5.0,<0.6.0"),
-        ("a13n-harness-ui", "0.4.0", ">=0.5.0,<0.6.0"),
+        ("a13n-service", "0.1.0", ">=0.6.0,<0.7.0"),
+        ("a13n-harness-ui", "0.4.0", ">=0.6.0,<0.7.0"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):

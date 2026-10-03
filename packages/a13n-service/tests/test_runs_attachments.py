@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from a13n_service.infra.db import short_session
 from a13n_service.runs.attachments import INLINE_TEXT_BYTES
+from a13n_service.runs.checkpoints import StatePointer, load_state
+from a13n_service.runs.tables import RunRow
 from a13n_service.settings import LocalProvisioning, Provisioning, Settings
 from fastapi import FastAPI
 from fastapi.responses import Response
@@ -166,6 +169,43 @@ async def test_the_model_reads_what_it_understands_natively_and_text_inline(
     # Viewers see the attachments themselves, not the text the model reads for them.
     displayed = runs_kit.texts(await runs_kit.items(service, run_id))
     assert not [text for _, text in displayed if text.startswith("Attachment")], displayed
+
+
+async def test_a_large_attachment_is_saved_once_and_read_again_by_the_next_run(
+    service, scripted_model, runs_kit
+) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.add_agent(service, "reader", await _model(service, scripted_model, "document_understanding"))
+    large = PDF + bytes(service.runtime.settings.worker.content_bytes)
+    report = await _asset(service, runs_kit, "report.pdf", "application/pdf", large)
+    started = await service.client.post(
+        f"{service.api}/threads", json=_message(agent, _attached(report)), headers=runs_kit.fresh_key()
+    )
+    assert started.status_code == 201, started.text
+    thread_id, run_id = started.json()["thread"]["id"], started.json()["run"]["id"]
+    scripted_model.say("Read")
+    await (await runs_kit.attempt(service))
+
+    # The checkpoint references the document instead of holding it, and the sealed run keeps what it references.
+    async with short_session(service.runtime.storage) as session:
+        pointer = StatePointer.model_validate((await session.get_one(RunRow, run_id)).checkpoint)
+    (ref,) = pointer.refs
+    assert "/contents/" in ref.key and ref.size < len(large)
+    assert await service.runtime.objects.get(ref.key) is not None
+    state = await load_state(service.runtime.objects, pointer)
+    assert state is not None and len(state.harness.model_dump_json()) < len(large)
+
+    submitted = await runs_kit.submit(service, thread_id, runs_kit.message(agent, "once more"))
+    assert submitted.status_code == 201, submitted.text
+    scripted_model.say("Again")
+    await (await runs_kit.attempt(service))
+    async with short_session(service.runtime.storage) as session:
+        assert StatePointer.model_validate(
+            (await session.get_one(RunRow, submitted.json()["run"]["id"])).checkpoint
+        ).refs == (ref,)
+    document = f"data:application/pdf;base64,{base64.b64encode(large).decode()}"
+    for request in (await scripted_model.request(), await scripted_model.request()):
+        assert [part["file"]["file_data"] for part in _user_parts(request) if part["type"] == "file"] == [document]
 
 
 async def test_a_file_the_run_cannot_read_is_refused_when_submitted_or_edited(

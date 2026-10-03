@@ -222,7 +222,7 @@ The built-in inline executor is Harness-private and is not a `SubagentOperator`.
 4. create fresh child instance lineage under the current parent instance;
 5. borrow the parent's already-entered provider-neutral Environment mapping;
 6. recursively execute the child and forward canonical child events;
-7. store the latest complete child `HarnessState` before returning success;
+7. retain the latest complete child `HarnessState` before returning success, saved through the Host state store when one is bound;
 8. return only a JSON-compatible bounded projection.
 
 Inline continuation state is:
@@ -232,7 +232,9 @@ class InlineSubagentState(BaseModel):
     child_instance_id: str
     subagent_name: str
     child_definition_id: str
-    state: HarnessState
+    child_thread_id: str
+    state: StoredRef | HarnessState
+    refs: tuple[StoredRef, ...] = ()
 
 
 class InlineSubagentCollectionState(BaseModel):
@@ -240,6 +242,8 @@ class InlineSubagentCollectionState(BaseModel):
 ```
 
 A compact inline ID has the form `{subagent_name}-{suffix}` and is unique only inside that parent state. It is not a Host execution ID, child Thread ID, backend ID, or authority token. A new ID starts a new child Thread. Resume requires an exact stored ID, child name, and child definition ID; incompatible restored state fails before execution.
+
+With a [Host state store](10-snapshot-and-resume.md#host-state-store), `state` is the reference to the child's state saved when its last advance ended, and `refs` repeats that state's own references, so the parent's export lists every saved value its children need without loading them. Without a store, `state` holds the child's state itself. Retained child state has no Environment state and no `a13n.usage` namespace, since a resumed child starts fresh accounting. `child_thread_id` is the Thread the child continues in, and no two retained children share one. A parent fork assigns each child a new `child_thread_id` without loading its state; the state forks into that Thread when the child is next resumed. Inline children use the parent's state store, and a child bindings factory cannot replace it.
 
 The child receives a fresh `AgentInstanceContext` whose parent and delegation references match the current parent instance and inline ID. Harness borrows only explicit safe Run inputs needed by nested execution, including the current invocation policy, model resolver, tool-instruction override, metadata, model-cost accounting, and an explicitly shared embedded task view when the authored task policy permits it. It does not copy arbitrary parent Run Capabilities.
 

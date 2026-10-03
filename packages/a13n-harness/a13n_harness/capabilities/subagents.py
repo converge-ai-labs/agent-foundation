@@ -20,7 +20,7 @@ from a13n_harness.context import AgentContext, BuiltSubagent
 from a13n_harness.errors import DefinitionError, StateError
 from a13n_harness.identity import AgentIdentityRef
 from a13n_harness.input import RunInputValue
-from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, HarnessState
+from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, HarnessState, StoredRef, _new_thread_id
 
 if TYPE_CHECKING:
     from a13n_harness.builder import DelegationContextPolicy
@@ -37,14 +37,19 @@ type SubagentToolCallStatus = Literal["running", "success", "failed", "denied", 
 
 
 class InlineSubagentState(BaseModel):
-    """Latest complete continuation for one compact inline child reference."""
+    """One retained inline child: its identity and its latest state, saved when its last run ended."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
 
     child_instance_id: str = Field(min_length=7, max_length=68)
     subagent_name: str = Field(min_length=1, max_length=63)
     child_definition_id: str = Field(min_length=1, max_length=256)
-    state: HarnessState
+    # The Thread the child continues in; a fork moves it, and the saved state follows when it is next loaded.
+    child_thread_id: str = Field(min_length=1, max_length=256)
+    # A reference with a Host state store, otherwise the state itself.
+    state: StoredRef | HarnessState
+    # The saved state's own references, so the parent's export lists them without loading it.
+    refs: tuple[StoredRef, ...] = ()
 
     @model_validator(mode="after")
     def _validate_identity(self) -> InlineSubagentState:
@@ -55,7 +60,7 @@ class InlineSubagentState(BaseModel):
 
 
 class InlineSubagentCollectionState(BaseModel):
-    """Capability-owned inline child continuations stored in parent Agent state."""
+    """The parent's registry of retained inline children."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
 
@@ -66,7 +71,19 @@ class InlineSubagentCollectionState(BaseModel):
     def _validate_keys(cls, value: dict[str, InlineSubagentState]) -> dict[str, InlineSubagentState]:
         if any(key != child.child_instance_id for key, child in value.items()):
             raise ValueError("inline subagent state keys must match child_instance_id")
+        if len({child.child_thread_id for child in value.values()}) != len(value):
+            raise ValueError("inline children must not share a Thread")
         return value
+
+    @property
+    def refs(self) -> tuple[StoredRef, ...]:
+        """Every saved value the retained children need."""
+        refs = {
+            ref.key: ref
+            for child in self.children.values()
+            for ref in (*((child.state,) if isinstance(child.state, StoredRef) else ()), *child.refs)
+        }
+        return tuple(refs.values())
 
 
 class SubagentToolCallSnapshot(BaseModel):
@@ -404,7 +421,6 @@ class SubagentCapability(AbstractCapability[AgentContext]):
                 )
                 or InlineSubagentCollectionState()
             )
-            _validate_inline_subagent_state(state, ctx.deps)
             replacement = _InlineSubagentCapability(context=ctx.deps, state=state)
         ctx.deps._record_run_capability(SUBAGENT_CAPABILITY_ID, replacement)
         return replacement
@@ -459,81 +475,37 @@ class _AsyncSubagentCapability(_SubagentActiveCapability):
         return self._toolset.get_toolset()
 
 
-def _fork_inline_subagent_state(snapshot: AgentContextStateSnapshot) -> AgentContextStateSnapshot:
-    """Fork the owned child tree while preserving opaque Capability namespaces."""
-    entries = snapshot.entries
-    entry = entries.get(SUBAGENT_CAPABILITY_ID)
+def _inline_subagents(snapshot: AgentContextStateSnapshot) -> InlineSubagentCollectionState | None:
+    entry = snapshot.get(SUBAGENT_CAPABILITY_ID)
     if entry is None:
-        return snapshot
+        return None
     if entry.version != _INLINE_SUBAGENT_STATE_VERSION:
-        raise StateError("Cannot fork unsupported inline subagent State.", code="subagent_state_incompatible")
-    state = InlineSubagentCollectionState.model_validate(entry.data)
+        raise StateError("Inline subagent State has an unsupported version.", code="subagent_state_incompatible")
+    return InlineSubagentCollectionState.model_validate(entry.data)
+
+
+def _inline_subagent_refs(snapshot: AgentContextStateSnapshot) -> tuple[StoredRef, ...]:
+    """The saved values a state's retained inline children need."""
+    registry = _inline_subagents(snapshot)
+    return registry.refs if registry is not None else ()
+
+
+def _fork_inline_subagent_state(snapshot: AgentContextStateSnapshot) -> AgentContextStateSnapshot:
+    """Move every retained child to a new Thread; its state forks when it is next loaded."""
+    registry = _inline_subagents(snapshot)
+    if registry is None:
+        return snapshot
     forked = InlineSubagentCollectionState(
         children={
-            child_id: record.model_copy(update={"state": record.state.fork()})
-            for child_id, record in state.children.items()
+            child_id: record.model_copy(update={"child_thread_id": _new_thread_id()})
+            for child_id, record in registry.children.items()
         }
     )
+    entries = snapshot.entries
     entries[SUBAGENT_CAPABILITY_ID] = CapabilityState(
         version=_INLINE_SUBAGENT_STATE_VERSION, data=forked.model_dump(mode="json")
     )
     return AgentContextStateSnapshot(entries=entries)
-
-
-def _validate_inline_subagent_state(state: InlineSubagentCollectionState, context: AgentContext) -> None:
-    _validate_inline_thread_identities(state, parent_thread_id=context.thread_id)
-    for child_id, record in state.children.items():
-        try:
-            child = context.subagents.require(record.subagent_name)
-        except KeyError as exc:
-            raise StateError(
-                "Inline subagent State references an unavailable child definition.",
-                code="subagent_state_incompatible",
-                details={"child_instance_id": child_id},
-            ) from exc
-        if child.definition.definition_id != record.child_definition_id:
-            raise StateError(
-                "Inline subagent State child definition is incompatible with the current Agent.",
-                code="subagent_state_incompatible",
-                details={"child_instance_id": child_id},
-            )
-
-
-def _validate_inline_thread_identities(
-    state: InlineSubagentCollectionState,
-    *,
-    parent_thread_id: str,
-) -> None:
-    seen = {parent_thread_id}
-    pending = [state]
-    while pending:
-        current = pending.pop()
-        for child_id, record in current.children.items():
-            thread_id = record.state.thread_id
-            if thread_id in seen:
-                raise StateError(
-                    "Inline subagent State reuses a Thread identity.",
-                    code="subagent_state_incompatible",
-                    details={"child_instance_id": child_id},
-                )
-            seen.add(thread_id)
-            entry = record.state.agent_context_state.entries.get(SUBAGENT_CAPABILITY_ID)
-            if entry is None:
-                continue
-            if entry.version != _INLINE_SUBAGENT_STATE_VERSION:
-                raise StateError(
-                    "Nested inline subagent State has an unsupported version.",
-                    code="subagent_state_incompatible",
-                    details={"child_instance_id": child_id},
-                )
-            try:
-                pending.append(InlineSubagentCollectionState.model_validate(entry.data))
-            except ValueError as exc:
-                raise StateError(
-                    "Nested inline subagent State is invalid.",
-                    code="subagent_state_incompatible",
-                    details={"child_instance_id": child_id},
-                ) from exc
 
 
 __all__ = [

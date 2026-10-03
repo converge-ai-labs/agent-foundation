@@ -376,8 +376,18 @@ async def resume_run(
 
 
 @router.get("/runs/{run_id}/items", response_model=RunItems)
-async def run_items(runtime: CurrentRuntime, workspace_id: WorkspaceId, run_id: str, actor: Actor) -> RunItems:
-    return await runs.items(runtime, actor, workspace_id, run_id)
+async def run_items(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    run_id: str,
+    actor: Actor,
+    before: Annotated[int | None, Query(ge=1, description="Return the items just before this ordinal")] = None,
+    after: Annotated[int | None, Query(ge=0, description="Return the items just after this ordinal")] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+) -> RunItems:
+    """A run's committed display items by ordinal. By default the newest, always including the unpaged tail whose
+    items live output can still change; `before` and `after` page from an ordinal and exclude each other."""
+    return await runs.items(runtime, actor, workspace_id, run_id, before=before, after=after, limit=limit)
 
 
 @router.get("/runs/{run_id}/lineage", response_model=RunPage)

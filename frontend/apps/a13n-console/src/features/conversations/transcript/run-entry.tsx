@@ -11,7 +11,7 @@ import { useRunDisplay } from "../run-display";
 import { runTimeline } from "../timeline";
 import { WorkingRow } from "./assistant-message";
 import { DebugRunSection } from "./debug/run-section";
-import { DroppedItems } from "./dropped-items";
+import { EarlierItems } from "./earlier-items";
 import { FailureNotice } from "./failure-notice";
 import { RunBlock } from "./run-block";
 import { useThreadRuns } from "./thread-runs";
@@ -78,7 +78,7 @@ export function RunEntry({
       )}
       {level === "debug" ? (
         <>
-          <DroppedItems count={live.dropped} />
+          <EarlierItems earlier={live.earlier} />
           <DebugRunSection
             run={run}
             thread={thread}
@@ -96,7 +96,7 @@ export function RunEntry({
             timeline={timeline}
             agentName={agentName}
             agentImageUrl={agentImageUrl}
-            earlier={<DroppedItems count={live.dropped} />}
+            earlier={<EarlierItems earlier={live.earlier} />}
           >
             {active && <WorkingRow connected={live.state === "connected"} />}
             {(run.failure != null || stopped) && (
