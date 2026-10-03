@@ -40,6 +40,7 @@ from a13n_harness._handoff import (
     HANDOFF_CAPABILITY_ID as HANDOFF_CAPABILITY_ID,
 )
 from a13n_harness._json import dump_json_bytes
+from a13n_harness.capabilities.input import InputCapability
 from a13n_harness.capabilities.lifecycle import active_model_request_index
 from a13n_harness.content import CONTENT_METADATA_KEY
 from a13n_harness.context import AgentContext
@@ -55,6 +56,7 @@ from a13n_harness.model_calls import ModelCallCheckError
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
+    ModelContextCoordinatorCapability,
     ModelContextNext,
     ModelContextPlacement,
     ModelContextProjection,
@@ -529,7 +531,9 @@ class HandoffCapability(AbstractModelContextCapability):
         self._toolset: HandoffToolset | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="outermost")
+        return CapabilityOrdering(
+            position="outermost", wraps=(ModelContextCoordinatorCapability,), wrapped_by=(InputCapability,)
+        )
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(HANDOFF_CAPABILITY_ID)
@@ -604,9 +608,15 @@ class HandoffCapability(AbstractModelContextCapability):
         )
 
     async def before_model_request(
-        self,
-        ctx: RunContext[AgentContext],
-        request_context: ModelRequestContext,
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        prepared = await self._restore_history(ctx, request_context)
+        if prepared is not request_context:
+            ctx.messages[:] = prepared.messages
+        return prepared
+
+    async def _restore_history(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         if self._toolset is None:
             raise DefinitionError("Handoff Toolset is not bound to a logical run.", code="capability_scope_invalid")
@@ -618,7 +628,7 @@ class HandoffCapability(AbstractModelContextCapability):
             messages = _build_restored_history(
                 request_context.messages,
                 state,
-                retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
+                retained_requests=ctx.deps._steering.replay_requests(ctx.run_id, ctx.conversation_id),
             )
         except BaseException as exc:
             try:
@@ -692,7 +702,11 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         self._depth = 0
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="innermost")
+        return CapabilityOrdering(
+            position="innermost",
+            wraps=(ModelContextCoordinatorCapability,),
+            wrapped_by=(InputCapability, HandoffCapability),
+        )
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(COMPACTION_CAPABILITY_ID)
@@ -708,9 +722,15 @@ class CompactionCapability(AbstractCapability[AgentContext]):
         return replacement
 
     async def before_model_request(
-        self,
-        ctx: RunContext[AgentContext],
-        request_context: ModelRequestContext,
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        prepared = await self._compact_history(ctx, request_context)
+        if prepared is not request_context:
+            ctx.messages[:] = prepared.messages
+        return prepared
+
+    async def _compact_history(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
     ) -> ModelRequestContext:
         if self._depth > 0 or _requires_exact_boundary(ctx, request_context.messages):
             return request_context
@@ -752,7 +772,7 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 messages = _build_compacted_history(
                     request_context.messages,
                     summary,
-                    retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
+                    retained_requests=ctx.deps._steering.replay_requests(ctx.run_id, ctx.conversation_id),
                 )
                 record_span_metadata(
                     span,
@@ -835,7 +855,7 @@ async def _compact_with_same_agent(
             # The run's selection when it has one, so the compaction request names the same model as the requests it
             # summarizes and a Host admits, attributes and prices it as that model.
             model=request_context.model_id or request_context.model,
-            message_history=deepcopy(request_context.messages),
+            message_history=deepcopy(list(request_context.messages)),
             deps=ctx.deps,
             # This is another model request in the same logical Harness Run,
             # not a new Host execution. Keep its already-bound collaborators.
@@ -1149,7 +1169,7 @@ def _compaction_snapshot(
 
 
 def _mark_current_restored_boundary(messages: list[ModelMessage]) -> list[ModelMessage]:
-    copied = deepcopy(messages)
+    copied = deepcopy(list(messages))
     handoff_kind = next(
         (
             message.metadata.get(_HANDOFF_METADATA_KEY)

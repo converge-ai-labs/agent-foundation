@@ -79,7 +79,11 @@ class StructuredOutputAutoToolChoiceCapability(AbstractCapability[AgentContext])
     id = STRUCTURED_OUTPUT_AUTO_TOOL_CHOICE_CAPABILITY_ID
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="innermost")
+        from a13n_harness.models.capability import SelfHealingModelCapability
+
+        # Recovery must surround metering so every repaired replay is admitted
+        # and accounted separately, including tool-only output requests.
+        return CapabilityOrdering(position="innermost", wraps=[SelfHealingModelCapability])
 
     async def before_model_request(
         self,

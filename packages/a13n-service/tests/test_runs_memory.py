@@ -281,3 +281,32 @@ async def test_store_calls_recheck_the_run_principal_under_its_authority(service
     with pytest.raises(MemoryStoreError) as refused:
         await store.write("notes/new.md", "x\n", expected=None, origin=Origin(run_id=run.id))
     assert refused.value.code == "forbidden"
+
+
+async def test_model_boundary_keeps_canonical_media_and_committed_context() -> None:
+    from a13n_harness import HarnessBuilder
+    from pydantic_ai import BinaryContent
+    from pydantic_ai.agent.spec import AgentSpec
+    from pydantic_ai.models.function import FunctionModel
+
+    boundary = Boundaries(lambda: {"memory": "7"})
+    image = BinaryContent(b"invalid-image", media_type="image/png")
+    seen = []
+
+    async def provider(messages, info):
+        seen.extend(messages)
+        yield "done"
+
+    result = (
+        await HarnessBuilder()
+        .build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=provider), capabilities=(boundary,))
+        .run(["inspect", image])
+    )
+    assert result.output_or_raise() == "done"
+    assert len(boundary.states) == 1
+    staged = next(iter(boundary.states.values()))
+    assert staged.cursors == {"memory": "7"}
+    assert staged.state.message_history == result.state.message_history[:-1]
+    assert "invalid-image" in str(staged.state.message_history)
+    assert "invalid-image" not in str(seen)
+    assert "a13n.agent-context" in str(staged.state.message_history)

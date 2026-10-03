@@ -661,7 +661,13 @@ class _FirstInput:
         if self._started:
             delivery = self._delivery
             return delivery.blocks if delivery is not None and delivery.request is current else ()
-        if request.kind is ModelContextRequestKind.INPUT and ctx.deps.deferred_resume is None:
+        if (
+            request.kind is ModelContextRequestKind.INPUT
+            and ctx.deps.deferred_resume is None
+            and ctx.deps._model_input.content is not None
+        ):
+            # A restored request can end in user-role context without a new semantic input.
+            # Its committed memory context and cursors remain the delivery for this run.
             self._delivery = _Delivery(current, await self._deliver(ctx))
         self._started = True
         return self._delivery.blocks if self._delivery is not None else ()

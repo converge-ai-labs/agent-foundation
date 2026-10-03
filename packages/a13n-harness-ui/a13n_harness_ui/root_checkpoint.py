@@ -12,8 +12,8 @@ from a13n_harness.context import AgentContext
 from a13n_harness.model_context import ModelContextCoordinatorCapability
 from anyio import CancelScope
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapModelRequestHandler
-from pydantic_ai.messages import CapabilityEvent, ModelResponse
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from pydantic_ai.messages import CapabilityEvent
 from pydantic_ai.models import ModelRequestContext
 
 
@@ -32,7 +32,7 @@ class RootCheckpointCapability(AbstractCapability[AgentContext]):
         self._active_run_id: str | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(wrapped_by=(ModelContextCoordinatorCapability,))
+        return CapabilityOrdering(position="innermost", wrapped_by=(ModelContextCoordinatorCapability,))
 
     async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Callable[[], Awaitable[Any]]) -> Any:
         # Compaction can reenter the same Agent with the same AgentContext but a
@@ -45,9 +45,9 @@ class RootCheckpointCapability(AbstractCapability[AgentContext]):
         finally:
             self._active_run_id = None
 
-    async def wrap_model_request(
-        self, ctx: RunContext[AgentContext], *, request_context: ModelRequestContext, handler: WrapModelRequestHandler
-    ) -> ModelResponse:
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
         if self._active_run_id is not None and ctx.run_id == self._active_run_id:
             # Before-hooks and the context coordinator have committed their state
             # and history transformations. Provider-facing messages can be merged
@@ -67,7 +67,7 @@ class RootCheckpointCapability(AbstractCapability[AgentContext]):
                 checkpoint.result()
                 if cancelled is not None:
                     raise cancelled
-        return await handler(request_context)
+        return request_context
 
     async def _checkpoint(self, ctx: RunContext[AgentContext], state: HarnessState) -> None:
         continuation_id = await self._save(state)

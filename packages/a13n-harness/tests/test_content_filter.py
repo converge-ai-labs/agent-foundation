@@ -13,11 +13,12 @@ from a13n_harness.filters import (
     ContentFilterConfiguration,
 )
 from a13n_harness.tools._output import tool_execution_value
-from pydantic_ai import BinaryContent, ImageUrl, TextContent, ToolReturn
+from pydantic_ai import BinaryContent, ImageUrl, RunContext, TextContent, ToolReturn
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.usage import RunUsage
 
 pytestmark = pytest.mark.anyio
 
@@ -92,6 +93,11 @@ async def test_content_filter_handles_user_and_tool_return_media_without_text_sp
     result = await executable.run([safe_image], bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "done"
+    assert result.state is not None
+    persisted = str(result.state.message_history)
+    assert "api_key=secret" not in persisted
+    assert "URL is unsafe" in persisted
+    assert "exceeds request limits" in persisted
     assert safe_image.url == "https://example.com/safe.png"
     assert unsafe_image.url.endswith("api_key=secret")
     assert oversized_binary.data == b"1234"
@@ -106,7 +112,6 @@ async def test_filter_replacements_preserve_user_metadata_without_changing_tool_
     shape: str,
     tool_result: bool,
 ) -> None:
-    from typing import Any, cast
 
     from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
     from pydantic_ai.models.test import TestModel
@@ -125,7 +130,7 @@ async def test_filter_replacements_preserve_user_metadata_without_changing_tool_
         model_request_parameters=ModelRequestParameters(),
     )
     filtered = await ContentFilterCapability(ContentFilterConfiguration(max_binary_bytes=3)).before_model_request(
-        cast(Any, None),
+        RunContext(deps=None, model=context.model, usage=RunUsage(), messages=list(context.messages)),
         context,
     )
     replacement = filtered.messages[0].parts[0].content

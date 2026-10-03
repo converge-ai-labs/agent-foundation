@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-from collections.abc import Awaitable, Callable
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from typing import Any
@@ -12,12 +11,13 @@ import anyio.to_thread
 from PIL import Image
 from pydantic_ai import BinaryContent, BinaryImage, ImageUrl, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness.content import ContentItem, annotate_prompt, prompt_content
 from a13n_harness.context import AgentContext
 from a13n_harness.image_input import ImageInputPolicy
+from a13n_harness.model_context import ModelContextCoordinatorCapability
 
 IMAGE_FILTER_CAPABILITY_ID = "a13n.filter.image"
 _MAX_PROCESSING_PIXELS = 80_000_000
@@ -44,29 +44,28 @@ class ImageFilterCapability(AbstractCapability[AgentContext]):
     def get_ordering(self) -> CapabilityOrdering:
         # Run after committed context projection, but before model adapters and
         # their exact-error recovery. Both ordinary and streaming calls use this seam.
-        return CapabilityOrdering(position="innermost")
+        return CapabilityOrdering(position="innermost", wrapped_by=(ModelContextCoordinatorCapability,))
 
-    async def wrap_model_request(
+    async def before_model_request(
         self,
         ctx: RunContext[AgentContext],
-        *,
         request_context: ModelRequestContext,
-        handler: Callable[[ModelRequestContext], Awaitable[ModelResponse]],
-    ) -> ModelResponse:
+    ) -> ModelRequestContext:
         del ctx
         projected = await anyio.to_thread.run_sync(_project_images, request_context.messages, self.configuration)
         if projected is None:
-            return await handler(request_context)
+            return request_context
         updated = copy(request_context)
         updated.messages = projected
-        return await handler(updated)
+        return updated
 
 
 def _project_images(messages: list[ModelMessage], configuration: ImageInputPolicy) -> list[ModelMessage] | None:
     # Bytes are immutable and shared by deepcopy; mutable native metadata and
     # message envelopes remain detached from canonical history and original inputs.
-    projected = deepcopy(messages)
+    projected = deepcopy(list(messages))
     changed = False
+    has_inline_image = False
     for message in projected:
         if not isinstance(message, ModelRequest):
             continue
@@ -81,6 +80,7 @@ def _project_images(messages: list[ModelMessage], configuration: ImageInputPolic
             prepared_annotations: list[ContentItem] = []
             for item_index, item in enumerate(items):
                 if isinstance(item, BinaryContent) and item.is_image:
+                    has_inline_image = True
                     replacements = _prepare_binary_image(item, configuration)
                     changed = changed or len(replacements) != 1 or replacements[0] is not item
                 else:
@@ -126,7 +126,10 @@ def _project_images(messages: list[ModelMessage], configuration: ImageInputPolic
                     changed = True
             parts[index] = replace(part, content=_restore_shape(part.content, items))
         message.parts = parts
-    return projected if changed else None
+    # Exact-error recovery mutates request envelopes even when size/format
+    # preparation left the inline image unchanged. Never share those envelopes
+    # with canonical history or the caller's original input.
+    return projected if changed or has_inline_image else None
 
 
 def _image_content_items(part: object) -> list[Any] | None:

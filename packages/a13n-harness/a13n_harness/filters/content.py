@@ -59,7 +59,6 @@ class ContentFilterCapability(AbstractCapability[AgentContext]):
         ctx: RunContext[AgentContext],
         request_context: ModelRequestContext,
     ) -> ModelRequestContext:
-        del ctx
         messages = list(request_context.messages)
         media_items = 0
         binary_bytes = 0
@@ -131,6 +130,7 @@ class ContentFilterCapability(AbstractCapability[AgentContext]):
             return request_context
         updated = copy(request_context)
         updated.messages = deepcopy(messages)
+        ctx.messages[:] = updated.messages
         return updated
 
 

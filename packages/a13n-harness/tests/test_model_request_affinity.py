@@ -113,7 +113,7 @@ async def _assert_cache_key(monkeypatch: pytest.MonkeyPatch, model_name: str, ex
     settings = ModelSettings()
     if expected:
         settings["openai_prompt_cache_key"] = derive_model_affinity_id(result.state.thread_id)
-    assert seen == [settings]
+    assert seen == [settings or None]
 
 
 # Both on merges both patches; both off takes the early return. Mixed values add no branch.
