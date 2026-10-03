@@ -13,6 +13,7 @@ from a13n_harness import (
     HarnessBuilder,
     HarnessEvent,
     HarnessExtensionEvent,
+    HarnessState,
     ModelRecoveryPolicy,
     RunBindings,
 )
@@ -300,7 +301,9 @@ async def test_a_restored_tool_result_request_does_not_redeliver_memory_context(
         "hi", bindings=RunBindings.embedded()
     )
     # A host checkpoint before the final answer includes tool results and their user-role context.
-    checkpoint = first.state.model_copy(update={"message_history": first.state.message_history[:-1]})
+    checkpoint = HarnessState.model_validate(
+        first.state.model_dump() | {"message_history": first.state.message_history[:-1]}
+    )
     restored_cursors = MemoryCursors(cursors.snapshot())
     replacement = _Model()
     recovered = await _build(

@@ -45,11 +45,15 @@ class RunStorage:
         return HarnessState.model_validate_json(await self._require().load(stored))
 
     async def export(self, state: HarnessState) -> HarnessState:
-        """`state` with each large binary content part saved and referenced, and its saved contents in `refs`."""
+        """`state` with each large binary content part saved and referenced, and `refs` listing every saved value
+        it needs: those its retained inline children need, and its saved contents."""
+        from a13n_harness.capabilities.subagents import _inline_subagent_refs
+
+        children = _inline_subagent_refs(state.agent_context_state)
         if self.store is None:
-            return state
+            return state.model_copy(update={"refs": children})
         value = state.model_dump(mode="json")
-        refs = {ref.key: ref for ref in state.refs}
+        refs = {ref.key: ref for ref in children}
         for part in _binary_parts(value):
             ref = _reference(part)
             if ref is None and len(part["data"]) > self.store.content_threshold:

@@ -111,6 +111,15 @@ def test_thread_identity_is_stable_on_copy_and_rotates_on_fork(thread_id: str) -
         state.fork(thread_id=state.thread_id)
 
 
+def test_fields_a_later_harness_adds_are_kept_through_serialization_and_fork() -> None:
+    later = {"memory": {"note": "kept"}}
+    state = HarnessState.model_validate(HarnessState.new().model_dump(mode="json") | later)
+    restored = HarnessState.model_validate_json(state.model_dump_json())
+
+    for value in (state, restored, state.fork()):
+        assert value.model_extra == later
+
+
 def test_independent_states_receive_distinct_thread_identities() -> None:
     first = HarnessState.new().thread_id
     assert re.fullmatch(r"thread_[0-9a-f]{32}", first)

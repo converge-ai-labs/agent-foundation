@@ -855,6 +855,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             deferred_tools_supported=bindings.deferred_tools_supported,
             _tool_recovery=self._tool_recovery,
             _storage=storage,
+            _state_extensions=dict(self._previous_state.model_extra or {}),
             metadata=bindings.metadata,
             _steering=SteeringBridge(
                 context_state,

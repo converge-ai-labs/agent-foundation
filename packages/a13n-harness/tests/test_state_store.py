@@ -123,7 +123,7 @@ async def test_large_contents_export_once_as_references_and_resolve_back() -> No
 
 async def test_without_a_store_contents_stay_inline_and_references_cannot_load() -> None:
     state = _state(_messages(LARGE))
-    assert await RunStorage(None).export(state) is state
+    assert await RunStorage(None).export(state) == state
 
     exported = await RunStorage(MemoryStore()).export(state)
     with pytest.raises(StateError) as error:
@@ -153,7 +153,7 @@ async def test_values_only_shaped_like_binary_content_stay_as_they_are() -> None
     # Saving and loading again changes nothing that serializing the state does not.
     plain = HarnessState.model_validate_json(state.model_dump_json())
     assert ModelMessagesTypeAdapter.dump_json(list(resolved)) == ModelMessagesTypeAdapter.dump_json(
-        plain.message_history
+        list(plain.message_history)
     )
     assert await loader.resolve_context(exported.agent_context_state) == state.agent_context_state
 
@@ -193,6 +193,22 @@ async def test_run_state_references_large_prompt_content_and_the_model_sees_it_a
     assert second.state is not None and second.state.refs == first.state.refs
     assert seen == [[LARGE], [LARGE]]
     assert store.kinds() == ["content"]
+
+
+@pytest.mark.parametrize("with_store", [False, True])
+async def test_a_run_keeps_the_state_fields_it_does_not_know(with_store: bool) -> None:
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "done"
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond))
+    later = {"memory": {"note": "kept"}}
+    previous = HarnessState.model_validate(HarnessState.new().model_dump(mode="json") | later)
+
+    result = await executable.run(
+        "hi", previous_state=previous, bindings=RunBindings.embedded(state_store=MemoryStore() if with_store else None)
+    )
+    assert result.state is not None and result.state.model_extra == later
 
 
 async def test_inline_child_state_saves_to_the_store_and_a_fork_moves_it_on_load() -> None:
