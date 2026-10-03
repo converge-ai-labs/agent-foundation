@@ -86,38 +86,6 @@ class InlineSubagentCollectionState(BaseModel):
         return tuple(refs.values())
 
 
-class _InlineSubagentStateV1(BaseModel):
-    """A child in version 1 of the registry, which held its state inline and named no Thread beside it."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    child_instance_id: str
-    subagent_name: str
-    child_definition_id: str
-    state: HarnessState
-
-
-class _InlineSubagentCollectionStateV1(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    children: dict[str, _InlineSubagentStateV1] = Field(default_factory=dict)
-
-    def upgraded(self) -> InlineSubagentCollectionState:
-        """The same children, each continuing in the Thread of its state."""
-        return InlineSubagentCollectionState(
-            children={
-                child_id: InlineSubagentState(
-                    child_instance_id=child.child_instance_id,
-                    subagent_name=child.subagent_name,
-                    child_definition_id=child.child_definition_id,
-                    child_thread_id=child.state.thread_id,
-                    state=child.state,
-                )
-                for child_id, child in self.children.items()
-            }
-        )
-
-
 class SubagentToolCallSnapshot(BaseModel):
     """Bounded Host projection of one current or recent child Tool call."""
 
@@ -501,20 +469,18 @@ class _AsyncSubagentCapability(_SubagentActiveCapability):
 
 
 def _inline_subagents(snapshot: AgentContextStateSnapshot) -> InlineSubagentCollectionState | None:
-    """The state's retained inline children; a version 1 registry reads as the current version."""
+    """The state's retained inline children. An earlier version of the registry is not supported."""
     entry = snapshot.get(SUBAGENT_CAPABILITY_ID)
     if entry is None:
         return None
     details: dict[str, JsonValue] = {"capability_id": SUBAGENT_CAPABILITY_ID}
-    if entry.version not in (_INLINE_SUBAGENT_STATE_VERSION, "1"):
+    if entry.version != _INLINE_SUBAGENT_STATE_VERSION:
         raise StateError(
             "Capability state version is not supported.",
             code="capability_state_version_unsupported",
             details={**details, "expected_version": _INLINE_SUBAGENT_STATE_VERSION, "actual_version": entry.version},
         )
     try:
-        if entry.version == "1":
-            return _InlineSubagentCollectionStateV1.model_validate(entry.data).upgraded()
         return InlineSubagentCollectionState.model_validate(entry.data)
     except ValidationError as exc:
         raise StateError(

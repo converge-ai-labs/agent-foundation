@@ -436,6 +436,58 @@ it("reads earlier Items on request until the first, completing the execution fac
   ).toEqual([null, "3", "2"]);
 });
 
+it("keeps earlier Items as the newest window moves on and reads those it leaves behind", async () => {
+  const item = (ordinal: number) =>
+    message(
+      `Item ${ordinal}`,
+      `1-${ordinal}`,
+      `1-${ordinal}`,
+      "completed",
+      ordinal,
+    );
+  display = { ...display, items: [item(3)] };
+  // A page before `before` holds one Item; a page after `after` holds `limit`.
+  read = async (request) => {
+    const query = new URL(request.url).searchParams;
+    const before = Number(query.get("before")),
+      after = Number(query.get("after"));
+    if (before) return Response.json({ ...display, items: [item(before - 1)] });
+    if (!after) return response(request);
+    const limit = Number(query.get("limit"));
+    return Response.json({
+      ...display,
+      items: Array.from({ length: limit }, (_, index) =>
+        item(after + 1 + index),
+      ),
+    });
+  };
+  const view = render(<View />);
+  await waitFor(() => expect(text()).toBe("Item 3"));
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  await waitFor(() => expect(text()).toBe("Item 2|Item 3"));
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  await waitFor(() => expect(text()).toBe("Item 1|Item 2|Item 3"));
+
+  display = { ...display, items: [item(6)] };
+  await act(async () => {
+    frames.push({ type: "reset", run_id: "run_one" });
+  });
+  const all = "Item 1|Item 2|Item 3|Item 4|Item 5|Item 6";
+  await waitFor(() => expect(text()).toBe(all));
+  expect(screen.getByTestId("coverage").textContent).toBe("complete");
+  const windows = () =>
+    pathRequests("/items")
+      .map((request) => new URL(request.url).search)
+      .filter(Boolean);
+  expect(windows()).toEqual(["?before=3", "?before=2", "?after=2&limit=3"]);
+
+  // The Run keeps them for its next reader.
+  view.rerender(<View mounted={false} />);
+  view.rerender(<View />);
+  await waitFor(() => expect(text()).toBe(all));
+  expect(windows()).toHaveLength(3);
+});
+
 it("learns a new attempt's identity once before folding its deltas", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));

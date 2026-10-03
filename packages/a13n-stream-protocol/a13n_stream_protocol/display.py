@@ -414,9 +414,14 @@ class DisplayFold:
         """The display to commit with a state whose open tool calls are `open_calls`: every other unfinished item
         is interrupted, and the final items before the first unfinished one fill as many pages as they can.
 
-        The items stay in the fold until `committed` confirms their pages were.
+        The items stay in the fold until `committed` confirms their pages were. Only a snapshot interrupts items: it
+        alone knows which calls the state leaves open, and a takeover continues those in place.
         """
-        self.interrupt(open_calls)
+        kept = {item_id(self.run_id, "tool_call", call) for call in open_calls}
+        for key, item in self.items.items():
+            if item.state == "in_progress" and key not in kept:
+                self.items[key] = item.model_copy(update={"state": "interrupted"})
+                self.changed.add(key)
         for key in self.changed & self.items.keys():
             self.sizes[key] = _size(self.items[key])
         self.changed.clear()
@@ -439,15 +444,6 @@ class DisplayFold:
                 del self.items[item.id], self.sizes[item.id]
                 self.paged.add(item.id)
         self.first = snapshot.tail.first
-
-    def interrupt(self, open_calls: Collection[str] = ()) -> None:
-        """Unfinished items no later event can finish: all of them when an attempt ends or starts, otherwise all
-        but the primary run's open tool calls."""
-        kept = {item_id(self.run_id, "tool_call", call) for call in open_calls}
-        for key, item in self.items.items():
-            if item.state == "in_progress" and key not in kept:
-                self.items[key] = item.model_copy(update={"state": "interrupted"})
-                self.changed.add(key)
 
     def _fold(self, payload: dict[str, Any]) -> ItemRef | None:
         event_type = payload["type"]
@@ -508,13 +504,11 @@ class DisplayFold:
                     content["truncated"] = True
             else:
                 self._bounded(content, "result", str(result))
-        state: ItemState = "completed" if event_type in _ENDS else self._continued(previous)
+        if event_type in _ENDS:
+            state: ItemState = "completed"
+        else:
+            state = "in_progress" if previous is None else previous.state
         return self._put(key, kind, state, content, at=_occurred(payload))
-
-    @staticmethod
-    def _continued(previous: Item | None) -> ItemState:
-        """A later event keeps a finished item's state; one an earlier attempt left interrupted resumes."""
-        return "in_progress" if previous is None or previous.state == "interrupted" else previous.state
 
     def _observation(self, payload: dict[str, Any]) -> ItemRef | None:
         # UI presents the semantic item, not a second native argument/text journal.
@@ -588,7 +582,7 @@ class DisplayFold:
                     content["provider"] = provider
                 if "tool_name" in source:
                     content["toolCallName"] = source["tool_name"]
-                state = self._continued(previous)
+                state = "in_progress" if previous is None else previous.state
                 if supplement:
                     if name == "a13n.filesystem.edit_applied":
                         content["applied_edit"] = {key: source.get(key) for key in ("file_path", "before", "after")}

@@ -141,9 +141,10 @@ class AgentContextStateSnapshot(BaseModel):
 
 
 class HarnessState(BaseModel):
-    """The complete portable continuation value understood by the Harness."""
+    """The complete portable continuation value understood by the Harness. Fields it does not know, such as those a
+    later Harness adds, are kept unchanged and never read."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="allow")
 
     schema_version: Literal["1"]
     thread_id: str = Field(
@@ -229,6 +230,7 @@ class HarnessState(BaseModel):
             message_history=self.message_history,
             agent_context_state=_fork_inline_subagent_state(self.agent_context_state),
             refs=self.refs,
+            **(self.model_extra or {}),
         )
 
 

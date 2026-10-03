@@ -422,6 +422,8 @@ class AgentContext:
     )
     tool_result_directory: str | None = None
     _storage: RunStorage = field(default_factory=lambda: RunStorage(None), repr=False, compare=False)
+    # The restored state's fields this Harness does not know, which every export keeps.
+    _state_extensions: dict[str, Any] = field(default_factory=dict, repr=False, compare=False)
     _tool_result_spill_store: _ToolResultSpillStore | None = field(
         default=None,
         repr=False,
@@ -569,22 +571,19 @@ class AgentContext:
         )
 
     async def export_state(self, message_history: Sequence[ModelMessage]) -> HarnessState:
-        """Export a detached continuation envelope. With a Host state store, large binary content is saved through
-        it the first time a state holds it, and the state references it."""
+        """Export a detached continuation envelope, through the run's storage, which saves large content and lists
+        what the state references."""
         # A request-boundary export can precede consumption of the native input
         # event. Reconcile delivered steering from the same canonical history
         # before snapshotting capability state; pending input stays unretained.
-        from a13n_harness.capabilities.subagents import _inline_subagent_refs
-
         await self._steering.resolve_delivered(message_history)
         await self.usage_attribution.save()
-        agent_context_state = await self.state.snapshot()
         state = HarnessState(
             schema_version="1",
             thread_id=self.thread_id,
             message_history=tuple(message_history),
-            agent_context_state=agent_context_state,
+            agent_context_state=await self.state.snapshot(),
             environment_states=self.environment.dump_states(),
-            refs=_inline_subagent_refs(agent_context_state),
+            **self._state_extensions,
         )
         return await self._storage.export(state)

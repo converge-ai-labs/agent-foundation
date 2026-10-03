@@ -42,6 +42,7 @@ from a13n_harness.content import request_input_content
 from a13n_harness.environment.advanced import (
     EmptyEnvironmentRuntime,
 )
+from a13n_harness.errors import StateError
 from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
@@ -565,35 +566,20 @@ async def test_inline_delegation_persists_child_thread_and_forwards_events() -> 
     assert "child-turn-2" in json.dumps(second.all_messages(), default=str)
 
 
-async def test_a_version_1_inline_registry_resumes_each_child_in_its_own_thread() -> None:
+async def test_an_earlier_inline_registry_version_is_rejected_not_reinterpreted() -> None:
     executable = _delegating_executable()
     limits = UsageLimits(request_limit=9, total_tokens_limit=100_000)
     first = await executable.run("start", bindings=_bindings_factory(), usage_limits=limits)
     assert first.state is not None
-    entry = first.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID]
-    assert isinstance(entry.data, dict) and isinstance(entry.data["children"], dict)
-    # Version 1 kept each child's state inline, naming neither its Thread nor references beside it.
-    earlier = {
-        child_id: {key: value for key, value in record.items() if key not in ("child_thread_id", "refs")}
-        for child_id, record in entry.data["children"].items()
-        if isinstance(record, dict)
-    }
     entries = first.state.agent_context_state.entries
-    entries[SUBAGENT_CAPABILITY_ID] = CapabilityState(version="1", data={"children": earlier})
-    previous = first.state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
+    entries[SUBAGENT_CAPABILITY_ID] = CapabilityState(version="1", data=entries[SUBAGENT_CAPABILITY_ID].data)
+    earlier = first.state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
 
-    second = await executable.run(
-        "continue", bindings=_bindings_factory(), previous_state=previous, usage_limits=limits
-    )
-
-    assert second.output_or_raise() == "parent-done"
-    assert second.state is not None
-    current = second.state.agent_context_state.entries[SUBAGENT_CAPABILITY_ID]
-    assert current.version == entry.version == "2"
-    [(child_id, record)] = InlineSubagentCollectionState.model_validate(current.data).children.items()
-    assert isinstance(record.state, HarnessState)
-    assert record.child_thread_id == record.state.thread_id == earlier[child_id]["state"]["thread_id"]
-    assert "child-turn-2" in json.dumps(second.all_messages(), default=str)
+    with pytest.raises(StateError) as resumed:
+        await executable.run("continue", bindings=_bindings_factory(), previous_state=earlier, usage_limits=limits)
+    with pytest.raises(StateError) as forked:
+        earlier.fork()
+    assert resumed.value.code == forked.value.code == "capability_state_version_unsupported"
 
 
 async def test_inline_delegation_intersects_child_agent_spec_usage_limits(
@@ -881,8 +867,14 @@ async def test_inline_delegation_forwards_child_lifecycle_before_pre_request_fai
 
     assert result.output_or_raise() == "handled"
     assert result.usage.requests == 2
+    from a13n_harness.events import InputTextEvent
+
     child_events = [event for event in events if event.run_id != parent_run_id]
-    assert len(child_events) == 4
+    assert len(child_events) == 5
+    observed_input = [event.event for event in child_events if isinstance(event.event, InputTextEvent)]
+    assert len(observed_input) == 1
+    assert observed_input[0].source == "user" and observed_input[0].content == "work"
+    child_events = [event for event in child_events if not isinstance(event.event, InputTextEvent)]
     assert child_events[0].event.payload == {"type": "run_started"}
     child_events = child_events[1:]
     assert all(isinstance(event.event, HarnessExtensionEvent) for event in child_events)

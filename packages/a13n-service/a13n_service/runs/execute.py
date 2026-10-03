@@ -341,8 +341,6 @@ class _Attempt:
         self.fold = DisplayFold(
             lease.run_id, plan.tail, attempt=lease.number, page_items=worker.page_items, page_bytes=worker.page_bytes
         )
-        # What an earlier attempt left unfinished continues only if this attempt streams it again.
-        self.fold.interrupt()
         self.offers = _Offers(plan.assigned)
         self.recipient = Recipient(
             plan.agent.model.config.characteristics.capabilities,

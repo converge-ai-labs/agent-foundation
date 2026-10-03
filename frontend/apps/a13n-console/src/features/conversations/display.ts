@@ -10,18 +10,18 @@ export const AUTHORED_INPUT_EVENT_NAMES: ReadonlySet<string> = new Set([
 /** Live and committed items use the same server-owned compact representation. */
 export type DisplayItem = Schema["Item"];
 
-/** Read the mutable tail and newest page, or an earlier immutable page. */
+/** Read the mutable tail and newest page, or a bounded window before/after an ordinal. */
 export function readDisplay(
   client: Client,
   workspaceId: string,
   runId: string,
-  signal: AbortSignal,
-  before?: number,
+  signal?: AbortSignal,
+  window: { before?: number; after?: number; limit?: number } = {},
 ) {
   return client
     .workspace(workspaceId)
     .GET("/api/v1/runs/{run_id}/items", {
-      params: { path: { run_id: runId }, query: { before } },
+      params: { path: { run_id: runId }, query: window },
       signal,
     })
     .then(data);
