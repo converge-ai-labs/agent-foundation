@@ -200,14 +200,19 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
         if (
             inherited == len(history)
             and self._positions
-            and history
-            and isinstance(history[-1], ModelResponse)
-            and history[-1].state == "suspended"
+            and (position := self._positions[-1]) is not None
+            and isinstance(self._messages[position], ModelResponse)
+            and self._messages[position].state == "suspended"
         ):
-            suspended_position = self._positions[-1]
+            suspended_position = position
         self._positions = [None] * inherited
         if suspended_position is not None:
-            self._positions[-1] = suspended_position
+            if history and isinstance(history[-1], ModelResponse) and history[-1].state == "suspended":
+                self._positions[-1] = suspended_position
+            else:
+                # Native continuation removes the suspended tail before before-hooks.
+                # Rebase merged requests without losing the response's display slot.
+                self._pending_response_position = suspended_position
         if inherited < len(history):
             self._pending_response_position = None
         self._boundary = deepcopy(_context_boundary(history))

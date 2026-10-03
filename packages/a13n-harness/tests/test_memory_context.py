@@ -286,6 +286,33 @@ async def test_only_the_first_input_request_of_a_run_gets_context() -> None:
     assert cursors.get("user") == "1"
 
 
+async def test_a_restored_tool_result_request_does_not_redeliver_memory_context() -> None:
+    store = FakeFileStore({"a.md": "a\n"})
+    cursors = MemoryCursors()
+
+    def reply(messages: list[ModelMessage]) -> str | DeltaToolCalls:
+        if len(model.calls) == 1:
+            return _tool_call("memory_file_create", {"memory": "user", "path": "b.md", "content": "b\n"})
+        return "done"
+
+    model = _Model(reply)
+    first = await _build(model, FileMemoryCapability([FileMount("user", store, "write")], cursors=cursors)).run(
+        "hi", bindings=RunBindings.embedded()
+    )
+    # A host checkpoint before the final answer includes tool results and their user-role context.
+    checkpoint = first.state.model_copy(update={"message_history": first.state.message_history[:-1]})
+    restored_cursors = MemoryCursors(cursors.snapshot())
+    replacement = _Model()
+    recovered = await _build(
+        replacement, FileMemoryCapability([FileMount("user", store, "write")], cursors=restored_cursors)
+    ).run(previous_state=checkpoint, bindings=RunBindings.embedded())
+
+    assert recovered.output_or_raise() == "done"
+    assert _blocks(replacement.calls[0]) == _blocks(model.calls[-1])
+    assert len(_blocks(replacement.calls[0])) == 1
+    assert restored_cursors.snapshot() == cursors.snapshot() == {"user": "1"}
+
+
 async def test_a_later_input_in_the_same_run_gets_no_new_context() -> None:
     store = FakeFileStore({"a.md": "a\n"})
     started, release = asyncio.Event(), asyncio.Event()
