@@ -12,7 +12,7 @@ from a13n_harness.filters import (
     ColdStartFilterConfiguration,
     MessageIntegrityFilterCapability,
 )
-from pydantic_ai import AgentSpec
+from pydantic_ai import AgentSpec, RunContext
 from pydantic_ai.capabilities import CombinedCapability, PrefixTools, WrapperCapability
 from pydantic_ai.messages import (
     ModelMessage,
@@ -27,8 +27,13 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import RunUsage
 
 pytestmark = pytest.mark.anyio
+
+
+def _run_context(messages):
+    return RunContext(deps=None, model=TestModel(), usage=RunUsage(), messages=list(messages))
 
 
 def _request_context(messages):
@@ -55,7 +60,7 @@ async def test_message_integrity_filter_keeps_only_one_result_for_the_current_ca
     ]
 
     filtered = await MessageIntegrityFilterCapability().before_model_request(
-        None,  # type: ignore[arg-type]
+        _run_context(messages),
         _request_context(messages),
     )
 
@@ -118,7 +123,7 @@ async def test_message_integrity_filter_preserves_model_level_retry_and_final_re
     ]
 
     filtered = await MessageIntegrityFilterCapability().before_model_request(
-        None,  # type: ignore[arg-type]
+        _run_context(messages),
         _request_context(messages),
     )
 
@@ -258,7 +263,7 @@ async def test_cold_start_filter_trims_only_consumed_tool_return_string_leaves()
     )
 
     filtered = await capability.before_model_request(
-        None,  # type: ignore[arg-type]
+        _run_context(messages),
         _request_context(messages),
     )
 
@@ -295,7 +300,7 @@ async def test_cold_start_only_honors_result_metadata_not_content(metadata, pres
             ModelResponse(parts=[TextPart("consumed")], timestamp=datetime.now(UTC) - timedelta(hours=2)),
         ]
     )
-    filtered = await ColdStartFilterCapability().before_model_request(None, request)
+    filtered = await ColdStartFilterCapability().before_model_request(_run_context(request.messages), request)
     actual = filtered.messages[0].parts[0]
     assert actual.metadata == metadata
     assert ("chars removed after cold start" in actual.content["content"]) is not preserved
@@ -341,7 +346,7 @@ async def test_filters_copy_only_changed_history_and_detach_all_nested_values(ki
     copy_spy = Mock(wraps=deepcopy)
     monkeypatch.setattr(modules[kind], "deepcopy", copy_spy)
 
-    filtered = await capabilities[kind].before_model_request(None, request)
+    filtered = await capabilities[kind].before_model_request(_run_context(request.messages), request)
 
     assert messages == original
     assert copy_spy.call_count == int(changed)

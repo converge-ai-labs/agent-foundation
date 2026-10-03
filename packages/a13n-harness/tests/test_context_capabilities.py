@@ -589,6 +589,57 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff(
     assert result.new_messages() == result.all_messages()[-2:]
 
 
+async def test_compaction_stays_replaced_across_tool_rounds_and_serialized_resume() -> None:
+    old_history = "obsolete history " * 10_000
+    requests: list[list[ModelMessage]] = []
+    compactions = 0
+    ordinary = 0
+
+    def inspect() -> str:
+        return "small tool result"
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal compactions, ordinary
+        if _COMPACTION_PROMPT in _user_text(messages):
+            compactions += 1
+            yield "Summary: continue inspecting."
+            return
+        ordinary += 1
+        requests.append(deepcopy(list(messages)))
+        assert old_history not in _user_text(messages)
+        if ordinary <= 2:
+            yield {0: DeltaToolCall(name="inspect", json_args="{}", tool_call_id=f"inspect-{ordinary}")}
+        else:
+            yield "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart(old_history)]),
+            ModelResponse(parts=[TextPart("Earlier answer")], usage=RequestUsage(input_tokens=21_000)),
+        )
+    )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(
+            CompactionCapability(CompactionPolicy(trigger_tokens=20_000)),
+            Capability(id="inspection", tools=[inspect]),
+        ),
+    )
+    result = await executable.run("Continue", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert result.state is not None
+    restored = HarnessState.model_validate_json(result.state.model_dump_json())
+    assert old_history not in _user_text(list(restored.message_history))
+    resumed = await executable.run("Continue again", previous_state=restored)
+    assert resumed.output_or_raise() == "done"
+    assert compactions == 1
+    assert ordinary == 4
+    for first, following in pairwise(requests[:3]):
+        assert following[: len(first)] == first
+
+
 @pytest.mark.parametrize("tool_name", ["web_search", "image_generation"])
 async def test_compaction_resumes_after_completed_native_tools(tool_name: str) -> None:
     calls: list[list[ModelMessage]] = []
@@ -703,6 +754,7 @@ async def test_compaction_preserves_native_provider_cache_prefixes() -> None:
     claude = AnthropicModel("claude-sonnet-4-6", provider=AnthropicProvider(api_key="test-only"))
     projections = []
     for messages, settings, parameters in calls[:3]:
+        settings = settings or {}
         chat_messages = await chat._map_messages(messages, parameters, model_settings=settings)
         responses_instructions, responses_messages = await responses._map_messages(messages, settings, parameters)
         claude_system, claude_messages = await claude._map_message(messages, parameters, settings)

@@ -31,6 +31,7 @@ _DEMO_PATH = Path(__file__).resolve().parents[3] / "dev" / "observation-demo" / 
             ("context_snapshot", "compaction_started", "compaction_completed"),
             (
                 "invoke_agent compaction-observation-demo",
+                "chat compaction-demo-model",
                 "compaction",
                 "invoke_agent compaction-observation-demo",
                 "chat compaction-demo-model",

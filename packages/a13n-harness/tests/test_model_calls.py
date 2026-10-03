@@ -602,7 +602,7 @@ async def test_compaction_dispatch_is_correlated_and_cannot_soften_host_veto(den
 
 
 @pytest.mark.parametrize("mode", ["earlier", "copied", "synthetic", "short_circuit"])
-async def test_outer_wrapper_commits_selected_response_instead_of_last_dispatch(mode):
+async def test_outer_wrapper_commits_selected_response_after_single_dispatch(mode):
     from pydantic_ai.messages import ModelResponse, TextPart
 
     checks = Checks()
@@ -613,7 +613,6 @@ async def test_outer_wrapper_commits_selected_response_instead_of_last_dispatch(
             if mode == "short_circuit":
                 return ModelResponse(parts=[TextPart("synthetic")])
             earlier = await handler(request_context)
-            await handler(request_context)
             if mode == "synthetic":
                 return ModelResponse(parts=[TextPart("synthetic")])
             if mode == "copied":
@@ -643,16 +642,15 @@ async def test_outer_wrapper_commits_selected_response_instead_of_last_dispatch(
     result = await asyncio.wait_for(executable.run("go", bindings=RunBindings.embedded(model_call_check=checks)), 5)
     assert result.output_or_raise() == ("first" if mode in {"earlier", "copied"} else "synthetic")
     assert len(checks.calls) == (0 if mode == "short_circuit" else 1)
-    # Native streaming consumes only the first stream; the second handler
-    # invocation opens a lazy composite but never enters its provider segment.
+    # Native wrappers dispatch at most once, but may replace the returned response.
     assert len(providers) == (0 if mode == "short_circuit" else 1)
     assert len(result.usage_records) == (0 if mode == "short_circuit" else 1)
     if result.usage_records:
         assert result.usage_records[0].call_id == checks.calls[0].call_id
 
 
-@pytest.mark.parametrize("retry_first", [False, True])
-async def test_nonstreaming_auxiliary_wrapper_returns_first_of_two_real_provider_responses(retry_first):
+@pytest.mark.parametrize("deny", [False, True])
+async def test_nonstreaming_auxiliary_model_selection_preserves_admission_and_metering(deny):
     from a13n_harness import AgentContext
     from a13n_harness.metering import ModelUsageBinding, ModelUsageCapability
     from pydantic_ai import Agent, RunContext
@@ -661,20 +659,21 @@ async def test_nonstreaming_auxiliary_wrapper_returns_first_of_two_real_provider
     checks = Checks()
     providers = []
 
-    class EarlierResponse(AbstractCapability):
-        async def wrap_model_request(self, ctx, *, request_context, handler):
-            try:
-                earlier = await handler(request_context)
-            except ModelHTTPError:
-                return await handler(request_context)
-            await handler(request_context)
-            return earlier
+    class SelectModel(AbstractCapability):
+        async def before_model_request(self, ctx, request_context):
+            from dataclasses import replace
+
+            return replace(request_context, model=FunctionModel(auxiliary_provider, model_name="selected"))
 
     def auxiliary_provider(messages, info):
-        providers.append(len(providers) + 1)
-        if retry_first and len(providers) == 1:
-            raise ModelHTTPError(503, "auxiliary")
-        return ModelResponse(parts=[TextPart(str(providers[-1]))])
+        providers.append("selected")
+        return ModelResponse(parts=[TextPart("analysis")])
+
+    class Policy:
+        async def check(self, call):
+            await checks.check(call)
+            if deny and call.source == "files.media_understanding":
+                raise PermissionError("denied")
 
     async def analyze(ctx: RunContext[AgentContext]):
         binding = ModelUsageBinding.for_context(
@@ -682,9 +681,15 @@ async def test_nonstreaming_auxiliary_wrapper_returns_first_of_two_real_provider
         )
         usage = ModelUsageCapability(binding)
         assert usage is not None
-        agent = Agent(FunctionModel(auxiliary_provider), capabilities=[EarlierResponse(), usage])
+        agent = Agent(FunctionModel(auxiliary_provider), capabilities=[SelectModel(), usage])
+        if deny:
+            from a13n_harness.model_calls import ModelCallCheckError
+
+            with pytest.raises(ModelCallCheckError):
+                await agent.run("analyze")
+            return "denied"
         result = await agent.run("analyze")
-        assert result.output == ("2" if retry_first else "1")
+        assert result.output == "analysis"
         return result.output
 
     async def primary(messages, info):
@@ -701,14 +706,17 @@ async def test_nonstreaming_auxiliary_wrapper_returns_first_of_two_real_provider
             capabilities=(Capability(id="analysis", tools=[analyze]),),
         )
     )
-    result = await executable.run("go", bindings=RunBindings.embedded(model_call_check=checks))
+    result = await executable.run("go", bindings=RunBindings.embedded(model_call_check=Policy()))
     assert result.output_or_raise() == "done"
     auxiliary_checks = [call for call in checks.calls if call.source == "files.media_understanding"]
     auxiliary_records = [record for record in result.usage_records if record.source == "files.media_understanding"]
-    assert providers == [1, 2] and len(auxiliary_checks) == 2
-    assert len(auxiliary_records) == 2
-    assert [r.call_id for r in auxiliary_records] == [c.call_id for c in auxiliary_checks]
-    assert auxiliary_records[0].usage_status == ("unavailable" if retry_first else "complete")
+    assert len(auxiliary_checks) == 1
+    assert auxiliary_checks[0].model_name == "selected"
+    assert providers == ([] if deny else ["selected"])
+    assert len(auxiliary_records) == (0 if deny else 1)
+    if not deny:
+        assert auxiliary_records[0].call_id == auxiliary_checks[0].call_id
+        assert auxiliary_records[0].usage_status == "complete"
 
 
 async def test_current_usage_events_are_v2_and_result_keeps_same_call_identity():
@@ -732,3 +740,80 @@ async def test_current_usage_events_are_v2_and_result_keeps_same_call_identity()
     assert len(result.usage_records) == len(reports) == 1
     assert reports[0]["call_id"] == result.usage_records[0].call_id
     assert reports[0]["call_id"].startswith("call_")
+
+
+@pytest.mark.parametrize("deny", [False, True])
+@pytest.mark.parametrize("structured", [False, True])
+async def test_before_hook_selected_model_keeps_checks_metering_and_self_healing(deny, structured):
+    import io
+    from dataclasses import replace
+
+    from PIL import Image
+    from pydantic import BaseModel
+
+    class Answer(BaseModel):
+        value: str
+
+    from pydantic_ai import BinaryContent
+
+    buffer = io.BytesIO()
+    with Image.new("RGB", (8, 8), "red") as image:
+        image.save(buffer, format="PNG")
+    native = BinaryContent(buffer.getvalue(), media_type="image/png")
+
+    providers = []
+    checks = Checks(error=PermissionError("denied") if deny else None)
+
+    async def initial(messages, info):
+        pytest.fail("The before-hook selection must replace the initial model")
+        yield "unreachable"
+
+    async def selected(messages, info):
+        providers.append(messages)
+        if len(providers) == 1:
+            raise ModelHTTPError(status_code=413, model_name="selected", body="payload too large")
+        assert "BinaryContent" not in str(messages)
+        if structured:
+            yield {
+                0: DeltaToolCall(
+                    name=info.output_tools[0].name, json_args='{"value":"recovered"}', tool_call_id="answer-1"
+                )
+            }
+        else:
+            yield "recovered"
+
+    class SelectModel(AbstractCapability):
+        async def before_model_request(self, ctx, request_context):
+            return replace(request_context, model=FunctionModel(stream_function=selected, model_name="selected"))
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=Answer if structured else str,
+        model=FunctionModel(stream_function=initial),
+        capabilities=(SelectModel(),),
+    )
+    if deny:
+        with pytest.raises(RunError, match="model-call check"):
+            await executable.run(
+                ["inspect", native],
+                bindings=RunBindings.embedded(model_call_check=checks),
+            )
+        assert providers == []
+        assert len(checks.calls) == 1
+    else:
+        result = await executable.run(
+            ["inspect", native],
+            bindings=RunBindings.embedded(model_call_check=checks),
+        )
+        assert result.output_or_raise() == (Answer(value="recovered") if structured else "recovered")
+        assert len(providers) == len(checks.calls) == len(result.usage_records) == 2
+        assert all(call.model_name == "selected" for call in checks.calls)
+        assert [record.call_id for record in result.usage_records] == [call.call_id for call in checks.calls]
+        from a13n_harness.content import request_input_content
+
+        assert any(
+            isinstance(item.value, BinaryContent) and item.value.data == native.data
+            for message in result.state.message_history
+            if isinstance(message, ModelRequest)
+            for item in request_input_content(message)
+        )

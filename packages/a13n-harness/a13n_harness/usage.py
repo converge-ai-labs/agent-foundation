@@ -15,7 +15,7 @@ import anyio
 from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapModelRequestHandler
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelResponse
 from pydantic_ai.models import ModelRequestContext
@@ -780,7 +780,14 @@ class UsageCapability(AbstractCapability[AgentContext]):
     def get_ordering(self) -> CapabilityOrdering:
         from a13n_harness.models.capability import SelfHealingModelCapability
 
-        return CapabilityOrdering(position="innermost", wraps=[SelfHealingModelCapability])
+        return CapabilityOrdering(position="innermost", wrapped_by=[SelfHealingModelCapability])
+
+    async def after_model_request(
+        self, ctx: RunContext[Any], *, request_context: ModelRequestContext, response: ModelResponse
+    ) -> ModelResponse:
+        from a13n_harness.metering import enrich_metered_response
+
+        return enrich_metered_response(request_context, response)
 
 
 class _RunUsageCapability(UsageCapability):
@@ -798,9 +805,9 @@ class _RunUsageCapability(UsageCapability):
             raise DefinitionError("Usage owner cannot cross runs.", code="capability_scope_invalid")
         return self
 
-    async def wrap_model_request(
-        self, ctx: RunContext[AgentContext], *, request_context: ModelRequestContext, handler: WrapModelRequestHandler
-    ) -> ModelResponse:
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
         from a13n_harness.metering import ModelUsageBinding, meter_request
 
         if ctx.deps is not self.context:
@@ -809,9 +816,7 @@ class _RunUsageCapability(UsageCapability):
         if not isinstance(cost, AbstractModelCostCapability):
             raise DefinitionError("Missing model-cost capability.", code="capability_type_mismatch")
         ctx.deps.usage_attribution.cost_capability = cost
-        return await meter_request(
-            ModelUsageBinding(ctx.deps.usage_attribution, cost, owner=ctx.deps), ctx, request_context, handler
-        )
+        return meter_request(ModelUsageBinding(ctx.deps.usage_attribution, cost, owner=ctx.deps), ctx, request_context)
 
 
 def _stable_id(kind: str, *values: str) -> str:

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 from copy import copy
 from dataclasses import dataclass
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.messages import ModelResponse
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.models.wrapper import WrapperModel
 
@@ -34,22 +33,20 @@ class SelfHealingModelCapability(AbstractCapability[AgentContext]):
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="innermost")
 
-    async def wrap_model_request(
+    async def before_model_request(
         self,
         ctx: RunContext[AgentContext],
-        *,
         request_context: ModelRequestContext,
-        handler: Callable[[ModelRequestContext], Awaitable[ModelResponse]],
-    ) -> ModelResponse:
+    ) -> ModelRequestContext:
         del ctx
         model = request_context.model
         while isinstance(model, WrapperModel):
             if isinstance(model, SelfHealingModel):
-                return await handler(request_context)
+                return request_context
             model = model.wrapped
         updated = copy(request_context)
         updated.model = SelfHealingModel(request_context.model, rules=self.rules)
-        return await handler(updated)
+        return updated
 
 
 __all__ = ["SelfHealingModelCapability"]

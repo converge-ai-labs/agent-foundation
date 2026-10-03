@@ -410,7 +410,8 @@ async def test_enqueued_input_projection_preserves_contiguous_tool_results(monke
         handled.append(current.messages[-1])
         return ModelResponse(parts=(TextPart("done"),))
 
-    await ModelContextCoordinatorCapability().wrap_model_request(ctx, request_context=request, handler=handler)
+    prepared = await ModelContextCoordinatorCapability().before_model_request(ctx, request)
+    await handler(prepared)
     if placement in {"after", "rendered_native"}:
         final = handled[0]
         assert final.parts[:2] == results
@@ -659,9 +660,9 @@ async def test_ordinary_preparation_preserves_prior_owned_overlays_for_prompt_ca
         handled.append(value)
         return ModelResponse(parts=(TextPart("done"),))
 
-    await coordinator.wrap_model_request(ctx, request_context=prepared, handler=handler)
+    await handler(prepared)
 
-    assert prepared is request_context
+    assert prepared is not request_context
     assert prepared.messages[0] is committed
     assert ctx.messages[0] is committed
     assert deps.projection_calls == 1

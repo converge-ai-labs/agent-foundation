@@ -11,8 +11,7 @@ from a13n_harness.model_context import ModelContextCoordinatorCapability
 from a13n_logging import get_logger
 from anyio import Event, create_task_group, move_on_after
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, WrapModelRequestHandler
-from pydantic_ai.messages import ModelResponse
+from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness_ui.errors import RunCoordinationError
@@ -160,7 +159,7 @@ class RestartPauseCapability(AbstractCapability[AgentContext]):
         )
 
     def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(wrapped_by=(ModelContextCoordinatorCapability,))
+        return CapabilityOrdering(position="innermost", wrapped_by=(ModelContextCoordinatorCapability,))
 
     async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Callable[[], Awaitable[Any]]) -> Any:
         if self._run_id is not None:
@@ -171,13 +170,11 @@ class RestartPauseCapability(AbstractCapability[AgentContext]):
         finally:
             self._run_id = None
 
-    async def wrap_model_request(
+    async def before_model_request(
         self,
         ctx: RunContext[AgentContext],
-        *,
         request_context: ModelRequestContext,
-        handler: WrapModelRequestHandler,
-    ) -> ModelResponse:
+    ) -> ModelRequestContext:
         if ctx.run_id == self._run_id and (self._restart.requested or self._restart.restoring):
             await self._restart.checkpoint(self._thread_id, await ctx.deps.export_state(ctx.messages))
-        return await handler(request_context)
+        return request_context
