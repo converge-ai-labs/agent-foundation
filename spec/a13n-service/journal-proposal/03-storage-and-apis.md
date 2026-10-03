@@ -14,7 +14,7 @@ run_item_pages            # permanent history page catalog
 
 Changes to existing rows:
 
-- `runs.checkpoint` keeps its meaning: the Run's latest complete state object. It also records the compression format and `refs`, the content and subagent objects of this Run that the state references, for cleanup.
+- `runs.checkpoint` keeps its meaning: the Run's latest complete state object. It also records the compression format and `refs`, the state's [reference closure](01-state-and-continuation.md#the-storage-binding), for cleanup: every content and subagent object the state needs, including those referenced only from saved subagent states.
 - `runs.display` keeps its meaning, but now names the tail object rather than a complete Display.
 - `threads.head_run_id` may name any sealed Run, and its database check changes accordingly ([continuation](01-state-and-continuation.md#continuing-after-a-failed-or-cancelled-run)).
 
@@ -22,29 +22,29 @@ There are no staging tables. A checkpoint transaction moves the two pointers and
 
 ## Object store
 
-| Key                                                  | Written by                             | Kept                                       |
-| ---------------------------------------------------- | -------------------------------------- | ------------------------------------------ |
-| `orgs/{org}/runs/{run}/state/{attempt}/{random}`     | Checkpoints                            | Final object kept; replaced ones reclaimed |
-| `orgs/{org}/runs/{run}/tail/{attempt}/{random}`      | Checkpoints                            | Final object kept; replaced ones reclaimed |
-| `orgs/{org}/runs/{run}/pages/{attempt}/{random}`     | Checkpoints                            | Permanently, once in the page catalog      |
-| `orgs/{org}/runs/{run}/contents/{attempt}/{random}`  | Storage binding: large binary content  | While the Run's final state references it  |
-| `orgs/{org}/runs/{run}/subagents/{attempt}/{random}` | Storage binding: inline subagent state | While the Run's final state references it  |
+| Key                                                  | Written by                             | Kept                                        |
+| ---------------------------------------------------- | -------------------------------------- | ------------------------------------------- |
+| `orgs/{org}/runs/{run}/state/{attempt}/{random}`     | Checkpoints                            | Final object kept; replaced ones reclaimed  |
+| `orgs/{org}/runs/{run}/tail/{attempt}/{random}`      | Checkpoints                            | Final object kept; replaced ones reclaimed  |
+| `orgs/{org}/runs/{run}/pages/{attempt}/{random}`     | Checkpoints                            | Permanently, once in the page catalog       |
+| `orgs/{org}/runs/{run}/contents/{attempt}/{random}`  | Storage binding: large binary content  | While the final checkpoint's `refs` list it |
+| `orgs/{org}/runs/{run}/subagents/{attempt}/{random}` | Storage binding: inline subagent state | While the final checkpoint's `refs` list it |
 
 `orgs/{org}/runs/{run}/display/…` disappears. Every key is still written once, and only committed references make bytes reachable, as the existing object contract requires. All of these objects are compressed with zstd.
 
-The Service store writes content and subagent states the way checkpoints publish objects today: outside any database session, to a new key of the current attempt. A load verifies the digest in the reference. Each checkpoint lists the stored values its state references in `runs.checkpoint.refs`.
+The Service store writes content and subagent states the way checkpoints publish objects today: outside any database session, to a new key of the current attempt. A load verifies the digest in the reference. Each checkpoint records its state's reference closure in `runs.checkpoint.refs`.
 
-A value inherited from an earlier Run keeps that Run's key. It lives under the earlier Run's prefix and is kept by the earlier Run's final state.
+A value inherited from an earlier Run keeps that Run's key. It lives under the earlier Run's prefix and is kept by the earlier Run's final `refs`.
 
 ## Cleanup
 
 Cleanup stays owner-driven, as today ([object reclamation](../07-facts-and-delivery.md#objects)):
 
 1. A checkpoint stages reclamation of the state and tail objects it replaced.
-1. A takeover scans the Run's `state/` and `tail/` objects and deletes those of earlier attempts that the committed pointers do not name.
-1. Every seal stages one scan of the Run's prefix. It keeps the final state, the final tail, every page in the catalog, and the objects listed in the final checkpoint's `refs`, and deletes everything else: replaced objects not yet reclaimed, uploads whose commit failed, and content or subagent states the final state no longer references.
+2. A takeover scans the Run's `state/` and `tail/` objects and deletes those of earlier attempts that the committed pointers do not name.
+3. Every seal stages one scan of the Run's prefix. It keeps the final state, the final tail, every page in the catalog, and the objects listed in the final checkpoint's `refs`, and deletes everything else: replaced objects not yet reclaimed, uploads whose commit failed, and content or subagent states outside the final `refs`.
 
-The seal scan is safe because nothing writes under a Run's prefix after its seal, and a later Run or fork reaches this Run's objects only through its final state, which keeps them. As today, the scan runs after the seal has frozen the references.
+The seal scan is safe because nothing writes under a Run's prefix after its seal, and a later Run or fork reaches this Run's objects only through its final state, whose `refs` keep every object that state can reach. As today, the scan runs after the seal has frozen the references.
 
 ## API
 

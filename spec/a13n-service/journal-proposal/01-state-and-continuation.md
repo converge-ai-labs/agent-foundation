@@ -32,9 +32,9 @@ StateStore
   load(ref) -> data
 ```
 
-The Harness uses the store for inline subagent states and large binary content parts. Exported state lists the references it holds, so the Host knows which saved values a checkpoint needs.
+The Harness uses the store for inline subagent states and large binary content parts. Exported state lists its reference closure: every saved value it needs, whether the state references it directly or only through a saved subagent state, at any depth. A saved subagent state is opaque to the Host, so the closure is how the Host knows which saved values a checkpoint needs. For example, if the parent state references child state A and A references screenshot B, the closure lists both A and B.
 
-- **Default store.** Without a Host store, saved values live in a namespace of Harness state and travel with it. Saving drops values the state no longer references, so each inline child keeps only its latest state, as today. Harness UI and simple embedders need no store of their own.
+- **Default store.** Without a Host store, saved values live in a namespace of Harness state and travel with it. Saving drops values outside the state's reference closure, so each inline child keeps only its latest state, as today. Harness UI and simple embedders need no store of their own.
 - **Service store.** The Service saves each value as a compressed object owned by the Run that saves it ([object keys](03-storage-and-apis.md#object-store)) and verifies the digest on load. A value is saved once. Later checkpoints of the same Run, and successor Runs that inherit the state, keep the same reference.
 
 ## Large content
@@ -43,7 +43,7 @@ Computer-use screenshots and other binary inputs stay inline in message history 
 
 When the Harness exports state, each binary content part larger than a threshold (initially 64 KiB) is saved through the store, and the exported message holds a reference with its media type, size, and digest. Parts already saved keep their reference, so a screenshot is uploaded once, not at every boundary. Loading resolves references before the history reaches the model, so the Agent sees the same messages as before.
 
-A tool result's screenshot reaches history before the next model request. That model boundary does not hold the request for its commit, so the upload does not delay the model or the tools.
+A tool result's screenshot reaches history before the next model request. The export at that model boundary saves it, and the request waits for that export ([`boundaries.py`](../../../packages/a13n-service/a13n_service/runs/boundaries.py)), so the first upload of a new screenshot delays the next model request once. The boundary still does not wait for its commit, and later checkpoints carry only the reference.
 
 ## Inline subagent state
 
@@ -58,9 +58,10 @@ InlineSubagentEntry
   child_definition_id
   child_thread_id
   state: StoredRef              # today: the child's complete HarnessState
+  refs: list[StoredRef]         # reference closure of the saved state
 ```
 
-- **Save.** When a child run ends, completed or failed, the Harness saves its state once through the store and records the entry. A cancelled child is not saved, as today. The saved state omits `a13n.usage` and borrowed environment states.
+- **Save.** When a child run ends, completed or failed, the Harness saves its state once through the store and records the entry with that state's reference closure, so the parent's export lists those values without loading the child. A cancelled child is not saved, as today. The saved state omits `a13n.usage` and borrowed environment states.
 - **Run start.** Starting a parent Run only reads the registry. It no longer validates every retained child against the current Agent.
 - **Resume.** `resume_subagent` loads the referenced state and checks that child's definition. A changed definition fails that call only, and the model can delegate a new child instead.
 - **Fork.** Forking the parent gives every entry a new `child_thread_id` without reading or copying stored states. When a stored state is loaded and its Thread ID differs from the entry's, the Harness forks it then.
@@ -78,7 +79,7 @@ Because every boundary already commits a complete state, a failed or cancelled R
 - **Head.** Every sealed Run becomes the head, whatever its outcome. A Run that sealed before its first checkpoint resolves to the state it started from. A waiting head still requires resume.
 - **Pausing is unchanged.** Automatic advancement still pauses after a failed or cancelled Run; only the baseline that the next explicit message continues from changes.
 - **Fork** accepts failed and cancelled Runs and starts from their last checkpoint ([`submit.py`](../../../packages/a13n-service/a13n_service/runs/submit.py)).
-- **Unfinished tool calls.** A Run can fail after a tool boundary committed tool calls but before their results were committed. Before the next Run adds its input, the Harness adds a result for each such call stating that it was interrupted and that its outcome is unknown, since the tool may have run. The existing integrity filter only drops orphan results; it does not add missing ones ([`integrity.py`](../../../packages/a13n-harness/a13n_harness/filters/integrity.py)).
+- **Unfinished tool calls.** A Run can fail after a tool boundary committed tool calls but before their results were committed. A Run that continues or forks from a failed or cancelled Run passes `tool_recovery="never"`. The Harness's existing recovery then gives each such call a result stating that it was interrupted and that its outcome is unknown, since the tool may have run, and runs none of them again ([`recovery.py`](../../../packages/a13n-harness/a13n_harness/recovery.py)). Takeover attempts and every other Run start keep `declared`, so a takeover still repeats calls declared recoverable.
 - **Child results.** A child result whose delegating call is in the origin Run's last checkpoint is delivered as an ordinary queued source. Otherwise it still fails with `origin_not_committed`.
 - **Escape hatch.** If the failure was caused by the history itself, such as a provider rejecting it, continuing fails again. The caller can fork from an earlier Run instead.
 

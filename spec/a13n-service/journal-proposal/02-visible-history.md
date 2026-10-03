@@ -12,14 +12,24 @@ Per-field limits stay: 262144 characters per message text, tool arguments, or to
 
 Display becomes two kinds of objects:
 
-- **History pages.** Immutable objects of finished items in ordinal order, written once and kept permanently.
+- **History pages.** Immutable objects of final items in ordinal order, written once and kept permanently.
 - **The tail.** The items not yet in a page. It takes the place of today's Display object: the worker writes it with each checkpoint, and the checkpoint transaction moves the Run's display pointer to it.
 
-When the oldest items of the tail form a full page of finished (`completed` or `failed`) items, initially 256 items or 1 MiB, the worker writes them as a page in the same publication. The checkpoint transaction records the page and the new tail together, so every item is in exactly one place.
+When the oldest items of the tail form a full page of final items, initially 256 items or 1 MiB, the worker writes them as a page in the same publication. The checkpoint transaction records the page and the new tail together, so every item is in exactly one place.
 
-Unfinished items (`in_progress` and `interrupted`) never enter a page while the Run executes, because a later attempt may still continue an interrupted item, as today. Pages hold only items that can no longer change, so a written page never changes.
+## Final items
 
-The tail stays small. The Service commits only at the primary Run's boundaries, and an inline child's items are committed when its delegation returns. At any checkpoint, the only unfinished items are therefore the tool calls of the latest model response. The tail holds those, plus less than one page of finished items.
+An item is final when no later event of the Run can change it. At each checkpoint, only the tool calls of the primary Run's latest model response that have no result in the exported state stay open; a takeover continues those in place, as today. Every other item is final. `completed` and `failed` items are already final, and the worker marks every other unfinished item `interrupted` in the same snapshot. Pages hold only final items, so a written page never changes.
+
+The rule follows from how the Service checkpoints:
+
+- The Service commits only at the primary Run's boundaries. A tool boundary commits before its batch runs, and the next model boundary commits after the batch ends, so no inline child is running at a checkpoint.
+- Every `delegate` or `resume_subagent` call starts a new child run, and item identity includes that run's `subagentRunId`, so no later event reaches an earlier child's items.
+- Earlier model responses already have their results in the exported state.
+
+For example, an inline child that fails after starting a tool call leaves that call `in_progress` with no result event. No later event can finish it, so the next checkpoint marks it `interrupted`, and it pages normally instead of holding every later item in the tail.
+
+The tail therefore holds at most the open tool calls and less than one page of final items.
 
 ## Sealed Runs
 
