@@ -131,6 +131,33 @@ async def test_without_a_store_contents_stay_inline_and_references_cannot_load()
     assert error.value.code == "state_store_missing"
 
 
+async def test_values_only_shaped_like_binary_content_stay_as_they_are() -> None:
+    # A tool may return any JSON: the first object is not binary content at all, and the second encodes its bytes in
+    # the standard base64 alphabet, which Pydantic AI reads but never writes.
+    lookalikes = [
+        {"kind": "binary", "data": "010101"},
+        {"kind": "binary", "data": base64.b64encode(LARGE).decode(), "media_type": "image/png"},
+    ]
+    returned = ToolReturnPart(tool_name="lookup", tool_call_id="call-2", content=lookalikes)
+    messages = [*_messages(LARGE), ModelRequest(parts=[returned])]
+    state = _state(messages, returned=lookalikes)
+
+    assert await RunStorage(None).resolve_messages(messages) == tuple(messages)
+    assert await RunStorage(None).resolve_context(state.agent_context_state) == state.agent_context_state
+
+    store = MemoryStore()
+    exported = await RunStorage(store).export(state)
+    assert [ref.size for ref in exported.refs] == [len(LARGE)] and store.kinds() == ["content"]
+    loader = RunStorage(store)
+    resolved = await loader.resolve_messages(exported.message_history)
+    # Saving and loading again changes nothing that serializing the state does not.
+    plain = HarnessState.model_validate_json(state.model_dump_json())
+    assert ModelMessagesTypeAdapter.dump_json(list(resolved)) == ModelMessagesTypeAdapter.dump_json(
+        plain.message_history
+    )
+    assert await loader.resolve_context(exported.agent_context_state) == state.agent_context_state
+
+
 async def test_run_state_references_large_prompt_content_and_the_model_sees_it_again() -> None:
     seen: list[list[bytes]] = []
 
