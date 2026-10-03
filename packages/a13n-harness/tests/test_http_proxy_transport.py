@@ -124,6 +124,14 @@ async def endpoint(
                 await asyncio.gather(*tasks)
 
 
+def rejected_certificate(error: BaseException) -> bool:
+    # Match the handshake error, not its text: macOS truststore localizes it. httpcore re-raises it `from None`,
+    # so the root is reachable only through the implicit context.
+    while (origin := error.__cause__ or error.__context__) is not None:
+        error = origin
+    return isinstance(error, ssl.SSLCertVerificationError)
+
+
 @pytest.mark.parametrize("variable", ["http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"])
 async def test_native_http_proxy_bypasses_custom_direct_transport(
     monkeypatch: pytest.MonkeyPatch, variable: str
@@ -172,7 +180,7 @@ async def test_native_tunnel_keeps_hostname_tls_and_proxy_auth(
             for _ in range(2):
                 response = await client.post(f"https://origin.test:{port}/path", content=b"mutation")
                 assert response.text == "ok"
-            with pytest.raises(httpx2.ConnectError, match="certificate verify failed"):
+            with pytest.raises(httpx2.ConnectError, check=rejected_certificate):
                 await client.get(f"https://other.test:{port}/path")
         assert client.is_closed
         assert len(seen) == 2
@@ -323,7 +331,7 @@ async def test_owned_clients_verify_self_signed_https_unless_operator_opts_out(
             if verify == "false":
                 assert (await client.get(url + "/path")).text == "ok"
             else:
-                with pytest.raises(httpx2.ConnectError, match="certificate verify failed"):
+                with pytest.raises(httpx2.ConnectError, check=rejected_certificate):
                     await client.get(url + "/path")
         assert len(origin) == (1 if verify == "false" else 0)
         assert bool(seen) is (route == "proxy")
@@ -340,5 +348,5 @@ async def test_injected_transport_keeps_its_verified_tls_policy(
         async with create_model_http_client(
             timeout=2, connect=2, retry=None, transport=httpx2.AsyncHTTPTransport(verify=True, trust_env=False)
         ) as client:
-            with pytest.raises(httpx2.ConnectError, match="certificate verify failed"):
+            with pytest.raises(httpx2.ConnectError, check=rejected_certificate):
                 await client.get(f"https://127.0.0.1:{port}/")
