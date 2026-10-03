@@ -129,7 +129,7 @@ A new semantic continuation prompt is input to the next `ModelAttempt`, not retr
 
 ## Interrupted History Normalization
 
-Before each native initialization, canonical history adapts native orphan-result removal, dangling ordinary-tool-call repair, and compatible adjacent-request merging jointly with content annotations. Request-local prompt order and annotations survive structural edits, including imported/recovery histories and JSON round trips. Delivered steering identities are retained in order when requests merge. Interrupted-tail repair follows the actual new-input/deferred-result boundary; pending deferred facts are not synthesized over. This preparation grants no tool authority and does not reinterpret application annotations from provider-normalized temporary history.
+Before each native initialization, the Harness merges compatible adjacent requests together with their content annotations and ordered delivered steering identities. Pydantic AI owns general orphan-result removal, dangling ordinary-tool-call repair, and native initialization of interrupted or deferred history; the Harness does not invoke private repair APIs or duplicate those passes. Presentation annotations are best-effort across native repairs of malformed history: they may be lost, and missing or unusable annotations fall back to native content defaults without blocking execution. The Harness does not reconstruct annotation associations from repaired history. This does not weaken tool-result authority or deferred-input reconciliation.
 
 Harness live recovery normalizes only a terminal message explicitly marked `state="interrupted"`.
 

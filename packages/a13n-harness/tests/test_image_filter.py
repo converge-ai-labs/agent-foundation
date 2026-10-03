@@ -689,6 +689,36 @@ async def test_default_image_filter_and_self_healing_compose_once_without_changi
     assert previous.message_history == original and history == original
 
 
+@pytest.mark.parametrize("annotations", [None, "invalid"])
+async def test_resumed_image_splitting_ignores_unusable_annotation_containers(annotations: object) -> None:
+    native = BinaryImage(_png((20, 5000)), media_type="image/png", identifier="attachment")
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart([native])], metadata={"a13n.content": annotations}),
+            ModelResponse(parts=[TextPart("previous response")]),
+        )
+    )
+    original = previous.model_dump_json()
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        assert [image.identifier for image in _images(messages)] == ["attachment-segment-1", "attachment-segment-2"]
+        media = [
+            item
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for item in request_input_content(message)
+            if isinstance(item.value, BinaryContent)
+        ]
+        assert [item.metadata for item in media] == [ContentMetadata(), ContentMetadata()]
+        yield "done"
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond))
+    result = await executable.run("Continue", previous_state=previous)
+    assert result.output_or_raise() == "done"
+    assert _images(result.state.message_history) == [native]
+    assert previous.model_dump_json() == original
+
+
 @pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize("annotated_input", [False, True])
 async def test_default_builder_split_images_retry_oversized_payload_without_changing_input(

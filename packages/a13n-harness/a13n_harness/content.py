@@ -11,8 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, JsonValue
-from pydantic_ai import _agent_graph
+from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 from pydantic_ai.messages import (
     BinaryContent,
     CachePoint,
@@ -20,7 +19,6 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelRequestPart,
-    ModelResponse,
     RetryPromptPart,
     TextContent,
     ToolReturnPart,
@@ -109,14 +107,16 @@ def prompt_content(request: ModelRequest, part_index: int) -> list[ContentItem]:
     items = content_items(part.content)
     annotations = (request.metadata or {}).get(CONTENT_METADATA_KEY, {})
     entries = annotations.get(str(part_index)) if isinstance(annotations, dict) else None
-    if entries is None:
-        return items
     if not isinstance(entries, list) or len(entries) != len(items):
-        raise ValueError("Content annotations do not match their canonical prompt part")
-    return [
-        ContentItem(item.value, ContentMetadata.model_validate(metadata))
-        for item, metadata in zip(items, entries, strict=True)
-    ]
+        return items
+    try:
+        return [
+            ContentItem(item.value, ContentMetadata.model_validate(metadata))
+            for item, metadata in zip(items, entries, strict=True)
+        ]
+    except ValidationError:
+        # Presentation metadata is best-effort after native history repair.
+        return items
 
 
 def request_input_content(request: ModelRequest) -> list[ContentItem]:
@@ -130,7 +130,8 @@ def request_input_content(request: ModelRequest) -> list[ContentItem]:
 
 
 def annotate_prompt(request: ModelRequest, part_index: int, items: Sequence[ContentItem]) -> ModelRequest:
-    annotations = dict((request.metadata or {}).get(CONTENT_METADATA_KEY, {}))
+    existing = (request.metadata or {}).get(CONTENT_METADATA_KEY)
+    annotations = dict(existing) if isinstance(existing, dict) else {}
     annotations[str(part_index)] = [item.metadata.model_dump(mode="json") for item in items]
     return replace(request, metadata={**(request.metadata or {}), CONTENT_METADATA_KEY: annotations})
 
@@ -162,72 +163,14 @@ def request_parts(request: ModelRequest) -> list[tuple[ModelRequestPart, list[Co
     ]
 
 
-def _repair_request_history(
-    messages: Sequence[ModelMessage], *, has_new_prompt: bool, has_deferred_results: bool
-) -> list[ModelMessage]:
-    """Adapt native repair's request-local structural edits, not its pairing rules.
+def merge_request_history(messages: Sequence[ModelMessage]) -> tuple[ModelMessage, ...]:
+    """Merge compatible adjacent requests together with their annotations.
 
-    Drop/repair never removes, inserts, or reorders UserPromptPart values and
-    preserves each existing request's metadata. Carry an ordinal annotation
-    ledger through these two passes, then rebuild paired canonical slots before
-    merging. This local ledger is neither persisted nor sent to a provider.
-    Dependency regressions pin this narrow use of the native repair helpers.
-    """
-    prepared = [
-        replace(
-            message,
-            metadata={
-                **(message.metadata or {}),
-                CONTENT_METADATA_KEY: [
-                    (message.metadata or {}).get(CONTENT_METADATA_KEY, {}).get(str(index))
-                    for index, part in enumerate(message.parts)
-                    if isinstance(part, UserPromptPart)
-                ],
-            },
-        )
-        if isinstance(message, ModelRequest)
-        else message
-        for message in messages
-    ]
-    repaired = _agent_graph._drop_orphaned_tool_results(prepared)  # pyright: ignore[reportPrivateUsage]
-    repaired = _agent_graph._repair_dangling_tool_calls(repaired)  # pyright: ignore[reportPrivateUsage]
-    if not has_deferred_results:
-        repaired = _agent_graph._repair_interrupted_tail(  # pyright: ignore[reportPrivateUsage]
-            repaired, has_new_prompt=has_new_prompt
-        )
-    result: list[ModelMessage] = []
-    for message in repaired:
-        if not isinstance(message, ModelRequest):
-            result.append(message)
-            continue
-        ledger = iter((message.metadata or {}).get(CONTENT_METADATA_KEY, []))
-        annotations = {}
-        for index, part in enumerate(message.parts):
-            if isinstance(part, UserPromptPart):
-                entries = next(ledger)
-                if entries is not None:
-                    annotations[str(index)] = entries
-        if list(ledger):
-            raise ValueError("Native history repair changed the prompt annotation ledger")
-        metadata = {key: value for key, value in (message.metadata or {}).items() if key != CONTENT_METADATA_KEY}
-        if annotations:
-            metadata[CONTENT_METADATA_KEY] = annotations
-        result.append(replace(message, metadata=metadata or None))
-    return result
-
-
-def normalize_request_history(
-    messages: Sequence[ModelMessage], *, has_new_prompt: bool = False, has_deferred_results: bool = False
-) -> tuple[ModelMessage, ...]:
-    """Repair and merge canonical requests jointly with their annotations.
-
-    Native outbound rendering may independently normalize temporary history;
-    its initialization must not shift or discard canonical annotation slots.
+    Tool pairing and interrupted-tail repair belong to native Agent execution.
+    Annotations are not recovered across those repairs.
     """
     result: list[ModelMessage] = []
-    for message in _repair_request_history(
-        messages, has_new_prompt=has_new_prompt, has_deferred_results=has_deferred_results
-    ):
+    for message in messages:
         previous = result[-1] if result else None
         if (
             isinstance(message, ModelRequest)
@@ -252,15 +195,6 @@ def normalize_request_history(
                 metadata["__pydantic_ai__"] = {**previous_framework, **current_framework}
             merged = replace(message, instructions=previous.instructions or message.instructions, metadata=metadata)
             result[-1] = replace_request_parts(merged, parts)
-        elif (
-            isinstance(message, ModelResponse)
-            and isinstance(previous, ModelResponse)
-            and all(
-                response.provider_response_id is None and response.provider_name is None and response.model_name is None
-                for response in (previous, message)
-            )
-        ):
-            result[-1] = replace(previous, parts=[*previous.parts, *message.parts])
         else:
             result.append(message)
     return tuple(result)
