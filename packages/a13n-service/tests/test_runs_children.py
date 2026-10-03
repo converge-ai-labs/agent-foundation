@@ -197,7 +197,8 @@ async def test_a_failed_origin_stays_history_for_its_child_result(service, scrip
     resumed = await runs_kit.submit(service, thread_id, runs_kit.message(coordinator, "go on"))
     assert resumed.status_code == 201, resumed.text
     await (await runs_kit.attempt(service))
-    if (await runs_kit.inbox(service, thread_id))[1]["status"] == "pending":
+    if (await runs_kit.inbox(service, thread_id))[1]["status"] != "consumed":
+        # The result missed that run's last request, so it starts the next run.
         await accept_module.ThreadAdvancer(service.runtime, batch=1)()
         await (await runs_kit.attempt(service))
     assert [entry["status"] for entry in await runs_kit.inbox(service, thread_id)] == ["consumed"] * 3
