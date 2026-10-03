@@ -21,28 +21,51 @@ What remains is message text, small Capability state, environment states, and th
 
 ## The storage binding
 
-The Harness owns its state format, so it decides what is stored separately. A Host provides one storage binding with two operations: save a value and return a reference, and load a value by reference. The Harness uses it for inline subagent states and for large binary content parts. The default binding keeps values inside Harness state, so Harness UI and simple embedders work unchanged.
+The Harness owns its state format, so it decides what is stored separately. A Host may supply a `state_store` in `RunBindings` ([`context.py`](../../../packages/a13n-harness/a13n_harness/context.py)):
 
-The Service implements the binding with objects owned by the Run that saves them ([object keys](03-storage-and-apis.md#object-store)). A value is saved once. Later checkpoints of the same Run, and successor Runs that inherit the state, keep the same reference.
+```text
+StoredRef                       # opaque to the Harness
+  key, digest, size             # digest: SHA-256 of the saved bytes
+
+StateStore
+  save(data, kind) -> StoredRef # kind: subagent_state or content
+  load(ref) -> data
+```
+
+The Harness uses the store for inline subagent states and large binary content parts. Exported state lists the references it holds, so the Host knows which saved values a checkpoint needs.
+
+- **Default store.** Without a Host store, saved values live in a namespace of Harness state and travel with it. Saving drops values the state no longer references, so each inline child keeps only its latest state, as today. Harness UI and simple embedders need no store of their own.
+- **Service store.** The Service saves each value as a compressed object owned by the Run that saves it ([object keys](03-storage-and-apis.md#object-store)) and verifies the digest on load. A value is saved once. Later checkpoints of the same Run, and successor Runs that inherit the state, keep the same reference.
 
 ## Large content
 
 Computer-use screenshots and other binary inputs stay inline in message history today ([`computer.py`](../../../packages/a13n-harness/a13n_harness/toolsets/computer.py)), so every boundary uploads all of them again.
 
-When the Harness exports state, each binary content part larger than a threshold (initially 64 KiB) is saved through the binding, and the exported message holds a reference with its media type, size, and digest. Parts already saved keep their reference, so a screenshot is uploaded once, not at every boundary. Loading resolves references before the history reaches the model, so the Agent sees the same messages as before.
+When the Harness exports state, each binary content part larger than a threshold (initially 64 KiB) is saved through the store, and the exported message holds a reference with its media type, size, and digest. Parts already saved keep their reference, so a screenshot is uploaded once, not at every boundary. Loading resolves references before the history reaches the model, so the Agent sees the same messages as before.
 
 A tool result's screenshot reaches history before the next model request. That model boundary does not hold the request for its commit, so the upload does not delay the model or the tools.
 
 ## Inline subagent state
 
-Inline subagents keep executing inside the parent's tool call. Only their storage changes:
+Inline subagents keep executing inside the parent's tool call, in the same worker, with no Thread or Run of their own in the Service. Their events stream into the parent Run's visible items, tagged with `subagentRunId`, and their usage is charged to the parent Run. Only their storage changes ([`delegation.py`](../../../packages/a13n-harness/a13n_harness/toolsets/delegation.py), [`subagents.py`](../../../packages/a13n-harness/a13n_harness/capabilities/subagents.py)).
 
-- When a child run ends, the Harness saves its state through the binding and records a registry entry in the parent's `a13n.subagents` namespace: child instance ID, subagent name, definition ID, child Thread ID, and the stored state reference. The saved state omits `a13n.usage`.
-- `resume_subagent` loads the referenced state and validates its definition at that point. An incompatible child fails that resume, not every later Run of the parent Thread ([`subagents.py`](../../../packages/a13n-harness/a13n_harness/capabilities/subagents.py)).
-- Fork rewrites the Thread IDs in registry entries. A child's stored state is forked when it is next loaded.
-- Registry entries always hold references. With the default binding, the referenced states live inside Harness state.
+The parent's `a13n.subagents` namespace becomes a registry of references, at namespace version 2:
 
-A child's progress while it runs is not checkpointed, as today. If the worker fails during a delegation, the recovered parent repeats the tool call from its last checkpoint: `delegate` starts a new child, and `resume_subagent` continues from the child's last saved state.
+```text
+InlineSubagentEntry
+  child_instance_id             # for example researcher-1a2b
+  subagent_name
+  child_definition_id
+  child_thread_id
+  state: StoredRef              # today: the child's complete HarnessState
+```
+
+- **Save.** When a child run ends, completed or failed, the Harness saves its state once through the store and records the entry. A cancelled child is not saved, as today. The saved state omits `a13n.usage` and borrowed environment states.
+- **Run start.** Starting a parent Run only reads the registry. It no longer validates every retained child against the current Agent.
+- **Resume.** `resume_subagent` loads the referenced state and checks that child's definition. A changed definition fails that call only, and the model can delegate a new child instead.
+- **Fork.** Forking the parent gives every entry a new `child_thread_id` without reading or copying stored states. When a stored state is loaded and its Thread ID differs from the entry's, the Harness forks it then.
+
+A child's progress while it runs is not checkpointed, as today. The Harness receives a child's state only when the child ends, and the Service checkpoints only the parent's boundaries. If the worker fails during a delegation, the recovered parent repeats the tool call from its last checkpoint: `delegate` starts a new child, and `resume_subagent` continues from the child's last saved state. A state saved before the failure but never referenced by a committed checkpoint is removed by the seal cleanup.
 
 Asynchronous subagents are already separate Threads and Runs. Their states and visible items follow this proposal as ordinary Runs.
 

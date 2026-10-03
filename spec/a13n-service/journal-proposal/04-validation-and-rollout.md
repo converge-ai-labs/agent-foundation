@@ -23,7 +23,7 @@ The tail and an occasional page add little. Large binary content is uploaded onc
 
 - **State round trip.** Exporting through the storage binding and loading again reproduces the same messages, binary content, namespaces, and environment states.
 - **Usage.** No persisted Service state contains `a13n.usage`, and accounting is unchanged.
-- **Inline subagents.** A child's state is saved when it ends; `resume_subagent` loads it; an incompatible definition fails only that resume; fork rewrites Thread IDs and forks the child state on load; a worker failure during a delegation repeats the tool call.
+- **Inline subagents.** A child's state is saved once when it ends and not when it is cancelled. Starting a parent Run reads only the registry. `resume_subagent` loads the state and checks only that child's definition. Fork rewrites Thread IDs and forks the child state on its first load. The default store keeps only referenced values. A worker failure during a delegation repeats the tool call, and a state saved by the failed attempt is removed by the seal cleanup.
 - **Visible history.** Paging across pages and the tail; unfinished items always in the tail; a takeover continuing an interrupted item in place; a waiting seal leaving the approval-pending call readable as `interrupted`; a page and its tail committed in one transaction; reads racing a checkpoint.
 - **Continuation.** The next Run after a failed or cancelled Run starts from its last checkpoint; unfinished tool calls get an interrupted result; fork from failed and cancelled Runs; child results whose origin failed.
 - **Cleanup.** Reclamation on replacement, takeover scans of `state/` and `tail/`, and the seal scan's keep set; inherited content and subagent states keep resolving after the Run that wrote them seals.
@@ -40,6 +40,7 @@ Agreed in the #849 discussion:
 
 - Every boundary keeps writing a complete state object. This proposal adds no staging, change log, or replay.
 - The Service stops persisting `a13n.usage`. Inline subagent states and large binary content go through a Host storage binding. State objects are compressed.
+- An inline child's state is saved once when the child ends and referenced from the parent's registry. Its definition is checked only when it is resumed. Inline children are not checkpointed while they run; a worker failure during a delegation repeats the tool call.
 - Display becomes permanent history pages plus a tail written with each checkpoint. Pages hold only finished items; interrupted items continue in place, as today.
 - Every sealed Run becomes the head. Fork accepts failed and cancelled Runs. Unfinished tool calls get an interrupted result. Automatic advancement still pauses after a failed or cancelled Run.
 - Objects belong to the Run that writes them. The seal scan keeps the final state, its references, the final tail, and the pages.

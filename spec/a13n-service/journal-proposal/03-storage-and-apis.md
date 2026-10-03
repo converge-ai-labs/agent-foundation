@@ -30,7 +30,9 @@ There are no staging tables. A checkpoint transaction moves the two pointers and
 | `orgs/{org}/runs/{run}/contents/{attempt}/{random}`  | Storage binding: large binary content  | While the Run's final state references it  |
 | `orgs/{org}/runs/{run}/subagents/{attempt}/{random}` | Storage binding: inline subagent state | While the Run's final state references it  |
 
-`orgs/{org}/runs/{run}/display/…` disappears. Every key is still written once, and only committed references make bytes reachable, as the existing object contract requires. State, tail, and page objects are compressed with zstd.
+`orgs/{org}/runs/{run}/display/…` disappears. Every key is still written once, and only committed references make bytes reachable, as the existing object contract requires. All of these objects are compressed with zstd.
+
+The Service store writes content and subagent states the way checkpoints publish objects today: outside any database session, to a new key of the current attempt. A load verifies the digest in the reference. Each checkpoint lists the stored values its state references in `runs.checkpoint.refs`.
 
 A value inherited from an earlier Run keeps that Run's key. It lives under the earlier Run's prefix and is kept by the earlier Run's final state.
 
