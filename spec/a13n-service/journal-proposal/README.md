@@ -1,92 +1,69 @@
-# Service journal and checkpoint proposal
+# Service run persistence proposal
 
-> **Discussion proposal — not the current specification.** This directory records a design under discussion. It does not describe implemented behavior, amend the accepted Service specification, or authorize implementation by itself. The existing [Service chapters](../README.md) remain authoritative until a reviewed change explicitly adopts and implements the proposal. Examples, field names, routes, and initial tuning values below are proposed contracts.
+> **Discussion proposal, not the current specification.** This directory records a design under discussion in [issue #849](https://github.com/converge-ai-labs/agent-foundation/issues/849). It does not describe implemented behavior, amend the accepted Service specification, or authorize implementation by itself. The existing [Service chapters](../README.md) remain authoritative until a reviewed change adopts and implements the proposal. Field names, routes, and initial values below are proposed.
 
-This proposal is intentionally kept in a separate Service subdirectory at the project owner's request. That placement is an exception to the repository's usual practice of keeping proposals in GitHub Issues; it does not make this material normative. The motivating problem is [issue #781](https://github.com/converge-ai-labs/agent-foundation/issues/781): repeatedly uploading complete execution state and display history costs more bandwidth as a conversation grows.
+This proposal is kept in a separate Service subdirectory at the project owner's request. That placement is an exception to the repository's usual practice of keeping proposals in GitHub Issues; it does not make this material normative.
+
+An earlier draft in this directory proposed a semantic event journal. Review replaced it with the smaller design below; see [what was dropped](04-validation-and-rollout.md#dropped-from-the-earlier-draft).
+
+## Problem
+
+A long-running Service conversation pays costs that grow with the conversation rather than with what changed:
+
+1. **Every safe boundary rewrites everything.** Before each model request and each tool batch, the worker serializes and uploads the complete Harness state and the complete Display, then moves two pointers in a fenced transaction ([`execute.py`](../../../packages/a13n-service/a13n_service/runs/execute.py), [`checkpoints.py`](../../../packages/a13n-service/a13n_service/runs/checkpoints.py)). Tool execution waits for that commit. #781 estimated about 9–10 MB uploaded per boundary to record 5–20 KB of change once Display reaches its cap.
+1. **Bookkeeping can fail a long Run.** The state object carries data the Service never restores: `a13n.usage` (up to 10,000 records per attempt, while the Service resumes with `resume_usage=False`) and the complete state of every retained inline subagent (`a13n.subagents`, never pruned). An object over `objects.max_bytes` (16 MiB by default) fails the Run with `payload_too_large`. After a retained subagent's revision changes, every later Run of the Thread fails at start with `subagent_state_incompatible`.
+1. **Visible history is truncated and unpaged.** Display keeps at most 4096 items and `worker.display_bytes` (8 MiB); older items are dropped or emptied, and compaction removes old messages from state as well. `GET …/runs/{run}/items` returns the whole retained Display.
 
 ## The proposal in one paragraph
 
-Commit aggregated execution and Session events to PostgreSQL. Archive those events into immutable, bounded object-store chunks, retaining the complete logical history. Render Display directly from individual journal events. Recover execution state from a bounded checkpoint plus subsequent events. Write checkpoints periodically rather than at every execution boundary. Keep accounting in `usage_records`, and run every hosted subagent in its own Thread with its own Runs, journal, and checkpoints. PostgreSQL owns durable progress and chunk locations; Redis carries only optional live output and wakeups.
+Split the package that every boundary uploads. Usage stays only in its ledger. Inline subagent states become separate objects referenced from the parent. While a Run executes, PostgreSQL stages only what changed: messages that differ from the Run's start object, changed Capability namespaces, and changed visible items, all in the existing boundary transaction. Object storage receives complete values at a few moments: the Run's state when the Run ends (or earlier, when history is rewritten or staging grows too large), visible items in immutable pages when a page fills, and a subagent's state when it finishes.
 
 ```mermaid
 flowchart LR
-    Producers["Execution and Session operations"] --> PG["PostgreSQL: committed events"]
-    PG --> Archive["Independent log archiver"]
-    Archive --> Chunks["Object store: immutable log chunks"]
-    Archive --> Catalog["PostgreSQL: chunk directory"]
-    PG --> Reader["One journal reader"]
-    Chunks --> Reader
-    Catalog --> Reader
-    Reader --> Display["Display: render selected events"]
-    Reader --> Replay["State: apply events after a checkpoint"]
-    Checkpoint["Object store: bounded checkpoints"] --> Replay
+    B["Each safe boundary"] -->|"one transaction, changed rows only"| SM
+    B -->|"same transaction"| SI
+    subgraph PG["PostgreSQL"]
+        SM["Staged running state"]
+        SI["Staged visible items"]
+        UL["usage_records ledger, unchanged"]
+    end
+    subgraph OS["Object store"]
+        ST["State objects"]
+        HP["History pages"]
+        CS["Subagent state objects"]
+    end
+    SM -->|"Run ends, earlier history rewritten, or staging over its cap"| ST
+    SI -->|"page full or Run ends"| HP
+    B -.->|"inline subagent finishes"| CS
 ```
 
-Here and below, “S3” means the Service's existing object-store abstraction, including its local backend. No new S3-specific consistency primitive is required.
+| Piece                 | Today, at every boundary              | While the Run executes                                | Final home                                |
+| --------------------- | ------------------------------------- | ----------------------------------------------------- | ----------------------------------------- |
+| Messages              | Inside the complete state object      | Rows for positions that differ from the start object  | State object                              |
+| Capability namespaces | Inside the complete state object      | Rows for namespaces that differ from the start object | State object                              |
+| `a13n.usage`          | Inside the complete state object      | Not persisted with state                              | `usage_records` only                      |
+| Inline subagent state | Inside the parent's `a13n.subagents`  | Parent keeps a registry entry with a reference        | Subagent state object, written once       |
+| Visible items         | Complete Display object (4096, 8 MiB) | Rows for changed items                                | Immutable history pages, kept permanently |
 
-## Goals
+After this change, a boundary is one PostgreSQL transaction that writes only changed rows, and tool execution no longer waits for object storage. Object storage is written only when a Run ends, earlier history is rewritten, a Run's staging exceeds its cap, a visible-item page fills, or an inline subagent finishes.
 
-- Reduce repeated network transfer and serialization of unchanged state and accumulated presentation history.
-- Retain every committed semantic event needed to explain a Session and reconstruct a Run's persisted execution state at an event boundary.
-- Support Display reads forward, backward, and within a requested range without replaying state or loading the entire history.
-- Bound each event, chunk, checkpoint, page, and in-memory buffer while allowing total retained history to grow.
-- Keep crash recovery independent of Redis persistence and trace availability.
-- Make ownership explicit: Run state, accounting, child execution, presentation, and transport are separate concerns.
-- Use one clean breaking design. There is no parallel protocol, old Display reader, old Run adapter, or historical-data conversion path in this proposal.
+## Unchanged
 
-## Core decisions
+- One fenced transaction remains each boundary's durability point. Lease fencing, at-most-once input incorporation, and pre-effect tool durability are unchanged.
+- Completed and waiting Runs still seal with a complete state object, so continue, fork, resume, and child-result successors start exactly as today.
+- Waiting and deferred-resume lifecycle, subagent hosting, and the live thread stream protocol are unchanged. Inline children still execute inside the parent tool call; asynchronous children remain separate Threads and Runs.
 
-| Concern                           | Proposed decision                                                                           |
-| --------------------------------- | ------------------------------------------------------------------------------------------- |
-| Durable event history             | One append-only journal per Run and one Session control journal, using one protocol         |
-| Recent event bodies               | Ordinary logged PostgreSQL rows                                                             |
-| Historical event bodies           | Immutable S3 chunks, retained after checkpointing, compaction, and Run completion           |
-| Chunk locations                   | One PostgreSQL `log_chunks` row per chunk; no growing JSON array on a Run                   |
-| Display                           | A projection of individual events; no full Display snapshot or persistent latest-card index |
-| Execution state                   | Bounded checkpoint plus ordered state changes from the journal                              |
-| Checkpoint timing                 | Recovery-cost thresholds, completed compaction, and Run sealing, including waiting          |
-| Archival timing                   | Buffered bytes, oldest unarchived event age, and a seal-triggered flush request             |
-| Relationship between those timers | Independent; a checkpoint does not also request archival                                    |
-| Usage                             | Existing `usage_records` ledger; a fresh Harness accounting scope after takeover            |
-| Hosted subagents                  | Independent child Threads for both synchronous and asynchronous calls                       |
-| Agent, model, and mount selection | Frozen within a Run; changes apply to a subsequent Run                                      |
-| Trace                             | Diagnostic evidence correlated with events; not the recovery store                          |
+## Not in scope
 
-## What changes from today's implementation
-
-The current [facts and delivery chapter](../07-facts-and-delivery.md) describes paired state and Display objects, bounded folded Display history, a provisional Redis tail, and complete Harness checkpoint state that includes Usage and nested child state. The current [Run chapter](../05-runs.md) describes sealed waiting Runs and different hosting for inline and asynchronous children.
-
-This proposal replaces those rules where stated. In particular:
-
-- A durable boundary commits new events and execution progress, not two complete object uploads.
-- A completed tool interaction adds an event. It does not rewrite a growing Display file or amend a previously archived event.
-- A checkpoint contains continuation state, not historical Usage or full child state.
-- A synchronous hosted child remains in its own Thread. Its parent records a durable deferred wait, seals, and releases the worker. Completion supplies the original call result to a successor parent Run.
-- Preserve the existing deferred-resume lifecycle: seal a waiting Run, release execution resources, and create a successor Run when the required approval or result is durably accepted. No long wait depends on an in-process task or live Harness instance. See [execution ownership](01-journal-model.md#execution-identity-and-lifecycle).
-- Replaced checkpoints and archived journal chunks are retained for historical inspection. The current Run-prefix cleanup rule cannot be reused unchanged.
-
-## Scope limits
-
-The proposal retains the limits agreed during discussion:
-
-1. Historical state inspection is supported. Restarting execution at any historical event, rolling back files, or undoing external tool effects is not.
-2. There is no generic exactly-once guarantee for external effects and no guarantee of discovering charges that a provider never reported. Use provider idempotency when available; stop on an unsafe, uncertain retry.
-3. Switching agents does not automatically translate incompatible private Capability state. Preserve only explicitly compatible continuation data, or require a new Thread.
-4. Hosted child Threads do not share mutable Python Capability objects with their parent. Explicit inputs, results, and optional shared environment mounts provide communication.
-5. Persisted state changes use a controlled mutation interface. Arbitrary plugin memory is outside the replay contract.
-6. This work does not add a hard monetary budget system. Existing request limits remain enforced by the Service; any future monetary policy uses the ledger and must define in-flight overrun.
-7. PostgreSQL failure stops durable progress. S3 failure permits a bounded PostgreSQL backlog, then backpressure; there is no second durable fallback store.
-8. Total history may grow, but individual payloads and operational concurrency are bounded. Raw token fragments are not retained.
+- A semantic event journal, historical state inspection at arbitrary positions, Session-wide timelines or control journals, and usage events in a journal.
+- Hosting synchronous subagents in separate Threads, or recording asynchronous subagents in parent state.
+- The Harness usage-scope capacity of 10,000 records per attempt, and durability of an inline child's progress while it runs. Both are left for separate proposals.
 
 ## Reading order
 
-| Document                                                     | Owns                                                                              |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [01: Journal model](01-journal-model.md)                     | Execution identity, ordering, event envelope, state mutation, and event coverage  |
-| [02: Storage and archival](02-storage-and-archival.md)       | Tables, S3 objects, publication, cleanup, and consistent reads                    |
-| [03: State and recovery](03-state-and-recovery.md)           | Checkpoint contents, triggers, compaction, replay, and recovery examples          |
-| [04: Usage and subagents](04-usage-and-subagents.md)         | Accounting ownership, child execution, waiting, and result delivery               |
-| [05: Display and APIs](05-display-and-apis.md)               | Direct rendering, pagination, live output, cancellation, and configuration events |
-| [06: Delivery and validation](06-delivery-and-validation.md) | Implementation scope, failure cases, performance model, and remaining tuning      |
-
-The key trade-off is deliberate: the Service replaces repeated full-history uploads with durable event writes, periodic state snapshots, and a small permanent PostgreSQL catalog. That reduces write amplification, but does not eliminate PostgreSQL write load or make metadata storage constant over the lifetime of a Session.
+| Document                                                   | Owns                                                                        |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [01: Running state](01-running-state.md)                   | State contents, staging, change detection, merges, recovery, subagent state |
+| [02: Visible history](02-visible-history.md)               | Visible items, history pages, reads, interruption                           |
+| [03: Storage and APIs](03-storage-and-apis.md)             | Tables, object keys, background job, cleanup, API and settings, migration   |
+| [04: Validation and rollout](04-validation-and-rollout.md) | Capacity model, measurements, guardrails, tests, order, decisions           |
