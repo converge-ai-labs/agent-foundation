@@ -23,20 +23,20 @@ export type DisplayItem = Omit<
 
 /**
  * A Run's committed display Items with the Run they describe: by default the
- * newest, with every Item that can still change, else those before ordinal
- * `before`, which are paged and never change.
+ * newest, with every Item that can still change, else at most `limit` just
+ * before or after an ordinal.
  */
 export function readDisplay(
   client: Client,
   workspaceId: string,
   runId: string,
-  signal: AbortSignal,
-  before?: number,
+  signal?: AbortSignal,
+  window: { before?: number; after?: number; limit?: number } = {},
 ) {
   return client
     .workspace(workspaceId)
     .GET("/api/v1/runs/{run_id}/items", {
-      params: { path: { run_id: runId }, query: { before } },
+      params: { path: { run_id: runId }, query: window },
       signal,
     })
     .then(data);

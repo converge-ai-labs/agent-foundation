@@ -70,7 +70,7 @@ Interrupt names the exact Run. Closing a page or losing a stream never interrupt
 
 ### Display Recovery
 
-A Run renders from its committed display and the provisional output of the [thread stream](../a13n-service/07-facts-and-delivery.md#the-thread-stream). The Console reads the Run's newest committed items, continues them with stream deltas, offers earlier items page by page on request, re-reads the items on `reset` or `gap`, and re-reads the Thread on `changed`. Output that a newer attempt replaces is discarded, never concatenated into a successful answer, and an `in_progress` item of a sealed Run shows as interrupted. Observations whose value the display omitted stay marked as such. Recovery is bounded, so it never loops endlessly. Run status comes from the Run, never from the stream.
+A Run renders from its committed display and the provisional output of the [thread stream](../a13n-service/07-facts-and-delivery.md#the-thread-stream). The Console reads the Run's newest committed items, continues them with stream deltas, offers earlier items page by page on request and keeps those read as the newest items move on, reading the items in between, re-reads the items on `reset` or `gap`, and re-reads the Thread on `changed`. Output that a newer attempt replaces is discarded, never concatenated into a successful answer, and an `in_progress` item of a sealed Run shows as interrupted. Observations whose value the display omitted stay marked as such. Recovery is bounded, so it never loops endlessly. Run status comes from the Run, never from the stream.
 
 ## Usage
 

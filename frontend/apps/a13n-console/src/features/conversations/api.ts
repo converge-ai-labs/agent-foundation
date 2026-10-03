@@ -3,6 +3,7 @@ import type { Client, paths } from "../../service-client";
 import {
   infiniteQueryOptions,
   queryOptions,
+  skipToken,
   type QueryClient,
 } from "@tanstack/react-query";
 import { allPages, data, type Schema } from "../../shared/api";
@@ -93,19 +94,15 @@ export function conversationQueries(client: Client, workspaceId: string) {
           readDisplay(client, workspaceId, run_id, signal),
       }),
     /**
-     * The Items before ordinal `before`, nearest first, a page at a time as
-     * the reader reaches further back.
+     * The Items a reader has read before a Run's newest window, in ordinal
+     * order. They never change, so the Run keeps them as that window moves;
+     * `useEarlierItems` adds each page it reads.
      */
-    earlierItems: (run_id: string, before: number) =>
-      infiniteQueryOptions({
-        queryKey: [...keys.items(run_id), "before", before],
-        initialPageParam: before,
-        queryFn: ({ signal, pageParam }) =>
-          readDisplay(client, workspaceId, run_id, signal, pageParam),
-        getNextPageParam: (page) => {
-          const first = page.items[0]?.ordinal;
-          return first !== undefined && first > 1 ? first : undefined;
-        },
+    earlierItems: (run_id: string) =>
+      queryOptions<Schema["Item"][]>({
+        queryKey: [...keys.items(run_id), "earlier"],
+        queryFn: skipToken,
+        staleTime: Infinity,
       }),
     /**
      * The Run and its ancestors, nearest first, across fork origins. Pages are
