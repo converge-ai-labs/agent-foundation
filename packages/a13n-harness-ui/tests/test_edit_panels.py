@@ -8,6 +8,8 @@ import pytest
 from a13n_harness_ui.interactive.panels import capability_panel, shell_result_preview, tool_result
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 
+from .display_fixture import feed_display
+
 
 @pytest.mark.parametrize(
     "before, after, counts, body",
@@ -68,11 +70,12 @@ def test_edit_over_comparison_budget_returns_a_plain_fact_with_raw_details(befor
 
 def test_oversized_edit_replaces_call_with_one_borderless_fact_and_preserves_details() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"toolCallId": "large", "toolCallName": "edit"})
-    renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "large", "delta": '{"file_path":"file.py"}'})
-    renderer.ingest("TOOL_CALL_END", {"toolCallId": "large"})
+    feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "large", "toolCallName": "edit"})
+    feed_display(renderer, "TOOL_CALL_ARGS", {"toolCallId": "large", "delta": '{"file_path":"file.py"}'})
+    feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "large"})
     before = "x\n" * 6000
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.filesystem.edit_applied",
@@ -81,7 +84,7 @@ def test_oversized_edit_replaces_call_with_one_borderless_fact_and_preserves_det
             },
         },
     )
-    renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "large", "content": '{"ok":true}'})
+    feed_display(renderer, "TOOL_CALL_RESULT", {"toolCallId": "large", "content": '{"ok":true}'})
     try:
         renderer.transcript.render(100)
         text = "\n".join("".join(text for _, text in row).rstrip() for row in renderer.transcript.rows)
@@ -98,7 +101,8 @@ def test_oversized_edit_replaces_call_with_one_borderless_fact_and_preserves_det
 @pytest.mark.parametrize("detailed", [False, True])
 def test_rendered_edit_panel_shows_only_one_path_and_no_hunk_coordinates(detailed: bool) -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.filesystem.edit_applied",
@@ -145,7 +149,8 @@ def test_edit_heading_reflows_between_border_and_subdued_path_without_losing_con
     renderer = StreamRenderer(Status())
     renderer.transcript.theme = resolve_theme(theme)
     renderer.transcript.detailed = detailed
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.filesystem.edit_applied",

@@ -434,7 +434,7 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
   const views = new Map<Part, ToolView | null>();
   const pending = new Map<string, Part>();
   const identity = (part: Part) =>
-    `${part.provider ?? "function"}:${part.tool_call_id}`;
+    `${part.subagent_run_id ?? "root"}:${part.provider ?? "function"}:${part.tool_call_id}`;
   for (const entry of entries)
     for (const [index, part] of entry.parts.entries()) {
       if (part.metadata?.display === false) continue;
@@ -442,6 +442,7 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
         views.set(part, {
           id: `${entry.position}:${index}`,
           toolCallId: part.tool_call_id ?? undefined,
+          subagentRunId: part.subagent_run_id ?? undefined,
           name: part.tool_name || "Tool",
           input: part.value ?? part.text ?? undefined,
           provider: part.provider ?? undefined,
@@ -464,6 +465,7 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
             name: part.tool_name || "Tool",
           }),
           toolCallId: part.tool_call_id ?? undefined,
+          subagentRunId: part.subagent_run_id ?? undefined,
           result: part.kind === "retry" ? part.text : part.value,
           resultParts: part.content_parts?.length
             ? readContentParts(part.content_parts)
@@ -565,7 +567,8 @@ export function savedToolGroups(entries: Schema<"TranscriptEntry">[]) {
         current &&
         current.length < MAX_ACTIVITY_TOOLS &&
         nextKind &&
-        nextKind === kind
+        nextKind === kind &&
+        tool.subagentRunId === current[0].subagentRunId
       ) {
         current.push(tool);
         groups.set(part, null);

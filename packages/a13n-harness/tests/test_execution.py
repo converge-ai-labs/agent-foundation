@@ -813,7 +813,9 @@ async def test_started_stream_closes_the_model_when_the_caller_stops_early() -> 
         while True:
             item = await stream.__anext__()
             assert isinstance(item, HarnessEvent)
-            if not isinstance(item.event, HarnessExtensionEvent):
+            from pydantic_ai.messages import PartStartEvent
+
+            if isinstance(item.event, PartStartEvent):
                 break
 
     await asyncio.wait_for(closed.wait(), timeout=2)
@@ -831,17 +833,20 @@ async def test_concurrent_next_is_rejected_without_closing_the_active_stream() -
     executable = _build(FunctionModel(stream_function=blocking_stream))
 
     async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
-        for expected_type in ("run_started", "model_request_started"):
-            lifecycle = await stream.__anext__()
-            assert isinstance(lifecycle, HarnessEvent)
-            assert isinstance(lifecycle.event, HarnessExtensionEvent)
-            assert lifecycle.event.payload["type"] == expected_type
+        lifecycle = await stream.__anext__()
+        assert isinstance(lifecycle, HarnessEvent)
+        assert isinstance(lifecycle.event, HarnessExtensionEvent)
+        assert lifecycle.event.payload["type"] == "run_started"
 
         from a13n_harness.events import InputTextEvent
 
         observed_input = await stream.__anext__()
         assert isinstance(observed_input, HarnessEvent) and isinstance(observed_input.event, InputTextEvent)
         assert observed_input.event.source == "user"
+        lifecycle = await stream.__anext__()
+        assert isinstance(lifecycle, HarnessEvent)
+        assert isinstance(lifecycle.event, HarnessExtensionEvent)
+        assert lifecycle.event.payload["type"] == "model_request_started"
         projected_context = await stream.__anext__()
         assert isinstance(projected_context, HarnessEvent) and isinstance(projected_context.event, InputTextEvent)
         assert projected_context.event.source == "context"

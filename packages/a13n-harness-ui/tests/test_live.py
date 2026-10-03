@@ -5,6 +5,8 @@ from a13n_harness_ui.errors import LivePresentationError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub, LiveCursor, SummaryCursor
 from ag_ui.core.events import TextMessageContentEvent
 
+from .display_fixture import feed_display
+
 pytestmark = pytest.mark.anyio
 
 
@@ -158,9 +160,10 @@ async def test_large_compaction_summary_reaches_live_renderer_without_payload_om
     renderer = StreamRenderer(Status())
     for event in await hub.snapshot():
         assert not event.payload_omitted
-        renderer.ingest(event.event_type, event.payload, run_id=event.run_id)
+        feed_display(renderer, event.event_type, event.payload, run_id=event.run_id)
     assert next(iter(renderer.transcript.blocks.values())).source == "Compacting context…"
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.harness.context",
@@ -256,18 +259,19 @@ async def test_child_display_does_not_treat_input_or_compaction_as_an_answer() -
     assert [activity.text for activity in display.snapshot().activities] == ["actual answer"]
 
 
-async def test_root_observer_bootstrap_survives_ring_eviction_and_publication_races() -> None:
+async def test_root_compact_bootstrap_survives_ring_eviction_and_publication_races() -> None:
     from datetime import UTC, datetime
 
     from a13n_harness import HarnessEvent
-    from a13n_stream_protocol import HarnessAguiObserver
+    from a13n_stream_protocol.display import DisplayFold, SetItem, Tail
     from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
 
-    observer = HarnessAguiObserver()
+    display = DisplayFold("run-root", Tail(), attempt=1, page_items=128, page_bytes=65536, retain_complete=True)
+    observer = display.observer
     hub = HarnessUiLiveHub(ring_size=2)
 
     def observe(sequence, value):
-        return observer.observe(
+        events = observer.observe(
             HarnessEvent(
                 thread_id="thread-root",
                 run_id="run-root",
@@ -276,8 +280,10 @@ async def test_root_observer_bootstrap_survives_ring_eviction_and_publication_ra
                 event=value,
             )
         )
+        return events, display.fold([event.model_dump(mode="json", by_alias=True) for event in events])
 
-    async def publish(events):
+    async def publish(batch):
+        events, observed = batch
         await hub.publish(
             run_kind="root",
             root_thread_id="thread-root",
@@ -285,32 +291,35 @@ async def test_root_observer_bootstrap_survives_ring_eviction_and_publication_ra
             thread_id="thread-root",
             run_id="run-root",
             events=events,
-            observer=observer,
+            observed=observed,
             base_continuation_id="saved-before",
         )
 
     await publish(observe(1, PartStartEvent(index=0, part=TextPart(content="begin"))))
     for index in range(2, 40):
         await publish(observe(index, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta=str(index)))))
-    count = observer.event_count
+    count = len(display.items)
+    assert observer.event_count == 0
     # Accumulated but not published yet: this must appear only in subsequent live delivery.
     pending = observe(40, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="pending")))
     async with hub.subscribe(root_thread_id="thread-root") as subscription:
         replay = subscription.root_stream
         assert replay is not None
-        assert replay.observer is observer  # Existing owner, no second payload store.
         assert replay.summary.event_count == count
         assert replay.summary.base_continuation_id == "saved-before"
         batches = list(replay.batches())
         events = [item for batch in batches for item in batch]
         assert all(len(batch) <= 16 for batch in batches)
         assert [item.index for item in events] == list(range(count))
-        assert any(item.payload and item.payload.get("delta") == "begin" for item in events)
-        assert not any(item.payload and item.payload.get("delta") == "pending" for item in events)
+        assert count == 1  # Thousands of tokens still bootstrap as one text item.
+        change = events[0].changes[0]
+        assert isinstance(change, SetItem)
+        assert change.item.content["text"] == "begin" + "".join(str(index) for index in range(2, 40))
+        assert "pending" not in change.item.content["text"]
         await publish(pending)
         delivered = await subscription.receive()
         assert delivered.sequence > subscription.root_stream.summary.event_count
-        assert delivered.payload is not None and delivered.payload["delta"] == "pending"
+        assert delivered.changes is not None and delivered.changes[0].text == "pending"
         assert [item for batch in replay.batches() for item in batch] == events
         await hub.finish_root(thread_id="thread-root", run_id="run-root", saved_continuation_id="saved-after")
         assert "thread-root" not in hub._root_streams
@@ -324,14 +333,15 @@ async def test_unsaved_root_retention_is_bounded_and_never_evicts_active_runs() 
     from datetime import UTC, datetime
 
     from a13n_harness import HarnessEvent
-    from a13n_stream_protocol import HarnessAguiObserver
     from pydantic_ai.messages import PartStartEvent, TextPart
 
     hub = HarnessUiLiveHub(ring_size=2)
 
     async def start(thread_id, run_id):
-        observer = HarnessAguiObserver()
-        events = observer.observe(
+        from a13n_stream_protocol.display import DisplayFold, Tail
+
+        display = DisplayFold(run_id, Tail(), attempt=1, page_items=128, page_bytes=65536)
+        events = display.observer.observe(
             HarnessEvent(
                 thread_id=thread_id,
                 run_id=run_id,
@@ -347,7 +357,7 @@ async def test_unsaved_root_retention_is_bounded_and_never_evicts_active_runs() 
             thread_id=thread_id,
             run_id=run_id,
             events=events,
-            observer=observer,
+            observed=display.fold([event.model_dump(mode="json", by_alias=True) for event in events]),
         )
 
     for index in range(20):

@@ -1,6 +1,6 @@
 import type { ContentPart } from "@ag-ui/core";
-import { EventSchema } from "@ag-ui/core/schemas";
 import { readContentParts } from "a13n-ui";
+import { applyItemChanges, type ItemChange } from "a13n-ui/display";
 import type { Schema, Transport } from "../transport/client";
 import type { ThreadRefresh } from "./refresh";
 import { ProcessObservations } from "./process-observations";
@@ -84,10 +84,7 @@ class RootRunChanged extends Error {}
 
 // Rendering only: history/receipt queries remain the continuation/control owners.
 export class FocusDisplay {
-  constructor(
-    private readonly fragmentLimit = 64 * 1024 * 1024,
-    readonly processes = new ProcessObservations(),
-  ) {}
+  constructor(readonly processes = new ProcessObservations()) {}
   // Previous visible suffix only; never consulted for cursors, controls or activity.
   retainedPresentation?: FocusDisplay;
   presentationFor(continuation: string | null | undefined) {
@@ -111,6 +108,8 @@ export class FocusDisplay {
   runId?: string;
   baseContinuation?: string | null;
   blocks = new Map<string, DisplayBlock>();
+  private readonly items = new Map<string, Schema<"Item">>();
+  private itemPosition?: number;
   ready = false;
   replayCount = 0;
   sequence = 0;
@@ -149,11 +148,6 @@ export class FocusDisplay {
       ? observed.display
       : undefined;
   }
-  private fragments = new Map<
-    string,
-    { count: number; parts: string[]; size: number }
-  >();
-  private fragmentBytes = 0;
   reset() {
     this.snapshot = undefined;
     this.retainedPresentation = undefined;
@@ -161,10 +155,9 @@ export class FocusDisplay {
     this.runId = undefined;
     this.baseContinuation = undefined;
     this.blocks.clear();
+    this.items.clear();
     this.children.clear();
     this.processes.clear();
-    this.fragments.clear();
-    this.fragmentBytes = 0;
     this.ready = false;
     this.replayCount = 0;
     this.sequence = 0;
@@ -190,6 +183,10 @@ export class FocusDisplay {
         : frame.snapshot.thread.continuation_id;
       this.cursor = frame.resume_cursor ?? undefined;
       this.ready = !!frame.resume_cursor;
+      for (const [id, position] of Object.entries(
+        frame.snapshot.root_stream?.checkpoints ?? {},
+      ))
+        this.checkpoints.set(id, position);
     } else if (frame.kind === "root_stream") {
       if (
         !this.snapshot?.root_stream ||
@@ -200,7 +197,7 @@ export class FocusDisplay {
       for (const event of frame.events) {
         if (event.index !== this.replayCount++)
           throw new Error("Incomplete root replay.");
-        this.fold(event.event_type, event.payload, event.payload_omitted);
+        this.apply(event.changes);
       }
     } else if (frame.kind === "ready") {
       if (
@@ -227,19 +224,20 @@ export class FocusDisplay {
           "Root Run changed; reload its focused snapshot.",
         );
       }
-      this.sequence = frame.event.sequence; // Global sequences are sparse within one Thread.
-      this.cursor = frame.resume_cursor;
-      if (frame.event.root_thread_id !== this.snapshot?.thread.thread.thread_id)
-        return;
-      if (frame.event.run_kind === "child") {
-        this.foldChild(frame.event);
-        return;
+      if (
+        frame.event.root_thread_id === this.snapshot?.thread.thread.thread_id
+      ) {
+        if (frame.event.run_kind === "child") this.foldChild(frame.event);
+        else {
+          if (frame.event.changes == null)
+            throw new Error("Missing compact display changes.");
+          this.apply(frame.event.changes);
+        }
       }
-      this.fold(
-        frame.event.event_type,
-        frame.event.payload,
-        frame.event.payload_omitted,
-      );
+      // Global sequences are sparse within one Thread. Never advance the
+      // recoverable cursor across a missing compact baseline or malformed batch.
+      this.sequence = frame.event.sequence;
+      this.cursor = frame.resume_cursor;
     }
   }
   private foldChild(event: Schema<"LiveEvent">) {
@@ -260,7 +258,7 @@ export class FocusDisplay {
       // One execution can start another Run after a deferred checkpoint. The
       // root-lineage stream is ordered; never concatenate two Run suffixes.
       this.processes.end(child.display.runId);
-      child.display = new FocusDisplay(128 * 1024, this.processes);
+      child.display = new FocusDisplay(this.processes);
       child.display.runId = event.run_id;
       child.display.gap = true;
     }
@@ -272,15 +270,154 @@ export class FocusDisplay {
       child = {
         parentId: event.parent_thread_id,
         threadId: event.thread_id,
-        display: new FocusDisplay(128 * 1024, this.processes),
+        display: new FocusDisplay(this.processes),
       };
       child.display.runId = event.run_id;
       this.children.set(event.execution_id, child);
     }
-    child.display.fold(event.event_type, event.payload, event.payload_omitted);
+    if (event.changes == null)
+      throw new Error("Missing child display changes.");
+    // Child output is an explicitly lossy suffix, with saved child output read
+    // separately. Missing/evicted child baselines must not reset the root lane.
+    const available = new Set(child.display.items.keys());
+    const applicable = event.changes.filter((change) => {
+      if (change.type === "set") {
+        available.add(change.item.id);
+        return true;
+      }
+      if (available.has(change.id)) return true;
+      child!.display.gap = true;
+      return false;
+    });
+    child.display.apply(applicable);
     child.display.trimChildOutput();
   }
+  private apply(changes: readonly ItemChange<Schema<"Item">>[]) {
+    const before = new Map(
+      changes.map((change) => {
+        const id = change.type === "set" ? change.item.id : change.id;
+        return [id, this.items.get(id)?.last_stream_id];
+      }),
+    );
+    if (!applyItemChanges(this.items, changes))
+      throw new Error("Missing compact display baseline.");
+    for (const [id, previousPosition] of before) {
+      const item = this.items.get(id)!;
+      if (item.last_stream_id === previousPosition) continue;
+      const content = item.content;
+      const position = Number(item.last_stream_id.split("-")[1]);
+      this.itemPosition = position;
+      if (object(content.metadata) && content.metadata.display === false)
+        continue;
+      if (item.kind === "observation") {
+        if (object(content.event)) this.lifecycle(content.event);
+        else this.foldCustom({ type: "CUSTOM", ...content });
+        this.itemPosition = undefined;
+        continue;
+      }
+      const subagentRunId = string(content.subagentRunId) || undefined;
+      const scope = subagentRunId
+        ? `${this.runId}:${subagentRunId}`
+        : this.runId;
+      const source = string(
+        item.kind === "tool_call" ? content.toolCallId : content.messageId,
+      );
+      const key =
+        content.provider != null
+          ? `${scope}:native:${string(content.provider)}:${source}`
+          : `${scope}:${source}`;
+      if (object(content.metadata) && content.metadata.display === false)
+        continue;
+      const previous = this.blocks.get(key);
+      const block: DisplayBlock = {
+        ...previous,
+        id: key,
+        kind:
+          item.kind === "tool_call"
+            ? "tool"
+            : item.kind === "reasoning_message"
+              ? "thinking"
+              : content.input_media != null
+                ? "media"
+                : content.role === "user"
+                  ? "user"
+                  : "assistant",
+        text: string(
+          item.kind === "tool_call" ? content.arguments : content.text,
+        ),
+        subagentRunId,
+        done: item.state !== "in_progress",
+        metadata: object(content.metadata) ? content.metadata : undefined,
+      };
+      if (item.kind === "tool_call") {
+        block.toolCallId = source;
+        block.name = string(content.toolCallName);
+        block.provider = string(content.provider) || undefined;
+        block.result =
+          "value" in content
+            ? sourceText(content.value)
+            : typeof content.result === "string"
+              ? content.result
+              : undefined;
+        block.retry = content.retry === true;
+        block.stopped = item.state === "interrupted";
+        block.edit = object(content.applied_edit)
+          ? (content.applied_edit as AppliedEdit)
+          : undefined;
+        block.images = Array.isArray(content.tool_images)
+          ? (content.tool_images as Schema<"ToolImageView">[])
+          : undefined;
+        block.apps = Array.isArray(content.mcp_apps)
+          ? (content.mcp_apps as Schema<"AppReference">[])
+          : undefined;
+        block.imageUnavailable = content.tool_image_unavailable === true;
+        if (
+          ["success", "failed", "denied", "interrupted"].includes(
+            string(content.outcome),
+          )
+        )
+          block.outcome = content.outcome as ToolView["outcome"];
+        if (block.retry)
+          block.failure = block.result || "Tool input validation failed.";
+        if (content.result_parts != null)
+          block.resultParts = readContentParts(content.result_parts);
+        if (object(content.failure))
+          block.failure = string(content.failure.message);
+        if (item.state === "failed" && !block.outcome) block.outcome = "failed";
+        if (
+          content.result != null ||
+          content.result_parts != null ||
+          "value" in content
+        )
+          this.processes.result(
+            scope!,
+            block.name,
+            block.text,
+            content.value ?? content.result ?? content.result_parts,
+          );
+      }
+      if (content.input_media != null) block.value = content.input_media;
+      this.blocks.set(key, block);
+      this.savedBlocks.set(key, position);
+      if (
+        !subagentRunId &&
+        this.recovery?.state === "retrying" &&
+        block.kind !== "user"
+      )
+        this.recovery = { ...this.recovery, state: "resumed" };
+    }
+    this.itemPosition = undefined;
+  }
   private trimChildOutput() {
+    let itemBytes = 0;
+    let itemCount = 0;
+    for (const [id, item] of [...this.items].reverse()) {
+      itemBytes += JSON.stringify(item).length;
+      if (++itemCount > 128 || itemBytes > 128 * 1024) {
+        this.items.delete(id);
+        this.gap = true;
+      }
+    }
     // Bound both long deltas and event cardinality; saved output is fetched
     // independently and never synthesized from this lossy display window.
     while (this.blocks.size > 128) {
@@ -313,73 +450,8 @@ export class FocusDisplay {
       } else remaining -= size;
     }
   }
-  private custom(payload: Payload): Payload | undefined {
-    if (payload.name !== "a13n.stream.fragment") return payload;
-    const value = payload.value;
-    if (
-      !object(value) ||
-      typeof value.id !== "string" ||
-      !Number.isInteger(value.index) ||
-      !Number.isInteger(value.count) ||
-      typeof value.data !== "string"
-    ) {
-      this.gap = true;
-      return;
-    }
-    const index = Number(value.index),
-      count = Number(value.count);
-    if (index === 0) {
-      const old = this.fragments.get(value.id);
-      if (old) this.fragmentBytes -= old.size;
-      if (this.fragments.size >= 8) {
-        this.gap = true;
-        return;
-      }
-      this.fragments.set(value.id, { count, parts: [], size: 0 });
-    }
-    const assembly = this.fragments.get(value.id);
-    const size = new TextEncoder().encode(value.data).length;
-    if (
-      !assembly ||
-      index !== assembly.parts.length ||
-      count !== assembly.count ||
-      count < 1 ||
-      index >= count ||
-      this.fragmentBytes + size > this.fragmentLimit
-    ) {
-      if (assembly) this.fragmentBytes -= assembly.size;
-      this.fragments.delete(value.id);
-      this.gap = true;
-      return;
-    }
-    assembly.parts.push(value.data);
-    assembly.size += size;
-    this.fragmentBytes += size;
-    if (assembly.parts.length !== count) return;
-    this.fragments.delete(value.id);
-    this.fragmentBytes -= assembly.size;
-    try {
-      const result: unknown = JSON.parse(assembly.parts.join(""));
-      if (
-        object(result) &&
-        result.type === "CUSTOM" &&
-        result.name !== "a13n.stream.fragment" &&
-        EventSchema.safeParse(result).success
-      )
-        return result;
-    } catch {
-      /* Display a gap rather than partial domain data. */
-    }
-    this.gap = true;
-  }
-  private fold(type: string, payload: Payload | null, omitted: boolean) {
-    if (omitted) this.gap = true;
-    if (!payload) return;
-    if (payload.type !== type || !EventSchema.safeParse(payload).success) {
-      this.gap = true;
-      return;
-    }
-    if (object(payload.metadata) && payload.metadata.display === false) return;
+  private lifecycle(payload: Payload) {
+    const type = string(payload.type);
     const subagentRunId = string(payload.subagentRunId) || undefined;
     if (
       !subagentRunId &&
@@ -393,88 +465,7 @@ export class FocusDisplay {
             ? "resumed"
             : "ended",
       };
-    else if (
-      !subagentRunId &&
-      this.recovery?.state === "retrying" &&
-      (((type === "TEXT_MESSAGE_CONTENT" ||
-        type === "REASONING_MESSAGE_CONTENT") &&
-        string(payload.delta)) ||
-        type === "TOOL_CALL_START")
-    )
-      this.recovery = { ...this.recovery, state: "resumed" };
-    const id = string(
-      type.startsWith("TOOL_CALL_") ? payload.toolCallId : payload.messageId,
-    );
-    const scope = subagentRunId ? `${this.runId}:${subagentRunId}` : this.runId;
-    const key = `${scope}:${id}`;
-    if (type === "TEXT_MESSAGE_START" || type === "REASONING_MESSAGE_START") {
-      this.blocks.set(key, {
-        id: key,
-        kind: type.startsWith("REASONING")
-          ? "thinking"
-          : payload.role === "user"
-            ? "user"
-            : "assistant",
-        text: "",
-        ...(object(payload.metadata) ? { metadata: payload.metadata } : {}),
-      });
-    } else if (
-      type === "TEXT_MESSAGE_CONTENT" ||
-      type === "REASONING_MESSAGE_CONTENT"
-    ) {
-      const block = this.blocks.get(key) ?? {
-        id: key,
-        kind: "assistant" as const,
-        text: "",
-      };
-      this.blocks.set(key, {
-        ...block,
-        text: block.text + string(payload.delta),
-        ...(object(payload.metadata) ? { metadata: payload.metadata } : {}),
-      });
-    } else if (
-      type === "TEXT_MESSAGE_END" ||
-      type === "REASONING_MESSAGE_END" ||
-      type === "TOOL_CALL_END"
-    ) {
-      const block = this.blocks.get(key);
-      if (block) this.blocks.set(key, { ...block, done: true });
-    } else if (type === "TOOL_CALL_START") {
-      this.blocks.set(key, {
-        id: key,
-        toolCallId: id,
-        kind: "tool",
-        name: string(payload.toolCallName),
-        text: "",
-      });
-    } else if (type === "TOOL_CALL_ARGS") {
-      const block = this.blocks.get(key) ?? {
-        id: key,
-        kind: "tool" as const,
-        toolCallId: id,
-        text: "",
-      };
-      this.blocks.set(key, {
-        ...block,
-        text: block.text + string(payload.delta),
-      });
-    } else if (type === "TOOL_CALL_RESULT") {
-      const block = this.blocks.get(key) ?? {
-        id: key,
-        kind: "tool" as const,
-        toolCallId: id,
-        text: "",
-      };
-      this.blocks.set(key, {
-        ...block,
-        result:
-          typeof payload.content === "string" ? payload.content : undefined,
-        resultParts: readContentParts(payload.content),
-        done: true,
-      });
-      if (this.runId)
-        this.processes.result(scope!, block.name, block.text, payload.content);
-    } else if (type === "RUN_FINISHED" || type === "RUN_ERROR") {
+    if (type === "RUN_FINISHED" || type === "RUN_ERROR") {
       this.stopTools();
       const failed = type === "RUN_ERROR";
       const outcome = object(payload.outcome)
@@ -529,18 +520,6 @@ export class FocusDisplay {
                 : "Completed",
         done: type !== "SUBAGENT_STARTED",
       });
-    } else if (type === "CUSTOM") {
-      const event = this.custom(payload);
-      if (
-        !event ||
-        (object(event.metadata) && event.metadata.display === false)
-      )
-        return;
-      this.foldCustom(event);
-    }
-    if (subagentRunId) {
-      const block = this.blocks.get(key);
-      if (block) this.blocks.set(key, { ...block, subagentRunId });
     }
   }
   private stopTools(subagentRunId?: string) {
@@ -559,11 +538,14 @@ export class FocusDisplay {
     const name = string(event.name);
     const subagentRunId = string(event.subagentRunId) || undefined;
     const scope = subagentRunId ? `${this.runId}:${subagentRunId}` : this.runId;
-    const setBlock = (key: string, block: DisplayBlock) =>
+    const setBlock = (key: string, block: DisplayBlock) => {
       this.blocks.set(key, {
         ...block,
         ...(subagentRunId ? { subagentRunId } : {}),
       });
+      if (this.itemPosition !== undefined)
+        this.savedBlocks.set(key, this.itemPosition);
+    };
     const value = object(event.value) ? event.value : {};
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
@@ -599,11 +581,8 @@ export class FocusDisplay {
       name === "a13n.harness_ui.checkpoint" &&
       typeof source.continuation_id === "string"
     ) {
-      const ordinal = this.checkpoints.size + 1;
-      this.checkpoints.set(source.continuation_id, ordinal);
-      for (const id of this.blocks.keys()) {
-        if (!this.savedBlocks.has(id)) this.savedBlocks.set(id, ordinal);
-      }
+      if (this.itemPosition !== undefined)
+        this.checkpoints.set(source.continuation_id, this.itemPosition);
       return;
     }
     if (
@@ -637,197 +616,6 @@ export class FocusDisplay {
           };
         }
       }
-      return;
-    }
-    if (
-      ["a13n.pydantic_ai.part_start", "a13n.pydantic_ai.part_end"].includes(
-        name,
-      ) &&
-      object(source.part)
-    ) {
-      const part = source.part;
-      if (
-        ["builtin-tool-call", "builtin-tool-return"].includes(
-          string(part.part_kind),
-        ) &&
-        typeof part.tool_call_id === "string"
-      ) {
-        const provider = string(part.provider_name) || "provider";
-        const key = `${scope}:native:${provider}:${part.tool_call_id}`;
-        const previous = this.blocks.get(key);
-        const returned = part.part_kind === "builtin-tool-return";
-        setBlock(key, {
-          id: key,
-          kind: "tool",
-          name: string(part.tool_name),
-          text: "",
-          ...previous,
-          provider,
-          ...(returned
-            ? {
-                result: sourceText(part.content),
-                done: true,
-                outcome: [
-                  "success",
-                  "failed",
-                  "denied",
-                  "interrupted",
-                ].includes(string(part.outcome))
-                  ? (part.outcome as ToolView["outcome"])
-                  : undefined,
-              }
-            : {
-                text: sourceText(part.args),
-                done: name === "a13n.pydantic_ai.part_end" || previous?.done,
-              }),
-        });
-        return;
-      }
-    }
-    if (
-      name === "a13n.harness-ui.mcp_apps" &&
-      typeof source.tool_call_id === "string" &&
-      Array.isArray(source.apps)
-    ) {
-      const key = `${scope}:${source.tool_call_id}`;
-      const apps = source.apps.filter(
-        (value): value is Schema<"AppReference"> =>
-          object(value) &&
-          [
-            "app_id",
-            "thread_id",
-            "run_id",
-            "tool_call_id",
-            "server_id",
-            "tool_name",
-          ].every((field) => typeof value[field] === "string"),
-      );
-      setBlock(key, {
-        id: key,
-        kind: "tool",
-        text: "",
-        ...this.blocks.get(key),
-        apps,
-      });
-      return;
-    }
-    if (
-      name === "a13n.harness-ui.tool_images" &&
-      typeof source.tool_call_id === "string" &&
-      Array.isArray(source.images)
-    ) {
-      const key = `${scope}:${source.tool_call_id}`;
-      const block = this.blocks.get(key);
-      const images = source.images.filter(
-        (image): image is Schema<"ToolImageView"> =>
-          object(image) &&
-          typeof image.thread_id === "string" &&
-          object(image.attachment) &&
-          typeof image.attachment.attachment_id === "string" &&
-          typeof image.attachment.name === "string" &&
-          typeof image.attachment.media_type === "string" &&
-          typeof image.attachment.size === "number",
-      );
-      setBlock(key, {
-        id: key,
-        kind: "tool",
-        text: "",
-        name: "computer_observe",
-        ...block,
-        images,
-        imageUnavailable: source.unavailable === true,
-      });
-      return;
-    }
-    if (
-      name === "a13n.filesystem.edit_applied" &&
-      typeof source.tool_call_id === "string" &&
-      typeof source.file_path === "string" &&
-      typeof source.before === "string" &&
-      typeof source.after === "string"
-    ) {
-      const key = `${scope}:${source.tool_call_id}`;
-      const block = this.blocks.get(key);
-      setBlock(key, {
-        id: key,
-        kind: "tool",
-        text: "",
-        name: "edit",
-        ...block,
-        edit: {
-          file_path: source.file_path,
-          before: source.before,
-          after: source.after,
-        },
-      });
-      return;
-    }
-    if (
-      name === "a13n.pydantic_ai.function_tool_result" &&
-      object(source.part) &&
-      typeof source.part.tool_call_id === "string"
-    ) {
-      const part = source.part;
-      if (
-        part.part_kind === "tool-return" ||
-        part.part_kind === "retry-prompt"
-      ) {
-        const key = `${scope}:${part.tool_call_id}`;
-        const block = this.blocks.get(key);
-        if (this.runId && part.part_kind === "tool-return")
-          this.processes.result(
-            scope!,
-            string(part.tool_name),
-            block?.text,
-            part.content,
-          );
-        setBlock(key, {
-          id: key,
-          kind: "tool",
-          text: "",
-          name: string(part.tool_name),
-          ...block,
-          toolCallId: string(part.tool_call_id),
-          result: sourceText(part.content),
-          done: true,
-          retry: part.part_kind === "retry-prompt",
-          outcome:
-            part.outcome === "failed" ||
-            part.outcome === "denied" ||
-            part.outcome === "interrupted" ||
-            part.outcome === "success"
-              ? part.outcome
-              : undefined,
-          failure:
-            part.part_kind === "retry-prompt"
-              ? sourceText(part.content) || "Tool input validation failed."
-              : undefined,
-        });
-        return;
-      }
-    }
-    if (name === "a13n.input.user" || name === "a13n.input.steering") {
-      const key = `${scope}:${string(source.message_id)}`;
-      setBlock(key, {
-        id: key,
-        kind: "user",
-        text: string(source.content),
-        done: true,
-        metadata: object(event.metadata) ? event.metadata : undefined,
-      });
-      return;
-    }
-    if (name.startsWith("a13n.input.") && name !== "a13n.input.media") return;
-    if (name === "a13n.input.media") {
-      if (source.source !== "user" && source.source !== "steering") return;
-      const key = `${scope}:${string(source.message_id)}`;
-      setBlock(key, {
-        id: key,
-        kind: "media",
-        text: "",
-        value: source.content,
-        metadata: object(event.metadata) ? event.metadata : undefined,
-      });
       return;
     }
     if (
@@ -962,6 +750,13 @@ export function watchThread(
   let replacement: FocusDisplay | undefined;
   let reconcileReplacement = false;
   let restarting = false;
+  let observedAt = Date.now();
+  // Publication hints are best effort. A quiet model/tool wait must still
+  // converge to a selected checkpoint without requiring another stream event.
+  const quietRefresh = setInterval(() => {
+    if (display.ready && display.runId && Date.now() - observedAt >= 10_000)
+      invalidate("checkpoint");
+  }, 10_000);
   const subscription = transport.realtime.subscribe({
     stream: "focus",
     root: threadId,
@@ -977,6 +772,7 @@ export function watchThread(
       );
     },
     receive(value) {
+      observedAt = Date.now();
       if (restarting) return;
       let immediate = false;
       try {
@@ -1042,6 +838,7 @@ export function watchThread(
   return () => {
     display.processes.end();
     clearTimeout(timer);
+    clearInterval(quietRefresh);
     subscription();
   };
 }

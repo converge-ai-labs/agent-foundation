@@ -8,6 +8,8 @@ import json
 import pytest
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 
+from .display_fixture import feed_display
+
 
 @pytest.fixture
 def renderer():
@@ -29,19 +31,19 @@ def call(renderer, name, arguments, *, call_id="call-1", run_id="root", result=N
         ("ARGS", {"delta": json.dumps(arguments)}),
         ("END", {}),
     ]:
-        renderer.ingest("TOOL_CALL_" + kind, {"toolCallId": call_id, **payload}, run_id=run_id, child=child)
+        feed_display(renderer, "TOOL_CALL_" + kind, {"toolCallId": call_id, **payload}, run_id=run_id, child=child)
     if result is not None:
         finish(renderer, call_id, result, run_id=run_id, child=child)
 
 
 def finish(renderer, call_id, result, *, run_id="root", child=False):
-    renderer.ingest(
-        "TOOL_CALL_RESULT", {"toolCallId": call_id, "content": json.dumps(result)}, run_id=run_id, child=child
+    feed_display(
+        renderer, "TOOL_CALL_RESULT", {"toolCallId": call_id, "content": json.dumps(result)}, run_id=run_id, child=child
     )
 
 
 def custom(renderer, name, event, **kwargs):
-    renderer.ingest("CUSTOM", {"name": name, "value": {"event": event}}, **kwargs)
+    feed_display(renderer, "CUSTOM", {"name": name, "value": {"event": event}}, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -104,7 +106,7 @@ def test_exploration_failure_is_not_deduplicated_or_hidden(renderer):
 def test_group_boundaries_and_late_results_remain_isolated(renderer):
     call(renderer, "view", {"file_path": "a"}, call_id="a")
     call(renderer, "grep", {"pattern": "old"}, call_id="b")
-    renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "answer", "delta": "Boundary answer"})
+    feed_display(renderer, "TEXT_MESSAGE_CONTENT", {"messageId": "answer", "delta": "Boundary answer"})
     call(renderer, "view", {"file_path": "c"}, call_id="c", result={"ok": True})
     finish(renderer, "a", {"ok": True})
     finish(renderer, "b", {"ok": False})
@@ -257,7 +259,7 @@ def test_evicted_group_anchor_does_not_hide_retained_failure(renderer):
             call_id=str(index),
             result={"ok": False, "error": {"code": "environment_not_found"}} if index == 1 else {"ok": True},
         )
-    renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "answer", "delta": "answer"})
+    feed_display(renderer, "TEXT_MESSAGE_CONTENT", {"messageId": "answer", "delta": "answer"})
     concise = render(renderer)
     assert "environment_not_found" in concise and "Read 2" in concise
     assert "Arguments | 1" in render(renderer, detailed=True)

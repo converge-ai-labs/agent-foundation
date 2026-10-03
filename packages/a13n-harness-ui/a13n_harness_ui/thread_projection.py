@@ -36,6 +36,7 @@ from pydantic_ai.tools import DeferredToolRequests
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
 from a13n_harness_ui.conversation import excerpt_text, input_excerpt
+from a13n_harness_ui.display_projection import display_entry, display_turns
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_apps.snapshots import app_references
@@ -403,7 +404,7 @@ class ThreadProjectionService:
             {
                 boundary
                 for turn in visible_turns
-                for boundary in (turn.input_position, turn.output_position, *turn.app_positions)
+                for boundary in (turn.input_position, *turn.output_positions, *turn.app_positions)
                 if boundary is not None and not position <= boundary < upper_bound
             }
         )
@@ -416,6 +417,7 @@ class ThreadProjectionService:
                 _TranscriptCursor(thread_id=thread_id, continuation_id=continuation_id, position=earlier_turn_position)
             )
             if earlier_turn_position > 0
+            and await self._store.inspections.turns(thread_id, continuation_id, upper=earlier_turn_position, limit=1)
             else None,
             later_turns_cursor=_encode_cursor(
                 _TranscriptCursor(
@@ -700,8 +702,6 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         raise ThreadError("Thread state belongs to another Thread.", code="thread_continuation_incompatible")
     display = stored.display_history if isinstance(stored, StoredContinuation) else None
     model_history = state.message_history
-    history = display.messages if display is not None else model_history
-    completed = display.completed_responses if display is not None else ()
     continuation_id = thread.continuation.logical_digest if thread.continuation else None
     notes = NotePage(continuation_id=continuation_id)
     tasks = TaskPage(continuation_id=continuation_id)
@@ -723,12 +723,16 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         notes=notes,
         tasks=tasks,
     )
-    turns = _transcript_turns(history, completed)
+    turns = display_turns(display) if display is not None else _transcript_turns(model_history)
     return InspectionData(
         metadata_json=metadata.model_dump_json(),
-        entries=tuple(
-            _message_entry(position, message, thread=thread).model_dump_json()
-            for position, message in enumerate(history)
+        entries=(
+            tuple(display_entry(item, thread).model_dump_json() for item in display.items)
+            if display is not None
+            else tuple(
+                _message_entry(position, message, thread=thread).model_dump_json()
+                for position, message in enumerate(model_history)
+            )
         ),
         turns=tuple(
             InspectionTurn(turn.turn_id, turn.input_position, turn.end_position, turn.model_dump_json())

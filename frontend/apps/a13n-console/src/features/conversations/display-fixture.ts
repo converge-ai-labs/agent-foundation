@@ -16,6 +16,7 @@ export function item(
 ): DisplayItem {
   return {
     id,
+    ordinal: 1,
     kind,
     state: kind === "tool_call" ? "in_progress" : "completed",
     first_stream_id: `${attempt}-0`,

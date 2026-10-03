@@ -227,8 +227,17 @@ test("Thread stream resumes after its last cursor and reports control frames", a
     run_id: "run_one",
     attempt: 1,
     sequence: 2,
-    event: { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "hi" },
-    item: { id: "itm_one", kind: "text_message", state: "in_progress" },
+    changes: [
+      {
+        type: "append",
+        id: "itm_one",
+        field: "text",
+        text: "hi",
+        last_stream_id: "1-2",
+        state: "in_progress",
+        ended_at: null,
+      },
+    ],
   };
   const client = createClient({
     baseUrl,
@@ -318,3 +327,51 @@ test("reconnects with the consumer's current complete position and matching hint
   assert.equal(new URL(requests[1].url).searchParams.get("position"), "1-160");
   assert.equal(requests[1].headers.get("Last-Event-ID"), "8-0");
 });
+
+test.each([
+  [
+    {
+      type: "append",
+      id: "m",
+      field: "text",
+      text: "x",
+      last_stream_id: "01-2",
+      state: "in_progress",
+      ended_at: null,
+    },
+  ],
+  [
+    {
+      type: "append",
+      id: "m",
+      field: "unknown",
+      text: "x",
+      last_stream_id: "1-2",
+      state: "in_progress",
+      ended_at: null,
+    },
+  ],
+  [{ type: "set", item: { id: "m" } }],
+  [{ type: "TEXT_MESSAGE_CONTENT", delta: "x" }],
+])(
+  "rejects malformed compact changes instead of interpreting source events",
+  async (change) => {
+    const client = createClient({
+      baseUrl,
+      auth: { type: "session" },
+      fetch: async () =>
+        new Response(
+          chunks(
+            `id: 1-0\nevent: delta\ndata: ${JSON.stringify({ run_id: "run", attempt: 1, sequence: 2, changes: [change] })}\n\n`,
+          ),
+          {
+            headers: { "Content-Type": "text/event-stream" },
+          },
+        ),
+    });
+    await assert.rejects(
+      client.streamThread("ws", "thread").next(),
+      ProtocolError,
+    );
+  },
+);

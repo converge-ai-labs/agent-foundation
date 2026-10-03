@@ -57,7 +57,11 @@ def test_checkpoint_roundtrip_preserves_native_accepted_input(tmp_path, child, v
             terminal=True,
         )
     else:
-        checkpoint = StoredContinuation(**fields)
+        from a13n_harness_ui.display_history import import_display_history
+
+        checkpoint = StoredContinuation(
+            **fields, display_history=import_display_history(state.thread_id, state.message_history)
+        )
     path = tmp_path / "checkpoint.json"
     path.write_text(checkpoint.model_dump_json())
     restored = type(checkpoint).model_validate_json(path.read_text())

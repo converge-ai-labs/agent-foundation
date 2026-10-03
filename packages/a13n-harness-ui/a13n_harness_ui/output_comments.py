@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic_ai.messages import ModelResponse, TextPart
-
 from a13n_harness_ui.errors import StoreConflictError, ThreadError
 from a13n_harness_ui.output_comment_models import (
     ChildOutputLocation,
@@ -242,17 +240,18 @@ class OutputComments:
         location = target.location
         if isinstance(location, RootOutputLocation):
             continuation = await self._store.objects.read_model(source, StoredContinuation)
-            history = (
-                display.messages
-                if (display := continuation.display_history) is not None
-                else continuation.harness_state.message_history
-            )
-            if continuation.harness_state.thread_id == target.producing_thread_id and location.message < len(history):
-                message = history[location.message]
-                if isinstance(message, ModelResponse) and location.part < len(message.parts):
-                    part = message.parts[location.part]
-                    if isinstance(part, TextPart):
-                        return part.content
+            from a13n_harness_ui.display_history import assistant_text
+
+            items = continuation.display_history.items
+            if (
+                continuation.harness_state.thread_id == target.producing_thread_id
+                and location.message < len(items)
+                and location.part == 0
+                and assistant_text(item := items[location.message])
+            ):
+                text = item.content.get("text")
+                assert isinstance(text, str)
+                return text
         else:
             checkpoint = await self._store.objects.read_model(source, StoredChildCheckpoint)
             if (

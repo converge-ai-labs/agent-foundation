@@ -8,6 +8,8 @@ import pytest
 from a13n_harness_ui.interactive.rendering import terminal_text
 from a13n_harness_ui.interactive.tool_rows import semantic_tool_row, subagent_result_row
 
+from .display_fixture import feed_display
+
 
 @pytest.mark.parametrize(
     "name,arguments,expected",
@@ -170,16 +172,16 @@ def test_streamed_subagent_receipts_wrap_and_deduplicate_native_protocol_results
     native = ("CUSTOM", {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}})
     protocol = ("TOOL_CALL_RESULT", {"toolCallId": "call", "content": json.dumps(result)})
     try:
-        renderer.ingest("TOOL_CALL_START", {"toolCallId": "call", "toolCallName": name})
-        renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "call", "delta": json.dumps(arguments)})
-        renderer.ingest("TOOL_CALL_END", {"toolCallId": "call"})
+        feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "call", "toolCallName": name})
+        feed_display(renderer, "TOOL_CALL_ARGS", {"toolCallId": "call", "delta": json.dumps(arguments)})
+        feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "call"})
         renderer.transcript.render(24)
         pending = "\n".join("".join(text for _, text in row) for row in renderer.transcript.rows)
         assert "wrapped" in pending and "…" in pending
         assert "at return" not in pending and "accepted" not in pending
         events = [native, protocol] if native_first else [protocol, native]
         for event in events + events:
-            renderer.ingest(*event)
+            feed_display(renderer, *event)
         assert len(renderer.transcript.blocks) == 1
         renderer.transcript.render(24)
         visible = "\n".join("".join(text for _, text in row) for row in renderer.transcript.rows)
@@ -187,7 +189,8 @@ def test_streamed_subagent_receipts_wrap_and_deduplicate_native_protocol_results
         assert ("at return" if name == "delegate" else "accepted for delivery") in " ".join(visible.split())
         assert "Call tool" not in visible and len(visible.splitlines()) > 4
         source = next(iter(renderer.transcript.blocks.values())).source
-        assert "part_kind" in source and "Additional tool result" in source
+        assert '"part_kind": "tool-return"' in source and '"execution_id": "exec-123"' in source
+        assert source.count("Additional tool result") == (0 if native_first else 1)
         assert "wrapped tasks" in source or "wrapped guidance" in source
     finally:
         renderer.transcript.close()
@@ -198,11 +201,13 @@ def test_native_subagent_failure_is_not_overwritten_by_protocol_success():
 
     renderer = StreamRenderer(Status())
     try:
-        renderer.ingest("TOOL_CALL_START", {"toolCallId": "call", "toolCallName": "steer_subagent"})
-        renderer.ingest(
-            "TOOL_CALL_ARGS", {"toolCallId": "call", "delta": '{"execution_id":"exec-123","message":"new guidance"}'}
+        feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "call", "toolCallName": "steer_subagent"})
+        feed_display(
+            renderer,
+            "TOOL_CALL_ARGS",
+            {"toolCallId": "call", "delta": '{"execution_id":"exec-123","message":"new guidance"}'},
         )
-        renderer.ingest("TOOL_CALL_END", {"toolCallId": "call"})
+        feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "call"})
         part = {
             "part_kind": "tool-return",
             "tool_name": "steer_subagent",
@@ -210,9 +215,13 @@ def test_native_subagent_failure_is_not_overwritten_by_protocol_success():
             "outcome": "denied",
             "content": "not allowed",
         }
-        renderer.ingest("CUSTOM", {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}})
-        renderer.ingest(
-            "TOOL_CALL_RESULT", {"toolCallId": "call", "content": '{"execution_id":"exec-123","accepted":true}'}
+        feed_display(
+            renderer, "CUSTOM", {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}}
+        )
+        feed_display(
+            renderer,
+            "TOOL_CALL_RESULT",
+            {"toolCallId": "call", "content": '{"execution_id":"exec-123","accepted":true}'},
         )
         block = next(iter(renderer.transcript.blocks.values()))
         assert "denied" in block.preview and "accepted for delivery" not in block.preview

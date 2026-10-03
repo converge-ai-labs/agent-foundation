@@ -251,6 +251,7 @@ class ToolImageView(SurfaceModel):
 
 
 class TranscriptPart(SurfaceModel):
+    subagent_run_id: str | None = None
     comment_target: SavedOutputTarget | None = None
     text_truncated: bool = False
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)
@@ -311,6 +312,7 @@ class TranscriptTurn(SurfaceModel):
     end_position: int = Field(ge=0)
     final_position: int | None = Field(default=None, ge=0)
     output_position: int | None = Field(default=None, ge=0)
+    output_positions: tuple[int, ...] = ()
     output_preview: str | None = Field(default=None, max_length=512)
     app_positions: tuple[int, ...] = ()
     preview: str = Field(max_length=512)

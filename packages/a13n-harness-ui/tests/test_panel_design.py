@@ -15,6 +15,8 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.utils import get_cwidth
 
+from .display_fixture import feed_display
+
 
 def _text(transcript: Transcript, width: int = 80) -> str:
     transcript.render(width)
@@ -47,10 +49,11 @@ def test_transcript_layout_uses_viewport_width_in_any_terminal_environment(
 
 def test_edit_applied_replaces_pending_call_and_retains_full_diff_on_expand() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"toolCallId": "edit-one", "toolCallName": "edit"})
-    renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "edit-one", "delta": '{"file_path":"file.py"}'})
-    renderer.ingest("TOOL_CALL_END", {"toolCallId": "edit-one"})
-    renderer.ingest(
+    feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "edit-one", "toolCallName": "edit"})
+    feed_display(renderer, "TOOL_CALL_ARGS", {"toolCallId": "edit-one", "delta": '{"file_path":"file.py"}'})
+    feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "edit-one"})
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.filesystem.edit_applied",
@@ -64,7 +67,7 @@ def test_edit_applied_replaces_pending_call_and_retains_full_diff_on_expand() ->
             },
         },
     )
-    renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "edit-one", "content": '{"ok":true}'})
+    feed_display(renderer, "TOOL_CALL_RESULT", {"toolCallId": "edit-one", "content": '{"ok":true}'})
     assert len(renderer.transcript.blocks) == 1
     text = _text(renderer.transcript)
     assert "Edit · file.py · +20 -20" in text
@@ -95,7 +98,8 @@ def test_long_edit_preview_discloses_character_omission_and_preserves_closed_fra
 @pytest.mark.parametrize("source", ["background_process", "async_subagent", None])
 def test_activity_input_uses_provenance_not_message_text(source: str | None) -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest(
+    feed_display(
+        renderer,
         "TEXT_MESSAGE_CONTENT",
         {
             "role": "user",
@@ -169,11 +173,11 @@ async def test_status_is_one_structured_panel_without_duplicate_usage() -> None:
 def test_ordinary_tool_rows_keep_output_in_details_and_only_report_observed_success(result, state) -> None:
     renderer = StreamRenderer(Status())
     try:
-        renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": "view"})
+        feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "one", "toolCallName": "view"})
         assert _text(renderer.transcript) == "Read path unavailable …"
-        renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "one", "delta": '{"file_path":"file.py"}'})
-        renderer.ingest("TOOL_CALL_END", {"toolCallId": "one"})
-        renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "one", "content": result})
+        feed_display(renderer, "TOOL_CALL_ARGS", {"toolCallId": "one", "delta": '{"file_path":"file.py"}'})
+        feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "one"})
+        feed_display(renderer, "TOOL_CALL_RESULT", {"toolCallId": "one", "content": result})
         text = _text(renderer.transcript)
         assert text.startswith("Read failed:") if state == "failed" else text == "Read file.py"
         assert "{" not in text and "output-marker" not in text
@@ -201,10 +205,11 @@ def test_native_tool_outcomes_use_the_correlated_row_and_keep_details(name, with
     }
     try:
         if with_start:
-            renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": name})
-            renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "one", "delta": json.dumps(arguments)})
-            renderer.ingest("TOOL_CALL_END", {"toolCallId": "one"})
-        renderer.ingest(
+            feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "one", "toolCallName": name})
+            feed_display(renderer, "TOOL_CALL_ARGS", {"toolCallId": "one", "delta": json.dumps(arguments)})
+            feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "one"})
+        feed_display(
+            renderer,
             "CUSTOM",
             {"name": "a13n.pydantic_ai.function_tool_result", "value": {"event": {"part": part}}},
         )
@@ -217,7 +222,11 @@ def test_native_tool_outcomes_use_the_correlated_row_and_keep_details(name, with
         renderer.transcript.dirty = True
         assert "extra_forbidden" in _text(renderer.transcript)
         block = next(iter(renderer.transcript.blocks.values()))
-        assert json.dumps(part, ensure_ascii=False, indent=2) in block.source
+        for field in ("tool_name", "tool_call_id", "part_kind", "outcome"):
+            if field in part:
+                assert json.dumps(field) + ": " + json.dumps(part[field]) in block.source
+        assert '"type": "extra_forbidden"' in block.source
+        assert '"msg": "Extra inputs are not permitted"' in block.source
         if with_start:
             assert json.dumps(arguments, ensure_ascii=False, indent=2) in block.source
     finally:
@@ -229,14 +238,16 @@ def test_native_retries_obey_child_visibility_and_run_scoped_correlation(mode) -
     renderer = StreamRenderer(Status(mode=mode))
     try:
         for run in ("root", "child"):
-            renderer.ingest(
+            feed_display(
+                renderer,
                 "TOOL_CALL_START",
                 {"toolCallId": "same", "toolCallName": "task_create"},
                 run_id=run,
                 child=run == "child",
             )
         renderer.status.state = "cancelling"
-        renderer.ingest(
+        feed_display(
+            renderer,
             "CUSTOM",
             {
                 "name": "a13n.pydantic_ai.function_tool_result",

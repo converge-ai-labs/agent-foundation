@@ -26,6 +26,8 @@ from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+from .display_fixture import feed_display
+
 
 def _text(renderer: StreamRenderer) -> str:
     return "\n".join(block.source for block in renderer.transcript.blocks.values())
@@ -36,7 +38,8 @@ def test_local_input_is_immediate_and_deduplicates_only_explicit_source() -> Non
     renderer.local_input("input-one", "same words")
     assert _text(renderer) == "> same words"
     for source in ("input-one", "input-two"):
-        renderer.ingest(
+        feed_display(
+            renderer,
             "TEXT_MESSAGE_CONTENT",
             {"messageId": source, "role": "user", "delta": "same words", "metadata": {"source_id": source}},
         )
@@ -280,7 +283,7 @@ def test_terminal_is_one_consumer_of_structured_media_input() -> None:
         )
     )
     for item in observed:
-        renderer.ingest(item.type.value, item.model_dump(mode="json"))
+        feed_display(renderer, item.type.value, item.model_dump(mode="json"))
     assert "image/png · 14 bytes" in _text(renderer)
     assert "https://example.test/picture.png" in _text(renderer)
     assert "private pixels" not in _text(renderer)
@@ -327,7 +330,11 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
             }
         },
     )
+    from a13n_stream_protocol.display import DisplayFold, Tail
+
     events = fragment_custom_event(report, identity="usage-one")
+    fold = DisplayFold("run-one", Tail(), attempt=1, page_items=128, page_bytes=262144, retain_complete=True)
+    observed = fold.fold([event.model_dump(mode="json", by_alias=True) for event in events])
     assert (len(events) > 1) == fragmented
     hub = HarnessUiLiveHub()
     release, updated = asyncio.Event(), asyncio.Event()
@@ -342,6 +349,7 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
             thread_id="thread-one",
             run_id="run-one",
             events=events,
+            observed=observed,
         )
         return SimpleNamespace(receipt_id="receipt-one")
 
@@ -427,7 +435,7 @@ async def test_recovered_final_answer_keeps_markdown_separate_from_notices(
     hub = HarnessUiLiveHub()
     renderer = StreamRenderer(Status())
     if gap:
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "partial", "delta": "Incomplete **answer"})
+        feed_display(renderer, "TEXT_MESSAGE_CONTENT", {"messageId": "partial", "delta": "Incomplete **answer"})
     renderer.gap = gap
     outcome = SimpleNamespace(
         execution=SimpleNamespace(output=answer, output_omitted=output_omitted),
@@ -464,7 +472,7 @@ async def test_recovered_final_answer_keeps_markdown_separate_from_notices(
             assert any("bold" in style and "Important result" in text for style, text in fragments)
             assert "# Recovered heading" not in "".join(text for _, text in fragments)
         # A later normal streamed response still takes the Markdown path.
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "next", "delta": "**Next answer**"})
+        feed_display(renderer, "TEXT_MESSAGE_CONTENT", {"messageId": "next", "delta": "**Next answer**"})
         assert list(renderer.transcript.blocks.values())[-1].markdown
     finally:
         renderer.transcript.close()

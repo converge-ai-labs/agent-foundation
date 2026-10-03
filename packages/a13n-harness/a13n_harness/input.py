@@ -26,7 +26,6 @@ class ModelInputState:
     content: tuple[ContentItem, ...] | None = None
     source: Literal["user", "recovery"] = "user"
     annotated: bool = False
-    observed: bool = False
 
     def begin(self, attempt_id: str, content: tuple[ContentItem, ...] | None, *, recovery: bool) -> None:
         self.attempt_id = attempt_id
@@ -37,7 +36,6 @@ class ModelInputState:
         )
         self.source = "recovery" if recovery else "user"
         self.annotated = False
-        self.observed = False
 
 
 @dataclass(frozen=True, slots=True)

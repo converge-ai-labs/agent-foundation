@@ -21,6 +21,8 @@ from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.selection import SelectionState
 
+from .display_fixture import feed_display
+
 
 def _png() -> bytes:
     stream = BytesIO()
@@ -93,7 +95,9 @@ def test_huge_delta_and_cache_budgets_are_visible_and_bounded() -> None:
 def test_interleaved_runs_keep_distinct_markdown_blocks_and_scroll_anchor() -> None:
     renderer = StreamRenderer(Status(mode="detailed"))
     for run, text in (("root", "root-1"), ("child", "child-1"), ("root", "root-2")):
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "same", "delta": text}, run_id=run, child=run == "child")
+        feed_display(
+            renderer, "TEXT_MESSAGE_CONTENT", {"messageId": "same", "delta": text}, run_id=run, child=run == "child"
+        )
     sources = [block.source for block in renderer.transcript.blocks.values()]
     assert sources == ["root-1root-2", "**Subagent · child**\n\nchild-1"]
     control = TranscriptControl(renderer.transcript)
@@ -114,7 +118,8 @@ def test_interleaved_runs_keep_distinct_markdown_blocks_and_scroll_anchor() -> N
 )
 def test_retry_notice_respects_child_visibility(mode: str, child: bool, visible: bool) -> None:
     renderer = StreamRenderer(Status(mode=mode))
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.harness.recovery",
@@ -180,7 +185,7 @@ async def test_model_stream_retry_renders_only_a_system_notice_until_exhaustion(
         async for item in run:
             for event in observer.observe(item):
                 payload = event.model_dump(mode="json", by_alias=True)
-                renderer.ingest(payload["type"], payload)
+                feed_display(renderer, payload["type"], payload)
                 if payload["type"] == "RUN_ERROR":
                     errors.append(payload)
                     assert calls == 2

@@ -11,8 +11,8 @@ from a13n_service.infra.outbox import Delivery, OutboxRow, claim
 from a13n_service.runs import checkpoints
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.checkpoints import CLEANUP, Committed, RunState, StatePointer, TailPointer
-from a13n_service.runs.display import Snapshot, StreamPosition, Tail
 from a13n_service.runs.tables import RunRow
+from a13n_stream_protocol.display import Snapshot, StreamPosition, Tail
 from sqlalchemy import func, select, update
 
 pytestmark = pytest.mark.anyio

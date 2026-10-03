@@ -12,12 +12,6 @@ from anyio import CancelScope, to_thread
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
-from a13n_harness_ui.display_history import (
-    DisplayHistory,
-    DisplayHistoryCollector,
-    saved_display_history,
-    with_display_history,
-)
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID, built_in_environment_profile
 from a13n_harness_ui.errors import ThreadError
@@ -255,17 +249,12 @@ class ThreadService:
         previous = stored.harness_state
         if previous.thread_id != thread_id:
             raise ThreadError("The selected state belongs to another Thread.", code="thread_continuation_incompatible")
-        saved = saved_display_history(previous)
-        display = DisplayHistoryCollector(
-            (), DisplayHistory(messages=previous.message_history if saved is None else saved.messages)
-        ).capture(())
-        state = with_display_history(
-            HarnessState.new(thread_id=thread_id, environment_states=previous.environment_states), display
-        )
+        state = HarnessState.new(thread_id=thread_id, environment_states=previous.environment_states)
         replacement = StoredContinuation(
             harness_release=harness_version,
             run_composition=stored.run_composition,
             harness_state=state,
+            display_history=stored.display_history,
             excerpt=stored.excerpt,
             created_at=datetime.now(UTC),
         )

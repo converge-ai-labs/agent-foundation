@@ -7,6 +7,8 @@ import json
 import pytest
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 
+from .display_fixture import feed_display
+
 
 def _visible(renderer: StreamRenderer, *, detailed: bool = False, width: int = 120) -> str:
     renderer.transcript.detailed = detailed
@@ -16,7 +18,8 @@ def _visible(renderer: StreamRenderer, *, detailed: bool = False, width: int = 1
 
 
 def _status(renderer, *, phase="exited", code=0, callback=False, run="root", child=False):
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.shell.status",
@@ -36,18 +39,20 @@ def _status(renderer, *, phase="exited", code=0, callback=False, run="root", chi
 
 
 def _start(renderer, *, name="shell_start", command="pytest -q", run="root", child=False):
-    renderer.ingest("TOOL_CALL_START", {"toolCallId": "call-one", "toolCallName": name}, run_id=run, child=child)
-    renderer.ingest(
+    feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "call-one", "toolCallName": name}, run_id=run, child=child)
+    feed_display(
+        renderer,
         "TOOL_CALL_ARGS",
         {"toolCallId": "call-one", "delta": json.dumps({"command": command})},
         run_id=run,
         child=child,
     )
-    renderer.ingest("TOOL_CALL_END", {"toolCallId": "call-one"}, run_id=run, child=child)
+    feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "call-one"}, run_id=run, child=child)
 
 
 def _result(renderer, *, phase="running", code=None, run="root", child=False):
-    renderer.ingest(
+    feed_display(
+        renderer,
         "TOOL_CALL_RESULT",
         {
             "toolCallId": "call-one",
@@ -114,7 +119,7 @@ def test_process_observation_end_is_run_scoped_and_gaps_are_not_complete_counts(
         _start(renderer, run=run)
         _result(renderer, run=run)
     assert "Background 2" in renderer.background_hint
-    renderer.ingest("RUN_FINISHED", {}, run_id="root")
+    feed_display(renderer, "RUN_FINISHED", {}, run_id="root")
     assert "Background 1" in renderer.background_hint
     assert "unavailable" in renderer.process_details()
     renderer.gap = True
@@ -195,7 +200,8 @@ def test_child_background_completion_obeys_mode_and_keeps_run_identity() -> None
 def test_internal_and_unknown_capability_events_are_not_conversation_content(mode: str, child: bool, name: str) -> None:
     renderer = StreamRenderer(Status(mode=mode))
     try:
-        renderer.ingest(
+        feed_display(
+            renderer,
             "CUSTOM",
             {
                 "name": name,
@@ -218,16 +224,19 @@ def test_internal_and_unknown_capability_events_are_not_conversation_content(mod
         renderer.transcript.close()
 
 
-def _capture(renderer: StreamRenderer, result: dict, *, run: str = "root") -> None:
-    renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "call-one", "content": json.dumps(result)}, run_id=run)
+def _capture(renderer: StreamRenderer, result: dict, *, run: str = "root", call_id: str = "call-one") -> None:
+    feed_display(renderer, "TOOL_CALL_RESULT", {"toolCallId": call_id, "content": json.dumps(result)}, run_id=run)
 
 
 def _wait(renderer: StreamRenderer, *, run: str = "root", process_id: str = "process-one") -> None:
-    renderer.ingest("TOOL_CALL_START", {"toolCallId": "call-one", "toolCallName": "shell_wait"}, run_id=run)
-    renderer.ingest(
-        "TOOL_CALL_ARGS", {"toolCallId": "call-one", "delta": json.dumps({"process_id": process_id})}, run_id=run
+    feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "wait-one", "toolCallName": "shell_wait"}, run_id=run)
+    feed_display(
+        renderer,
+        "TOOL_CALL_ARGS",
+        {"toolCallId": "wait-one", "delta": json.dumps({"process_id": process_id})},
+        run_id=run,
     )
-    renderer.ingest("TOOL_CALL_END", {"toolCallId": "call-one"}, run_id=run)
+    feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "wait-one"}, run_id=run)
 
 
 @pytest.mark.parametrize("streams", [{}, {"stdout": {"text": ""}, "stderr": {"text": ""}}])
@@ -273,7 +282,7 @@ def test_shell_wait_uses_retained_launch_command_without_overwriting_it() -> Non
     _result(renderer)
     _wait(renderer)
     assert _visible(renderer).splitlines()[-1] == f"Run waiting · {command}"
-    _capture(renderer, {"process_id": "process-one", "status": {"phase": "exited", "exit_code": 0}})
+    _capture(renderer, {"process_id": "process-one", "status": {"phase": "exited", "exit_code": 0}}, call_id="wait-one")
     assert _visible(renderer).splitlines()[-1] == f"Run exit 0 · {command}"
     assert renderer._shell_processes[("root", "process-one")].command == command
     assert "process-one" not in _visible(renderer)
@@ -290,7 +299,7 @@ def test_shell_wait_does_not_guess_missing_or_cross_run_commands(unavailable: st
     run = "other" if unavailable == "other-run" else "root"
     _wait(renderer, run=run, process_id="process-other" if unavailable == "other-process" else "process-one")
     assert _visible(renderer).splitlines()[-1] == "Run waiting · command unavailable"
-    _capture(renderer, {"status": {"phase": "exited", "exit_code": 0}}, run=run)
+    _capture(renderer, {"status": {"phase": "exited", "exit_code": 0}}, run=run, call_id="wait-one")
     assert _visible(renderer).splitlines()[-1] == "Run exit 0 · command unavailable"
     renderer.transcript.close()
 
@@ -350,7 +359,7 @@ def test_long_capture_cannot_push_coverage_notices_out_of_preview_budget() -> No
 
 def test_start_only_shell_is_one_row_before_arguments_arrive() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"toolCallId": "one", "toolCallName": "shell_exec"})
+    feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "one", "toolCallName": "shell_exec"})
     assert _visible(renderer) == "Run command unavailable …"
     renderer.transcript.close()
 
@@ -367,7 +376,7 @@ def test_start_only_shell_is_one_row_before_arguments_arrive() -> None:
 def test_unavailable_native_status_never_falls_back_to_output_preview(result: str, label: str) -> None:
     renderer = StreamRenderer(Status())
     _start(renderer, name="shell_exec", command="check")
-    renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "call-one", "content": result}, run_id="root")
+    feed_display(renderer, "TOOL_CALL_RESULT", {"toolCallId": "call-one", "content": result}, run_id="root")
     assert _visible(renderer) == f"Run {label} · check"
     expanded = _visible(renderer, detailed=True)
     assert '"command": "check"' in expanded
@@ -384,7 +393,8 @@ def test_shell_review_timeout_renders_observed_denial_without_a_frontend_timer(m
     try:
         _start(renderer, name="shell_exec")
         assert "Automatically denied" not in _visible(renderer)
-        renderer.ingest(
+        feed_display(
+            renderer,
             "CUSTOM",
             {
                 "name": "a13n.harness.tool",
@@ -420,7 +430,8 @@ def test_unified_shell_review_result_uses_existing_custom_event_renderer(decisio
     renderer = StreamRenderer(Status(mode="concise"))
     try:
         _start(renderer, name="shell_exec")
-        renderer.ingest(
+        feed_display(
+            renderer,
             "CUSTOM",
             {
                 "name": "a13n.harness.tool",

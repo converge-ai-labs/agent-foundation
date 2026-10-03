@@ -19,6 +19,8 @@ from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.output import DummyOutput
 from prompt_toolkit.styles import Style, default_ui_style, merge_styles
 
+from .display_fixture import feed_display
+
 
 def _source(renderer: StreamRenderer) -> str:
     return "\n".join(block.source for block in renderer.transcript.blocks.values())
@@ -29,18 +31,18 @@ def _text(transcript: Transcript) -> str:
 
 
 def _tool(renderer: StreamRenderer, name: str, args: dict, result: str = "done") -> None:
-    renderer.ingest("TOOL_CALL_START", {"toolCallId": "call-1", "toolCallName": name})
+    feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "call-1", "toolCallName": name})
     arguments = json.dumps(args)
     for start in range(0, len(arguments), 127):
-        renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "call-1", "delta": arguments[start : start + 127]})
-    renderer.ingest("TOOL_CALL_END", {"toolCallId": "call-1"})
-    renderer.ingest("TOOL_CALL_RESULT", {"toolCallId": "call-1", "content": result})
+        feed_display(renderer, "TOOL_CALL_ARGS", {"toolCallId": "call-1", "delta": arguments[start : start + 127]})
+    feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "call-1"})
+    feed_display(renderer, "TOOL_CALL_RESULT", {"toolCallId": "call-1", "content": result})
 
 
 def test_thinking_is_separate_and_expanded_in_concise_mode() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest("REASONING_MESSAGE_CONTENT", {"messageId": "one", "delta": "exposed reasoning"})
-    renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": "one", "delta": "answer"})
+    feed_display(renderer, "REASONING_MESSAGE_CONTENT", {"messageId": "one", "delta": "exposed reasoning"})
+    feed_display(renderer, "TEXT_MESSAGE_CONTENT", {"messageId": "one", "delta": "answer"})
     blocks = list(renderer.transcript.blocks.values())
     assert len(blocks) == 2
     assert blocks[0].source == "exposed reasoning"
@@ -63,7 +65,8 @@ def test_edit_diff_and_summary_keep_content_beyond_old_preview_limit() -> None:
     assert "LAST ORIGINAL LINE" not in source
     assert "failed | no edit confirmed" in source
     summary = "A full summary.\n" * 1000 + "SUMMARY END"
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.context.handoff_summary",
@@ -77,7 +80,8 @@ def test_edit_diff_and_summary_keep_content_beyond_old_preview_limit() -> None:
         },
     )
     assert summary not in _source(renderer)
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.harness.context",
@@ -139,7 +143,7 @@ def test_context_lifecycle_is_full_and_never_claims_hidden_summary() -> None:
         "retryable": False,
         "error_code": "failure",
     }
-    renderer.ingest("CUSTOM", {"name": "a13n.harness.context", "value": {"event": {"payload": mutation}}})
+    feed_display(renderer, "CUSTOM", {"name": "a13n.harness.context", "value": {"event": {"payload": mutation}}})
     source = _source(renderer)
     assert "Compact failed: failure" in source
     assert all(key in source for key in mutation)
@@ -163,9 +167,10 @@ def test_compaction_summary_projects_to_an_independent_expanded_block() -> None:
     )
     renderer = StreamRenderer(Status())
     for event in HarnessAguiObserver().observe(source):
-        renderer.ingest(event.type.value, event.model_dump(mode="json"), run_id="run-1")
+        feed_display(renderer, event.type.value, event.model_dump(mode="json"), run_id="run-1")
     assert next(iter(renderer.transcript.blocks.values())).source == "Compacting context…"
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.harness.context",
@@ -182,7 +187,8 @@ def test_compaction_summary_projects_to_an_independent_expanded_block() -> None:
 
 def test_steering_delivery_notice_does_not_duplicate_the_input_event_body() -> None:
     renderer = StreamRenderer(Status())
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.pydantic_ai.enqueued_messages",
@@ -356,13 +362,14 @@ def test_input_events_hide_context_without_marking_user_as_assistant() -> None:
         )
         for event in observer.observe(source):
             payload = event.model_dump(mode="json")
-            renderer.ingest(payload["type"], payload, run_id="run-input")
+            feed_display(renderer, payload["type"], payload, run_id="run-input")
     assert _source(renderer) == "> AGENTS.md user question"
     assert "HIDDEN" not in renderer.drain()
     assert not renderer.assistant_seen
     assert renderer.status.state == "running"
     # CONTENT remains safe even after a bounded consumer loses START.
-    renderer.ingest(
+    feed_display(
+        renderer,
         "TEXT_MESSAGE_CONTENT",
         {
             "messageId": "lost-start",
@@ -378,10 +385,11 @@ def test_native_shell_preview_prioritizes_command_output_and_failure_with_exit_c
     import json
 
     renderer = StreamRenderer(Status())
-    renderer.ingest("TOOL_CALL_START", {"toolCallId": "shell-one", "toolCallName": "shell_exec"})
-    renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "shell-one", "delta": '{"command":"pytest -q"}'})
-    renderer.ingest("TOOL_CALL_END", {"toolCallId": "shell-one"})
-    renderer.ingest(
+    feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "shell-one", "toolCallName": "shell_exec"})
+    feed_display(renderer, "TOOL_CALL_ARGS", {"toolCallId": "shell-one", "delta": '{"command":"pytest -q"}'})
+    feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "shell-one"})
+    feed_display(
+        renderer,
         "TOOL_CALL_RESULT",
         {
             "toolCallId": "shell-one",
@@ -412,14 +420,14 @@ def test_tools_are_compact_and_question_debug_is_hidden() -> None:
     renderer = StreamRenderer(Status())
     for index in range(3):
         call = {"toolCallId": str(index), "toolCallName": "view"}
-        renderer.ingest("TOOL_CALL_START", call)
-        renderer.ingest("TOOL_CALL_RESULT", {**call, "content": "done"})
+        feed_display(renderer, "TOOL_CALL_START", call)
+        feed_display(renderer, "TOOL_CALL_RESULT", {**call, "content": "done"})
     renderer.transcript.render(80)
     assert len(renderer.transcript.rows) == 4
     assert "Explored" in _text(renderer.transcript)
-    renderer.ingest("TOOL_CALL_START", {"toolCallId": "private-id", "toolCallName": "ask_user_question"})
-    renderer.ingest("TOOL_CALL_ARGS", {"toolCallId": "private-id", "delta": '{"questions": []}'})
-    renderer.ingest("TOOL_CALL_END", {"toolCallId": "private-id"})
+    feed_display(renderer, "TOOL_CALL_START", {"toolCallId": "private-id", "toolCallName": "ask_user_question"})
+    feed_display(renderer, "TOOL_CALL_ARGS", {"toolCallId": "private-id", "delta": '{"questions": []}'})
+    feed_display(renderer, "TOOL_CALL_END", {"toolCallId": "private-id"})
     assert "ask_user_question" not in _source(renderer) and "private-id" not in _source(renderer)
     renderer.transcript.close()
 

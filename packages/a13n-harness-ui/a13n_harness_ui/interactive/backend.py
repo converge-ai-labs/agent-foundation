@@ -796,8 +796,7 @@ class SessionBackend:
                         return False
                     event = event.model_copy(update={"payload": payload})
                 renderer.ingest(
-                    event.event_type,
-                    event.payload,
+                    event.changes,
                     child=event.run_kind == "child",
                     run_id=event.run_id,
                     execution_id=event.execution_id,

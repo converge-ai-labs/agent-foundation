@@ -1,315 +1,332 @@
-"""Root display history, independent of the model's replaceable context."""
+"""UI-owned compact display snapshots, independent of native model context."""
 
 from __future__ import annotations
 
-import json
-from collections.abc import Awaitable, Callable, Sequence
-from copy import deepcopy
-from hashlib import sha256
-from typing import Any, Self, cast
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from typing import Literal, Self
 
-from a13n_harness.capabilities.context import CompactionCapability, CompactionSummaryEvent, HandoffCapability
-from a13n_harness.context import AgentContext
-from a13n_harness.state import (
-    AgentContextStateSnapshot,
-    CapabilityState,
-    HarnessState,
-    clone_messages,
-    decode_messages,
-    encode_messages,
-)
-from a13n_harness.toolsets.events import HandoffSummaryEvent
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
-from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from a13n_stream_protocol.display import DisplayFold, Item, StreamPosition, Tail
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_ai.messages import (
-    AgentStreamEvent,
     ModelMessage,
     ModelRequest,
     ModelResponse,
-    TextContent,
+    NativeToolCallPart,
+    NativeToolReturnPart,
+    RetryPromptPart,
+    SystemPromptPart,
     TextPart,
-    UserPromptPart,
+    ThinkingPart,
+    ToolCallPart,
+    ToolReturnPart,
 )
-from pydantic_ai.models import ModelRequestContext
-
-_STATE_KEY = "a13n.harness-ui.display-history"
-_COMPLETED_KEY = "a13n.harness-ui.completed"
 
 
 class DisplayHistory(BaseModel):
-    """Inspection-only messages and their current native-history positions."""
+    """One complete inspection snapshot selected atomically with HarnessState.
+
+    Item ordinals are stable transcript addresses. Completion is a Host fact,
+    recorded only by successful terminal selection, not inferred from text end.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    messages_json: bytes | Sequence[ModelMessage] = Field(default=b"[]", alias="messages", exclude=True, repr=False)
-    model_positions: tuple[int | None, ...] = ()
-    pending_response_position: int | None = None
-    model_history_digest: str = ""
-
-    @field_validator("messages_json", mode="before")
-    @classmethod
-    def _encode_messages(cls, value: Any) -> bytes:
-        return encode_messages(value)
-
-    @computed_field
-    @property
-    def messages(self) -> tuple[ModelMessage, ...]:
-        return decode_messages(cast(bytes, self.messages_json))
-
-    @property
-    def completed_responses(self) -> tuple[int, ...]:
-        return tuple(
-            position
-            for position, message in enumerate(self.messages)
-            if isinstance(message, ModelResponse) and (message.metadata or {}).get(_COMPLETED_KEY) is True
-        )
+    version: Literal["1"] = "1"
+    run_id: str | None = None
+    items: tuple[Item, ...] = ()
+    position: StreamPosition = Field(default_factory=lambda: StreamPosition(attempt=0, sequence=0))
+    completed: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def _valid_positions(self) -> Self:
-        messages = self.messages
-        message_count = len(messages)
-        if any(
-            position is not None and not 0 <= position < message_count
-            for position in (*self.model_positions, self.pending_response_position)
-        ):
-            raise ValueError("Display history position is outside the saved messages")
+    def _addresses(self) -> Self:
+        if any(item.ordinal != index for index, item in enumerate(self.items, 1)):
+            raise ValueError("Display item ordinals must be dense and ordered")
+        if len({item.id for item in self.items}) != len(self.items):
+            raise ValueError("Display item identities must be unique")
+        if not set(self.completed) <= {item.id for item in self.items if assistant_text(item)}:
+            raise ValueError("Completion must address saved root assistant text")
         return self
 
+    def start(self, run_id: str, *, resume: bool) -> DisplayFold:
+        return DisplayFold(
+            self.run_id if resume and self.run_id is not None else run_id,
+            Tail(items=[item.model_copy(deep=True) for item in self.items], position=self.position),
+            attempt=self.position.attempt + 1,
+            page_items=128,
+            page_bytes=262144,
+            retain_complete=True,
+        )
 
-def _message_digest(encoded: bytes) -> str:
-    return sha256(json.dumps(json.loads(encoded), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-
-
-def saved_display_history(state: HarnessState) -> DisplayHistory | None:
-    """Read inspection state without changing the continuation's stored schema."""
-    return _read_display_history(state, state.agent_context_state.get(_STATE_KEY))
-
-
-def _read_display_history(state: HarnessState, entry: CapabilityState | None) -> DisplayHistory | None:
-    if entry is None:
-        return None
-    if entry.version != "1":
-        raise ValueError("Unsupported display history version")
-    display = DisplayHistory.model_validate(entry.data)
-    # Older Apps preserve unknown Capability namespaces but do not advance this
-    # inspection snapshot. Never apply its positional mapping to different input.
-    if display.model_history_digest != _message_digest(cast(bytes, state.message_history_json)):
-        return None
-    if len(display.model_positions) != len(state.message_history):
-        raise ValueError("Display history must map the selected model history")
-    return display
-
-
-def with_display_history(state: HarnessState, display: DisplayHistory) -> HarnessState:
-    """Attach UI-owned state in the existing extensible Capability envelope."""
-    entries = state.agent_context_state.entries
-    entries[_STATE_KEY] = CapabilityState(version="1", data=display.model_dump(mode="json"))
-    return state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
-
-
-def detach_display_history(state: HarnessState) -> tuple[HarnessState, DisplayHistory | None]:
-    """Restore and remove inspection state with one namespace decode.
-
-    Validate before returning native execution state. Every durable root selection
-    must reattach the collector's current history with ``with_display_history``.
-    """
-    entries = state.agent_context_state.entries
-    entry = entries.pop(_STATE_KEY, None)
-    display = _read_display_history(state, entry)
-    if entry is None:
-        return state, display
-    runtime = state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
-    return runtime, display
+    def capture(self, fold: DisplayFold, *, completed: bool = False) -> DisplayHistory:
+        items = tuple(item.model_copy(deep=True) for item in fold.items.values())
+        # A continuation of a turn invalidates its former completion, even when
+        # it has not emitted another text item. Earlier turns keep their marks.
+        last_input = next((item.ordinal for item in reversed(items) if ordinary_input(item)), 0)
+        previous_input = next((item.ordinal for item in reversed(self.items) if ordinary_input(item)), 0)
+        continuing = fold.run_id == self.run_id or last_input > previous_input
+        marks = {
+            item.id for item in items if item.id in self.completed and (not continuing or item.ordinal < last_input)
+        }
+        if completed:
+            final = next((item for item in reversed(items) if assistant_text(item) and item.ordinal > last_input), None)
+            if (
+                final is not None
+                and final.last_stream_id.startswith(f"{fold.attempt}-")
+                and (
+                    fold.response_groups.get("root") is None
+                    or final.content.get("responseGroup") == fold.response_groups["root"]
+                )
+            ):
+                marks.update(item.id for item in response_parts(items, final))
+        return DisplayHistory(run_id=fold.run_id, items=items, position=fold.position, completed=tuple(sorted(marks)))
 
 
-def _context_boundary(messages: Sequence[ModelMessage]) -> tuple[object, ...]:
-    """Compare only owned replacement summaries, never ordinary message timestamps."""
-    for message in messages:
-        metadata = message.metadata or {}
+def response_parts(items: Sequence[Item], final: Item) -> tuple[Item, ...]:
+    """All root text parts in one response, preserving their stable addresses."""
+    group = final.content.get("responseGroup")
+    return tuple(
+        item
+        for item in items
+        if assistant_text(item)
+        and (item.id == final.id or (group is not None and item.content.get("responseGroup") == group))
+    )
+
+
+def ordinary_input(item: Item) -> bool:
+    return (
+        item.kind == "text_message"
+        and item.content.get("role") == "user"
+        and item.content.get("input_source", "user") == "user"
+        and not item.content.get("subagentRunId")
+        and not (isinstance(metadata := item.content.get("metadata"), dict) and metadata.get("display") is False)
+    )
+
+
+def assistant_text(item: Item) -> bool:
+    return (
+        item.kind == "text_message"
+        and item.content.get("role", "assistant") == "assistant"
+        and not item.content.get("subagentRunId")
+        and isinstance(item.content.get("text"), str)
+        and not (isinstance(metadata := item.content.get("metadata"), dict) and metadata.get("display") is False)
+    )
+
+
+def import_display_history(thread_id: str, messages: Sequence[ModelMessage]) -> DisplayHistory:
+    """Project an explicit native initial-state import once, never a continuation fallback."""
+    if not messages:
+        return DisplayHistory()
+
+    from a13n_harness.content import request_input_content
+    from a13n_harness.tools._output import tool_execution_value
+    from a13n_stream_protocol import tool_result_content
+    from a13n_stream_protocol.content import public_tool_value
+    from a13n_stream_protocol.messages import project_input_content
+    from pydantic import TypeAdapter
+    from pydantic_ai.messages import ModelResponsePart
+
+    from a13n_harness_ui.mcp_apps.snapshots import app_references
+    from a13n_harness_ui.tool_evidence import applied_edit
+    from a13n_harness_ui.tool_images import tool_image_unavailable, tool_images
+
+    response_part = TypeAdapter(ModelResponsePart)
+
+    fold = DisplayHistory().start(thread_id, resume=False)
+    for position, message in enumerate(messages):
+        timestamp = int((message.timestamp or datetime.now(UTC)).timestamp() * 1000)
+        message_metadata = message.metadata or {}
+        context = message_metadata.get("a13n.context") or (
+            "compaction" if message_metadata.get("keep") == "compact" else None
+        )
         if isinstance(message, ModelRequest):
-            for part in message.parts:
-                if isinstance(part, UserPromptPart) and not isinstance(part.content, str):
-                    for item in part.content:
-                        if isinstance(item, TextContent) and (item.metadata or {}).get("a13n.context") == "handoff":
-                            return ("handoff", (item.metadata or {}).get("operation_id"), item.content)
-            if metadata.get("a13n.context") == "handoff":
-                return ("handoff", message.timestamp)
-        if isinstance(message, ModelResponse) and metadata.get("keep") == "compact":
-            return (
-                "compaction",
-                message.timestamp,
-                *(part.content for part in message.parts if isinstance(part, TextPart)),
-            )
-    return ()
-
-
-class DisplayHistoryCollector(AbstractCapability[AgentContext]):
-    """Capture complete root messages before context replacement, not helper Runs."""
-
-    id = _STATE_KEY
-
-    def __init__(self, model_history: Sequence[ModelMessage], saved: DisplayHistory | None = None) -> None:
-        # Saved messages are already freshly decoded and detached from their envelope.
-        self._messages = list(clone_messages(model_history) if saved is None else saved.messages)
-        self._positions: list[int | None] = (
-            list(range(len(model_history))) if saved is None else list(saved.model_positions)
-        )
-        if len(self._positions) != len(model_history):
-            raise ValueError("Display history does not match the selected model history")
-        self._pending_response_position = saved.pending_response_position if saved is not None else None
-        self._boundary = deepcopy(_context_boundary(model_history))
-        self._completed_responses = {
-            position
-            for position, message in enumerate(self._messages)
-            if saved is not None
-            and isinstance(message, ModelResponse)
-            and (message.metadata or {}).get(_COMPLETED_KEY) is True
-        }
-        self._active_run_id: str | None = None
-        self._unmapped_run_id: str | None = None
-        self._operations: set[str] = {
-            operation
-            for message in self._messages
-            if isinstance(operation := (message.metadata or {}).get("operation_id"), str)
-        }
-
-    def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="outermost", wraps=(HandoffCapability, CompactionCapability))
-
-    async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Callable[[], Awaitable[Any]]) -> Any:
-        if self._active_run_id is not None:
-            return await handler()
-        self._active_run_id = ctx.run_id
-        self._unmapped_run_id = ctx.run_id
-        try:
-            return await handler()
-        finally:
-            self._active_run_id = None
-
-    def _initialize_positions(self, history: Sequence[ModelMessage]) -> None:
-        if self._unmapped_run_id is None:
-            return
-        # Native preparation may merge inherited adjacent requests, including
-        # before a failed Run's first model hook. Rebase on the captured history,
-        # not wrap_run's initial context, which may still hold the old list.
-        inherited = next(
-            (index for index, message in enumerate(history) if message.run_id == self._unmapped_run_id),
-            len(history),
-        )
-        suspended_position = None
-        if (
-            inherited == len(history)
-            and self._positions
-            and (position := self._positions[-1]) is not None
-            and isinstance(self._messages[position], ModelResponse)
-            and self._messages[position].state == "suspended"
-        ):
-            suspended_position = position
-        self._positions = [None] * inherited
-        if suspended_position is not None:
-            if history and isinstance(history[-1], ModelResponse) and history[-1].state == "suspended":
-                self._positions[-1] = suspended_position
-            else:
-                # Native continuation removes the suspended tail before before-hooks.
-                # Rebase merged requests without losing the response's display slot.
-                self._pending_response_position = suspended_position
-        if inherited < len(history):
-            self._pending_response_position = None
-        self._boundary = deepcopy(_context_boundary(history))
-        self._unmapped_run_id = None
-
-    async def before_model_request(
-        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
-    ) -> ModelRequestContext:
-        if ctx.run_id == self._active_run_id:
-            self._collect(ctx.messages)
-        return request_context
-
-    async def on_event(self, ctx: RunContext[AgentContext], *, event: AgentStreamEvent) -> None:
-        if ctx.run_id != self._active_run_id or not isinstance(event, (HandoffSummaryEvent, CompactionSummaryEvent)):
-            return
-        self._collect(ctx.messages)
-        if event.operation_id in self._operations:
-            return
-        self._operations.add(event.operation_id)
-        kind = "handoff" if isinstance(event, HandoffSummaryEvent) else "compaction"
-        metadata = {"a13n.context": kind, "operation_id": event.operation_id}
-        self._messages.append(
-            ModelRequest(parts=[UserPromptPart([TextContent(event.summary, metadata=metadata)])], metadata=metadata)
-            if kind == "handoff"
-            else ModelResponse(parts=[TextPart(event.summary)], metadata={**metadata, "keep": "compact"})
-        )
-
-    def capture(self, history: Sequence[ModelMessage], *, completed: bool = False) -> DisplayHistory:
-        self._collect(history, completed=completed)
-        return DisplayHistory(
-            messages=tuple(self._messages),
-            model_positions=tuple(self._positions),
-            pending_response_position=self._pending_response_position,
-            model_history_digest=_message_digest(encode_messages(history)),
-        )
-
-    def _collect(self, history: Sequence[ModelMessage], *, completed: bool = False) -> None:
-        """Advance inspection copies without serializing an unused checkpoint."""
-        self._initialize_positions(history)
-        boundary = _context_boundary(history)
-        if boundary != self._boundary:
-            # Before-hooks have already captured the original messages. The new
-            # prefix contains only synthetic context and retained input replays.
-            # Neither replaces nor repeats the original display rows.
-            self._positions = []
-            self._pending_response_position = None
-            self._boundary = deepcopy(boundary)
-            for message in history:
-                metadata = message.metadata or {}
-                if (
-                    metadata.get("a13n.context") in ("handoff", "compaction")
-                    or metadata.get("keep") == "compact"
-                    or "a13n.steering-run" in metadata
-                ):
-                    self._positions.append(None)
-                else:
-                    self._positions.append(len(self._messages))
-                    self._messages.append(deepcopy(message))
-        else:
-            if len(history) < len(self._positions):
-                # Native suspended-response preparation temporarily removes the
-                # tail before requesting its completion. Keep its display slot,
-                # including across a checkpoint/reload, for the merged response.
-                position = self._positions[-1]
-                if (
-                    len(history) != len(self._positions) - 1
-                    or position is None
-                    or not isinstance(response := self._messages[position], ModelResponse)
-                    or response.state != "suspended"
-                ):
-                    raise ValueError("Model history changed without an owned context replacement")
-                self._pending_response_position = position
-                self._positions.pop()
-            for index, message in enumerate(history):
-                if index >= len(self._positions):
-                    if self._pending_response_position is not None and isinstance(message, ModelResponse):
-                        position = self._pending_response_position
-                        self._positions.append(position)
-                        self._messages[position] = deepcopy(message)
-                        self._pending_response_position = None
-                    else:
-                        self._positions.append(len(self._messages))
-                        self._messages.append(deepcopy(message))
-                elif (position := self._positions[index]) is not None:
-                    self._messages[position] = deepcopy(message)
-        if (
-            completed
-            and history
-            and isinstance(history[-1], ModelResponse)
-            and history[-1].state == "complete"
-            and (history[-1].metadata or {}).get("keep") != "compact"
-        ):
-            position = self._positions[-1]
-            if position is not None and any(isinstance(part, TextPart) for part in history[-1].parts):
-                self._completed_responses.add(position)
-        # Mark only inspection copies. Native model context and the version-1
-        # display envelope stay unchanged, including for older App readers.
-        for position in self._completed_responses:
-            message = self._messages[position]
-            message.metadata = {**(message.metadata or {}), _COMPLETED_KEY: True}
+            for index, value in enumerate(request_input_content(message)):
+                projected = project_input_content(value)
+                if projected is None:
+                    continue
+                content, metadata = projected
+                if context:
+                    if index == 0:
+                        fold.fold(
+                            [
+                                {
+                                    "type": "CUSTOM",
+                                    "name": f"a13n.context.{context}_summary",
+                                    "timestamp": timestamp,
+                                    "value": {
+                                        "event": {
+                                            "summary": content,
+                                            "operation_id": message_metadata.get("operation_id"),
+                                        }
+                                    },
+                                }
+                            ]
+                        )
+                    continue
+                source = str(
+                    message_metadata.get("a13n.steering-source")
+                    or (metadata.model_extra or {}).get("a13n.steering-source")
+                    or ("steering" if "a13n.steering-run" in message_metadata else "user")
+                )
+                if "a13n.steering-run" in message_metadata and source not in {"async_subagent", "background_process"}:
+                    source = "steering"
+                fold.fold(
+                    [
+                        {
+                            "type": "CUSTOM",
+                            "name": "a13n.input.media" if metadata.media else f"a13n.input.{source}",
+                            "timestamp": timestamp,
+                            "metadata": metadata.model_dump(mode="json"),
+                            "value": {
+                                "event": {
+                                    "message_id": f"import:{position}:{index}",
+                                    "input_id": message_metadata.get("a13n.steering-input")
+                                    or metadata.source_id
+                                    or f"import:{position}",
+                                    "source": source,
+                                    "content": content,
+                                }
+                            },
+                        }
+                    ]
+                )
+        for index, part in enumerate(message.parts):
+            identity = f"import:{position}:{index}"
+            events = []
+            if isinstance(message, ModelResponse) and isinstance(part, (TextPart, ThinkingPart)):
+                if context:
+                    fold.fold(
+                        [
+                            {
+                                "type": "CUSTOM",
+                                "name": f"a13n.context.{context}_summary",
+                                "timestamp": timestamp,
+                                "value": {
+                                    "event": {
+                                        "summary": part.content,
+                                        "operation_id": message_metadata.get("operation_id"),
+                                    }
+                                },
+                            }
+                        ]
+                    )
+                    continue
+                kind = "TEXT_MESSAGE" if isinstance(part, TextPart) else "REASONING_MESSAGE"
+                events = [
+                    {
+                        "type": f"{kind}_START",
+                        "messageId": identity,
+                        "role": "assistant",
+                        "responseGroup": f"import:{position}",
+                        "metadata": {
+                            "closing": message.state == "complete"
+                            and not any(
+                                isinstance(value, (ToolCallPart, NativeToolCallPart)) for value in message.parts
+                            ),
+                        },
+                    },
+                    {"type": f"{kind}_CONTENT", "messageId": identity, "delta": part.content},
+                    {"type": f"{kind}_END", "messageId": identity},
+                ]
+            elif isinstance(part, ToolCallPart):
+                events = [
+                    {"type": "TOOL_CALL_START", "toolCallId": part.tool_call_id, "toolCallName": part.tool_name},
+                    {"type": "TOOL_CALL_ARGS", "toolCallId": part.tool_call_id, "delta": part.args_as_json_str()},
+                    {"type": "TOOL_CALL_END", "toolCallId": part.tool_call_id},
+                ]
+            elif isinstance(part, (NativeToolCallPart, NativeToolReturnPart)):
+                events = [
+                    {
+                        "type": "CUSTOM",
+                        "name": "a13n.pydantic_ai.part_end",
+                        "value": {"event": {"part": response_part.dump_python(part, mode="json")}},
+                    }
+                ]
+            elif isinstance(part, (SystemPromptPart, RetryPromptPart)):
+                events = [
+                    {
+                        "type": "CUSTOM",
+                        "name": "a13n.input.system"
+                        if isinstance(part, SystemPromptPart)
+                        else "a13n.pydantic_ai.function_tool_result",
+                        "value": {
+                            "event": {
+                                "part": {
+                                    "part_kind": part.part_kind,
+                                    "content": part.content,
+                                    **(
+                                        {"tool_call_id": part.tool_call_id, "tool_name": part.tool_name}
+                                        if isinstance(part, RetryPromptPart)
+                                        else {}
+                                    ),
+                                }
+                            }
+                        },
+                    }
+                ]
+            elif isinstance(part, ToolReturnPart):
+                value = tool_execution_value(part.content, part.metadata)
+                content = tool_result_content(value)
+                events = [
+                    {
+                        "type": "TOOL_CALL_RESULT",
+                        "toolCallId": part.tool_call_id,
+                        "content": content
+                        if isinstance(content, str)
+                        else [value.model_dump(mode="json", by_alias=True) for value in content],
+                    }
+                ]
+                events.append(
+                    {
+                        "type": "CUSTOM",
+                        "name": "a13n.pydantic_ai.function_tool_result",
+                        "value": {
+                            "event": {
+                                "part": {
+                                    "part_kind": part.part_kind,
+                                    "tool_call_id": part.tool_call_id,
+                                    "tool_name": part.tool_name,
+                                    "content": public_tool_value(value),
+                                    "outcome": part.outcome,
+                                }
+                            }
+                        },
+                    }
+                )
+                if edit := applied_edit(part):
+                    events.append(
+                        {
+                            "type": "CUSTOM",
+                            "name": "a13n.filesystem.edit_applied",
+                            "value": {"event": {"tool_call_id": part.tool_call_id, **edit.model_dump(mode="json")}},
+                        }
+                    )
+                images = tool_images(part)
+                if images or tool_image_unavailable(part):
+                    events.append(
+                        {
+                            "type": "CUSTOM",
+                            "name": "a13n.harness-ui.tool_images",
+                            "value": {
+                                "event": {
+                                    "tool_call_id": part.tool_call_id,
+                                    "images": [image.model_dump(mode="json") for image in images],
+                                    "unavailable": tool_image_unavailable(part),
+                                }
+                            },
+                        }
+                    )
+                if apps := app_references(part):
+                    events.append(
+                        {
+                            "type": "CUSTOM",
+                            "name": "a13n.harness-ui.mcp_apps",
+                            "value": {
+                                "event": {
+                                    "tool_call_id": part.tool_call_id,
+                                    "apps": [app.model_dump(mode="json") for app in apps],
+                                }
+                            },
+                        }
+                    )
+            fold.fold([{**event, "timestamp": timestamp} for event in events])
+    return DisplayHistory().capture(fold)

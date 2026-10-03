@@ -11,7 +11,7 @@ from typing import Literal
 from uuid import uuid4
 
 from a13n_harness.usage import ModelUsageRecord
-from a13n_stream_protocol import HarnessAguiObserver
+from a13n_stream_protocol.display import Item, ItemChange, Observed, SetItem, apply_changes
 from ag_ui.core import CustomEvent
 from ag_ui.core import Event as AguiEvent
 from anyio import (
@@ -60,6 +60,7 @@ class LiveEvent(_StreamModel):
     event_type: str = Field(min_length=1, max_length=128)
     payload: dict[str, JsonValue] | None
     payload_omitted: bool
+    changes: tuple[ItemChange, ...] | None = None
 
 
 class RootStreamSummary(_StreamModel):
@@ -69,68 +70,39 @@ class RootStreamSummary(_StreamModel):
     run_id: str
     base_continuation_id: str | None
     event_count: int = Field(ge=0)
+    checkpoints: dict[str, int] = Field(default_factory=dict)
 
 
 class RootStreamEvent(_StreamModel):
     index: int = Field(ge=0)
-    event_type: str
-    payload: dict[str, JsonValue] | None
-    payload_omitted: bool
+    changes: tuple[ItemChange, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class RootStreamReplay:
     summary: RootStreamSummary
-    observer: HarnessAguiObserver
-    observed_count: int
-    supplements: tuple[tuple[int, AguiEvent], ...] = ()
+    items: tuple[Item, ...]
 
     def includes_continuation(self, continuation_id: str | None) -> bool:
-        """The original base or a checkpoint covered by this exact replay prefix."""
-        if continuation_id == self.summary.base_continuation_id:
-            return True
-        for start in range(0, self.observed_count, 16):
-            for event in self.observer.snapshot(start=start, stop=min(start + 16, self.observed_count)):
-                if isinstance(event, CustomEvent) and event.name == "a13n.harness_ui.checkpoint":
-                    value = event.value
-                    source = value.get("event") if isinstance(value, dict) else None
-                    if isinstance(source, dict) and source.get("continuation_id") == continuation_id:
-                        return True
-        return False
+        """The original base or a checkpoint covered by this exact compact cut."""
+        return continuation_id == self.summary.base_continuation_id or continuation_id in self.summary.checkpoints
 
     def batches(self) -> Iterator[tuple[RootStreamEvent, ...]]:
-        """Read only the captured prefix; do not copy an entire Run per page."""
-        batch = []
-        for index, event in enumerate(self._events()):
-            payload, omitted = _bounded_payload(event)
-            batch.append(
-                RootStreamEvent(index=index, event_type=event.type.value, payload=payload, payload_omitted=omitted)
+        """Send each compact item once, never replay its historical token deltas."""
+        for start in range(0, len(self.items), 16):
+            yield tuple(
+                RootStreamEvent(index=index, changes=(SetItem(item=self.items[index]),))
+                for index in range(start, min(start + 16, len(self.items)))
             )
-            if len(batch) == 16:
-                yield tuple(batch)
-                batch = []
-        if batch:
-            yield tuple(batch)
-
-    def _events(self) -> Iterator[AguiEvent]:
-        position = 0
-        for stop, event in self.supplements:
-            for start in range(position, stop, 16):
-                yield from self.observer.snapshot(start=start, stop=min(start + 16, stop))
-            position = stop
-            yield event
-        for start in range(position, self.observed_count, 16):
-            yield from self.observer.snapshot(start=start, stop=min(start + 16, self.observed_count))
 
 
 @dataclass(slots=True)
 class _RootStream:
     thread_id: str
     run_id: str
-    observer: HarnessAguiObserver
     base_continuation_id: str | None
-    published_count: int = 0
-    supplements: list[tuple[int, AguiEvent]] = field(default_factory=list)
+    items: dict[str, Item] = field(default_factory=dict)
+    checkpoints: dict[str, int] = field(default_factory=dict)
     apps: dict[str, AppReference] = field(default_factory=dict)
 
     def capture(self) -> RootStreamReplay:
@@ -139,11 +111,15 @@ class _RootStream:
                 thread_id=self.thread_id,
                 run_id=self.run_id,
                 base_continuation_id=self.base_continuation_id,
-                event_count=self.published_count + len(self.supplements),
+                event_count=len(self.items),
+                checkpoints=dict(self.checkpoints),
             ),
-            observer=self.observer,
-            observed_count=self.published_count,
-            supplements=tuple(self.supplements),
+            # Lifecycle controls summarize the latest state of their lane; apply
+            # them after baseline content so terminal tools stop on reconnect too.
+            items=tuple(
+                item.model_copy(deep=True)
+                for item in sorted(self.items.values(), key=lambda item: "event" in item.content)
+            ),
         )
 
 
@@ -319,21 +295,19 @@ class HarnessUiLiveHub:
         run_id: str,
         events: Sequence[AguiEvent],
         execution_id: str | None = None,
-        observer: HarnessAguiObserver | None = None,
+        observed: Sequence[Observed] | None = None,
         base_continuation_id: str | None = None,
         supplements: Sequence[AguiEvent] = (),
     ) -> None:
         """Publish detached events while marking slow subscribers for reset.
 
-        The root producer supplies its existing observer and its latest batch.
-        Only the published prefix becomes visible to new subscriptions, even if
-        observation precedes asynchronous publication.
+        The Host supplies typed changes from its single display fold. Only
+        changes applied under the publication lock enter a subscription baseline;
+        folding ahead of publication cannot leak an unpublished suffix.
         """
-        start = 0 if observer is None else observer.event_count - len(events)
-        if observer is not None and (run_kind != "root" or start < 0):
-            raise ValueError("observer replay requires the root's latest observed batch")
+        if observed is not None and len(observed) != len(events) + len(supplements):
+            raise ValueError("compact changes must match the publication batch")
         for offset, source in enumerate((*events, *supplements)):
-            is_supplement = offset >= len(events)
             async with self._lock:
                 if self._closed:
                     return
@@ -352,6 +326,7 @@ class HarnessUiLiveHub:
                     event_type=source.type.value,
                     payload=payload,
                     payload_omitted=omitted,
+                    changes=tuple(observed[offset].changes) if observed is not None else None,
                 )
                 self._ring.append(event)
                 ring = self._root_rings.get(root_thread_id)
@@ -363,20 +338,19 @@ class HarnessUiLiveHub:
                     self._root_floors[root_thread_id] = ring[0].sequence
                 ring.append(event)
                 self._root_rings.move_to_end(root_thread_id)
-                if observer is not None:
+                if observed is not None and run_kind == "root":
                     current = self._root_streams.get(thread_id)
                     if current is None or current.run_id != run_id:
-                        current = _RootStream(thread_id, run_id, observer, base_continuation_id)
+                        current = _RootStream(thread_id, run_id, base_continuation_id)
                         self._root_streams[thread_id] = current
                         self._terminal_streams.pop(thread_id, None)
-                    if is_supplement:
-                        current.supplements.append((current.published_count, source.model_copy(deep=True)))
-                        if isinstance(source, CustomEvent) and source.name == METADATA_KEY:
-                            for item in source.value["event"]["apps"]:
-                                reference = AppReference.model_validate(item, strict=False)
-                                current.apps[reference.app_id] = reference
-                    else:
-                        current.published_count = start + offset + 1
+                    apply_changes(current.items, observed[offset].changes)
+                    if isinstance(source, CustomEvent) and source.name == "a13n.harness_ui.checkpoint":
+                        current.checkpoints[source.value["event"]["continuation_id"]] = observed[offset].sequence
+                    if isinstance(source, CustomEvent) and source.name == METADATA_KEY:
+                        for item in source.value["event"]["apps"]:
+                            reference = AppReference.model_validate(item, strict=False)
+                            current.apps[reference.app_id] = reference
                 self._trim_root_rings()
                 for subscriber in self._subscribers:
                     if not subscriber.accepts(event) or subscriber.gap:

@@ -52,26 +52,26 @@ The core concepts are:
 | Resolved Run composition | Immutable configuration, resource content, selected local roots, and dependency provenance captured for one admitted Run |
 | Execution segment        | One accepted child `delegate` or `resume_subagent` execution; normally one Harness Run plus bounded denial continuation  |
 | Surface projection       | Detached, bounded, serializable summary, detail, transcript, operation, child, or live value                             |
-| Compact display          | Bounded AG-UI projection used for inspection and rendering, never for resume                                             |
+| Compact display          | Shared typed items used for inspection and rendering under Host retention policy, never for resume                       |
 
 ## Boundaries
 
-| Concern                                | Owner                                         | Harness UI relationship                                                                                             |
-| -------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Native Agent construction and loop     | Harness and Pydantic AI                       | Resolves selected Capabilities and extensions into exact native inputs                                              |
-| Desired local resource behavior        | Harness UI configuration files                | Accepts one coherent generation and preserves direct text editing                                                   |
-| Declarative plugin content             | Installed Content Plugin catalog              | Adds editable Skill sources and fallback Markdown subagents without runtime code                                    |
-| Mutable conversation presentation      | Harness UI Thread metadata                    | Stores versioned title and archive state                                                                            |
-| Mutable conversation defaults          | Harness UI Thread configuration               | Stores sticky selections and applies explicit partial changes                                                       |
-| Root and child continuation            | Harness `HarnessState` selected by Harness UI | Persists complete immutable checkpoints and current references                                                      |
-| Environment operations and state codec | Environment package                           | Supplies fresh adapters and explicit lifecycle operations                                                           |
-| Local root grouping and path layout    | Harness UI Project and selected profile       | Supplies ordered roots and Host-path-preserving or virtual aggregate paths captured at Run admission                |
-| Current Environment state              | Harness UI                                    | Stores and publishes Host-authoritative state under a complete Thread/configuration/root key                        |
-| Async child admission and persistence  | `HarnessUiSubagentOperator`                   | Creates child Threads and runs the complete Harness Host-operator boundary                                          |
-| AG-UI conversion                       | Agent Stream Protocol                         | Uses one stream observer per root or asynchronous child Run, preserving inline-child attribution                    |
-| Local persistence                      | Harness UI                                    | Uses SQLite for compact mutable heads and immutable files for compositions and checkpoints                          |
-| Presentation                           | CLI, WebUI, and embedding adapters            | Consume detached App projections, exact process-local receipts, root-lineage live events, and summary invalidations |
-| Durable distributed execution          | a13n Service                                  | Not emulated by Harness UI                                                                                          |
+| Concern                                | Owner                                         | Harness UI relationship                                                                                                      |
+| -------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Native Agent construction and loop     | Harness and Pydantic AI                       | Resolves selected Capabilities and extensions into exact native inputs                                                       |
+| Desired local resource behavior        | Harness UI configuration files                | Accepts one coherent generation and preserves direct text editing                                                            |
+| Declarative plugin content             | Installed Content Plugin catalog              | Adds editable Skill sources and fallback Markdown subagents without runtime code                                             |
+| Mutable conversation presentation      | Harness UI Thread metadata                    | Stores versioned title and archive state                                                                                     |
+| Mutable conversation defaults          | Harness UI Thread configuration               | Stores sticky selections and applies explicit partial changes                                                                |
+| Root and child continuation            | Harness `HarnessState` selected by Harness UI | Persists complete immutable checkpoints and current references                                                               |
+| Environment operations and state codec | Environment package                           | Supplies fresh adapters and explicit lifecycle operations                                                                    |
+| Local root grouping and path layout    | Harness UI Project and selected profile       | Supplies ordered roots and Host-path-preserving or virtual aggregate paths captured at Run admission                         |
+| Current Environment state              | Harness UI                                    | Stores and publishes Host-authoritative state under a complete Thread/configuration/root key                                 |
+| Async child admission and persistence  | `HarnessUiSubagentOperator`                   | Creates child Threads and runs the complete Harness Host-operator boundary                                                   |
+| AG-UI conversion                       | Agent Stream Protocol                         | Uses one non-retaining observer and compact fold per root or asynchronous child segment, preserving inline-child attribution |
+| Local persistence                      | Harness UI                                    | Uses SQLite for compact mutable heads and immutable files for compositions and checkpoints                                   |
+| Presentation                           | CLI, WebUI, and embedding adapters            | Consume detached App projections, exact process-local receipts, root-lineage live events, and summary invalidations          |
+| Durable distributed execution          | a13n Service                                  | Not emulated by Harness UI                                                                                                   |
 
 ## Configuration and Run Flow
 

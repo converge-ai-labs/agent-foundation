@@ -106,11 +106,27 @@ function savedRows(
   continuation?: string | null,
 ): Row[] {
   const rows: Row[] = [];
+  let previousChild: string | undefined;
   for (const entry of entries) {
     const identity = savedEntryIdentity(entry);
     const start = rows.length;
     entry.parts.forEach((part, index) => {
-      if (part.metadata?.display === false || part.kind === "system") return;
+      if (
+        part.metadata?.display === false ||
+        part.kind === "system" ||
+        groups.get(part) === null
+      )
+        return;
+      const firstRow = rows.length;
+      const child = part.subagent_run_id ?? undefined;
+      if (child && child !== previousChild) {
+        rows.push({
+          id: `saved:${entry.position}:${index}:origin`,
+          kind: "origin",
+          childId: child,
+        });
+      }
+      previousChild = child;
       // Sibling parts can grow at later checkpoints without replacing this part.
       const id = `saved:${savedEntryIdentity({ ...entry, parts: [part] })}:${index}`;
       const context = part.metadata?.["a13n.context"];
@@ -166,6 +182,8 @@ function savedRows(
       for (const reference of part.mcp_apps ?? []) {
         rows.push({ id: reference.app_id, kind: "app", reference });
       }
+      for (let rowIndex = firstRow; rowIndex < rows.length; rowIndex++)
+        rows[rowIndex].subagentRunId = child;
     });
     for (let index = start; index < rows.length; index++) {
       rows[index].position = entry.position;
@@ -869,11 +887,12 @@ function TurnSegments({
   const complete =
     turn?.final_position != null &&
     rows.every((row) => row.position !== undefined);
-  const outputPosition = turn?.output_position ?? turn?.final_position;
+  const outputPositions = new Set(turn?.output_positions ?? []);
   const output = rows.flatMap((row) =>
-    outputPosition != null &&
     row.kind === "assistant" &&
-    row.position === outputPosition
+    !row.subagentRunId &&
+    row.position !== undefined &&
+    outputPositions.has(row.position)
       ? [row]
       : [],
   );

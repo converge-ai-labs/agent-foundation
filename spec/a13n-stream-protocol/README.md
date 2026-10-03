@@ -20,18 +20,18 @@ Read `00`, then [Harness Events and Usage](../a13n-harness/12-events-observabili
 
 ### Build Harness UI Surfaces
 
-Read `00`, then [Harness UI Runtime Subagents and Surfaces](../a13n-harness-ui/05-runtime-subagents-and-surfaces.md). Both local surfaces consume the same post-processor AG-UI events, while Harness UI owns persistence, replay, fan-out, and transport.
+Read `00`, then [Harness UI Runtime Subagents and Surfaces](../a13n-harness-ui/05-runtime-subagents-and-surfaces.md). Both local surfaces consume typed compact-display changes from the same shared fold, while Harness UI owns persistence, baseline cutover, fan-out, and transport.
 
 ### Service observation
 
-The Service uses AG-UI as the event vocabulary of its durable display and thread stream, owned by [facts and delivery](../a13n-service/07-facts-and-delivery.md). Shared stream adapters remain available to other Hosts.
+The Service uses the shared fold for its durable display and typed thread-stream changes, owned by [facts and delivery](../a13n-service/07-facts-and-delivery.md). Shared stream adapters remain available to other Hosts.
 
 ## Authority Rules
 
 - Pydantic AI and the Harness own run execution, public source events, lifecycle observations, results, and `HarnessState`.
 - Agent Stream Protocol owns standard AG-UI conversion, generic `CUSTOM` fallback, optional replay-stable Host processing, process-local accumulation, and atomic reconstruction from a supplied source history.
 - A Host owns input acceptance, visibility policy, source-history retention and selection, cursors, gaps, replay-to-live cutover, persistence, event identities, fan-out, cancellation, and transport lifecycle.
-- A renderer owns ephemeral view state only.
+- The shared compact fold owns display semantics and emits typed item sets and appends under a Host-selected retention policy. A renderer applies them and owns ephemeral view state only.
 - AG-UI event delivery is observation. It never commits execution, proves external side effects, grants tool authority, or becomes continuation state.
 
 ## Specification Conventions

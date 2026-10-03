@@ -13,6 +13,8 @@ from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+from .display_fixture import feed_display
+
 
 async def _until(predicate) -> None:
     async with asyncio.timeout(3):
@@ -162,7 +164,8 @@ def test_native_delivery_feedback_is_distinct_from_acceptance() -> None:
     from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
 
     renderer = StreamRenderer(Status())
-    renderer.ingest(
+    feed_display(
+        renderer,
         "CUSTOM",
         {
             "name": "a13n.pydantic_ai.enqueued_messages",

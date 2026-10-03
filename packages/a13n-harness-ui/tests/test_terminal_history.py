@@ -16,6 +16,8 @@ from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
+from .display_fixture import feed_display
+
 
 def _source(renderer: StreamRenderer) -> str:
     return "\n".join(block.source for block in renderer.transcript.blocks.values())
@@ -107,9 +109,11 @@ def test_many_live_turns_evict_old_display_but_keep_newest_turn() -> None:
     renderer = StreamRenderer(Status())
     for turn in range(800):
         renderer.local_input(str(turn), f"question {turn}")
-        renderer.ingest("TEXT_MESSAGE_START", {"messageId": str(turn)})
-        renderer.ingest("TEXT_MESSAGE_CONTENT", {"messageId": str(turn), "delta": f"answer {turn}\n" + "x" * 3000})
-        renderer.ingest("TEXT_MESSAGE_END", {"messageId": str(turn)})
+        feed_display(renderer, "TEXT_MESSAGE_START", {"messageId": str(turn)})
+        feed_display(
+            renderer, "TEXT_MESSAGE_CONTENT", {"messageId": str(turn), "delta": f"answer {turn}\n" + "x" * 3000}
+        )
+        feed_display(renderer, "TEXT_MESSAGE_END", {"messageId": str(turn)})
     assert renderer.transcript.evicted
     assert len(renderer.transcript.blocks) <= 500
     assert renderer.transcript.source_bytes <= 2 * 1024 * 1024

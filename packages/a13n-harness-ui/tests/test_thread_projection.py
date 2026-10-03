@@ -133,7 +133,7 @@ def test_inspection_reuses_native_history_and_preserves_display_context_split(ki
 
     import a13n_harness.state as state_module
     from a13n_harness import HarnessState
-    from a13n_harness_ui.display_history import DisplayHistory, DisplayHistoryCollector, with_display_history
+    from a13n_harness_ui.display_history import import_display_history
     from a13n_harness_ui.storage import ObjectKind, ObjectRef, StoredContinuation, StoredThreadInitialState
     from a13n_harness_ui.storage.contracts import AgentResourceSource, Thread, ThreadConfiguration
     from a13n_harness_ui.thread_projection import ThreadInspection, build_thread_inspection
@@ -146,11 +146,7 @@ def test_inspection_reuses_native_history_and_preserves_display_context_split(ki
         ModelResponse(parts=[TextPart("Saved answer")], usage=RequestUsage(input_tokens=7, output_tokens=3)),
     )
     state = HarnessState.new(thread_id="thread_one", message_history=messages if kind != "cleared" else ())
-    if kind in {"display", "cleared"}:
-        display = DisplayHistoryCollector(messages).capture(messages, completed=True)
-        if kind == "cleared":
-            display = DisplayHistoryCollector((), DisplayHistory(messages=display.messages)).capture(())
-        state = with_display_history(state, display)
+    display = import_display_history(state.thread_id, messages)
     composition = ObjectRef(object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64)
     initial = ObjectRef(object_kind=ObjectKind.thread_initial_state, object_schema_version="1", logical_digest="b" * 64)
     continuation = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="c" * 64)
@@ -169,15 +165,18 @@ def test_inspection_reuses_native_history_and_preserves_display_context_split(ki
         StoredThreadInitialState(harness_state=state, created_at=now)
         if kind == "initial"
         else StoredContinuation(
-            harness_release="test", run_composition=composition, harness_state=state, created_at=now
+            harness_release="test",
+            run_composition=composition,
+            harness_state=state,
+            display_history=display,
+            created_at=now,
         )
     )
     decode = Mock(wraps=state_module.decode_messages)
     monkeypatch.setattr(state_module, "decode_messages", decode)
     inspection = build_thread_inspection(thread, stored)
-    # Saved display validation also checks the native mapping once. Projection
-    # itself reuses one decoded native history for context and token metadata.
-    assert decode.call_count == (2 if kind in {"display", "cleared"} else 1)
+    # Native decoding is only for model context and usage, never saved display.
+    assert decode.call_count == 1
     metadata = ThreadInspection.model_validate_json(inspection.metadata_json)
     assert metadata.context_empty is (kind == "cleared")
     assert metadata.latest_request_tokens == (None if kind == "cleared" else 10)

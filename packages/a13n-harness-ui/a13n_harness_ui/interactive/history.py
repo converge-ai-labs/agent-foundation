@@ -54,7 +54,11 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
             "Recent history only · older or oversized content omitted · Ctrl+T to browse retained messages\n",
             kind="notice",
         )
+    previous_child: str | None = None
     for part, text in reversed(selected):
+        if part.subagent_run_id and part.subagent_run_id != previous_child:
+            renderer.append(f"Subagent · {terminal_text(part.subagent_run_id)}\n", kind="notice")
+        previous_child = part.subagent_run_id
         if part.kind == "tool_call":
             name = part.tool_name or "tool"
             block = renderer.transcript.append(f"{name}\n{tool_arguments(name, text)}", kind="tool")

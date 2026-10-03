@@ -18,12 +18,10 @@ import json
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from a13n_harness import HarnessEvent, HarnessStreamEvent
 from a13n_harness.tools._output import tool_execution_value
-from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiStreamObserver, tool_result_content
-from a13n_stream_protocol.fragments import CustomEventAssembler
 from ag_ui.core import Event, TextPart, ToolCallArgsEvent, ToolCallResultEvent
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic_ai.messages import (
@@ -35,6 +33,9 @@ from pydantic_ai.messages import (
     ToolCallPart,
     ToolReturnPart,
 )
+
+from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiStreamObserver, tool_result_content
+from a13n_stream_protocol.fragments import CustomEventAssembler
 
 type ItemKind = Literal["text_message", "reasoning_message", "tool_call", "observation"]
 type ItemState = Literal["in_progress", "completed", "interrupted", "failed"]
@@ -56,7 +57,16 @@ _MESSAGE_KINDS: dict[str, ItemKind] = {
 _TOOL_EVENTS = frozenset({"TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END", "TOOL_CALL_RESULT"})
 _ENDS = frozenset({"TEXT_MESSAGE_END", "REASONING_MESSAGE_END", "TOOL_CALL_RESULT"})
 _FINISHED: frozenset[ItemState] = frozenset({"completed", "failed"})
-_COPIED = ("messageId", "role", "toolCallId", "toolCallName", "parentMessageId", "metadata", "subagentRunId")
+_COPIED = (
+    "messageId",
+    "role",
+    "toolCallId",
+    "toolCallName",
+    "parentMessageId",
+    "metadata",
+    "subagentRunId",
+    "responseGroup",
+)
 _ACCUMULATED = {
     "TEXT_MESSAGE_CONTENT": "text",
     "REASONING_MESSAGE_CONTENT": "text",
@@ -128,21 +138,82 @@ class Snapshot:
     tail: Tail
 
 
+class SetItem(BaseModel):
+    """Insert or replace one compact item; the Host assigns its stable identity."""
+
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["set"] = "set"
+    item: Item
+
+
+class AppendItem(BaseModel):
+    """Append only new text, without retransmitting the growing item."""
+
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["append"] = "append"
+    id: str
+    field: Literal["text", "arguments"]
+    text: str
+    last_stream_id: str
+    state: ItemState
+    ended_at: datetime | None
+
+
+type ItemChange = Annotated[SetItem | AppendItem, Field(discriminator="type")]
+
+
+def apply_changes(items: dict[str, Item], changes: Sequence[ItemChange]) -> None:
+    """Apply one contiguous batch to a compact baseline, without interpreting source events."""
+    staged: dict[str, Item] = {}
+    for change in changes:
+        if isinstance(change, SetItem):
+            staged[change.item.id] = change.item.model_copy(deep=True)
+        else:
+            previous = staged.get(change.id) or items[change.id]
+            content = {**previous.content, change.field: str(previous.content.get(change.field, "")) + change.text}
+            staged[change.id] = previous.model_copy(
+                update={
+                    "content": content,
+                    "last_stream_id": change.last_stream_id,
+                    "state": change.state,
+                    "ended_at": change.ended_at,
+                }
+            )
+    items.update(staged)
+
+
+def _change(previous: Item | None, item: Item) -> ItemChange:
+    if previous is not None:
+        for field in ("text", "arguments"):
+            before, after = previous.content.get(field), item.content.get(field)
+            if (
+                isinstance(before, str)
+                and isinstance(after, str)
+                and after.startswith(before)
+                and {k: v for k, v in previous.content.items() if k != field}
+                == {k: v for k, v in item.content.items() if k != field}
+            ):
+                return AppendItem(
+                    id=item.id,
+                    field=field,
+                    text=after[len(before) :],
+                    last_stream_id=item.last_stream_id,
+                    state=item.state,
+                    ended_at=item.ended_at,
+                )
+    return SetItem(item=item.model_copy(deep=True))
+
+
 class Observed(BaseModel):
     """One AG-UI event at its stream sequence, with the item it changed."""
 
     sequence: int
     event: dict[str, Any]
     item: ItemRef | None
+    changes: list[ItemChange] = Field(default_factory=list)
 
 
 _OMITTED: dict[str, JsonValue] = {"omitted": True}
-
-
-def _bounded(content: dict[str, JsonValue], field: str, value: str) -> None:
-    content[field] = value[:MAX_FIELD_CHARS]
-    if len(value) > MAX_FIELD_CHARS:
-        content["truncated"] = True
 
 
 def _size(item: Item) -> int:
@@ -269,8 +340,20 @@ class DisplayFold:
     """A run's display tail in memory during one attempt, continuing the committed tail it restored. A page holds
     `page_items` items, or fewer that reach `page_bytes`."""
 
-    def __init__(self, run_id: str, tail: Tail, *, attempt: int, page_items: int, page_bytes: int):
+    def __init__(
+        self,
+        run_id: str,
+        tail: Tail,
+        *,
+        attempt: int,
+        page_items: int,
+        page_bytes: int,
+        retain_complete: bool = False,
+    ):
         self.run_id, self.attempt = run_id, attempt
+        # UI inspection retains complete output/evidence. Service uses its
+        # existing preview budget; neither policy changes model history.
+        self.retain_complete = retain_complete
         self.page_items, self.page_bytes = page_items, page_bytes
         self.first = tail.first
         self.items = {item.id: item for item in tail.items}
@@ -281,11 +364,21 @@ class DisplayFold:
         self.sizes: dict[str, int] = {}
         self.changed: set[str] = set(self.items)
         self.sequence = 0
-        self.observer = HarnessAguiStreamObserver(processor=_bound_payloads)
+        self.observer = HarnessAguiStreamObserver(
+            processor=None if retain_complete else _bound_payloads, retain_events=False
+        )
+        self._changes: list[ItemChange] = []
+        self._announced: set[str] = set()
         # Assembly precedes display truncation; a small saved-display budget
         # must not erase the existence of a valid fragmented input message.
         self.assembler = CustomEventAssembler()
         self.arguments: _Arguments | None = None
+        self.response_groups: dict[str, str] = {}
+
+    def _bounded(self, content: dict[str, JsonValue], field: str, value: str) -> None:
+        content[field] = value if self.retain_complete else value[:MAX_FIELD_CHARS]
+        if not self.retain_complete and len(value) > MAX_FIELD_CHARS:
+            content["truncated"] = True
 
     @property
     def position(self) -> StreamPosition:
@@ -301,15 +394,20 @@ class DisplayFold:
         observed: list[Observed] = []
         for payload in events:
             self.sequence += 1
-            observed.append(Observed(sequence=self.sequence, event=payload, item=self._fold(payload)))
+            self._changes = []
+            ref = self._fold(payload)
+            observed.append(Observed(sequence=self.sequence, event=payload, item=ref, changes=self._changes))
         if observed and source is not None and (failed := _failed_tool_call(source)) is not None:
+            self._changes = []
             ref = self._fail_tool_call(
                 *failed,
                 at=_occurred(observed[-1].event),
                 subagent_run_id=source.run_id if source.run_id != self.observer.run_id else None,
             )
             if ref is not None:
-                observed[-1] = observed[-1].model_copy(update={"item": ref})
+                observed[-1] = observed[-1].model_copy(
+                    update={"item": ref, "changes": [*observed[-1].changes, *self._changes]}
+                )
         return observed
 
     def snapshot(self, open_calls: Collection[str] = ()) -> Snapshot:
@@ -322,7 +420,7 @@ class DisplayFold:
         for key in self.changed & self.items.keys():
             self.sizes[key] = _size(self.items[key])
         self.changed.clear()
-        items = list(self.items.values())
+        items = [item.model_copy(deep=True) for item in self.items.values()]
         pages: list[Page] = []
         start, size = 0, 0
         for end, item in enumerate(items, 1):
@@ -355,6 +453,24 @@ class DisplayFold:
         event_type = payload["type"]
         if event_type == "CUSTOM":
             return self._observation(payload)
+        if self.retain_complete and event_type in {
+            "RUN_STARTED",
+            "RUN_FINISHED",
+            "RUN_ERROR",
+            "SUBAGENT_STARTED",
+            "SUBAGENT_FINISHED",
+            "SUBAGENT_ERROR",
+        }:
+            key = item_id(
+                self.run_id, "observation", f"lifecycle:{self.attempt}:{payload.get('subagentRunId', 'root')}"
+            )
+            previous = self.items.get(key)
+            previous_event = previous.content.get("event") if previous is not None else None
+            lifecycle = {**previous_event, **payload} if isinstance(previous_event, dict) else payload
+            content = {"event": lifecycle}
+            if isinstance(scope := lifecycle.get("subagentRunId"), str):
+                content["subagentRunId"] = scope
+            return self._put(key, "observation", "completed", content, at=_occurred(payload))
         if event_type == "RUN_FINISHED" and payload.get("outcome", {}).get("type") == "interrupt":
             key = item_id(self.run_id, "observation", f"{self.attempt}:{self.sequence}")
             return self._put(key, "observation", "completed", payload, at=_occurred(payload))
@@ -372,18 +488,26 @@ class DisplayFold:
         previous = self.items.get(key)
         content: dict[str, JsonValue] = dict(previous.content) if previous is not None else {}
         content.update({name: payload[name] for name in _COPIED if name in payload})
+        if self.retain_complete and kind in {"text_message", "reasoning_message"} and content.get("role") != "user":
+            group = self.response_groups.get(str(content.get("subagentRunId") or "root"))
+            if group is not None and "responseGroup" not in content:
+                content["responseGroup"] = group
         if (accumulated := _ACCUMULATED.get(event_type)) is not None:
-            _bounded(content, accumulated, str(content.get(accumulated, "")) + payload["delta"])
+            self._bounded(content, accumulated, str(content.get(accumulated, "")) + payload["delta"])
+        if self.retain_complete and event_type == "TOOL_CALL_END":
+            content["arguments_complete"] = True
         if event_type == "REASONING_ENCRYPTED_VALUE":
             content["encrypted_value"] = payload.get("encryptedValue")
         if event_type == "TOOL_CALL_RESULT":
             result = payload.get("content", "")
             if isinstance(result, list):
-                content["result_parts"] = result if _json_size(result) <= MAX_FIELD_CHARS else []
+                content["result_parts"] = (
+                    result if self.retain_complete or _json_size(result) <= MAX_FIELD_CHARS else []
+                )
                 if not content["result_parts"]:
                     content["truncated"] = True
             else:
-                _bounded(content, "result", str(result))
+                self._bounded(content, "result", str(result))
         state: ItemState = "completed" if event_type in _ENDS else self._continued(previous)
         return self._put(key, kind, state, content, at=_occurred(payload))
 
@@ -393,13 +517,31 @@ class DisplayFold:
         return "in_progress" if previous is None or previous.state == "interrupted" else previous.state
 
     def _observation(self, payload: dict[str, Any]) -> ItemRef | None:
+        # UI presents the semantic item, not a second native argument/text journal.
+        if self.retain_complete and payload.get("name") == _PART_DELTA:
+            return None
         if (streamed := fragment(payload)) is not None:
             return self._arguments(payload, *streamed)
         assembled = self.assembler.accept(payload)
         if assembled is None:
             return None
         value: JsonValue = assembled.get("value")  # type: ignore[assignment]
-        if assembled.get("name") in AUTHORED_INPUT_EVENT_NAMES:
+        input_event = value.get("event") if isinstance(value, dict) else None
+        lifecycle = input_event.get("payload") if isinstance(input_event, dict) else None
+        if (
+            self.retain_complete
+            and assembled.get("name") == "a13n.harness.lifecycle"
+            and isinstance(lifecycle, dict)
+            and lifecycle.get("type") == "model_request_started"
+        ):
+            scope = str(assembled.get("subagentRunId") or "root")
+            self.response_groups[scope] = f"{self.run_id}:{self.attempt}:{self.sequence}"
+        media_input = (
+            assembled.get("name") == "a13n.input.media"
+            and isinstance(input_event, dict)
+            and input_event.get("source") in {"user", "steering"}
+        )
+        if assembled.get("name") in AUTHORED_INPUT_EVENT_NAMES or media_input:
             assert isinstance(value, dict) and isinstance(value["event"], dict)
             message_id = str(value["event"]["message_id"])
             content: dict[str, JsonValue] = {"messageId": message_id, "role": "user"}
@@ -407,15 +549,79 @@ class DisplayFold:
                 content["subagentRunId"] = cast(JsonValue, assembled["subagentRunId"])
             if "metadata" in assembled:
                 content["metadata"] = cast(JsonValue, assembled["metadata"])
-            _bounded(content, "text", str(value["event"]["content"]))
-            key = item_id(self.run_id, "text_message", message_id)
+            if assembled.get("name") == "a13n.input.media":
+                content["input_media"] = value["event"]["content"]
+            else:
+                self._bounded(content, "text", str(value["event"]["content"]))
+            content["input_source"] = value["event"].get("source", "user")
+            content["input_group"] = value["event"].get("input_id")
+            scope = assembled.get("subagentRunId")
+            key = item_id(self.run_id, "text_message", f"{scope}:{message_id}" if scope else message_id)
             return self._put(key, "text_message", "completed", content, at=_occurred(assembled))
-        if _json_size(value) > MAX_OBSERVATION_BYTES:
+        if self.retain_complete and isinstance(input_event, dict):
+            name = assembled.get("name")
+            part = input_event.get("part")
+            native = isinstance(part, dict) and part.get("part_kind") in {"builtin-tool-call", "builtin-tool-return"}
+            result = name in {"a13n.pydantic_ai.function_tool_result", "a13n.pydantic_ai.output_tool_result"}
+            supplement = name in {
+                "a13n.filesystem.edit_applied",
+                "a13n.harness-ui.tool_images",
+                "a13n.harness-ui.mcp_apps",
+            }
+            if (native or result) and isinstance(part, dict):
+                source = part
+            elif supplement:
+                source = input_event
+            else:
+                source = None
+            if source is not None and isinstance(call_id := source.get("tool_call_id"), str):
+                scope = assembled.get("subagentRunId")
+                provider = str(source.get("provider_name") or "provider") if native else None
+                identity = f"native:{provider}:{call_id}" if native else call_id
+                key = item_id(self.run_id, "tool_call", f"{scope}:{identity}" if scope else identity)
+                previous = self.items.get(key)
+                content = dict(previous.content) if previous is not None else {}
+                content["toolCallId"] = call_id
+                if scope:
+                    content["subagentRunId"] = cast(JsonValue, scope)
+                if provider:
+                    content["provider"] = provider
+                if "tool_name" in source:
+                    content["toolCallName"] = source["tool_name"]
+                state = self._continued(previous)
+                if supplement:
+                    if name == "a13n.filesystem.edit_applied":
+                        content["applied_edit"] = {key: source.get(key) for key in ("file_path", "before", "after")}
+                    elif name == "a13n.harness-ui.tool_images":
+                        content["tool_images"] = source.get("images", [])
+                        content["tool_image_unavailable"] = source.get("unavailable", False)
+                    else:
+                        content["mcp_apps"] = source.get("apps", [])
+                elif source.get("part_kind") == "builtin-tool-call":
+                    args = source.get("args")
+                    content["arguments"] = args if isinstance(args, str) else json.dumps(args, ensure_ascii=False)
+                    content["arguments_complete"] = True
+                else:
+                    content["value"] = source.get("content")
+                    content["outcome"] = source.get("outcome")
+                    content["retry"] = source.get("part_kind") == "retry-prompt"
+                    state = (
+                        "failed"
+                        if content["retry"] or content["outcome"] in {"failed", "denied", "interrupted"}
+                        else "completed"
+                    )
+                return self._put(key, "tool_call", state, content, at=_occurred(assembled))
+            # Native part observations duplicate the semantic message/tool items.
+            if name in {"a13n.pydantic_ai.part_start", "a13n.pydantic_ai.part_end"}:
+                return None
+        if not self.retain_complete and _json_size(value) > MAX_OBSERVATION_BYTES:
             value = _OMITTED
         key = item_id(self.run_id, "observation", f"{self.attempt}:{self.sequence}")
         content: dict[str, JsonValue] = {"name": str(assembled.get("name")), "value": value}
         if "subagentRunId" in assembled:
             content["subagentRunId"] = cast(JsonValue, assembled["subagentRunId"])
+        if "metadata" in assembled:
+            content["metadata"] = cast(JsonValue, assembled["metadata"])
         return self._put(key, "observation", "completed", content, at=_occurred(payload))
 
     def _arguments(self, event: dict[str, Any], stream: object, text: str) -> ItemRef:
@@ -434,7 +640,7 @@ class DisplayFold:
         held.sequence = self.sequence
         if held.size > MAX_OBSERVATION_BYTES:
             held.event = None
-        value = held.event["value"] if held.event is not None else _OMITTED
+        value = copy.deepcopy(held.event["value"]) if held.event is not None else _OMITTED
         content: dict[str, JsonValue] = {"name": _PART_DELTA, "value": value}
         if "subagentRunId" in event:
             content["subagentRunId"] = cast(JsonValue, event["subagentRunId"])
@@ -481,4 +687,7 @@ class DisplayFold:
             content=content,
         )
         self.changed.add(key)
+        # A resumed item needs a baseline before this attempt sends suffixes.
+        self._changes.append(_change(previous if key in self._announced else None, self.items[key]))
+        self._announced.add(key)
         return ItemRef(id=key, kind=kind, state=state)

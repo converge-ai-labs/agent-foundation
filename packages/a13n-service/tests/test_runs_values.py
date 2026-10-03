@@ -3,8 +3,8 @@
 from datetime import UTC, datetime
 
 import pytest
-from a13n_service.runs.display import DisplayFold, Item, Tail
 from a13n_service.runs.schemas import Outcome, Pending, PendingCall
+from a13n_stream_protocol.display import DisplayFold, Item, Tail
 from pydantic import ValidationError
 
 PENDING = Pending(approvals=(), calls=(PendingCall(tool_call_id="call_test", tool_name="lookup", arguments={}),))
