@@ -114,3 +114,70 @@ it("allows editing a rejected form and does not mislabel validation as unknown d
   await waitFor(() => expect(input.disabled).toBe(false));
   expect(screen.queryByText(/Delivery is uncertain/)).toBeNull();
 });
+
+it.each([502, 503, 504])(
+  "retains the exact answer after HTTP %i and retries only on request",
+  async (status) => {
+    client.POST.mockRejectedValueOnce(
+      new ApiError("Gateway unavailable", status),
+    ).mockResolvedValue({ data: { ...request, state: "accepted" } });
+    mount();
+    const input = (await screen.findByLabelText("Name")) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Ada" } });
+    fireEvent.click(screen.getByLabelText("Alpha"));
+    fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+    await screen.findByText(/Delivery is uncertain/);
+    expect(input.disabled).toBe(true);
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
+    expect(client.POST).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Check request" }));
+    await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(3));
+    expect(client.POST).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Retry same response" }),
+    );
+    await waitFor(() => expect(client.POST).toHaveBeenCalledTimes(2));
+    expect(client.POST.mock.calls[0]).toEqual(client.POST.mock.calls[1]);
+    expect(client.POST.mock.calls[1][1].body).toEqual({
+      action: "accept",
+      content: { name: "Ada", choices: ["a"] },
+    });
+  },
+);
+
+it.each(["mcp_input_conflict", "mcp_input_stale"])(
+  "does not offer an uncertain-delivery retry for %s",
+  async (code) => {
+    client.POST.mockRejectedValue(
+      new ApiError("Request unavailable", 409, code),
+    );
+    mount();
+    const input = (await screen.findByLabelText("Name")) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Ada" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+    await screen.findByText("Request unavailable");
+    expect(input.disabled).toBe(true);
+    expect(screen.queryByText(/Delivery is uncertain/)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Retry same response" }),
+    ).toBeNull();
+    expect(client.POST).toHaveBeenCalledTimes(1);
+  },
+);
+
+it("removes a gateway-failed request when reconciliation finds it accepted", async () => {
+  client.POST.mockImplementation(async () => {
+    client.GET.mockResolvedValue({ data: [{ ...request, state: "accepted" }] });
+    throw new ApiError("Gateway unavailable", 504);
+  });
+  mount();
+  fireEvent.change(await screen.findByLabelText("Name"), {
+    target: { value: "Ada" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+  await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(screen.queryByLabelText("MCP input request")).toBeNull(),
+  );
+  expect(client.POST).toHaveBeenCalledTimes(1);
+});
