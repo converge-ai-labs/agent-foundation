@@ -10,9 +10,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from a13n_stream_protocol.display import Item, ItemChange, SetItem, apply_changes
-from pydantic import TypeAdapter
-
 from .context_activity import ContextActivity
 from .input_display import composer_piece
 from .panels import capability_panel, shell_outcome, shell_result_preview, tool_arguments, tool_preview, tool_result
@@ -27,10 +24,9 @@ from .tool_rows import (
 )
 from .transcript import Transcript
 
-_DISPLAY_CHANGES = TypeAdapter(list[ItemChange])
-
 if TYPE_CHECKING:
     from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
+    from a13n_stream_protocol.display import Item
 
     from a13n_harness_ui.goal import GoalView
     from a13n_harness_ui.storage.usage import UsageTotals
@@ -264,6 +260,8 @@ class StreamRenderer:
 
     def __init__(self, status: Status, *, limit: int | None = None) -> None:
         from a13n_stream_protocol import CustomEventAssembler
+        from a13n_stream_protocol.display import ItemChange
+        from pydantic import TypeAdapter
 
         from .tasks import TaskPanel
 
@@ -286,6 +284,7 @@ class StreamRenderer:
         self._line_open = False
         self._local_output: dict[str, int] = {}
         self._custom_events = CustomEventAssembler()
+        self._display_changes_adapter = TypeAdapter(list[ItemChange])
         self._display_items: dict[str, Item] = {}
         self._display_blocks: dict[str, int] = {}
         self._exploration: ExplorationGroup | None = None
@@ -636,12 +635,14 @@ class StreamRenderer:
             self.boundary = True
 
     def _display_changes(self, payload: Mapping[str, object], *, run_id: str) -> None:
+        from a13n_stream_protocol.display import SetItem, apply_changes
+
         value = payload.get("value")
         if not isinstance(value, dict) or value.get("format") != "display-ops-v1":
             self.gap = True
             return
         try:
-            changes = _DISPLAY_CHANGES.validate_python(value.get("changes"))
+            changes = self._display_changes_adapter.validate_python(value.get("changes"))
             previous = self._display_items.copy()
             apply_changes(self._display_items, changes)
         except ValueError:

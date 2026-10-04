@@ -476,7 +476,9 @@ def texts(listing: dict[str, Any]) -> list[tuple[str | None, str]]:
     return [
         (item["content"].get("role"), item["content"]["text"])
         for item in listing["items"]
-        if item["kind"] == "text_message" and item["content"].get("metadata", {}).get("display", True)
+        if item["kind"] == "text_message"
+        and "text" in item["content"]
+        and item["content"].get("metadata", {}).get("display", True)
     ]
 
 

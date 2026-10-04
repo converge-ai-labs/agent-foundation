@@ -85,7 +85,8 @@ async def test_native_image_stream_saves_final_image_and_resumes_without_bytes(t
                 NativeTool(WebSearchTool()),
             ),
         )
-        bindings = RunBindings.embedded()
+        produced: list[HarnessEvent] = []
+        bindings = RunBindings.embedded(producer_observer=produced.append)
         stream = executable.stream("Draw a tree", bindings=bindings)
         async with stream:
             events = [item.event async for item in stream if isinstance(item, HarnessEvent)]
@@ -106,6 +107,14 @@ async def test_native_image_stream_saves_final_image_and_resumes_without_bytes(t
             and "generated.png" in event.part.content
             for event in events
         )
+        references = [
+            item.event.part.content
+            for item in produced
+            if isinstance(item.event, PartStartEvent)
+            and isinstance(item.event.part, TextPart)
+            and "generated.png" in item.event.part.content
+        ]
+        assert len(references) == 1
         assert {tool["type"] for tool in requests[0]["tools"]} == {"image_generation", "web_search"}
         assert "![brief image description](<saved path or URL>)" in json.dumps(requests[0])
         assert "Use the exact path or URL returned by the image saver" in json.dumps(requests[0])

@@ -283,8 +283,15 @@ async def test_reverse_desktop_image_reaches_model_live_history_and_browser(tmp_
                     live_image = None
                     while live_image is None:
                         event = await watch.events.receive()
-                        if event.payload and event.payload.get("name") == "a13n.harness-ui.tool_images":
-                            live_image = event.payload["value"]["event"]
+                        if event.payload and event.payload.get("name") == "a13n.display.changes":
+                            for change in event.payload["value"]["changes"]:
+                                if change["type"] == "set" and change["item"]["content"].get("tool_images"):
+                                    content = change["item"]["content"]
+                                    live_image = {
+                                        "tool_call_id": content["toolCallId"],
+                                        "images": content["tool_images"],
+                                        "unavailable": content.get("tool_image_unavailable", False),
+                                    }
                     operation = await app.wait_root_operation(receipt.receipt_id)
                 assert operation.status is RootOperationStatus.completed, operation
             assert live_image["tool_call_id"] == "desktop-1" and not live_image["unavailable"]

@@ -249,8 +249,11 @@ async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scri
     await (await runs_kit.attempt(service, runtime=runtime))
 
     newest = await runs_kit.items(service, run_id)
-    count = len(newest["items"])
-    assert [item["ordinal"] for item in newest["items"]] == list(range(1, count + 1)) and count > 32, newest
+    count = newest["items"][-1]["ordinal"]
+    assert count > 32
+    assert [item["ordinal"] for item in newest["items"]] == list(range(count - len(newest["items"]) + 1, count + 1)), (
+        newest
+    )
     async with short_session(service.runtime.storage) as session:
         pages = (
             await session.execute(
