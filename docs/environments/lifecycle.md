@@ -18,7 +18,11 @@ flowchart TB
     Adapter --> Harness[Agent Harness Run]
     Harness --> Operations[Files, shell, processes, output, and ports]
     Adapter --> Latest[Detached cached state]
-    Latest --> Host
+    Host <--- Latest
+
+    class Host app
+    class Definition,Adapter,Harness a13n
+    class State,Latest store
 ```
 
 A normal Run follows this sequence:

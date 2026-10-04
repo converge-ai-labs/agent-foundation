@@ -19,6 +19,19 @@ Agent Foundation 通过 Service 提供托管执行，通过 Harness 提供嵌入
 - **Harness：** Python 进程构建并运行 agent。存储、访问策略和结果交付由你的应用负责。
 - **Harness UI：** 终端和浏览器工作台使用自己的配置和会话历史来运行 agent。可以与可信的协作者共享一个实例。
 
+```mermaid
+flowchart TB
+    Client["Console 或你的应用"] -->|"HTTP API 或 SDK"| Service["Service 部署"]
+    Process["你的 Python 进程"]
+    Workbench["Harness UI：终端或浏览器"]
+    Service -->|"托管"| Harness["Harness 运行每个 agent"]
+    Process -->|"嵌入"| Harness
+    Workbench -->|"交互"| Harness
+
+    class Client,Process,Workbench app
+    class Service,Harness a13n
+```
+
 **Service SDK** 是远程执行的客户端。**Harness 库** 在你的进程中执行 agent。Service Console 和 Harness UI 的浏览器界面是两个独立应用。
 
 ## 单独使用组件

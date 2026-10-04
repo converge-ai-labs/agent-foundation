@@ -5,6 +5,19 @@ description: Save HarnessState to continue, fork, or recover a Thread across pro
 
 `HarnessState` is the portable continuation value for one independently advancing Thread. It preserves model history, versioned Capability namespaces, and optional portable Environment data. It deliberately does not preserve authority or Host lifecycle state.
 
+```mermaid
+flowchart TB
+    New["HarnessState.new()"] --> Run1["Run 1"]
+    Run1 -->|"result.state"| State["HarnessState"]
+    State --> Run2["Run 2 on the same Thread"]
+    State -->|"fork()"| Branch["HarnessState with a new Thread ID"]
+    Branch --> Run3["Run on the forked Thread"]
+    State <-->|"Serialize and restore"| Storage["Host storage"]
+
+    class Run1,Run2,Run3 a13n
+    class State,Branch,Storage store
+```
+
 ## State Contents
 
 A state envelope contains:

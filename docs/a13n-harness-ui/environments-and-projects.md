@@ -22,10 +22,13 @@ Windows supports **Full Control only** for the built-in local modes. Setup and t
 ## Files, Projects, and recovery
 
 ```mermaid
-flowchart LR
+flowchart TB
     P[Project file: ordered roots and defaults] --> T[New Thread: saved root paths]
     T --> R[Run: Environment mounts]
     P -. Later edits affect new Threads only .-> N[New Thread]
+
+    class P store
+    class T,R,N a13n
 ```
 
 Model, Agent, Device, extension, MCP, and Project resources live in sibling YAML directories. A Project selects local directories, Device working environments, or both. Without an explicit default environment, the first local directory is its default working directory. Launching the CLI in that first directory uses the same Project and all its roots. For example, a Project with roots `[code, notes]` is entered from `code`; adding `notes` later does not create a new Project or hide existing CLI sessions.

@@ -18,7 +18,11 @@ flowchart TB
     Adapter --> Harness[Agent Harness 执行]
     Harness --> Operations[文件、shell、进程、输出和端口]
     Adapter --> Latest[缓存状态的独立副本]
-    Latest --> Host
+    Host <--- Latest
+
+    class Host app
+    class Definition,Adapter,Harness a13n
+    class State,Latest store
 ```
 
 正常执行按以下顺序进行：

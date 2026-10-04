@@ -18,6 +18,10 @@ flowchart TB
     Bindings["Current bindings and Environment"] --> Run
     State["Previous HarnessState"] --> Run
     Run --> Result["Result and next state"]
+
+    class Spec,Build,Agent,Run a13n
+    class Bindings app
+    class State,Result store
 ```
 
 Build once, then supply current run inputs. Save the returned state to continue the same Thread.

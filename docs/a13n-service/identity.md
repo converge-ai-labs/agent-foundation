@@ -5,6 +5,20 @@ description: Organizations, workspaces, roles, grants, login sessions, API keys,
 
 Every request acts as a **principal**: a user, who signs in with an email address and password, or a service account, which exists for applications. Principals receive **roles** through **grants** in an organization or a workspace, and authenticate with a login session or an API key.
 
+```mermaid
+flowchart TB
+    User["User: login session or API key"]
+    Account["Service account: API keys only"]
+    User -->|"Organization grant"| Organization["Organization: its grants apply to every workspace"]
+    Organization -.-> Workspace1["Workspace: agents, sessions, resources"]
+    Organization -.-> Workspace2["Workspace"]
+    User -->|"Workspace grant"| Workspace1
+    Account -->|"Workspace grant, runner by default"| Workspace2
+
+    class User,Account app
+    class Organization,Workspace1,Workspace2 a13n
+```
+
 ## Organizations and workspaces
 
 An **organization** is the administration boundary. It holds its members and its workspaces. A **workspace** is the boundary for work: agents, sessions, providers, models, connections, environments and every other resource belong to exactly one workspace.

@@ -10,9 +10,11 @@
 
 /*
  * The docs follow the a13n-ui design system (spec/frontend/design-system.md):
- * the system font, neutral surfaces instead of outlines, and the near-black
- * primary as the only accent, with reading type from its Documentation Pages
- * section. The rules below adapt Fumadocs components to it.
+ * the system font, neutral surfaces, and the near-black primary for
+ * interface accents, with reading type from its Documentation Pages section.
+ * Hue appears only where it carries meaning: code tokens, callout kinds,
+ * diagram categories, and link underlines. The rules below adapt Fumadocs
+ * components to it.
  */
 
 @theme inline {
@@ -58,10 +60,14 @@ html > body[data-scroll-locked] {
   scroll-margin-top: calc(var(--fd-docs-row-3) + 1.5rem);
 }
 
-/* Prose: 16px body and links in text color; headings sit close to the text they introduce. */
+/*
+ * Prose: 16px body in supporting text, so headings, bold, links, and code
+ * stand out in text color. Sections open with a hairline; headings sit close
+ * to the text they introduce.
+ */
 .prose {
   --tw-prose-size: 1;
-  --tw-prose-body: var(--a13n-text);
+  --tw-prose-body: var(--a13n-text-supporting);
   line-height: 1.7;
 }
 
@@ -71,15 +77,23 @@ html > body[data-scroll-locked] {
 }
 
 .prose h2 {
-  margin-top: 36px;
+  margin-top: 48px;
   margin-bottom: 12px;
-  font-size: 20px;
+  padding-top: 24px;
+  border-top: 1px solid var(--a13n-border);
+  font-size: 22px;
+}
+
+.prose > h2:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .prose h3 {
-  margin-top: 28px;
+  margin-top: 32px;
   margin-bottom: 8px;
-  font-size: 17px;
+  font-size: 18px;
 }
 
 .prose h4 {
@@ -90,31 +104,38 @@ html > body[data-scroll-locked] {
   font-weight: 600;
 }
 
+/* Links keep the text color and carry a brand underline. */
 .prose a:not([data-card], .not-prose *) {
-  text-decoration-color: color-mix(in srgb, currentColor 28%, transparent);
-  text-decoration-thickness: 1px;
+  font-weight: 500;
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--a13n-signal) 45%,
+    transparent
+  );
+  text-decoration-thickness: 1.5px;
   text-underline-offset: 3px;
   transition: text-decoration-color 150ms;
 }
 
 .prose a:not([data-card], .not-prose *):hover {
   opacity: 1;
-  text-decoration-color: currentColor;
+  text-decoration-color: var(--a13n-signal);
 }
 
-/* Inline code is a surface chip in running text and bare monospace elsewhere (headings, controls). */
+/* Inline code is an outlined chip in running text and bare monospace elsewhere (headings, controls). */
 .prose :not(pre) > code:not(.not-prose *) {
   padding: 0;
   border: 0;
   border-radius: 0;
   background: none;
-  font-size: 0.875em;
+  font-size: 0.84em;
 }
 
 .prose :is(p, li, td, blockquote) code:not(pre code, .not-prose *) {
-  padding: 0.125em 0.375em;
+  padding: 0.15em 0.4em;
   border-radius: 6px;
   background: var(--a13n-surface);
+  box-shadow: inset 0 0 0 1px var(--a13n-input-border);
 }
 
 .prose blockquote {
@@ -129,7 +150,7 @@ html > body[data-scroll-locked] {
   content: none;
 }
 
-/* Tables: no frame or header fill; hairlines between rows only. */
+/* Tables: a rounded header band over hairlines between rows. */
 .prose table {
   border: 0;
   border-radius: 0;
@@ -141,32 +162,37 @@ html > body[data-scroll-locked] {
   padding: 10px 12px;
 }
 
-.prose :is(th, td):first-child {
-  padding-inline-start: 0;
-}
-
-.prose :is(th, td):last-child {
-  padding-inline-end: 0;
-}
-
 .prose th {
   padding-block: 8px;
-  background: none;
+  background: var(--a13n-surface);
   font-size: 12px;
-  font-weight: 500;
-  color: var(--color-fd-muted-foreground);
+  font-weight: 600;
+  color: var(--a13n-secondary);
 }
 
-/* Code blocks sit on the surface, without a frame, shadow, or title divider. */
+.prose th:first-child {
+  border-start-start-radius: 8px;
+  border-end-start-radius: 8px;
+}
+
+.prose th:last-child {
+  border-start-end-radius: 8px;
+  border-end-end-radius: 8px;
+}
+
+/* Code blocks: a hairline frame on the surface, titled by file or language. */
 figure.shiki {
-  border: 0;
+  border: 1px solid var(--a13n-border);
   border-radius: var(--a13n-radius-group);
   background: var(--a13n-surface);
   box-shadow: none;
 }
 
-figure.shiki > div:first-child {
-  border: 0;
+figure.shiki > div:first-child:not(.absolute) {
+  border-color: var(--a13n-border);
+  background: var(--a13n-surface);
+  font-size: 12.5px;
+  font-weight: 500;
 }
 
 /* The floating copy button masks code scrolled beneath it and, with a pointer, appears on hover. */
@@ -321,8 +347,8 @@ figure.shiki > div.absolute {
   display: none;
 }
 
-/* Framed panels from Fumadocs components (API reference, tabs) become surfaces. */
-#nd-page .rounded-xl.border:is(.bg-fd-card, .bg-fd-secondary) {
+/* Framed panels from Fumadocs components (API reference, tabs) become surfaces; code blocks keep their frame. */
+#nd-page .rounded-xl.border:is(.bg-fd-card, .bg-fd-secondary):not(figure) {
   border-color: transparent;
   background: var(--a13n-surface);
 }
@@ -330,6 +356,7 @@ figure.shiki > div.absolute {
 #nd-page
   .rounded-xl.border:is(.bg-fd-card, .bg-fd-secondary)
   :is(figure.shiki, [role="tabpanel"]) {
+  border-color: transparent;
   background: transparent;
 }
 

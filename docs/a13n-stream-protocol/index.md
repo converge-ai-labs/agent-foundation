@@ -22,6 +22,9 @@ flowchart TB
     Observer --> Events["Typed AG-UI events"]
     Events --> Host["Host persistence and transport"]
     Host --> UI["Renderer"]
+
+    class Run,Observer a13n
+    class Host,UI app
 ```
 
 ## One observer, one Run

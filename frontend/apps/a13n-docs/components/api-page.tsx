@@ -5,6 +5,7 @@ import { curl } from "fumadocs-openapi/requests/generators/curl";
 import { javascript } from "fumadocs-openapi/requests/generators/javascript";
 import { python } from "fumadocs-openapi/requests/generators/python";
 import { createOpenAPIPage } from "fumadocs-openapi/ui";
+import { codeThemes } from "@/lib/code-blocks";
 
 // Image uploads (agent avatars) send the file bytes as the request body.
 const imageBody: MediaAdapter = {
@@ -26,6 +27,7 @@ codeUsages.add("js", javascript);
 export const APIPage = createOpenAPIPage({
   playground: { enabled: false },
   codeUsages,
+  shikiOptions: { themes: codeThemes },
   mediaAdapters: {
     "image/png": imageBody,
     "image/jpeg": imageBody,

@@ -52,6 +52,23 @@ curl https://api.github.com/user -H "Authorization: Bearer $GH_TOKEN"
 
 无需设置 `HTTP_PROXY` 或 `HTTPS_PROXY`。内核路由将流量送入外层 broker。对于 443 端口上的 HTTPS，broker 只替换请求**头字段值** 中的占位标记，且仅对该秘密的 `inject_hosts` 生效。URL 和请求体保持原样。broker 验证上游 TLS。通过 `SSL_CERT_FILE`、`REQUESTS_CA_BUNDLE`、`CURL_CA_BUNDLE` 和 `NODE_EXTRA_CA_CERTS` 提供包含系统信任和会话 CA 的私有 bundle。使用证书固定或独立信任库的客户端需要显式集成。Envd 不会覆盖原生系统 CA bundle，因此 `update-ca-certificates` 仍可正常运行。
 
+```mermaid
+flowchart TB
+    Caller["可信调用方"] -->|"session.open 携带秘密值"| Envd["Envd"]
+    subgraph Session["受控会话"]
+        Command["命令：GH_TOKEN 中是占位标记"]
+    end
+    Envd --> Command
+    Command -->|"所有流量，由内核路由"| Broker["外层 broker"]
+    Broker -->|"允许的主机：请求头字段值换成真实秘密"| Upstream["api.github.com"]
+    Broker -->|"其他主机或非公共地址"| Refused["拒绝"]
+
+    class Caller app
+    class Envd,Broker a13n
+    class Upstream ext
+    class Refused danger
+```
+
 原生 sudo 通常会移除这些环境变量。对于 root HTTPS 命令，请按现有 sudoers 策略保留所需变量，例如：
 
 ```bash

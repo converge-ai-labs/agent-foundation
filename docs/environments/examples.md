@@ -24,6 +24,10 @@ sequenceDiagram
     Host->>Environment: dump_state()
     Host->>Environment: close()
     Note over Environment,Target: close is non-destructive
+
+    %% class Host app
+    %% class Provider,Environment a13n
+    %% class Target ext
 ```
 
 ## Install the example
@@ -120,6 +124,10 @@ sequenceDiagram
     Cleanup->>Docker: destroy
     Cleanup-->>Host: state=None
     Host->>Cleanup: close
+
+    %% class Host app
+    %% class First,Second,Cleanup a13n
+    %% class Docker ext
 ```
 
 The example supplies a native `DockerSDKEngine` through `DockerProviderRuntime`. The image needs Python and a POSIX shell; no Envd executable or bootstrap directory is needed.

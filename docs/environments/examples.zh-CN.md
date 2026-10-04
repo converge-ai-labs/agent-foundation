@@ -24,6 +24,10 @@ sequenceDiagram
     Host->>Environment: dump_state()
     Host->>Environment: close()
     Note over Environment,Target: close 不销毁目标
+
+    %% class Host app
+    %% class Provider,Environment a13n
+    %% class Target ext
 ```
 
 ## 安装示例
@@ -120,6 +124,10 @@ sequenceDiagram
     Cleanup->>Docker: destroy
     Cleanup-->>Host: state=None
     Host->>Cleanup: close
+
+    %% class Host app
+    %% class First,Second,Cleanup a13n
+    %% class Docker ext
 ```
 
 示例通过 `DockerProviderRuntime` 提供原生 `DockerSDKEngine`。镜像需要 Python 和 POSIX shell；不需要 Envd 可执行文件或启动目录。

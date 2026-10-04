@@ -63,6 +63,10 @@ flowchart TB
     Environment --> Direct[原生本地、Docker 或云操作]
     Environment --> EIP[EIP 操作]
     EIP --> Envd[a13n-envd 或远程后端]
+
+    class Host app
+    class Definition,Environment,Harness,Envd a13n
+    class Direct ext
 ```
 
 - **Host** 选择可信 provider、期望配置、当前状态、运行时协作对象、保留策略和授权。

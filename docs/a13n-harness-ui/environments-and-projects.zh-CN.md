@@ -22,10 +22,13 @@ Windows 内置本地模式**仅支持 Full Control**。设置向导和 CLI Envir
 ## 文件、Project 与恢复
 
 ```mermaid
-flowchart LR
+flowchart TB
     P[Project 文件：有序根目录和默认值] --> T[新 Thread：保存根路径]
     T --> R[Run：Environment 挂载]
     P -. 后续修改只影响新 Thread .-> N[新 Thread]
+
+    class P store
+    class T,R,N a13n
 ```
 
 Model、Agent、Device、扩展、MCP 和 Project 资源存放在同级 YAML 目录。Project 可以选择本地目录、Device 工作环境，或两者一起使用。没有显式默认环境时，第一个本地目录是默认工作目录。从该目录启动 CLI 会使用同一 Project 及其全部根目录。例如根目录为 `[code, notes]` 的 Project 从 `code` 进入；之后添加 `notes` 不会创建新 Project，也不会隐藏已有 CLI 会话。

@@ -23,6 +23,9 @@ flowchart LR
     Plugin[插件贡献] --> PAI
     Run[当前 Run 的 Capabilities] --> PAI
     PAI --> Loop[Pydantic AI Agent 执行循环]
+
+    class Spec,Definition,Plugin,Run a13n
+    class PAI,Loop ext
 ```
 
 存在 Capability 本身不授权外部工作。跨越托管边界的工具仍检查当前执行策略和 provider 强制限制。

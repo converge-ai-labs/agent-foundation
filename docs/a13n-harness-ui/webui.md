@@ -25,6 +25,9 @@ flowchart TB
     Browser -->|Send prompt| App[HarnessUiApp]
     App --> Agent[Agent Run]
     Agent --> Environment[Selected Environment or Device]
+
+    class Browser app
+    class App,Agent a13n
 ```
 
 Markdown files open with **Preview** selected and expose **Preview** and **Text** as explicit buttons; the preview renders the current local buffer, so unsaved edits can be checked before saving. File operations are compact buttons, and **Add to chat** is the single file-context action: it adds the selected source lines when the text editor has a selection, otherwise the complete reviewed file. It does not send the composer. Same-instance Host-file links in assistant Markdown open the Files drawer on the current page. WebUI root Agents receive the supported relative link shape in their per-input surface guidance: `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}`. Bare Host paths and direct Files API URLs are not browser file links; external Markdown links continue to open separately.

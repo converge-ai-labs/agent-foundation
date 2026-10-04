@@ -35,6 +35,11 @@ flowchart TB
     Worker -->|"实时事件"| Redis[(Redis)]
     Redis -->|"实时输出"| Control
     Control -->|"线程事件流"| Client
+
+    class Client app
+    class Control,Worker a13n
+    class Postgres,Objects,Redis store
+    class External ext
 ```
 
 1. 客户端发送消息。Service 将其加入线程收件箱，并在线程就绪时启动一次运行。

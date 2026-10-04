@@ -19,6 +19,19 @@ Agent Foundation supports managed execution through Service, embedded execution 
 - **Harness:** your Python process constructs and runs the agent. Your application owns storage, access policy, and delivery.
 - **Harness UI:** the terminal and browser workbench runs agents with its own configuration and conversation history. Share an instance with trusted collaborators.
 
+```mermaid
+flowchart TB
+    Client["Console or your application"] -->|"HTTP API or SDK"| Service["Service deployment"]
+    Process["Your Python process"]
+    Workbench["Harness UI: terminal or browser"]
+    Service -->|"Managed"| Harness["Harness runs each agent"]
+    Process -->|"Embedded"| Harness
+    Workbench -->|"Interactive"| Harness
+
+    class Client,Process,Workbench app
+    class Service,Harness a13n
+```
+
 A **Service SDK** is a client for remote execution. The **Harness library** executes agents inside your process. Service Console and Harness UI's browser are separate applications.
 
 ## Use individual components

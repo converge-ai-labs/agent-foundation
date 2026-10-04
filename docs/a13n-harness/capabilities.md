@@ -23,6 +23,9 @@ flowchart LR
     Plugin[Plugin contributions] --> PAI
     Run[Fresh run Capabilities] --> PAI
     PAI --> Loop[Pydantic AI Agent loop]
+
+    class Spec,Definition,Plugin,Run a13n
+    class PAI,Loop ext
 ```
 
 Capability presence does not itself authorize external work. Tools that cross a managed boundary still evaluate fresh run policy and provider enforcement.

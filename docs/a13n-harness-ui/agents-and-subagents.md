@@ -11,6 +11,8 @@ Choose a child form by what it needs to change:
 flowchart LR
     Parent[Parent Agent] -->|markdown: child-role| Markdown[Instructions only; inherits parent Model]
     Parent -->|agent: agent-reviewer| Resource[Separate Agent resource; own Model and tools]
+
+    class Parent a13n
 ```
 
 Both forms execute through Harness; neither starts a separate daemon.

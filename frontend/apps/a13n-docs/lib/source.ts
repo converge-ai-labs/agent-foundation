@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { remarkMdxMermaid } from "fumadocs-core/mdx-plugins";
+import {
+  rehypeCodeDefaultOptions,
+  remarkMdxMermaid,
+} from "fumadocs-core/mdx-plugins";
 import { llms, loader, type InferPageType } from "fumadocs-core/source";
 import { metaSchema, pageSchema } from "fumadocs-core/source/schema";
 import { applyMdxPreset } from "fumadocs-mdx/config";
@@ -8,6 +11,7 @@ import { defineDocs } from "fumadocs-mdx/macro";
 import { createOpenAPI } from "fumadocs-openapi/server";
 import { createElement, Fragment } from "react";
 import { z } from "zod";
+import { codeThemes, transformerLanguageTitle } from "./code-blocks";
 import { icon } from "./icons";
 import { i18n } from "./i18n";
 import openapiChinese from "./locales/openapi.zh-CN.json";
@@ -30,7 +34,11 @@ const docs = defineDocs({
         remarkMdxMermaid,
       ],
       rehypeCodeOptions: {
-        themes: { light: "github-light", dark: "github-dark" },
+        themes: codeThemes,
+        transformers: [
+          ...(rehypeCodeDefaultOptions.transformers ?? []),
+          transformerLanguageTitle,
+        ],
       },
     }),
   },

@@ -10,6 +10,20 @@ A memory is what agents keep across conversations: preferences, decisions, conve
 
 Threads **mount** memories under names. Each run freezes the thread's memory mounts when it is accepted, sees each memory's context or recalled records at its start, and changes the memories through the `memory_file_*` and `memory_record_*` tools.
 
+```mermaid
+flowchart TB
+    Thread["Thread: memories mounted by name, read or write"] --> Run["Run"]
+    subgraph Workspace["Workspace"]
+        File["File memory: versioned text files"]
+        Record["Record memory: records in mem0"]
+    end
+    Run <-->|"Context at start, file tools"| File
+    Run <-->|"Recall at start, record tools"| Record
+
+    class Thread,Run a13n
+    class File,Record store
+```
+
 All API paths below are under `/api/v1`.
 
 ## Create a file memory

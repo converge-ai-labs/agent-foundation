@@ -11,6 +11,8 @@ description: 用 YAML 定义可复用 Agent，用轻量 Markdown subagent 定义
 flowchart LR
     Parent[父 Agent] -->|markdown: child-role| Markdown[仅改变指令；继承父级 Model]
     Parent -->|agent: agent-reviewer| Resource[独立 Agent 资源；自己的 Model 和工具]
+
+    class Parent a13n
 ```
 
 两种形式都通过 Harness 执行，不会启动独立守护进程。

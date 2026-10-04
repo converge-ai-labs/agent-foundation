@@ -25,6 +25,9 @@ flowchart TB
     Browser -->|发送提示词| App[HarnessUiApp]
     App --> Agent[Agent Run]
     Agent --> Environment[选定的 Environment 或 Device]
+
+    class Browser app
+    class App,Agent a13n
 ```
 
 Markdown 文件默认以 **Preview** 打开，可通过 **Preview** 和 **Text** 按钮切换。预览使用当前本地缓冲区，因此保存前就能检查未保存的编辑。文件操作采用紧凑按钮，**Add to chat** 是唯一的文件上下文添加入口：文本编辑器有选区时添加选中的源码行，否则添加已审阅的完整文件。它不会发送输入框内容。assistant Markdown 中指向同一实例 Host 文件的链接，会在当前页面打开 Files 抽屉。WebUI 根 Agent 在每次输入的界面指引中会获得支持的相对链接格式：`/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}`。单独的 Host 路径和直接的 Files API URL 不是浏览器文件链接；外部 Markdown 链接仍会单独打开。
