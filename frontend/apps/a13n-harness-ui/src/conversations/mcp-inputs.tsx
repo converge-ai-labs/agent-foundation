@@ -2,7 +2,12 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, FormField, Input, ChoiceField } from "a13n-ui";
 import { useTransport } from "../transport/context";
-import { ApiError, result, type Schema } from "../transport/client";
+import {
+  ApiError,
+  isConnectionError,
+  result,
+  type Schema,
+} from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import styles from "./decisions.module.css";
 import conversation from "./conversation.module.css";
@@ -307,26 +312,28 @@ function McpInput({
           </p>
         )}
         {answer.error && <ErrorNotice error={answer.error} />}
-        {answer.error && !(answer.error instanceof ApiError) && (
-          <>
-            <p className={styles.hint}>
-              Delivery is uncertain. Check the request before retrying; the
-              business tool is never repeated.
-            </p>
-            <div className={styles.actions}>
-              <Button variant="ghost" onClick={reconcile}>
-                Check request
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={answer.isPending || !submitted}
-                onClick={() => submitted && answer.mutate(submitted)}
-              >
-                Retry same response
-              </Button>
-            </div>
-          </>
-        )}
+        {answer.error &&
+          (!(answer.error instanceof ApiError) ||
+            isConnectionError(answer.error)) && (
+            <>
+              <p className={styles.hint}>
+                Delivery is uncertain. Check the request before retrying; the
+                business tool is never repeated.
+              </p>
+              <div className={styles.actions}>
+                <Button variant="ghost" onClick={reconcile}>
+                  Check request
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={answer.isPending || !submitted}
+                  onClick={() => submitted && answer.mutate(submitted)}
+                >
+                  Retry same response
+                </Button>
+              </div>
+            </>
+          )}
       </div>
     </section>
   );
