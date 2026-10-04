@@ -38,7 +38,7 @@ COMMANDS = (
     ),
     Command(
         "theme",
-        "Choose a terminal theme.",
+        "Choose the TUI theme.",
         "[auto|dark|light]",
         maximum=1,
         choices=("auto", "dark", "light"),
@@ -63,7 +63,7 @@ COMMANDS = (
         maximum=1,
         raw_tail=True,
     ),
-    Command("status", "Show model, context, environment, and subscription usage.", busy=True),
+    Command("status", "Show Model, context, Environment, and subscription usage.", busy=True),
     Command("ps", "Inspect observed background processes and their last reported status.", busy=True),
     Command(
         "subagents",
@@ -74,7 +74,8 @@ COMMANDS = (
     ),
     Command(
         "usage",
-        "Show recorded Thread usage; subscription shows plan usage; reset redeems Codex credits.",
+        "Show recorded Thread usage; subscription shows Codex plan limits; "
+        "reset redeems a Codex reset credit after confirmation.",
         "[details|subscription|reset]",
         maximum=1,
         choices=("details", "subscription", "reset"),
@@ -82,7 +83,7 @@ COMMANDS = (
     ),
     Command(
         "steer",
-        "Add guidance while the agent is working.",
+        "Steer the active Run with additional input.",
         "message",
         minimum=1,
         maximum=1,
@@ -92,19 +93,20 @@ COMMANDS = (
     Command("import", "Preview and optionally enable external subagents with parent inheritance."),
     Command(
         "agent",
-        "Switch agent, including its model, instructions, and tools.",
+        "Switch Agent, including its Model, instructions, and tools.",
         "[agent-id]",
         maximum=1,
     ),
     Command(
         "model",
-        "Select a Project model or configure media understanding defaults.",
+        "Override the Model until you quit and remember it for the Project; default clears the override and the "
+        "remembered choice; defaults configures global media understanding with Save/Cancel.",
         "[model-id|default|defaults]",
         maximum=1,
     ),
     Command(
         "fast",
-        "Select Fast or Ultrafast for this session without saving configuration.",
+        "Select Fast or Ultrafast until you quit, without saving configuration.",
         "[on|off|ultrafast|reset]",
         maximum=1,
         choices=("on", "off", "ultrafast", "reset"),
@@ -125,21 +127,26 @@ COMMANDS = (
     ),
     Command(
         "environment",
-        "Show or select execution permissions for subsequent turns.",
+        "Show or select the Environment mode (Full Control or Sandbox) for subsequent turns.",
         "[mode]",
         maximum=1,
         choices=("full-control", "sandbox"),
     ),
-    Command("new", "Start a fresh session; keep all saved history."),
-    Command("resume", "Search, preview, and name saved sessions, or resume one by ID.", "[session-id]", maximum=1),
+    Command("new", "Start a new conversation; keep all saved history."),
+    Command(
+        "resume",
+        "Search, preview, and name saved conversations, or resume one by Thread ID.",
+        "[thread-id]",
+        maximum=1,
+    ),
     Command("history", "Browse retained messages (Ctrl+T)."),
     Command("notes", "Show saved notes with full contents within display budgets."),
     Command("config", "Find your configuration files."),
     Command(
         "review", "Inspect a pending request against the selected continuation.", "request-id", minimum=1, maximum=1
     ),
-    Command("cancel", "Stop the current task.", busy=True),
-    Command("quit", "End this session.", aliases=("exit",), busy=True),
+    Command("cancel", "Stop the active Run.", busy=True),
+    Command("quit", "Quit the TUI; the saved conversation stays resumable.", aliases=("exit",), busy=True),
 )
 
 
@@ -223,13 +230,13 @@ class CommandRegistry:
                 "",
                 "### Shortcuts",
                 "",
-                "`Enter` send or guide · `Ctrl+J` / `Alt+Enter` newline · `Tab` complete",
+                "`Enter` send or steer · `Ctrl+J` / `Alt+Enter` newline · `Tab` complete",
                 "`Ctrl+C` stop / twice to exit · `Ctrl+D` exit · `Ctrl+O` details",
                 "`Ctrl+V` paste image · `Alt+E` expand paste · `PgUp/PgDn` scroll · `Ctrl+End` latest · `/mouse off` copy",
-                "`Ctrl+T` browse retained messages · `$` complete available skills · `/` commands",
+                "`Ctrl+T` browse retained messages · `$` complete available Skills · `/` commands",
                 "",
-                "Add agents with `a13n-harness-ui add agent`. `/model` changes only the model for this TUI session; "
-                "`/model default` returns to the Agent's model. Nothing is saved.",
+                "Add Agents with `a13n-harness-ui add agent`. `/model` remembers a Model for the Project; "
+                "`/model default` returns to the Agent's Model.",
             ]
         if name is None or commands[0].name in {"paste-image", "attach"}:
             lines += [

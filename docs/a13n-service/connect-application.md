@@ -15,7 +15,7 @@ Create an API key under **Workspace settings → My API keys** and export it wit
 export A13N_URL=http://127.0.0.1:8080 A13N_API_KEY=a13n_...
 ```
 
-The key acts in its workspace with its owner's current permissions. You need the **runner** role or higher in that workspace; creating agents requires **builder** or **admin**. For a team application, use a dedicated [service account](identity.md#service-accounts). Keep API keys in server-side configuration.
+The key acts in its workspace with the current permissions of its principal: the user or service account it belongs to. You need the **runner** role or higher in that workspace; creating agents requires **builder** or **admin**. For a team application, use a dedicated [service account](identity.md#service-accounts). Keep API keys in server-side configuration.
 
 ## Select an agent
 
@@ -36,7 +36,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 
 ## Start a conversation
 
-Set `AGENT_ID` to the selected agent's `id` and generate a key for this message:
+Set `AGENT_ID` to the selected agent's `id` and generate an idempotency key for this message:
 
 ```sh
 AGENT_ID=ap_replace_with_the_returned_id
@@ -61,8 +61,8 @@ RUN_ID=run_replace_with_the_returned_id
 curl "$A13N_URL/api/v1/runs/$RUN_ID" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-Continue until the run is `completed`, `waiting`, `failed`, or `cancelled`. A completed run's answer is in `output`. A waiting run needs an [answer, approval, or client tool result](agents-and-runs.md#waits-approvals-and-questions); inspect the result of a failed run with the [troubleshooting guide](monitoring.md#troubleshoot-a-request-or-run).
+Repeat this request until the run is `completed`, `waiting`, `failed`, or `cancelled`. A completed run's answer is in `output`. A waiting run needs an [answer, approval, or client tool result](agents-and-runs.md#waits-approvals-and-questions); inspect the result of a failed run with the [troubleshooting guide](monitoring.md#troubleshoot-a-request-or-run).
 
-Instead of polling, follow the thread stream or subscribe to [webhooks](files-and-webhooks.md#webhooks). Disconnecting the client leaves remote work running. Send follow-ups to `POST …/threads/{thread_id}/inbox` to continue the conversation.
+Instead of polling, follow the thread stream or subscribe to [webhooks](files-and-webhooks.md#webhooks). The run continues when the client disconnects. Send follow-ups to `POST …/threads/{thread_id}/inbox` to continue the thread.
 
 See [HTTP conventions](http.md) for authentication, pagination, conditional writes, and errors; the [API reference](api-reference/index.md) lists request and response schemas. Match your [SDK's supported contract](sdks.md#keep-version-ownership-clear) to your deployed Service version.

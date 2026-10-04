@@ -3,9 +3,9 @@ title: Memory
 description: Workspace memories that agents keep across conversations, as versioned files or recalled records.
 ---
 
-A memory is what agents keep across conversations: preferences, decisions, conventions and reference facts. It belongs to a workspace, and several conversations can use it at once. There are two kinds:
+A memory is what agents keep across conversations: preferences, decisions, conventions and reference facts. It belongs to a workspace, and several threads can mount it at once. There are two kinds:
 
-- A **file memory** is a small tree of text files. The Service keeps its files, and the history of every change, in PostgreSQL. Every write checks the file's version at the moment it runs, so a change based on stale content fails and returns the current file instead of overwriting another conversation's work. [File memory](../a13n-harness/memory.md) explains what the model sees and how to write good memory files.
+- A **file memory** is a small tree of text files. The Service keeps its files, and the history of every change, in PostgreSQL. Every write checks the file's version at the moment it runs, so a change based on stale content fails and returns the current file instead of overwriting another run's work. [File memory](../a13n-harness/memory.md) explains what the model sees and how to write good memory files.
 - A **record memory** is a set of short text records, such as "The user prefers metric units", kept in a [mem0](https://mem0.ai) backend through a [Memory Provider](#set-up-a-memory-provider). At the start of each run, the records closest to the run's input are **recalled** into it. Records have no versions: the last write wins.
 
 Threads **mount** memories under names. Each run freezes the thread's memory mounts when it is accepted, sees each memory's context or recalled records at its start, and changes the memories through the `memory_file_*` and `memory_record_*` tools.
@@ -40,8 +40,8 @@ curl -X POST "$A13N_URL/api/v1/memories" \
 
 - `type` is `postgres`, the Service's own store and the default. The response's `id` (`mem_…`) identifies the memory; memories have no key.
 - `guide` tells agents what belongs in this memory and how to organize it, up to `memory.guide_bytes`. Leave it out or set it to `null` to use the deployment's guide for the memory's kind (`memory.default_guide.file` or `memory.default_guide.record`, else the built-in one); `""` gives the memory no guide. The memory's `inherited_guide` shows the guide `null` resolves to.
-- `always_load` names up to 64 paths whose full content leads the memory's context in every run. A path need not exist yet. Only people who may change the memory choose them, so a conversation cannot pin its own writes into every later one.
-- `PATCH …/memories/{memory_id}` with the memory's `If-Match` changes `name`, `description`, `labels`, `guide` and `always_load`. Runs that start afterwards use the change.
+- `always_load` names up to 64 paths whose full content leads the memory's full context, which a thread receives the first time it sees the memory. A path need not exist yet. Only principals with `write` on the memory set them, so a run cannot pin its own writes into every later thread.
+- `PATCH …/memories/{memory_id}` with the memory's `If-Match` changes `name`, `description`, `labels`, `guide` and `always_load`. Attempts that start afterwards use the change, including a later attempt of a run that is already running.
 - `DELETE …/memories/{memory_id}` with `If-Match` deletes the memory with its files, history and thread mounts. A running run that uses it gets `memory_deleted` from its next memory tool call.
 
 `GET …/memories` lists the workspace's memories, filtered by `label`, `kind` (`file` or `record`) and `type`. A file memory shows `file_count`, `content_bytes` and `history_bytes`; they are null for a record memory.
@@ -85,7 +85,7 @@ curl -X POST "$A13N_URL/api/v1/memories" \
 - `type` is the provider's type, and the provider must be an enabled Memory Provider of the workspace. `always_load` does not apply.
 - Each record memory owns a **namespace** in the backend, which is mem0's `user_id`. By default it is `a13n-` and 32 hex characters derived from the memory's ID. Set `namespace` to adopt records that already exist under a `user_id`, such as ones your application wrote; it is 1 to 256 printable characters with no whitespace and no `*`. One namespace belongs to one memory: another memory using it is `409 already_exists`.
 - `type`, `provider_id` and `namespace` never change.
-- Deleting a record memory deletes the records in its namespace too, in the background. Until that finishes, a new memory cannot take the namespace (`409 conflict` with reason `namespace_purging`). If the backend keeps refusing, the purge stops after `outbox.defaults.max_attempts` tries and the records stay in the backend. The mem0 Platform finishes a purge on its own after accepting it, so its records can linger briefly.
+- Deleting a record memory deletes the records in its namespace too, in the background. Until that finishes, a new memory cannot take the namespace (`409 conflict` with reason `namespace_purging`). If the backend keeps refusing, the purge stops after the `memory_purge` outbox policy's `max_attempts` tries (`outbox.by_kind.memory_purge`, else `outbox.defaults`), and the records stay in the backend. The mem0 Platform finishes a purge on its own after accepting it, so its records can linger briefly.
 
 ### Read and edit records
 
@@ -122,7 +122,7 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/memories" \
 - Mount changes take the **thread's** `If-Match`, return the thread's new ETag, need `run`, and affect runs accepted afterwards. `GET …/threads/{thread_id}/memories` lists the mounts with the thread's ETag, and `DELETE …/threads/{thread_id}/memories/{name}` removes one.
 - New threads and forks take initial mounts in their `memories` field. A fork copies its origin thread's memory mounts. Archiving a thread removes them.
 
-To give every conversation of an agent a memory, set the agent's `memory_mounts` to `[{name, memory_id, access, recall}]`. They join a thread when its first run is accepted, for each name and memory the thread does not use yet. Afterwards the thread's own mounts decide, so removing one keeps it removed. A default whose memory was deleted fails that first run with `invalid_argument`, and defaults that would take the thread over its limit fail it with `memory_mount_limit`.
+To give every thread of an agent a memory, set the agent's `memory_mounts` to `[{name, memory_id, access, recall}]`. They join a thread when its first run is accepted, for each name and memory the thread does not use yet. Afterwards the thread's own mounts decide, so removing one keeps it removed. A default whose memory was deleted fails that first run with `invalid_argument`, and defaults that would take the thread over its limit fail it with `memory_mount_limit`.
 
 An async [subagent](agents-and-runs.md#subagents)'s thread starts with the parent run's memory mounts and then adds its own agent's defaults. Inline subagents get no memory tools or context.
 
@@ -135,7 +135,7 @@ The `memory` [toolset](tools.md#built-in-toolsets) is enabled by default. Its to
 
 Disabling a tool removes it from every mount; disabling the toolset leaves the run its memories' context and recall without tools.
 
-At the start of a run, each file memory adds one context block: its always-loaded files and an index of its files the first time a conversation sees it, and afterwards only the files changed since, including changes by other conversations and people. A conversation whose history was compacted gets full context again. A run's memory context shares `memory.context_bytes` (32 KiB by default), of which each memory's always-loaded files take at most `memory.always_load_bytes`.
+At the start of a run, each file memory adds one context block: its always-loaded files and an index of its files the first time a thread sees it, and afterwards only the files changed since, including changes by other threads and people. A thread whose history was compacted gets full context again. A run's memory context shares `memory.context_bytes` (32 KiB by default), of which each memory's always-loaded files take at most `memory.always_load_bytes`.
 
 Each memory call checks the run's access to the workspace: `read` to view, list and search, `run` to change a file or record. A refused call fails with `forbidden`, and a call to a record memory whose provider was disabled fails with `unavailable`. A failed file call changes nothing; the model reads the file and decides again.
 
@@ -158,6 +158,6 @@ People can read and correct what agents wrote. Reading needs `read`, editing and
 | `POST …/memories/{id}/revisions/{seq}/restore` | Puts back the content that change replaced, as a new change; `If-Match` names the file now at the path, if any |
 | `DELETE …/memories/{id}/revisions?path=`       | Deletes the retained history of one path; the file stays                                                       |
 
-Each revision records who made the change: `run_id` and `tool_call_id` for an agent's tool call, `principal_id` for both agents and people. A file's ETag changes with every change, so an edit based on an old read answers `412 precondition_failed`.
+Each revision records who made the change: `principal_id` always (for an agent's change, the run's principal), plus `run_id` and `tool_call_id` for an agent's tool call. A file's ETag changes with every change, so an edit based on an old read answers `412 precondition_failed`.
 
 A file holds at most `memory.max_file_bytes` (64 KiB by default). Each file keeps its latest `memory.revisions_per_file` changes (10 by default), and one memory's content and history together fit `memory.max_total_bytes` (32 MiB by default): the oldest history is pruned first, and only content alone over the limit refuses a change, with `409 conflict` and reason `memory_full`. See the [settings reference](configuration-reference.md#memory) for every `memory.*` setting.

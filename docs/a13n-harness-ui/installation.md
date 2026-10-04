@@ -19,17 +19,17 @@ Optional Bash/Zsh shortcut: `alias anui='a13n-harness-ui'` in your shell profile
 
 ## Upgrade
 
-For a uv-tool installation, run `a13n-harness-ui update` or `uv tool upgrade a13n-harness-ui`, then restart Harness UI. The application command needs uv on PATH and runs the upgrade without another prompt. For other installations, use their original package manager.
+For a uv-tool installation, run `a13n-harness-ui update` or `uv tool upgrade a13n-harness-ui`, then restart Harness UI. `a13n-harness-ui update` needs uv on PATH and runs the upgrade without another prompt. For other installations, use their original package manager.
 
-Startup can check for updates, but never installs one without confirmation. Disable the check for a single invocation with `--no-update-check`, or permanently with `process.terminal_update_check: false`. See [update and failure behavior](automation-and-troubleshooting.md#logs-updates-and-exit).
+Startup can check for updates, but never installs one without confirmation. Disable the check for a single invocation with `--no-update-check`, or permanently with `process.terminal_update_check: false` in `a13n-harness-ui.yaml`. See [update and failure behavior](automation-and-troubleshooting.md#logs-updates-and-exit).
 
 ### Dependency compatibility
 
-uv resolves the application and dependencies against its published requirements. Harness UI releases independently against compatible Harness, Stream Protocol and Environment dependencies. Upgrade Harness UI itself if an old package's requirements block a dependency update; check any constraints you supplied rather than forcing an incompatible version.
+uv resolves the application and dependencies against its published requirements. Harness UI releases independently against compatible versions of `a13n-harness`, `a13n-stream-protocol`, `a13n-envd-client` and `a13n-logging`. Upgrade Harness UI itself if an old package's requirements block a dependency update; check any constraints you supplied rather than forcing an incompatible version.
 
 ### Sandbox runtime
 
-Full Control needs no Envd download. Sandbox acquires a daemon matching the installed `a13n-envd-client` version when needed, including after an upgrade. Source builds with version `0.0.0` need an explicit validated executable for managed Local EIP. See [Envd installation](../a13n-envd/index.md).
+Full Control needs no Envd download. Sandbox acquires a daemon matching the installed `a13n-envd-client` version when needed, including after an upgrade. Source builds with version `0.0.0` need an explicit, validated `a13n-envd` executable for Sandbox. See [Envd installation](../a13n-envd/index.md).
 
 ## Run from source
 
@@ -45,15 +45,15 @@ Follow the repository [contribution guide](https://github.com/converge-ai-labs/a
 
 Source documentation tracks `main`. When using a published wheel, consult the documentation and metadata for that release if an API or setting differs.
 
-## Other interfaces
+## WebUI
 
-The installed package includes both interfaces. Start the browser workbench with:
+The installed package includes both the TUI and WebUI. Start WebUI with:
 
 ```console
 a13n-harness-ui webui
 ```
 
-Open the printed login link to configure models, start conversations, and work with trusted collaborators. The foreground server owns active execution; keep it running while using the browser. Native host file and terminal sharing are enabled by default; use `--no-share-computer` to disable them. See [Use the browser](webui.md) for access controls, collaboration boundaries, containers, and listener configuration.
+Open the printed login link in your browser to configure Models, start conversations, and work with trusted collaborators. The foreground server owns active execution; keep it running while you use WebUI. Native host file and terminal sharing are enabled by default; use `--no-share-computer` to disable them. See [WebUI](webui.md) for access controls, collaboration boundaries, containers, and listener configuration.
 
 ## Next step
 

@@ -1,10 +1,10 @@
 ---
 title: Harness
 sidebarTitle: Overview
-description: An embeddable Python SDK for building agents, connecting tools and Environments, and continuing work from saved state.
+description: An embeddable Python SDK for building Agents, connecting tools and Environments, and continuing work from saved state.
 ---
 
-Harness (`a13n-harness`) runs or streams agent work inside your own process. Your application supplies current credentials and chooses what to persist. [Harness UI](../a13n-harness-ui/index.md) provides an interactive local Host; [Service](../a13n-service/index.md) operates managed agents.
+Harness (`a13n-harness`) runs or streams Agent work inside your own process. Your application supplies current credentials and chooses what to persist. [Harness UI](../a13n-harness-ui/index.md) provides an interactive local Host; [Service](../a13n-service/index.md) operates managed Agents.
 
 ## Start with a small Agent
 
@@ -24,7 +24,7 @@ flowchart TB
     class State,Result store
 ```
 
-Build once, then supply current run inputs. Save the returned state to continue the same Thread.
+Build once, then supply current Run inputs. Save the returned state to continue the same Thread.
 
 ## Learn by feature
 
@@ -36,31 +36,31 @@ Build once, then supply current run inputs. Save the returned state to continue 
 | Ask structured questions and supply human feedback  | [Human-in-the-loop tools](human-in-the-loop.md)                         |
 | Accept media input and return typed output          | [Inputs and outputs](inputs-and-outputs.md)                             |
 | Select optional behavior                            | [Capabilities](capabilities.md)                                         |
-| Manage conversation context and tasks               | [Context](context.md)                                                   |
-| Share file or record memory                         | [Memory](memory.md)                                                     |
+| Manage model context and working state              | [Context](context.md)                                                   |
+| Add file or record memory that outlives one Thread  | [Memory](memory.md)                                                     |
 | Work with files, shell, and multiple Environments   | [Environments](environments.md)                                         |
 | Persist, resume, and fork Threads                   | [State and Resume](state-and-resume.md)                                 |
 | Connect MCP tools                                   | [MCP](mcp.md)                                                           |
 | Understand images, audio, and video                 | [Multimedia understanding](multimedia-understanding.md)                 |
-| Run child agents or restricted Python orchestration | [Delegation and CodeAct](delegation-and-codeact.md)                     |
+| Run child Agents or restricted Python orchestration | [Delegation and CodeAct](delegation-and-codeact.md)                     |
 | Discover procedural instructions                    | [Skills](skills.md)                                                     |
 | Set budgets and inspect usage                       | [Usage and limits](usage-and-limits.md)                                 |
-| Trace runs and stream observations                  | [Observation](observation.md)                                           |
+| Trace Runs and stream observations                  | [Observation](observation.md)                                           |
 | Add middleware and Environment integrations         | [Plugins](plugins.md)                                                   |
 | Embed Harness with durable application state        | [Hosting](hosting.md)                                                   |
 | Test without provider credentials                   | [Testing](testing.md)                                                   |
 
 ## What Harness owns
 
-`AgentSpec` and `HarnessBuilder` define and build an `ExecutableAgent`. Each run creates an `AgentContext` and returns events, results, usage, and `HarnessState`. Harness owns process-local execution; an embedding Host owns its users, persistence, and recovery policy.
+`AgentSpec` and `HarnessBuilder` define and build an `ExecutableAgent`. Each Run creates an `AgentContext` and returns events, results, usage, and `HarnessState`. Harness owns process-local execution; an embedding Host owns its users, persistence, and recovery policy.
 
-The SDK accepts native model, message, tool, and output types from its dependencies. Harness UI YAML is Host configuration, not an `AgentSpec` schema.
+The SDK accepts native Pydantic AI model, message, tool, and output types. Harness UI YAML is Host configuration, not an `AgentSpec` schema.
 
 ## Three places to put configuration
 
-- **Definition** (`AgentSpec` and builder arguments): instructions, output type, and stable capabilities.
+- **Definition** (`AgentSpec` and builder arguments): instructions, output type, and stable Capabilities.
 - **Invocation** (`RunBindings`, Environment, input): current identity, clients, tools, and access policy.
-- **Continuation** (`HarnessState`): messages and portable capability state; not credentials or live resources.
+- **Continuation** (`HarnessState`): messages and portable Capability state; not credentials or live resources.
 
 ## Runnable applications
 

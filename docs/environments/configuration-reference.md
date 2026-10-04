@@ -8,11 +8,11 @@ description: Every built-in Environment Provider configuration field, generated 
 
 Use [Configure Providers](configuration.md) for authoring, configuration/runtime/state boundaries, and cross-field restrictions. These are Provider settings, not standalone daemon JSON defaults.
 
-Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these template configuration objects.
+Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these recipe, account, and credential objects.
 
-## Cloud providers
+## Cloud Providers
 
-All six cloud providers use the same configuration, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud provider guide](providers.md#cloud-providers).
+All six cloud Providers use the same recipe, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud Provider guide](providers.md#cloud-providers).
 
 | Provider       | Recipe                                                              | Backend                                                           | Credential                          |
 | -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
@@ -158,7 +158,7 @@ Choices: `DisabledSandbox or RestrictedSandbox`.
 
 ## `LocalEnvdLaunchConfiguration`
 
-Host-selected daemon recipe, shared by every Session on this runtime.
+Host-selected daemon launch configuration, shared by every Session on this runtime.
 
 | Field                         | Required | Type / choices                 | Constraints and default                             |
 | ----------------------------- | -------- | ------------------------------ | --------------------------------------------------- |

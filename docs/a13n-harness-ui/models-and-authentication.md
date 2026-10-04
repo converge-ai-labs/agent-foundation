@@ -1,42 +1,42 @@
 ---
 title: Models and authentication
-description: Create Models, sign in with a subscription or API key, and set context budgets.
+description: Create Models, sign in with a subscription or API key, and set working context budgets.
 ---
 
-A Model chooses a provider connection, request settings, and context budget. Store it in **`models/<name>.yaml` beside the selected root configuration**; Agents reference its `id`. Credentials are separate: Model authentication holds a reference, not the key or token.
+A Model chooses a provider connection, request settings, and working context budget. Store it in **`models/<name>.yaml` beside the selected root configuration**; Agents reference its `id`. Credentials are separate: Model authentication holds a reference, not the key or token.
 
 ## Choose your task
 
-| Task                                          | Start here                                                                                    |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Create a connection interactively             | `a13n-harness-ui add model`                                                                   |
-| Write a complete API-key Model                | [Configuration recipe](configuration-recipes.md#change-the-model-reasoning-or-context-budget) |
-| Point to a compatible endpoint                | [Custom endpoint recipe](configuration-recipes.md#connect-an-openai-compatible-endpoint)      |
-| Find every Model field                        | [Model file reference](#model-file-reference)                                                 |
-| Change request parameters                     | [Native request settings](#native-request-settings)                                           |
-| Tune context or enable image input            | [Context and modality policy](#context-and-modality-policy)                                   |
-| Use a subscription account                    | [Login](#subscription-login-and-api-keys), [Codex example](#codex-model-example)              |
-| Change a Model only for this terminal session | [Temporary selection](#change-agents-during-a-conversation)                                   |
+| Task                                         | Start here                                                                                    |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Create a Model interactively                 | `a13n-harness-ui add model`                                                                   |
+| Write a complete API-key Model               | [Configuration recipe](configuration-recipes.md#change-the-model-reasoning-or-context-budget) |
+| Point to a compatible endpoint               | [Custom endpoint recipe](configuration-recipes.md#connect-an-openai-compatible-endpoint)      |
+| Find every Model field                       | [Model file reference](#model-file-reference)                                                 |
+| Change request parameters                    | [Native request settings](#native-request-settings-and-connection-wiring)                     |
+| Tune context or enable image input           | [Context and modality policy](#context-and-modality-policy)                                   |
+| Use a subscription account                   | [Login](#subscription-login-and-api-keys), [Codex example](#codex-model-example)              |
+| Change the TUI Model for the current Project | [TUI selection](#change-the-agent-or-model-in-the-tui)                                        |
 
 `settings` controls model requests. `model_configuration` controls connection wiring such as `base_url`. `model_characteristics` controls local context/input policy. These mappings are not interchangeable, and none belongs at the root of `a13n-harness-ui.yaml`.
 
 ## Create and manage Models
 
-In the browser, open **Settings → Models** to add, edit or clone a saved Model. First-use setup and an Agent's **Add model** action use the same flow. Saving a Model changes no active Run.
+In WebUI, open **Settings → Models** to add, edit or clone a saved Model. Initial setup and an Agent's **Add model** action use the same flow. Saving a Model changes no active Run.
 
 1. Choose **ChatGPT subscription**, **Codex subscription**, **Grok subscription**, **GitHub Copilot subscription**, or an API connection. Subscriptions keep their native account stores and transports; they are not API-key presets.
 2. Connect the shared subscription account, choose a saved API key, save a new key, or name a server environment variable. Credential writes happen independently; cancelling the Model draft does not undo a completed login or key save.
 3. Choose a suggestion or enter a case-sensitive Model ID. Suggestions describe known routes, not your account's entitlement; manual IDs remain available if the directory fails.
-4. Choose **Use this model** and adjust offered reasoning, speed and working context. For an existing connection, **Apply connection & defaults** deliberately changes its preset settings.
+4. Choose **Use this model** and adjust offered reasoning, speed and working context budget. When you change the connection, model ID or base URL of a saved Model, this button is labeled **Apply connection & defaults** and resets model-specific settings to reviewed defaults.
 5. Save the Model YAML. Only saved Models appear in conversation selectors; advanced YAML editing remains available.
 
 Choose native tools on the **Agent**, after selecting its saved Model. Changing a Model does not rewrite an Agent's tools. See [Native tools](native-and-web-tools.md) for required provider resources and YAML examples.
 
-Terminal `setup`, `add model`, and the new-Model branch of `add agent` use the same backend choices and preparation rules. API connections can reuse saved-key metadata or an environment-variable reference without exposing key bytes. Subscription setup offers inline device/browser login or an explicit configure-later choice when an account is unavailable.
+The CLI commands `setup`, `add model`, and the new-Model branch of `add agent` use the same backend choices and preparation rules. API connections can reuse saved-key metadata or an environment-variable reference without exposing key bytes. Subscription setup offers inline device/browser login or an explicit configure-later choice when an account is unavailable.
 
 ## Gateway session affinity
 
-In **Add Model** or first-run setup, choose a **Gateway session affinity** preset or type a replacement in **Session affinity header**. CLI `add model` offers the same presets and custom entry. The saved result is an ordinary header name, not a preset reference:
+In **Add Model** or initial setup, choose a **Gateway session affinity** preset or type a replacement in **Session affinity header**. CLI `add model` offers the same presets and custom entry. The saved result is an ordinary header name, not a preset reference:
 
 ```yaml
 model_configuration:
@@ -44,7 +44,7 @@ model_configuration:
   session_affinity_header: x-litellm-session-id
 ```
 
-Set this inside the Model file, alongside `base_url`, **not** in `settings.extra_headers` or the root process configuration. Do not supply a session value: a stable UUID v5 derived from the current Thread ID is inserted automatically, using the [shared Harness derivation](../a13n-harness/models.md#automatic-model-request-affinity). The derived value is not saved in the recipe or Thread state. Leave the field absent or set it to `null` to disable it. To replace a preset, change only the name, for example to `x-company-session`.
+Set this inside the Model file, alongside `base_url`, **not** in `settings.extra_headers` or the root process configuration. Do not supply a session value: a stable UUID v5 derived from the current Thread ID (for a conversation, its root Thread) is inserted automatically, using the [shared Harness derivation](../a13n-harness/models.md#model-request-affinity). The derived value is not saved in the recipe or Thread state. Leave the field absent or set it to `null` to disable it. To replace a preset, change only the name, for example to `x-company-session`.
 
 | Preset                         | Header name            | Gateway prerequisite / boundary                                                |
 | ------------------------------ | ---------------------- | ------------------------------------------------------------------------------ |
@@ -59,7 +59,7 @@ The value stays stable for the same Thread across turns and retries; independent
 
 **Affinity value upgrade:** automatic gateway headers, prompt-cache keys, and bound Codex native session defaults now use a derived UUID rather than the raw Thread ID. Existing Threads may lose upstream cache or routing affinity once; their local IDs and history do not change and need no migration.
 
-**Upgrade note:** older releases implicitly sent `x-session-id`. Omitted fields now disable gateway affinity, including in existing files and captures. Add `session_affinity_header: x-session-id` and start a new composition to retain that behavior. The legacy process-wide environment switch does not override Harness UI Model recipes. Configuration files are never automatically rewritten.
+**Upgrade note:** older releases implicitly sent `x-session-id`. Omitted fields now disable gateway affinity, including in existing files and captures. Add `session_affinity_header: x-session-id`; Runs started after the edit retain that behavior. The legacy process-wide environment switch does not override Harness UI Model recipes. Configuration files are never automatically rewritten.
 
 ## Subscription login and API keys
 
@@ -75,15 +75,15 @@ a13n-harness-ui auth key set key-primary
 a13n-harness-ui auth key delete key-primary
 ```
 
-For Codex, Grok and Copilot, device authorization is the default and needs no host callback. Open the printed URL yourself. Use `--browser` only when your browser can reach the host's loopback callback; Codex uses `http://localhost:1455/auth/callback`. There is no automatic fallback to another login method. Authorization expires within fifteen minutes. Replacing a different shared account requires `--allow-account-switch` through the CLI.
+For Codex, Grok and Copilot, device authorization is the default and needs no Host callback. Open the printed URL yourself. Use `--browser` only when your browser can reach the Host's loopback callback; Codex uses `http://localhost:1455/auth/callback`. There is no automatic fallback to another login method. Authorization expires within fifteen minutes. Replacing a different shared account requires `--allow-account-switch` through the CLI.
 
-For API access, choose **API key** in initial setup, `a13n-harness-ui add model`, or the **Create a new model** branch of `a13n-harness-ui add agent`. Select the provider/protocol, confirm or edit its base URL, enter a key in the hidden credential field, choose a provider-specific model suggestion (or type a custom, case-sensitive model ID), select a settings preset, and review the working context budget. You can instead enter `key:key-primary` for a stored key or `env:OPENAI_API_KEY` for an environment variable available to the Harness UI process. A newly entered key is saved immediately under a fresh reference in the local key store, independently of configuration publication. Never paste an API key into the normal composer.
+For API access, choose **API key** in initial setup, `a13n-harness-ui add model`, or the **Create a new model** branch of `a13n-harness-ui add agent`. Then select the provider or protocol, confirm its base URL, and enter the key in the hidden field. Choose a model suggestion or type a case-sensitive model ID. Finally, select a settings preset and review the working context budget. You can instead enter `key:key-primary` for a stored key or `env:OPENAI_API_KEY` for an environment variable available to the Harness UI process. A newly entered key is saved immediately under a fresh reference in the local key store, independently of configuration publication. Never paste an API key into the normal composer.
 
-Stored API keys are plaintext in the data root's independent `auth.json`, with private permissions. Protect the host and backups. Configuration and Run snapshots hold references, not key bytes. A completed credential save/login is independent of setup publication and is not undone by cancelling setup.
+Stored API keys are plaintext in the data root's independent `auth.json`, with private permissions. Protect the Host and backups. Configuration and Run snapshots hold references, not key bytes. A completed credential save/login is independent of setup publication and is not undone by cancelling setup.
 
 ## ChatGPT subscription
 
-Choose **ChatGPT subscription** in Add Model, or run `a13n-harness-ui login chatgpt`. The terminal first prints a sign-in link, then asks for the **complete callback URL** in a hidden prompt. After authorizing, copy the entire browser address-bar URL, even if the loopback page cannot be reached. Do not paste it into a conversation or share it: it contains a one-time code. Invalid URLs can be corrected; an exchange failure requires a new login.
+Choose **ChatGPT subscription** in Add Model, or run `a13n-harness-ui login chatgpt`. The CLI first prints a sign-in link, then asks for the **complete callback URL** in a hidden prompt. After authorizing, copy the entire browser address-bar URL, even if the loopback page cannot be reached. Do not paste it into a conversation or share it: it contains a one-time code. Invalid URLs can be corrected; an exchange failure requires a new login.
 
 WebUI tries the automatic loopback callback first. If the server is remote, expand **Callback cannot reach this server?** and paste the full URL. Both paths use the same validation and exchange. A pasted URL is never fetched. This is an authorization-code callback workflow, not a device verification code.
 
@@ -105,13 +105,13 @@ Credentials are plaintext in the Host data root's private `auth.json`, alongside
 
 ## GitHub Copilot subscription
 
-Choose **GitHub Copilot subscription** in onboarding, Add Model, or the new-Model branch of Add Agent. Existing Models can be selected without editing them or signing in again. You can save a recipe before authentication is ready; it will need credentials before its first request. Cancelling Agent creation does not delete an independently saved inline Model.
+Choose **GitHub Copilot subscription** in initial setup, Add Model, or the new-Model branch of Add Agent. Existing Models can be selected without editing them or signing in again. You can save a recipe before authentication is ready; it will need credentials before its first request. Cancelling Agent creation does not delete an independently saved inline Model.
 
 Native login uses device authorization with the official Copilot CLI public App ID. No app registration, client secret, installed CLI, or Copilot SDK Agent loop is needed. The historical CLI scope baseline requests `read:user`, `read:org`, `repo`, and `gist`; review the broad repository permissions on GitHub's authorization screen. This is not a minimal-permission claim. Browser-callback login is not supported for Copilot.
 
 Harness UI can reuse the selected official CLI GitHub.com account from `$COPILOT_HOME/config.json` (default `~/.copilot/config.json`) when the sibling `settings.json` explicitly has `storeTokenPlaintext: true`. It accepts the reviewed legacy token string and `{token: ...}` file forms and their snake_case aliases, without copying tokens into Harness UI. This compatibility was checked with synthetic CLI 1.0.88 Linux files. Current OS-keychain storage is not supported; Harness UI does not use a potentially stale file as a fallback. Prefer native login rather than weakening your CLI storage policy just for this integration.
 
-Native credentials are plaintext in `<data-root>/oauth/copilot.json`, private-permission protected and separate from API-key `auth.json`. This file also remembers the selected account and source. Missing or expired credentials never select another saved account automatically. **Choose account source** explicitly changes the binding. The same actions are available in the terminal:
+Native credentials are plaintext in `<data-root>/oauth/copilot.json`, private-permission protected and separate from API-key `auth.json`. This file also remembers the selected account and source. Missing or expired credentials never select another saved account automatically. **Choose account source** explicitly changes the binding. The same actions are available through the CLI:
 
 ```console
 a13n-harness-ui auth sources copilot
@@ -142,14 +142,14 @@ model_configuration: {}
 
 ## Native media input
 
-Setup, `add model`, and `add agent` with a new connection automatically save known model input capabilities. The final summary shows the selected native media types; no separate capability question is required. Defaults come from a bundled, reviewed model catalog, not a network probe. They describe model capabilities, not account entitlement or continued model availability.
+Setup, `add model`, and `add agent` with a new connection automatically save known model input capabilities. The final summary shows the selected native media types; no separate model input capability question is required. Defaults come from a bundled, reviewed model catalog, not a network probe. They describe model input capabilities, not account entitlement or continued model availability.
 
 For example, a known image-capable OpenAI, Claude, or Grok Model includes:
 
 ```yaml
 model_characteristics:
   capabilities: [image_understanding]
-  context_window: 350000
+  context_window_tokens: 350000
   proactive_context_management_threshold: 0.65
   compact_threshold: 0.90
 ```
@@ -169,9 +169,9 @@ model_characteristics:
 
 The Agent can call default `read_video_url(url, instructions=None, media_type=None)`. Direct HTTP(S) videos become raw-byte `BinaryContent`, Base64-encoded by the SDK. Local `view` and directly supplied video share the default 10 MiB single/aggregate encoded budget. No compression, splitting, frame extraction, or upload occurs. YouTube stays a native URL and is rejected when unsupported, with no download fallback. Pasted links remain text. Provider 413 or exact payload-size errors use existing self-healing to remove inline images/videos and replay once; ordinary authentication, permission, MIME, and rate-limit errors do not trigger repair. Download errors remain tool failures. Filtering and healing preserve original history.
 
-Capabilities are separate from an Agent's tools and from model output modalities. In particular, the file `view` tool uses these declarations to attach media directly to the active model. Without a matching capability, it requires an explicitly configured [media-understanding fallback](../a13n-harness/multimedia-understanding.md) or reports unavailability.
+Model input capabilities are separate from Agent Capabilities, an Agent's tools, and model output modalities. In particular, the file `view` tool uses these declarations to attach media directly to the active model. Without a matching model input capability, it requires an explicitly configured [media-understanding fallback](../a13n-harness/multimedia-understanding.md) or reports unavailability.
 
-Unknown model IDs are labeled unknown and do not automatically enable media. Exact known IDs still receive starter defaults behind a custom base URL; verify that your endpoint supports the declared input. You can edit `model_characteristics.capabilities` in the Model file. Direct setup API callers can explicitly supply capabilities, including `[]`, to override defaults without changing their context policy.
+Unknown model IDs are labeled unknown and do not automatically enable media. Exact known IDs still receive starter defaults behind a custom base URL; verify that your endpoint supports the declared input. You can edit `model_characteristics.capabilities` in the Model file. Direct setup API callers can explicitly supply model input capabilities, including `[]`, to override defaults without changing their context policy.
 
 Existing Model files are never backfilled automatically. If an older setup generated `capabilities: []` for an image-capable model, change only that field to `[image_understanding]` after checking the selected model and endpoint. Later Runs use the accepted configuration; active Runs and historical captures remain unchanged. Adding an Agent that reuses a Model preserves that Model exactly.
 
@@ -187,15 +187,15 @@ media_understanding:
   audio: null
 ```
 
-Each reference must exist and declare the matching `image_understanding`, `video_understanding`, or `audio_understanding` capability. Unsupported Models are not selectable for that purpose. Remove references before deleting a Model or removing its required capability.
+Each reference must exist and declare the matching `image_understanding`, `video_understanding`, or `audio_understanding` model input capability. Unsupported Models are not selectable for that purpose. Remove references before deleting a Model or removing its required model input capability.
 
 The file `view` tool remains native-first:
 
-1. If the active Model declares the media capability, Harness attaches the media directly. No auxiliary Model or credentials are initialized.
+1. If the active Model declares the matching model input capability, Harness attaches the media directly. No auxiliary Model or credentials are initialized.
 2. Otherwise, the configured Model for that media kind describes or transcribes the file and returns text. Its own request settings, connection configuration, credential reference, and Thread affinity are used; the primary Model's settings and temporary `/thinking` or `/fast` overrides are not inherited.
-3. An omitted or `null` reference uses the existing Harness environment fallback for that kind. **Environment** means a corresponding model environment variable is set; **Not configured** means none is set. Clearing a default does not disable the environment fallback. See [Harness multimedia configuration](../a13n-harness/multimedia-understanding.md) for variable names and settings.
+3. An omitted or `null` reference uses the existing Harness environment-variable fallback for that kind. **Environment** means a corresponding model environment variable is set; **Not configured** means none is set. Clearing a default does not disable the environment-variable fallback. See [Harness multimedia configuration](../a13n-harness/multimedia-understanding.md) for variable names and settings.
 
-A configured Model failure is reported, not silently replaced by an environment Model. Saving validates references and capability declarations without making a provider request or proving account access. Credentials are loaded only when auxiliary inference is needed. Provider charges may apply.
+A configured Model failure is reported, not silently replaced by the environment-variable fallback. Saving validates references and model input capability declarations without making a provider request or proving account access. Credentials are loaded only when auxiliary inference is needed. Provider charges may apply.
 
 New Runs capture the selected Models' complete recipes, without secret bytes. Edits affect future captures, not already captured Runs or recovered continuations. Child Runs use the same configuration-generation and capture rules. This setting controls file `view` fallback; it does not convert unsupported composer attachments or force a proxy for native-capable Models.
 
@@ -216,9 +216,9 @@ Initial setup and new-Model creation offer these explicit subscription routes:
 
 Codex starter choices are release-owned defaults. Grok choices were reviewed against the official [xAI release notes](https://docs.x.ai/developers/release-notes) and [Grok 4.20 model page](https://docs.x.ai/developers/models/grok-4.20-beta-0309-reasoning) on September 7, 2026. The Grok 4.7 default was reviewed against the official [Grok 4.7 guide](https://docs.x.ai/developers/grok-4-7) on September 22, 2026. These choices do not query entitlement or promise that all subscription accounts can access every model. Grok choices are model generations, not three verified subscription price tiers. API-key setup offers provider-specific suggestions plus custom IDs. Lists expand to the terminal's available space and scroll with the focused choice. Suggestions are bundled starter choices, not live availability checks.
 
-Codex and OpenAI API suggestions use the same leading order: GPT-6.1 Sol, GPT-6 Astra, GPT-5.6 Terra, GPT-6 Sol, then GPT-5.6 Sol. GPT-6.1 Sol presets write native `openai_reasoning_effort` because the bundled runtime profile does not yet recognize that ID. Its controls offer low, medium, high, xhigh, and max, without an Off option, matching the [official model reference](https://developers.openai.com/api/docs/models/gpt-6.1-sol). Use OpenAI Responses for agent tool calling; this model's Chat Completions endpoint does not support tool calling. GPT-6 Sol continues using the bundled thinking profile. The bundled model catalog does not yet declare media capabilities for these IDs; configure supported media capabilities explicitly when needed. Existing saved Models are not migrated.
+Codex and OpenAI API suggestions use the same leading order: GPT-6.1 Sol, GPT-6 Astra, GPT-5.6 Terra, GPT-6 Sol, then GPT-5.6 Sol. GPT-6.1 Sol presets write native `openai_reasoning_effort` because the bundled runtime profile does not yet recognize that ID. Its controls offer low, medium, high, xhigh, and max, without an Off option, matching the [official model reference](https://developers.openai.com/api/docs/models/gpt-6.1-sol). Use OpenAI Responses for agent tool calling; this model's Chat Completions endpoint does not support tool calling. GPT-6 Sol continues using the bundled thinking profile. The bundled model catalog does not yet declare model input capabilities for these IDs; configure supported model input capabilities explicitly when needed. Existing saved Models are not migrated.
 
-Auxiliary Models are named **Codex shell review** or **Grok shell review**. They are not selectable root Agents. Codex review uses Luna with low reasoning; Grok review uses 4.7 with low reasoning. Existing user-edited reviewer resources are preserved.
+Auxiliary Models are named **Codex shell review** or **Grok shell review**. Setup creates no Agent for them; they serve only shell review. Codex review uses `openai-codex:gpt-5.6-luna` with low thinking; Grok review uses `grok:grok-4.7` with low thinking. Existing user-edited reviewer resources are preserved.
 
 ## API context defaults and readable names
 
@@ -226,7 +226,7 @@ API setup recommends **350,000 tokens**, or the bundled catalog's model context 
 
 New API Models use the same native defaults as Codex: a summary reminder at **65%**, automatic compaction at **90%**, and the standard Harness summary prompts. At 350k the thresholds are **227,500** and **315,000** tokens. These settings are saved under `model_characteristics` and survive Run capture/reconstruction; reusing an existing Model does not change them. The catalog is bundled, so setup makes no model-discovery request.
 
-Generated names identify the connection using ordinary text, for example **OpenAI - GPT-5.6 Sol**, **Z.AI - GLM 5.3**, or **Moonshot AI - Kimi K2.6**. Default Agent names add **- Coding**. Suggestions and saved names use the same rule, independently of terminal labels, colors, or status indicators. The add commands suggest non-colliding names and let you override them; custom Agent names do not erase their new Model's descriptive connection name. Configuration stays UTF-8 and custom names can contain Unicode. Existing resources are not renamed.
+Generated names identify the connection using ordinary text, for example **OpenAI - GPT-5.6 Sol**, **Z.AI - GLM 5.3**, or **Moonshot AI - Kimi K2.6**. Default Agent names add **- Coding**. Suggestions and saved names use the same rule, independently of TUI labels, colors, or status indicators. The add commands suggest non-colliding names and let you override them; custom Agent names do not erase their new Model's descriptive connection name. Configuration stays UTF-8 and custom names can contain Unicode. Existing resources are not renamed.
 
 ## Codex reasoning and context
 
@@ -238,7 +238,7 @@ The defaults are release-owned recommendations, not claims that every account su
 | balanced              |                350,000 | Default for repository work                                                                   |
 | extended              |                872,000 | Large tasks where your account supports the catalog maximum; expect greater latency and usage |
 
-A **working budget** controls local reminders and compaction. It does not increase the provider's limit or grant access. The default reminder threshold is 65% and automatic compaction starts at 90%, based on the latest reported root request footprint rather than cumulative tokens. At 350k these are 227,500 and 315,000 tokens.
+The **working context budget** (`context_window_tokens`) controls local reminders and compaction. It does not increase the provider's limit or grant access. The default reminder threshold is 65% and automatic compaction starts at 90%, based on the latest reported root request footprint rather than cumulative tokens. At 350k these are 227,500 and 315,000 tokens.
 
 Use `/thinking` to see the choices supported by the selected Model and installed adapter. The menu can offer effort levels, explicit token-budget presets, or Off; it does not offer a universal list. `/thinking default` returns to the selected Model's configured settings, including provider-native thinking fields. The status line describes the requested setting, not a measured provider result. High reasoning is independent of detailed display: you can use high reasoning while seeing concise output. Only provider-exposed reasoning is shown, and some providers do not return it.
 
@@ -259,11 +259,11 @@ settings:
   openai_reasoning_summary: detailed
 ```
 
-The WebUI offers the same independent Reasoning mode control in Agent & Model settings, with an explicit Default choice that names the inherited target. The Model resource editor saves a permanent Standard/Pro choice; its Provider default choice removes the native field. Changing these settings never relabels an already captured Run. Pro access, usage, and latency depend on the provider; selecting Pro does not guarantee entitlement.
+WebUI offers the same independent Reasoning mode control in Agent & Model settings, with an explicit Default choice that names the inherited target. The Model resource editor saves a permanent Standard/Pro choice; its Provider default choice removes the native field. Changing these settings never relabels an already captured Run. Pro access, usage, and latency depend on the provider; selecting Pro does not guarantee entitlement.
 
 ## Fast mode and service tiers
 
-Codex onboarding adds a **Fast / Standard** choice after the model, defaulting to **Fast**. Fast saves `settings.openai_service_tier: priority`; Standard saves `settings.openai_service_tier: default`. The choice also appears when creating a new Codex Model with `add model` or `add agent`. Reusing a Model or loading an existing configuration does not change its tier.
+For a Codex subscription, initial setup adds a **Fast / Standard** choice after the model, defaulting to **Fast**. Fast saves `settings.openai_service_tier: priority`; Standard saves `settings.openai_service_tier: default`. The choice also appears when creating a new Codex Model with `add model` or `add agent`. Reusing a Model or loading an existing configuration does not change its tier.
 
 ### Temporary: use `/fast`
 
@@ -277,13 +277,13 @@ In an idle TUI, these commands affect subsequent Runs without rewriting YAML or 
 | `/fast ultrafast` | `service_tier: ultrafast` for Codex GPT-6 Astra         |
 | `/fast reset`     | Remove the override and inherit the Model configuration |
 
-**Off is not reset:** if your Model is configured for priority, `/fast off` requests standard service, while `/fast reset` returns to Fast. The override lasts for this TUI process, including `/new` and `/resume`. Selecting a Model or Agent clears it; restarting does not restore a tier override from history. `/thinking` changes reasoning independently and preserves the tier.
+**Off is not reset:** if your Model is configured for priority, `/fast off` requests standard service, while `/fast reset` returns to Fast. The override lasts until you quit the TUI, including across `/new` and `/resume`. Selecting a Model or Agent clears it; restarting does not restore a tier override from history. `/thinking` changes reasoning independently and preserves the tier.
 
-This is a generic Model setting, not a Codex-only command. It applies to the root Model and Markdown children that inherit it, not explicitly configured child or auxiliary Models. **Fast** in the status bar and the requested service tier in `/status` describe the effective request, not proof that the provider fulfilled priority. Provider/model/account support varies; priority may consume more quota or cost more, and speed is not guaranteed. Unsupported settings retain the native integration's behavior; Harness UI does not silently retry at another tier.
+This is a generic Model setting, not a Codex-only command. It applies to the root Model and Markdown subagents that inherit it, not explicitly configured child or auxiliary Models. **Fast** in the status bar and the requested service tier in `/status` describe the effective request, not proof that the provider fulfilled priority. Provider/model/account support varies; priority may consume more quota or cost more, and speed is not guaranteed. Unsupported settings retain the native integration's behavior; Harness UI does not silently retry at another tier.
 
 ### Ultrafast for Codex GPT-6 Astra
 
-Select a Model with route `openai-codex:gpt-6-astra`. In the WebUI, open **Agent & Model settings** and select **Ultrafast** beside **Fast**. The two buttons are mutually exclusive; clicking the selected button requests standard processing. **Use default** restores the Model's configured tier. The HTTP operation field is `fast: "ultrafast"`; existing `true`, `false`, and null values retain their meaning. The TUI equivalent is `/fast ultrafast`.
+Select a Model with route `openai-codex:gpt-6-astra`. In WebUI, open **Agent & Model settings** and select **Ultrafast** beside **Fast**. The two buttons are mutually exclusive; clicking the selected button requests standard processing. **Use default** restores the Model's configured tier. The HTTP operation field is `fast: "ultrafast"`; existing `true`, `false`, and null values retain their meaning. The TUI equivalent is `/fast ultrafast`.
 
 OpenAI currently requires Pro $500 or an eligible Enterprise/Edu workspace for Codex Ultrafast. Buying extra credits on another personal plan does not unlock it. GPT-6 Astra Ultrafast uses included subscription limits at 8x the Standard rate, and purchased credits at 6x; these are usage multipliers, not end-to-end speed guarantees. See [Codex speed and eligibility](https://developers.openai.com/codex/agent-configuration/speed) for current availability and workspace restrictions. Harness UI checks the Model connection locally, not your account entitlement; OpenAI remains responsible for granting access. Other models, including Sol, do not receive an Ultrafast override through this control.
 
@@ -321,7 +321,7 @@ settings:
   openai_reasoning_summary: detailed
   openai_store: false
 model_characteristics:
-  context_window: 350000
+  context_window_tokens: 350000
   proactive_context_management_threshold: 0.65
   compact_threshold: 0.90
 ```
@@ -330,13 +330,13 @@ model_characteristics:
 
 Each file uses `schema_version: "1"`, `kind: model`, a unique `model-` `id`, and a human-readable `name`.
 
-| Field                   | Default  | Meaning                                                                                        |
-| ----------------------- | -------- | ---------------------------------------------------------------------------------------------- |
-| `route`                 | Required | Supported provider/model route, such as `openai-responses:gpt-5` or `openai-codex:gpt-6.1-sol` |
-| `authentication`        | Required | One explicit authentication form below                                                         |
-| `settings`              | `{}`     | Native request settings passed through to Harness and its model adapters                       |
-| `model_configuration`   | `{}`     | Optional `base_url` for supported HTTP/API-key providers; empty for subscriptions              |
-| `model_characteristics` | `null`   | Optional native Harness context/capability policy                                              |
+| Field                   | Default  | Meaning                                                                                                         |
+| ----------------------- | -------- | --------------------------------------------------------------------------------------------------------------- |
+| `route`                 | Required | Supported provider/model route, such as `openai-responses:gpt-5` or `openai-codex:gpt-6.1-sol`                  |
+| `authentication`        | Required | One explicit authentication form below                                                                          |
+| `settings`              | `{}`     | Native request settings passed through to Harness and its model adapters                                        |
+| `model_configuration`   | `{}`     | Optional `base_url` and `session_affinity_header` for supported HTTP/API-key providers; empty for subscriptions |
+| `model_characteristics` | `null`   | Optional native Harness context and model input capability policy                                               |
 
 Authentication accepts exactly one form:
 
@@ -377,11 +377,11 @@ Within `model_characteristics`:
 
 Harness UI accepts the legacy name `context_window` in configuration and saved snapshots. New serialization and editor saves use `context_window_tokens`; if both are supplied, their values must agree. Reading existing files or saved objects does not rewrite them. Core Harness Agent specs require the canonical spelling.
 
-These values guide Harness behavior; they do not give a model modalities or token entitlement it lacks. Agent-level explicit context-capability thresholds remain authoritative. Review the selected provider's supported settings before changing a generic example.
+These values guide Harness behavior; they do not give a model modalities or token entitlement it lacks. Explicit token thresholds on an Agent's handoff or compaction Capability remain authoritative. Review the selected provider's supported settings before changing a generic example.
 
 ### Image input preparation
 
-Model files accept `model_characteristics.image_input`, independently of context thresholds and capabilities. Omit it for default preparation, supply an object to customize it, or set it to `null` to disable automatic preparation:
+Model files accept `model_characteristics.image_input`, independently of context thresholds and model input capabilities. Omit it for default preparation, supply an object to customize it, or set it to `null` to disable automatic preparation:
 
 ```yaml
 model_characteristics:
@@ -397,7 +397,7 @@ The selected root, independent child and image-understanding Model each use thei
 
 ### Account-store locations
 
-Codex shares its supported file store under `CODEX_HOME` (default `~/.codex`). Harness UI respects the upstream credential-store policy and reports unsupported stores rather than replacing them. Grok uses `GROK_AUTH_PATH` before `GROK_HOME` or its default file; inline `GROK_AUTH` is not a shared writable-login mode. Account inspection does not log in or refresh credentials. Codex model requests use an explicit shared-store credential source. A provider caches credentials within its lifetime and rereads storage before refresh, not on every request. A new Run or account operation gets a fresh provider. If refreshed credentials cannot be saved, the request fails, but the provider retains the rotated credentials in memory; resolve the store conflict and start a new Run rather than assuming the rotation was persisted. Grok retains its Harness-owned refresh lifecycle.
+Codex shares its supported file store under `CODEX_HOME` (default `~/.codex`). Harness UI respects the upstream credential-store policy and reports unsupported stores rather than replacing them. Grok uses `GROK_AUTH_PATH` before `GROK_HOME` or its default file; inline `GROK_AUTH` is not a shared writable-login mode. Account inspection does not log in or refresh credentials. Codex model requests use an explicit shared-store credential source. The in-process Codex model provider caches credentials for its lifetime and rereads the store before refresh, not on every request. A new Run or account operation gets a fresh model provider. If refreshed credentials cannot be saved, the request fails, but the model provider retains the rotated credentials in memory; resolve the store conflict and start a new Run rather than assuming the rotation was persisted. Grok retains its Harness-owned refresh lifecycle.
 
 Harness retains device login, Thread affinity, routing hints, and per-run turn state where the official Codex provider has no equivalent. Browser PKCE and callback handling use the official flow; a small login-exchange adapter retains the real ID token required by native Codex `auth.json`. New login and account switching write that ID token, and same-account refresh preserves it. No second Codex subscription store is created.
 
@@ -409,11 +409,11 @@ a13n-harness-ui login codex --allow-account-switch
 
 Logout and account replacement are explicit credential mutations; inspect which shared account/store you are changing. Never post account files, tokens, or stored-key files in diagnostics.
 
-## Change agents during a conversation
+## Change the Agent or Model in the TUI
 
-`/agent` lists configured Agents with their model routes. `/agent agent-primary` switches the full Agent configuration for the next operation and resets session reasoning. `/model` instead lists configured Models; `/model <model-id>` overrides only the model and remembers the choice per Project, leaving the Agent unchanged. `/model default` clears both the override and the Project preference. It survives conversation navigation, Agent selection, and TUI restarts. An explicit launch `--agent` skips the preference; headless runs and API callers do not inherit it. See [everyday model selection](everyday-use.md#everyday-interaction) for recovery and reset behavior. History and Environment selection remain intact, and YAML is not rewritten. Add another model-backed Agent with `a13n-harness-ui add agent`, then switch to it.
+`/agent` lists configured Agents with their model routes. `/agent agent-primary` switches the full Agent configuration for the next operation and clears temporary `/thinking`, `/fast` and `/pro` overrides. `/model` instead lists configured Models; `/model <model-id>` overrides only the model and remembers the choice per Project, leaving the Agent unchanged. `/model default` clears both the override and the Project preference. The remembered Project Model survives conversation navigation, Agent selection, and TUI restarts. An explicit launch `--agent` skips the preference; headless runs and API callers do not inherit it. See [everyday model selection](everyday-use.md#everyday-interaction) for recovery and reset behavior. History and Environment selection remain intact, and YAML is not rewritten. Add another model-backed Agent with `a13n-harness-ui add agent`, then switch to it.
 
-`/thinking low` changes reasoning without editing files; `/thinking default` returns to the effective Model's configured settings. An in-flight operation keeps its captured values. An inherited Markdown child receives the parent's effective recipe; an independently referenced Agent keeps its own Model.
+`/thinking low` changes reasoning without editing files; `/thinking default` returns to the effective Model's configured settings. An in-flight operation keeps its captured values. An inheriting Markdown subagent receives the parent's effective recipe; an independently referenced Agent keeps its own Model.
 
 `/status` shows observed root usage and, for Codex, read-only subscription limit information. `/usage reset` separately opens explicitly confirmed credit redemption. Local observed cost is an estimate, not your subscription bill. See [usage and credit confirmation](everyday-use.md#tasks-usage-and-terminal-feedback).
 
@@ -421,7 +421,7 @@ Logout and account replacement are explicit credential mutations; inspect which 
 
 The guided HTTP/API-key catalog includes integrations for OpenAI Responses, OpenAI-compatible Chat Completions, Anthropic, Google Gemini API, OpenRouter, DeepSeek, Z.AI / GLM, Moonshot AI / Kimi, Groq, Mistral, Together AI, Fireworks AI, Cerebras, SambaNova, and Vercel AI Gateway. xAI has two separate API-key choices: `grok:` uses Chat Completions, while `xai:` uses the native SDK's default gRPC endpoint and exposes native X Search and other xAI tools. The native SDK choice skips the HTTP base-URL step. Both are separate from Grok subscription authentication. For other OpenAI-compatible services, select **OpenAI-compatible · Chat Completions** and provide that service's URL and model ID. Cloud IAM and subscription transports are not generic URL/key connections.
 
-The preset picker shows the output limit alongside thinking, and the last Environment or name question shows the assembled connection and settings before saving. First-use landing, `add model`, and `add agent` with a new Model share these creation-time presets. Presets write normal editable YAML:
+The preset picker shows the output limit alongside thinking, and the last Environment or name question shows the assembled connection and settings before saving. Initial setup, `add model`, and `add agent` with a new Model share these creation-time presets. Presets write normal editable YAML:
 
 - **OpenAI Responses:** for models recognized by the upstream profile as reasoning-capable, high thinking, `openai_reasoning_summary: detailed`, and `openai_store: false`. Low, medium, extra-high (`xhigh`), and provider-default options are available. Unknown or non-reasoning models (such as GPT-4.1) default to neutral settings without reasoning-summary parameters. Chat Completions does not receive Responses-only summary fields.
 - **Anthropic:** adaptive thinking with returned summaries and high effort for newer supported model profiles; otherwise interleaved extended thinking with an 8,192-token budget and a 16,384-token output cap. The interleaved preset explicitly enables `interleaved-thinking-2025-05-14`; adaptive thinking interleaves automatically. Models whose upstream profile rejects budget thinking only offer adaptive and provider-default presets.
@@ -435,7 +435,7 @@ Choose **Provider defaults** when the model does not support the proposed reason
 
 ### Paired output budgets
 
-For the exact reviewed model IDs below, selecting a thinking preset also saves `settings.max_tokens`. These are **per-request output recommendations**, not total Run limits, model maximums, or targets that force the model to generate that much text. Reasoning can consume the output allowance according to the provider's native accounting. Working context controls reminders and compaction independently; choosing a smaller working context does not scale these values.
+For the exact reviewed model IDs below, selecting a thinking preset also saves `settings.max_tokens`. These are **per-request output recommendations**, not total Run limits, model maximums, or targets that force the model to generate that much text. Reasoning can consume the output allowance according to the provider's native accounting. The working context budget controls reminders and compaction independently; choosing a smaller budget does not scale these values.
 
 | Connection and reviewed model IDs                                                                                                 | Thinking choice              |       Saved `max_tokens` |
 | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -----------------------: |
@@ -454,9 +454,9 @@ Review the saved value for your endpoint, context size, reasoning needs, latency
 
 The release-owned recommendations were checked against provider references on September 10, 2026: [OpenAI model limits](https://developers.openai.com/api/docs/models/gpt-5.6-sol), [Claude model limits](https://platform.claude.com/docs/en/models/sonnet-4-6/overview), [Gemini output limits](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro), [DeepSeek model details](https://api-docs.deepseek.com/quick_start/pricing), [GLM model details](https://docs.z.ai/guides/llm/glm-5.3), [Moonshot's model card](https://huggingface.co/moonshotai/Kimi-K2.5), and [OpenRouter's model metadata](https://openrouter.ai/api/v1/models). These sources describe model capabilities and examples, not a promise that a custom endpoint or account will accept every setting. Native SDK request serialization is tested with mock HTTP; it is not a live provider test. In particular, the installed native DeepSeek adapter emits `max_completion_tokens`, whereas DeepSeek's API reference documents `max_tokens`; acceptance and enforcement of that alias have not been verified against the live service. Harness UI does not override the adapter's field mapping.
 
-After initial setup, `add model` saves only a reusable Model, then offers a separate Add Agent flow for that Model. `add agent` first lets you select an existing Model or create a new one, then saves a new Agent. Reusing a Model references it directly without copying or modifying its settings. Both commands allocate separate identities for repeated names and leave existing Agents, Models, defaults, and conversations untouched. First-use landing creates the initial Model and Agent together without an existing-Model question. Setup and Add Agent initialize an absent root `security.shell_review` shortcut, preserving existing root selections. Subscription connections can use the separate reviewer Model; API-key setup reuses the connected Model. The shortcut applies across Agents with `risk_threshold: extra_high`, approval on flagged shell calls, and no added restriction on non-timeout review failure by default. Review timeout always denies execution. Add Model never modifies this root policy. Existing Agent files are not migrated. See [shell review configuration](configuration-recipes.md#configure-tool-review); the risk threshold is independent of the Model's thinking effort.
+After initial setup, `add model` saves only a reusable Model, then offers a separate Add Agent flow for that Model. `add agent` first lets you select an existing Model or create a new one, then saves a new Agent. Reusing a Model references it directly without copying or modifying its settings. Both commands allocate separate identities for repeated names and leave existing Agents, Models, defaults, and conversations untouched. Initial setup creates the initial Model and Agent together without an existing-Model question. Setup and Add Agent initialize an absent root `security.shell_review` shortcut, preserving existing root selections. Codex and Grok subscription setup creates a separate shell review Model; ChatGPT, GitHub Copilot, and API-key setup reuse the connected Model. The shortcut applies across Agents with `risk_threshold: extra_high`, approval on flagged shell calls, and no added restriction on non-timeout review failure by default. Review timeout always denies execution. Add Model never modifies this root policy. Existing Agent files are not migrated. See [shell review configuration](configuration-recipes.md#configure-shell-review); the risk threshold is independent of the Model's thinking effort.
 
-## Native request settings
+## Native request settings and connection wiring
 
 For an API-key gateway using **Google Cloud**, author the Model route explicitly; the setup catalog's `google:` connection uses the **Gemini Developer API**, which is a different transport:
 
@@ -483,8 +483,8 @@ Use the settings supported by your installed model adapter and provider. Example
 | `extra_headers`, `extra_body`                                                         | Native request extensions, including nested JSON values                                    |
 | `openai_prompt_cache_key`, `openai_store`                                             | OpenAI request options; Codex still applies its native subscription behavior               |
 
-For example, an existing `settings.service_tier: priority` continues to work without renaming the field; newly written OpenAI/Codex configuration uses `settings.openai_service_tier: priority`. The terminal shows the configured native tier; an explicit `/fast on` or `/fast off` overrides the applicable native tier for subsequent Runs only, and `/fast reset` restores the file selection. The source file is not rewritten.
+For example, an existing `settings.service_tier: priority` continues to work without renaming the field; newly written OpenAI/Codex configuration uses `settings.openai_service_tier: priority`. The TUI shows the configured native tier; an explicit `/fast on` or `/fast off` overrides the applicable native tier for subsequent Runs only, and `/fast reset` restores the file selection. The source file is not rewritten.
 
-Opaque settings are retained verbatim, not secret-scrubbed by guessing field names. Use the dedicated authentication and MCP credential sources for secrets; do not place credentials in settings or extension configuration unless you intend those values to be persisted in local configuration captures. Diagnostics and settings display should be reviewed before sharing.
+Opaque settings are retained verbatim, not secret-scrubbed by guessing field names. Use the dedicated authentication and MCP credential sources for secrets; do not place credentials in settings or extension configuration unless you intend those values to be persisted in local configuration captures. Review diagnostics and displayed settings before you share them.
 
-`model_configuration` is separate Host wiring, not request settings: it accepts an optional `base_url` for the HTTP/API-key providers offered by setup, the legacy `openai` alias, and the native `google-cloud` route and its aliases. Use an HTTP(S) URL without embedded credentials, query parameters, or fragments. Local HTTP endpoints are supported. Subscription endpoints cannot be overridden. The `xai:` native SDK route also requires empty `model_configuration`; it uses upstream's default gRPC endpoint and does not accept an HTTP `base_url`. Unknown Host constructor fields and unsupported routes still fail rather than being silently ignored.
+`model_configuration` is separate Host wiring, not request settings: it accepts an optional `base_url` for the HTTP/API-key providers offered by setup, the legacy `openai` alias, and the native `google-cloud` route and its aliases. It also accepts an optional [`session_affinity_header`](#gateway-session-affinity) for supported HTTP/API-key providers. Use an HTTP(S) URL without embedded credentials, query parameters, or fragments. Local HTTP endpoints are supported. Subscription endpoints cannot be overridden. The `xai:` native SDK route also requires empty `model_configuration`; it uses upstream's default gRPC endpoint and does not accept an HTTP `base_url`. Unknown Host constructor fields and unsupported routes still fail rather than being silently ignored.

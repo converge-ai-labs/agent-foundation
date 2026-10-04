@@ -1,7 +1,7 @@
 ---
 title: Harness quickstart
 sidebarTitle: Quickstart
-description: Build and run an offline agent, then connect a model provider.
+description: Build and run an offline Agent, then connect a model provider.
 ---
 
 ## Requirements
@@ -17,7 +17,7 @@ cd agent-foundation
 uv sync --locked --package a13n-harness
 ```
 
-The offline example uses a `FunctionModel` from the installed runtime dependency; it needs no provider key.
+The offline example uses the Pydantic AI `FunctionModel`, which installs with Harness; it needs no provider key.
 
 ## Run an offline Agent
 
@@ -141,9 +141,9 @@ async def main() -> None:
 
 Run `uv run python app.py` again. The `async with` scope closes Run resources even if the consumer stops early. For a reusable streaming application with persisted state, see the [agent-app example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app).
 
-## Add capabilities
+## Add Capabilities
 
-Add optional Capabilities when your Agent needs their tools:
+Add optional Capabilities when your Agent needs their context or tools:
 
 ```python
 from a13n_harness.capabilities import (

@@ -17,7 +17,7 @@ Agent Foundation 通过 Service 提供托管执行，通过 Harness 提供嵌入
 
 - **Service：** 应用向已运行的部署提交任务。Service 负责身份管理、会话保存和持久执行；Console 是它的浏览器应用。
 - **Harness：** Python 进程构建并运行 agent。存储、访问策略和结果交付由你的应用负责。
-- **Harness UI：** 终端和浏览器工作台使用自己的配置和会话历史来运行 agent。可以与可信的协作者共享一个实例。
+- **Harness UI：** 终端和浏览器工作台使用自己的配置和会话历史来运行 agent。只与可信的协作者共享实例；Harness UI 没有按用户划分的权限或隔离。
 
 ```mermaid
 flowchart TB
@@ -32,7 +32,7 @@ flowchart TB
     class Service,Harness a13n
 ```
 
-**Service SDK** 是远程执行的客户端。**Harness 库** 在你的进程中执行 agent。Service Console 和 Harness UI 的浏览器界面是两个独立应用。
+**Service SDK** 是远程执行的客户端。**Harness 库** 在你的进程中执行 agent。Console 和 Harness UI 的 WebUI 是两个独立的浏览器应用。
 
 ## 单独使用组件
 
@@ -43,4 +43,4 @@ flowchart TB
 | 将 Harness 观测转换为 AG-UI 事件           | [Stream Protocol](../a13n-stream-protocol/index.md) |
 | 发行包名、导入路径和可运行示例             | [软件包目录](packages.md)                           |
 
-要了解一次对话的完整流程，请阅读[核心概念](core-concepts.md)。部署运维请参阅[运行与维护](../a13n-service/operations.md)。Service 客户端独立发布版本，请核对其[支持的协议约定](../a13n-service/sdks.md#keep-version-ownership-clear)是否匹配你的部署。
+要了解一次对话的完整流程，请阅读[核心概念](core-concepts.md)。部署运维请参阅[运维 Service](../a13n-service/operations.md)。Service 客户端独立发布版本，请核对其[支持的协议约定](../a13n-service/sdks.md#keep-version-ownership-clear)是否匹配你的部署。

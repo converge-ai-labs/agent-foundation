@@ -1,26 +1,26 @@
 ---
 title: 环境
-description: 让 agent 在托管容器或你自己的机器上工作。
+description: 让 agent 在托管沙箱或你自己的机器上工作。
 ---
 
 环境是 agent 工作的计算机，文件和终端工具都在那里执行。Service 提供两种环境：
 
-- **托管环境：** Service 根据**模板** 创建、启动、停止和删除，例如为每次对话创建一个 Docker 容器。
+- **托管环境：** Service 根据**模板** 创建、启动、停止和删除，例如为每个线程创建一个 Docker 容器。
 - **外部目标：** 由你自行运行 `a13n-envd` 守护进程的计算机，Service 只负责连接。
 
-线程**挂载** 环境。每次运行启动时固定线程挂载，并一直使用到结束。没有挂载环境时，agent 没有文件或终端工具。
+线程**挂载** 环境。每次运行在被接收时固定线程挂载，并一直使用到结束。没有挂载环境时，agent 没有文件或终端工具。
 
 Console 的 **Environments → Templates** 管理模板，**Environments → Instances** 列出环境；provider 位于 **Workspace settings → Providers → Environment** 。下文所有 API 路径均位于 `/api/v1` 下。
 
-## 自动本地配置
+## 工作空间自动配置
 
 挂载 Docker socket 的单机 Compose 部署在 Engine 可访问时，为每个工作空间自动添加 **Docker** provider 和 **Linux Sandbox** 模板。模板固定使用[与已安装 Service 版本匹配的配套镜像](#docker-image-versions)，并设置 `pull_policy: if_missing`。如果本地没有镜像，Engine 在创建首个实例时拉取；工作空间初始化不会拉取镜像。Linux 镜像包含 Python 3.13、pip、venv、uv、Node.js 24、npm、pnpm、Git、Bash、curl、ripgrep、jq、归档工具和 C/C++ 构建工具。命令以 `sandbox` 用户运行，可写目录为 `/workspace` 和 `/tmp/a13n`。项目依赖可以安装到虚拟环境或项目目录中。
 
 新工作空间要使用本地构建镜像，运行 `make image-docker-environment`，启动 Compose 时设置 `A13N_DOCKER_ENVIRONMENT_IMAGE=a13n-docker-environment:local`。已有模板请在 Console 或 API 中修改；自动配置不会在初始化后替换它。
 
-不挂载 socket 的快速入门配置不会启用 Docker 自动配置。源码开发时，`make dev` 显式启用 **Local**，并创建根目录为该检出目录 `var/dev/environments` 的 **Local Workspace** 模板。后续每个环境获得独立子目录。Local 直接以 Service 账号运行，不提供隔离。
+不挂载 socket 的快速入门配置不会启用 Docker 自动配置。源码开发时，`make dev` 显式启用 **Local**，并创建根目录为该检出目录 `var/dev/environments` 的 **Local Workspace** 模板。后续每个环境获得独立子目录。Local 直接以 Service 进程的操作系统用户身份运行命令，不提供隔离。
 
-通用 Service 配置中，两种组件默认都关闭，可在 [Service 设置](configuration.md#workspace-provisioning)中启用。创建工作空间和单机启动时会初始化缺失组件；失败会记录日志并重试两次。重试后需要重启 Service 才会重新发现 Engine。成功初始化只执行一次：你的修改、禁用和删除结果会保留，重启也不改变。新实例仍需要显式按模板预留，或由选择该模板的 agent 创建。
+通用 Service 配置中，Local 和 Docker 自动配置默认都关闭，可在 [Service 设置](configuration.md#workspace-provisioning)中启用。创建工作空间时，以及 `all` 角色每次启动时，会补建缺失的 Local 和 Docker provider 及模板；配置失败会记录日志并重试两次。重试后需要重启 Service 才会重新发现 Engine。成功初始化只执行一次：你的修改、禁用和删除结果会保留，重启也不改变。自动配置不会创建环境：请从该模板预留环境，或将该模板设为 agent 的 `default_environment_template_id`。
 
 ## Provider
 
@@ -28,7 +28,7 @@ Console 的 **Environments → Templates** 管理模板，**Environments → Ins
 
 ![Console 中的 Sandbox 与环境 provider 目录](../../.github/assets/console-sandbox-providers.webp)
 
-*图中使用 Seed 示例工作空间；Local directory 仅在开发环境中可用。*
+*图中使用 Seed 示例工作空间；Local directory 仅在设置 `provisioning.local.enabled` 时出现，该设置用于开发。*
 
 | 类型      | 环境                              | 账号                                                                                                            | 停止行为                   |
 | --------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------- |
@@ -43,7 +43,7 @@ Console 的 **Environments → Templates** 管理模板，**Environments → Ins
 
 Docker provider 默认使用运维人员设置的 `environments.docker_host`；provider 单独设置的 `docker_host` 必须是[出站策略](configuration.md#outbound-requests)允许的远程 TCP 或 HTTPS Engine。访问 Docker Engine 等同于获得宿主机级权限。模板只能绑定 `environments.docker_mount_roots` 下的宿主机目录（默认不允许任何目录）；不支持特权容器和宿主机命名空间。请在 Engine 上限制 CPU、内存和进程用量。[Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)连接宿主机 Engine；Kubernetes chart 不包含 Engine。
 
-云托管类型访问厂商固定的 API：账号指定组织、团队、工作空间或应用，不指定主机。沙箱费用计入该账号。Service 会在厂商终止前续期，维持就绪的 E2B、Modal、Vercel 或 Runloop 沙箱，因此应设置模板空闲策略来控制费用。如果 provider 凭据改为另一个无法访问沙箱的账号，环境显示 `provider_credential_changed`；恢复沙箱所属账号凭据后可继续使用。续期不能突破厂商硬限制：Modal 在 recipe 的 `timeout_seconds`（最多 24 小时）后终止沙箱，环境随后显示丢失；Vercel 在 recipe 的 `timeout_seconds` 后结束会话，环境变为停止，下次运行会恢复。如果模板的空闲停止先触发，文件会保留。所有 recipe 字段请参阅 [provider 配置](../environments/configuration-reference.md)。
+云托管类型访问厂商固定的 API：账号指定组织、团队、工作空间或应用，不指定主机。沙箱费用计入该账号。Service 会在厂商终止前续期，维持就绪的 E2B、Modal、Vercel 或 Runloop 沙箱，因此应设置模板空闲策略来控制费用。provider 凭据可能改为另一个无法访问沙箱的账号。此时环境显示失败 `provider_credential_changed`。恢复沙箱所属账号的凭据后，环境重新可用。续期不能突破厂商硬限制：Modal 在 recipe 的 `timeout_seconds`（最多 24 小时）后终止沙箱，环境随后显示丢失；Vercel 在 recipe 的 `timeout_seconds` 后结束沙箱会话，环境变为停止，下次运行会恢复。如果模板的空闲停止先触发，文件会保留。所有 recipe 字段请参阅 [provider 配置](../environments/configuration-reference.md)。
 
 只有 Docker provider 可以测试（`POST …/{provider_id}/test`）：Engine 响应一次 ping。远程 Engine 无法解析时，失败消息为 `provider_unavailable`；只有策略拒绝时才返回 `provider_endpoint_denied`。
 
@@ -64,7 +64,7 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH` 使用模板的 `If-Match` 修改名称、描述、provider、config 和标签。新 provider 或 recipe 仅影响之后创建的环境：环境使用创建任务派发时的模板构建，并保留该 recipe。空闲策略始终使用当前设置。
 - `PATCH {"enabled": false}` 阻止从该模板创建新环境；`{"enabled": true}` 重新允许。已有环境仍可使用。
 
-要让 agent 的每次对话都有自己的环境，设置 `default_environment_template_id`。没有 `workspace` 挂载的线程启动运行时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。
+要让 agent 的每个根线程都有自己的环境，设置 agent 的 `default_environment_template_id`。没有 `workspace` 挂载的线程的运行被接收时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。
 
 ### Docker 镜像版本
 
@@ -115,7 +115,7 @@ curl -X POST "$A13N_URL/api/v1/environments" \
   -d '{"endpoint": "https://build-box.example.com:8443", "token": "...", "name": "Build box"}'
 ```
 
-注册需要 `write`。端点是守护进程的 HTTP(S) 源；明文 HTTP 仅接受回环地址，且必须符合出站[端点策略](configuration.md#outbound-requests)。Service 查询设备身份并打开会话，然后记录 `ready` 环境；未指定名称时使用设备名称。Token 加密存储，永不返回；环境显示 `endpoint` 和 `device_id`。策略拒绝的端点返回 `409 conflict`，原因位于 `endpoint`。守护进程拒绝 token 与无法访问的表现相同：均返回 `503 unavailable`，原因为 `provider_connection_failed`。
+注册需要 `write`。端点是守护进程的 HTTP(S) 源；明文 HTTP 仅接受回环地址，且必须符合出站[端点策略](configuration.md#outbound-requests)。Service 查询设备身份并在其上打开 Envd 会话，然后记录 `ready` 环境；未指定名称时使用设备名称。Token 加密存储，永不返回；环境显示 `endpoint` 和 `device_id`。策略拒绝的端点返回 `409 conflict`，原因位于 `endpoint`。守护进程拒绝 token 与无法访问的表现相同：均返回 `503 unavailable`，原因为 `provider_connection_failed`。
 
 后续每次连接都要求相同设备；该端点出现其他守护进程时，以 `provider_device_mismatch` 拒绝，挂载此环境的运行失败。守护进程迁移或 token 变化时，重新发送 token；迁移时也提供新端点：
 
@@ -125,7 +125,7 @@ curl -X PATCH "$A13N_URL/api/v1/environments/$ENVIRONMENT" \
   -d '{"endpoint": "https://build-box-2.example.com:8443", "token": "..."}'
 ```
 
-Service 先验证新连接；设备 ID 不同时返回 `409 conflict`，原因为 `provider_device_mismatch`。外部目标是**私有** 的：只有注册者可以挂载，只有注册者或工作空间管理员可以修改、删除。Service 不会停止或删除守护进程所在计算机；删除环境只会忘记 token。
+Service 先验证新连接；设备 ID 不同时返回 `409 conflict`，原因为 `provider_device_mismatch`。外部目标是**私有** 的：只有注册它的主体（用户或服务账号）可以挂载，只有该主体或工作空间管理员可以修改、删除。Service 不会停止或删除守护进程所在计算机；删除环境只会忘记 token。
 
 ### 停止、重命名与删除
 
@@ -149,11 +149,11 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 
 - `name` 必须匹配 `^[a-z][a-z0-9-]{0,62}$`。名为 `workspace` 的主挂载对 agent 显示为 `/workspace`，其他挂载显示为 `/mnt/{name}`。`working_directory` 是环境内的起始目录。
 - 同一线程内，每个名称和环境只能挂载一次。替换挂载需先删除再添加。
-- 一个线程最多 32 个挂载；超过时返回 `409 conflict`，原因为 `mount_limit`。接收运行时仍可在此限制之外添加 agent 的主沙箱。
-- 挂载修改使用**线程** 的 `If-Match`，返回线程的新 ETag，需要 `run`，仅影响之后启动的运行；正在运行的任务保留原挂载。`GET …/threads/{thread_id}/environments` 返回挂载和线程 ETag，`DELETE …/threads/{thread_id}/environments/{name}` 移除挂载。
+- 一个线程最多 32 个挂载；超过时返回 `409 conflict`，原因为 `mount_limit`。接收运行时仍可在此限制之外，根据 agent 的默认模板添加 `workspace` 挂载。
+- 挂载修改使用**线程** 的 `If-Match`，返回线程的新 ETag，需要 `run`，仅影响之后接收的运行；此前接收的运行保留原挂载。`GET …/threads/{thread_id}/environments` 返回挂载和线程 ETag，`DELETE …/threads/{thread_id}/environments/{name}` 移除挂载。
 - 新线程和分叉线程通过 `environments` 字段指定初始挂载。分叉默认共享源线程挂载，除非设置 `fresh_environments`。归档线程会移除挂载。
 - 多个线程可以同时挂载和使用同一环境。
 
-运行启动时，最多等待 `environments.wait_seconds` 让环境就绪，并启动已停止环境。未能及时就绪时，本次尝试失败，运行在尝试额度内重试；已无法使用的环境（例如已删除）让运行以 `environment_unavailable` 失败。
+每次尝试执行前，最多等待 `environments.wait_seconds` 让运行的环境就绪，并启动已停止的环境。未能及时就绪时，本次尝试失败，运行在尝试额度内重试；已无法使用的环境（例如已删除）让运行以 `environment_unavailable` 失败。
 
 异步[子 agent](agents-and-runs.md#subagents) 按调用边的策略获得环境：共享父运行挂载（`shared`）、根据模板新建（`dedicated`），或不使用环境。

@@ -3,15 +3,15 @@ title: Replay and recovery
 description: Rebuild a UI projection for the same Run, and know when a new Harness Run is needed instead.
 ---
 
-There are two different restart problems: reconstructing a UI projection for the **same** Run, and starting a **new** Harness Run from a checkpoint. `HarnessAguiObserver.resume()` solves only the first.
+There are two different restart problems: reconstructing a UI projection for the **same** Run, and starting a **new** Harness Run from saved `HarnessState`. `HarnessAguiObserver.resume()` solves only the first.
 
 ## Choose the recovery path
 
 | What changed?                                                   | What to do                                                                              |
 | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | Observation consumer restarted; same source Run still available | Replay the exact finite source prefix into a fresh observer, then consume its live tail |
-| Agent worker restarted from `HarnessState`                      | Create a new observer for the new Run ID                                                |
-| Only rendered messages or AG-UI records were retained           | Do not claim they can reconstruct Harness multipart source state                        |
+| Host started a new Harness Run from `HarnessState`              | Create a new observer for the new Run ID                                                |
+| Only rendered messages or AG-UI records were retained           | Do not pass them to `resume()`; they cannot reconstruct Harness multipart source state  |
 | Source history has a gap                                        | Report/reconcile it in the Host; do not silently skip it                                |
 
 ## Resume from Source History
@@ -36,7 +36,7 @@ async for item in source_journal.tail(
     await host.persist_and_publish(new_events)
 ```
 
-The argument is a finite `AsyncIterable[HarnessStreamEvent[Any]]`. It must yield the exact ordered public source prefix for one Run and then finish at the Host-selected handoff point. After `resume()` returns, pass later live items to `observe()`.
+The argument is a finite `AsyncIterable[HarnessStreamEvent[Any]]`. It must yield the exact ordered public source prefix for one Run (`HarnessAguiObserver`) or for one root stream and its inline children (`HarnessAguiStreamObserver`), and then finish at the Host-selected handoff point. After `resume()` returns, pass later live items to `observe()`.
 
 `resume()`:
 
@@ -59,7 +59,7 @@ The snapshot contains the reconstructed historical AG-UI projection, while `next
 The Host owns the source-history contract around `resume()`:
 
 - retain or reconstruct typed public `HarnessStreamEvent` values;
-- select a finite prefix for exactly one `run_id`;
+- select a finite prefix for exactly one `run_id` (`HarnessAguiObserver`), or for one root stream and its inline children (`HarnessAguiStreamObserver`);
 - preserve source order and exclude duplicate delivery;
 - detect retention gaps rather than silently omitting source items;
 - establish a replay-to-live cutover with neither a gap nor overlap;

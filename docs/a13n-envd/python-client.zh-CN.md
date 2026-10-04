@@ -49,7 +49,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-端点是守护进程基础 URL，不是 `/eip/control`。设备初始化协商协议并验证身份，不打开会话。`open_session()` 创建独立的固定 cwd 范围并检查就绪状态。退出会话上下文仅关闭该会话。退出设备上下文会关闭其会话和物理传输，不关闭外部守护进程或工作空间。
+端点是守护进程基础 URL，不是 `/eip/control`。设备初始化协商协议并验证身份，不打开会话。`open_session()` 创建独立的固定 cwd 范围并检查就绪状态。退出会话上下文仅关闭该会话。退出设备上下文会关闭其会话和物理传输，不关闭外部守护进程，也不影响设备上的文件。
 
 ## 选择传输方式
 
@@ -60,7 +60,7 @@ if __name__ == "__main__":
 | `HttpTransport(endpoint, credential, ...)`    | 守护进程基础 URL 和附加凭据                         | 经身份验证的请求和原始传输流；客户端管理内部 HTTP 连接池 |
 | `AcceptedWebSocketTransport(connection, ...)` | 已接受并完成身份验证的 `WebSocketConnection`        | 要求已协商 `eip.v1`；不监听、拨号或验证升级              |
 
-三种传输的 `max_request_bytes`、`max_response_bytes` 和 `max_transfer_frame_bytes` 均默认为 1 MiB；限制必须为正数，并收窄到协商后的描述符范围。提高客户端限制不能授予服务器不支持的方法。
+所有传输的 `max_request_bytes`、`max_response_bytes` 和 `max_transfer_frame_bytes` 均默认为 1 MiB；限制必须为正数，并收窄到协商后的描述符范围。提高客户端限制不能授予服务器不支持的方法。
 
 ### HTTP 选项
 
@@ -83,13 +83,13 @@ if __name__ == "__main__":
 
 - `descriptor` 和 `describe()`：缓存或最新观测的设备信息，包括路径格式、默认工作目录和目录发现可用性。
 - `list_directories(DirectoryListParams(...))`：有界的单层目录列表，携带精确预期设备 ID 与代次、绝对路径、偏移量和上限。不打开会话。
-- `open_session(working_directory=None, required_methods=(), readiness_timeout=10.0)`：新的独立会话。省略 cwd 时选择设备默认值。必需方法用于断言兼容性，不是权限。
+- `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)`：新的独立会话。省略 cwd 时选择设备默认值。受控出站网络设备要求提供 `egress`；其他设备会拒绝它。必需方法用于断言兼容性，不是权限。
 - `attach_session(descriptor)`：在断线宽限期内，显式附加到同一设备代次中的精确已有会话。绝不重放操作或恢复传输。
 - `close()`：关闭本地管理的会话，然后关闭物理连接。
 
 每个会话具有固定 `session_id`、代次和工作目录，管理自己的生成式 `client`、文件传输、命令、输出和回执命名空间。独立会话可在任意传输通道上并发运行。不同会话可以复用操作 ID，但不共享证据。
 
-`EIPSession` 提供 `describe()`、`readiness(timeout=10.0)`、`open_reader()`、`open_writer()`、`open_output()`、`close()` 和 `abort()`。客户端在会话打开期间维护会话内保活。关闭或中止会话绝不会关闭同级会话或借用的传输通道。`abort()` 会在有限时间内尽力关闭会话，但不声称结果不确定的工作已经结束。
+`EIPSession` 提供 `describe()`、`readiness(timeout=10.0)`、`open_reader()`、`open_writer()`、`open_output()`、`observe_computer()`、`close()` 和 `abort()`。客户端在会话打开期间维护会话内保活。关闭或中止会话绝不会关闭同级会话或借用的传输通道。`abort()` 会在有限时间内尽力关闭会话，但不声称结果不确定的工作已经结束。
 
 刷新会话描述符可以收窄方法和限制；身份、代次和固定 cwd 不能改变。未就绪响应或会话内协议失败会隔离该会话。传输损坏或丢失会终止该连接上的全部本地范围。在每个借用适配器的整个生命周期中，保持设备所有者存活。
 
@@ -145,7 +145,7 @@ reader 验证连续偏移量、精确引用、单调计数器与完成状态、�
 
 ## 超时、取消与回执
 
-`RequestCoordinator` 管理单个设备 reader，以及有界的请求关联和接纳。`SessionRequester` 为操作调用和二进制传输限定范围。已发送但被调用者放弃的请求，在收到响应或传输终结事件前仍占用关联状态和容量；调用者取消不会取消共享 stdio 写入。这是高级传输集成基础组件；普通调用者使用会话及其生成客户端。
+`RequestCoordinator` 管理单个设备 reader，以及有界的请求关联和接纳。`SessionRequester` 为操作调用和二进制传输限定范围。已发送但被调用者放弃的请求，在收到响应或传输终结事件前仍占用关联状态和容量；调用者取消不会取消共享 stdio 写入。两者都是高级传输集成基础组件；普通调用者使用 `EIPSession` 及其生成客户端。
 
 `EIPCallContext` 要求 1–128 字符的操作 ID，可选提供正 uint64 `timeout_ms`。操作 ID 与 JSON-RPC 请求 ID 不同。方法的回执/重放语义要求结果核对时，提供稳定的操作 ID。
 
@@ -246,4 +246,4 @@ assert "file.read_text" in METHODS
 uv run --locked pytest packages/a13n-envd-client/tests
 ```
 
-客户端套件通过协议 fixture 覆盖消息帧、会话、错误、传输和输出。原生进程清理和守护进程可用性需要独立的 Envd 集成检查。外层沙箱由 Host 建立，而非 envd。Host 管理进程启动和运行时初始化时，使用 [Local Envd](index.md#try-local-envd)；应用工具使用[环境操作](../environments/operations.md)。
+客户端套件通过协议 fixture 覆盖消息帧、会话、错误、传输和输出。原生进程清理和守护进程可用性需要独立的 Envd 集成检查。外层沙箱由 Host 建立，而非 Envd。Host 管理进程启动和运行时初始化时，使用 [Local Envd](index.md#try-local-envd)；应用工具使用[环境操作](../environments/operations.md)。

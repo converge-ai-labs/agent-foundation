@@ -1,5 +1,5 @@
 ---
-title: 运行与维护
+title: 运维 Service
 description: 进程角色、迁移、健康检查、后台任务、运维命令和备份。
 ---
 
@@ -40,24 +40,24 @@ a13n-service --config service.toml migrate --check  # verify the schema matches 
 | `GET /healthz` | 进程提供 HTTP 服务期间始终返回 `200 {"status": "ok", "role": "<role>"}`。                        |
 | `GET /readyz`  | 启动完成、后台任务运行且数据库 schema 可用后，返回 `200 {"status": "ready", "role": "<role>"}`。 |
 
-启动未完成或后台任务停止后，就绪检查返回 `503 {"status": "unavailable", "dependency": "runtime"}`；无法在 `server.readiness_timeout` 内检查 schema 时，返回 `"dependency": "database"`。Redis 不可用时仍保持就绪，并添加 `"degraded": ["redis"]`，因为 Redis 仅用于加速 Service。
+启动未完成或后台任务停止后，就绪检查返回 `503 {"status": "unavailable", "dependency": "runtime"}`；无法在 `server.readiness_timeout` 内检查 schema 时，返回 `"dependency": "database"`。Redis 不可用时仍保持就绪，并添加 `"degraded": ["redis"]`，因为 PostgreSQL 保存全部持久状态；Redis 恢复前，实时线程事件流和限流都会停止。
 
 ## 后台任务
 
 Control 进程通过有界扫描维护排队任务和投递。失败的扫描记录日志，并在下一个间隔重试。
 
-| 扫描任务                        | 间隔                               | 工作                                                                       |
-| ------------------------------- | ---------------------------------- | -------------------------------------------------------------------------- |
-| `advance_threads`               | `control.scan_seconds`             | 启动空闲线程的下一条排队输入。                                             |
-| `expire_leases`                 | `worker.authority_seconds`         | 结束租约过期的尝试，让运行由其他 worker 继续或失败。                       |
-| `expire_credentials`            | `auth.expiry_scan_seconds`         | 删除过期或撤销的登录会话、邮件链接和未接受邀请。                           |
-| `maintain_environments`         | `environments.scan_seconds`        | 停止或删除超过模板空闲阈值的托管环境，并继续未完成 provider 操作。         |
-| `renew_environments`            | `environments.scan_seconds`        | 续期即将结束的就绪云沙箱，每次调用受 `environments.renewal_seconds` 限制。 |
-| `recover_connection_operations` | `providers.operation_scan_seconds` | 处理超过截止时间且执行者已消失的连接授权操作。                             |
-| `deliver_outbox`                | `control.scan_seconds`             | 投递 webhook、身份邮件和子 agent 结果。                                    |
-| `purge_outbox`                  | 默认每 60 秒                       | 删除超过该类型结束后保留期限的已结束投递。                                 |
+| 扫描任务                        | 间隔                               | 工作                                                                                              |
+| ------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `advance_threads`               | `control.scan_seconds`             | 启动空闲线程的下一条排队输入。                                                                    |
+| `expire_leases`                 | `worker.authority_seconds`         | 结束租约过期的尝试，让运行由其他 worker 继续或失败。                                              |
+| `expire_credentials`            | `auth.expiry_scan_seconds`         | 删除过期或撤销的登录会话、邮件链接和未接受邀请。                                                  |
+| `maintain_environments`         | `environments.scan_seconds`        | 停止或删除超过模板空闲阈值的托管环境，并继续未完成 provider 操作。                                |
+| `renew_environments`            | `environments.scan_seconds`        | 续期即将结束的就绪云沙箱，每次调用受 `environments.renewal_seconds` 限制。                        |
+| `recover_connection_operations` | `providers.operation_scan_seconds` | 处理超过截止时间且执行者已消失的连接授权操作。                                                    |
+| `deliver_outbox`                | `control.scan_seconds`             | 投递 webhook、身份邮件和子 agent 结果，清理已删除记录型记忆的命名空间，并删除被替换的检查点对象。 |
+| `purge_outbox`                  | 默认每 60 秒                       | 删除超过其 outbox 类型保留期的已结束投递。                                                        |
 
-投递至少一次。发送者以 `outbox.defaults.lease_seconds` 的租约领取一批 `outbox.defaults.batch` 条记录；失败投递按指数退避重试（间隔最多一小时），达到 `outbox.defaults.max_attempts` 次后标为 dead。Webhook 订阅者可通过 API 查看和重新投递；参阅 [webhook](files-and-webhooks.md#webhooks)。
+投递至少一次。发送者以 `lease_seconds` 的租约领取一批 `batch` 条记录；失败投递按指数退避重试（间隔最多一小时），达到 `max_attempts` 次后标为 dead。这些值来自该类型的 [outbox 策略](#outbox-retention-and-capacity)。工作空间管理员可通过 API 查看和重新投递 webhook 投递；参阅 [webhook](files-and-webhooks.md#webhooks)。
 
 ## 运维命令
 
@@ -80,9 +80,9 @@ Control 进程通过有界扫描维护排队任务和投递。失败的扫描记
 
 同时备份 PostgreSQL、对象存储和加密密钥环（或 `encryption.key_file`）。没有写入时使用的密钥，存储的凭据无法解密；运行检查点、显示数据、资产和 skill 包位于对象存储。[单机 Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades)和 [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#upgrades-and-backups)介绍各自的备份、恢复和升级。
 
-### Outbox 保留与容量
+## Outbox 保留与容量
 
-相同策略适用于 webhook、邮件、子运行结果、记忆清理和检查点回收。默认成功投递在完成后保留一天，dead 投递在失败后保留十四天。每分钟，清理扫描在每个短事务中最多删除 1000 条过期记录，重复执行最多五秒。不会为缩减表而丢弃待处理任务。
+一套 outbox 策略（可按类型覆盖）管理 webhook、邮件、子运行结果、记忆清理和检查点回收。默认成功投递在完成后保留一天，dead 投递在失败后保留十四天。默认情况下，清理扫描每分钟运行一次，在每个短事务中最多删除 1000 条过期记录，重复执行最多五秒。不会为缩减表而丢弃待处理任务。
 
 配置共享默认值，仅按类型覆盖有差异的字段：
 
@@ -111,6 +111,6 @@ delivered_retention_seconds = 3600
 parallel = 2
 ```
 
-环境变量覆盖遵循既有分节约定：`A13N_OUTBOX__DEFAULTS` 和 `A13N_OUTBOX__BY_KIND` 携带 JSON 对象。环境变量替换对应 TOML 字段，各类型再从默认值继承未指定的策略字段。未知字段和类型导致启动失败。每个进程只解析一次配置；修改后需重启。
+环境变量遵循分节约定：`A13N_OUTBOX__DEFAULTS` 和 `A13N_OUTBOX__BY_KIND` 携带 JSON 对象。每个环境变量替换对应 TOML 字段，各类型再从默认值继承未指定的策略字段。未知字段和类型导致启动失败。每个进程只解析一次配置；修改后需重启。
 
-对 `a13n_outbox_backlog_alert == 1` 和 `a13n_outbox_dead == 1` 设置告警，并取 control 副本中的最大值。检查失败目标并恢复投递能力；保留策略不会丢弃待处理任务。
+对 `a13n_outbox_backlog_alert == 1` 和 `a13n_outbox_dead == 1` 设置告警，并取 `all` 和 `control` 副本中的最大值。检查失败目标并恢复投递能力；保留策略不会丢弃待处理任务。

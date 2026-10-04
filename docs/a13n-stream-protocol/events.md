@@ -25,7 +25,7 @@ The stream observer preserves child native IDs and adds `subagentRunId` to child
 
 `observe()` returns only the AG-UI events produced by that source item. A single source item can produce several events—for example, a text part with initial content produces both `TEXT_MESSAGE_START` and `TEXT_MESSAGE_CONTENT`.
 
-The first successfully observed item binds `observer.thread_id` and `observer.run_id`. Later root items retain that correlation; each inline child has independently validated correlation and multipart state. Use another observer when the Harness starts another Run, even when both Runs advance the same Thread.
+The first successfully observed item binds `observer.thread_id` and `observer.run_id`. Later root items retain that correlation; each inline child has independently validated correlation and multipart state. Use another observer when the Harness starts another root Run or an asynchronous child Run, even when both Runs advance the same Thread.
 
 ### Event mappings
 
@@ -50,7 +50,7 @@ Unmatched Harness extensions use names such as `a13n.harness.lifecycle`. Unmatch
 
 ### Content and large custom events
 
-Capability events preserve their native name and payload, including user-defined kinds. A file edit remains before/after data, a summary remains summary data, and a shell status remains a status observation. The protocol does not turn them into assistant answers or pre-rendered panels. Clients decide their presentation. Input uses source-specific CUSTOM events with `role` and `message_id` inside `value.event` and top-level `ContentMetadata`; normal displays omit content marked `display: false`. Public tool execution values can contain ordered text, image, audio, video, or document parts. Supplemental tool media stays model-only; binary bytes never enter the public protocol.
+Capability events preserve their native name and payload, including user-defined kinds. A file edit remains before/after data, a summary remains summary data, and a shell status remains a status observation. The protocol does not turn them into Agent answers or pre-rendered panels. Clients decide their presentation. Input uses source-specific CUSTOM events with `role` and `message_id` inside `value.event` and top-level `ContentMetadata`; normal displays omit content marked `display: false`. Public tool execution values can contain ordered text, image, audio, video, or document parts. Supplemental tool media stays model-only; binary bytes never enter the public protocol.
 
 Custom events larger than 48 KiB use generic `a13n.stream.fragment` frames. Reassemble them before inspecting the original event:
 
@@ -65,7 +65,7 @@ if complete is not None:
     render_custom(complete["name"], complete["value"])
 ```
 
-The framing preserves the complete JSON structure rather than truncating the source. The assembler bounds pending content and rejects incomplete or inconsistent sequences; check `assembler.gap` and replace the assembler when resetting a subscription. These are best-effort observations, not a durable event log. See the [framing contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-stream-protocol/00-overview.md#large-custom-events) for limits and fields.
+The framing preserves the complete JSON structure rather than truncating the source. The assembler bounds pending content and rejects incomplete or inconsistent sequences; check `assembler.gap` and replace the assembler when resetting a subscription. Reassembled custom events are best-effort observations, not a durable event log. See the [framing contract](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-stream-protocol/00-overview.md#large-custom-events) for limits and fields.
 
 ### Serialize events
 
@@ -99,7 +99,7 @@ The observer does not compact streaming chunks or enforce a retention limit. A l
 
 ## Apply a Host Processor
 
-A processor can omit an event or replace approved content fields before the event is accumulated and returned:
+A processor can omit an event or replace the mutable content fields listed in [Processor replacement limits](api-reference.md#processor-replacement-limits) before the event is accumulated and returned:
 
 ```python
 from typing import Any

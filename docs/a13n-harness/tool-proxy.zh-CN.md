@@ -1,9 +1,9 @@
 ---
 title: ToolProxy 工具分组
-description: 通过搜索和调用入口提供大型工具集合，让模型只需查看简短列表。
+description: 通过搜索工具和调用工具提供大型工具集合，让模型只需查看简短的工具分组列表。
 ---
 
-ToolProxy 通过两个面向模型的入口提供大型本地工具集合：`search_proxy_tools` 和 `call_proxy_tool`。模型先看到简短的领域列表，需要时发现确切参数 schema，再用参数对象调用所选工具。
+ToolProxy 通过两个面向模型的控制工具提供大型本地工具集合：`search_proxy_tools` 和 `call_proxy_tool`。模型先看到简短的领域列表，需要时发现确切参数 schema，再用参数对象调用所选工具。
 
 ToolProxy 只改变发现和调用的呈现方式。验证、策略、凭据、钩子、结果和用量仍由 Pydantic AI 当前 `ToolManager`、原 Toolset 和普通 Harness 执行边界负责。它不是第二个执行引擎或 MCP 客户端。
 
@@ -64,11 +64,11 @@ agent = HarnessBuilder().build(
 
 ## 指令与动态参数
 
-控件描述只放当前组摘要。来源 Toolset 指令随发现的工具返回，不提前填满每个模型请求。独立的 Capability 级指令保留原生行为。
+控制工具描述只放当前组摘要。来源 Toolset 指令随发现的工具返回，不提前填满每个模型请求。独立的 Capability 级指令保留原生行为。
 
-准备后的控件包含当前 `group` 枚举。搜索在来源准备和 Harness 工具集合解析后返回当前成员 schema，使不可用或被替代工具不能通过旧索引继续调用。调用结构保持简洁，不包含所有成员参数的联合类型。
+准备后的控制工具包含当前 `group` 枚举。搜索在来源准备和 Harness 工具集合解析后返回当前成员 schema，使不可用或被替代工具不能通过旧索引继续调用。`call_proxy_tool` 的 schema 保持简洁，不包含所有成员参数的联合类型。
 
-生成的指引告诉模型：
+生成的指令告诉模型：
 
 1. 选择领域并发现确切 schema；
 2. 使用返回的本地名称和匹配 schema 的参数对象；
@@ -76,7 +76,7 @@ agent = HarnessBuilder().build(
 4. 分页读取，工具不可用时刷新发现结果；
 5. 核查不确定副作用，不盲目重试修改。
 
-空查询浏览一个或所有组。关键词匹配组名、工具名和描述，是确定性本地搜索，不是语义检索。`offset` 和 `next_offset` 只适用于当前步骤查询结果，不是持久游标。关闭 Toolset 指令也会关闭生成的代理指引和搜索结果中的来源指令。
+空查询浏览一个或所有组。关键词匹配组名、工具名和描述，是确定性本地搜索，不是语义检索。`offset` 和 `next_offset` 只适用于当前步骤查询结果，不是持久游标。关闭 Toolset 指令也会关闭生成的代理指令和搜索结果中的来源指令。
 
 ## 配置名称与发现限制
 
@@ -98,11 +98,11 @@ proxy = ToolProxyCapability(
 
 `max_results` 接受 1–100。搜索 `limit` 省略或 null 时默认 `min(5, max_results)`。UTF-8 JSON 搜索预算为 1024–32,768 字节。每页只包含完整 schema 和指令，放不下的条目移到下一页。单个条目也放不下时明确失败。应直接公开该工具或简化 schema，不依赖截断契约。
 
-准备后没有剩余分组工具时，不公开代理控件或生成指令。分组减少模型上下文，但来源仍正常初始化和准备工具。它不会消除 MCP 工具列表流量，也不会让构造一千个 Toolset 不产生开销。
+准备后没有剩余分组工具时，不公开代理控制工具或生成的代理指令。分组减少模型上下文，但来源仍正常初始化和准备工具。它不会消除 MCP 工具列表流量，也不会让构造一千个 Toolset 不产生开销。
 
 ## 为绑定 Run 的 MCP Capability 分组
 
-将 Capability 实例作为组 `source`，尤其是绑定 Run 时会替换自身的能力。不要在定义时提取 `ContextualMCP` Toolset：
+将 Capability 实例作为组 `source`，尤其是绑定 Run 时会替换自身的 Capability。不要在定义时提取 `ContextualMCP` Toolset：
 
 ```python
 from a13n_harness.capabilities import ToolProxyCapability, ToolProxyGroup
@@ -157,7 +157,7 @@ proxy = ToolProxyCapability(
 capabilities = (proxy, CodeActCapability())
 ```
 
-runner 目录包含代理控件，不包含每个分组工具声明。受限 Python 可在一次 `run_code` 中发现并调用工具：
+runner 目录包含代理控制工具，不包含每个分组工具声明。受限 Python 可在一次 `run_code` 中发现并调用工具：
 
 ```python
 found = await search_proxy_tools(query="customer name", group="crm")
@@ -181,13 +181,13 @@ async def main(inputs):
     )
 ```
 
-通过当前 Environment 可访问的文件路径调用 `run_program(path="lookup.codeact.py", inputs={"customer_id": 42})`。每次宿主调用都需 await。代理调用保守地形成顺序执行屏障，在 `asyncio.gather` 中也如此。
+模型调用 `run_program(path="lookup.codeact.py", inputs={"customer_id": 42})`；该文件必须可通过当前 Environment 访问。受限 Python 中的每次宿主函数调用都需 await。代理调用保守地形成顺序执行屏障，在 `asyncio.gather` 中也如此。
 
 分组不授予 CodeAct 使用资格。桥接先解析目标并检查其自己的类型化策略，再派发。没有显式所有者策略的 MCP 来源可通过普通模型代理调用，但不自动允许 CodeAct 调用。策略和运行时边界见 [CodeAct](delegation-and-codeact.md#codeact)。
 
 ## Host 集成
 
-Host 在构造 Agent 定义时决定展示方式。已构造来源使用 `ToolProxyCapability`。要将普通 Harness Plugin 提供的工具与选中 Capability 一起分组，将类型化 `ToolProxyPlan` 传给 `AgentDefinition.tool_proxy` 或 `HarnessBuilder.build(tool_proxy=...)`。Harness 在普通的一次性绑定中保留插件归属，无须插件扫描或特殊来源工厂 API。
+Host 在构造 Agent 定义时决定展示方式。已构造来源使用 `ToolProxyCapability`。要将普通 Harness 插件提供的工具与选中 Capability 一起分组，将类型化 `ToolProxyPlan` 传给 `AgentDefinition.tool_proxy` 或 `HarnessBuilder.build(tool_proxy=...)`。Harness 在普通的一次性绑定中保留插件归属，无须插件扫描或特殊来源工厂 API。
 
 ```python
 from a13n_harness import AgentDefinition, AgentSpec
@@ -239,15 +239,15 @@ tool_sources:
 
 来源构造一次，再选择放置位置。第三方 `AbstractCapability` 可直接用作 `ToolProxyGroup(source=capability, description=...)`，无须 ToolProxy 专用实现。原生组合保留 Agent/Run 绑定、钩子和 Capability 级指令。`ContextualMCP` 等绑定 Run 的来源应提供 Capability 本身，不提前调用 `get_toolset()`。
 
-groups 映射在构造时使用。改变展示应构建替代执行对象；修改原映射不重新配置已有 Agent。空映射不公开代理控件，直接工具不变。
+groups 映射在构造时使用。改变展示应构建替代执行对象；修改原映射不重新配置已有 Agent。空映射不公开代理控制工具，直接工具不变。
 
 ### 插件提供的来源
 
-`AbstractHarnessPlugin.get_capabilities()` 是内容提供边界，不是通用来源查询 API。优先用 `ToolProxyPlan` 为已有插件分组，无须改动插件。Harness 对各插件的 `for_agent()` 和 `get_capabilities()` 恰好调用一次，先验证原来源再分组。中间件仍安装；分组不授权保留能力。
+`AbstractHarnessPlugin.get_capabilities()` 是内容提供边界，不是通用来源查询 API。优先用 `ToolProxyPlan` 为已有插件分组，无须改动插件。Harness 对各插件的 `for_agent()` 和 `get_capabilities()` 恰好调用一次，先验证原来源再分组。中间件仍安装；分组不授权保留的 Capability。
 
 插件也可用以下 `ToolProxyCapability` 自行管理展示。在一个组合点汇总分组，不要安装互相竞争的代理界面。
 
-以下 Host 自有插件展示该边界。工厂为每个执行对象只构造一次来源定义；`get_capabilities()` 选择直接或分组展示。来源 Run 绑定仍是原生流程：
+以下 Host 自有插件展示该边界。其 `source_factory` 可调用对象在 `for_agent()` 中为每个执行对象只构造一次来源 Capability；`get_capabilities()` 选择直接或分组展示。来源 Run 绑定仍是原生流程：
 
 ```python
 from collections.abc import Callable, Mapping, Sequence
@@ -295,7 +295,7 @@ class HostToolsPlugin(AbstractHarnessPlugin):
 ## 执行、用量与限制
 
 - **统一执行路径：** 目标验证、Capability 钩子、受管理授权、凭据、超时、结果限制和 Toolset 派发仍使用原生机制。搜索用于发现，不是授权。
-- **原生统计：** 成功的普通代理调用计算调用结构和目标，共两次成功工具调用。CodeAct 解析调用结构时不执行额外代理层：runner 加一个目标也算两次；再搜索一次则算三次。用量限制在目标派发前检查。
+- **原生统计：** 成功的普通代理调用计算 `call_proxy_tool` 调用和目标，共两次成功工具调用。CodeAct 解析 `call_proxy_tool` 调用时不执行额外代理层：runner 加一个目标也算两次；再搜索一次则算三次。用量限制在目标派发前检查。
 - **重试：** 普通目标验证和 `ModelRetry` 保留目标原生重试状态。ToolProxy 不重放副作用，也不维护重试引擎。CodeAct 保留有上限的 runner 失败语义。
 - **仅内联审批：** 原生处理器可在当前调用内批准或拒绝。未解决审批或外部延迟会使代理调用失败，不会挂起嵌套续接。需要跨轮次 Host 交互的工具应直接公开。
 - **支持的目标：** 本地函数工具，包括本地执行 MCP 和内联审批控制工具。不支持将外部/客户端工具、提供方原生工具、控制/输出工具、CodeAct runner 和延迟加载工具作为分组目标。

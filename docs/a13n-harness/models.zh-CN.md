@@ -14,7 +14,7 @@ description: 选择模型来源、逐次执行路由，声明上下文特性和�
 | 用户/租户专属路由或短期凭据        | 新 `RunBindings.model_resolver`                                           |
 | 共享静态网关配置                   | Builder 的 `gateway_provider_factory`                                     |
 
-这些示例扩展[离线快速入门](getting-started.md)。`provider_factory` 和 `route_store` 等名称代表应用自己管理的协作对象，不是内置服务。
+这些示例扩展[离线快速入门](getting-started.md)。`provider_factory`、`apply_provider_profile` 和 `gateway_provider_factory` 等名称代表应用自己管理的协作对象，不是内置服务。
 
 ## 模型选择
 
@@ -101,7 +101,7 @@ provider 端点验证仍适用，包括需要时的本地 DNS 检查。不使用
 
 ## 出站 TLS 验证
 
-自有 HTTP 客户端默认验证 HTTPS 目标的证书和主机名。在受控开发环境或拦截代理环境中，运维人员可在启动 Host 前显式关闭验证：
+Harness、Harness UI 和 Service 构造的 HTTP 客户端默认验证 HTTPS 目标的证书和主机名。在受控开发环境或拦截代理环境中，运维人员可在启动 Host 前显式关闭验证：
 
 ```bash
 export A13N_OUTBOUND_TLS_VERIFY=false
@@ -159,7 +159,7 @@ spec = AgentSpec(
 - `anthropic:context-400k`：Harness 上下文预算为 `400_000` token；
 - `anthropic:context-1m`：Harness 上下文预算为 `1_000_000` token。
 
-这些值只控制 Harness 生命周期阈值，不选择 provider 上下文变体、添加 beta 请求头、更改请求设置或扩大模型实际上下文能力。
+这些值只控制 Harness 生命周期阈值，不选择 provider 上下文变体、添加 beta 请求头、更改请求设置或扩大模型实际上下文窗口。
 
 内置设置别名如下：
 
@@ -169,11 +169,11 @@ spec = AgentSpec(
 
 max-output 别名是显式请求上限，不承诺兼容性。所选模型和 provider 仍验证是否支持该请求。
 
-每个解析器内，别名按声明顺序应用，具体覆盖最后应用。别名解析要求带 provider 前缀的直接或网关模型字符串，未知或不兼容别名立即失败。没有别名或覆盖提供特性时，`resolve_model_characteristics()` 返回 `None`；`resolve_model_settings()` 返回普通、独立的原生设置字典。Host 可通过不可变自定义目录添加私有选项，但必须在持久保存 agent 修订前解析每个别名。`AgentSpec`、`HarnessBuilder`、worker 和 Harness 状态都不包含别名名称。
+每个解析器内，别名按声明顺序应用，具体覆盖最后应用。别名解析要求带 provider 前缀的直接或网关模型字符串，未知或不兼容别名立即失败。没有别名或覆盖提供特性时，`resolve_model_characteristics()` 返回 `None`；`resolve_model_settings()` 返回普通、独立的原生设置字典。Host 可通过不可变自定义目录添加私有选项，但必须在持久保存自己的定义修订前解析每个别名。`AgentSpec`、`HarnessBuilder`、worker 和 Harness 状态都不包含别名名称。
 
 ## 模型特性
 
-构建和序列化键 `model_characteristics` 保存解析后的 Harness 管理特性，不是 provider 请求设置，也不是第二份 provider profile。Python 通过 `spec.model_characteristics` 读取，不与 Pydantic 类级 `model_config` 冲突。它定义显式 Harness 模型能力、上下文窗口，以及主动总结和压缩比例。显式 Harness 上下文窗口也会反映到生效的原生 `ModelProfile`，使外部 Pydantic AI Capability 可通过上游模型抽象读取相同值：
+构建和序列化键 `model_characteristics` 保存解析后的 Harness 管理特性，不是 provider 请求设置，也不是第二份 provider profile。Python 通过 `spec.model_characteristics` 读取，不与 Pydantic 类级 `model_config` 冲突。它定义显式模型输入能力、上下文窗口，以及主动总结和压缩比例。显式 Harness 上下文窗口也会反映到生效的原生 `ModelProfile`，使外部 Pydantic AI Capability 可通过上游模型抽象读取相同值：
 
 ```python
 spec = AgentSpec(
@@ -190,7 +190,7 @@ spec = AgentSpec(
 
 ### 图片输入策略
 
-`HarnessModelCharacteristics.image_input` 使用共享且冻结的 `ImageInputPolicy`，可从 `a13n_harness` 导入。它控制所选模型的请求预处理，独立于父模型、上下文预算及原生 `ModelSettings`。省略时启用默认策略，部分对象为未指定成员采用默认值，显式 `null` 禁用自动预处理。显式 `ImageFilterCapability` 保留自己的策略，不会重复安装自动实例。
+`HarnessModelCharacteristics.image_input` 使用共享且冻结的 `ImageInputPolicy`，可从 `a13n_harness` 导入。它只控制所选模型的请求预处理；父 Agent 的模型、上下文预算及原生 `ModelSettings` 都不会改变它。省略时启用默认策略，部分对象为未指定成员采用默认值，显式 `null` 禁用自动预处理。显式 `ImageFilterCapability` 保留自己的策略，不会重复安装自动实例。
 
 | 参数                     | 默认值    | 含义                                                 |
 | ------------------------ | --------- | ---------------------------------------------------- |
@@ -204,7 +204,7 @@ spec = AgentSpec(
 
 默认字节限制是 5 MiB（`5 * 1024 * 1024`），不是原始文件大小或整个请求预算。即使表单以 MiB 显示，Host 也存储精确字节。不会从模型名称猜测 GIF 支持或限制。默认值策略在序列化时省略，以保持旧模型捕获的 canonical bytes；显式 `null` 始终保留。变换和历史保留行为见[请求级图片预处理](context.md#filters)。
 
-## 自动模型请求亲和性
+## 模型请求亲和性
 
 网关亲和性需要**主动启用**。配置**请求头名称** ，不要配置固定会话值：
 
@@ -212,17 +212,17 @@ spec = AgentSpec(
 builder = HarnessBuilder(session_affinity_header="x-litellm-session-id")
 ```
 
-Harness 在该请求头中发送从当前 `AgentContext.thread_id` 派生的稳定 UUID v5，不发送原始线程 ID。省略选项（或使用 `None`）保持网关亲和性禁用。选择网关配置识别的名称；`x-session-id` 不是通用标准。自定义名称替换旧请求头，不同时发送两者。发送请求头表示请求亲和性，不保证 provider 固定路由。
+Harness 在该请求头中发送从当前 `AgentContext.thread_id` 派生的稳定 UUID v5，不发送原始线程 ID。省略选项（或使用 `None`）保持网关亲和性禁用。选择网关配置识别的名称；`x-session-id` 不是通用标准。Harness 只发送配置的请求头，不会同时发送 `x-session-id`。发送请求头表示请求亲和性，不保证 provider 固定路由。
 
 同一 `HarnessState` 续接期间值保持稳定；独立根、子、同级和分叉执行使用不同值。可信 Host 可通过 `HarnessState.new(thread_id=...)` 选择源线程 ID，`HarnessState.fork(thread_id=...)` 创建独立的 Host 指定分支。Harness 不使用临时执行 ID，也不修改调用者设置。嵌入 SDK 中，显式原生 `extra_headers` 仍以不区分大小写的方式优先。
 
-同一 agent 图中的不同连接可从 `a13n_harness.model_affinity` 导入 `derive_model_affinity_id`，在 `RunModelResolver` 中通过 `RequestHeadersModel(model, common_headers={header_name: derive_model_affinity_id(context.deps.thread_id)})` 绑定各模型；保持 Builder 选项禁用。始终使用当前解析上下文，不捕获父级 ID。Harness UI 在 `Model.model_configuration` 中管理此项；Service 在活跃 `ModelProvider.configuration` 中管理。
+同一 Agent 图中的不同连接可从 `a13n_harness.model_affinity` 导入 `derive_model_affinity_id`，在 `RunModelResolver` 中通过 `RequestHeadersModel(model, common_headers={header_name: derive_model_affinity_id(context.deps.thread_id)})` 绑定各模型；保持 Builder 选项禁用。始终使用当前解析上下文，不捕获父级 ID。Harness UI 在 `Model.model_configuration` 中管理此项；Service 在 Provider 的 `config` 中管理。
 
 OpenAI 提示缓存键独立控制：符合条件的模型默认接收 `openai_prompt_cache_key=derive_model_affinity_id(thread_id)`，使用与网关亲和性相同的派生值。显式缓存设置优先，不进行转换。
 
 共享派生使用固定命名空间和精确线程 ID，即使线程 ID 本身已是 UUID。它生成 36 字符、小写、带连字符的 UUID，不持久保存映射、不添加状态字段，也不依赖执行、模型、时钟或机器。内部 ID、事件和遥测保持不变。这是有界线上格式，不是身份验证 token，也不保证所有网关接受。
 
-缓存键资格使用最终解析 Model 的 `model_name`，不使用 Host 逻辑别名。名称必须以 `gpt-` 开头，后面紧接 ASCII 数字，可加恰好一个 `openai/` 前缀。因此 `gpt-4.1`、`gpt-5-codex` 和 `openai/gpt-5` 符合条件；DeepSeek、`gpt-oss-120b`、`o3` 和自定义部署名称不符合。匹配区分大小写，不裁剪空白或移除任意命名空间。Chat Completions 和 Responses 适配器都可将设置作为 `prompt_cache_key` 发送。命名策略不保证兼容网关接受该字段。
+缓存键资格使用最终解析 Model 的 `model_name`，不使用 Host 逻辑模型字符串。名称必须以 `gpt-` 开头，后面紧接 ASCII 数字，可加恰好一个 `openai/` 前缀。因此 `gpt-4.1`、`gpt-5-codex` 和 `openai/gpt-5` 符合条件；DeepSeek、`gpt-oss-120b`、`o3` 和自定义部署名称不符合。匹配区分大小写，不裁剪空白或移除任意命名空间。Chat Completions 和 Responses 适配器都可将设置作为 `prompt_cache_key` 发送。命名策略不保证兼容网关接受该字段。
 
 Host 构建 builder 时可独立控制默认值：
 
@@ -239,21 +239,21 @@ builder = HarnessBuilder(
 export A13N_HARNESS_MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED=false
 ```
 
-环境值接受 `1/true/yes/on` 或 `0/false/no/off`，不区分大小写，不能含首尾空白。被读取的环境值无效，或 Builder 覆盖不是布尔值时，构建失败。每个 builder 为整个执行图（含子 agent）只记录一次请求头名称和缓存策略，因此环境变化不影响已有 builder 或执行对象。启用缓存键开关只启用 GPT 命名规则，不强制向其他模型注入。禁用补丁不改变任何显式设置，包括非 GPT 模型上的缓存键。
+环境值接受 `1/true/yes/on` 或 `0/false/no/off`，不区分大小写；含首尾空白的值无效。被读取的环境值无效，或 Builder 覆盖不是布尔值时，构建失败。每个 builder 为整个执行图（含子 agent）只记录一次请求头名称和缓存策略，因此环境变化不影响已有 builder 或执行对象。启用缓存键开关只启用 GPT 命名规则，不强制向其他模型注入。禁用补丁不改变任何显式设置，包括非 GPT 模型上的缓存键。
 
 这些开关只控制 Harness 默认值，不控制 provider 原生行为。在解析器中显式绑定 `CodexRequestModel(..., thread_id=context.deps.thread_id)`：其原生 `session-id`、`thread-id` 和 `x-client-request-id` 独立于网关请求头，使用相同 UUID 派生。向适配器传入原始线程 ID，不是已派生 UUID。禁用 Harness 注入时，Codex 适配器仍可提供自己的缓存键。
 
 ### 迁移已有连接
 
-自动网关请求头、提示缓存键和绑定 Codex 会话默认值现在使用派生 UUID，不再使用原始线程 ID。已有线程的出站值切换一次，可能重置上游缓存或路由亲和性。本地历史不变，无需状态迁移。显式原生值保持不变；嵌入调用者若需要旧线上值，可以显式提供，但须符合 Host 验证策略。
+主动启用的网关请求头、自动提示缓存键和绑定 Codex 会话默认值使用派生 UUID，而非原始线程 ID。已有线程的出站值切换一次，可能重置上游缓存或路由亲和性。本地历史不变，无需状态迁移。显式原生值保持不变；嵌入调用者若需要旧线上值，可以显式提供，但须符合 Host 验证策略。
 
-旧版本向所有模型隐式发送 `x-session-id`。该默认值已移除，包括省略新字段的旧配置文件。要保留它，在嵌入 Builder 中选择 `session_affinity_header="x-session-id"`，为各 Harness UI Model 添加 `model_configuration.session_affinity_header: x-session-id`，或在 Service provider 上设置 `configuration.session_affinity_header`。文件不会自动改写。Harness UI 和 Service 有意忽略旧全局请求头开关，防止一个连接的策略泄露到另一个。已有捕获的 Harness UI 执行配置不会改写；编辑模型后启动新的执行组合。
+旧版本向所有模型隐式发送 `x-session-id`。该默认值已移除，包括省略新字段的旧配置文件。要保留它，在嵌入 Builder 中选择 `session_affinity_header="x-session-id"`，为各 Harness UI Model 添加 `model_configuration.session_affinity_header: x-session-id`，或在 Service provider 上设置 `config.session_affinity_header`。文件不会自动改写。Harness UI 和 Service 有意忽略旧全局请求头开关，防止一个连接的策略泄露到另一个。Harness UI 不会改写已捕获的执行组合；新执行会捕获编辑后的模型。
 
 ## 凭据与订阅身份验证
 
-使用 API key 的模型遵循原生 provider 凭据机制。秘密和客户端生命周期放在应用代码中，不放入 `HarnessState`、元数据或 agent 预设。模型字符串本身不能证明访问权限。
+使用 API key 的模型遵循原生 provider 凭据机制。秘密和客户端生命周期放在应用代码中，不放入 `HarnessState`、元数据或 `AgentSpec`。模型字符串本身不能证明访问权限。
 
-`a13n_harness.providers.model.oauth` 模块提供 SDK 级订阅组件：Codex 浏览器/设备登录流程和 `CodexRequestModel`；Grok 凭据来源与 OAuth/设备流程类型，以及 `build_grok_model`。Host 负责用户交互、账号存储、持久化和替换账号的许可。新执行重建已验证模型，不把导出的续接状态当作已保存客户端。
+`a13n_harness.providers.model.oauth` 模块提供 SDK 级订阅组件：Codex 浏览器/设备登录流程；ChatGPT 登录与凭据类型；Grok 凭据来源与 OAuth/设备流程类型，以及 `build_grok_model`；GitHub Copilot 凭据类型，以及 `build_copilot_model`。Codex 模型适配器是 `a13n_harness.models.codex.CodexRequestModel`。Host 负责用户交互、账号存储、持久化和替换账号的许可。新执行重建已验证模型，不把导出的续接状态当作已保存客户端。
 
 直接可用的本地登录体验见 [Harness UI 身份验证](../a13n-harness-ui/models-and-authentication.md)。SDK 集成可先参考[身份验证与 HTTP 客户端示例](model-authentication.md)，再查看[模型身份验证契约](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/16a-model-authentication.md)和 `a13n_harness.providers.model.oauth` 的公开类型；Harness 不提供产品账号数据库。
 
@@ -267,4 +267,4 @@ export A13N_HARNESS_MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED=false
 
 使用 `a13n_harness.providers.model.ModelProviderDefinition` 提供带类型连接和原生 SDK 构造器。`build()` 结果是原生 Pydantic AI Model，可直接传给 Harness。内置项位于 `a13n_harness.providers.model.builtins`。可选模型 OAuth 流程位于 `a13n_harness.providers.model.oauth`，感知线程的 Codex 适配器为 `a13n_harness.models.codex.CodexRequestModel`。
 
-Host 通过代码组合模型定义，经 `ProviderCatalog` 选择。Host 负责持久化、授权和当前账号选择。API key 凭据对象使用 `{"api_key": "..."}`；AWS 和 Google 凭据保留结构化字段。
+Host 通过代码组合模型 provider 定义，经 `ProviderCatalog` 选择。Host 负责持久化、授权和当前账号选择。API key 凭据对象使用 `{"api_key": "..."}`；AWS 和 Google 凭据保留结构化字段。

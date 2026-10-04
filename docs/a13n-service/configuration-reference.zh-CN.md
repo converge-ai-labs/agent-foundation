@@ -1,7 +1,7 @@
 ---
 title: Service 设置参考
 sidebarTitle: 设置参考
-description: 全部 Service 设置的环境变量、类型、范围和默认值。
+description: Service 设置的每个字段，及其环境变量、类型、范围和默认值。
 ---
 
 > [!NOTE]
@@ -199,7 +199,7 @@ description: 全部 Service 设置的环境变量、类型、范围和默认值�
 | `providers.http_origins`           | `A13N_PROVIDERS__HTTP_ORIGINS`           | 字符串数组    | default=[]                                                    |
 | `providers.require_https`          | `A13N_PROVIDERS__REQUIRE_HTTPS`          | 布尔值        | default=true                                                  |
 | `providers.return_urls`            | `A13N_PROVIDERS__RETURN_URLS`            | 字符串数组    | default=[]                                                    |
-| `providers.mcp_servers`            | `A13N_PROVIDERS__MCP_SERVERS`            | McpServers    | default=[]                                                    |
+| `providers.mcp_servers`            | `A13N_PROVIDERS__MCP_SERVERS`            | 对象数组      | default=[]                                                    |
 | `providers.flow_seconds`           | `A13N_PROVIDERS__FLOW_SECONDS`           | 整数          | minimum=30; maximum=1800; default=600                         |
 | `providers.operation_seconds`      | `A13N_PROVIDERS__OPERATION_SECONDS`      | 数值          | minimum=2; maximum=30; default=10                             |
 | `providers.operation_scan_seconds` | `A13N_PROVIDERS__OPERATION_SCAN_SECONDS` | 数值          | maximum=3600; exclusiveMinimum=0; default=30                  |
@@ -227,7 +227,7 @@ description: 全部 Service 设置的环境变量、类型、范围和默认值�
 | 设置                            | 环境变量                              | 类型 / 选项                         | 约束与默认值                                                    |
 | ------------------------------- | ------------------------------------- | ----------------------------------- | --------------------------------------------------------------- |
 | `telemetry.log_level`           | `A13N_TELEMETRY__LOG_LEVEL`           | "DEBUG", "INFO", "WARNING", "ERROR" | default="INFO"                                                  |
-| `telemetry.log_format`          | `A13N_TELEMETRY__LOG_FORMAT`          | LogFormat                           | default="json"                                                  |
+| `telemetry.log_format`          | `A13N_TELEMETRY__LOG_FORMAT`          | "pretty", "json"                    | default="json"                                                  |
 | `telemetry.log_stdout`          | `A13N_TELEMETRY__LOG_STDOUT`          | 布尔值                              | default=true                                                    |
 | `telemetry.log_file`            | `A13N_TELEMETRY__LOG_FILE`            | 字符串或 null                       | format="path"; default=null                                     |
 | `telemetry.log_file_max_mb`     | `A13N_TELEMETRY__LOG_FILE_MAX_MB`     | 整数                                | minimum=1; maximum=10240; default=100                           |

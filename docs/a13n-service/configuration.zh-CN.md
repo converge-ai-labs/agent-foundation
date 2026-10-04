@@ -11,7 +11,7 @@ Service 在启动时从可选 TOML 文件和环境变量读取一次设置。修
 
 未知设置会阻止启动，不会退回默认值。验证错误不会输出密钥值。
 
-共享进程变量 `A13N_OUTBOUND_TLS_VERIFY` 也受支持，不属于节字段覆盖机制。未设置或设为 `true` 会验证目标证书；`false` 会显式关闭自有 HTTP 客户端的验证。其他值会阻止启动。它没有 TOML 字段。请分别在每个 control/worker 进程中设置，修改后重启；具体范围、例外及被拦截风险见[出站 TLS 验证](../a13n-harness/models.md#outbound-tls-verification)。
+共享进程变量 `A13N_OUTBOUND_TLS_VERIFY` 也受支持，不属于 `A13N_<SECTION>__<FIELD>` 机制。未设置或设为 `true` 会验证目标证书；`false` 会显式关闭自有 HTTP 客户端的验证。其他值会阻止启动。它没有 TOML 字段。请在每个 Service 进程中设置，无论其角色，修改后重启；具体范围、例外及被拦截风险见[出站 TLS 验证](../a13n-harness/models.md#outbound-tls-verification)。
 
 接受列表、映射或嵌套节的字段，在环境变量中使用 JSON，例如 `server.trusted_proxies`、`providers` 列表（`http_origins`、`return_urls`、`mcp_servers`）、`encryption.keys`、`plugins.keys` 或嵌套 `auth.mail` 节。例如 `A13N_PLUGINS__KEYS='["notes"]'` 或 `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`。
 
@@ -66,9 +66,13 @@ Redis 保存限流计数器、worker 唤醒和临时线程事件；PostgreSQL �
 
 `objects.max_bytes` 限制单个存储对象；`objects.upload_bytes` 限制单次上传；每 `upload_window_seconds` 允许 `upload_limit` 次上传，按主体计数。
 
+使用 `objects.addressing_style` 选择 `auto`（由 SDK 选择）、`path`（`endpoint/bucket/key`）或 `virtual`（`bucket.endpoint/key`）。虚拟寻址要求 bucket 名称、DNS 和 TLS 证书兼容；阿里云 OSS 等要求 bucket 子域名的提供商应使用它。省略时沿用现有 `path_style` 行为：`true` 强制使用 `path`，`false` 使用 `auto`。显式寻址方式优先于 `path_style=false`；`path_style=true` 与 `auto` 或 `virtual` 同时设置会导致配置校验失败。使用 Helm 时设置 `objects.addressingStyle`；对应环境变量为 `A13N_OBJECTS__ADDRESSING_STYLE`。
+
+对于拒绝可选流式校验和尾部的 S3 兼容提供商（包括阿里云 OSS），请在每个 Service 进程上设置标准 AWS SDK 环境变量 `AWS_REQUEST_CHECKSUM_CALCULATION=when_required`。本地、Docker 和 Kubernetes 部署都适用；使用 Helm 时，将它写入用于创建 `existingSecret` 的环境文件。操作本身要求的校验和仍保持启用，Service 的摘要校验也不变。未设置时使用 SDK 默认值。OSS 不需要原生写入请求头或 bucket 版本控制检查：所有提供商都使用同一条普通 `PutObject` 路径。
+
 ### 加密密钥
 
-Provider 和连接凭据、OAuth token、排队邮件链接使用密钥环当前密钥进行 AES-GCM 加密。每个密钥是 32 字节随机数据，以 base64 编码，使用自选 ID：
+Provider 和连接凭据、模型 provider 的额外请求头、外部目标 token、OAuth token、客户端密钥和待完成的授权、webhook 签名密钥和投递目标，以及排队邮件链接，都使用密钥环当前密钥进行 AES-GCM 加密。每个密钥是 32 字节随机数据，以 base64 编码，使用自选 ID：
 
 ```sh
 export A13N_ENCRYPTION__ACTIVE_KEY_ID=primary
@@ -91,7 +95,7 @@ Service 在 `server.host` 和 `server.port` 提供 HTTP。可使用 `server.tls_
 
 `auth.session_seconds` 是浏览器登录会话寿命。每 `auth.login_window_seconds` 允许 `auth.login_limit` 次密码登录，按客户端地址计数；公共连接授权回调使用相同限制，但单独计数。`auth.invitation_seconds` 决定邀请可接受多久，`auth.link_seconds` 决定密码重置或邮箱修改链接有效多久。
 
-设置 `auth.mail.smtp_host` 后，通过 SMTP 发送身份邮件。未设置时，邀请链接一次性返回给邀请人，密码重置和邮箱修改不可用。邮件链接加密排队，因此 SMTP 需要 `encryption.active_key_id`。链接永不写入日志。
+设置 `auth.mail.smtp_host` 后，通过 SMTP 发送身份邮件。未设置时，邀请链接一次性返回给邀请人，密码重置和邮箱修改不可用。邮件链接加密排队，因此 SMTP 需要加密密钥：`encryption.active_key_id` 加 `encryption.keys`，或 `encryption.key_file`。链接永不写入日志。
 
 ```toml
 [auth.mail]
@@ -114,7 +118,7 @@ Service 对 provider、远程 MCP 服务器、OAuth 服务器和 webhook 端点�
 - `providers.require_https = true`（默认值）时，拒绝明文 HTTP，除非源与 `providers.http_origins` 中的条目完全一致。
 - Host provider 客户端不跟随重定向，拒绝压缩响应，并通过 `providers.response_bytes` 限制响应体。TLS 验证、凭据规则和超时保持有效。
 
-Run 消息通过 `options.configuration` 接受配置，与 Agent overrides 分开：
+提交到线程的消息通过 `options.configuration` 接受配置，与对 agent 修订版本的覆盖（override）分开：
 
 ```json
 {
@@ -125,9 +129,9 @@ Run 消息通过 `options.configuration` 接受配置，与 Agent overrides 分�
 }
 ```
 
-请包含所需 Model、Web、connection 和远程 Environment 的全部域名。`allowed_hosts` 为 null 表示不限制，空数组拒绝全部目标；普通条目精确匹配规范化后的主机名/IP，`regex:<pattern>` 条目则使用 Python 正则匹配完整的规范化主机名。JSON 示例使用双反斜杠表示字面量的点，仅放行 `api.example.com` 或 `docs.example.com`，不放行任意子域或后缀。无效或空表达式会在接受时被拒绝。规范化、子域表达式和转义详见[主机规则与正则表达式](../a13n-harness/context.md#host-rules-and-regular-expressions)。glob、端口和 CIDR 不是主机规则。接受时冻结快照，供输入 URL 读取、执行、故障恢复、resume 和子 Run 使用。Steering 可省略配置或指定完全相同的值；活跃 Run 的不同配置会以 `run_configuration_immutable` 拒绝。使用 `delivery: "next_run"` 选择新的快照。带命名空间的 JSON extensions 仅由显式支持它们的消费者读取。Console 控件由 #823 单独跟进；API 已支持此配置。
+请在 `allowed_hosts` 中列出运行调用的每个模型 provider、web provider、连接和远程环境端点的域名。`allowed_hosts` 为 null 表示不限制，空数组拒绝全部目标；普通条目精确匹配规范化后的主机名/IP，`regex:<pattern>` 条目则使用 Python 正则匹配完整的规范化主机名。JSON 示例使用双反斜杠表示字面量的点，仅放行 `api.example.com` 或 `docs.example.com`，不放行任意子域或后缀。无效或空表达式会在接受时被拒绝。规范化、子域表达式和转义详见[主机规则与正则表达式](../a13n-harness/context.md#host-rules-and-regular-expressions)。glob、端口和 CIDR 不是主机规则。接受时冻结快照，供输入 URL 读取、执行、故障恢复、resume 和子运行使用。引导可省略配置或指定完全相同的值；活跃运行的不同配置会以 `run_configuration_immutable` 拒绝。使用 `delivery: "next_run"` 选择新的快照。带命名空间的 JSON extensions 仅由显式支持它们的消费者读取。Console 没有此配置的控件；请通过 API 设置。
 
-授权只检查 URL 声明的域名，不预解析 DNS、不分类地址，也不固定 IP。Run 之外的管理操作保留进程的 URL/HTTPS 策略，不借用 Run 配置。任意 shell、第三方插件和不透明 SDK 流量的网络限制应在部署或 Environment 边界实施。
+`allowed_hosts` 检查只比较 URL 声明的域名：不预解析 DNS、不分类地址，也不固定 IP。运行之外的管理操作保留进程的 URL/HTTPS 策略，不借用运行的配置。任意 shell、第三方插件和不透明 SDK 流量的网络限制应在部署或环境边界实施。
 
 ### 出站代理
 
@@ -141,13 +145,13 @@ export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
 
 支持大写形式和 `ALL_PROXY`；选择及绕过匹配遵循 `httpx2`。HTTP 代理 URL 可以通过 CONNECT 转发 HTTPS 流量。模型、Remote MCP/OAuth、connector、记录型记忆、web 请求、模型目录、webhook 和宿主 HTTP 客户端的其他调用方都使用这些路由。
 
-**部署运维人员的代理属于可信出站基础设施。** 声明域名授权和 TLS 验证独立于路由保持有效。代理负责最终 DNS 和目标网络限制；直连及 `NO_PROXY` 路由同样使用原生传输的 DNS，不在应用层固定 IP。代理请求失败不会自动回退为直连。
+**部署运维人员的代理属于可信出站基础设施。** `allowed_hosts` 检查和 TLS 验证独立于路由保持有效。代理负责最终 DNS 和目标网络限制；直连及 `NO_PROXY` 路由同样使用原生传输的 DNS，不在应用层固定 IP。代理请求失败不会自动回退为直连。
 
-HTTPS Envd 挂载也使用环境代理；明文本地或 provider 私有 Envd 链接保持直连。其他 SDK 管理的环境和存储传输保持各自代理行为。这不会改变 Envd 受控出站 broker 或其执行隔离策略。
+通过 HTTPS 连接 `a13n-envd` 也使用这些代理变量；以明文 HTTP 连接本地或 provider 私有的 `a13n-envd` 保持直连。其他 SDK 管理的环境和存储传输保持各自代理行为。这不会改变 Envd 受控出站 broker 或其执行隔离策略。
 
-提供 API 的进程还会从 `https://models.dev/catalog.json` 读取公共模型目录，默认最多每 60 秒一次，用于 Console 模型选择器。无法访问时目录不可用，需要按 ID 添加模型。
+提供 API 的进程还会从 `https://models.dev/catalog.json` 读取公共模型目录，用于 Console 模型选择器。目录满一小时后，读取会触发刷新；刷新失败后至少 60 秒才重试；没有设置可以改变这一行为。无法访问时目录不可用，需要按 ID 添加模型。
 
-例如，使用 Docker 宿主机上的模型服务器：
+例如，用 `providers.http_origins` 允许以明文 HTTP 访问 Docker 宿主机上的模型服务器：
 
 ```toml
 [providers]
@@ -207,7 +211,7 @@ Service 将每次尝试的 Harness span 导出到一个 trace 后端，并从同
 
 ## 工作空间自动配置
 
-自动 Local 和 Docker 配置只在单机 `all` 角色执行，两者默认关闭。例如：
+自动配置 Local 和 Docker 环境 provider 及其模板只在单机 `all` 角色执行，两者默认关闭。例如：
 
 ```toml
 [provisioning.local]
@@ -218,10 +222,10 @@ root = "/srv/a13n/environments"
 enabled = true
 ```
 
-Local 必须显式提供 Service 所在机器的绝对根目录，没有通用默认值。它也会启用 Local provider 类型。`make dev` 提供自己的检出路径。请用此 Local 节替代已停用的 `environments.allow_local` 设置。禁用 Local 会保留目录和资源，但后续执行需要重新启用。
+Local 必须显式提供 Service 所在机器的绝对根目录，没有通用默认值。它也会启用 Local provider 类型。`make dev` 提供自己的检出路径。禁用 Local 会保留其目录、provider 和模板，但在重新启用 Local 之前，运行无法使用 Local 环境。
 
 Docker 使用现有运维 Engine 设置 `environments.docker_host`，或进程的 Docker 环境。Compose 内运行需要访问 Engine，通常通过提供的单机部署挂载 socket。仅安装 Docker CLI 不够。Docker 自动配置不影响手动创建的 Docker provider。
 
-环境变量覆盖按组件使用 JSON 对象，例如 `A13N_PROVISIONING__DOCKER='{"enabled":true}'`。默认 Docker 模板固定使用与已安装 Service 版本匹配的 GHCR 配套镜像；首次创建实例时按需拉取。提供的挂载 socket 的 Compose 部署启用 Docker，关闭 Local；其中 `A13N_DOCKER_ENVIRONMENT_IMAGE` 可覆盖初始模板镜像。
+环境变量为每个嵌套节使用一个 JSON 对象，例如 `A13N_PROVISIONING__DOCKER='{"enabled":true}'`。默认 Docker 模板固定使用与已安装 Service 版本匹配的 GHCR 配套镜像；首次创建实例时按需拉取。提供的挂载 socket 的 Compose 部署启用 Docker，关闭 Local；其中 `A13N_DOCKER_ENVIRONMENT_IMAGE` 可覆盖初始模板镜像。
 
-使用本地构建镜像时，运行 `make image-docker-environment`，设置 `image = "a13n-docker-environment:local"` 和 `pull_policy = "never"`。设置只初始化资源一次；要改变未来实例，请通过 Console 或 API 修改已有模板。已有实例保留原始镜像。重试和职责规则请参阅[自动本地配置](environments.md#automatic-local-setup)。
+使用本地构建镜像时，运行 `make image-docker-environment`。然后在 `[provisioning.docker]` 中设置 `image = "a13n-docker-environment:local"` 和 `pull_policy = "never"`。设置只初始化资源一次；要改变未来实例，请通过 Console 或 API 修改已有模板。已有实例保留原始镜像。重试和职责规则请参阅[工作空间自动配置](environments.md#workspace-provisioning)。

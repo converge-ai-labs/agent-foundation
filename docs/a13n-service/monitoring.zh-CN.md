@@ -3,16 +3,16 @@ title: 监控与排障
 description: 使用日志、指标、trace 和用量记录回答运维问题。
 ---
 
-Service 记录三类观测信号，分别用于回答不同问题：
+Service 产生三类观测信号（日志、指标和 trace），并在 PostgreSQL 中记录用量事实。它们分别用于回答不同问题：
 
-| 问题                             | 查看位置                                      |
-| -------------------------------- | --------------------------------------------- |
-| 这次请求或运行发生了什么？       | 按 `request_id` 或 `run_id` 搜索[日志](#logs) |
-| Service 是否健康、积压或失败？   | [指标](#metrics)、告警规则和运维看板          |
-| Agent 在一次尝试中做了什么？     | 该尝试的 [trace](agents-and-runs.md#traces)   |
-| 租户使用了多少，其运行做了什么？ | PostgreSQL 中的[用量](#usage)记录             |
+| 问题                                 | 查看位置                                      |
+| ------------------------------------ | --------------------------------------------- |
+| 这次请求或运行发生了什么？           | 按 `request_id` 或 `run_id` 搜索[日志](#logs) |
+| Service 是否健康、积压或失败？       | [指标](#metrics)、告警规则和运维看板          |
+| Agent 在一次尝试中做了什么？         | 该尝试的 [trace](agents-and-runs.md#traces)   |
+| 工作空间使用了多少，其运行做了什么？ | PostgreSQL 中的[用量](#usage)记录             |
 
-日志和指标永不包含凭据、请求或响应体、URL、查询字符串。指标不会标记租户或对象；租户级数据来自 PostgreSQL。
+日志和指标永不包含凭据、请求或响应体、URL、查询字符串。指标不会标记组织、工作空间或对象；工作空间级数据来自 PostgreSQL。
 
 ## 日志
 
@@ -62,20 +62,22 @@ log_stdout = false      # only the file
 metrics_port = 9464
 ```
 
-| 指标                                   | 标签                                                             | 含义                                         |
-| -------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------- |
-| `http_server_request_duration_seconds` | `http_request_method`, `http_route`, `http_response_status_code` | 请求时长，包含事件流                         |
-| `a13n_runs_accepted_total`             | `trigger`                                                        | 接收的运行数                                 |
-| `a13n_runs_sealed_total`               | `status`, `reason`                                               | 已封存运行数；`reason` 为失败码              |
-| `a13n_attempt_queue_wait_seconds`      | —                                                                | 已到执行时间的运行等待 worker 的时长         |
-| `a13n_attempt_duration_seconds`        | `status`                                                         | 从领取到结束的尝试时长                       |
-| `a13n_worker_slots`                    | `state`: `free`, `busy`                                          | Worker 的执行尝试槽位                        |
-| `a13n_backlog_size`                    | `queue`                                                          | 已到执行时间的运行或某 outbox 类型的待投递数 |
-| `a13n_backlog_oldest_age_seconds`      | `queue`                                                          | 最早到期项的等待时长                         |
-| `a13n_outbox_deliveries_total`         | `kind`, `result`                                                 | Webhook、邮件等投递结果                      |
-| `a13n_sweep_passes_total`              | `sweep`, `result`                                                | 后台扫描次数                                 |
+| 指标                                   | 标签                                                             | 含义                                                                                                                                                                   |
+| -------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http_server_request_duration_seconds` | `http_request_method`, `http_route`, `http_response_status_code` | 请求时长，包含事件流                                                                                                                                                   |
+| `a13n_runs_accepted_total`             | `trigger`                                                        | 接收的运行数                                                                                                                                                           |
+| `a13n_runs_sealed_total`               | `status`, `reason`                                               | 已封存运行数；`reason` 为失败码                                                                                                                                        |
+| `a13n_attempt_queue_wait_seconds`      | —                                                                | 已到执行时间的运行等待 worker 的时长                                                                                                                                   |
+| `a13n_attempt_duration_seconds`        | `status`                                                         | 从领取到结束的尝试时长                                                                                                                                                 |
+| `a13n_worker_slots`                    | `state`: `free`, `busy`                                          | Worker 的执行尝试槽位                                                                                                                                                  |
+| `a13n_backlog_size`                    | `queue`                                                          | 已到执行时间的运行或某 outbox 类型的待投递数                                                                                                                           |
+| `a13n_backlog_oldest_age_seconds`      | `queue`                                                          | 最早到期项的等待时长                                                                                                                                                   |
+| `a13n_outbox_deliveries_total`         | `kind`, `result`                                                 | Webhook、邮件等投递结果                                                                                                                                                |
+| `a13n_sweep_passes_total`              | `sweep`, `result`                                                | 后台扫描次数                                                                                                                                                           |
+| `a13n_outbox_backlog_alert`            | `kind`                                                           | 某 outbox 类型的积压持续超过阈值达 `backlog_alert_seconds` 时为 1，否则为 0；进程重启后计时重置。参阅 [outbox 保留与容量](operations.md#outbox-retention-and-capacity) |
+| `a13n_outbox_dead`                     | `kind`                                                           | 某 outbox 类型保留有 dead 投递时为 1，否则为 0                                                                                                                         |
 
-Worker 也提供 Harness 指标，例如 `a13n_harness_run_duration_seconds`，以及模型 token 用量 `gen_ai_client_token_usage`；参阅 [Harness 观测](../a13n-harness/observation.md)。Control 副本每 15 秒查询积压数，上限为 10,000；所有 control 副本报告相同值，应取最大值。
+Worker 也提供 Harness 指标，例如 `a13n_harness_run_duration_seconds`，以及模型 token 用量 `gen_ai_client_token_usage`；参阅 [Harness 观测](../a13n-harness/observation.md)。`all` 和 `control` 副本每 15 秒查询积压数，上限取 10,000 与该类型 `backlog_count` 中的较大值；所有副本报告相同值，应取最大值。两个 outbox gauge 同样如此。
 
 [监控套件](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/monitoring)包含告警规则、运维看板和用量看板，并提供 Prometheus、VictoriaMetrics、其 Kubernetes operator 和 Grafana 的配置说明。
 
@@ -83,7 +85,7 @@ Worker 也提供 Harness 指标，例如 `a13n_harness_run_duration_seconds`，�
 
 从响应的 `X-Request-Id` 开始，错误体中也将它作为 `request_id` 返回：
 
-1. 按 `request_id` 搜索日志。`Request finished` 显示路由和状态。启动运行的请求还记录 `Run accepted` 及 `run_id`；被拒绝请求没有运行，状态和错误体说明原因。排在活跃运行之后的消息会稍后启动运行，可在线程收件箱中找到。
+1. 按 `request_id` 搜索日志。`Request finished` 显示路由和状态。启动运行的请求还记录 `Run accepted` 及 `run_id`；被拒绝请求没有运行，状态和错误体说明原因。排在活跃运行之后的消息会启动后续运行；请在线程收件箱中找到该消息的条目，运行被接收后，条目会指明对应运行。
 
 2. 按 `run_id` 搜索日志。记录停在哪里，就能判断运行的位置：
 
@@ -100,13 +102,11 @@ Worker 也提供 Harness 指标，例如 `a13n_harness_run_duration_seconds`，�
 
 ## 用量
 
-租户用量作为事实记录保存在 PostgreSQL，绝不写入指标。工作空间通过[用量 API](agents-and-runs.md#usage)读取自身用量。运维人员可导入监控套件的用量看板，通过只读数据库角色读取按组织、工作空间和模型统计的运行及模型用量。
-
-Outbox 还提供 `a13n_outbox_backlog_alert{kind}`，表示持续超过积压阈值，以及 `a13n_outbox_dead{kind}`，表示存在保留中的 dead 投递。取 control 副本中的最大值。两者均为每 15 秒更新的 0/1 gauge；进程重启后积压计时重置。默认策略、覆盖和处理建议请参阅 [outbox 保留与容量](operations.md#outbox-retention-and-capacity)。
+工作空间用量作为事实记录保存在 PostgreSQL，绝不写入指标。工作空间通过[用量 API](agents-and-runs.md#usage)读取自身用量。运维人员可导入监控套件的用量看板，通过只读数据库角色读取按组织、工作空间和模型统计的运行及模型用量。
 
 ### Console 中的工作空间用量
 
-打开 **Observe → Usage** 查看当前工作空间。可选择最近 7 天、30 天，或最长 366 天的自定义范围。概览显示模型成本、token、缓存输入、缓存命中率、Run 数、请求数和平均 Run 时长。日图表可在 Spend 和 Tokens 间切换，再通过分页明细比较 Agent 或模型。
+打开 **Observe → Usage** 查看当前工作空间。可选择最近 7 天、30 天，或最长 366 天的自定义范围。概览显示模型成本、token、缓存输入、缓存命中率、运行数、请求数和平均运行时长。日图表可在 Spend 和 Tokens 间切换，再通过分页明细比较 agent 或模型。
 
 ![Console 中最近 30 天的成本、token、缓存命中率与每日花费](../../.github/assets/service-console.webp)
 
@@ -114,6 +114,6 @@ Outbox 还提供 `a13n_outbox_backlog_alert{kind}`，表示持续超过积压阈
 
 Spend 包含记录的美元模型成本。没有价格的请求单独计数：部分小计不是完整成本；成本全部未知时显示不可用。缓存输入已经包含在输入 token 中。缓存命中率按缓存输入总和除以输入总和计算，不是请求百分比的平均值。
 
-用量日期按入库时间计算，Run 数按启动时间计算。平均 Run 时长涵盖已启动且封存的 Run，从启动到封存计算，包括中途的执行等待。等待中的 Run 在人工审批前封存；恢复后继 Run 是独立运行。延迟到达的用量可能更新此前日期的总计。图表使用浏览器显示的时区。
+用量日期按入库时间计算，运行数按启动时间计算。平均运行时长涵盖已启动且封存的运行，从启动到封存计算，包括中途的执行等待。等待中的运行在人工审批前封存；恢复后的后继运行是独立运行。延迟到达的用量可能更新此前日期的总计。图表使用浏览器显示的时区。
 
-这些读取直接查询存储的事实，不需要 trace 后端。HTTP 端点为 `GET /api/v1/usage/overview`（总计和每日分桶）、`/api/v1/usage/agents` 和 `/api/v1/usage/models`（分页明细）。均接受 `start` 和不包含边界的 `end` RFC 3339 时间戳；overview 还接受 IANA `timezone`，明细接受 `limit` 和 `cursor`。已有 `/api/v1/usage` 继续提供按 Run、Thread 和 Session 的汇总。
+这些读取直接查询存储的事实，不需要 trace 后端。HTTP 端点为 `GET /api/v1/usage/overview`（总计和每日分桶）、`/api/v1/usage/agents` 和 `/api/v1/usage/models`（分页明细）。均接受 `start` 和不包含边界的 `end` RFC 3339 时间戳；overview 还接受 IANA `timezone`，明细接受 `limit` 和 `cursor`。`GET /api/v1/usage` 返回按运行、线程和会话的汇总。

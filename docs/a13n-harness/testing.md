@@ -1,10 +1,10 @@
 ---
 title: Testing Harness applications
 sidebarTitle: Testing
-description: Test agents at their own boundaries with deterministic models, streams, state, and Environments.
+description: Test Agents at their own boundaries with deterministic models, streams, state, and Environments.
 ---
 
-Test a Harness application at the same boundaries it owns: deterministic model behavior, terminal results, continuation state, public stream events, Environment lifecycle, and selected extensions. Keep provider-network tests separate from the fast application suite.
+Test a Harness application at the boundaries Harness exposes to it: deterministic model behavior, terminal results, continuation state, public stream events, Environment lifecycle, and selected extensions. Keep provider-network tests separate from the fast application suite.
 
 ## Start with `FunctionModel`
 
@@ -46,7 +46,7 @@ async def test_agent_returns_expected_output() -> None:
     assert result.state is not None
 ```
 
-This tests Harness construction, the Pydantic AI loop, terminal normalization, and state export. Use a streaming function when the test needs text deltas, tool calls, deferred interaction, or provider-history shapes.
+This tests Harness construction, the Pydantic AI loop, terminal normalization, and state export. Harness sends streamed model requests, so `FunctionModel` needs a `stream_function`; `FunctionModel(function=...)` alone fails the Run. Yield strings for text deltas, and yield `DeltaToolCalls` when the test needs tool calls, deferred interaction, or provider-history shapes.
 
 ## Test continuation explicitly
 
@@ -67,7 +67,7 @@ For application persistence, round-trip the complete `HarnessState` through the 
 
 ## Protect provider prompt prefixes
 
-When a Capability changes model-visible messages, drive at least two model requests inside one Run. Capture the messages received by the Model, compare each complete sequence with the equal-length prefix of the next request through the public message codec, and confirm the final transformation remains in canonical result history. This detects request-local transformations that were not written back to active history. If the Capability intentionally replaces history, assert that exact transition instead of weakening or omitting the prefix check.
+When a Capability changes model-visible messages, drive at least two model requests inside one Run. Capture the messages received by the Model. Through the public message codec, compare each complete sequence with the equal-length prefix of the next request. Confirm that the final transformation remains in canonical result history. This detects request-local transformations that were not written back to active history. If the Capability intentionally replaces history, assert that exact transition instead of weakening or omitting the prefix check.
 
 When that Capability also contributes instructions, capture `AgentInfo.instructions` for every request and require them to remain identical. If the Capability contract intentionally changes instructions, assert the exact expected transition instead of weakening the stability check.
 
@@ -91,11 +91,11 @@ assert terminal is not None
 terminal.raise_for_status()
 ```
 
-Add a test that exits the consumer early when the application exposes streaming to callers. The application must still close the stream scope so temporary Environment resources and run-local collaborators are released.
+Add a test that exits the consumer early when the application exposes streaming to callers. The application must still close the stream scope so temporary Environment resources and Run-local collaborators are released.
 
-## Separate definition and run authority
+## Separate definition and Run authority
 
-Test definition-selected Capabilities with fixed fakes. Inject user-specific policy, model routing, media, document, Web, or interaction collaborators through fresh run bindings. This keeps tests aligned with the production ownership boundary and prevents credentials or mutable authority from leaking into reusable definitions.
+Test definition-selected Capabilities with fixed fakes. Inject user-specific policy, model routing, media, document, Web, or interaction collaborators through fresh Run bindings. This keeps tests aligned with the production ownership boundary and prevents credentials or mutable authority from leaking into reusable definitions.
 
 When a Capability exposes tools, test both sides:
 
@@ -104,11 +104,11 @@ When a Capability exposes tools, test both sides:
 
 ## Test Environment integration at three levels
 
-| Level                 | Use                                              | Assert                                                            |
-| --------------------- | ------------------------------------------------ | ----------------------------------------------------------------- |
-| Unit                  | Fake typed Environment ports or collaborators    | Tool arguments, result shaping, policy, and errors                |
-| Local integration     | Direct Local provider with a temporary directory | Real file/process behavior and cleanup                            |
-| Isolation integration | Local Envd with a built `a13n-envd` binary       | EIP negotiation, isolation prerequisites, lifecycle, and recovery |
+| Level                 | Use                                              | Assert                                                                                               |
+| --------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Unit                  | Fake typed Environment ports or collaborators    | Tool arguments, result shaping, policy, and errors                                                   |
+| Local integration     | Direct Local Provider with a temporary directory | Real file/process behavior and cleanup                                                               |
+| Isolation integration | Local Envd with a built `a13n-envd` binary       | Environment Interaction Protocol (EIP) negotiation, isolation prerequisites, lifecycle, and recovery |
 
 Direct Local is not an isolation substitute. A test that must prove the EIP or native-isolation boundary should use the real Local Envd path.
 
@@ -120,7 +120,7 @@ make local-envd-test
 
 ## Test plugins as installed packages
 
-For entry-point discovery, build or install the extension distribution in an isolated environment rather than patching the catalog. Verify explicit selection, configuration validation, fresh per-run instances, cleanup, and failure isolation.
+For entry-point discovery, build or install the extension distribution in an isolated Python virtual environment rather than patching the catalog. Verify explicit selection, configuration validation, fresh per-Run instances, cleanup, and failure isolation.
 
 The repository's [plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) includes entry-point and direct-code paths with offline tests.
 

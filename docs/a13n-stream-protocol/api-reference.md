@@ -21,7 +21,7 @@ Stream Protocol exposes AG-UI 1.0 observation and content projection APIs. It co
 | `CustomEventAssembler`             | Reassemble ordered frames within one bounded subscription                                                 |
 | `__version__`                      | Installed distribution version                                                                            |
 
-`HarnessAguiObserver(processor=None)` exposes `observe(item)`, `snapshot()`, async `resume(history)`, and read-only `thread_id` / `run_id`. IDs are unbound until observation succeeds. [Events and processors](events.md) owns the live workflow; [Replay and recovery](replay.md) owns atomic reconstruction, validation, and failure behavior.
+`HarnessAguiObserver(processor=None)` exposes `observe(item)`, `snapshot(*, start=0, stop=None)`, `event_count`, async `resume(history)`, and read-only `thread_id` / `run_id`. IDs are unbound until observation succeeds. [Events and processors](events.md) owns the live workflow; [Replay and recovery](replay.md) owns atomic reconstruction, validation, and failure behavior.
 
 ## Fragment a complete custom event
 
@@ -47,7 +47,7 @@ Pass the **complete serialized CUSTOM envelope** to `accept()`, not only its `va
 
 The assembler defaults to 64 MiB pending bytes and eight pending identities; both bounds must be positive. It returns `None` until an entire event is reconstructed, or on rejected fragments. Invalid, inconsistent, out-of-order, nested, or over-budget sequences set the sticky `gap` flag. It never publishes a partial domain event.
 
-One assembler belongs to one live subscription. Reset it on reconnect. A missing tail with no subsequent frame cannot be detected from silence alone; the Host owns stream termination/timeouts and gap presentation. Fragment assembly is not durable replay.
+One assembler belongs to one live subscription. Create a new assembler on reconnect. A missing tail with no subsequent frame cannot be detected from silence alone; the Host owns stream termination/timeouts and gap presentation. Fragment assembly is not durable replay.
 
 ## Input metadata and media
 
@@ -66,7 +66,7 @@ This is one-way observation, not a codec for restoring model input or a media-st
 
 ## Terminal events
 
-- Completed output becomes `RUN_FINISHED` with success outcome and usage. Non-JSON-safe output is omitted and marked `result_omitted` in source metadata rather than serialized as arbitrary Python.
+- Completed output becomes `RUN_FINISHED` with success outcome and usage. Non-JSON-safe output is omitted and marked `result_omitted` in `rawEvent` rather than serialized as arbitrary Python.
 - Suspended output becomes `RUN_FINISHED` with `outcome.type="interrupt"` and one interrupt per deferred call or approval. `id` and `toolCallId` preserve the native call ID; Host pending-answer policy remains authoritative.
 - Cancellation becomes `RUN_FINISHED` with `outcome.type="cancelled"`.
 - Failure becomes `RUN_ERROR` with safe failure code/message and usage.

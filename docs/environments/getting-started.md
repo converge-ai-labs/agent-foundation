@@ -6,7 +6,7 @@ description: Read and write one file through an Environment, without Harness, a 
 
 ## Install from this checkout
 
-The examples track `main`. Use Python 3.13 and the locked workspace:
+The examples track `main`. Use Python 3.13 and the repository lockfile:
 
 ```console
 git clone https://github.com/converge-ai-labs/agent-foundation.git
@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
 The output is `Hello from Environment`.
 
-1. The selection explicitly names Direct Local; installing another Provider would not activate it.
+1. The selection explicitly names Direct Local; installing another Provider does not activate that Provider.
 2. Validation and adapter construction do not access the target.
 3. `async with` enters a single-use operation scope. `ensure_ready({"files"})` prepares the target and checks the required family.
 4. `/hello.txt` is a logical path within this Environment, not the Host filesystem root.
@@ -79,11 +79,11 @@ environment = await direct_local.create(
 result = await executable.run("Inspect the workspace", environment=environment)
 ```
 
-This fragment assumes the workspace still exists and `executable` was built with `DynamicEnvironmentCapability`. Harness handles entry, readiness on use, and close. Supplying an Environment alone does not add tools to a Model.
+This fragment assumes the `workspace` directory still exists and `executable` was built with `DynamicEnvironmentCapability`. Harness handles entry, readiness on use, and close. Supplying an Environment alone does not add tools to the model.
 
 ## Where to go next
 
 - [Choose a backend](index.md) before adding isolation or remote execution.
-- [Lifecycle and state](lifecycle.md) explains retained Docker and cloud-provider targets and explicit destruction.
+- [Lifecycle and state](lifecycle.md) explains retained Docker and cloud Provider targets and explicit destruction.
 - [Operations](operations.md) explains search syntax, output limits, and process handles.
 - [Harness integration](../a13n-harness/environments.md) adds model-facing tools and multiple mounts.

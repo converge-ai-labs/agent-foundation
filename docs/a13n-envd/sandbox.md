@@ -16,9 +16,9 @@ make image-sandbox
 make image-check-sandbox
 ```
 
-The local tag is `a13n-sandbox:local`. The image smoke check verifies startup defaults, the development account's directory permissions and passwordless sudo, and daemon startup under Docker's default permissions. Protocol and execution-isolation tests remain in the envd test suite.
+The local tag is `a13n-sandbox:local`. The image smoke check verifies startup defaults, the `sandbox` account's directory permissions and passwordless sudo, and daemon startup under Docker's default permissions. Protocol and execution-isolation tests remain in the Envd test suite.
 
-Published images use `ghcr.io/converge-ai-labs/a13n-sandbox`. Select the envd release tag matching your EIP client; `dev` tracks main, stable releases use `X.Y.Z`, and RCs use `X.Y.Z-rc.N` without advancing `latest`. These instructions describe the source image in this checkout, not a promise that an older published tag already has these defaults.
+Published images use `ghcr.io/converge-ai-labs/a13n-sandbox`. Select the Envd release tag matching your EIP client; `dev` tracks main, stable releases use `X.Y.Z`, and RCs use `X.Y.Z-rc.N` without advancing `latest`. These instructions describe the source image in this checkout, not a promise that an older published tag already has these defaults.
 
 ## Run with a Host
 
@@ -41,7 +41,7 @@ docker run --rm -i \
   a13n-sandbox:local
 ```
 
-A new empty volume inherits the image directory's ownership. Existing volumes and bind mounts retain their ownership; arrange write access for `1000:1000` yourself. The image does not recursively chown mounted files at startup. Closing a Session does not delete workspace files, but removing a container discards files not stored in a volume or bind mount.
+A new empty volume inherits the image directory's ownership. Existing volumes and bind mounts retain their ownership; arrange write access for `1000:1000` yourself. The image does not recursively chown mounted files at startup. Closing a Session does not delete files in `/workspace`, but removing a container discards files not stored in a volume or bind mount.
 
 ### Connect to Harness UI
 
@@ -57,9 +57,9 @@ docker run --rm --name agent-sandbox \
   a13n-envd connect https://host.example.com --host work
 ```
 
-Replace the Host URL with one reachable **from inside the container**. Container `localhost` is not the host computer. Approve the printed verification code at the Host, then leave the container running. This outbound mode needs no Docker port publishing. Subsequent starts reuse the saved Device identity and credential from the state volume. Treat that volume as a credential; do not mount it into another unrelated sandbox. See [registration and saved Hosts](configuration.md#connect-to-a-host). To use the sandbox with a13n Service, run it as an HTTP daemon and [register it as an external target](../environments/remote-envd.md#connect-to-the-service).
+Replace the Host URL with one reachable **from inside the container**. Container `localhost` is not the host computer. Approve the printed verification code at the Host, then leave the container running. This outbound mode needs no Docker port publishing. Subsequent starts reuse the saved Device identity and credential from the state volume. Treat that volume as a credential; do not mount it into another unrelated sandbox. See [registration and saved Hosts](configuration.md#connect-to-harness-ui). To use the sandbox with Service, run it as an HTTP daemon and [register it as an external target](../environments/remote-envd.md#connect-to-the-service).
 
-The persistent installation directory is `/var/lib/a13n-envd`. Standalone generation-private runtime data uses `/run/a13n-envd-state`; `connect` manages its Host-specific runtime under the installation directory. Neither runtime directory is a workspace or a Session recovery checkpoint.
+The persistent installation directory is `/var/lib/a13n-envd`. Standalone generation-private runtime data uses `/run/a13n-envd-state`; `connect` manages its Host-specific runtime under the installation directory. Neither runtime directory is a working directory or a Session recovery checkpoint.
 
 ## Everyday development
 
@@ -86,22 +86,22 @@ For a human debugging an already running container, select the execution account
 docker exec -it --user sandbox agent-sandbox bash
 ```
 
-Docker exec does not pass through envd: omitting `--user sandbox` uses the image's root launch account, and envd's identity, sudo and egress policies do not constrain these direct Docker operations.
+Docker exec does not pass through Envd: omitting `--user sandbox` uses the image's root launch account, and Envd's identity, sudo and egress policies do not constrain these direct Docker operations.
 
 ## Defaults and overrides
 
-| Setting            | Image behavior                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------ |
-| Launcher           | Root, supervised by tini                                                                         |
-| Execution identity | `A13N_ENVD_EXECUTION_UID=1000`, `A13N_ENVD_EXECUTION_GID=1000`                                   |
-| Commands           | `A13N_ENVD_FULL_CONTROL=true` enables the native shell                                           |
-| Sudo               | Existing daemon default allows privilege gains; image sudoers grants `sandbox` passwordless sudo |
-| Egress             | Existing daemon default is `inherit`; no destination filtering is implied                        |
-| Working directory  | `/workspace`                                                                                     |
-| Installation state | `A13N_ENVD_STATE_DIR=/var/lib/a13n-envd`                                                         |
-| Standalone runtime | `A13N_ENVD_RUNTIME_DIR=/run/a13n-envd-state`                                                     |
+| Setting            | Image behavior                                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| Launcher           | Root, supervised by tini                                                                           |
+| Execution identity | `A13N_ENVD_EXECUTION_UID=1000`, `A13N_ENVD_EXECUTION_GID=1000`                                     |
+| Commands           | `A13N_ENVD_FULL_CONTROL=true` enables the native shell                                             |
+| Sudo               | Standalone daemon default allows privilege gains; image sudoers grants `sandbox` passwordless sudo |
+| Egress             | Standalone daemon default is `inherit`; no destination filtering is implied                        |
+| Working directory  | `/workspace`                                                                                       |
+| Installation state | `A13N_ENVD_STATE_DIR=/var/lib/a13n-envd`                                                           |
+| Standalone runtime | `A13N_ENVD_RUNTIME_DIR=/run/a13n-envd-state`                                                       |
 
-Environment overrides work without replacing the default command. For example, disable privilege gains for envd workers and their descendants:
+Environment overrides work without replacing the default command. For example, disable privilege gains for Envd workers and their descendants:
 
 ```bash
 docker run --rm -i \
@@ -111,7 +111,7 @@ docker run --rm -i \
 
 This blocks worker setuid/file-capability privilege gains, including native sudo; it does not change the daemon's root launch identity or restrict a Docker administrator. Set `A13N_ENVD_FULL_CONTROL=false` for file-only use. To run as another account, provision that account in a derived image, set both execution UID/GID values, and arrange its filesystem permissions. Do not use Docker `--user` to change only the daemon identity while leaving incompatible execution IDs or root-owned state paths.
 
-Image environment values take precedence over daemon JSON. Override the corresponding environment variables or use CLI options when changing these defaults. See [configuration precedence and native identity](configuration.md).
+Image environment values take precedence over daemon JSON. Override the corresponding environment variables or use command-line options when changing these defaults. See [configuration precedence and native identity](configuration.md).
 
 ### Opt-in controlled egress
 

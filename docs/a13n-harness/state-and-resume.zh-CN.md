@@ -62,7 +62,7 @@ second = await executable.run(
 )
 ```
 
-`first.thread_id == second.thread_id`，而 `first.run_id != second.run_id`。新 Run 重建当前绑定，创建新的上下文、`EnvironmentRuntime`、插件图和用量累加器。
+`first.thread_id == second.thread_id`，而 `first.run_id != second.run_id`。Host 提供新的绑定，新 Run 创建新的上下文、`EnvironmentRuntime`、Run 绑定插件和用量累加器。
 
 ## 序列化状态
 
@@ -79,7 +79,7 @@ restored = HarnessState.model_validate_json(payload)
 
 ## Fork Thread
 
-将续接数据复制为独立推进的历史时，用 `fork()`。省略 ID 由 Harness 生成，或传入不同的 Host 自选 ID：
+将续接数据复制为独立推进的历史时，用 `fork()`。省略 ID 让 Harness 生成，或传入不同的 Host 自选 ID：
 
 ```python
 branch_state = state.fork(thread_id="thr_productbranch1")
@@ -92,7 +92,7 @@ assert branch_state.message_history == state.message_history
 
 ## 流式期间导出
 
-活动流可导出最新安全公共边界：
+活动流可在最新安全公共边界导出候选状态：
 
 ```python
 async with executable.stream("Work", bindings=fresh_bindings()) as stream:
@@ -100,11 +100,11 @@ async with executable.stream("Work", bindings=fresh_bindings()) as stream:
         checkpoint_candidate = await stream.export_state()
 ```
 
-`export_state()` 不持久化内容，也不暴露任意 token 增量。调用方决定候选是否完整、当前有效且可安全选择。终态结果仍是最简单的完整检查点边界。
+`export_state()` 不持久化内容，也不暴露任意 token 增量。Host 决定候选是否完整、当前有效且可安全选择。终态结果仍是最简单的完整检查点边界。
 
 ## 恢复未回答工具调用
 
-检查点可能包含尚未记录结果的工具调用。崩溃后，即使结果缺失，操作也可能已运行。在将调用视为未知前，先提供 Host 保留的[已接受延迟输入](#recover-an-interrupted-deferred-resume)：外部结果、失败和显式拒绝在所有恢复模式下仍有效。其余未解决调用由 `run()` 和 `stream()` 的单 Run `tool_recovery` 决定是否重新执行：
+检查点可能包含尚未记录结果的工具调用。崩溃后，即使结果缺失，操作也可能已运行。在将调用视为未知前，先提供 Host 保留的[已接受延迟输入](#recover-an-interrupted-deferred-resume)。外部结果、失败和显式拒绝在所有恢复模式下仍有效。其余未解决调用由 `run()` 和 `stream()` 的单 Run `tool_recovery` 决定是否重新执行：
 
 | 模式                 | 恢复后未回答的调用                                   |
 | -------------------- | ---------------------------------------------------- |
@@ -133,11 +133,11 @@ catalog = Capability(
 )
 ```
 
-辅助函数返回原生 `Tool`，只添加元数据，不包装执行；已有 `Tool` 会被复制，保留设置和其他元数据。实例方法可在构造 Capability 时用 `recovery_retryable(self.lookup_record)`。Plugin 可如此声明各工具，无须 Host 知道工具名。
+辅助函数返回原生 `Tool`，只添加元数据，不包装执行；已有 `Tool` 会被复制，保留设置和其他元数据。实例方法可在构造 Capability 时用 `recovery_retryable(self.lookup_record)`。插件可如此声明各工具，无须 Host 知道工具名。
 
 动态 Toolset 构建当前工具时也可使用此函数。已有 `ToolDefinition` 元数据的集成，将 `a13n_harness.tools` 的 `RECOVERY_RETRY_SAFE_METADATA_KEY` 设为布尔 `True`。也支持原生 `SetToolMetadata`。声明从新准备的定义读取，不从已保存消息读取。
 
-声明表示即使之前结果未知，重复操作仍可接受。它与提供方派发重试和 `HarnessToolMetadata.idempotency` 独立：仅有 provider key 不能证明恢复调用会复用原上游操作。
+声明表示即使之前结果未知，重复操作仍可接受。它与提供方派发重试和 `HarnessToolMetadata.idempotency` 独立：仅有 provider 幂等键不能证明恢复调用会复用原上游操作。
 
 ### 按策略恢复
 
@@ -153,7 +153,7 @@ result = await executable.run(
 
 此选项属于 Run，不属于序列化状态或模型重试策略。不保证恰好一次副作用，也不阻止后续模型请求再次调用。
 
-旧 `execute_pending_tools` 已由 `tool_recovery` 替代：`False` 迁移为 `"never"`，`True` 为 `"always"`，`"auto"` 为 `"declared"`。默认现在遵循逐工具声明；未标记工具继续收到未知结果。
+在默认的 `"declared"` 模式下，未标记工具收到未知结果。
 
 ## 结构化挂起
 
@@ -163,7 +163,7 @@ result = await executable.run(
 - `deferred`：确切的原生待处理请求结构；
 - `suspend_reason="deferred"`。
 
-应用在 Run 关闭后处理外部交互，再启动新 Run：
+Host 在 Run 关闭后处理外部交互，再启动新 Run：
 
 ```python
 from a13n_harness import DeferredToolResume
@@ -262,7 +262,7 @@ await context.state.write(
 
 ## Run 本地 shell 观测
 
-`DynamicEnvironmentCapability` 按各挂载实际动作组合 shell 执行、`shell_info` 发现/检查、显式偏移 `shell_wait` 和支持的 stdin/控制工具。引用属于一个 Harness Run，不属于持久进程服务。查询不重置输出；原生完成不代表输出已完整捕获。
+`DynamicEnvironmentCapability` 按各挂载实际动作组合 shell 执行、`shell_info` 发现/检查、显式偏移 `shell_wait` 和支持的 stdin/控制工具。shell 进程引用属于一个 Harness Run，不属于持久进程服务。查询不重置输出；原生完成不代表输出已完整捕获。
 
 Run 关闭释放观测，不会统一终止全部进程。根据 Provider 状态恢复的新 adapter 可能发现后端保留的命令；新 Run 分配新引用，不能使用历史旧引用。进程引用、缓冲、watcher 和输出游标不进入 Harness Capability 状态。Provider 状态保存原生恢复证据；Host 负责目标生命周期和状态发布。
 
@@ -274,7 +274,7 @@ Run 关闭释放观测，不会统一终止全部进程。根据 Provider 状态
 
 | 事实                                  | 负责方              |
 | ------------------------------------- | ------------------- |
-| 可移植对话续接                        | `HarnessState` 候选 |
+| 可移植 Thread 续接                    | `HarnessState` 候选 |
 | 所选检查点和来源                      | Host                |
 | 定义版本和产物锁定                    | Host                |
 | 当前身份、策略和凭据                  | Host 重新构造       |

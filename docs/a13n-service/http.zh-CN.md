@@ -15,16 +15,16 @@ description: 所有端点共用的认证、错误、并发、幂等、分页和�
 curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-提供 `Authorization` 请求头时，cookie 会被忽略。API 密钥仅在自身工作空间生效，不能修改创建它的用户账号。
+提供 `Authorization` 请求头时，cookie 会被忽略。API 密钥仅在自身工作空间生效，不能修改它所属的用户或服务账号的账号信息。
 
 浏览器使用 `POST /api/v1/auth/login` 设置的登录会话 cookie。除 `GET`、`HEAD` 和 `OPTIONS` 外，使用 cookie 认证的请求必须：
 
-- 在 `X-CSRF-Token` 中发送会话的 CSRF token；登录响应返回它，已有会话也可通过 `GET /api/v1/auth/session` 再次获取；
+- 在 `X-CSRF-Token` 中发送登录会话的 CSRF token；登录响应返回它，已有登录会话也可通过 `GET /api/v1/auth/session` 再次获取；
 - 若发送 `Origin` 请求头，其值必须等于 `server.public_url` 的源；回环公共 URL 中，`localhost` 和 `127.0.0.1` 可以互换。
 
 账号操作（修改资料、密码、邮箱、禁用账号、列出登录会话和自己的审计记录）、`GET /api/v1/auth/session`、`POST /api/v1/auth/logout`，以及创建 API 密钥、发送或重发邀请、启动浏览器授权（OAuth 授权码或 connector 账号配置）均需要登录会话。API 密钥调用这些操作统一返回 `403 forbidden`：它不能创建寿命可超过自身的凭据，也不能向第三方发出代你完成操作的链接。没有有效凭据时返回 `401 unauthenticated`；已禁用主体的凭据视为无效。
 
-每个认证后的响应，包括路由响应和认证后发生的错误，都包含 `Cache-Control: no-store`；会话续期时还包含更新的 cookie。
+每个认证后的响应，包括路由响应和认证后发生的错误，都包含 `Cache-Control: no-store`；登录会话续期时还包含更新的 cookie。
 
 ### 工作空间
 
@@ -62,7 +62,7 @@ curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
 | `conflict`              | 409  | 目标状态不允许该操作；`details.reason` 说明原因，例如 `archived`、`builtin`、`last_organization_admin` 或 `idempotency_key_reused`。 |
 | `precondition_failed`   | 412  | `If-Match` 已过期；`details.current_etag` 包含当前值。                                                                               |
 | `payload_too_large`     | 413  | 请求体或文件超过限制（`details.limit`）。                                                                                            |
-| `disabled`              | 422  | 目标或工作空间已禁用或归档。                                                                                                         |
+| `disabled`              | 422  | 请求用到的目标、其主体或工作空间已禁用或归档。修改已归档的 agent 或 skill 则返回 `409 conflict`。                                    |
 | `precondition_required` | 428  | 操作需要 `If-Match`。                                                                                                                |
 | `rate_limited`          | 429  | 请求过多；等待 `Retry-After` 秒后重试（`details.retry_after_seconds`）。                                                             |
 | `internal`              | 500  | 未预期错误；报告时请提供 `request_id`。                                                                                              |
@@ -84,7 +84,7 @@ curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
 
 缺少 `If-Match` 时返回 `428 precondition_required`；值已过期时返回 `412 precondition_failed` 和当前 ETag。请重新读取资源、重新应用修改并重试。比较是精确匹配，弱验证器和 `*` 永不匹配。OpenAPI 将 `If-Match` 声明为可选请求头，但每个声明它的操作实际上都要求提供。
 
-收件箱操作（编辑、撤回、重排排队消息）、环境挂载和线程更新使用**线程** 的 ETag。创建资源和 interrupt 等运行命令不需要 ETag。
+收件箱操作（编辑、撤回、重排排队消息）、环境和记忆挂载修改以及线程更新使用**线程** 的 ETag。其他创建资源的操作，以及 interrupt 等针对运行的命令，不需要 ETag。
 
 ## 幂等请求
 

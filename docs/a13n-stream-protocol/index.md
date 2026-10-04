@@ -29,7 +29,7 @@ flowchart TB
 
 ## One observer, one Run
 
-`HarnessAguiObserver` binds to one Run. `HarnessAguiStreamObserver` instead binds to a root stream and tracks its inline children independently, attributing their output with `subagentRunId`. Host-managed asynchronous executions still use independent observers.
+`HarnessAguiObserver` binds to one Run. `HarnessAguiStreamObserver` instead binds to a root stream and tracks its inline children independently, attributing their output with `subagentRunId`. Host-managed asynchronous child Runs still use independent observers.
 
 `observe()` returns only events produced by the current item. `snapshot()` returns detached accumulated events; it is an in-memory convenience, not a durable log. `resume()` reconstructs observer state from exact Harness source history without publishing history again.
 
@@ -39,19 +39,19 @@ flowchart TB
 uv add a13n-stream-protocol
 ```
 
-Published Stream Protocol pins the matching Harness release. The source [quickstart](getting-started.md) uses the repository's locked workspace to match this documentation on `main`.
+Published Stream Protocol pins the matching Harness release. The source [quickstart](getting-started.md) uses the repository lockfile to match this documentation on `main`.
 
 ## Ownership Summary
 
-| Concern                                                           | Owner                 |
-| ----------------------------------------------------------------- | --------------------- |
-| Harness execution, source lifecycle, result, and `HarnessState`   | Harness               |
-| Harness-to-AG-UI conversion and process-local reconstruction      | Agent Stream Protocol |
-| Visibility policy expressed by a replay-stable processor          | Host processor        |
-| Source-history retention, cursor, gap detection, and live cutover | Host                  |
-| Durable AG-UI IDs, persistence, replay, and fan-out               | Host                  |
-| SSE, WebSocket, Redis, or in-process delivery                     | Host transport        |
-| Rendered view state                                               | Renderer              |
+| Concern                                                           | Owner           |
+| ----------------------------------------------------------------- | --------------- |
+| Harness execution, source lifecycle, result, and `HarnessState`   | Harness         |
+| Harness-to-AG-UI conversion and process-local reconstruction      | Stream Protocol |
+| Visibility policy expressed by a replay-stable processor          | Host processor  |
+| Source-history retention, cursor, gap detection, and live cutover | Host            |
+| Durable AG-UI IDs, persistence, replay, and fan-out               | Host            |
+| SSE, WebSocket, Redis, or in-process delivery                     | Host transport  |
+| Rendered view state                                               | Renderer        |
 
 ## Upgrade to AG-UI 1.0
 
@@ -60,16 +60,16 @@ Upgrade Hosts and renderers together. Python uses `ag-ui-protocol>=1,<2`; browse
 - Logical Run start emits `RUN_STARTED` once, after preparation and before public output.
 - Cancellation and suspension use `RUN_FINISHED` with cancelled or interrupt outcomes; only failure uses `RUN_ERROR`. Deferred call IDs stay native, and Host answer validation is unchanged.
 - Input uses CUSTOM `value.event.role` and `value.event.message_id`, with top-level metadata.
-- Tool results may contain ordered upstream content parts; hidden supplemental media is never public. Unsupported media is shown as unavailable rather than reconstructed from bytes or provider handles.
+- Tool results may contain ordered upstream content parts; hidden supplemental media is never public. Binary data and unsafe URLs become payload-omitted descriptors, never inline bytes; provider file handles stay `FileSource` references without a downloadable URL.
 - Namespace inline child display keys by `subagentRunId`. Child replies do not become root answers. Missing historical child display cannot be reconstructed from model history.
 
-This protocol upgrade does not discard Harness continuation state or usage ledgers. Optional saved-display additions do not require resetting those stores.
+This protocol upgrade does not discard Harness continuation state or usage ledgers.
 
 ## Next Steps
 
-- Read the [Agent Harness guide](../a13n-harness/index.md) for building, streaming, and resuming Agents.
+- Read the [Harness guide](../a13n-harness/index.md) for building, streaming, and resuming Agents.
 - Read the [package README](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-stream-protocol) for package and release details.
-- Consult the [Agent Stream Protocol specification](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-stream-protocol) for the normative observation contract and schema boundary.
+- Consult the [Stream Protocol specification](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-stream-protocol) for the normative observation contract and schema boundary.
 
 ## Reference topics
 

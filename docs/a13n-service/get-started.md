@@ -20,7 +20,7 @@ curl -fL https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/mai
 docker compose -f a13n-service.yaml up -d --wait --pull always
 ```
 
-Service, Console, PostgreSQL, and Redis start together. The stack mounts the host Docker socket and automatically prepares Docker execution environments for your workspace. It publishes only <http://127.0.0.1:8080>. The source file uses the published `latest` image; release assets pin a release version.
+Service, Console, PostgreSQL, and Redis start together. The stack mounts the host Docker socket and automatically adds a Docker environment provider and a `Linux Sandbox` environment template to each workspace. It publishes only <http://127.0.0.1:8080>. The source file uses the published `latest` image; release assets pin a release version.
 
 If you already have a repository checkout, `make compose-up` from its root starts the same stack and prints the Console URL.
 
@@ -34,16 +34,18 @@ Whoever registers first on an uninitialized Service becomes its administrator. K
 
 ## Add a model
 
-1. Open **Models → Add model → Connect a new provider**, choose the provider type (for example OpenAI or Anthropic) and enter its API key.
-2. Select **Connect provider**, then choose a model from the catalog or select **Custom model** and enter an upstream model ID.
-3. Give the model a name, check the upstream ID and API, then select **Add model**. For an OpenAI-compatible endpoint, choose the API it supports, such as **OpenAI Chat Completions**. Choose a model available to your provider account.
+1. Open **Models → Add model → Connect a new provider**.
+2. Choose the provider type, for example OpenAI or Anthropic.
+3. Enter its API key.
+4. Select **Connect provider**, then choose a model from the catalog or select **Custom model** and enter an upstream model ID.
+5. Give the model a name, check the upstream ID and API, then select **Add model**. For an OpenAI-compatible endpoint, choose the API it supports, such as **OpenAI Chat Completions**. Choose a model available to your provider account.
 
 Outbound requests reject private addresses and plain HTTP by default. To use a model server on your own network, allow it first; see [outbound requests](configuration.md#outbound-requests). See [Models](models.md) for every provider type.
 
 ## Create and try an agent
 
-1. Open **Agents → Create agent**, name it `My first agent`, choose your model, and enter instructions such as `You are a helpful assistant. Answer clearly and briefly.`
-2. Save it. Every save creates an immutable version.
+1. Open **Agents → Create manually**, name it `My first agent`, choose your model, and enter instructions such as `You are a helpful assistant. Answer clearly and briefly.`
+2. Save it. Every save creates an immutable revision, listed in Console under **Versions**.
 3. Choose **Try agent** and send `Give me three ideas for a useful agent I could build.` You should see the response stream into the conversation.
 
 This first conversation needs no execution environment, tools, or memory setup. Those can be added after the model connection works.
@@ -79,7 +81,7 @@ To **permanently delete all stack data**, run `docker compose -f a13n-service.ya
 
 ## Deploy the Service
 
-The local Compose stack can keep your existing account and data as you continue using it. For shared deployments, configure the public URL and access before exposing Service; see the deployment guides below. The Service ships as the `a13n-service` Python package, the `ghcr.io/converge-ai-labs/a13n-service` image for `linux/amd64` and `linux/arm64`, and the Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`. Every deployment needs PostgreSQL, Redis and an encryption key; see [Configure Service](configuration.md#required-infrastructure). Two deployment guides are maintained in the repository:
+The local Compose stack can keep your existing account and data as you continue using it. For shared deployments, configure the public URL and access before exposing Service; see the deployment guides below. The Service ships as the `a13n-service` Python package, the `ghcr.io/converge-ai-labs/a13n-service` image for `linux/amd64` and `linux/arm64`, and the Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`. Every deployment needs a public URL, PostgreSQL, Redis, shared object storage and an encryption key; see [Configure Service](configuration.md#required-infrastructure). Two deployment guides are maintained in the repository:
 
 - [Single host with Docker Compose](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#single-host-deployment-with-native-docker): Service, PostgreSQL, Redis and Console on one machine, with Docker environments on the host's Docker Engine.
 - [Kubernetes with Helm](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes): separate control and worker Deployments and a migration Job, with values for a local kind cluster.

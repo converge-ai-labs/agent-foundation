@@ -1,5 +1,5 @@
 ---
-title: Run and maintain
+title: Operate the Service
 description: Process roles, migrations, health checks, background work, operator commands, and backups.
 ---
 
@@ -40,24 +40,24 @@ For a dedicated migration step, such as the Helm chart's migration Job, set `dat
 | `GET /healthz` | Always `200 {"status": "ok", "role": "<role>"}` while the process serves HTTP.                                                     |
 | `GET /readyz`  | `200 {"status": "ready", "role": "<role>"}` once startup finished, background tasks are running and the database schema is usable. |
 
-Readiness returns `503 {"status": "unavailable", "dependency": "runtime"}` before startup completes or after a background task stopped, and `"dependency": "database"` when the schema cannot be checked within `server.readiness_timeout`. Losing Redis keeps the process ready and adds `"degraded": ["redis"]`, because Redis only speeds the Service up.
+Readiness returns `503 {"status": "unavailable", "dependency": "runtime"}` before startup completes or after a background task stopped, and `"dependency": "database"` when the schema cannot be checked within `server.readiness_timeout`. Losing Redis keeps the process ready and adds `"degraded": ["redis"]`, because PostgreSQL holds all durable state; live thread streams and rate limits stop until Redis returns.
 
 ## Background work
 
 Control processes maintain queued work and deliveries in bounded sweeps. Failed passes are logged and retried at the next interval.
 
-| Sweep                           | Interval                           | Work                                                                                                                       |
-| ------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `advance_threads`               | `control.scan_seconds`             | Starts the next queued input of idle threads.                                                                              |
-| `expire_leases`                 | `worker.authority_seconds`         | Ends attempts whose lease expired, so the run continues on another worker or fails.                                        |
-| `expire_credentials`            | `auth.expiry_scan_seconds`         | Deletes expired or revoked login sessions, mail links and unaccepted invitations.                                          |
-| `maintain_environments`         | `environments.scan_seconds`        | Stops or deletes managed environments idle past their template's thresholds, and continues unfinished provider operations. |
-| `renew_environments`            | `environments.scan_seconds`        | Renews ready hosted sandboxes that would otherwise end, each call bounded by `environments.renewal_seconds`.               |
-| `recover_connection_operations` | `providers.operation_scan_seconds` | Settles connection authorization operations whose owner disappeared past their deadline.                                   |
-| `deliver_outbox`                | `control.scan_seconds`             | Delivers webhooks, identity mail and subagent results.                                                                     |
-| `purge_outbox`                  | every 60 seconds by default        | Removes settled deliveries past the kind’s settlement-based retention.                                                     |
+| Sweep                           | Interval                           | Work                                                                                                                                       |
+| ------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `advance_threads`               | `control.scan_seconds`             | Starts the next queued input of idle threads.                                                                                              |
+| `expire_leases`                 | `worker.authority_seconds`         | Ends attempts whose lease expired, so the run continues on another worker or fails.                                                        |
+| `expire_credentials`            | `auth.expiry_scan_seconds`         | Deletes expired or revoked login sessions, mail links and unaccepted invitations.                                                          |
+| `maintain_environments`         | `environments.scan_seconds`        | Stops or deletes managed environments idle past their template's thresholds, and continues unfinished provider operations.                 |
+| `renew_environments`            | `environments.scan_seconds`        | Renews ready hosted sandboxes that would otherwise end, each call bounded by `environments.renewal_seconds`.                               |
+| `recover_connection_operations` | `providers.operation_scan_seconds` | Settles connection authorization operations whose owner disappeared past their deadline.                                                   |
+| `deliver_outbox`                | `control.scan_seconds`             | Delivers webhooks, identity mail and subagent results, purges deleted record memories' namespaces and deletes replaced checkpoint objects. |
+| `purge_outbox`                  | every 60 seconds by default        | Removes settled deliveries past the retention period of their outbox kind.                                                                 |
 
-Deliveries are at least once. A sender claims a batch of `outbox.defaults.batch` rows for `outbox.defaults.lease_seconds`; a failed delivery is retried with exponential backoff (up to one hour between tries) until it has used `outbox.defaults.max_attempts` attempts, and is then marked dead. Webhook subscribers can inspect and redeliver deliveries through the API; see [webhooks](files-and-webhooks.md#webhooks).
+Deliveries are at least once. A sender claims a batch of `batch` rows for `lease_seconds`; a failed delivery is retried with exponential backoff (up to one hour between tries) until it has used `max_attempts` attempts, and is then marked dead. Each value comes from the kind's [outbox policy](#outbox-retention-and-capacity). Workspace administrators can inspect and redeliver webhook deliveries through the API; see [webhooks](files-and-webhooks.md#webhooks).
 
 ## Operator commands
 
@@ -80,9 +80,9 @@ Every process logs each request, run and delivery with the IDs that lead from on
 
 Back up PostgreSQL, the object store and the encryption key ring (or `encryption.key_file`) together. Stored credentials cannot be decrypted without the key that wrote them, and run checkpoints, displays, assets and skill packages live in the object store. The [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades) and the [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#upgrades-and-backups) describe backing up, restoring and upgrading each deployment.
 
-### Outbox retention and capacity
+## Outbox retention and capacity
 
-The same policy applies to webhooks, email, child results, memory purges and checkpoint reclamation. Defaults retain successful deliveries for one day after completion and dead deliveries for fourteen days after failure. Every minute, the purge sweep deletes up to 1000 expired rows per short transaction and repeats for at most five seconds. Pending work is never discarded to shrink the table.
+One outbox policy, with per-kind overrides, governs webhooks, email, child results, memory purges and checkpoint reclamation. Defaults retain successful deliveries for one day after completion and dead deliveries for fourteen days after failure. By default, the purge sweep runs every minute, deletes up to 1000 expired rows per short transaction and repeats for at most five seconds. Pending work is never discarded to shrink the table.
 
 Configure shared defaults and override only the fields that differ for a kind:
 
@@ -111,6 +111,6 @@ delivered_retention_seconds = 3600
 parallel = 2
 ```
 
-Environment overrides follow the existing section convention: `A13N_OUTBOX__DEFAULTS` and `A13N_OUTBOX__BY_KIND` carry JSON objects. The environment replaces the corresponding TOML field, then each kind inherits unspecified policy fields from defaults. Unknown fields and kinds fail startup. Configuration is resolved once per process; restart to apply a change.
+Environment variables follow the section convention: `A13N_OUTBOX__DEFAULTS` and `A13N_OUTBOX__BY_KIND` carry JSON objects. Each variable replaces the corresponding TOML field, then each kind inherits unspecified policy fields from defaults. Unknown fields and kinds fail startup. Configuration is resolved once per process; restart to apply a change.
 
-Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1`, taking the maximum across control replicas. Check the failing destination and restore delivery capacity; retention does not discard pending work.
+Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1`, taking the maximum across `all` and `control` replicas. Check the failing destination and restore delivery capacity; retention does not discard pending work.

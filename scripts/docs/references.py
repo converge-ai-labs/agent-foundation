@@ -57,17 +57,23 @@ def cell(value: object) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ")
 
 
-def schema_label(schema: dict[str, Any]) -> str:
+def schema_label(schema: dict[str, Any], definitions: dict[str, Any] | None = None) -> str:
+    """Label a schema; with `definitions`, a reference shows its choices or `object` instead of its name."""
     if "$ref" in schema:
-        return schema["$ref"].rsplit("/", 1)[-1]
+        name = schema["$ref"].rsplit("/", 1)[-1]
+        if definitions is None or name not in definitions:
+            return name
+        target = definitions[name]
+        return "object" if "properties" in target else schema_label(target, definitions)
     if "anyOf" in schema or "oneOf" in schema:
-        return " or ".join(schema_label(item) for item in schema.get("anyOf", schema.get("oneOf", [])))
+        items = schema.get("anyOf", schema.get("oneOf", []))
+        return " or ".join(schema_label(item, definitions) for item in items)
     if "enum" in schema:
         return ", ".join(json.dumps(value) for value in schema["enum"])
     if "const" in schema:
         return json.dumps(schema["const"])
     if schema.get("type") == "array":
-        return f"array of {schema_label(schema.get('items', {}))}"
+        return f"array of {schema_label(schema.get('items', {}), definitions)}"
     return str(schema.get("type", "schema-defined value"))
 
 
@@ -116,7 +122,7 @@ def render_configuration() -> str:
                 continue
             is_nested = path.count(".") > 0
             env = f"`{variable}` (JSON field `{name}`)" if is_nested else f"`{variable}__{name.upper()}`"
-            row = (f"`{path}.{name}`", env, schema_label(field), constraints(field))
+            row = (f"`{path}.{name}`", env, schema_label(field, definitions), constraints(field))
             groups[section].append("| " + " | ".join(cell(value) for value in row) + " |")
 
     for section, definition in schema["properties"].items():
@@ -127,7 +133,7 @@ def render_configuration() -> str:
     text = """---
 title: Service settings reference
 sidebarTitle: Settings reference
-description: Every Service setting with its environment variable, type, bounds, and default.
+description: Every field of the Service settings, with its environment variable, type, bounds, and default.
 ---
 
 > [!NOTE]
@@ -184,11 +190,11 @@ description: Every built-in Environment Provider configuration field, generated 
 
 Use [Configure Providers](configuration.md) for authoring, configuration/runtime/state boundaries, and cross-field restrictions. These are Provider settings, not standalone daemon JSON defaults.
 
-Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these template configuration objects.
+Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these recipe, account, and credential objects.
 
-## Cloud providers
+## Cloud Providers
 
-All six cloud providers use the same configuration, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud provider guide](providers.md#cloud-providers).
+All six cloud Providers use the same recipe, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud Provider guide](providers.md#cloud-providers).
 
 | Provider | Recipe | Backend | Credential |
 | --- | --- | --- | --- |

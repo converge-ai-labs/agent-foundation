@@ -1,7 +1,7 @@
 ---
 title: Managed tools and invocation policy
 sidebarTitle: Managed tools and policy
-description: Give Host-managed tools one boundary for authorization, credentials, approvals, and bounded output.
+description: Set permissions and review for every local tool, and give Host-managed tools one boundary for authorization, credentials, approvals, and bounded output.
 ---
 
 Ordinary Pydantic AI tools remain ordinary Python: they can use the process's ambient authority. Use Harness-managed tools when a Host needs a common boundary for current authorization, resolved resource identity, short-lived credentials, output bounds, and dispatch certainty.
@@ -69,7 +69,7 @@ The packaged system prompt stays separate from custom `instruction`. A shell-spe
 
 Reviewers return only `risk` and `reason`. Risk order is `low < medium < high < extra_high`; the runtime applies the configured action at or above the threshold. Defaults are global `extra_high` and `deny`. One best rule wins: exact ID, longest prefix, then `*`; missing fields inherit global values, not broader rules. `ToolReviewConfig` contains this policy; code-first reviewers may instead use `ToolReviewPolicy`.
 
-The single common prompt renders XML with an intact redacted current call and original schema, targeting 16 KiB with a 64 KiB hard limit. Optional blocks are omitted explicitly, never by truncating the current operation. Task/correction text, passive Environment information, up to five earlier reviews, and eight recent actions supply bounded context. At most 48 flat evidence records travel with saved Harness state across Runs; they contain no full arguments or results. Human denials and observed dispatch outcomes are distinguished from assessments. History is advisory, not reusable approval or proof of successful external effects.
+Each review request renders the redacted current call and original schema intact as XML, targeting 16 KiB with a 64 KiB hard limit. Optional blocks are omitted explicitly, never by truncating the current operation. Task/correction text, passive Environment information, up to five earlier reviews, and eight recent actions supply bounded context. At most 48 flat evidence records travel with saved Harness state across Runs; they contain no full arguments or results. Human denials and observed dispatch outcomes are distinguished from assessments. History is advisory, not reusable approval or proof of successful external effects.
 
 To implement a trusted reviewer without another model request:
 
@@ -101,7 +101,7 @@ permissions = ToolPermissionsCapability(
 )
 ```
 
-The default model reviewer's request is recorded like the Agent's own model requests: a model usage record with source `tool.review` and the tool/call IDs, priced by the Agent's model-cost policy under the reviewer's `model`. A custom reviewer can return provider usage receipts in `ToolReviewResult.usage` or preserve proven receipts in `ToolReviewError`. The shared gate records them in the existing ledger with source `tool.review` and tool/call IDs for all tools, including shell. Completed `HarnessExtensionEvent(kind="tool")` events with `payload.type="tool_review_result"` expose the redacted result, including risk/reason and usage, plus a separate runtime-computed `decision`. Errors expose a safe code and effective decision with `result=null`. Do not account the event receipts a second time. Missing reviewers produce neither a review call nor a result event.
+The default model reviewer's request is recorded like the Agent's own model requests. It produces a model usage record with source `tool.review` and the tool and call IDs. The Agent's model-cost policy prices it under the reviewer's `model`. A custom reviewer can return provider usage receipts in `ToolReviewResult.usage` or preserve proven receipts in `ToolReviewError`. The shared gate records them in the existing ledger with source `tool.review` and tool/call IDs for all tools, including shell. Completed `HarnessExtensionEvent(kind="tool")` events with `payload.type="tool_review_result"` expose the redacted result, including risk/reason and usage, plus a separate runtime-computed `decision`. Errors expose a safe code and effective decision with `result=null`. Do not account the event receipts a second time. Missing reviewers produce neither a review call nor a result event.
 
 ### Read the native approval decision
 
@@ -119,7 +119,7 @@ def export_report(ctx: RunContext[AgentContext]) -> str:
     return "Export confirmed"
 ```
 
-A structured native approval applies to the whole call, without separate reviewer, permission, or tool approval stages. The Host may construct legal history and native results; Harness does not authenticate their provenance or require historical resource/schema/argument proofs. Review and current policy run again on resume, so a fresh denial or review timeout still blocks execution. Native overrides are validated against the current schema.
+A structured native approval applies to the whole call, without separate reviewer, permission, or tool approval stages. The Host may construct legal history and native results; Harness does not authenticate their provenance or require historical resource/schema/argument proofs. Review and current policy run again on resume, so a fresh denial or review timeout still blocks execution. Native argument overrides are validated against the current schema.
 
 Provider-native tools and external client tools are not local permission-gate calls. Select Host Web search if `web.search` needs a non-allow permission; an active provider-native search tool with that policy fails explicitly instead of claiming enforcement.
 
@@ -217,7 +217,7 @@ Do not claim `read_only` for an operation that writes or sends externally just t
 - `InvocationPolicyDecision.deny(reason)`.
 - `InvocationPolicyDecision.require_approval(reason, metadata=...)`.
 
-Reasons are bounded nonblank text when supplied; approval metadata is finite JSON bounded to 16 KiB. The Host should expose only appropriate safe information. A policy decision is about this prepared invocation, not a permanent grant to future Runs.
+Reasons are bounded nonblank text when supplied; approval metadata is finite JSON bounded to 16 KiB. Put only information that is safe to show into reasons and approval metadata. A policy decision is about this prepared invocation, not a permanent grant to future Runs.
 
 `InvocationPolicyCapability` requires an evaluator. Its optional collaborators are `credential_broker` and `grant_broker`; `strict_managed_tools` defaults to false and `max_dispatch_retries` defaults to 1 (range 0–3). Attach it through fresh Run bindings, not a serialized definition. Without an attached restrictive policy, do not assume managed metadata alone denies an operation. Strict managed mode rejects tools outside the managed boundary; it does not retroactively isolate Python code already running in the Host.
 
@@ -243,6 +243,6 @@ Dispatch retries are bounded and require the supported certainty/idempotency con
 
 A spill needs the supported Environment output path and current access. It does not grant additional file authority. Truncation or references are not complete inline results. Redaction at this managed output boundary is not a universal promise that arbitrary logs, custom callbacks, or unmanaged tools are secret-free.
 
-By default, temporary tool results are written below the default Environment mount's `.a13n/tmp/tool-results/`. A Host can set `RunBindings.tool_result_directory` (also accepted by `RunBindings.embedded()`) to a canonical absolute Environment directory, such as `/environment/scratch/tmp/tool-results`. This applies to both proactive Toolset disclosure and managed-tool overflow without changing the default mount. An unavailable explicit directory does not fall back to the workspace; the result remains a bounded preview with no file path. Harness creates unique Run-private subdirectories and attempts to remove them on Run cleanup, leaving other files alone. These files are not durable outputs or continuation storage.
+By default, temporary tool results are written below the default Environment mount's `.a13n/tmp/tool-results/`. A Host can set `RunBindings.tool_result_directory` (also accepted by `RunBindings.embedded()`) to a canonical absolute Environment directory, such as `/environment/scratch/tmp/tool-results`. This applies to both proactive Toolset disclosure and managed-tool overflow without changing the default mount. An unavailable explicit directory does not fall back to the default mount; the result remains a bounded preview with no file path. Harness creates unique Run-private subdirectories and attempts to remove them on Run cleanup, leaving other files alone. These files are not durable outputs or continuation storage.
 
 See [Environment tools](environments.md) for canonical resource and model-visible operation integration, and [Host embedding](hosting.md) for durable command ownership outside the process-local boundary.

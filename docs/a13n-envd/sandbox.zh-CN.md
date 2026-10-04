@@ -16,9 +16,9 @@ make image-sandbox
 make image-check-sandbox
 ```
 
-本地标签为 `a13n-sandbox:local`。镜像冒烟检查验证启动默认值、开发账号的目录权限和免密码 sudo，以及 Docker 默认权限下的守护进程启动。协议和执行隔离测试仍由 envd 测试套件负责。
+本地标签为 `a13n-sandbox:local`。镜像冒烟检查验证启动默认值、`sandbox` 账号的目录权限和免密码 sudo，以及 Docker 默认权限下的守护进程启动。协议和执行隔离测试仍由 Envd 测试套件负责。
 
-发布镜像使用 `ghcr.io/converge-ai-labs/a13n-sandbox`。选择与 EIP 客户端匹配的 envd 发布标签；`dev` 跟随 main，稳定版本使用 `X.Y.Z`，RC 使用 `X.Y.Z-rc.N`，不会推进 `latest`。本文介绍当前检出中的源码镜像，不保证较旧的已发布标签已经具有这些默认值。
+发布镜像使用 `ghcr.io/converge-ai-labs/a13n-sandbox`。选择与 EIP 客户端匹配的 Envd 发布标签；`dev` 跟随 main，稳定版本使用 `X.Y.Z`，RC 使用 `X.Y.Z-rc.N`，不会推进 `latest`。本文介绍当前检出中的源码镜像，不保证较旧的已发布标签已经具有这些默认值。
 
 ## 配合 Host 运行
 
@@ -41,7 +41,7 @@ docker run --rm -i \
   a13n-sandbox:local
 ```
 
-新建的空卷继承镜像目录的所有权。已有卷和绑定挂载保留原所有权；请自行安排 `1000:1000` 的写入权限。镜像启动时不会递归 chown 挂载文件。关闭会话不会删除工作空间文件，但移除容器会丢弃未存入卷或绑定挂载的文件。
+新建的空卷继承镜像目录的所有权。已有卷和绑定挂载保留原所有权；请自行安排 `1000:1000` 的写入权限。镜像启动时不会递归 chown 挂载文件。关闭会话不会删除 `/workspace` 中的文件，但移除容器会丢弃未存入卷或绑定挂载的文件。
 
 ### 连接 Harness UI
 
@@ -57,9 +57,9 @@ docker run --rm --name agent-sandbox \
   a13n-envd connect https://host.example.com --host work
 ```
 
-将 Host URL 换成**容器内部可以访问** 的地址。容器的 `localhost` 不是宿主计算机。在 Host 上批准打印的验证码，然后保持容器运行。这种出站模式无需发布 Docker 端口。后续启动会复用状态卷中保存的设备身份和凭据。把该卷视为凭据，不要将其挂载到其他无关沙箱。参见[注册与保存的 Host](configuration.md#connect-to-a-host)。要配合 a13n Service 使用沙箱，请以 HTTP 守护进程方式运行，并[注册为外部目标](../environments/remote-envd.md#connect-to-the-service)。
+将 Host URL 换成**容器内部可以访问** 的地址。容器的 `localhost` 不是宿主计算机。在 Host 上批准打印的验证码，然后保持容器运行。这种出站模式无需发布 Docker 端口。后续启动会复用状态卷中保存的设备身份和凭据。把该卷视为凭据，不要将其挂载到其他无关沙箱。参见[注册与保存的 Host](configuration.md#connect-to-harness-ui)。要配合 Service 使用沙箱，请以 HTTP 守护进程方式运行，并[注册为外部目标](../environments/remote-envd.md#connect-to-the-service)。
 
-持久安装目录为 `/var/lib/a13n-envd`。独立运行时的代次私有数据位于 `/run/a13n-envd-state`；`connect` 在安装目录下管理对应 Host 的运行时。两种运行时目录都不是工作空间或会话恢复检查点。
+持久安装目录为 `/var/lib/a13n-envd`。独立运行时的代次私有数据位于 `/run/a13n-envd-state`；`connect` 在安装目录下管理对应 Host 的运行时。两种运行时目录都不是工作目录或会话恢复检查点。
 
 ## 日常开发
 
@@ -86,7 +86,7 @@ python3 -m venv .venv
 docker exec -it --user sandbox agent-sandbox bash
 ```
 
-Docker exec 不经过 envd：省略 `--user sandbox` 会使用镜像的 root 启动账号，envd 的身份、sudo 和出站网络策略不会约束这些直接 Docker 操作。
+Docker exec 不经过 Envd：省略 `--user sandbox` 会使用镜像的 root 启动账号，Envd 的身份、sudo 和出站网络策略不会约束这些直接 Docker 操作。
 
 ## 默认值与覆盖
 
@@ -95,13 +95,13 @@ Docker exec 不经过 envd：省略 `--user sandbox` 会使用镜像的 root 启
 | 启动者     | Root，由 tini 管理                                                  |
 | 执行身份   | `A13N_ENVD_EXECUTION_UID=1000`、`A13N_ENVD_EXECUTION_GID=1000`      |
 | 命令       | `A13N_ENVD_FULL_CONTROL=true` 启用原生 shell                        |
-| Sudo       | 守护进程现有默认值允许提权；镜像 sudoers 授予 `sandbox` 免密码 sudo |
-| 出站网络   | 守护进程现有默认值为 `inherit`；不表示存在目标过滤                  |
+| Sudo       | 独立守护进程默认值允许提权；镜像 sudoers 授予 `sandbox` 免密码 sudo |
+| 出站网络   | 独立守护进程默认值为 `inherit`；不表示存在目标过滤                  |
 | 工作目录   | `/workspace`                                                        |
 | 安装状态   | `A13N_ENVD_STATE_DIR=/var/lib/a13n-envd`                            |
 | 独立运行时 | `A13N_ENVD_RUNTIME_DIR=/run/a13n-envd-state`                        |
 
-覆盖环境变量无需替换默认命令。例如，禁止 envd worker 及其后代进程提权：
+覆盖环境变量无需替换默认命令。例如，禁止 Envd worker 及其后代进程提权：
 
 ```bash
 docker run --rm -i \
@@ -111,7 +111,7 @@ docker run --rm -i \
 
 这会阻止 worker 通过 setuid 或文件 capabilities 提权，包括原生 sudo；它不会改变守护进程的 root 启动身份，也不会限制 Docker 管理员。只需文件操作时，设置 `A13N_ENVD_FULL_CONTROL=false`。要使用其他账号，在派生镜像中预置账号，同时设置执行 UID/GID 并安排文件系统权限。不要只用 Docker `--user` 修改守护进程身份，却保留不兼容的执行 ID 或 root 所有的状态路径。
 
-镜像环境变量优先于守护进程 JSON。修改这些默认值时，覆盖相应环境变量或使用 CLI 选项。参见[配置优先级与原生身份](configuration.md)。
+镜像环境变量优先于守护进程 JSON。修改这些默认值时，覆盖相应环境变量或使用命令行选项。参见[配置优先级与原生身份](configuration.md)。
 
 ### 主动启用受控出站网络
 

@@ -49,7 +49,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-The endpoint is the daemon base URL, not `/eip/control`. Device initialization negotiates the protocol and verifies identity without opening a Session. `open_session()` creates an independent fixed-cwd scope and checks readiness. Session context exit closes only that Session. Device context exit closes its Sessions and physical transport, not the external daemon or workspace.
+The endpoint is the daemon base URL, not `/eip/control`. Device initialization negotiates the protocol and verifies identity without opening a Session. `open_session()` creates an independent fixed-cwd scope and checks readiness. Session context exit closes only that Session. Device context exit closes its Sessions and physical transport, not the external daemon or the files on the Device.
 
 ## Choose a transport
 
@@ -60,7 +60,7 @@ The endpoint is the daemon base URL, not `/eip/control`. Device initialization n
 | `HttpTransport(endpoint, credential, ...)`    | Daemon base URL and attachment credential                      | Authenticated requests and raw transfer streams; client owns its internal HTTP connection pool |
 | `AcceptedWebSocketTransport(connection, ...)` | Already accepted and authenticated `WebSocketConnection`       | Requires negotiated `eip.v1`; does not listen, dial, or authenticate the upgrade               |
 
-All three default to 1 MiB each for `max_request_bytes`, `max_response_bytes`, and `max_transfer_frame_bytes`; limits are positive and narrow to the negotiated descriptor. Increasing a client limit cannot grant unsupported server methods.
+All transports default to 1 MiB each for `max_request_bytes`, `max_response_bytes`, and `max_transfer_frame_bytes`; limits are positive and narrow to the negotiated descriptor. Increasing a client limit cannot grant unsupported server methods.
 
 ### HTTP options
 
@@ -83,13 +83,13 @@ A Device provides:
 
 - `descriptor` and `describe()`: cached or freshly observed Device information, including path style, default working directory and directory-discovery availability.
 - `list_directories(DirectoryListParams(...))`: bounded one-level directory listing with exact expected Device ID and generation, absolute path, offset and limit. It opens no Session.
-- `open_session(working_directory=None, required_methods=(), readiness_timeout=10.0)`: a new independent Session. Omitted cwd selects the Device default. Required methods assert compatibility, not permissions.
+- `open_session(working_directory=None, egress=None, required_methods=(), readiness_timeout=10.0)`: a new independent Session. Omitted cwd selects the Device default. A controlled-egress Device requires `egress`; other Devices reject it. Required methods assert compatibility, not permissions.
 - `attach_session(descriptor)`: explicit attachment to the exact existing Session in the same Device generation during disconnect grace. It never replays operations or resumes transfers.
 - `close()`: close locally owned Sessions and then the physical connection.
 
 Each Session has a fixed `session_id`, generation and working directory. It owns its generated `client`, file transfers, commands, output and receipt namespace. Independent Sessions may run concurrently on any carrier. Operation IDs may be reused across different Sessions without sharing evidence.
 
-`EIPSession` provides `describe()`, `readiness(timeout=10.0)`, `open_reader()`, `open_writer()`, `open_output()`, `close()` and `abort()`. The client maintains Session-local keepalive while open. Session close or abort never closes a sibling Session or borrowed carrier. `abort()` makes a bounded best-effort Session close without claiming the outcome of ambiguous work.
+`EIPSession` provides `describe()`, `readiness(timeout=10.0)`, `open_reader()`, `open_writer()`, `open_output()`, `observe_computer()`, `close()` and `abort()`. The client maintains Session-local keepalive while open. Session close or abort never closes a sibling Session or borrowed carrier. `abort()` makes a bounded best-effort Session close without claiming the outcome of ambiguous work.
 
 Session descriptor refresh may narrow methods and limits; identity, generation and fixed cwd cannot change. A not-ready response or Session-local protocol failure fences that Session. Carrier corruption or loss terminates all local scopes on that connection. Keep the Device owner alive for every borrowing adapter's complete lifetime.
 
@@ -145,7 +145,7 @@ The reader validates contiguous offsets, exact reference, monotonic counters and
 
 ## Timeouts, cancellation, and receipts
 
-`RequestCoordinator` owns the single Device reader and bounded correlation/admission. `SessionRequester` scopes operation calls and binary transfers. Sent abandoned requests retain correlation and capacity until a response or terminal carrier event; a cancelled caller does not cancel a shared stdio write. It is an advanced transport-integration primitive; normal callers use a session and its generated client.
+`RequestCoordinator` owns the single Device reader and bounded correlation/admission. `SessionRequester` scopes operation calls and binary transfers. Sent abandoned requests retain correlation and capacity until a response or terminal carrier event; a cancelled caller does not cancel a shared stdio write. Both are advanced transport-integration primitives; normal callers use an `EIPSession` and its generated client.
 
 `EIPCallContext` requires an operation ID of 1–128 characters and optionally a positive uint64 `timeout_ms`. The operation ID is distinct from the JSON-RPC request ID. Supply a stable operation ID when the method's receipt/replay semantics require reconciliation.
 
@@ -164,7 +164,7 @@ Cancellation, a disconnected carrier, or a local timeout does not prove an alrea
 | `EIPConnectionError`      | Connection establishment/exchange failure, not proof of non-dispatch |
 | `EIPRequestTimeoutError`  | Local wait expired; inspect `dispatched`                             |
 | `EIPMethodError`          | Valid correlated EIP error; inspect typed `error`                    |
-| `EIPSessionStateError`    | Invalid local session/helper state or unavailable method             |
+| `EIPSessionStateError`    | Invalid local Session/helper state or unavailable method             |
 | `EIPTransferError`        | Transfer reset/failure; optional `status` and `offset` evidence      |
 
 Custom carrier integrations implement `EIPTransport` and exchange `ControlFrame` or generated binary `DataFrame` values through `EIPTransportFrame`. They must preserve framing, size limits, serialization, and lifecycle; these exports are not another provisioner API.
@@ -246,4 +246,4 @@ The [EIP contract](https://github.com/converge-ai-labs/agent-foundation/tree/mai
 uv run --locked pytest packages/a13n-envd-client/tests
 ```
 
-The client suite covers framing, sessions, errors, transfers, and output with protocol fixtures. Native process cleanup and daemon availability need the separate Envd integration checks. The Host, not envd, establishes any outer sandbox. For Host-owned process launch/runtime bootstrap, use [Local Envd](index.md#try-local-envd); for application tools, use [Environment operations](../environments/operations.md).
+The client suite covers framing, Sessions, errors, transfers, and output with protocol fixtures. Native process cleanup and daemon availability need the separate Envd integration checks. The Host, not Envd, establishes any outer sandbox. For Host-owned process launch/runtime bootstrap, use [Local Envd](index.md#try-local-envd); for application tools, use [Environment operations](../environments/operations.md).

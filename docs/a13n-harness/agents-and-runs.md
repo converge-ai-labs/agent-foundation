@@ -3,7 +3,7 @@ title: Agents and Runs
 description: Build a reusable executable once, then run or stream each logical Run with fresh bindings.
 ---
 
-Agent Harness keeps Agent construction code-first and process-local. It adds one reusable build boundary and one canonical logical-run boundary around Pydantic AI; it does not create a second Agent loop or a serialized Agent-definition language.
+Harness keeps Agent construction code-first and process-local. It adds one reusable build boundary and one canonical logical-Run boundary around Pydantic AI; it does not create a second Agent loop or a serialized Agent-definition language.
 
 ## Definition and Build
 
@@ -57,11 +57,12 @@ An `AgentDefinition` fixes:
 - one string or concrete model selection;
 - definition-selected Capabilities;
 - trusted Harness middleware plugins;
-- finite inline child definitions;
-- explicitly selected self-healing rules and bounded model-recovery policy;
-- one default-on build-time model-cost policy.
+- finite named child definitions (subagents);
+- explicitly selected self-healing rules and bounded model-recovery policy.
 
-The output contract cannot change per run. Pass a Python output type or Pydantic AI `OutputSpec` through `output_type`, or use `AgentSpec.output_schema`; do not set both.
+The build, not the definition, fixes one more value: the default-on model-cost policy. It uses the current pricing catalog, or the catalog passed as `build(..., pricing_catalog=...)`.
+
+The output contract cannot change per Run. Pass a Python output type or Pydantic AI `OutputSpec` through `output_type`, or use `AgentSpec.output_schema`; do not set both.
 
 ### Refine a loaded preset
 
@@ -91,13 +92,13 @@ spec = AgentSpec(cold_start_filter=ColdStartFilterConfiguration(idle_seconds=3_6
 disabled = spec.with_updates(cold_start_filter=None)
 ```
 
-Successful direct `view` results for files under published skill directories are marked at read time and exempt from cold-start trimming, regardless of file extension. The marker survives saved-history resume; it does not bypass initial output limits, prove the file was read completely, or prevent compaction and handoff from replacing the history. Older unmarked results keep the ordinary trimming behavior, and CodeAct does not transfer an inner read's exemption to its combined output.
+Successful direct `view` results for files under published Skill directories are marked at read time and exempt from cold-start trimming, regardless of file extension. The marker survives saved-history resume; it does not bypass initial output limits, prove the file was read completely, or prevent compaction and handoff from replacing the history. Older unmarked results keep the ordinary trimming behavior, and CodeAct does not transfer an inner read's exemption to its combined output.
 
 Plain Pydantic AI specs receive the same default. An explicitly composed `ColdStartFilterCapability` keeps its policy; `None` disables automatic installation rather than removing an authored Capability.
 
 ### Usage limits and retries
 
-Harness `AgentSpec.usage_limits` is Pydantic AI's native `UsageLimits`. The default permits 1,000 model requests for one logical run and leaves token, tool-call, and cost limits unset:
+Harness `AgentSpec.usage_limits` is Pydantic AI's native `UsageLimits`. The default permits 1,000 model requests for one logical Run and leaves token, tool-call, and cost limits unset:
 
 ```python
 from a13n_harness import AgentSpec
@@ -114,7 +115,7 @@ spec = AgentSpec(
 
 A plain Pydantic AI `AgentSpec` receives the same 1,000-request Harness default. To remove the request-count ceiling explicitly, use `UsageLimits(request_limit=None)`; passing no `usage_limits` argument to `run()` means “use the definition value,” not “disable limits.”
 
-A run can exactly replace the complete definition value:
+A Run can exactly replace the complete definition value:
 
 ```python
 result = await executable.run(
@@ -123,7 +124,7 @@ result = await executable.run(
 )
 ```
 
-The override is not a field-by-field merge. Keep stable workload budgets on `AgentSpec`; use the invocation argument for a narrower or otherwise deliberately different one-run budget. Inline children receive the strictest value for each field across their own definition and authored edge, with an independent usage accumulator. Parent limits do not impose a tree-wide cap.
+The override is not a field-by-field merge. Keep stable workload budgets on `AgentSpec`; use the invocation argument for a narrower or otherwise deliberately different one-Run budget. Inline children receive the strictest value for each field across their own definition and their `SubagentDefinition.usage_limits`, with an independent usage accumulator. Parent limits do not impose a tree-wide cap.
 
 `AgentSpec.retries` remains the native Pydantic AI setting:
 
@@ -146,11 +147,11 @@ spec = AgentSpec(
 )
 ```
 
-The prompt is fixed for one built definition. When a later definition resumes non-empty `HarnessState`, the Harness removes historical `SystemPromptPart` values and places the current ordered blocks at the beginning of the first request. Removing the prompt from the new definition removes those historical parts. A provider-suspended response remains an in-progress native request and is not rewritten; resume it with a compatible definition.
+The prompt is fixed for one built definition. When a Run of a later definition resumes non-empty `HarnessState`, the Harness removes historical `SystemPromptPart` values and places the current ordered blocks at the beginning of the first request. Removing the prompt from the new definition removes those historical parts. A provider-suspended response remains an in-progress native request and is not rewritten; resume it with a compatible definition.
 
 `AgentSpec.instructions` remains the native Pydantic AI instruction plane. Static and dynamic instructions keep their per-request lifecycle and are not merged into or replaced by `system_prompt` reconciliation. Capability- and Toolset-owned guidance also remains instructions.
 
-Toolsets contribute usage guidance only for tools active in their current surface. Harness `AgentSpec.toolset_instructions` defaults to `True`; set it to `False` to suppress Toolset-owned instruction blocks for every run of that definition:
+Toolsets contribute usage guidance only for tools active in their current surface. Harness `AgentSpec.toolset_instructions` defaults to `True`; set it to `False` to suppress Toolset-owned instruction blocks for every Run of that definition:
 
 ```python
 spec = AgentSpec(
@@ -159,7 +160,7 @@ spec = AgentSpec(
 )
 ```
 
-Override that default for one logical run with `RunBindings.toolset_instructions`:
+Override that default for one logical Run with `RunBindings.toolset_instructions`:
 
 ```python
 bindings = RunBindings.embedded(toolset_instructions=True)
@@ -170,19 +171,19 @@ result = await executable.run("Inspect the workspace", bindings=bindings)
 
 ### Model selection
 
-See [Models and authentication](models.md#model-selection).
+See [Models](models.md#model-selection).
 
 ### Model authoring aliases
 
-See [Models and authentication](models.md#model-authoring-aliases).
+See [Models](models.md#model-authoring-aliases).
 
 ### Model characteristics
 
-See [Models and authentication](models.md#model-characteristics).
+See [Models](models.md#model-characteristics).
 
 ### Automatic model request affinity
 
-See [Models and authentication](models.md#automatic-model-request-affinity).
+See [Models](models.md#model-request-affinity).
 
 ## Mandatory Composition
 
@@ -200,7 +201,7 @@ Application code must not add a second mandatory boundary. Optional request/hist
 
 ## Fresh Run Bindings
 
-`RunBindings` carries current, trusted run inputs:
+`RunBindings` carries current, trusted Run inputs:
 
 ```python
 from a13n_harness import (
@@ -226,16 +227,9 @@ bindings = RunBindings.embedded(
 
 `RunBindings.embedded()` supplies an embedded identity and optional advanced integrations. Use it when an embedded application needs run Capabilities, a model resolver, model-context middleware, metadata, or an advanced `EnvironmentRuntime`. Ordinary `run()` and `stream()` calls can omit `bindings`; run normalization creates fresh embedded bindings and an empty Environment runtime when no Environment input is supplied. A Host can construct `RunBindings` directly with an exact `AgentInstanceContext`.
 
-Create fresh bindings for every root, resumed, or child run. Do not persist or reuse live bindings as continuation state. Optional feature providers and overrides use `web`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`; each is consumed by its selected feature Capability rather than a companion Run Capability. Leave selection fields `None` to retain defaults; an explicit empty Skill set or client-tool tuple selects none. The Host owns provider lifetime, including any deliberately shared transport.
+Create fresh bindings for every root, resumed, or child Run. Do not persist or reuse live bindings as continuation state. Optional feature providers and overrides use `web`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`; each is consumed by its selected feature Capability rather than a companion Run Capability. Leave selection fields `None` to retain defaults; an explicit empty Skill set or client-tool tuple selects none. The Host owns provider lifetime, including any deliberately shared transport.
 
-| Stable definition input     | Fresh run input                                            |
-| --------------------------- | ---------------------------------------------------------- |
-| `AgentSpec`                 | Identity and Agent instance context                        |
-| Output contract             | Environment runtime                                        |
-| Agent behavior Capabilities | Model resolver and model-context binding                   |
-| Direct plugins              | Policy and provider collaborators                          |
-| Child topology              | Typed feature overrides and current policy                 |
-| Recovery policy             | Bounded non-authoritative metadata and Observation context |
+Stable definition inputs: `AgentSpec`, output contract, Agent behavior Capabilities, direct plugins, child topology, and recovery policy. Fresh Run inputs: identity and Agent instance context, Environment runtime, model resolver and model-context binding, policy and provider collaborators, typed feature overrides and current policy, and bounded non-authoritative metadata and Observation context.
 
 ## Input
 
@@ -278,12 +272,12 @@ A result has one status:
 | ----------- | ----------------------------------------------------------------- | ------------------------------------------ |
 | `completed` | A validated business output completed and cleanup succeeded       | `output`, `state`, `usage`                 |
 | `suspended` | A supported native deferred tool or approval requires later input | `state`, `deferred`, `suspend_reason`      |
-| `failed`    | The logical run ended with a safe normalized failure              | `failure`, optional safe `state` candidate |
-| `cancelled` | Cancellation stopped the logical run                              | no business output                         |
+| `failed`    | The logical Run ended with a safe normalized failure              | `failure`, optional safe `state` candidate |
+| `cancelled` | Cancellation stopped the logical Run                              | no business output                         |
 
-Use `raise_for_status()` when only completion is acceptable. Use `output_or_raise()` to both validate status and return the typed output. Inspect `status`, `failure`, or `deferred` when the application handles other outcomes explicitly. Roots and children can return `suspended` when fresh `RunBindings.deferred_tools_supported` is enabled (the default). If disabled, dynamic deferral is denied inside the same model loop, and unexpected terminal deferral becomes `failed` with `deferred_tools_unsupported`.
+Use `raise_for_status()` when only completion is acceptable. Use `output_or_raise()` to both validate status and return the typed output. Inspect `status`, `failure`, or `deferred` when the application handles other outcomes explicitly. Roots and Host-managed children can return `suspended` when fresh `RunBindings.deferred_tools_supported` is enabled (the default); built-in inline children always disable deferred tools. If disabled, dynamic deferral is denied inside the same model loop, and unexpected terminal deferral becomes `failed` with `deferred_tools_unsupported`.
 
-`all_messages()` returns the complete detached message history represented by the result. `new_messages()` returns only messages added by that logical run.
+`all_messages()` returns the complete detached message history represented by the result. `new_messages()` returns only messages added by that logical Run.
 
 ## Stream Events
 
@@ -306,9 +300,9 @@ async with executable.stream("Do the work", bindings=bindings) as stream:
 The public stream union contains:
 
 - `HarnessEvent`, wrapping a native Pydantic AI `AgentStreamEvent` or a bounded `HarnessExtensionEvent`;
-- one terminal `HarnessRunResultEvent`, emitted only after owned run resources close successfully.
+- one terminal `HarnessRunResultEvent`, emitted only after owned Run resources close successfully.
 
-Every item carries the same `thread_id` and `run_id` for that logical run plus a monotonically increasing `sequence`. Inline child observations can also appear in the parent stream with their child correlation preserved.
+Every item carries the same `thread_id` and `run_id` for that logical Run plus a monotonically increasing `sequence`. Inline child observations can also appear in the parent stream with their child correlation preserved.
 
 A stream entered and exited without iteration does not start model execution. Iteration starts the canonical event path.
 
@@ -319,7 +313,7 @@ After stream entry:
 - `stream.context` exposes the fresh `AgentContext` to trusted embedding code;
 - `stream.usage` returns a detached `RunUsageSummary` of current local Context usage, not the mutable native accumulator;
 - `await stream.export_state()` returns the latest safe portable state boundary;
-- `await stream.steer(input, input_id=None)` delivers non-empty native user content through Pydantic AI's active-run `priority="asap"` queue and returns its enqueue ID; a host-chosen `input_id` is recorded on the delivered request, and `steering_input_ids(state.message_history)` from `a13n_harness.capabilities.steering` lists the IDs present in exported state;
+- `await stream.steer(input, input_id=None)` delivers non-empty native user content through Pydantic AI's active-run `priority="asap"` queue and returns its enqueue ID. A Host-chosen `input_id` is recorded on the delivered request. `steering_input_ids(state.message_history)` from `a13n_harness.capabilities.steering` lists the IDs present in exported state;
 - `stream.cancel()` requests semantic cancellation;
 - `stream.result` becomes available only after the terminal result event is delivered.
 
@@ -335,12 +329,12 @@ Recovery has narrow owners:
 | ----------------------------------------------------- | ---------------------------------------------------------------- |
 | Provider transport retry                              | Model provider/client and native Pydantic AI retry configuration |
 | Exact provider-history incompatibility                | Default-on `SelfHealingModelCapability` and `SelfHealingModel`   |
-| Interrupted model attempt inside one live logical run | `ModelRecoveryPolicy` and `HarnessRunStream`                     |
+| Interrupted model attempt inside one live logical Run | `ModelRecoveryPolicy` and `HarnessRunStream`                     |
 | Worker/process loss, durable replay, or delivery      | Embedding Host                                                   |
 
-Self-healing is enabled by default and performs only supported one-shot history repairs around the final effective Model, including a concrete, run-resolved, or natively inferred Model. `HarnessBuilder(self_healing_enabled=False)` restores the former opt-in behavior for the root and inline children, including compaction through the same Agent. Rebuilding older definitions or Host captures now enables these repairs without changing their saved schema. Independent native tool-review and media-understanding Agents do not inherit the primary Agent's request Capabilities. It is not a retry for arbitrary model or tool exceptions. Semantic model recovery is disabled by default; opt in with a bounded `ModelRecoveryPolicy` on the definition when continuing an interrupted model attempt is valid for the application.
+Self-healing is enabled by default and performs only supported one-shot history repairs around the final effective Model, including a concrete, Run-resolved, or natively inferred Model. `HarnessBuilder(self_healing_enabled=False)` disables automatic self-healing for the root and inline children, including compaction through the same Agent; only explicitly selected `SelfHealingModelCapability` instances stay active. A rebuilt saved definition or Host capture gets these repairs without a change to its saved schema. Independent native tool-review and media-understanding Agents do not inherit the primary Agent's request Capabilities. Self-healing is not a retry for arbitrary model or tool exceptions. Semantic model recovery is disabled by default; opt in with a bounded `ModelRecoveryPolicy` on the definition when continuing an interrupted model attempt is valid for the application.
 
-An interrupted attempt retains text already emitted, even when the stream stops during a subsequent tool call. The next attempt receives that partial response as interrupted history, not as completed output. Unfinished thinking and tool arguments are excluded; invalid provider-native call/return groups are removed without erasing surrounding recoverable text. Failed or cancelled runs export the same filtered history for a later Host-selected continuation.
+An interrupted attempt retains text already emitted, even when the stream stops during a subsequent tool call. The next attempt receives that partial response as interrupted history, not as completed output. Unfinished thinking and tool arguments are excluded; invalid provider-native call/return groups are removed without erasing surrounding recoverable text. Failed or cancelled Runs export the same filtered history for a later Host-selected continuation.
 
 Recovery never makes uncertain external side effects exactly once. When a tool or provider mutation may have been dispatched without an authoritative result, reconcile current provider state before retrying.
 
@@ -351,13 +345,13 @@ See [Usage, limits, and pricing](usage-and-limits.md) for native usage, provider
 ## Correlation
 
 - `thread_id` identifies one independently advancing history. Resume preserves it; `HarnessState.fork()` creates another.
-- `run_id` identifies one process-local logical execution. Every new root, resume, or replacement run receives a new value.
-- inner model attempts and inline child runs have their own narrower correlation and do not replace Thread or root Run identity.
+- `run_id` identifies one process-local logical execution. Every new root, resume, or replacement Run receives a new value.
+- inner model attempts and inline child Runs have their own narrower correlation and do not replace Thread or root Run identity.
 
 Identifiers are observations and routing keys, not authority.
 
 ## Cleanup
 
-`ExecutableAgent` is immutable reusable build output and owns no entered Model, plugin, Capability, client, or child resource, so it has no `close()` method or async context-manager lifecycle. `run()` internally scopes and closes one `HarnessRunStream`. Callers that use `stream()` must enter that stream with `async with`; early exit then closes the run's temporary resources deterministically.
+`ExecutableAgent` is immutable reusable build output and owns no entered Model, plugin, Capability, client, or child resource, so it has no `close()` method or async context-manager lifecycle. `run()` internally scopes and closes one `HarnessRunStream`. Callers that use `stream()` must enter that stream with `async with`; early exit then closes the Run's temporary resources deterministically.
 
-A clean `HarnessRunResultEvent` means Harness-owned run cleanup completed. It is still only a process-local candidate; a Host decides when to persist a checkpoint, commit durable completion, or deliver output externally.
+A clean `HarnessRunResultEvent` means Harness-owned Run cleanup completed. It is still only a process-local candidate; a Host decides when to persist a checkpoint, commit durable completion, or deliver output externally.

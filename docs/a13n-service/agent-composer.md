@@ -1,13 +1,13 @@
 ---
 title: Agent Composer
-description: A built-in agent that creates and edits agents with you, saving each change after your approval.
+description: A built-in agent that creates agents and new agent revisions with you, saving each one after your approval.
 ---
 
 Agent Composer works in an ordinary conversation. It reads the workspace's models, skills, connections, environment templates and agents, proposes a configuration, and saves it after you approve each write.
 
 ## Start Agent Composer
 
-In Console, open **Agents**, expand the **Create agent** menu and choose **Create with AI**. To change an existing agent, open its detail page and choose **Edit with AI**. Console prepares Agent Composer and opens a new conversation with it.
+In Console, open **Agents** and choose **Create with AI**. To change an existing agent, open its detail page and choose **Edit with AI**. Console prepares Agent Composer and opens a new conversation with it.
 
 Through the API, prepare it, then [start a session](agents-and-runs.md#start-a-conversation) with the returned agent:
 
@@ -16,7 +16,7 @@ curl -X POST "$A13N_URL/api/v1/agent-composer" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-Preparing requires `write` in the workspace. The first call creates the workspace's one built-in agent (`source: "builtin"`), which `GET /api/v1/agents?source=builtin` also finds. Later calls refresh its name and description and add a revision only when its configuration changed. Anyone with `run` can converse with it once it exists.
+Preparing requires `write` in the workspace. The first call creates the workspace's one built-in agent (`source: "builtin"`), which `GET /api/v1/agents?source=builtin` also finds. Later calls refresh its name and description and add a revision only when its configuration changed. Anyone with `run` can start runs with it once it exists.
 
 ## Choose its model
 
@@ -40,7 +40,7 @@ Agent Composer uses the `configuration` toolset. Every tool acts as the principa
 | `create_agent`          | Creates an agent with a name, description and configuration, and returns its `agent_id` and `default_revision_id`.                   | ask                |
 | `create_agent_revision` | Adds a complete configuration as a new revision of an agent, by default making it the default revision.                              | ask                |
 
-Each write stops the run and waits for your [approval](agents-and-runs.md#waits-approvals-and-questions); Console shows the proposed call to approve or deny. Refusals, such as a validation error or a missing permission, are returned to Agent Composer, which reports them.
+Each write call puts the run in `waiting` until you give your [approval](agents-and-runs.md#waits-approvals-and-questions); Console shows the proposed call to approve or deny. Refusals, such as a validation error or a missing permission, are returned to Agent Composer, which reports them.
 
 To change an agent, Agent Composer reads the revision you name, or else its default revision, and writes a whole new revision that keeps every field you did not ask to change. It uses only the model keys and resource IDs its tools returned.
 

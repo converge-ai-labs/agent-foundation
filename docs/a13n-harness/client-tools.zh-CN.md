@@ -1,11 +1,11 @@
 ---
 title: 客户端工具
-description: 声明由 agent 进程之外的应用执行的工具，再携带结果恢复执行。
+description: 声明由客户端应用在 Harness 执行之外执行的工具，再携带结果恢复执行。
 ---
 
 模型可以请求某项操作，但必须由另一个应用执行时，可以使用客户端工具。例如浏览器操作、外部应用集成，或需要认证的其他客户端。声明提供模型所需的说明和 JSON 参数 schema，不包含 Python 执行函数或凭据。
 
-根执行会挂起，并返回带有关联标识的外部调用。Host 负责认证执行方、执行操作或收集其结果、持久化结果，再通过新的执行恢复工作。进程内的函数工具见[工具与依赖](tools-and-dependencies.md)。内置 `ask_user_question` 的请求和答案结构见[人机协作工具](human-in-the-loop.md)；无需自定义客户端工具声明。
+支持延迟工具的执行会挂起，并返回带有关联标识的外部调用。Host 负责认证执行方、执行操作或收集其结果、持久化结果，再携带 `DeferredToolResume` 启动新的执行。进程内的函数工具见[工具与依赖](tools-and-dependencies.md)。内置 `ask_user_question` 的请求和答案结构见[人机协作工具](human-in-the-loop.md)；无需自定义客户端工具声明。
 
 ## 离线声明、挂起与恢复
 
@@ -109,13 +109,13 @@ asyncio.run(main())
 | `default_toolsets`   | `()`    | 定义中配置的默认工具声明                 |
 | `allow_run_override` | `False` | 是否允许 Host 为一次执行替换完整工具范围 |
 
-定义明确允许覆盖时，可以传入 `RunBindings.client_toolsets`。这是**整份列表替换**，不会合并：`client_toolsets=()` 清空可用工具，`None` 保留默认值。单独提供绑定不能安装定义层的能力，也不能改变其覆盖策略。有效的工具声明会经过校验，并为本次执行复制一份。
+定义明确允许覆盖时，可以传入 `RunBindings.client_toolsets`。这是**整份列表替换**，不会合并：`client_toolsets=()` 清空可用工具，`None` 保留默认值。绑定不能安装 `ClientToolsCapability`，也不能改变其 `allow_run_override` 策略。有效的工具声明会经过校验，并为本次执行复制一份。
 
 使用稳定的 `toolset_id` 和工具名。恢复外部调用时，仍须匹配选定的声明及当前继续执行的约定；不能通过更改 schema 或替换执行方，接受不匹配的待处理结果。
 
 ## 声明字段与限制
 
-`ClientToolDefinition` 包含 `name`、`description`、`parameters_json_schema`，以及可选的 `instruction` 和 JSON `metadata`。参数 schema 必须声明 `type: "object"`。指令仅用于引导模型，不会强制实施审批策略。声明不会继续引用调用方可修改的原始输入。
+`ClientToolDefinition` 包含 `name`、`description`、`parameters_json_schema`，以及可选的 `instruction` 和 JSON `metadata`。参数 schema 必须声明 `type: "object"`。指令只是对模型的指导，不会强制实施审批策略。声明不会继续引用调用方可修改的原始输入。
 
 | 项目                | 限制                      |
 | ------------------- | ------------------------- |

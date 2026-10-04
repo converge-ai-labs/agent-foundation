@@ -9,7 +9,7 @@ Harness uses Pydantic AI's native input and output types. It adds a normalized r
 
 ## Return a structured value
 
-This complete offline example validates a Pydantic model. Save it as `output_example.py` in the [quickstart workspace](getting-started.md) and run `uv run python output_example.py`.
+This complete offline example validates a Pydantic model. Save it as `output_example.py` in the [quickstart checkout](getting-started.md) and run `uv run python output_example.py`.
 
 ```python
 import asyncio
@@ -117,7 +117,7 @@ result = await executable.run(input_factory=make_input, environment=environment)
 
 ## Continue history or stream progress
 
-Pass `previous_state=first.state` to continue a Thread; persist the complete `HarnessState` for restart, not just displayed text. `all_messages()` returns detached represented history and `new_messages()` returns this Run's additions.
+Pass `previous_state=first.state` to continue a Thread; persist the complete `HarnessState` for restart, not just displayed text. `all_messages()` returns the complete detached message history of the result, and `new_messages()` returns only the messages this Run added.
 
 Use `async with executable.stream(...)` for incremental public events. Text deltas are progress, not a replacement for the terminal result. A parent stream may also contain child events with different Run correlation; do not mistake a child's terminal event for root completion.
 

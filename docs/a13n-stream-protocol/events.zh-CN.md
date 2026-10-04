@@ -25,7 +25,7 @@ stream observer 保留子执行的原生 ID，并为其输出添加 `subagentRun
 
 `observe()` 只返回该源条目产生的 AG-UI 事件。一个源条目可能产生多个事件，例如带初始内容的文本 part 会同时产生 `TEXT_MESSAGE_START` 和 `TEXT_MESSAGE_CONTENT`。
 
-首次成功观测的条目绑定 `observer.thread_id` 和 `observer.run_id`。后续根条目保持该关联；每个内联子执行独立验证关联并维护分片状态。Harness 启动另一次执行时，使用另一个 observer，即使两次执行推进的是同一线程。
+首次成功观测的条目绑定 `observer.thread_id` 和 `observer.run_id`。后续根条目保持该关联；每个内联子执行独立验证关联并维护分片状态。Harness 启动另一次根执行或异步子执行时，使用另一个 observer，即使两次执行推进的是同一线程。
 
 ### 事件映射
 
@@ -50,7 +50,7 @@ stream observer 保留子执行的原生 ID，并为其输出添加 `subagentRun
 
 ### 内容与大型自定义事件
 
-Capability 事件保留原生名称和载荷，包括用户自定义 kind。文件编辑仍是前后对比数据，摘要仍是摘要数据，shell 状态仍是状态观测。协议不会把它们转换成助手回答或预渲染面板。展示方式由客户端决定。输入使用按来源区分的 CUSTOM 事件，`role` 和 `message_id` 位于 `value.event` 内，`ContentMetadata` 位于顶层；常规显示省略标记为 `display: false` 的内容。公开工具执行值可包含有序的文本、图像、音频、视频或文档 part。工具补充媒体仍仅供模型使用，二进制字节不会进入公开协议。
+Capability 事件保留原生名称和载荷，包括用户自定义 kind。文件编辑仍是前后对比数据，摘要仍是摘要数据，shell 状态仍是状态观测。协议不会把它们转换成 agent 回答或预渲染面板。展示方式由客户端决定。输入使用按来源区分的 CUSTOM 事件，`role` 和 `message_id` 位于 `value.event` 内，`ContentMetadata` 位于顶层；常规显示省略标记为 `display: false` 的内容。公开工具执行值可包含有序的文本、图像、音频、视频或文档 part。工具补充媒体仍仅供模型使用，二进制字节不会进入公开协议。
 
 超过 48 KiB 的自定义事件使用通用 `a13n.stream.fragment` 帧。检查原事件前先重组：
 
@@ -65,7 +65,7 @@ if complete is not None:
     render_custom(complete["name"], complete["value"])
 ```
 
-消息帧保留完整 JSON 结构，不截断源内容。assembler 限制待处理内容，并拒绝不完整或不一致的序列；请检查 `assembler.gap`，重置订阅时替换 assembler。这些是尽力交付的观测，不是持久事件日志。限制和字段见[消息帧契约](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-stream-protocol/00-overview.md#large-custom-events)。
+消息帧保留完整 JSON 结构，不截断源内容。assembler 限制待处理内容，并拒绝不完整或不一致的序列；请检查 `assembler.gap`，重置订阅时替换 assembler。重组后的自定义事件是尽力交付的观测，不是持久事件日志。限制和字段见[消息帧契约](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-stream-protocol/00-overview.md#large-custom-events)。
 
 ### 序列化事件
 
@@ -99,7 +99,7 @@ observer 不压缩流式块，也不实施保留上限。长期运行的 Host �
 
 ## 应用 Host 处理器
 
-处理器可在事件累积并返回前，省略事件或替换允许修改的内容字段：
+处理器可在事件累积并返回前，省略事件，或替换[处理器替换限制](api-reference.md#processor-replacement-limits)中列出的可修改内容字段：
 
 ```python
 from typing import Any

@@ -1,10 +1,10 @@
 ---
 title: Stream Protocol quickstart
 sidebarTitle: Quickstart
-description: Convert an offline Harness Run into AG-UI events. This example uses the real Harness stream and converter but no provider credentials, browser, server, or network transport.
+description: Convert an offline Harness Run into AG-UI events. This example uses the real Harness stream and observer but no provider credentials, browser, server, or network transport.
 ---
 
-## Prepare the source workspace
+## Prepare the source checkout
 
 Use Python 3.13 and the repository lockfile:
 
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Each printed line is an AG-UI event encoded as JSON. The output includes text events, public custom observations, and a terminal event; IDs and timestamps vary. It is **JSON Lines, not SSE**. The application chooses a delivery framing separately.
+Each printed line is an AG-UI event encoded as JSON. The output includes text events, public custom observations, and a terminal event; IDs and timestamps vary. It is **JSON Lines, not SSE**. The Host chooses a delivery framing separately.
 
 1. Harness owns Agent execution and scoped cleanup.
 2. `observe(item)` converts one public source item, potentially into multiple AG-UI events.
@@ -68,11 +68,11 @@ Each printed line is an AG-UI event encoded as JSON. The output includes text ev
 
 Use `HarnessAguiStreamObserver` for a root stream that forwards inline-child observations. It preserves their source correlation and emits child-attributed output without nested root lifecycles. Keep separate stream observers for independently executed root or asynchronous child Runs. `HarnessAguiObserver` rejects other Run correlations and is appropriate only for a strictly single-Run source.
 
-Use the [multi-Run routing example](events.md#observe-a-harness-run) before enabling delegation.
+Read the [stream observer example](events.md#observe-a-harness-run) before you enable delegation.
 
 ## Add a transport deliberately
 
-The converter supplies no HTTP routes, replay cursor, durable event ID, retention policy, or reconnect loop. Your Host must decide:
+Stream Protocol supplies no HTTP routes, replay cursor, durable event ID, retention policy, or reconnect loop. Your Host must decide:
 
 - whether source observations, projected events, or both are retained;
 - which content the consumer may see;

@@ -34,7 +34,7 @@ Administrators can rename an organization or workspace and set an icon (PNG, JPE
 | Role      | Verbs                   | Typical use                                                    |
 | --------- | ----------------------- | -------------------------------------------------------------- |
 | `viewer`  | read                    | Inspect configuration, conversations and results.              |
-| `runner`  | read, run               | Start and steer conversations with existing agents.            |
+| `runner`  | read, run               | Start conversations with existing agents and steer their runs. |
 | `builder` | read, run, write        | Create and change agents and resources.                        |
 | `admin`   | read, run, write, admin | Manage members, invitations, keys, service accounts and audit. |
 
@@ -71,11 +71,11 @@ There is no self-service sign-up: accounts are created only by bootstrap and by 
 
 ## Sign in and login sessions
 
-Console signs in with `POST /api/v1/auth/login` and `{email, password}`. The Service sets a `__Host-a13n_session` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`) and returns a CSRF token; when the public URL is plain HTTP, the cookie is `a13n_session` and not `Secure`. A session lasts `auth.session_seconds` (12 hours by default) from its last use. Login attempts are rate limited per client address and email.
+Console signs in with `POST /api/v1/auth/login` and `{email, password}`. The Service sets a `__Host-a13n_session` cookie (`Secure`, `HttpOnly`, `SameSite=Strict`) and returns a CSRF token; when the public URL is plain HTTP, the cookie is `a13n_session` and not `Secure`. A login session lasts `auth.session_seconds` (12 hours by default) from its last use. Login attempts are rate limited per client address and email.
 
 Requests authenticated by the cookie that change state must send the CSRF token in `X-CSRF-Token`, and a browser `Origin` must equal the Service's public origin (for a loopback public URL, under either `localhost` or `127.0.0.1`). See [HTTP conventions](http.md#authentication).
 
-Under **Personal settings → Login sessions**, or `GET /api/v1/users/me/login-sessions`, you see your live sessions and can revoke any of them. `POST /api/v1/auth/logout` ends the current one, and `GET /api/v1/auth/session` re-reads it and its CSRF token; both need the session cookie itself and refuse an API key with `403 forbidden`.
+Under **Personal settings → Login sessions**, or `GET /api/v1/users/me/login-sessions`, you see your live login sessions and can revoke any of them. `POST /api/v1/auth/logout` ends the current one, and `GET /api/v1/auth/session` re-reads it and its CSRF token; both need the session cookie itself and refuse an API key with `403 forbidden`.
 
 ## Your account
 
@@ -83,7 +83,7 @@ Account operations require a login session; API keys cannot perform them.
 
 - **Profile**: change your name, and your avatar (PNG, JPEG or WebP).
 - **Password**: changing it (`POST /api/v1/users/me/password` with the current password) ends your other login sessions. Passwords have at least 8 characters.
-- **Password reset**: **Forgot your password?** on the sign-in page mails a one-use link valid for `auth.link_seconds`. Resetting ends every login session. Reset requires SMTP.
+- **Password reset**: **Forgot password** on the sign-in page mails a one-use link valid for `auth.link_seconds`. Resetting ends every login session. Reset requires SMTP.
 - **Email change**: submit the new address with your current password; the Service mails a confirmation link to the new address, and the change takes effect when it is opened. Confirming ends every login session. Email change requires SMTP.
 - **Disable**: `POST /api/v1/users/me/disable` with your current password disables your account, ends your other login sessions and revokes your outstanding password-reset and email-change links. Your grants and keys are kept but nothing authenticates as you; runs you started stop at their next authority check. Only an operator can re-enable you.
 
@@ -106,13 +106,13 @@ List and revoke your keys under **My API keys** (`GET /api/v1/users/me/keys`, `D
 A service account is an identity for an application. It belongs to one workspace for its whole life, can only be granted roles there, and authenticates only with API keys. Workspace administrators manage them under **Workspace settings → Service accounts**, or with `/api/v1/workspaces/{workspace_id}/service-accounts`:
 
 - `POST` with `{name, description, role}` creates the account and its workspace grant (`runner` by default).
-- `POST …/service-accounts/{account_id}/keys` with `{name, expires_at?}` issues a key to a logged-in administrator. Copy its secret from the one-time response.
+- `POST …/service-accounts/{account_id}/keys` with `{name, expires_at?}` issues a key for the service account; only an administrator with a login session can call it. Copy its secret from the one-time response.
 - `PATCH` changes the name, description or role, or sets `status` to `disabled` or `active`. A disabled account keeps its keys, but they stop authenticating.
 - `DELETE` retires the account: its grants are removed, its keys revoked and it is disabled. The record remains for audit history.
 
 ## Operator account control
 
-Operators with access to the deployment can disable or re-enable any user, outside tenant authority:
+Operators with access to the deployment can disable or re-enable any user. These commands need no organization or workspace role:
 
 ```sh
 a13n-service --config service.toml user disable --email person@example.com

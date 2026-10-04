@@ -12,7 +12,7 @@ description: 发行包名、导入路径、源码位置、可运行示例和发�
 | `a13n-harness`         | `packages/a13n-harness`         | [Agent 组合与执行](../a13n-harness/index.md)、工具、状态和 provider                                            |
 | `a13n-stream-protocol` | `packages/a13n-stream-protocol` | [将 Harness 观测转换为 AG-UI 事件](../a13n-stream-protocol/index.md)                                           |
 | `a13n-harness-ui`      | `packages/a13n-harness-ui`      | [终端和浏览器工作台](../a13n-harness-ui/index.md)，也可作为[可嵌入的 App](../a13n-harness-ui/embedding.md)使用 |
-| `a13n-envd-client`     | `packages/a13n-envd-client`     | 用于会话、文件、进程和输出的 [Python EIP 客户端](../a13n-envd/python-client.md)                                |
+| `a13n-envd-client`     | `packages/a13n-envd-client`     | 用于 Envd 会话、文件、进程和输出的 [Python EIP 客户端](../a13n-envd/python-client.md)                          |
 | `a13n-service`         | `packages/a13n-service`         | 提供身份管理、资源和持久执行的[托管 agent 运行时](../a13n-service/index.md)                                    |
 | `a13n-logging`         | `packages/a13n-logging`         | 为库和应用提供[结构化日志](../a13n-logging/index.md)                                                           |
 
@@ -20,9 +20,9 @@ description: 发行包名、导入路径、源码位置、可运行示例和发�
 
 ## 原生守护进程
 
-`crates/a13n-envd` 构建 **Envd** 守护进程。它通过 EIP 提供会话、文件、命令、进程和保留输出。请参阅[安装](../a13n-envd/installation.md)、[配置](../a13n-envd/configuration.md)和 [Python 客户端](../a13n-envd/python-client.md)。
+`crates/a13n-envd` 构建 **Envd** 守护进程。它通过 EIP 提供 Envd 会话、文件、命令、进程和保留输出。请参阅[安装](../a13n-envd/installation.md)、[配置](../a13n-envd/configuration.md)和 [Python 客户端](../a13n-envd/python-client.md)。
 
-Harness 的 Local Envd provider 将守护进程连接到 Environment。选择此 provider 时，Harness UI 可以自动获取匹配的可执行文件。
+Harness 的 Local Envd provider 将守护进程连接到环境。选择此 provider 时，Harness UI 可以自动获取匹配的可执行文件。
 
 ## Service SDK 与 CLI
 
@@ -35,22 +35,22 @@ Service 客户端分别位于独立的 Python、TypeScript、Go 和 Rust 仓库�
 | 源码                            | 用途                                     |
 | ------------------------------- | ---------------------------------------- |
 | `frontend/apps/a13n-console`    | Service 的浏览器界面，用于资源和对话管理 |
-| `frontend/apps/a13n-harness-ui` | Harness UI 的交互式浏览器工作台          |
+| `frontend/apps/a13n-harness-ui` | Harness UI 的 WebUI                      |
 | `frontend/packages/a13n-ui`     | 共享 React 组件、设计 token 和品牌素材   |
 
-Console 随 Service 发布，Harness UI 的浏览器界面随 Python UI 发行包发布。两者都打包在各自的 wheel 和 sdist 中，安装使用时无需 Node.js。前端开发请遵循[前端 README](https://github.com/converge-ai-labs/agent-foundation/blob/main/frontend/README.md)。
+Console 随 Service 发布，WebUI 随 `a13n-harness-ui` 发行包发布。两者都打包在各自的 wheel 和 sdist 中，安装使用时无需 Node.js。前端开发请遵循[前端 README](https://github.com/converge-ai-labs/agent-foundation/blob/main/frontend/README.md)。
 
 ## 可运行的示例项目
 
 每个项目都有自己的依赖、测试和运行说明。请从各自的 README 开始：
 
-| 示例                                                                                                                        | 演示内容                                                  |
-| --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| [Agent 应用](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/agent-app/README.md)                   | 离线流式轮次、状态保存和重启恢复                          |
-| [环境 provider](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/README.md)     | 直接使用 Local、Local Envd 和 Docker 的生命周期           |
-| [能力与插件](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/plugins/README.md)                     | 自定义能力、Harness 插件、Environment provider 和运行扩展 |
-| [已安装的 provider 插件](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/provider-plugin/README.md) | 打包 Environment provider 并加载已安装的入口              |
-| [MCP App](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/mcp-apps/README.md)                       | 带交互式浏览器计数器的 stdio MCP 服务器                   |
+| 示例                                                                                                                        | 演示内容                                           |
+| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| [Agent 应用](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/agent-app/README.md)                   | 离线流式轮次、状态保存和重启恢复                   |
+| [环境 provider](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/README.md)     | 直接使用 Local、Local Envd 和 Docker 的生命周期    |
+| [能力与插件](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/plugins/README.md)                     | 自定义能力、Harness 插件、环境 provider 和运行扩展 |
+| [已安装的 provider 插件](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/provider-plugin/README.md) | 打包环境 provider 并加载已安装的入口               |
+| [MCP App](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/mcp-apps/README.md)                       | 带交互式浏览器计数器的 stdio MCP 服务器            |
 
 [示例索引](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/README.md)列出了运行命令和前置条件。[环境示例](../environments/examples.md)介绍了其他内置 provider。
 
@@ -62,6 +62,6 @@ Console 随 Service 发布，Harness UI 的浏览器界面随 Python UI 发行�
 | Envd 及其 Python 客户端      | 使用相同版本                                           |
 | Harness UI、Service、Logging | 独立发布；软件包元数据声明兼容的依赖版本               |
 
-前端随其所属应用发布。示例项目不属于生产发布。源码工作空间中的版本是开发占位值；选择部署版本时请以已发布软件包的元数据为准。
+前端随其所属应用发布。示例项目不属于生产发布。源码树中的软件包版本是开发占位值；选择部署版本时请以已发布软件包的元数据为准。
 
 贡献者环境配置请参阅[贡献指南](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md)。仓库和发布约定请参阅[仓库模型](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/repository-model.md)。

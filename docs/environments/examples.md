@@ -4,7 +4,7 @@ sidebarTitle: Built-in examples
 description: Runnable examples that use Direct Local, Local Envd, Docker, and remote Envd Providers directly.
 ---
 
-The runnable [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) project shows how Host code uses selected built-in Environment Providers directly. For cloud backends, see [Cloud providers](providers.md#cloud-providers). It runs no Agent and needs no model credentials.
+The runnable [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) project shows how Host code uses selected built-in Environment Providers directly. For cloud backends, see [Cloud Providers](providers.md#cloud-providers). The project runs no Agent and needs no model credentials.
 
 Native and Envd backends follow the same Host-owned sequence:
 
@@ -32,7 +32,7 @@ sequenceDiagram
 
 ## Install the example
 
-The example is an independent project that resolves the Provider package from the local checkout:
+The example is an independent project that resolves `a13n-harness` from the local checkout:
 
 ```bash
 cd examples/environment-provider
@@ -55,15 +55,15 @@ uv run environment-provider-example direct_local
 
 The command:
 
-- creates a Host-owned workspace;
+- creates a Host-owned directory;
 - selects only `direct_local` in an immutable catalog;
 - validates a credential-free recipe against the Provider's declared model;
 - constructs and enters one fresh adapter;
 - writes and reads `/provider-example.txt` through `EnvironmentOperations.files`;
 - observes that `dump_state()` is `None`;
-- closes the adapter and verifies that the workspace remains.
+- closes the adapter and verifies that the directory remains.
 
-Use another workspace with:
+Use another directory with:
 
 ```bash
 uv run environment-provider-example direct_local \
@@ -132,7 +132,7 @@ sequenceDiagram
 
 The example supplies a native `DockerSDKEngine` through `DockerProviderRuntime`. The image needs Python and a POSIX shell; no Envd executable or bootstrap directory is needed.
 
-A production Host persists the latest state before releasing ownership of the lifecycle operation. If creation, readiness, execution, or close fails, read `dump_state()` during unconditional finalization: Docker may already have published the exact target identity even when a later step failed. Never infer absence from an unavailable inspection or select a container by a friendly name.
+A production Host persists the latest state before releasing ownership of the lifecycle operation. If creation, readiness, execution, or close fails, read `dump_state()` during unconditional finalization: the Docker Provider may already have cached the exact target identity even when a later step failed. Never infer absence from an unavailable inspection or select a container by a friendly name.
 
 ## Use the adapter with Harness
 
@@ -161,7 +161,7 @@ The gate lints, type-checks, tests, and builds the independent project. Its smok
 
 ## HTTP and WebSocket Envd
 
-For a one-command local trial, connection to an existing daemon, and a minimal Host WebSocket handler, use the [Remote Envd guide](remote-envd.md). Both examples use the same two-Run file round trip and preserve the daemon on Provider close. The local demo separately shows operator-owned startup and cleanup.
+For a one-command local trial, connection to an existing daemon, and a minimal Host WebSocket handler, use the [Remote Envd guide](remote-envd.md). Both examples use the same two-adapter file round trip and preserve the daemon when an adapter closes. The local demo separately shows operator-owned startup and cleanup.
 
 ```bash
 uv run environment-provider-example remote_envd_demo \

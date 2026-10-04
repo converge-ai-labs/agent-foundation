@@ -4,7 +4,7 @@ sidebarTitle: 内置示例
 description: 直接使用 Direct Local、Local Envd、Docker 和远程 Envd provider 的可运行示例。
 ---
 
-可运行的 [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) 项目展示 Host 代码如何直接使用选定的内置环境 provider。云后端见[云 provider](providers.md#cloud-providers)。示例不运行 agent，也不需要模型凭据。
+可运行的 [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) 项目展示 Host 代码如何直接使用选定的内置环境 provider。云后端见[云 provider](providers.md#cloud-providers)。该项目不运行 agent，也不需要模型凭据。
 
 Native 和 Envd 后端遵循相同的 Host 管理流程：
 
@@ -32,7 +32,7 @@ sequenceDiagram
 
 ## 安装示例
 
-该示例是独立项目，从本地检出解析 provider 包：
+该示例是独立项目，从本地检出解析 `a13n-harness`：
 
 ```bash
 cd examples/environment-provider
@@ -55,15 +55,15 @@ uv run environment-provider-example direct_local
 
 该命令会：
 
-- 创建 Host 管理的工作空间；
+- 创建 Host 管理的目录；
 - 在不可变目录中仅选择 `direct_local`；
 - 按 provider 声明的模型验证不含凭据的目标配置；
 - 构建并进入一个新适配器；
 - 通过 `EnvironmentOperations.files` 写入和读取 `/provider-example.txt`；
 - 确认 `dump_state()` 为 `None`；
-- 关闭适配器并验证工作空间仍存在。
+- 关闭适配器并验证目录仍存在。
 
-使用另一个工作空间：
+使用另一个目录：
 
 ```bash
 uv run environment-provider-example direct_local \
@@ -132,7 +132,7 @@ sequenceDiagram
 
 示例通过 `DockerProviderRuntime` 提供原生 `DockerSDKEngine`。镜像需要 Python 和 POSIX shell；不需要 Envd 可执行文件或启动目录。
 
-生产 Host 应在释放生命周期操作归属前，持久保存最新状态。创建、就绪、执行或关闭失败时，在必定执行的收尾步骤中读取 `dump_state()`：即使后续步骤失败，Docker 可能已经发布精确目标身份。绝不能从检查不可用推断目标不存在，也不能根据友好名称选择容器。
+生产 Host 应在释放生命周期操作归属前，持久保存最新状态。创建、就绪、执行或关闭失败时，在必定执行的收尾步骤中读取 `dump_state()`：即使后续步骤失败，Docker provider 可能已经缓存精确目标身份。绝不能从检查不可用推断目标不存在，也不能根据友好名称选择容器。
 
 ## 在 Harness 中使用适配器
 
@@ -161,7 +161,7 @@ make examples-check-all
 
 ## HTTP 与 WebSocket Envd
 
-单命令本地试用、连接已有守护进程和最小 Host WebSocket handler 见 [Remote Envd 指南](remote-envd.md)。两个示例采用相同的两次执行文件读写流程，provider 关闭后保留守护进程。本地演示还单独展示运维人员管理的启动和清理。
+单命令本地试用、连接已有守护进程和最小 Host WebSocket handler 见 [Remote Envd 指南](remote-envd.md)。两个示例采用相同的双适配器文件读写流程，适配器关闭后保留守护进程。本地演示还单独展示运维人员管理的启动和清理。
 
 ```bash
 uv run environment-provider-example remote_envd_demo \

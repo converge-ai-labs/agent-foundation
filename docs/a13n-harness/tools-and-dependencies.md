@@ -9,7 +9,7 @@ Harness does not replace Pydantic AI's tool schema or dispatcher. It adds a mand
 
 ## Run a function tool offline
 
-This complete example calls `double(4)` through the real Agent loop without network access. Save it as `tools_example.py` in the [source quickstart](getting-started.md) workspace and run `uv run python tools_example.py`.
+This complete example calls `double(4)` through the real Agent loop without network access. Save it as `tools_example.py` in the repository checkout from the [quickstart](getting-started.md) and run `uv run python tools_example.py`.
 
 ```python
 import asyncio
@@ -70,7 +70,7 @@ if __name__ == "__main__":
 1. The type annotation defines the argument schema; the docstring explains the action to the model.
 2. `Capability(tools=[double])` includes the function in native composition.
 3. The deterministic Model emits a tool call, receives the result, and returns text.
-4. `output_or_raise()` returns the final validated answer, not the individual tool return.
+4. `output_or_raise()` returns the final validated output, not the individual tool return.
 
 For larger groups, use `Capability(toolsets=[FunctionToolset([...], id="...")])` with `FunctionToolset` from `pydantic_ai.toolsets`. Tools remain inside their owning Capability; there is no parallel Harness tool registration API.
 
@@ -96,7 +96,7 @@ capability = Capability(id="request-context", tools=[request_label])
 bindings = RunBindings.embedded(metadata={"request_label": "support-triage"})
 ```
 
-Pass `capability` at build time and the fresh `bindings` to `run()` or `stream()`. `ctx` contains native messages, usage, and limits; `ctx.deps` contains Harness identity, Thread/Run correlation, Environment, plugins, state, and metadata.
+Pass `capability` at build time and the fresh `bindings` to `run()` or `stream()`. `ctx` contains native messages, usage, and limits; `ctx.deps` contains the Agent identity and instance, Thread/Run correlation, Environment, plugins, state, and metadata.
 
 Metadata is bounded application context, **not authorization**. Do not put keys, tokens, or a live database session in it. A trusted identity claim also needs current policy before it grants an operation.
 
@@ -127,19 +127,19 @@ async def inspect_inventory(inventory, model):
 
 The Capability belongs to build-time composition, not `RunBindings.capabilities`. The latter accepts only the documented invocation-policy and upstream MCP types; it is not an arbitrary application-service or tool injection point.
 
-If the application reuses one executable across requests, install a custom `AbstractCapability[AgentContext]` at build time and resolve the service in its native `for_run(ctx)` from trusted current-run identity and an application-owned factory. Native run binding executes again for each internal model-recovery attempt. A [Harness plugin](plugins.md#plugin-lifecycle) can instead bind a fresh instance once per logical Run; its contributed tools or Capabilities retrieve that instance with `ctx.deps.plugins.require(plugin_id, ExpectedPluginType)`. Neither approach requires a second dependency container, and concurrent Runs must not mutate a shared prototype to select their service.
+If the application reuses one executable across requests, install a custom `AbstractCapability[AgentContext]` at build time and resolve the service in its native `for_run(ctx)` from trusted current-Run identity and an application-owned factory. Native Run binding executes again for each internal model-recovery attempt. A [Harness plugin](plugins.md#plugin-lifecycle) can instead bind a fresh instance once per logical Run; its contributed tools or Capabilities retrieve that instance with `ctx.deps.plugins.require(plugin_id, ExpectedPluginType)`. Neither approach requires a second dependency container, and concurrent Runs must not mutate a shared prototype to select their service.
 
-The service must enforce its own scope; do not let the model choose a tenant or credential. Keep database transactions around individual operations, not around the whole model/tool loop. The application or owning extension must manage resource acquisition and cleanup explicitly; `for_run()` alone does not close clients. Never put live services in `metadata`, serialize them into `HarnessState`, or reuse an authenticated run-bound instance as continuation state.
+The service must enforce its own scope; do not let the model choose a tenant or credential. Keep database transactions around individual operations, not around the whole model/tool loop. The application or owning extension must manage resource acquisition and cleanup explicitly; `for_run()` alone does not close clients. Never put live services in `metadata`, serialize them into `HarnessState`, or reuse an authenticated Run-bound instance as continuation state.
 
-## Native, managed, and provider-native tools
+## Tool execution paths
 
 | Tool path                | Example                                     | Boundary                                                                         |
 | ------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------- |
 | Trusted Python function  | `double`, your application service          | Native tool dispatch plus Harness result handling; Python code owns side effects |
 | Managed Environment tool | File edit or shell execution                | Typed resources, current policy, Provider enforcement, and bounded results       |
 | Local MCP tool           | Tool from a connected MCP server            | Native MCP transport and local function-tool result boundary                     |
-| Provider-native tool     | Model-provider search or image tool         | Executed by the provider; not a local Python tool call                           |
-| Deferred tool            | Human approval or external/client execution | Root suspends; Host supplies correlated input in a new Run                       |
+| Provider-native tool     | Model-provider search or image tool         | Executed by the model provider; not a local Python tool call                     |
+| Deferred tool            | Human approval or external/client execution | The root Run suspends; the Host supplies correlated input in a new Run           |
 
 A name such as `safe_shell` does not make a tool managed. Managed metadata selects the additional policy path. A Python callback can still access its process's ambient authority; tool visibility is not OS isolation.
 

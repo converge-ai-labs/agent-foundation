@@ -15,7 +15,7 @@ flowchart TB
     Definition --> Adapter[Fresh Environment]
     State[EnvironmentState or none] --> Adapter
     Runtime[Fresh runtime collaborators] --> Adapter
-    Adapter --> Harness[Agent Harness Run]
+    Adapter --> Harness[Harness Run]
     Harness --> Operations[Files, shell, processes, output, and ports]
     Adapter --> Latest[Detached cached state]
     Host <--- Latest
@@ -31,10 +31,10 @@ A normal Run follows this sequence:
 2. The definition validates the credential-free target recipe, then the account configuration and credential (unless the Host supplied a runtime).
 3. The Host supplies the latest authoritative `EnvironmentState`.
 4. The definition acquires its runtime collaborator, then constructs one fresh adapter; everything before the runtime factory is pure. A runtime the Host passes in is borrowed; one the definition acquires belongs to the adapter.
-5. The Host prepares eagerly, or lets the first operation prepare lazily. Harness binds the local scope, uses operations, exports cached state, and closes it.
+5. The Host prepares eagerly, or lets the first operation prepare lazily. Harness binds the local scope, uses operations, exports cached state, and closes the adapter.
 6. The Host persists the latest state and applies retention policy separately.
 
-`close()` releases the Session, temporary output, clients, and admission owned by that adapter, including a runtime `create()` acquired for it. It is idempotent and non-destructive. Shared Envd Device runtimes the Host passes in belong to the Host and are closed separately at Host shutdown. Harness never calls `destroy()`.
+`close()` releases the clients, Envd Session, temporary output, and other local handles owned by that adapter, including a runtime that `create()` acquired for it. It is idempotent and non-destructive. Shared Envd Device runtimes the Host passes in belong to the Host and are closed separately at Host shutdown. Harness never calls `destroy()`.
 
 When retention policy selects removal, the Host constructs a different fresh adapter from the exact current state and calls `destroy()` explicitly. Successful destruction clears that adapter's cached state. A failed or unknown outcome preserves the last validated state for inspection or retry.
 
@@ -74,7 +74,7 @@ result = await executable.run(
 )
 ```
 
-Harness enters and closes the adapter exactly once. Construct another adapter for every independent Run, even when several Runs target the same workspace, container, VM, or remote sandbox.
+Harness enters and closes the adapter exactly once. Construct another adapter for every independent Run, even when several Runs target the same working directory, container, VM, or remote sandbox.
 
 ## Re-enter a stateful target
 
@@ -102,7 +102,7 @@ finally:
 
 `dump_state()` is synchronous and performs no target I/O. It returns a detached deep copy of the latest validated cached state, so caller mutation cannot alter the adapter's cache. Providers update that cache as soon as changed target identity is known, before later readiness work that might fail.
 
-State is a soft reference, not proof that a target still exists. Construction validates its codec and compatibility; during preparation, the Provider inspects the exact target selected by that validated state. Merely entering the adapter does not perform that inspection. It may create a replacement only after authoritative absence and according to that Provider's contract. It never treats an incompatible target, ambiguous discovery, unavailable control plane, or unknown mutation outcome as absence.
+State is a soft reference, not proof that a target still exists. Construction validates its codec and compatibility; during preparation, the Provider inspects the exact target selected by that validated state. Merely entering the adapter does not perform that inspection. The Provider may create a replacement only after authoritative absence, only when the Host allows creation, and only as that Provider's contract permits. It never treats an incompatible target, ambiguous discovery, unavailable control plane, or unknown mutation outcome as absence.
 
 `EnvironmentState` contains no bearer credential, live client, task, process-local handle, Harness mount policy, or destruction authority. Storage, authorization, retention, scheduling, and selection of the authoritative version remain Host responsibilities.
 
@@ -126,7 +126,7 @@ finally:
     await cleanup.close()
 ```
 
-The Provider removes only the exact backing target and provider-owned bootstrap material represented by validated state. Shared Host directories, Docker bind sources, and external named volumes remain externally owned.
+The Provider removes only the exact backing target and Provider-owned bootstrap material represented by validated state. Shared Host directories, Docker bind sources, and external named volumes remain externally owned.
 
 Do not use context exit, Harness completion, suspension, or cancellation as an implicit destruction signal. Those paths close process-local resources only.
 
@@ -141,7 +141,7 @@ Do not use context exit, Harness completion, suspension, or cancellation as an i
 | `recover()`                                 | Explicitly authorized in-scope recovery where supported; not generic mutation replay                         |
 | `reconcile()`                               | Observe an abandoned preparation as running/stopped/absent without creating, starting, or replacing a target |
 | `stop()`                                    | Resumable target stop where supported; distinct from close and destroy                                       |
-| `keepalive(deadline=..., operation_id=...)` | Refresh retention for a supported target under Host maintenance ownership                                    |
+| `keepalive(deadline=..., operation_id=...)` | Extend a running target's lifetime where supported; the Host owns timing and retries                         |
 | `dump_state()`                              | Detached cached state, with no target I/O                                                                    |
 | `close()`                                   | Idempotent local-resource cleanup                                                                            |
 | `destroy()`                                 | Remove the exact owned target through a fresh, unentered adapter                                             |
@@ -163,7 +163,7 @@ Provider capability declarations tell a Host which maintenance paths it may sele
 | Runloop                      | Yes                  | Yes                                     | Yes                                     | Yes                      |
 | Remote HTTP / WebSocket Envd | No, externally owned | No                                      | No                                      | No                       |
 
-See the [six-cloud comparison](providers.md#reconnection-and-lifecycle) for filesystem, memory, and expiry differences. Managed selection does not mean every Provider creates storage or owns the Host directory. Unsupported base methods are not usable merely because they appear on the abstract interface. Schedule keepalive from the Provider's `keepalive_horizon` and actual target policy; do not treat the base default as a universal cloud TTL.
+See the [six-cloud comparison](providers.md#reconnection-and-lifecycle) for filesystem, memory, and expiry differences. Managed selection does not mean every Provider creates storage or owns the Host directory. Unsupported base methods are not usable merely because they appear on the abstract interface. Schedule keepalive from the Provider's `keepalive_horizon` and actual target policy; do not treat the 300-second base default as a universal cloud TTL.
 
 ## Handle typed failures
 
@@ -189,7 +189,7 @@ Always publish the latest validated cached state according to Host policy, inclu
 ## Host checklist
 
 - Construct one fresh adapter per independent Run, including resumed Runs.
-- Persist the latest detached state after success or failure; publishing it remains a Host policy decision.
+- Read the latest detached state after success or failure, and publish it according to Host policy.
 - Treat an unavailable control plane or unknown mutation outcome as uncertainty, not target absence.
 - Close local resources independently of retention. Destroy only an exact validated target through a fresh adapter.
 - Keep credentials, authorization, and live clients out of both Environment and Harness continuation data.

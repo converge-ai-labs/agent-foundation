@@ -29,7 +29,7 @@ flowchart TB
 
 ## 一个 observer 对应一次执行
 
-`HarnessAguiObserver` 绑定单次执行。`HarnessAguiStreamObserver` 则绑定根流，独立跟踪其中的内联子执行，并用 `subagentRunId` 标识其输出归属。Host 管理的异步执行仍使用独立 observer。
+`HarnessAguiObserver` 绑定单次执行。`HarnessAguiStreamObserver` 则绑定根流，独立跟踪其中的内联子执行，并用 `subagentRunId` 标识其输出归属。Host 管理的异步子执行仍使用独立 observer。
 
 `observe()` 只返回当前条目产生的事件。`snapshot()` 返回累积事件的独立副本，是便于读取的内存状态，不是持久日志。`resume()` 从精确的 Harness 源历史重建 observer 状态，不会再次发布历史。
 
@@ -39,19 +39,19 @@ flowchart TB
 uv add a13n-stream-protocol
 ```
 
-发布版 Stream Protocol 固定依赖匹配的 Harness 版本。源码[快速入门](getting-started.md)使用仓库锁定的工作空间，与跟随 `main` 的本文档保持一致。
+发布版 Stream Protocol 固定依赖匹配的 Harness 版本。源码[快速入门](getting-started.md)使用仓库锁文件，与跟随 `main` 的本文档保持一致。
 
 ## 职责归属
 
-| 职责                                            | 负责方                |
-| ----------------------------------------------- | --------------------- |
-| Harness 执行、源生命周期、结果和 `HarnessState` | Harness               |
-| Harness 到 AG-UI 转换及进程内重建               | Agent Stream Protocol |
-| 通过重放稳定的处理器表达可见性策略              | Host 处理器           |
-| 源历史保留、游标、缺口检测和切换到实时流        | Host                  |
-| 持久 AG-UI ID、持久化、重放和扇出               | Host                  |
-| SSE、WebSocket、Redis 或进程内交付              | Host 传输层           |
-| 渲染后的视图状态                                | 渲染器                |
+| 职责                                            | 负责方          |
+| ----------------------------------------------- | --------------- |
+| Harness 执行、源生命周期、结果和 `HarnessState` | Harness         |
+| Harness 到 AG-UI 转换及进程内重建               | Stream Protocol |
+| 通过重放稳定的处理器表达可见性策略              | Host 处理器     |
+| 源历史保留、游标、缺口检测和切换到实时流        | Host            |
+| 持久 AG-UI ID、持久化、重放和扇出               | Host            |
+| SSE、WebSocket、Redis 或进程内交付              | Host 传输层     |
+| 渲染后的视图状态                                | 渲染器          |
 
 ## 升级到 AG-UI 1.0
 
@@ -60,16 +60,16 @@ uv add a13n-stream-protocol
 - 逻辑执行在准备成功后、公开输出前只发送一次 `RUN_STARTED`。
 - 取消和暂停使用带 cancelled 或 interrupt outcome 的 `RUN_FINISHED`，只有失败使用 `RUN_ERROR`。延后调用保留原生 ID，Host 回答验证策略不变。
 - 输入使用 CUSTOM `value.event.role` 和 `value.event.message_id`，元数据仍在顶层。
-- 工具结果可以包含有序的上游内容 part；隐藏的补充媒体不会公开。不支持的媒体显示为不可用，不从字节或 provider handle 重建。
+- 工具结果可以包含有序的上游内容 part；隐藏的补充媒体不会公开。二进制数据和不安全 URL 转为省略载荷的描述，绝不包含内联字节；provider 文件句柄保持为 `FileSource` 引用，不提供可下载 URL。
 - 内联子执行的展示键按 `subagentRunId` 隔离，子回答不成为根回答。旧记录中缺失的子执行展示不能从模型历史重建。
 
-协议升级不删除 Harness 续接状态或用量账本。保存展示中的可选字段扩展不需要重置这些存储。
+协议升级不删除 Harness 续接状态或用量账本。
 
 ## 下一步
 
-- 阅读 [Agent Harness 指南](../a13n-harness/index.md)，了解构建、流式输出和恢复 agent。
+- 阅读 [Harness 指南](../a13n-harness/index.md)，了解构建、流式输出和恢复 agent。
 - 阅读[包 README](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-stream-protocol)，了解软件包和发布详情。
-- 查阅 [Agent Stream Protocol 规范](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-stream-protocol)，了解规范性观测契约和 schema 边界。
+- 查阅 [Stream Protocol 规范](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-stream-protocol)，了解规范性观测契约和 schema 边界。
 
 ## 参考主题
 

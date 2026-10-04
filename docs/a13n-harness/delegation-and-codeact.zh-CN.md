@@ -3,7 +3,7 @@ title: 委派与 CodeAct
 description: 内联或异步运行已声明 subagent，让 CodeAct 通过符合条件的工具执行受限 Python。
 ---
 
-Agent Harness 提供两种高级协调功能，无须引入工作流引擎：
+Harness 提供两种高级协调功能，无须引入工作流引擎：
 
 - subagent 执行在内联或异步 operator 中运行确切的已声明子级；
 - CodeAct 在活动工具中明确允许使用的子集上运行受限 Python。
@@ -52,11 +52,11 @@ parent = HarnessBuilder().build(
 
 ### 内联执行与续接
 
-默认 Capability 不需要 Host 调度器或子级绑定回调。其内部内联执行器会：
+默认内联模式下的 `SubagentCapability()` 不需要 Host 调度器或子级绑定回调。其内部内联执行器会：
 
 1. 选择一个已声明子级；
 2. 派生新的子实例血缘，并取编写的用量上限交集；
-3. 应用委派边的上下文策略；
+3. 应用该子级 `SubagentDefinition.context` 的上下文策略；
 4. 借用父级已经进入的 Environment 映射，不重新进入或关闭 adapter；
 5. 通过规范 `ExecutableAgent.stream()` 路径运行子级；
 6. 将已验证的子级观测转发到父级流；
@@ -98,7 +98,7 @@ Harness 不提供默认异步管理器、执行存储、后台任务注册表、
 
 ### 子 Run 的延迟工具
 
-延迟支持由新的 `RunBindings.deferred_tools_supported` 选择，不取决于是否有父级。默认 `True`。根级和子级都可使用原生延迟调用、审批和 Host 配置的处理器。
+延迟支持由新的 `RunBindings.deferred_tools_supported` 选择，不取决于是否有父级。默认 `True`。根级和 Host 管理的子级可使用原生延迟调用、审批和 Host 配置的处理器；内置内联子级不能使用。
 
 没有子级反馈生命周期的 Host 设置 `deferred_tools_supported=False`。声明式延迟工具及其第一方指引会被省略。运行时 `CallDeferred` 和 `ApprovalRequired` 在同一模型循环内转为 `ToolDenied("Deferred tool interaction is unavailable for this Run.")`。自定义处理器不能绕过设置。意外终态延迟会以 `deferred_tools_unsupported` 失败。Harness UI 当前为异步子级选择不支持模式；普通异步提示续接仍可用。
 
@@ -110,7 +110,7 @@ Harness 不提供默认异步管理器、执行存储、后台任务注册表、
 
 只声明子级业务 `output_type`，可包含结构化 Pydantic 模型。构建根级和子级时，Harness 自动加入原生 `DeferredToolRequests` 支持；业务输出中显式包含该保留类型会被拒绝。挂起结果携带 `deferred`，没有业务输出。成功恢复后，`output_or_raise()` 返回声明的业务类型。
 
-用量限制按子 Run 独立计算。每个子级获得自身定义限制与委派边编写限制逐字段的最严格交集，不继承父级预算或累加器。异步 Host 可进一步收紧。子事件单独标注归属；Host 可汇总用量用于显示，不引入共享强制上限。
+用量限制按子 Run 独立计算。每个子级获得自身定义限制与其 `SubagentDefinition.usage_limits` 逐字段的最严格交集，不继承父级预算或累加器。异步 Host 可进一步收紧。子事件单独标注归属；Host 可汇总用量用于显示，不引入共享强制上限。
 
 ## CodeAct
 
@@ -160,7 +160,7 @@ capabilities = (
 
 ### 嵌套派发
 
-受限代码获得生成的类型化宿主函数。嵌套调用通过当前最终构建的 Pydantic AI `ToolManager` 验证并执行，不使用第二个派发器。因此普通 Capability 钩子、Harness 受管理工具策略、提供方约束、事件、用量和延迟行为仍适用。根级内联延迟处理器可提供嵌套结果。子级拒绝或未解决根请求只使当前 CodeAct runner 调用失败；CodeAct 不持久化或恢复解释器栈帧。
+受限代码获得生成的类型化宿主函数。嵌套调用通过当前最终构建的 Pydantic AI `ToolManager` 验证并执行，不使用第二个派发器。因此普通 Capability 钩子、Harness 受管理工具策略、提供方约束、事件、用量和延迟行为仍适用。根 Run 的延迟处理器若在嵌套调用返回前解决请求，即可提供嵌套结果。子级拒绝或未解决根请求只使当前 CodeAct runner 调用失败；CodeAct 不持久化或恢复解释器栈帧。
 
 源码验证、不可用函数、沙箱执行错误和资源超限都会返回失败工具结果，方便 Agent 修正代码或选择其他工具。即使未开始嵌套工具，也不消耗 runner 模型重试预算。外层调用 schema 验证和 runner 隔离规则仍采用正常重试策略。
 
@@ -179,22 +179,10 @@ capabilities = (
 - 只接受严格 UTF-8 的 `*.codeact.py` 文件；
 - 通过当前 Environment 读取；
 - 要求恰好有 `async def main(inputs)`；
-- 每次调用创建新的解释器会话；
+- 每次调用创建新的解释器；
 - 接收 JSON 兼容输入。
 
 Environment 路径不增加工具使用资格。代码只能调用注入的宿主函数。
-
-## 如何选择
-
-| 需求                                           | 使用方式                                                 |
-| ---------------------------------------------- | -------------------------------------------------------- |
-| 给具名子 Agent 一个范围明确的任务并等待        | 内联委派                                                 |
-| 用本地 Python 控制流组合多个符合条件的工具调用 | CodeAct                                                  |
-| 提交超出当前进程/Run 生命周期的持久任务        | Host 管理的异步子级或任务服务                            |
-| 执行任意可信应用 Python                        | 普通应用代码，而非 CodeAct                               |
-| 运行不可信 OS 代码                             | 真正隔离的 Environment provider，不能只靠 CodeAct 解释器 |
-
-两种功能均可选。简单 Agent 应用应从普通原生 Capability 和工具开始，只有执行方式需要时才添加委派或 CodeAct。
 
 ### 显式保存数据，不保存解释器
 
@@ -204,7 +192,7 @@ Environment 路径不增加工具使用资格。代码只能调用注入的宿�
 await store(key="search.results", value={"ids": [12, 34], "next_page": 3})
 ```
 
-后续输入、程序或续接 Run 可读取，无须重做搜索：
+后续 `run_code` 调用、`run_program` 调用或续接 Run 可读取，无须重做搜索：
 
 ```python
 results = await load(key="search.results")
@@ -218,3 +206,15 @@ results["ids"]
 模型只收到有上限的键目录（最多 32 个键、4 KiB），不收到全部值。用 `load()` 发现省略的键。`CodeActConfig.max_state_entries` 默认 256，`max_state_bytes` 默认 10 MiB，限制含键在内的完整紧凑 JSON 命名空间。键需 1–256 个字符。值必须是有限 JSON；拒绝写入不替换已有数据。恢复状态也受这些限制。
 
 CodeAct 让 Monty 解析 Python 名称，不用近似静态作用域检查器拒绝调用。真实宿主调用仍必须符合当前工具目录的使用策略。后续不可用调用可能在前面的工具执行后失败；完成的副作用和显式写入不回滚或自动重放。
+
+## 如何选择
+
+| 需求                                           | 使用方式                                                 |
+| ---------------------------------------------- | -------------------------------------------------------- |
+| 给具名子 Agent 一个范围明确的任务并等待        | 内联委派                                                 |
+| 用本地 Python 控制流组合多个符合条件的工具调用 | CodeAct                                                  |
+| 提交超出当前进程/Run 生命周期的持久任务        | Host 管理的异步子级或任务服务                            |
+| 执行任意可信应用 Python                        | 普通应用代码，而非 CodeAct                               |
+| 运行不可信的 shell 命令或原生程序              | 真正隔离的 Environment provider，不能只靠 CodeAct 解释器 |
+
+两种功能均可选。简单 Agent 应用应从普通原生 Capability 和工具开始，只有执行方式需要时才添加委派或 CodeAct。

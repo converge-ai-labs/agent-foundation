@@ -11,7 +11,7 @@ Environment operations are typed Python interfaces usable without an Agent. The 
 | Family    | Purpose                                                       | Important boundary                                                          |
 | --------- | ------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | Files     | Read/write, metadata, listing, queries, search, and mutations | Logical paths and Provider-enforced access                                  |
-| Shell     | Start a command                                               | Command syntax, inheritance, deadlines, and isolation are Provider-specific |
+| Shell     | Run one bounded command and return its result                 | Command syntax, inheritance, deadlines, and isolation are Provider-specific |
 | Processes | Inspect, wait, write input, and signal where supported        | Discovery and control are separately supported operations                   |
 | Outputs   | Read retained stdout/stderr at explicit offsets               | Observation may be partial or evicted; not a durable log                    |
 | Ports     | Observe supported targets                                     | Not a public ingress or automatic port-sharing service                      |
@@ -20,15 +20,15 @@ Use [Getting started](getting-started.md) for a complete file example. Entering 
 
 ## Paths belong to the boundary you are calling
 
-The single-Environment API follows each Provider's path contract. Direct Local and root-mapped native Providers use paths within their configured root, such as `/hello.txt`. Envd Providers use Device-absolute filesystem paths: `/home/user/hello.txt`, `/C:/Users/example/hello.txt`, or `/UNC/server/share/hello.txt`. Their fixed working directory does not restrict file access.
+The single-Environment API follows each Provider's path contract. Direct Local and the six cloud Providers use paths within their configured root, such as `/hello.txt`; Docker uses native container paths. Envd Providers use Device-absolute filesystem paths: `/home/user/hello.txt`, `/C:/Users/example/hello.txt`, or `/UNC/server/share/hello.txt`. Their fixed working directory does not restrict file access.
 
-Harness adds mount selection and relative-path resolution. Do not send an aggregate Harness path directly to a low-level Provider file operator unless it is also a valid path for that Provider. Root mapping is not OS isolation for an allowed command; Envd isolation belongs to the outer Host.
+Harness adds mount selection and relative-path resolution. Do not send an aggregate Harness path directly to a low-level Provider file operator unless it is also a valid path for that Provider. Root mapping is not OS isolation for an allowed command. Envd enforces the Device's launch Sandbox and egress mode; the outer Host boundary still sets available authority.
 
 ## Environment operations and tools
 
 The Provider package owns typed files, shell, process, retained-output, and port operation contracts. An entered adapter advertises only the operation families and exact actions it can enforce.
 
-Agent Harness applies mount names, access ceilings, routing, operation timeouts, state aggregation, and optional model-facing tools. Adding an Environment does not automatically expose tools to the model. See [Use Environments from Agent Harness](../a13n-harness/environments.md) for Run inputs and `DynamicEnvironmentCapability` configuration.
+Harness applies mount names, access ceilings, routing, operation timeouts, state aggregation, and optional model-facing tools. Adding an Environment does not automatically expose tools to the model. See [Use Environments from Harness](../a13n-harness/environments.md) for Run inputs and `DynamicEnvironmentCapability` configuration.
 
 ## File operation reference
 
@@ -63,7 +63,7 @@ For commands and process observation, follow the complete [command example and t
 
 ## File search patterns
 
-File query patterns and text-search `include` filters use the same path syntax on Direct Local, Docker, all six cloud providers, and envd-backed Providers:
+File query patterns and text-search `include` filters use the same path syntax on Direct Local, Docker, all six cloud Providers, and Envd-backed Providers:
 
 | Pattern                    | Selection                                        |
 | -------------------------- | ------------------------------------------------ |
@@ -74,13 +74,13 @@ File query patterns and text-search `include` filters use the same path syntax o
 
 Brace groups are non-nested, with at least two nonempty alternatives and at most 256 expanded patterns. Patterns accept at most 16 KiB. Backslash escapes and numeric ranges are not shell-expanded. Use a complete `**` path segment for recursive matching.
 
-Text search defaults to literal matching at the Environment API. The model-facing Harness `grep` tool instead defaults to `regex=true`; it also exposes `regex=false` and `case_sensitive=false`. Prefer literal mode for code fragments containing punctuation. Portable regular expressions use literals, classes, grouping, alternation, anchors, and quantifiers. Direct Local, Docker, and all six cloud providers use Python `re`; envd uses Rust `regex`, which rejects lookaround and backreferences. Engine-specific extensions and Unicode edge cases can differ.
+Text search defaults to literal matching at the Environment API. The model-facing Harness `grep` tool instead defaults to `regex=true`; it also exposes `regex=false` and `case_sensitive=false`. Prefer literal mode for code fragments containing punctuation. Portable regular expressions use literals, classes, grouping, alternation, anchors, and quantifiers. Direct Local, Docker, and all six cloud Providers use Python `re`; Envd uses Rust `regex`, which rejects lookaround and backreferences. Engine-specific extensions and Unicode edge cases can differ.
 
 Invalid patterns produce an `environment_request_invalid` error with a safe field, reason, and correction hint. Zero results are successful. Continue bounded pages using the returned offset while keeping filters and filesystem stable. A per-file match limit caps returned matches from that file; an eligible-file scan ceiling raises a limit error rather than silently claiming a complete result. Narrow the root and include filter before increasing limits.
 
 ## Waiting is not a command deadline
 
-A bounded wait returns what is currently known; it does not necessarily stop the command. A command deadline requires Provider support. For example, E2B has sandbox TTL and SDK request deadlines but rejects per-command `execution_timeout_seconds` before launch.
+A bounded wait returns what is currently known; it does not necessarily stop the command. A command deadline requires Provider support. For example, E2B has sandbox TTL and SDK request deadlines but rejects a per-command `limits.wall_time_seconds` before launch.
 
 Output records report provenance, available ranges, offsets, and incomplete observations. Use returned offsets for subsequent reads. Repeated inspection or waits do not reset an observation budget. If complete output matters, direct it to an application log file with an explicit retention policy.
 

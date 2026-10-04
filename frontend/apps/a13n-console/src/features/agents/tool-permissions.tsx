@@ -24,8 +24,6 @@ const options = [
   },
 ] as const;
 
-const labels = { allow: "Allow", ask: "Ask", deny: "Deny" } as const;
-
 export function ToolPermissions({
   name,
   label,
@@ -42,6 +40,7 @@ export function ToolPermissions({
   onChange: (permission: PermissionChoice) => void;
 }) {
   const { t } = useTranslation();
+  const labels = { allow: t("Allow"), ask: t("Ask"), deny: t("Deny") };
   return (
     <div
       className={styles.toolsetPermissions}
@@ -58,7 +57,7 @@ export function ToolPermissions({
                   type="button"
                   disabled={readOnly}
                   className={styles.toolsetPermission}
-                  aria-label={t(labels[permission])}
+                  aria-label={labels[permission]}
                   aria-pressed={
                     (value === "inherit" ? "allow" : (value ?? "allow")) ===
                     permission
@@ -71,7 +70,7 @@ export function ToolPermissions({
             </TooltipTrigger>
             <TooltipPopup>
               <span className={styles.toolsetPermissionTip}>
-                <strong>{t(labels[permission])}</strong>
+                <strong>{labels[permission]}</strong>
                 {t(description)}
               </span>
             </TooltipPopup>

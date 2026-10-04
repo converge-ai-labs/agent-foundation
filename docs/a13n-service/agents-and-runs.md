@@ -1,9 +1,9 @@
 ---
 title: Agents, threads and runs
-description: Configure agents, start conversations, and follow, steer, or answer runs.
+description: Configure agents, start conversations, and follow, steer, or resume runs.
 ---
 
-An **agent** is a named, versioned configuration: a model, instructions, tools and policies. People and applications talk to agents in **sessions**. A session holds one or more **threads**, each a single line of conversation; messages you send go to the thread's **inbox**, and each turn of the agent is a **run**. A run executes on a worker as one or more **attempts** and ends `completed`, `waiting`, `failed` or `cancelled`.
+An **agent** is a named resource whose configuration (a model, instructions, tools and policies) is saved as immutable, numbered **revisions**. People and applications talk to agents in **sessions**. A session holds one or more **threads**, each an independently advancing history; messages you send go to the thread's **inbox**, and each accepted advancement of a thread is a **run**. A run executes on a worker as one or more **attempts** and ends `completed`, `waiting`, `failed` or `cancelled`.
 
 ```mermaid
 stateDiagram-v2
@@ -22,11 +22,11 @@ stateDiagram-v2
     class failed danger
 ```
 
-All paths below are under `/api/v1` and act in the request's [workspace](http.md#workspace). Reading needs `read`; starting, steering, answering and stopping runs needs `run`; changing agents needs `write`. See [Identity and access](identity.md#roles).
+All paths below are under `/api/v1` and act in the request's [workspace](http.md#workspace). Reading needs `read`; starting, steering, resuming and stopping runs needs `run`; changing agents needs `write`. See [Identity and access](identity.md#roles).
 
 ## Agents
 
-In Console, open **Agents → Create manually**. Each save creates an immutable **version** (a revision in the API); **Versions** lists them and **Set as default** chooses the one new conversations use. **Import from YAML** and **Export agent** copy an agent between workspaces, matching each referenced resource to one in the target workspace.
+In Console, open **Agents → Create manually**. Each save creates an immutable revision; **Versions** lists them and **Set as default** chooses the one that later runs without a pinned revision use, in new and existing conversations. **Import YAML** (in the **Create manually** menu) and **Export agent** copy an agent between workspaces, matching each referenced resource to one in the target workspace.
 
 Through the API:
 
@@ -73,7 +73,7 @@ A revision's `config` holds:
 | `default_environment_template_id` | An [environment template](environments.md#templates) from which each new thread gets its own primary environment.                      |
 | `memory_mounts`                   | [Memories](memory.md#mount-a-memory-on-a-thread) each new thread mounts when its first run is accepted, `[{name, memory_id, access}]`. |
 
-Saving validates the whole configuration against the workspace: every referenced model, skill, connection, provider and agent must exist and be usable by you, or saving fails with `invalid_argument` on that field, and skill and subagent references without a `revision_id` are pinned to the current default revision. A revision therefore always runs exactly what it was saved with.
+Saving validates the whole configuration against the workspace: every referenced model, skill, connection, provider and agent must exist and be usable by you, or saving fails with `invalid_argument` on that field, and skill and subagent references without a `revision_id` are pinned to the current default revision. A revision therefore keeps its configuration and its skill and subagent pins; the models, connections, providers and templates it names are live and are resolved again at each use.
 
 ### Tool permissions
 
@@ -85,12 +85,12 @@ Every built-in tool, connection tool and client tool has a permission:
 | `ask`      | The run [waits](#waits-approvals-and-questions) for a person to approve or deny the call.                                                                                           |
 | `review`   | The `reviewer` model approves or denies the call; with its default `on_error: approval_required`, a failed review asks a person. A revision that uses `review` must set `reviewer`. |
 | `deny`     | The call is refused.                                                                                                                                                                |
-| `inherit`  | The default, which allows.                                                                                                                                                          |
+| `inherit`  | The default: the tool's own default permission, which is `allow` except where a tool declares another, such as `ask` for the configuration toolset's write tools.                   |
 
 ```mermaid
 flowchart TB
-    Call["The model calls a tool"] --> Permission(["Permission"])
-    Permission -->|"allow or inherit"| Run["The tool runs"]
+    Call["The model calls a tool"] --> Permission(["Effective permission"])
+    Permission -->|"allow"| Run["The tool runs"]
     Permission -->|"review"| Reviewer["The reviewer model decides"]
     Permission -->|"ask"| Person["The run waits for a person"]
     Permission -->|"deny"| Refuse["The call is refused"]
@@ -124,9 +124,9 @@ A client tool is declared in the revision and executed by your application:
 }
 ```
 
-When the model calls it, the run ends `waiting` with the call in `pending`. Your application performs it and [resumes](#resume-a-waiting-run) the run with the result.
+When the model calls it, the run ends `waiting` with the call in `pending.calls`. Your application performs it and [resumes](#resume-a-waiting-run) the run with the result.
 
-With `user_questions: true`, the model can ask the user a question with `ask_user_question`. The run waits with an entry in `pending.calls`; answer that specific call through [resume](#resume-a-waiting-run). Ordinary messages remain queued until the wait is explicitly resolved.
+With `user_questions: true`, the model can ask the user a question with `ask_user_question`. The run waits with an entry in `pending.calls`; answer that specific call through [resume](#resume-a-waiting-run). Ordinary messages stay in the inbox until the wait is explicitly resolved.
 
 ### Subagents
 
@@ -143,7 +143,7 @@ With `user_questions: true`, the model can ask the user a question with `ask_use
 ```
 
 - **Inline** (`subagent_mode: "inline"`, the default): a delegated agent runs inside the parent's run and attempt, as part of that run. Inline subagents may not lead back to the delegating agent, and the graph's depth and size are bounded. `usage_limits` bounds requests, tokens and tool calls of each delegation.
-- **Async** (`subagent_mode: "async"`): each delegation starts a child thread in the same session, using the parent run's principal. The parent can check, wait for, steer, cancel and continue children with the Harness [delegation tools](../a13n-harness/delegation-and-codeact.md#asynchronous-children). A child's result arrives as a `child_result` inbox entry and either steers the active parent run or starts its next run; delivery retries when the inbox is full. A child waiting for a person still counts as running. For async edges, only `usage_limits.request_limit` applies.
+- **Async** (`subagent_mode: "async"`): each delegation starts a child thread in the same session, using the parent run's principal. The parent can check, wait for, steer, cancel and continue children with the Harness [delegation tools](../a13n-harness/delegation-and-codeact.md#asynchronous-children). A child's result arrives as a `child_result` inbox entry and either steers the active parent run or starts its next run; delivery retries when the inbox is full. The parent's delegation tools report a child run that waits for a person as `running`. For async edges, only `usage_limits.request_limit` applies.
 
 An async child's environment follows its edge: `shared` (the default) mounts the parent run's environments, `dedicated` reserves a new one from `template_id`, and `none` mounts nothing. The child agent's own `default_environment_template_id` is not used. A run may start at most `worker.child_count` children, and children nest at most `worker.child_depth` levels.
 
@@ -172,7 +172,7 @@ The response (`201`, or `200` for a replay) is `{thread, entry, run}`: the new t
 
 Sessions list most recently updated first: a new run or a label edit moves a session to the top. A run's acceptance does not change a session's `ETag`, so a label edit's `If-Match` read before a later run still applies.
 
-In Console, **New conversation** starts a session; **Try agent** starts one from the agent's page.
+In Console, **Sessions → New session** starts a session; **Try agent** starts one from the agent's page.
 
 ### Import conversation context
 
@@ -191,7 +191,7 @@ To continue a conversation produced outside the Service, add `message_history` t
 
 These are Pydantic AI conversation messages, not text pasted into the current prompt. Request parts accept `user-prompt` text (also lists of strings or native `TextContent` objects) and `tool-return`; response parts accept `text` and `tool-call`. Historical tool calls use `tool_name`, `tool_call_id` and `args` (a JSON object, a JSON string encoding an object, or null); their returns use the same name and ID plus JSON `content` and optional `outcome` (`success` by default, or `failed`, `denied`, `interrupted`). Every call must have a matching return before another response, a new user prompt or the end of the import. Historical tools do not need to be installed and will not execute.
 
-Import is limited to 256 messages and 256 KiB of normalized JSON. System instructions, media and suspended execution are not accepted. Use the Agent configuration for instructions and the current payload for attachments. Native timestamps, provider fields and usage are accepted, but do not become Service accounting. Application metadata and Run/conversation IDs are retained for readback and cleared before initializing execution; they cannot claim Service input consumption or authority.
+Import is limited to 256 messages and 256 KiB of normalized JSON. System instructions, media and suspended execution are not accepted. Use the agent configuration for instructions and the current payload for attachments. Native timestamps, provider fields and usage are accepted, but do not become Service accounting. Application metadata and the messages' `run_id` and `conversation_id` are retained for readback and cleared before initializing execution; they cannot claim Service input consumption or authority.
 
 OpenAPI and generated clients represent this field as JSON objects rather than duplicating Pydantic AI's type hierarchy. Python users who already use Pydantic AI can serialize a completed text/tool history directly; the Service SDK does not need to depend on Pydantic AI:
 
@@ -205,7 +205,7 @@ def history_json(messages: list[ModelMessage]) -> list[dict]:
 
 Pass the resulting array as `message_history`. It must satisfy the import restrictions above; not every possible Pydantic AI history is importable. Thread readback retains your submitted JSON values, without inserting omitted timestamps or other native defaults. Repeating the same submitted request with the same idempotency key replays it.
 
-The Thread keeps the immutable import for readback, but it does not manufacture historical Runs, display Items, tool executions or usage. Follow-up messages continue the committed checkpoint without reimporting; forks inherit that checkpoint. You cannot replace history on an existing Thread.
+The thread keeps the immutable import for readback, but it does not manufacture historical runs, display items, tool executions or usage. Follow-up messages continue the committed checkpoint without reimporting; forks inherit that checkpoint. You cannot replace history on an existing thread.
 
 ## Submit a message
 
@@ -232,8 +232,8 @@ When the thread is idle, either delivery starts a run at once (trigger `input`).
 A thread accepts no new run while:
 
 - a run is active;
-- its last run is `waiting` on any pending item, including questions; resume that exact Run first;
-- its latest run `failed` or was `cancelled`: queued messages wait, and only a message you submit now starts a run. After that run the queue continues.
+- its last run is `waiting` on any pending item, including questions; resume that exact run first;
+- its latest run `failed` or was `cancelled`: queued messages wait, and only a message you submit now starts a run. After that run, the inbox continues in order.
 
 A message that cannot run, for example because its agent was archived or an override is no longer valid, fails in place with a `failure` and does not block the messages behind it.
 
@@ -257,7 +257,7 @@ When the run can take a file in none of these ways, the message is refused with 
 - `DELETE …/inbox/{entry_id}` withdraws a pending entry. Its tombstone keeps the idempotency key.
 - `PUT …/inbox/order` with `{"entry_ids": [...]}` reorders the pending entries; the list must name exactly the pending entries.
 
-Anyone with `run` may withdraw and reorder. A thread holds at most `control.inbox_count` pending and assigned entries totalling `control.inbox_bytes`; beyond that, submissions answer `429 rate_limited`. Console shows these under **Queued messages**, and sends messages typed while a run works as guidance (`steer`).
+Anyone with `run` may withdraw and reorder. A thread holds at most `control.inbox_count` pending and assigned entries totalling `control.inbox_bytes`; beyond that, submissions answer `429 rate_limited`. Console shows these under **Queued messages**, and sends messages typed while a run is active as steering messages (`steer`).
 
 ### Per-run options
 
@@ -282,7 +282,7 @@ A thread can pass non-credential context, such as a tenant or conversation ID, t
 {"mcp_headers": {"conn_...": {"x-tenant-id": "acme"}}}
 ```
 
-Each key must be an enabled MCP connection of the workspace. At most 32 connections and 16 KiB of names and values are allowed; `authorization`, transport and protocol headers, and names the connection's own authentication uses are refused. Each run freezes the thread's headers when it starts, and forks and async children inherit them. Run views do not show them.
+Each key must be an enabled MCP connection of the workspace. At most 32 connections and 16 KiB of names and values are allowed; `authorization`, transport and protocol headers, and names the connection's own authentication uses are refused. Each run freezes the thread's headers when it is accepted, and forks and async children inherit them. Run views do not show them.
 
 ## Waits, approvals and questions
 
@@ -309,7 +309,7 @@ sequenceDiagram
     Note over Service,Worker: A tool call needs approval
     Worker-->>Service: Run 1 ends waiting
     Service-->>App: Pending approvals and calls
-    App->>Service: Resume Run 1 with every result
+    App->>Service: Resume run 1 with every result
     Service->>Worker: Run 2 with the results
     Worker-->>Service: Run 2 ends completed
     Service-->>App: Answer
@@ -320,7 +320,7 @@ sequenceDiagram
 
 ### Resume a waiting run
 
-Submit one complete batch naming the exact waiting Run and every pending call ID:
+Submit one complete batch naming the exact waiting run and every pending call ID:
 
 ```bash
 curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
@@ -330,7 +330,7 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
   -d '{"approvals": {"call_delete": {"action": "deny", "reason": "Keep the file"}}, "calls": {}}'
 ```
 
-Approval values are `{ "action": "approve" }` or `{ "action": "deny", "reason": "..." }`. Call results are `{ "status": "returned", "value": ... }` or `{ "status": "failed", "message": "..." }`. Returned values can be any JSON; an explicit failure becomes a tool failure the Agent can handle, not necessarily a failed Run.
+Approval values are `{ "action": "approve" }` or `{ "action": "deny", "reason": "..." }`. Call results are `{ "status": "returned", "value": ... }` or `{ "status": "failed", "message": "..." }`. Returned values can be any JSON; an explicit failure becomes a tool failure the agent can handle, not necessarily a failed run.
 
 For a user question, a returned value contains structured answers or a free-text response:
 
@@ -403,14 +403,16 @@ curl -N "$A13N_URL/api/v1/threads/$THREAD/stream" -H "Authorization: Bearer $A13
 
 The stream is provisional; the run's items are the durable record. To render a thread:
 
-1. Read `GET …/runs/{run_id}/items` for the active run. When `position` is non-null, open the stream with `?run=<run_id>&position=<position>`. Pass its non-null `resume_after` as the `Last-Event-ID` header. Without a saved position, start retained replay without a cursor.
-2. Apply `delta` frames whose `attempt` and `sequence` come after the items' `position` (`"{attempt}-{sequence}"`).
-3. On `reset`, discard superseded provisional output and read items again. On `gap`, read items and compare their position with the gap's optional `position`: clear the gap only when the missing range is covered, otherwise await a newer checkpoint or terminal state. On `changed`, read the thread.
-4. Recheck the Run on connection and periodically while it remains active: a Run that ended before subscription may not produce another stream notification. Read its final items once sealed.
+1. Read `GET …/runs/{run_id}/items` for the active run.
+2. When `position` is non-null, open the stream with `?run=<run_id>&position=<position>`, and pass a non-null `resume_after` as the `Last-Event-ID` header.
+3. Without a saved position, open the stream without a cursor for retained replay.
+4. Apply `delta` frames whose `attempt` and `sequence` come after the items' `position` (`"{attempt}-{sequence}"`).
+5. On `reset`, discard superseded provisional output and read items again. On `gap`, read items and compare their position with the gap's optional `position`: clear the gap only when the missing range is covered, otherwise await a newer checkpoint or terminal state. On `changed`, read the thread.
+6. Recheck the run on connection and periodically while it remains active: a run that ended before subscription may not produce another stream notification. Read its final items once sealed.
 
-The snapshot's `resume_after` can lag because checkpoints do not wait for Redis writes. With the Run and position supplied, the server filters covered deltas and uses retained hints to seek directly. Missing, expired or incompatible hints fall back to filtered retained replay; they do not by themselves indicate lost output. Keep client deduplication for overlapping delivery. On a network reconnect, retain the display and send its continuously applied position with a matching hint; after a page refresh, load a snapshot first. Never advance that position across a gap. Consecutive text, reasoning or tool-argument deltas of one message or tool call that arrive within `worker.stream_coalesce_seconds` come as one `delta` whose event carries their text together. After each checkpoint the Service removes the entries its items now cover, once they are `worker.stream_trim_seconds` old; it also caps a stream at about `worker.stream_length` entries and drops it `worker.stream_ttl` seconds after the last output.
+The snapshot's `resume_after` can lag because checkpoints do not wait for Redis writes. With the run and position supplied, the server filters covered deltas and uses retained hints to seek directly. Missing, expired or incompatible hints fall back to filtered retained replay; they do not by themselves indicate lost output. Keep client deduplication for overlapping delivery. On a network reconnect, retain the display and send its continuously applied position with a matching hint; after a page refresh, load a snapshot first. Never advance that position across a gap. Consecutive text, reasoning or tool-argument deltas of one message or tool call that arrive within `worker.stream_coalesce_seconds` come as one `delta` whose event carries their text together. After each checkpoint the Service removes the entries its items now cover, once they are `worker.stream_trim_seconds` old; it also caps a stream at about `worker.stream_length` entries and drops it `worker.stream_ttl` seconds after the last output.
 
-`delta` and `boundary` frames carry an SSE `id`. Readers without a Run/position can reconnect with the last one in `Last-Event-ID`; a missing cursor then reports `gap`. Readers supplying a Run/position instead receive a gap only for a missing required sequence or a transport failure. Reload items and reassess coverage at later boundaries or when the Run seals. The Service sends a keep-alive comment every 15 seconds and ends the stream when your access to the workspace ends. The frames' JSON Schema is `proto/a13n-service/thread-stream.schema.json`.
+`delta` and `boundary` frames carry an SSE `id`. Readers without a run and position can reconnect with the last one in `Last-Event-ID`; a missing cursor then reports `gap`. Readers supplying a run and position instead receive a gap only for a missing required sequence or a transport failure. Reload items and reassess coverage at later boundaries or when the run seals. The Service sends a keep-alive comment every 15 seconds and ends the stream when your access to the workspace ends. The frames' JSON Schema is `proto/a13n-service/thread-stream.schema.json`.
 
 ## Usage
 

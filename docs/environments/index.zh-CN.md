@@ -4,7 +4,7 @@ sidebarTitle: 概览
 description: 以统一方式访问本地、容器、云端和远程目标中的文件、命令、进程与端口。
 ---
 
-环境（Environment）以统一方式提供文件、命令、进程、保留输出和端口访问。可以直接用于自动化，也可以把新适配器交给 Harness，让 agent 在所选工作空间、沙箱、容器、虚拟机或远程执行目标中工作。它不要求 agent、模型凭据或托管服务。
+环境（Environment）以统一方式提供文件、命令、进程、保留输出和端口访问。可以直接用于自动化，也可以把新适配器交给 Harness，让 agent 在所选工作目录、沙箱、容器、虚拟机或远程执行目标中工作。它不要求 agent、模型凭据或托管服务。
 
 环境 provider 内置于 `a13n-harness`；只有厂商 SDK 通过 [extras](../a13n-harness/plugins.md#harness-extras) 按需安装。只调用普通应用工具或远程 API 的 agent 无需环境。
 
@@ -36,19 +36,19 @@ description: 以统一方式访问本地、容器、云端和远程目标中的�
 
 agent 只需要普通工具或远程 API 时，不使用环境。否则选择 Native 或 Envd 路线：
 
-| 路线   | Provider         | 适用场景             | 操作与归属边界                                 |
-| ------ | ---------------- | -------------------- | ---------------------------------------------- |
-| Native | `direct_local`   | 可信本地自动化       | 宿主 OS 操作；已有目录，不承诺沙箱隔离         |
-| Native | `e2b`            | 原生托管云沙箱       | E2B SDK；创建、暂停、恢复、续期和销毁沙箱      |
-| Native | `daytona`        | 云沙箱               | 原生停止/启动并保留文件                        |
-| Native | `modal`          | 云沙箱               | 基于快照停止/恢复；固定运行寿命                |
-| Native | `vercel`         | 云沙箱               | 具有原生会话的命名持久沙箱                     |
-| Native | `sprites`        | 云沙箱               | 持久磁盘与自动休眠/唤醒                        |
-| Native | `runloop`        | 云沙箱               | Devbox 挂起/恢复和空闲保活                     |
-| Envd   | `local_envd`     | CLI 和本地 agent     | 私有 stdio 守护进程；关闭后保留工作空间        |
-| Native | `docker`         | 单机服务             | Docker Engine 生命周期和 exec；关闭后保留容器  |
-| Envd   | `http_envd`      | 网络可达的外部环境   | HTTP(S) EIP；仅连接                            |
-| Envd   | `websocket_envd` | 主动连接 Host 的环境 | 反向 WebSocket EIP；与 Host 集成的 SDK，仅连接 |
+| 路线   | Provider         | 适用场景                 | 操作与归属边界                                 |
+| ------ | ---------------- | ------------------------ | ---------------------------------------------- |
+| Native | `direct_local`   | 可信本地自动化           | 宿主 OS 操作；已有目录，不承诺沙箱隔离         |
+| Native | `e2b`            | 原生托管云沙箱           | E2B SDK；创建、暂停、恢复、续期和销毁沙箱      |
+| Native | `daytona`        | 云沙箱                   | 原生停止/启动并保留文件                        |
+| Native | `modal`          | 云沙箱                   | 基于快照停止/恢复；固定运行寿命                |
+| Native | `vercel`         | 云沙箱                   | 具有原生会话的命名持久沙箱                     |
+| Native | `sprites`        | 云沙箱                   | 持久磁盘与自动休眠/唤醒                        |
+| Native | `runloop`        | 云沙箱                   | Devbox 挂起/恢复和空闲保活                     |
+| Envd   | `local_envd`     | CLI 和本地 agent         | 私有 stdio 守护进程；关闭后保留文件            |
+| Native | `docker`         | 单机服务                 | Docker Engine 生命周期和 exec；关闭后保留容器  |
+| Envd   | `http_envd`      | 网络可达的外部守护进程   | HTTP(S) EIP；仅连接                            |
+| Envd   | `websocket_envd` | 主动连接 Host 的守护进程 | 反向 WebSocket EIP；与 Host 集成的 SDK，仅连接 |
 
 [在本地试用远程示例](remote-envd.md)，无需模型、Docker 或云账号。
 
@@ -58,9 +58,9 @@ agent 只需要普通工具或远程 API 时，不使用环境。否则选择 Na
 flowchart TB
     Host[Host 策略、配置、状态与凭据] --> Definition[EnvironmentProviderDefinition]
     Definition --> Environment[新环境适配器]
-    Environment --> Harness[Agent Harness 执行]
+    Environment --> Harness[Harness 执行]
     Harness --> Tools[所选模型工具]
-    Environment --> Direct[原生本地、Docker 或云操作]
+    Environment --> Direct[Direct Local、Docker 或云操作]
     Environment --> EIP[EIP 操作]
     EIP --> Envd[a13n-envd 或远程后端]
 
@@ -69,11 +69,11 @@ flowchart TB
     class Direct ext
 ```
 
-- **Host** 选择可信 provider、期望配置、当前状态、运行时协作对象、保留策略和授权。
+- **Host** 选择可信 provider、期望的目标配置、账号配置、当前状态、运行时协作对象、保留策略和授权。
 - **环境 provider 定义** 验证账号输入、凭据和目标配置，构建新的单次使用适配器；只在运行时工厂中获取活跃协作对象。
-- **Environment** 进入或创建精确目标，提供结构化操作，缓存最新状态，关闭进程内资源，并支持 Host 显式销毁。
-- **Agent Harness** 负责执行内挂载名称、访问上限、路由、状态聚合和非破坏性清理。
-- **EIP** 是 `a13n-envd` 和远程后端使用的结构化操作协议。
+- **Environment** 准备一个精确目标（连接、恢复或创建该目标），提供结构化操作，缓存最新状态，关闭进程内资源，并支持 Host 显式销毁。
+- **Harness** 负责执行内挂载名称、访问上限、路由、状态聚合和非破坏性清理。
+- **EIP**（环境交互协议，Environment Interaction Protocol）是 `a13n-envd` 和远程后端使用的结构化操作协议。
 
 `EnvironmentState` 和 `HarnessState` 是不同记录。前者是 provider 管理的目标软引用；后者是 agent 续接状态。两者都不恢复当前凭据或授权。
 
@@ -120,13 +120,13 @@ result = await executable.run(
 )
 ```
 
-provider 在准备阶段检查目录，不在进入范围时检查。Harness 在执行后关闭适配器，绝不销毁目标。Direct Local 在关闭时保留目录，并拒绝目标销毁。
+provider 在准备阶段检查目录，不在进入范围时检查。Harness 在执行后关闭适配器，绝不销毁目标。Direct Local 在关闭时保留目录；其 `destroy()` 是已声明的空操作，绝不删除该目录。
 
 Direct Local 限制通过当前环境挂载生效。它们不会把获准运行的子进程与 Host 用户账号隔离。
 
 ## 使用 Local Envd
 
-Host 管理共享 Local Envd 运行时及其延迟启动的设备。每个新适配器都会打开独立会话，使用固定的设备工作目录：
+Host 管理共享 Local Envd 运行时；该运行时延迟启动守护进程，并持有其设备连接。每个新适配器都会打开独立会话，使用固定的设备工作目录：
 
 ```python
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
@@ -156,7 +156,7 @@ async with LocalEnvdProviderRuntime(
 
 可执行文件解析依次检查显式参数、`A13N_ENVD_EXECUTABLE`，再检查 `PATH` 上的 `a13n-envd`。客户端和 provider 包不会安装或下载原生二进制文件。
 
-Local Envd 验证守护进程与客户端的精确兼容性，绝不会回退到 Direct Local。Envd 路径指向设备文件系统；固定 cwd 不提供访问隔离。Host 管理的账号、容器或沙箱负责文件系统与网络隔离。设置和安全边界见 [`a13n-envd` 指南](../a13n-envd/index.md)。
+Local Envd 验证守护进程与客户端的精确兼容性，绝不会回退到 Direct Local。Envd 路径指向设备文件系统；固定 cwd 不提供访问隔离。Host 在启动时选择守护进程的 Sandbox 和出站网络模式，Envd 对每个会话实施这些设置；Host 的账号、容器或虚拟机仍决定外层隔离边界。设置和安全边界见 [`a13n-envd` 指南](../a13n-envd/index.md)。
 
 ## 重新进入并保留目标
 
@@ -215,9 +215,9 @@ result = await executable.run(
 )
 ```
 
-默认挂载可通过 `/workspace` 访问；命名挂载可通过 `/environment/{name}` 访问。存在多个条目时，显式选择 `default_environment`，或让 `/workspace` 保持未绑定。映射顺序绝不授予权限。
+除非挂载设置了 `mount_path`，默认挂载可通过 `/workspace` 访问，每个命名挂载可通过 `/environment/{name}` 访问；设置了 `mount_path` 的挂载只能通过该根路径访问。存在多个条目时，显式选择 `default_environment`，或让 `/workspace` 保持未绑定。映射顺序绝不授予权限。
 
-Harness 在进入前验证完整挂载集合。一个适配器失败时，会关闭所有可能持有进程内资源的已提供适配器，且不会发布部分挂载集合。回退清理中绝不销毁目标。
+Harness 在进入前验证完整挂载集合。一个适配器失败时，Harness 会关闭所有可能持有进程内资源的已提供适配器，且不会发布部分挂载集合。回退清理中绝不销毁目标。
 
 ## 仅选择必需操作
 
@@ -228,13 +228,13 @@ Harness 在进入前验证完整挂载集合。一个适配器失败时，会关
 ## 下一步
 
 - [运行内置 provider 示例](examples.md)
-- [在 Agent Harness 中使用环境](../a13n-harness/environments.md)
+- [在 Harness 中使用环境](../a13n-harness/environments.md)
 - [管理 provider 状态](lifecycle.md)和[实现 provider 插件](providers.md#provider-catalog-and-plugins)
 - [运维和配置 `a13n-envd`](../a13n-envd/index.md)
-- [阅读 EIP 和 a13n-envd 规范](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-envd)
+- [阅读 EIP 和 Envd 规范](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-envd)
 
-## 托管准备与恢复
+## Service 中的环境
 
-Service 基于这些 provider 工作：从模板创建托管 Docker 和云沙箱环境，通过端点和 token 连接外部 envd 目标，并冻结每次执行的挂载；参见 [Service 环境](../a13n-service/environments.md)。上文介绍的嵌入式 provider 生命周期仍可独立使用。
+Service 基于这些 provider 工作：从模板创建托管 Docker 和云沙箱环境，通过端点和 token 连接外部 Envd 目标，并冻结每次执行的挂载；参见 [Service 环境](../a13n-service/environments.md)。上文介绍的嵌入式 provider 生命周期仍可独立使用。
 
 直接 SDK 集成请参考[环境生命周期与错误](lifecycle.md)和[远程 Envd](remote-envd.md)。

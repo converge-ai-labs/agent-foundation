@@ -6,26 +6,28 @@ description: The native daemon that exposes files, commands, processes, and port
 
 Envd (`a13n-envd`) serves the **Environment Interaction Protocol (EIP)** over stdio, HTTP(S), or an outbound reverse WebSocket connection.
 
-Connect agents through [Harness Environment Providers](../environments/index.md), or use the [Python EIP client](python-client.md) directly.
+Connect Agents through [Harness Environment Providers](../environments/index.md), or use the [Python EIP client](python-client.md) directly.
 
 ## Choose your path
 
 | Situation                                                 | Start here                                                                          |
 | --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Using the terminal product                                | [Harness UI execution permissions](../a13n-harness-ui/environments-and-projects.md) |
+| Using Harness UI                                          | [Harness UI execution permissions](../a13n-harness-ui/environments-and-projects.md) |
 | Trying a local EIP Environment without a model            | [Local Envd example](#try-local-envd)                                               |
 | Installing a matching native executable                   | [Installation](installation.md)                                                     |
-| Running an Agent development container                    | [Sandbox image](sandbox.md)                                                         |
+| Running an agent development container                    | [Sandbox image](sandbox.md)                                                         |
 | Operating your own daemon or EIP transport                | [Configuration and transports](configuration.md)                                    |
-| Diagnosing access or missing methods                      | [Outer security and troubleshooting](isolation.md)                                  |
+| Diagnosing access or missing methods                      | [Execution boundaries and troubleshooting](isolation.md)                            |
 | Connecting through an Environment Provider                | [Remote Envd](../environments/remote-envd.md)                                       |
 | Implementing an EIP client or Provider                    | [Python EIP client](python-client.md)                                               |
-| Managing sessions, retained output, and uncertain results | [Sessions and output](operations.md)                                                |
+| Managing Sessions, retained output, and uncertain results | [Sessions and output](operations.md)                                                |
 
 ## What it provides
 
 - Read, write, search, and transfer files.
 - Run commands, send input, read output, and stop processes.
+- Inspect ports and wait for them to open.
+- Optionally observe and control a shared desktop ([computer use](computer-use.md)).
 - Check operation results, cancel work, and inspect failures.
 - Discover available operations for each platform and configuration.
 
@@ -44,7 +46,7 @@ flowchart TB
     class Files store
 ```
 
-One daemon serves a Device and multiple independent Sessions. Each Session owns its operations, processes, retained output, transfers and evidence. Working directory is a default, not an access boundary. Mutually untrusted workloads need separate Host-enforced outer boundaries; EIP Sessions are not tenant isolation.
+One daemon serves a Device and multiple independent Sessions. Each Session owns its operations, processes, retained output, transfers and evidence. Working directory is a default, not an access boundary. Mutually untrusted workloads need separate Host-enforced outer boundaries; EIP Sessions do not isolate workloads from each other.
 
 ## Try Local Envd
 
@@ -58,7 +60,7 @@ uv run environment-provider-example local_envd \
   --executable ../../target/debug/a13n-envd
 ```
 
-The example owns its workspace, starts a private daemon over stdio, creates one Session for its adapter, and verifies that closing the adapter preserves the workspace. The Host runtime closes the daemon afterward. For Agent integration, supply a **fresh** Local Envd adapter to Harness with `DynamicEnvironmentCapability`; [Harness integration](../a13n-harness/environments.md) shows that boundary. A Host can reuse its `LocalEnvdProviderRuntime` across adapters, but each adapter opens an independent Session.
+The example creates its own working directory, starts a private daemon over stdio, creates one Session for its adapter, and verifies that closing the adapter preserves that directory. The example's `LocalEnvdProviderRuntime` then closes the daemon. For Agent integration, supply a **fresh** Local Envd adapter to Harness with `DynamicEnvironmentCapability`; [Harness integration](../a13n-harness/environments.md) shows that boundary. A Host can reuse its `LocalEnvdProviderRuntime` across adapters, but each adapter opens an independent Session.
 
 Configure `LocalEnvdLaunchConfiguration` on that runtime when you need execution identity, Sandbox grants, egress mode, executable roots, shell profiles, or limits. Envd manages Session workers; the Host owns outer container or VM isolation. See [execution boundaries](isolation.md) and [Session credential references](../environments/remote-envd.md#session-egress-and-credential-references).
 

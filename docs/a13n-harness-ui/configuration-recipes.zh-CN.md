@@ -1,7 +1,7 @@
 ---
 title: 常见配置用法
 sidebarTitle: 常见用法
-description: 按任务配置模型、agent、工具、MCP 服务器、Skill 和审查策略。
+description: Model、Agent、工具、MCP 服务器、Skill 和审查策略的常见配置修改。
 ---
 
 先完成[设置](setup.md)。如果要手动编辑，先找到选中的目录，再验证修改：
@@ -24,7 +24,7 @@ defaults:
 
 要在不编辑文件的情况下创建其他 Agent，运行 `a13n-harness-ui add agent`。
 
-## 修改模型、推理或上下文预算
+## 修改 Model、推理或上下文预算
 
 模型连接和请求设置属于 **`models/<name>.yaml`**，不应放在根 YAML 或 Agent 的 `capabilities` 中。
 
@@ -44,15 +44,15 @@ settings:
   openai_service_tier: default
 model_characteristics:
   capabilities: [image_understanding]
-  context_window: 128000
+  context_window_tokens: 128000
   proactive_context_management_threshold: 0.65
   compact_threshold: 0.90
 ```
 
 - `route` 选择提供方和模型，不会创建凭据。
 - `authentication.env` 指定 Harness UI 启动时可用的已导出变量。使用本地保存的密钥时，先运行 `a13n-harness-ui auth key set key-primary`，再将 `env` 替换为 `credential_ref: key-primary`。
-- `thinking` 请求支持的推理强度，与终端简洁/详细显示无关。
-- `context_window` 是本地工作预算，不会提高提供方上限。这里的提醒阈值为 83,200 token，压缩阈值为 115,200 token。
+- `thinking` 请求支持的推理强度，与 TUI 简洁/详细显示无关。
+- `context_window_tokens` 是本地工作预算，不会提高提供方上限。这里的提醒阈值为 83,200 token，压缩阈值为 115,200 token。
 - `capabilities` 声明原生输入支持；开启模态前，应验证实际端点。
 
 在 **`agents/<name>.yaml`** 中选择：
@@ -96,7 +96,7 @@ instructions: |
   Report changed files, checks, and remaining limitations.
 ```
 
-为该配置树的所有 Agent 提供指导，编辑**根 YAML 旁的 `AGENTS.md`**。为单个工作区提供指导，编辑**工作目录中的 `AGENTS.md`** 。不会扫描祖先目录的指导文件。这些文件提供指引，不授予或移除执行权限。
+为该配置树的所有 Agent 提供指导，编辑**根 YAML 旁的 `AGENTS.md`**。为单个 Project 或目录提供指导，编辑**其工作目录中的 `AGENTS.md`** 。不会扫描祖先目录的指导文件。这些文件提供指引，不授予或移除执行权限。
 
 ## 开启指定内置 subagent
 
@@ -107,9 +107,9 @@ subagents:
 
 可用名称为 `explorer`、`code-reviewer` 和 `executor`。`[]` 关闭自动加入。无须复制其 Markdown 文件。内置角色继承父级 Model，加入根角色清单，不会递归加入每个子级。
 
-需要独立模型的子级，应创建 Agent 资源，并在父 Agent 的 `subagents` 中添加 `- agent: agent-reviewer`。只有指令的角色使用 [Markdown 子级](agents-and-subagents.md#write-a-markdown-child)。
+需要独立 Model 的子级，应创建 Agent 资源，并在父 Agent 的 `subagents` 中添加 `- agent: agent-reviewer`。只有指令的角色使用 [Markdown subagent](agents-and-subagents.md#write-a-markdown-subagent)。
 
-## 配置工具审查
+## 配置 shell 审查
 
 ```yaml title="a13n-harness-ui.yaml"
 security:
@@ -121,15 +121,15 @@ security:
     on_error: allow
 ```
 
-先将 `model-review` 创建为 **Model 资源**，或使用已有 Model ID。它不是 `code-reviewer` subagent，也不能执行工具。订阅设置会创建独立的轻量审查模型；API 密钥设置复用连接的模型。每次审查都会发出模型请求，按所选连接计算用量和费用。
+先将 `model-review` 创建为 **Model 资源**，或使用已有 Model ID。它不是 `code-reviewer` subagent，也不能执行工具。Codex 和 Grok 订阅设置会创建独立的 shell 审查 Model；ChatGPT、GitHub Copilot 和 API 密钥设置复用所连接的 Model。每次审查都会发出模型请求，按所选连接计算用量和费用。
 
 此快捷配置为各 Agent 及其子级的 shell 启动（`environment.shell_exec`）启用审查，不适用于每个工具。风险级别为 `low`、`medium`、`high` 和 `extra_high`；默认阈值为 `extra_high`。默认情况下，达到或超过阈值的调用会请求审批。此配置不会为其他工具启用审查。
 
 设置 `enable: false` 停止使用快捷配置。**这不会移除或关闭显式 Agent 策略。** 开启时，快捷配置在捕获的 Run 中将权限和可选审查合并到一个 `ToolPermissionsCapability`。其 shell 权限优先于 Agent 显式 `allow`、`deny` 或 `ask`；提供的阈值、标记动作、错误动作和 Model 优先于对应 Agent 字段。无关规则、审查指令和其他设置保留。省略/null 字段继承 Agent 审查配置；缺失时回退到 `extra_high`、实际 Agent Model、`on_flagged: approval_required` 和 `on_error: allow`。
 
-普通 UI 配置使用此根映射。高级 Agent 配置可使用带嵌套 `review` 配置的单个 `ToolPermissionsCapability`。快捷配置关闭时，审查器运行仍要求 `review` 权限：仅有审查器或风险规则不会开启审查。没有独立的审查 Capability 或兼容别名。
+普通 UI 配置使用此根映射。高级 Agent 配置可使用带嵌套 `review` 配置的单个 `ToolPermissionsCapability`。快捷配置关闭时，审查器只对 Agent 权限为 `review` 的工具运行；仅有审查器或风险规则不会开启审查。没有独立的审查 Capability 或兼容别名。
 
-`on_flagged` 接受 `deny` 或 `approval_required`；`on_error` 还接受 `allow`。非超时审查错误遵循实际 `on_error` 策略；默认 `allow` 继续执行所有剩余检查。审查超时始终拒绝执行。人工决策使用独立的 Host `tools.interaction_timeout_seconds`（默认 120）。风险/原因展示尽力提供；`/review request-id` 可打开详情。历史仅供参考，不代表权限，审查也不提供文件系统或网络隔离。运行 `a13n-harness-ui config validate` 验证；开启的快捷配置缺少 Model 或合并策略无效时会报错。已接受修改影响后续 Run，绝不改变已捕获执行。
+`on_flagged` 接受 `deny` 或 `approval_required`；`on_error` 还接受 `allow`。非超时审查错误遵循实际 `on_error` 策略；默认 `allow` 继续执行所有剩余检查。审查超时始终拒绝执行。人工决策使用独立的 Host `tools.interaction_timeout_seconds`（默认 120）。风险/原因展示尽力提供；`/review request-id` 可打开详情。审查历史只是供审查器参考的证据，不授予权限；审查也不提供文件系统或网络隔离。运行 `a13n-harness-ui config validate` 验证；开启的快捷配置缺少 Model 或合并策略无效时会报错。已接受修改影响后续 Run，绝不改变已捕获执行。
 
 ### 使用 TypeSafe Jev 审查
 
@@ -192,7 +192,7 @@ capabilities:
     configuration: {}
 ```
 
-保留其他条目。自动来源包括所选 Environment 中的 Project `.agents/skills`、用户 `~/.agents/skills`、已安装 Content Plugin 和发行版配置 Skill。见[来源优先级与离线指引](skills-and-content-plugins.md#automatic-sources-and-precedence)。Skill 目录包含 `SKILL.md`。聊天中输入 `$` 可查找可用 Skill。
+保留其他条目。自动来源包括所选 Environment 中的 Project `.agents/skills`、用户 `~/.agents/skills`、已安装 Content Plugin 和发行版配置 Skill。见[来源优先级与离线指引](skills-and-content-plugins.md#automatic-sources-and-precedence)。Skill 目录包含 `SKILL.md`。在 TUI 中输入 `$` 可查找可用 Skill。
 
 可选 `configuration.roots` 添加显式绝对 **Environment 路径**，不是任意宿主机路径。仅列出宿主机目录，不会让 Sandbox 获得访问权限。见 [Skill 来源](skills-and-content-plugins.md)。
 
@@ -213,13 +213,13 @@ tools:
 
 显示默认值在启动时生效；`/theme` 和 `/mode` 修改实时展示，不改变模型推理、权限或已保存模型上下文。
 
-交互超时控制终端问题、审批和外部结果，或完整 [WebUI 决策批次](webui.md#questions-and-approval-timeouts)，不限制模型执行。到期绝不授予审批。设置 `enable_codeact: false` 从新解析的 Run 中移除内置 CodeAct runner 和状态工具。全局关闭开关也优先于显式 Agent Capability 选择。
+交互超时控制 TUI 问题、审批和外部结果，或完整 [WebUI 决策批次](webui.md#questions-and-approval-timeouts)，不限制模型执行。到期绝不授予审批。设置 `enable_codeact: false` 从新解析的 Run 中移除内置 CodeAct runner 和状态工具。全局关闭开关也优先于显式 Agent Capability 选择。
 
 允许范围见[根字段](configuration.md#display-settings)。
 
 ## 使用多个目录
 
-创建带有序绝对根目录的 [Project 资源](environments-and-projects.md#project-file-reference)。从其**第一个** 根目录启动终端以选择该 Project。单目录用户不需要 Project 文件：终端使用启动目录。
+创建带有序绝对根目录的 [Project 资源](environments-and-projects.md#project-file-reference)。从其**第一个** 根目录启动 TUI 以选择该 Project。单目录用户不需要 Project 文件：TUI 使用启动目录。
 
 使用 `/environment` 改变执行模式。Project 根目录组织工作，不限制 Full Control 的宿主机权限。
 
@@ -227,8 +227,10 @@ tools:
 
 1. 检查 `config path`：你是否在编辑该进程选中的配置树？
 2. 运行 `config validate`：修复无效字段和缺失引用，检查 Capability 警告。
-3. 用 `/status` 检查所选 Agent 和实际 Model。必要时移除临时覆盖。
-4. 等待**新 Run**：配置绝不改变正在执行的捕获。
-5. 如果修改了全局资源默认值，开启新对话。进程/显示启动设置则需重启。
+3. 用 `/status` 检查所选 Agent 和实际 Model。
+4. 如果设置了临时覆盖，将其移除。
+5. 等待**新 Run**：配置绝不改变正在执行的捕获。
+6. 如果修改了全局资源默认值，开启新对话。
+7. 如果修改了进程或显示设置，重启 Harness UI。
 
 磁盘上的无效修改可能使上一版已接受配置继续生效。不要删除数据目录来强制应用修改：它也存放已保存对话和凭据。见[配置优先级](configuration.md#what-wins-and-when-edits-apply)。
