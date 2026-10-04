@@ -966,7 +966,9 @@ async def test_users_disable_their_own_account(service) -> None:  # type: ignore
     assert "user.disable" in await audit_actions(service, target_kind="user")
 
 
-async def test_archiving_revokes_pending_invitations(service) -> None:  # type: ignore[no-untyped-def]
+async def test_archiving_revokes_pending_invitations(service, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    # The expiry sweep deletes revoked invitations; this test reads the revoked one back.
+    await runs_kit.pause_sweeps(service)
     client = service.client
     lab = (await client.post(f"{service.organization}/workspaces", json={"name": "Lab"})).json()
     path = f"/api/v1/workspaces/{lab['id']}"
