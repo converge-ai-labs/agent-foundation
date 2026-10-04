@@ -216,7 +216,7 @@ async def test_unreadable_resume_input_leaves_waiting_head_unchanged(service, sc
     )
     assert response.status_code == 400, response.text
     thread = await runs_kit.get_thread(service, waiting["thread_id"])
-    assert thread["head_run_id"] == waiting["id"] and thread["current_run_id"] is None
+    assert thread["last_run_id"] == waiting["id"] and thread["current_run_id"] is None
     assert len((await service.client.get(f"{service.api}/threads/{waiting['thread_id']}/runs")).json()["items"]) == 1
 
 
@@ -292,7 +292,7 @@ async def test_resume_input_survives_pre_effect_checkpoint_without_replaying_app
         await session.execute(
             update(AttemptRow).where(AttemptRow.run_id == run_id).values(lease_expires_at=AttemptRow.created_at)
         )
-    state = await checkpoints.load_state(service.runtime.objects, run_id, pointer)
+    state = await checkpoints.load_state(service.runtime.objects, pointer)
     assert state is not None and not state.resume_input_consumed
     assert "After approved tool" not in str(state.harness.message_history)
     await expire_leases(service.runtime, batch=10)
@@ -340,6 +340,7 @@ async def test_resume_input_materialization_failure_fails_the_successor_not_the_
         await (await runs_kit.attempt(service))
     failed = await runs_kit.get_run(service, response.json()["id"])
     assert failed["status"] == "failed" and failed["failure"]["code"] == "invalid_argument", failed
+    # The failed successor is now the thread's history; sealed before any checkpoint, it leaves the wait's state.
     thread = await runs_kit.get_thread(service, waiting["thread_id"])
-    assert thread["head_run_id"] == waiting["id"]
+    assert thread["last_run_id"] == failed["id"]
     assert len(await runs_kit.inbox(service, waiting["thread_id"])) == 1

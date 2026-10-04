@@ -382,7 +382,7 @@ async def test_question_wait_keeps_old_and_new_messages_until_explicit_resume(
         await advance(service.runtime, thread_id)
         await sweep()
     thread = await runs_kit.get_thread(service, thread_id)
-    assert thread["current_run_id"] is None and thread["head_run_id"] == run_id
+    assert thread["current_run_id"] is None and thread["last_run_id"] == run_id
     queued = (await runs_kit.inbox(service, thread_id))[1:]
     assert [(e["id"], e["status"]) for e in queued] == [(old["id"], "pending"), (new["id"], "pending")]
 

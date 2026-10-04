@@ -158,20 +158,23 @@ http_origins = ["http://host.docker.internal:11434"]
 
 ## 执行
 
-| 设置                                               | 作用                                                                      |
-| -------------------------------------------------- | ------------------------------------------------------------------------- |
-| `worker.slots`                                     | 单个 worker 进程并发执行的尝试数。                                        |
-| `worker.max_attempts`                              | 运行失败前可消耗的计费尝试数。                                            |
-| `worker.lease_seconds`, `worker.authority_seconds` | 尝试租约寿命，以及 worker 续期、检查取消和主体访问权限的频率。            |
-| `worker.drain_seconds`                             | 停止中的 worker 等待尝试交接的时长。                                      |
-| `worker.child_depth`, `worker.child_count`         | 子 agent 运行的深度和数量限制。                                           |
-| `worker.stream_coalesce_seconds`                   | 连续文本、推理或工具参数增量合并为一个实时事件的时间窗口。                |
-| `worker.stream_trim_seconds`                       | 检查点已覆盖的实时事件在 Redis 中保留多久，以便短暂断线客户端无缺口恢复。 |
-| `worker.stream_length`, `worker.stream_ttl`        | Redis 中单线程实时事件流的兜底长度上限和空闲寿命。                        |
-| `worker.display_bytes`, `worker.output_bytes`      | 运行显示数据和结果的大小限制。                                            |
-| `control.inbox_count`, `control.inbox_bytes`       | 单线程收件箱容量（`inbox_bytes` 默认 2 MiB）。                            |
-| `control.subscriptions`                            | 每个工作空间的 webhook 订阅数。                                           |
-| `environments.*`                                   | 环境维护频率、provider 调用限制和尝试等待环境的时长。                     |
+| 设置                                               | 作用                                                                         |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `worker.slots`                                     | 单个 worker 进程并发执行的尝试数。                                           |
+| `worker.max_attempts`                              | 运行失败前可消耗的计费尝试数。                                               |
+| `worker.lease_seconds`, `worker.authority_seconds` | 尝试租约寿命，以及 worker 续期、检查取消和主体访问权限的频率。               |
+| `worker.drain_seconds`                             | 停止中的 worker 等待尝试交接的时长。                                         |
+| `worker.child_depth`, `worker.child_count`         | 子 agent 运行的深度和数量限制。                                              |
+| `worker.stream_coalesce_seconds`                   | 连续文本、推理或工具参数增量合并为一个实时事件的时间窗口。                   |
+| `worker.stream_trim_seconds`                       | 检查点已覆盖的实时事件在 Redis 中保留多久，以便短暂断线客户端无缺口恢复。    |
+| `worker.stream_length`, `worker.stream_ttl`        | Redis 中单线程实时事件流的兜底长度上限和空闲寿命。                           |
+| `worker.output_bytes`                              | 运行结果的大小限制。                                                         |
+| `worker.page_items`, `worker.page_bytes`           | 运行显示历史单页大小：最多 `page_items` 项，或达到 `page_bytes` 时的更少项。 |
+| `worker.content_bytes`                             | 大于该值的图片、文档等二进制内容单独保存一次，不随每个检查点重复写入。       |
+| `worker.compression_level`                         | worker 写入运行对象时使用的 zstd 级别。                                      |
+| `control.inbox_count`, `control.inbox_bytes`       | 单线程收件箱容量（`inbox_bytes` 默认 2 MiB）。                               |
+| `control.subscriptions`                            | 每个工作空间的 webhook 订阅数。                                              |
+| `environments.*`                                   | 环境维护频率、provider 调用限制和尝试等待环境的时长。                        |
 
 `provisioning.local.enabled = true` 提供 `local` 环境 provider，直接在 worker 宿主机执行命令，没有隔离。仅用于开发。
 

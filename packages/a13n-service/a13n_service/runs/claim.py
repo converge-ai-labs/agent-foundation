@@ -78,7 +78,7 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
                 session, runtime, run, ["run.running", "run_attempt.leased"], at=current, attempt=attempt
             )
             if previous is not None:
-                checkpoints.reclaim(session, run, before_attempt=attempt.number)
+                await checkpoints.reclaim(session, run, before_attempt=attempt.number)
             leases.append(
                 Lease(
                     run_id=run.id,

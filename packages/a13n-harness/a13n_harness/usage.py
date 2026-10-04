@@ -433,6 +433,14 @@ class UsageSnapshot(UsageScope):
         return state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
 
 
+def without_usage(state: HarnessState) -> HarnessState:
+    """The state without its accounting, for a Host that keeps usage elsewhere and resumes without it."""
+    entries = state.agent_context_state.entries
+    if entries.pop(USAGE_CAPABILITY_ID, None) is None:
+        return state
+    return state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
+
+
 def select_usage_snapshot(previous: UsageSnapshot, current: UsageSnapshot) -> UsageSnapshot:
     """Choose current state from one owner; a sequence never merges independent writers."""
     identity = {"usage_id", "thread_id", "run_id", "agent_instance_id", "parent_agent_instance_id", "delegation_id"}

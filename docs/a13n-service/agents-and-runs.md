@@ -196,7 +196,7 @@ When the thread is idle, either delivery starts a run at once (trigger `input`).
 A thread accepts no new run while:
 
 - a run is active;
-- its history head is `waiting` on any pending item, including questions; resume that exact Run first;
+- its last run is `waiting` on any pending item, including questions; resume that exact Run first;
 - its latest run `failed` or was `cancelled`: queued messages wait, and only a message you submit now starts a run. After that run the queue continues.
 
 A message that cannot run, for example because its agent was archived or an override is no longer valid, fails in place with a `failure` and does not block the messages behind it.
@@ -295,7 +295,7 @@ A structured value could be `{"answers": {"Which color?": "blue"}}`; multi-selec
 
 Both result maps are required, and each must cover its pending group exactly. Missing results, unknown IDs and wrong categories reject the entire request without changing the wait. There are no default answers or partial submissions. In Console, review each item and submit the complete set; **Continue without feedback** explicitly submits denials and failed results after confirmation.
 
-The response is the successor run (`201`, or `200` for an idempotent replay). Results are stored in its existing `resume` field, without another inbox message. Only the thread's waiting history head can be resumed while nothing else runs; stale requests receive `409 conflict` with reason `not_idle_waiting_head`. After a failed successor, explicitly resume the still-waiting head again.
+The response is the successor run (`201`, or `200` for an idempotent replay). Results are stored in its existing `resume` field, without another inbox message. Only the thread's last run can be resumed, while it waits and nothing else runs; stale requests receive `409 conflict` with reason `not_idle_waiting_head`. A successor that fails becomes the thread's history like any other run, so the wait is over: your next message continues from it, and calls it left without a result read as interrupted.
 
 To accompany those results with a clarification or attachment, include optional `input` in the same resume request:
 
@@ -314,17 +314,17 @@ The accompanying input does not replace any required result. Ordinary inbox mess
 ## Interrupt, fork and archive
 
 - **Interrupt**: `POST …/runs/{run_id}/interrupt` cancels a run. A run that has not started is `cancelled` at once; a running run is asked to stop at its next safe point and shows `cancel_requested_at` until then. Interrupting a cancelled run returns it; a completed, waiting or failed run answers `409` (`run_completed`, ...). Console's **Stop** interrupts the active run.
-- **Fork**: `POST …/runs/{run_id}/fork` starts a new thread in the same session whose first run continues from a `completed` or `waiting` run, with a new message (the same body as a submission) and an `Idempotency-Key`. A fork of a waiting run automatically denies approvals and marks other calls as having no response in the new branch before processing the new message. The original wait is unchanged. The fork shares the origin thread's mounted environments unless `fresh_environments` is `true`, and `environments` adds more. It copies the origin thread's memory mounts, and `memories` adds more. Failed and cancelled runs cannot be forked.
+- **Fork**: `POST …/runs/{run_id}/fork` starts a new thread in the same session whose first run continues from any ended run, with a new message (the same body as a submission) and an `Idempotency-Key`. A fork of a waiting run automatically denies approvals and marks other calls as having no response in the new branch before processing the new message. The original wait is unchanged. The fork shares the origin thread's mounted environments unless `fresh_environments` is `true`, and `environments` adds more. It copies the origin thread's memory mounts, and `memories` adds more. A fork of a failed or cancelled run continues from its last checkpoint, with its unfinished tool calls interrupted.
 - **Archive**: `POST …/threads/{thread_id}/archive` with the thread's `If-Match` ends a thread permanently: pending messages are withdrawn, its mounts are removed, and an active run is interrupted. Its history stays readable.
 
-A failed or cancelled run never becomes history: continuation uses the last completed or waiting run. If that head is still waiting, resume it explicitly; ordinary messages stay queued.
+Every ended run is the history its thread continues, whatever its outcome. After a failed or cancelled run, the next run starts from its last checkpoint, or from where the run started if it failed before one, and tool calls it left unfinished read as interrupted rather than running again. When the history itself caused the failure, for example a model provider rejecting it, fork an earlier run instead.
 
 ## Results
 
 `GET …/runs/{run_id}` returns the run: `status`, `trigger`, `lineage` (`root`, `continue` or `fork`), `parent_run_id`, the `input` or `resume` that started it, `options`, `environment_mounts`, `memory_mounts`, `pending`, `output`, `failure {code, message}`, `usage_at_seal`, `labels` and timestamps. `output` is the agent's final text, or JSON matching its `output_spec`.
 
-- `GET …/threads/{thread_id}/runs` lists a thread's runs, newest first. A thread's `head_run_id` is its latest completed or waiting run, `current_run_id` its active run.
-- `GET …/runs/{run_id}/items` returns the run's display items (text and reasoning messages, tool calls and observations) with `position`, optional `resume_after`, and `complete`. Items of a run that ended while they were in progress read `interrupted`. A display keeps at most 4096 items; `dropped` counts the oldest items it removed beyond that limit.
+- `GET …/threads/{thread_id}/runs` lists a thread's runs, newest first. A thread's `last_run_id` is the run that ended last, whose history the next run continues, and `current_run_id` its active run.
+- `GET …/runs/{run_id}/items` returns the run's display items (text and reasoning messages, tool calls and observations) in order, each with its `ordinal`, plus `position`, optional `resume_after`, and `complete`. By default it returns the newest `limit` items (200 by default, at most 500); pass the first item's ordinal as `before` to read the items before it, or `after` to read on from an ordinal. Items of a run that ended while they were in progress read `interrupted`.
 - `GET …/runs/{run_id}/lineage` returns the run and its ancestors, nearest first, across forks.
 - `GET …/runs/{run_id}/attempts` lists attempts with their `start_reason` (`initial`, `recovery` after a lost worker, `handoff` when a worker shuts down) and outcome. A run fails after `max_attempts` attempts that were not handoffs.
 

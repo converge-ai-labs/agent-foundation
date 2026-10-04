@@ -257,8 +257,14 @@ class Worker(Section):
     # One boundary delivery batch of steers.
     delivery_count: int = Field(default=8, ge=1, le=128)
     delivery_bytes: int = Field(default=262144, ge=1024, le=16777216)
-    display_bytes: int = Field(default=8388608, ge=65536, le=67108864)
     output_bytes: int = Field(default=1048576, ge=1024, le=16777216)
+    # A display history page holds this many items, or fewer that reach page_bytes.
+    page_items: int = Field(default=256, ge=16, le=4096)
+    page_bytes: int = Field(default=1048576, ge=65536, le=16777216)
+    # Binary content parts of the Harness state larger than this are saved once as their own run objects.
+    content_bytes: int = Field(default=65536, ge=1024, le=16777216)
+    # The zstd level of every run object a worker writes.
+    compression_level: int = Field(default=3, ge=1, le=19)
     # The thread stream's backstop cap. Coalesced text and reasoning append about ten entries a second, so one step
     # streams for about a quarter of an hour before the cap removes its start; boundaries trim covered entries first.
     stream_length: int = Field(default=10000, ge=16, le=100000)

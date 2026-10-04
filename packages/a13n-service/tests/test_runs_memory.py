@@ -2,6 +2,7 @@
 checkpoint commits, recovery from them, and the per-call recheck of the run's principal."""
 
 import asyncio
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any
 
@@ -197,9 +198,8 @@ async def test_a_memory_deleted_mid_run_refuses_its_next_call(service, scripted_
     assert "memory_deleted" in tool_result(await scripted_model.request(), "call_view")
 
 
-async def test_a_recovered_attempt_continues_from_the_committed_cursors(
-    service, scripted_model, runs_kit, monkeypatch
-) -> None:  # type: ignore[no-untyped-def]
+async def lose_a_memory_read(service, scripted_model, runs_kit, monkeypatch) -> tuple[dict[str, Any], str]:  # type: ignore[no-untyped-def]
+    """A run whose worker died while it read a memory file, after the tool boundary committed, ready to recover."""
     await runs_kit.pause_sweeps(service)
     memory = await team_memory(service)
     agent = await runs_kit.create_agent(service, scripted_model)
@@ -224,10 +224,6 @@ async def test_a_recovered_attempt_continues_from_the_committed_cursors(
         with pytest.raises(asyncio.CancelledError):
             await running
     monkeypatch.setattr(Boundaries, "before_tool_execute", before)
-    # The tool boundary committed the history holding the context together with the cursor it delivered.
-    assert await cursors(service, run_id) == {memory["id"]: "2"}
-
-    await write_file(service, memory, "notes/juice.md", "Orange\n")
     async with transaction(service.runtime.storage) as session:
         await session.execute(
             update(AttemptRow).where(AttemptRow.run_id == run_id).values(lease_expires_at=AttemptRow.created_at)
@@ -235,6 +231,17 @@ async def test_a_recovered_attempt_continues_from_the_committed_cursors(
     await expire_leases(service.runtime, batch=10)
     async with transaction(service.runtime.storage) as session:
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
+    return memory, run_id
+
+
+async def test_a_recovered_attempt_continues_from_the_committed_cursors(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    memory, run_id = await lose_a_memory_read(service, scripted_model, runs_kit, monkeypatch)
+    # The tool boundary committed the history holding the context together with the cursor it delivered.
+    assert await cursors(service, run_id) == {memory["id"]: "2"}
+
+    await write_file(service, memory, "notes/juice.md", "Orange\n")
     scripted_model.say("Recovered")
     await (await runs_kit.attempt(service))
     result = await runs_kit.get_run(service, run_id)
@@ -244,6 +251,23 @@ async def test_a_recovered_attempt_continues_from_the_committed_cursors(
     # The recovered attempt continues the committed history: its context is not delivered again.
     assert recovered.count(BLOCK) == 1 and "notes/juice.md" not in recovered
     assert await cursors(service, run_id) == {memory["id"]: "2"}
+
+
+async def test_a_takeover_keeps_the_open_memory_read_out_of_pages_until_it_answers(
+    service, scripted_model, runs_kit, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    _, run_id = await lose_a_memory_read(service, scripted_model, runs_kit, monkeypatch)
+    # Each final item fills a page, so the read is the next item the recovery's tool boundary could page.
+    settings = service.runtime.settings
+    worker = settings.worker.model_copy(update={"page_items": 1})
+    runtime = replace(service.runtime, settings=settings.model_copy(update={"worker": worker}))
+    scripted_model.say("Recovered")
+    await (await runs_kit.attempt(service, runtime=runtime))
+
+    result = await runs_kit.get_run(service, run_id)
+    assert (result["status"], result["attempts"]) == ("completed", 2), result
+    [call] = [item for item in (await runs_kit.items(service, run_id))["items"] if item["kind"] == "tool_call"]
+    assert call["state"] == "completed" and "Oolong" in call["content"]["result"], call
 
 
 async def test_store_calls_recheck_the_run_principal_under_its_authority(service) -> None:  # type: ignore[no-untyped-def]

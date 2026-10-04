@@ -27,6 +27,8 @@ from pydantic_ai.messages import CapabilityEvent, ModelMessage, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
 
+from a13n_service.runs.display import open_tool_calls
+
 
 @dataclass(kw_only=True)
 class SafeBoundary(CapabilityEvent, namespace="a13n.service"):
@@ -37,10 +39,12 @@ class SafeBoundary(CapabilityEvent, namespace="a13n.service"):
 
 @dataclass(frozen=True, slots=True)
 class Staged:
-    """What one boundary commits: the exported state and the memory cursors its history holds context as of."""
+    """What one boundary commits: the exported state, the memory cursors its history holds context as of, and the
+    tool calls it leaves open."""
 
     state: HarnessState
     cursors: dict[str, str | None]
+    open_calls: frozenset[str]
 
 
 class Boundaries(AbstractCapability[AgentContext]):
@@ -102,7 +106,8 @@ class Boundaries(AbstractCapability[AgentContext]):
         self.staged_length, self.tokens = len(messages), self.tokens + 1
         token = self.tokens
         self.acknowledged[token] = asyncio.get_running_loop().create_future()
-        cursors = self.cursors()  # Taken with `messages`, before the export awaits.
-        self.states[token] = Staged(await ctx.deps.export_state(messages), cursors)
+        # Taken with `messages`, before the export awaits.
+        cursors, open_calls = self.cursors(), open_tool_calls(messages)
+        self.states[token] = Staged(await ctx.deps.export_state(messages), cursors, open_calls)
         await ctx.emit(SafeBoundary(token=token, at=at))
         return token

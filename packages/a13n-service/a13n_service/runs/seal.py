@@ -3,7 +3,8 @@
 Three callers hold different authority (worker lease, interrupt of an accepted run, the expiry sweep) but
 share one transition, so thread pointers, input disposition, child notification and webhooks are decided
 in one place. Cleanup is staged durably with the transition. The transaction owner advances successors
-after commit; only telemetry uses callbacks. Failed or cancelled runs pause their thread.
+after commit; only telemetry uses callbacks. Every sealed run is the history its thread continues, but failed or
+cancelled runs pause their thread's automatic advancement.
 """
 
 from datetime import datetime, timedelta
@@ -126,8 +127,6 @@ async def seal(
         run.failure = outcome.failure.model_dump()
     run.usage_at_seal = usage
     thread.current_run_id, thread.last_run_id = None, run.id
-    if outcome.status in {"completed", "waiting"}:
-        thread.head_run_id = run.id
     await session.flush()
     await inbox.release_assigned(session, thread, run, at=at)
     if thread.origin == "child" and outcome.status != "waiting":
@@ -142,7 +141,7 @@ async def seal(
             payload={"child_run_id": run.id},
         )
     await notify_subscribers(session, runtime, run, kinds, at=at, attempt=attempt)
-    checkpoints.reclaim(session, run)
+    await checkpoints.reclaim(session, run)
 
 
 async def recover(
@@ -191,18 +190,19 @@ async def stop(session: AsyncSession, runtime: Runtime, thread: ThreadRow, run: 
 
 
 async def seal_attempt(
-    runtime: Runtime, lease: Lease, outcome: Outcome, *, display: checkpoints.DisplayPointer | None = None
+    runtime: Runtime, lease: Lease, outcome: Outcome, *, display: checkpoints.DisplayWrite | None = None
 ) -> None:
     """The worker's seal of a failure or cancellation; a completed or waiting outcome seals in its final checkpoint's
     transaction instead.
 
-    A failed or cancelled attempt may pass the display of its interrupted tail, which becomes the run's final
-    display in the same transaction; the state pointer stays at the last checkpoint as inspection evidence.
+    A failed or cancelled attempt may pass the display it folded, its unfinished items interrupted, which becomes
+    the run's final display in the same transaction; the state pointer stays at the last checkpoint, which a
+    successor continues.
     """
     async with transaction(runtime.storage) as session:
         thread, run, attempt, current = await lock_thread_lease(session, lease)
         if display is not None:
-            run.display = display.model_dump(mode="json")
+            checkpoints.record_display(session, run, display)
         await seal(session, runtime, thread, run, attempt, outcome, at=current)
     if outcome.status in {"completed", "waiting"}:
         await advance(runtime, lease.thread_id)

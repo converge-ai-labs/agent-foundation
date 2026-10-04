@@ -196,10 +196,10 @@ async def fork(
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
         origin = await get_run(session, scope.workspace_id, run_id)
         origin_thread = await get_thread(session, scope.workspace_id, origin.thread_id, lock=True)
-        # Failed and cancelled runs never became history; fork their parent and resubmit instead.
-        if origin.status not in {"completed", "waiting"}:
+        # A fork continues a sealed run's last checkpoint, whatever its outcome.
+        if origin.sealed_at is None:
             raise conflict("run", origin.id, f"run_{origin.status}")
-        checkpoints.require_compatible(origin.id, origin.checkpoint)
+        checkpoints.require_compatible(origin)
         owner = await session.get(SessionRow, origin.session_id)
         assert owner is not None
         thread = new_thread(

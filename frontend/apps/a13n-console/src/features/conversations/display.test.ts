@@ -20,7 +20,6 @@ it("reads the committed display of one Run", async () => {
       items: [],
       position: "1-4",
       complete: true,
-      dropped: 0,
     });
   });
   const client = createClient({

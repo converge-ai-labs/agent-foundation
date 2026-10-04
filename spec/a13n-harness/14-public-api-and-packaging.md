@@ -22,7 +22,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | Direct plugins                | `AbstractHarnessPlugin`, `PluginOrdering`                                                                                                                                                                                                                                                            |
 | Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`, `ToolRecoveryMode`                                                                                                                                                                                                                         |
 | Observation                   | `HarnessInstrumentation`, `HarnessObservationContext`, `HarnessTraceContent`, `InputTextEvent`, `InputMediaEvent`                                                                                                                                                                                    |
-| State, execution, and results | `HarnessState`, `HarnessRunStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                                                                                            |
+| State, execution, and results | `HarnessState`, `StateStore`, `StoredRef`, `HarnessRunStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                                                                 |
 | Errors                        | `HarnessError`, `DefinitionError`, `IdentityError`, `InputError`, `ModelResolutionError`, `PluginError`, `RunCleanupError`, `RunError`, `StateError`                                                                                                                                                 |
 
 `a13n_harness.__all__` is exactly this table. Feature-family APIs remain public through their owning stable modules rather than being duplicated at the package root. Important routes include:
@@ -175,6 +175,7 @@ class RunBindings:
     model_context: ModelContextMiddleware | None = None
     observation: HarnessObservationContext | None = None
     tool_result_directory: str | None = None
+    state_store: StateStore | None = None
 
     @classmethod
     def embedded(
@@ -200,6 +201,7 @@ class RunBindings:
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
         tool_result_directory: str | None = None,
+        state_store: StateStore | None = None,
     ) -> RunBindings: ...
 ```
 
@@ -243,6 +245,8 @@ class ModelCallCheck(Protocol):
 `SkillsCapability()` uses the canonical optional workspace source owned by [Skills and Discovery](09-context-and-memory.md#skills-and-discovery). `SkillManager.default(additional_sources=...)` retains that source before explicit Host additions, while passing another `SkillManager` replaces the default source composition. `SkillSource.catalog(files=...)` and `SkillMaterializer.materialize(files=...)` use only the public `FileOperator` boundary. `SkillSource.roots` and `SkillManager.roots` expose the configured canonical absolute FileOperator paths. `SkillManager.scan(files=...)` is the direct non-virtual mode for a caller-controlled FileOperator. `SkillManager.scan_environment(environment=...)` captures mount-incarnation-pinned file scopes and returns `BoundSkillCatalog`; both Environment-aware Hosts and `SkillsCapability` use that method without constructing another Agent loop. `BoundSkillCatalog.require_current()` fences only the routes represented by its items. These are separate explicit operations: neither dispatches to or retries through the other, and the public surface provides only the explicit source and root operations described here.
 
 `RunBindings.tool_result_directory` selects an optional canonical absolute Environment path for Run-private tool result files. It is captured on `AgentContext`, grants no file authority, and is not restored from State. The [tool output contract](07-tool-execution.md#dispatch-retry-and-results) owns default placement, explicit-sink failure, and cleanup.
+
+`RunBindings.state_store` optionally binds the Host store that exported state references large binary content and retained inline child states through, under the [Host state store contract](10-snapshot-and-resume.md#host-state-store). Inline children inherit it, and it is not restored from State.
 
 `RunBindings.skill_selection` is the optional Host override consumed only by a definition-selected `SkillsCapability`. Its immutable exact-name set chooses a subset of the conflict-resolved discovered catalog for one logical run. Absence selects the complete catalog, while an explicit empty set selects none. It carries no source, file, package, or activation authority and is reconstructed independently for resumed and child runs.
 

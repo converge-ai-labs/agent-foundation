@@ -10,7 +10,7 @@ import pytest
 from a13n_harness import HarnessEvent
 from a13n_service.runs import stream as stream_module
 from a13n_service.runs.coalesce import MAX_MERGED_CHARS, Coalescer
-from a13n_service.runs.display import Display, DisplayFold, Observed
+from a13n_service.runs.display import DisplayFold, Observed, Tail
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import ThreadStream, WrittenPosition, stream_key
 from a13n_service.settings import Settings
@@ -89,7 +89,7 @@ def _streamed_arguments(events: list[dict[str, Any]]) -> list[str]:
     return [event["value"]["event"]["delta"]["args_delta"] for event in events if event.get("name") == PART_DELTA]
 
 
-def _argument_items(display: Display) -> list[str | None]:
+def _argument_items(display: Tail) -> list[str | None]:
     """The argument text of each observation item holding a tool call's streamed arguments; None once omitted."""
     texts: list[str | None] = []
     for item in display.items:
@@ -110,11 +110,11 @@ def _replies(events: list[dict[str, Any]]) -> list[str]:
 
 async def _coalesce(
     runtime: Runtime, sources: list[HarnessEvent], *, window: float, boundary_after: int | None = None
-) -> tuple[list[tuple[str, dict[str, str]]], Display]:
+) -> tuple[list[tuple[str, dict[str, str]]], Tail]:
     """Feed Harness events through a coalescer as an attempt does, committing a boundary after the event at
     `boundary_after`; the stream entries and the display it leaves."""
     thread_id = f"thr_{uuid4().hex}"
-    fold = DisplayFold(RUN, Display(), attempt=1, max_bytes=runtime.settings.worker.display_bytes)
+    fold = DisplayFold(RUN, Tail(), attempt=1, page_items=256, page_bytes=1048576)
     live = ThreadStream(runtime.redis, runtime.settings, thread_id=thread_id, run_id=RUN, attempt=1)
     async with live, Coalescer(fold, live, window=window) as output:
         for index, source in enumerate(sources):
@@ -124,10 +124,10 @@ async def _coalesce(
                 output.boundary()
             if index % 100 == 0:
                 await live.buffer.join()  # A model streams slower than this loop: let the writer keep up.
-    return await _entries(runtime.redis, thread_id), fold.snapshot()
+    return await _entries(runtime.redis, thread_id), fold.snapshot().tail
 
 
-def _positionless(display: Display) -> list[dict[str, Any]]:
+def _positionless(display: Tail) -> list[dict[str, Any]]:
     """Items without the stream positions they record, which merging renumbers; an observation's ID is its
     position."""
     return [
@@ -210,7 +210,7 @@ async def test_a_merged_fragment_stays_within_the_bound(runtime: Runtime) -> Non
 async def test_a_pause_releases_held_text_within_the_window(runtime: Runtime) -> None:
     thread_id = f"thr_{uuid4().hex}"
     start, hel, lo, end = _harness(_text(0, "Hel", "lo"))
-    fold = DisplayFold(RUN, Display(), attempt=1, max_bytes=runtime.settings.worker.display_bytes)
+    fold = DisplayFold(RUN, Tail(), attempt=1, page_items=256, page_bytes=1048576)
     live = ThreadStream(runtime.redis, runtime.settings, thread_id=thread_id, run_id=RUN, attempt=1)
     async with live, Coalescer(fold, live, window=0.05) as output:
         output.observe(start)
@@ -228,7 +228,7 @@ async def test_the_attempt_end_releases_a_held_fragment(runtime: Runtime) -> Non
     for ending in (None, asyncio.CancelledError):
         thread_id = f"thr_{uuid4().hex}"
         start, hello, _ = _harness(_text(0, "Hello"))
-        fold = DisplayFold(RUN, Display(), attempt=1, max_bytes=runtime.settings.worker.display_bytes)
+        fold = DisplayFold(RUN, Tail(), attempt=1, page_items=256, page_bytes=1048576)
         live = ThreadStream(runtime.redis, runtime.settings, thread_id=thread_id, run_id=RUN, attempt=1)
         try:
             async with live, Coalescer(fold, live, window=60) as output:
@@ -240,7 +240,7 @@ async def test_the_attempt_end_releases_a_held_fragment(runtime: Runtime) -> Non
             pass
 
         assert _contents(_events(await _entries(runtime.redis, thread_id))) == ["Hello"], ending
-        assert fold.snapshot().items[0].content["text"] == "Hello"
+        assert fold.snapshot().tail.items[0].content["text"] == "Hello"
 
 
 async def test_a_streamed_reply_reaches_the_stream_coalesced(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
@@ -710,7 +710,7 @@ async def test_failed_checkpoint_publication_never_enqueues_a_boundary_or_trims(
 
 
 async def test_display_retains_standard_interrupt_and_scopes_child_native_ids() -> None:
-    fold = DisplayFold(RUN, Display(), attempt=1, max_bytes=1_000_000)
+    fold = DisplayFold(RUN, Tail(), attempt=1, page_items=256, page_bytes=1048576)
     events = [
         {"type": "TOOL_CALL_START", "toolCallId": "same", "toolCallName": "root"},
         {"type": "TOOL_CALL_START", "toolCallId": "same", "toolCallName": "child", "subagentRunId": "child"},
@@ -733,11 +733,14 @@ async def test_display_retains_standard_interrupt_and_scopes_child_native_ids() 
     ]
     observed = fold.fold(events)
     assert observed[-1].item is not None
-    saved = fold.snapshot()
+    # The root call is the primary run's open one; the child's call of the same ID is another item.
+    saved = fold.snapshot(open_calls={"same"}).tail
     root, child, interrupt = saved.items
     assert root.id != child.id and root.state == "in_progress" and child.state == "completed"
     assert child.content["subagentRunId"] == "child"
     assert child.content["result_parts"] == events[2]["content"]
     assert interrupt.content == events[-1]
-    restored = DisplayFold(RUN, Display.model_validate_json(saved.model_dump_json()), attempt=2, max_bytes=1_000_000)
-    assert restored.snapshot().items[-1].content == interrupt.content
+    restored = DisplayFold(
+        RUN, Tail.model_validate_json(saved.model_dump_json()), attempt=2, page_items=256, page_bytes=1048576
+    )
+    assert restored.snapshot().tail.items[-1].content == interrupt.content

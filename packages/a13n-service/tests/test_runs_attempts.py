@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 
 import pytest
-from a13n_harness.usage import ModelUsageRecord
+from a13n_harness.usage import USAGE_CAPABILITY_ID, ModelUsageRecord
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.models import service as models_service
@@ -259,7 +259,13 @@ async def test_claim_leaves_newer_checkpoints_and_fails_older_ones(service, scri
                 .where(RunRow.id == run_id)
                 .values(
                     checkpoint={**pointer, "format": format, "seq": 1, "attempt": 1},
-                    display={**pointer, "format": format, "position": {"attempt": 1, "sequence": 1}},
+                    tail={
+                        **pointer,
+                        "format": format,
+                        "position": {"attempt": 1, "sequence": 1},
+                        "first": 1,
+                        "count": 0,
+                    },
                 )
             )
         # The newer one is due first, so filtering after the claim's limit would find nothing to claim.
@@ -663,10 +669,10 @@ async def test_an_outcome_commits_only_with_its_seal(service, scripted_model, ru
     assert [(item["status"], item["failure"]["code"]) for item in attempts] == [("failed", "attempt_failed")]
     async with transaction(service.runtime.storage) as session:
         run = await session.get_one(RunRow, run_id)
-        state = await checkpoints.load_state(
-            service.runtime.objects, run.id, checkpoints.StatePointer.model_validate(run.checkpoint)
-        )
+        state = await checkpoints.load_state(service.runtime.objects, checkpoints.require_compatible(run))
         assert state is not None and state.seq == 1
+        # Usage is accounted in the database; a checkpoint carries none for the next attempt to restore.
+        assert USAGE_CAPABILITY_ID not in state.harness.agent_context_state.entries
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
 
     monkeypatch.setattr(execute_module, "seal", sealing)

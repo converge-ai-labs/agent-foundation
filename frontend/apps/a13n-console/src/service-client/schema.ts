@@ -1641,7 +1641,11 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Run Items */
+    /**
+     * Run Items
+     * @description A run's committed display items by ordinal. By default the newest, always including the unpaged tail whose
+     *     items live output can still change; `before` and `after` page from an ordinal and exclude each other.
+     */
     get: operations["run_items_api_v1_runs__run_id__items_get"];
     put?: never;
     post?: never;
@@ -4655,6 +4659,8 @@ export interface components {
       kind: components["schemas"]["ItemKind"];
       /** Last Stream Id */
       last_stream_id: string;
+      /** Ordinal */
+      ordinal: number;
       /**
        * Started At
        * Format: date-time
@@ -6130,13 +6136,12 @@ export interface components {
     };
     /**
      * RunItems
-     * @description A run's committed display with the run it describes. Live output continues after `position`.
+     * @description Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,
+     *     so the first item's ordinal tells whether earlier ones exist. Live output continues after `position`.
      */
     RunItems: {
       /** Complete */
       complete: boolean;
-      /** Dropped */
-      dropped: number;
       /** Items */
       items: components["schemas"]["Item"][];
       /** Position */
@@ -6986,8 +6991,6 @@ export interface components {
       created_at: string;
       /** Current Run Id */
       current_run_id: string | null;
-      /** Head Run Id */
-      head_run_id: string | null;
       /** Id */
       id: string;
       /** Labels */
@@ -11217,7 +11220,13 @@ export interface operations {
   };
   run_items_api_v1_runs__run_id__items_get: {
     parameters: {
-      query?: never;
+      query?: {
+        /** @description Return the items just before this ordinal */
+        before?: number | null;
+        /** @description Return the items just after this ordinal */
+        after?: number | null;
+        limit?: number;
+      };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
         "X-Workspace-ID"?: string | null;

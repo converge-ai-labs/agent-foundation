@@ -11,10 +11,11 @@ import { useAgent } from "../../agents/queries";
 import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { emptyExecution } from "../execution";
 import { presentItems } from "../projection";
+import { useEarlierItems } from "../earlier-items";
 import { useRunDisplay } from "../run-display";
 import { runTimeline } from "../timeline";
 import { DebugRunSection } from "./debug/run-section";
-import { DroppedItems } from "./dropped-items";
+import { EarlierItems } from "./earlier-items";
 import { useThreadRuns } from "./thread-runs";
 import { RunBlock } from "./run-block";
 import debug from "./debug/debug.module.css";
@@ -243,7 +244,7 @@ function DebugAncestor({
     );
   return (
     <>
-      <DroppedItems count={live.dropped} />
+      <EarlierItems earlier={live.earlier} />
       <DebugRunSection
         run={run}
         thread={own.thread}
@@ -270,9 +271,10 @@ function HistoricalRun({
   const own = useOwnThread(runQuery.data, thread);
   const agent = useAgent(runQuery.data?.agent_id);
   const retained = useQuery({ ...queries.items(runId), staleTime: 60_000 });
+  const earlier = useEarlierItems(runId, retained.data?.items[0]?.ordinal);
   const items = useMemo(
-    () => presentItems(retained.data?.items ?? []),
-    [retained.data],
+    () => presentItems([...earlier.items, ...(retained.data?.items ?? [])]),
+    [earlier.items, retained.data],
   );
   const run = runQuery.data;
   // A historical run is read from its retained Items alone: the timeline
@@ -310,7 +312,7 @@ function HistoricalRun({
         timeline={timeline}
         agentName={agent.data?.name}
         agentImageUrl={agent.data?.image_url}
-        earlier={<DroppedItems count={retained.data.dropped} />}
+        earlier={<EarlierItems earlier={earlier} />}
         separatorAction={
           <Link
             className={styles.separatorLink}

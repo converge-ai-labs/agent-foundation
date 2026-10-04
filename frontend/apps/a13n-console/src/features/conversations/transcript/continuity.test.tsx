@@ -48,9 +48,9 @@ vi.mock("./inbox", () => ({ ThreadInbox: () => null }));
 vi.mock("../run-display", () => ({
   useRunDisplay: () => ({
     items: [],
+    earlier: { items: [], more: false, loading: false, error: null },
     attempts: [],
     state: "connected",
-    dropped: 0,
     execution: {
       steps: [],
       observations: [],
@@ -112,7 +112,6 @@ function show(level: "chat" | "debug" = "chat", delayNavigation = false) {
   let thread = fixtureThread({
     id: "thread",
     session_id: "session",
-    head_run_id: "run",
     last_run_id: "run",
   });
   const queries: string[] = [];

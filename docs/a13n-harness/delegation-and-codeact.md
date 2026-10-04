@@ -64,6 +64,8 @@ The default Capability needs no Host scheduler or child-binding callback. Its pr
 
 `delegate(subagent, prompt)` creates a new inline continuation and returns its `execution_id`. `resume_subagent(execution_id, prompt)` advances only that exact compatible nested `HarnessState`. Inline child state never publishes borrowed Environment state independently, and the child cannot mount, replace, unmount, or change the default Environment.
 
+Harness `0.6` changed how a state retains inline children. A state saved by an earlier Harness that retains inline children fails to resume or fork with `capability_state_version_unsupported`, so those children cannot continue; start a new Thread. States without inline children, including those of Hosts that run only asynchronous children, are unaffected.
+
 ### Asynchronous Children
 
 A child that may outlive the parent Run requires a Host-owned `SubagentOperator`:

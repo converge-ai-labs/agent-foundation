@@ -74,7 +74,6 @@ function mount({
   reject = false,
   resubmit,
   question = false,
-  waitingHead = false,
 }: {
   status?: Schema["RunStatus"];
   historical?: boolean;
@@ -82,7 +81,6 @@ function mount({
   reject?: boolean;
   resubmit?: Resubmission;
   question?: boolean;
-  waitingHead?: boolean;
 } = {}) {
   const posts: { path: string; body: unknown; key: string | null }[] = [];
   const reads: string[] = [];
@@ -123,7 +121,6 @@ function mount({
     session_id: "session",
     origin,
     current_run_id: active ? "run" : null,
-    head_run_id: waitingHead ? "waiting-head" : "run",
     last_run_id: historical ? "later" : "run",
   });
   let steered = false;
@@ -187,36 +184,6 @@ function mount({
           entry("inb_new", "Sent", {
             delivery: "steer",
             ...(steered ? { status: "consumed", assigned_run_id: "run" } : {}),
-          }),
-        );
-      if (path.endsWith("/runs/waiting-head"))
-        return Response.json(
-          fixtureRun({
-            id: "waiting-head",
-            status: "waiting",
-            wait_reason: "call",
-            pending: {
-              approvals: [],
-              calls: [
-                {
-                  tool_call_id: "question",
-                  tool_name: "ask_user_question",
-                  arguments: {
-                    questions: [
-                      {
-                        header: "Color",
-                        question: "Which color?",
-                        options: [
-                          { label: "Blue", description: "Blue color" },
-                          { label: "Red", description: "Red color" },
-                        ],
-                      },
-                    ],
-                  },
-                  presentation: null,
-                },
-              ],
-            },
           }),
         );
       return Response.json(current);
@@ -456,23 +423,3 @@ it.each([false, true])(
     expect(posts[0]?.key).toBe(`${posts[1]?.key}:resume`);
   },
 );
-
-it("restores the waiting head's question after a failed successor and submits to that exact wait", async () => {
-  const posts = mount({ status: "failed", waitingHead: true });
-  fireEvent.click(await screen.findByRole("radio", { name: /Blue/ }));
-  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
-  await waitFor(() => expect(posts).toHaveLength(1));
-  expect(posts[0]).toMatchObject({
-    path: "/api/v1/runs/waiting-head/resume",
-    body: {
-      approvals: {},
-      calls: {
-        question: {
-          status: "returned",
-          value: { answers: { "Which color?": "Blue" } },
-        },
-      },
-    },
-  });
-});
