@@ -154,7 +154,6 @@ class DisplayHistoryCollector:
             self.saved = self.saved.model_copy(update={"items": tuple(items)})
         self.fold: DisplayFold | None = None
         self._published: dict[str, Item] = {}
-        self._pending: set[str] = set()
 
     def observe(self, source: HarnessStreamEvent[Any]) -> None:
         if self.fold is None:
@@ -173,29 +172,26 @@ class DisplayHistoryCollector:
         ):
             self.fold.response_groups["root"] = self._pending_response
             self._resume_group_assigned = True
-        self._pending.update(self.fold.changed)
-        self.fold.changed.clear()
 
     def supplement(self, events: Sequence[Any]) -> None:
         if self.fold is not None:
             self.fold.fold([event.model_dump(mode="json", by_alias=True) for event in events])
-            self._pending.update(self.fold.changed)
-            self.fold.changed.clear()
 
     def drain(self) -> list[ItemChange]:
         if self.fold is None:
             return []
         changes = []
         fold = self.fold
-        for key in sorted(self._pending, key=lambda key: fold.items[key].ordinal):
+        for key in sorted(fold.changed, key=lambda key: fold.items[key].ordinal):
             item = fold.items[key]
             changes.append(item_change(self._published.get(key), item))
             self._published[key] = item
-        self._pending.clear()
+        fold.changed.clear()
         return changes
 
     def publication_failed(self) -> None:
-        self._pending.update(self._published)
+        if self.fold is not None:
+            self.fold.changed.update(self._published)
         self._published.clear()
 
     def capture(self, history: Sequence[ModelMessage] = (), *, completed: bool = False) -> DisplayHistory:

@@ -522,7 +522,6 @@ class _Attempt:
         steers = await self._commit(
             staged.state,
             cursors=staged.cursors,
-            open_calls=staged.open_calls,
             snapshot=staged.display,
         )
         output.stream.boundary(staged.display.tail.position.sequence)
@@ -541,16 +540,14 @@ class _Attempt:
         state: HarnessState,
         *,
         cursors: dict[str, str | None],
-        open_calls: Collection[str],
+        snapshot: Snapshot,
         outcome: Outcome | None = None,
         deferred: JsonValue = None,
-        snapshot: Snapshot | None = None,
     ) -> list[Offered]:
         """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
         the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned.
-
-        `open_calls` are the tool calls the state leaves unanswered, whose display items stay unfinished."""
-        snapshot = self.fold.pending(snapshot) if snapshot is not None else self._snapshot(open_calls)
+        The caller freezes the matching display before entering this persistence path."""
+        snapshot = self.fold.pending(snapshot)
         if near_deadline(self.runtime, self.control):
             raise LeaseLost()
         started = time.monotonic()
@@ -695,17 +692,17 @@ class _Attempt:
             return
         # Completed and suspended results always carry their state; a waiting one leaves its pending calls open.
         assert result.state is not None
-        open_calls = open_tool_calls(result.all_messages())
+        snapshot = self._snapshot(open_tool_calls(result.all_messages()))
         if result.status == "completed":
             outcome = Outcome(status="completed", output=self._output(result.output))
-            await self._commit(result.state, cursors=self.cursors.snapshot(), open_calls=open_calls, outcome=outcome)
+            await self._commit(result.state, cursors=self.cursors.snapshot(), snapshot=snapshot, outcome=outcome)
         else:
             assert result.deferred is not None
             outcome = Outcome(status="waiting", pending=deferred.pending(result.deferred))
             await self._commit(
                 result.state,
                 cursors=self.cursors.snapshot(),
-                open_calls=open_calls,
+                snapshot=snapshot,
                 outcome=outcome,
                 deferred=deferred.dump(result.deferred),
             )

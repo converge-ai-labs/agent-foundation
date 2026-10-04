@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 import pytest
 from a13n_harness import HarnessBuilder, HarnessEvent, RunBindings
 from a13n_service.runs.boundaries import Boundaries, SafeBoundary
-from a13n_service.runs.display import DisplayFold, Snapshot, Tail
+from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from pydantic_ai import Tool
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -75,7 +75,13 @@ async def test_producer_freezes_matching_display_before_parallel_tool_acknowledg
                 fold.committed(fold.pending(cuts[0]))
                 boundaries.acknowledge(1)
                 assert effects == []
-                assert staged.open_calls == {"call-0", "call-1"}
+                assert open_tool_calls(staged.state.message_history) == {"call-0", "call-1"}
+                items = [entry for page in staged.display.pages for entry in page.items] + staged.display.tail.items
+                assert {
+                    entry.content["toolCallId"]
+                    for entry in items
+                    if entry.kind == "tool_call" and entry.state == "in_progress"
+                } == {"call-0", "call-1"}
             selected = fold.pending(staged.display)
             fold.committed(selected)
             boundaries.acknowledge(item.event.token)

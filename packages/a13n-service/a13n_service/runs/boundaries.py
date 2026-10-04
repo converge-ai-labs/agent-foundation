@@ -39,12 +39,10 @@ class SafeBoundary(CapabilityEvent, namespace="a13n.service"):
 
 @dataclass(frozen=True, slots=True)
 class Staged:
-    """What one boundary commits: the exported state, the memory cursors its history holds context as of, and the
-    tool calls it leaves open."""
+    """The exported state, its delivered memory cursors, and matching frozen display."""
 
     state: HarnessState
     cursors: dict[str, str | None]
-    open_calls: frozenset[str]
     display: Snapshot | None = None
 
 
@@ -112,6 +110,6 @@ class Boundaries(AbstractCapability[AgentContext]):
         cursors, open_calls = self.cursors(), open_tool_calls(messages)
         state = await ctx.deps.export_state(messages)
         display = self.freeze_display(open_calls) if self.freeze_display is not None else None
-        self.states[token] = Staged(state, cursors, open_calls, display)
+        self.states[token] = Staged(state, cursors, display)
         await ctx.emit(SafeBoundary(token=token, at=at))
         return token

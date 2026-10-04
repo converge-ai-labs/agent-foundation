@@ -582,7 +582,7 @@ class RootRunExecutor:
                         memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=paused_state,
-                        display=display,
+                        display=display.capture(paused_state.message_history) if display is not None else None,
                         excerpt=checkpoint_excerpt(thread.excerpt, paused_state.message_history),
                         activity_changed=True,
                     )
@@ -621,19 +621,24 @@ class RootRunExecutor:
                                 usage=result.usage,
                             )
                         )
+                    completed_run_id = (
+                        stream.run_id
+                        if stream is not None and result.status == "completed" and run_error is None
+                        else None
+                    )
                     continuation = await self._select_state(
                         thread=thread,
                         composition=published.reference,
                         memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=result.state,
-                        display=display,
-                        deferred=result.deferred,
-                        completed_run_id=(
-                            stream.run_id
-                            if stream is not None and result.status == "completed" and run_error is None
+                        display=(
+                            display.capture(result.state.message_history, completed=completed_run_id is not None)
+                            if display is not None and result.state is not None
                             else None
                         ),
+                        deferred=result.deferred,
+                        completed_run_id=completed_run_id,
                         excerpt=thread.excerpt if excerpts is None else excerpts.finish(result),
                         activity_changed=excerpts is not None and excerpts.changed,
                     )
@@ -653,7 +658,7 @@ class RootRunExecutor:
                             memory_positions=reconstructed.memory_cursors.snapshot(),
                             accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                             state=state,
-                            display=display,
+                            display=display.capture(state.message_history) if display is not None else None,
                             excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
                             activity_changed=excerpts is not None and excerpts.changed,
                         )
@@ -786,7 +791,7 @@ class RootRunExecutor:
         thread: Thread,
         composition: ObjectRef,
         state: HarnessState | None,
-        display: DisplayHistoryCollector | DisplayHistory | None = None,
+        display: DisplayHistory | None = None,
         deferred: DeferredToolRequests | None = None,
         accepted: DeferredToolResume | None = None,
         excerpt: ConversationExcerpt,
@@ -794,23 +799,17 @@ class RootRunExecutor:
         completed_run_id: str | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> RootContinuationSelection:
+        """Select native state with a display already frozen on the producer's event loop."""
         if state is None:
             return RootContinuationSelection(status="not_available")
         published_ref: ObjectRef | None = None
-        # Freeze on the producer's event loop before storage yields or a worker
-        # serializes it. Concurrent accepted child scopes can continue emitting.
-        frozen_display = (
-            display.capture(state.message_history, completed=completed_run_id is not None)
-            if isinstance(display, DisplayHistoryCollector)
-            else display
-        )
 
         def prepare_continuation() -> tuple[StoredContinuation, ThreadReadModel]:
             continuation = StoredContinuation(
                 harness_release=harness_version,
                 run_composition=composition,
                 memory_cursors=dict(memory_positions or {}),
-                harness_state=with_display_history(state, frozen_display) if frozen_display is not None else state,
+                harness_state=with_display_history(state, display) if display is not None else state,
                 excerpt=excerpt,
                 deferred_requests=deferred,
                 accepted_input=StoredDeferredInput.capture(accepted, state),
@@ -821,7 +820,7 @@ class RootRunExecutor:
         try:
             # The request checkpoint joins this work before model execution or
             # cancellation; terminal saving starts only after stream teardown.
-            # Never abandon a worker that still owns mutable display collection.
+            # Join serialization before propagating cancellation.
             continuation, read_model = await to_thread.run_sync(prepare_continuation)
             published_ref = (
                 await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=continuation)

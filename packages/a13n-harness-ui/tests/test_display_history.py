@@ -487,6 +487,60 @@ def test_failed_live_publication_retries_a_baseline_without_losing_durable_captu
     assert collector.fold.observer.event_count == 0
 
 
+def test_capture_and_supplements_share_one_dirty_set_without_consuming_publication() -> None:
+    from datetime import UTC, datetime
+
+    from a13n_harness import HarnessEvent
+    from a13n_stream_protocol.display import AppendItem, SetItem, apply_changes
+    from ag_ui.core import CustomEvent
+    from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPartDelta, ToolCallPart
+
+    collector = DisplayHistoryCollector(())
+
+    def observe(sequence, event):
+        collector.observe(
+            HarnessEvent(
+                thread_id="thread", run_id="run", sequence=sequence, occurred_at=datetime.now(UTC), event=event
+            )
+        )
+
+    observe(1, PartStartEvent(index=0, part=TextPart("first")))
+    observe(2, PartDeltaEvent(index=0, delta=TextPartDelta(" second")))
+    observe(3, PartStartEvent(index=1, part=ToolCallPart("inspect", {}, "call")))
+    collector.supplement(
+        [
+            CustomEvent(
+                name="a13n.harness-ui.tool_images",
+                value={"event": {"tool_call_id": "call", "images": [{"path": "retained.png"}]}},
+            )
+        ]
+    )
+    frozen = collector.capture()
+    frozen_json = frozen.model_dump_json()
+    changes = collector.drain()
+    assert all(isinstance(change, SetItem) for change in changes)
+    assert [change.item.id for change in changes] == [item.id for item in frozen.items]
+    assert len({change.item.id for change in changes}) == len(changes)
+    assert collector.drain() == []
+    assert next(item for item in frozen.items if item.kind == "tool_call").content["tool_images"] == [
+        {"path": "retained.png"}
+    ]
+
+    observe(4, PartDeltaEvent(index=0, delta=TextPartDelta(" third")))
+    appended = collector.drain()
+    assert len(appended) == 1 and isinstance(appended[0], AppendItem)
+    collector.publication_failed()
+    observe(5, PartDeltaEvent(index=0, delta=TextPartDelta(" fourth")))
+    retry = collector.drain()
+    assert retry and all(isinstance(change, SetItem) for change in retry)
+    items = {}
+    apply_changes(items, retry)
+    assert tuple(items.values()) == collector.capture().items
+    assert any(item.content.get("text") == "first second third fourth" for item in items.values())
+    assert collector.drain() == []
+    assert frozen.model_dump_json() == frozen_json
+
+
 def test_tool_result_does_not_renumber_later_comment_parts() -> None:
     from a13n_stream_protocol.display import DisplayFold
 
