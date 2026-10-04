@@ -3,7 +3,7 @@ title: Skills
 description: Package instructions and files as revisioned skills that agents load on demand.
 ---
 
-A skill is a package of instructions and supporting files that an agent can load when a task calls for it. Skills are [revisioned](resources.md#lifecycles): each change adds an immutable revision, and agent revisions pin the exact skill revision they use. See [Harness skills](../a13n-harness/skills.md) for how agents use them at run time.
+A skill is a package of instructions and supporting files that an agent can load when a task calls for it. Skills are [revisioned](resources.md#lifecycles): each new package adds an immutable revision, and agent revisions pin the exact skill revision they use. See [Harness skills](../a13n-harness/skills.md) for how agents use them at run time.
 
 A skill is identified by its [ID](resources.md#common-conventions) (`sk_…`), which paths such as `/api/v1/skills/{skill_id}` and agent configurations use. The model sees the skill by the `name` that the `SKILL.md` of its pinned revision declares. Two skills of a workspace may declare the same name, and a new revision may declare another, but the skills of one agent must declare distinct names.
 
@@ -22,7 +22,7 @@ description: Write release notes from merged pull requests.
 1. List the merged pull requests since the last tag...
 ```
 
-Limits: at most 1000 files, 8 MiB per file, 32 MiB expanded, 256 KiB for `SKILL.md`, and paths up to 1024 bytes. Members must be regular files with relative paths, stored or deflated, and not encrypted.
+Limits: at most 1000 files, 8 MiB per file, 32 MiB expanded, 256 KiB for `SKILL.md`, and paths up to 1024 bytes. Archive entries must be regular files with relative paths, stored or deflated, and not encrypted.
 
 ## Add a skill
 

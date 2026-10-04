@@ -15,16 +15,16 @@ Applications authenticate with an [API key](identity.md#api-keys) as a bearer to
 curl "$A13N_URL/api/v1/agents" -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-When an `Authorization` header is present, cookies are ignored. An API key acts only in its own workspace, and never changes the account of the person who created it.
+When an `Authorization` header is present, cookies are ignored. An API key acts only in its own workspace, and never changes the account of the user or service account it belongs to.
 
 Browsers use the login session cookie set by `POST /api/v1/auth/login`. For cookie-authenticated requests other than `GET`, `HEAD` and `OPTIONS`:
 
-- send the session's CSRF token in `X-CSRF-Token`; login returns it, and `GET /api/v1/auth/session` returns it again for an existing session;
+- send the login session's CSRF token in `X-CSRF-Token`; login returns it, and `GET /api/v1/auth/session` returns it again for an existing login session;
 - an `Origin` header, if sent, must equal the origin of `server.public_url`; for a loopback public URL, `localhost` and `127.0.0.1` are interchangeable.
 
 Account operations (changing your profile, password or email, disabling your account, listing login sessions and your own audit trail), `GET /api/v1/auth/session` and `POST /api/v1/auth/logout` require a login session, as do creating an API key, sending or resending an invitation, and starting a browser authorization (an OAuth authorization code or a connector account setup). An API key gets `403 forbidden` from all of them, one status everywhere: it never mints something that can outlive it, and never hands a third party a link to complete on your behalf. A request without valid credentials receives `401 unauthenticated`; a disabled principal's credentials are treated as invalid.
 
-Every authenticated response, including the route's own answer and any error after authentication, carries `Cache-Control: no-store` and, when the session was renewed, its refreshed cookie.
+Every authenticated response, including the route's own answer and any error after authentication, carries `Cache-Control: no-store` and, when the login session was renewed, its refreshed cookie.
 
 ### Workspace
 
@@ -62,7 +62,7 @@ Every error has one shape, and every response carries an `X-Request-Id` header:
 | `conflict`              | 409    | The target's state refuses the operation; `details.reason` says why, such as `archived`, `builtin`, `last_organization_admin` or `idempotency_key_reused`.           |
 | `precondition_failed`   | 412    | `If-Match` is stale; `details.current_etag` has the current value.                                                                                                   |
 | `payload_too_large`     | 413    | A body or file exceeds its limit (`details.limit`).                                                                                                                  |
-| `disabled`              | 422    | The target, or the workspace, is disabled or archived.                                                                                                               |
+| `disabled`              | 422    | The target, its principal or the workspace is disabled or archived where the request uses it. Changing an archived agent or skill is `409 conflict` instead.         |
 | `precondition_required` | 428    | The operation requires `If-Match`.                                                                                                                                   |
 | `rate_limited`          | 429    | Too many requests; retry after `Retry-After` seconds (`details.retry_after_seconds`).                                                                                |
 | `internal`              | 500    | An unexpected error; report the `request_id`.                                                                                                                        |
@@ -84,7 +84,7 @@ curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
 
 Without `If-Match` the request fails with `428 precondition_required`; with a stale value, with `412 precondition_failed` and the current ETag. Read the resource again, reapply your change and retry. The comparison is exact, so weak validators and `*` never match. The OpenAPI document marks `If-Match` as an optional header, but every operation that declares it requires it.
 
-Inbox operations (edit, withdraw and reorder queued messages), environment mounts and thread updates take the **thread's** ETag. Operations that create things, and run commands such as interrupt, take none.
+Inbox operations (edit, withdraw and reorder queued messages), environment and memory mount changes, and thread updates take the **thread's** ETag. Other operations that create things, and commands on a run such as interrupt, take none.
 
 ## Idempotent requests
 

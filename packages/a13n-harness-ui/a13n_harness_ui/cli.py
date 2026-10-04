@@ -96,17 +96,17 @@ _PATH = click.Path(path_type=Path)
     help="Explicit Harness UI configuration YAML (default: ~/.a13n-harness-ui/a13n-harness-ui.yaml).",
 )
 @click.option("--data-root", type=_PATH, help="Override the local Harness UI data root.")
-@click.option("--resume", "thread_id", help="Resume a saved session by ID.")
-@click.option("--agent", "agent_id", help="Select a configured Agent for this session.")
+@click.option("--resume", "thread_id", metavar="THREAD_ID", help="Resume a saved conversation by Thread ID.")
+@click.option("--agent", "agent_id", help="Select a configured Agent for new conversations.")
 @click.option(
     "--environment-mode",
     type=_ENVIRONMENT_MODE_CHOICE,
-    help="Override the built-in Environment mode for this session.",
+    help="Override the built-in Environment mode for new conversations.",
 )
 @click.option(
     "--environment-profile",
     "environment_profile_id",
-    help="Override the custom Environment profile for this session.",
+    help="Override the custom Environment profile for new conversations.",
 )
 @click.option(
     "--display",
@@ -130,9 +130,9 @@ def cli(
 ) -> None:
     """An interactive coding agent in your terminal.
 
-    Start in the current directory. Use /help inside a session.
+    Start in the current directory. Use /help inside the TUI.
     Enter submits; Ctrl+J or Alt+Enter inserts a newline; Ctrl+D exits.
-    Configuration: ~/.a13n-harness-ui/a13n-harness-ui.yaml. Use `a13n-harness-ui webui` for the browser UI."""
+    Configuration: ~/.a13n-harness-ui/a13n-harness-ui.yaml. Use `a13n-harness-ui webui` for WebUI."""
 
     ctx.obj = _CliContext(
         display=display,
@@ -163,7 +163,7 @@ def cli(
 
 @cli.command("webui")
 @click.option("--host", default="127.0.0.1", show_default=True, help="Listener IPv4 or IPv6 address.")
-@click.option("--port", type=click.IntRange(1, 65535), default=8765, show_default=True)
+@click.option("--port", type=click.IntRange(1, 65535), default=8765, show_default=True, help="Listener TCP port.")
 @click.option(
     "--apikey",
     "--api-key",
@@ -182,7 +182,10 @@ def cli(
     "--share-computer/--no-share-computer",
     default=True,
     show_default=True,
-    help="Share native Host Files as the server OS account, independent of Agent permissions.",
+    help=(
+        "Share native Host Files, Git Changes, and Terminal panels as the server OS account, "
+        "independent of Agent permissions."
+    ),
 )
 @click.pass_context
 def webui_command(
@@ -212,7 +215,7 @@ def webui_command(
 
 @cli.command("update")
 def update_command() -> None:
-    """Update this uv-tool installation now, without starting chat or setup."""
+    """Update this uv-tool installation now, without starting the TUI or setup."""
     from a13n_harness_ui.updater import update
 
     update()
@@ -224,7 +227,7 @@ def update_command() -> None:
 )
 @click.pass_context
 def setup_command(ctx: click.Context, advanced: bool) -> None:
-    """Configure a model, context budget, and execution permissions interactively."""
+    """Configure a Model, context budget, and execution permissions interactively."""
     _execute(_request(ctx, command="setup", setup_advanced=advanced))
 
 
@@ -237,7 +240,7 @@ def add_group() -> None:
 @click.option("--advanced", is_flag=True, help="Also customize reasoning, tool review, and instructions.")
 @click.pass_context
 def add_agent_command(ctx: click.Context, advanced: bool) -> None:
-    """Create another agent without changing existing agents or defaults."""
+    """Create another Agent without changing existing Agents or defaults."""
     _execute(_request(ctx, command="add", action="agent", setup_advanced=advanced))
 
 
@@ -245,25 +248,25 @@ def add_agent_command(ctx: click.Context, advanced: bool) -> None:
 @click.option("--advanced", is_flag=True, help="Also customize subscription context and reasoning settings.")
 @click.pass_context
 def add_model_command(ctx: click.Context, advanced: bool) -> None:
-    """Create a reusable model without creating or changing an agent."""
+    """Create a reusable Model without creating or changing an Agent."""
     _execute(_request(ctx, command="add", action="model", setup_advanced=advanced))
 
 
 @cli.command("run")
 @click.argument("prompt")
-@click.option("--resume", "thread_id", help="Continue a saved session.")
-@click.option("--agent", "agent_id", help="Agent used for a new session.")
+@click.option("--resume", "thread_id", metavar="THREAD_ID", help="Continue a saved conversation by Thread ID.")
+@click.option("--agent", "agent_id", help="Agent used for a new conversation.")
 @click.option(
     "--environment-mode",
     type=_ENVIRONMENT_MODE_CHOICE,
-    help="Built-in execution mode used for a new session.",
+    help="Built-in Environment mode used for a new conversation.",
 )
 @click.option(
     "--environment-profile",
     "environment_profile_id",
-    help="Custom Environment profile used for a new session.",
+    help="Custom Environment profile used for a new conversation.",
 )
-@click.option("--title", help="Title used for a new session.")
+@click.option("--title", help="Title used for a new conversation.")
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
 @click.pass_context
 def run_command(
@@ -276,7 +279,7 @@ def run_command(
     title: str | None,
     output_format: str,
 ) -> None:
-    """Execute one prompt without an interactive terminal."""
+    """Execute one prompt without opening the TUI."""
 
     _validate_environment_selection(environment_mode, environment_profile_id)
     _execute(
@@ -341,10 +344,10 @@ def import_group() -> None:
 
 
 @import_group.command("subagents")
-@click.option("--product", type=_PRODUCT_CHOICE, required=True)
-@click.option("--scope", type=_SCOPE_CHOICE, required=True)
-@click.option("--project-root", type=_PATH)
-@click.option("--user-home", type=_PATH)
+@click.option("--product", type=_PRODUCT_CHOICE, required=True, help="Product whose subagent definitions to read.")
+@click.option("--scope", type=_SCOPE_CHOICE, required=True, help="Read user-level or project-level definitions.")
+@click.option("--project-root", type=_PATH, help="Directory to read for project scope; required with that scope.")
+@click.option("--user-home", type=_PATH, help="Home directory to read for user scope (default: your home directory).")
 @click.option("--apply", is_flag=True, help="Apply every ready candidate; omission is a dry-run preview.")
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
 @click.pass_context
@@ -421,7 +424,7 @@ def plugin_list_command(ctx: click.Context, output_format: str) -> None:
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
 @click.pass_context
 def plugin_uninstall_command(ctx: click.Context, plugin_id: str, output_format: str) -> None:
-    """Unregister one Content Plugin."""
+    """Permanently delete the installed Content Plugin directory, including local edits, without another confirmation."""
 
     _execute(
         _request(
@@ -519,9 +522,18 @@ def auth_key_delete(ctx: click.Context, reference: str) -> None:
 
 @cli.command("login")
 @click.argument("provider", type=_PROVIDER_CHOICE)
-@click.option("--allow-account-switch", is_flag=True)
 @click.option(
-    "--device-code/--browser", default=True, help="Device authorization (default) or a local browser callback."
+    "--allow-account-switch",
+    is_flag=True,
+    help="Allow login to replace a different account already stored for this provider.",
+)
+@click.option(
+    "--device-code/--browser",
+    default=True,
+    help=(
+        "Device authorization (default; ChatGPT uses callback URL paste) "
+        "or a local browser callback (Codex and Grok only)."
+    ),
 )
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
 @click.pass_context
@@ -567,7 +579,7 @@ def auth_sources_command(ctx: click.Context, provider: str, output_format: str) 
 def auth_select_command(
     ctx: click.Context, provider: str, account_source: str, account_id: str, output_format: str
 ) -> None:
-    """Explicitly replace this Host's account and credential-source binding."""
+    """Explicitly replace the account and credential-source binding stored in this data root."""
     _execute(
         _request(
             ctx,
@@ -586,7 +598,7 @@ def auth_select_command(
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
 @click.pass_context
 def auth_logout_command(ctx: click.Context, provider: str, output_format: str) -> None:
-    """Remove locally stored Model credentials."""
+    """Remove the selected locally stored Model credentials."""
 
     _execute(
         _request(

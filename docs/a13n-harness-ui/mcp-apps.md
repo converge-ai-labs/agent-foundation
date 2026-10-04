@@ -1,9 +1,9 @@
 ---
 title: Interactive MCP Apps
-description: Show interactive MCP App results inside browser conversations.
+description: Show interactive MCP App results inside WebUI conversations.
 ---
 
-An MCP App can keep working after the assistant finishes, using its MCP server's existing connection. This feature belongs to WebUI; it does not install a browser-control service or give the Agent access to your browser.
+An MCP App can keep working after the Run that produced it ends, using its MCP server's existing connection. This feature belongs to WebUI; it does not install a browser-control service or give the Agent access to your browser.
 
 ## Enable Apps for selected servers
 
@@ -16,9 +16,9 @@ webui:
     servers: [mcp-counter]
 ```
 
-Apps are off by default. WebUI adds the selected servers to root and child Agents without editing their YAML; existing tool filters and permissions still apply. The CLI continues to use only ordinary `mcp_servers` selections. Restart WebUI after enabling Apps or changing its sandbox listener. Text tool results remain usable if an App presentation fails.
+Apps are off by default. WebUI adds the selected servers to root and child Agents without editing their YAML; existing tool filters and permissions still apply. The TUI and `run` continue to use only ordinary `mcp_servers` selections. Restart WebUI after enabling Apps or changing its sandbox listener. Text tool results remain usable if an App presentation fails.
 
-The server must provide the MCP Apps `ui.resourceUri` metadata and a `text/html;profile=mcp-app` resource. Legacy MCP-UI HTML conventions are not an alternative supported protocol. MCP Core `2026-07-28`, the Python/TypeScript SDK major versions, and the Apps UI wire version are independent; upgrading to ext-apps 2.x does not change the UI wire version to the Core date. The Host supports inline display, same-server tools/resources, text or structured context, messages, external links and theme changes. It does not currently support image context, App-provided model tools, fullscreen mode or stable-origin browser storage.
+The server must provide the MCP Apps `ui.resourceUri` metadata and a `text/html;profile=mcp-app` resource. Legacy MCP-UI HTML conventions are not an alternative supported protocol. MCP Core `2026-07-28`, the Python/TypeScript SDK major versions, and the Apps UI wire version are independent. Upgrading to ext-apps 2.x does not change the UI wire version to the Core date. The Host supports inline display, same-server tools/resources, text or structured context, messages, external links and theme changes. It does not currently support image context, App-provided model tools, fullscreen mode or stable-origin browser storage.
 
 For a complete local example without a model account, run `make mcp-apps-demo` from a source checkout. See `examples/mcp-apps/README.md` in the repository for the real stdio counter, public App SDK bundle and standalone server instructions. The demo uses a scripted HTTP model but the normal Host, history and permission paths.
 
@@ -32,22 +32,22 @@ App tool operations do not use model review or custom Agent reviewers. A `review
 
 - Tool approvals appear in the trusted Host card, outside the App iframe. Review the server, tool and exact arguments before approving. A later policy or credential change can invalidate a pending approval.
 - **Check result** reconciles an uncertain operation by reading its existing receipt. It does not repeat the call or promise that an unconfirmed write had no effect.
-- Closing a View ends its controls and pending confirmations, not the MCP server's connection. Already dispatched operations may still finish.
+- Closing a View (the interaction binding that **Activate interactions** creates) ends its controls and pending confirmations, not the MCP server's connection. Already dispatched operations may still finish.
 - Connections have no idle timeout. A completed Run or a disconnected browser does not discard server state. Host shutdown, explicit connection closure, binding retirement or Thread disposal ends the connection. A crashed server is not silently restarted and its business calls are not replayed.
 
 Removing a server from an Agent's generic selection does not remove it while WebUI Apps still selects it. Removing it from Apps settings disables new App interactions and retires that App-enabled binding; generic MCP remains available if independently selected, with lifetime determined by root `mcp.host_owned_servers`. Changes affect later Run captures, not an already admitted Run.
 
-On reload, Open App restores the saved original result, not its prior interactive state. Reactivate to read current server state; restarting WebUI does not restore a server's private memory.
+On reload, Open App restores the saved original result, not its prior interactive state. Reactivate to read current server state; restarting WebUI does not restore a server's private state.
 
 An App tool or resource request may also need [MCP human input](mcp.md#human-input-from-mcp-servers). The trusted Host presents that request outside the iframe and attributes it to the initiating View. Answering continues the same operation through the SDK; the saved App snapshot is captured only from a complete final result, never an input-required intermediate round.
 
 ## Context is opt-in
 
-An App can offer its latest text or structured value as context. Inspect it and select it in the Host card before submitting an ordinary composer message. Unselected context is not attached. Selection is local to mounted Apps in that browser conversation, not another tab or the shared draft.
+An App can offer its latest text or structured value as context. Inspect it and select it in the Host card before submitting an ordinary composer message. Unselected context is not attached. Selection is local to mounted Apps in that browser tab's conversation (its root Thread), not another tab or the shared draft.
 
 Send captures the exact selected values. Later App updates cannot rewrite an in-flight submission. Replaced, discarded or missing selections fail visibly rather than silently substituting newer context. Each value is limited to 64 KiB and one submission may select at most eight Views. Context is source-attributed external data, not Host instructions, and is not implicitly attached to steering.
 
-An App message is a separate proposal. Review its text and destination, then choose **Send once** or **Decline** outside the iframe. A child App proposes a handoff to its owning root conversation. If the root is busy, the message fails instead of being queued or converted to steering. Sending does not replace your composer draft. After an uncertain response, check the receipt rather than sending the same proposal again.
+An App message is a separate proposal. Review its text and destination, then choose **Send once** or **Decline** outside the iframe. A child App proposes a handoff to its owning conversation. If the root Thread is busy, the message fails instead of being queued or converted to steering. Sending does not replace your composer draft. After an uncertain response, check the receipt rather than sending the same proposal again.
 
 ## External links
 
@@ -80,13 +80,13 @@ Publish port 8766 to the reverse proxy's network and route `https://apps.example
 
 With a local reverse proxy on the same machine, keep `bind: 127.0.0.1` and forward the fixed port instead. For plain-HTTP local Docker testing, publish separate WebUI and sandbox ports and set `public_url` to the browser-reachable sandbox origin. Binding WebUI to a non-loopback address requires an explicit sandbox `public_url`; startup rejects omission rather than advertising an unusable internal address.
 
-| Setting              | Default     | Meaning                                                                   |
-| -------------------- | ----------- | ------------------------------------------------------------------------- |
-| `enabled`            | `false`     | Enable Apps capture and WebUI hosting                                     |
-| `servers`            | `[]`        | App server IDs automatically added to every root and child Agent in WebUI |
-| `sandbox.bind`       | `127.0.0.1` | Literal IPv4/IPv6 listener address                                        |
-| `sandbox.port`       | `0`         | `0` chooses a free local port; use a fixed port for forwarding            |
-| `sandbox.public_url` | `null`      | Browser-reachable separate HTTP(S) origin; required for remote listeners  |
+| Setting              | Default     | Meaning                                                                                     |
+| -------------------- | ----------- | ------------------------------------------------------------------------------------------- |
+| `enabled`            | `false`     | Enable Apps capture and WebUI hosting                                                       |
+| `servers`            | `[]`        | App server IDs automatically added to every root and child Agent in WebUI                   |
+| `sandbox.bind`       | `127.0.0.1` | Literal IPv4/IPv6 listener address                                                          |
+| `sandbox.port`       | `0`         | `0` chooses a free local port; use a fixed port for forwarding                              |
+| `sandbox.public_url` | `null`      | Browser-reachable separate HTTP(S) origin; required when WebUI binds a non-loopback address |
 
 The installed Python wheel and sdist contain the sandbox proxy and compiled Host assets. Node.js is needed to prepare repository assets, not to run an installed WebUI or rebuild its wheel from an sdist.
 
@@ -96,5 +96,5 @@ The installed Python wheel and sdist contain the sandbox proxy and compiled Host
 - **Sandbox unavailable:** fix the bind address, port conflict or public origin and restart WebUI. A bind failure leaves the normal workbench and text result usable but does not fall back to same-origin HTML.
 - **Initialization failed:** the App did not finish the public SDK handshake within 15 seconds. Inspect browser errors and asset/CSP declarations. This timeout concerns the View handshake, not MCP connection lifetime.
 - **Activate fails after a configuration change:** current authority or the original tool contract no longer matches. Reinvoke the tool under the current configuration if appropriate; opening history never does this for you.
-- **Operation limit reached:** explicitly close and reopen the View. The browser retains at most 128 tool requests of at most 256 KiB each; it does not evict undecided work to admit more calls.
+- **Operation limit reached:** explicitly close and reopen the View. The browser retains at most 128 tool requests per View, each at most 256 KiB; it does not evict undecided work to admit more calls.
 - **App requires external assets or browser storage:** offline display is not guaranteed. Only declared exact resource/connect origins are allowed, Host-origin network access is blocked, and this profile does not supply a stable App storage origin.

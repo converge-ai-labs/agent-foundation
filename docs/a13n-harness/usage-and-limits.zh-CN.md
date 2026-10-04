@@ -23,13 +23,13 @@ Run 可以替换整个 `UsageLimits`，不会逐字段合并。工具/输出重�
 
 `result.usage` 和 `stream.usage` 返回脱离运行对象的 `RunUsageSummary` 值，包含当前模型请求、token/音频计数、工具调用、提供方回执、Decimal USD 费用，以及明确的未知费用/覆盖不完整标记。它们不是 Pydantic AI 可变的 `RunUsage`。`result.usage_records` 包含当前带归属的用量贡献。反复观测提供方挂起的生成，会更新同一份贡献，不增加请求或累加累计 token。
 
-模型记录有可选 `call_id`，将贡献关联到原始 Model 调用，包括 Host 可选的[派发前检查](hosting.md#check-model-calls-before-dispatch)。用量报告仍为 schema 版本 `1`；旧记录没有该字段时加载为 `call_id=None`，表示派发关联未知，不证明没有提供方调用。此 ID 不是 HTTP 请求 ID 或恰好一次的计费键，也不改变现有记录去重。中断调用只保留实际观测的用量；检查或分配 ID 本身不代表产生费用。
+模型记录有可选 `call_id`，将贡献关联到原始 Model 调用，包括 Host 可选的[派发前检查](hosting.md#check-model-calls-before-dispatch)。用量报告使用 schema 版本 `1`；没有 `call_id` 的记录加载为 `call_id=None`，表示派发关联未知，不证明没有提供方调用。此 ID 不是 HTTP 请求 ID 或恰好一次的计费键，也不改变现有记录去重。中断调用只保留实际观测的用量；检查或分配 ID 本身不代表产生费用。
 
 提供方集成可通过 `AgentContext.record_provider_usage()` 记录稳定的非模型回执。
 
 ### 保存与恢复用量
 
-用量属于 `a13n.usage` 下的 Context State，随 `HarnessState` 导出。普通运行、fork 和 HITL 回答后续执行默认重置用量统计。运行中补充指导不会重置。重置不删除之前持久化的消耗。
+用量存储在 `a13n.usage` Capability 命名空间中，随 `HarnessState` 导出。默认情况下，每次 `run()` 或 `stream()` 调用都会重置用量统计，包括继续已保存状态的 Run、在 fork 出的 Thread 上执行的 Run，以及携带人工介入回答恢复执行的 Run。在运行中的流内引导不会重置统计。重置不删除之前持久化的消耗。
 
 要显式继续同一统计范围：
 
@@ -47,11 +47,13 @@ continued = await executable.run(
 
 运行时 Run ID 改变，但快照的 `usage_id`、原始贡献归属和序列继续。用量状态缺失或不匹配会明确失败。提供方挂起的生成要求此模式；继续该生成时重置会在派发前被拒绝。
 
-Host 可通过 `RunBindings.usage_reporter` 绑定异步 `UsageReporter.report(snapshot: UsageSnapshot)`。每个 `usage_id` 只保存最新快照，用 `select_usage_snapshot` 验证替换，并原子提交各范围。不要累加累计快照，也不要将显示分块作为第二条录入路径。显示报告携带有上限的变更记录分块；直接交付携带完整独立状态。内联子级继承 reporter，但范围独立。报告失败会停止执行，应重试报告交付，而非重做模型任务。
+Host 可通过 `RunBindings.usage_reporter` 绑定异步 `UsageReporter.report(snapshot: UsageSnapshot)`。每个 `usage_id` 只保存最新快照，用 `select_usage_snapshot` 验证替换，并原子提交各范围。不要累加累计快照，也不要将显示分块作为第二条录入路径。流的 `usage_report` 显示事件携带有上限的变更记录分块；reporter 接收完整独立状态。内联子级继承 reporter，但范围独立。报告失败会停止执行，应重试报告交付，而非重做模型任务。
 
 需要增量存储时，可改为绑定 `UsageDeltaReporter.report_delta(delta: UsageDelta)`。`delta.scope` 包含统计范围的标识、当前序列和工具调用计数；`delta.records` 只包含 `delta.after_sequence` 之后发生变化的记录的最新值。返回前，必须将这些替换记录和范围进度原子提交。提交结果不确定时，应接受重试和重叠区间，但拒绝超出已存进度、造成缺口的区间。Harness 保留未确认的变化用于重试，与显示交付相互独立。如果 reporter 同时实现两种方法，Harness 调用 `report_delta`。完整检查点和结果记录仍然可用。在使用 `resume_usage=True` 前，需确保恢复的统计序列及对应记录已经持久化到你的存储中。
 
 持久统计比所选执行检查点更新时，显式恢复统计前使用 `latest_snapshot.restore(checkpoint)`。它只覆盖统计，不移动消息历史或恢复执行权限。每个范围的写入需串行。独立 worker 尝试需不同范围，防止晚到旧 worker 覆盖新统计。快照最多 10,000 条记录、16 MiB；达到容量会失败，不静默丢弃观测。
+
+## 估算模型费用
 
 模型费用估值默认开启。`HarnessBuilder` 注入 `CatalogModelCostCapability`，为构建后的 Agent 固定当前有效的价格目录。Host 未开启更新时，使用内置 `genai-prices` 数据和 Harness 补充。`get_default_pricing_catalog()` 始终读取该内置基线；`get_current_pricing_catalog()` 还采用成功的上游更新。两者返回不可变目录，不下载。读取或导出当前快照：
 
@@ -65,7 +67,7 @@ exported = pricing.model_dump(mode="json")
 
 ### 在 Host 中更新价格
 
-Pydantic AI 2.40 及以上提供 `prices.update_in_background()`。在最终应用进程中启动一次，不要在导入时或 fork 前启动。以下示例使用应用自己的 `serve()` 函数：
+Pydantic AI 提供 `prices.update_in_background()`。在最终应用进程中启动一次，不要在导入时或 fork worker 进程前启动。以下示例使用应用自己的 `serve()` 函数：
 
 ```python
 from pydantic_ai import prices
@@ -77,7 +79,7 @@ async def main():
 
 上游更新器立即下载，之后每小时下载。启动无须等待首次下载：内置价格立即可用，下载失败保留最后有效数据。后续每次 `HarnessBuilder.build()` 自动捕获验证后的更新，无须重启或清空缓存。已构建的执行对象即使复用也保留旧价格；重建才会更新。同一规则保证活动 Run 和内联后代的价格稳定。
 
-异步 Host 应在事件循环外捕获目录，再传给 builder。显式快照只用于默认定价；自定义模型费用 Capability 仍优先：
+异步 Host 应在事件循环外捕获目录，再传给 `HarnessBuilder.build()`。显式快照只用于默认定价；自定义模型费用 Capability 仍优先：
 
 ```python
 from anyio import to_thread
@@ -92,9 +94,9 @@ executable = HarnessBuilder().build(definition, pricing_catalog=catalog)
 
 ### 按实际服务层级定价
 
-Harness 使用 `ModelResponse.provider_details` 中的**实际服务层级**，不使用请求的 `service_tier`。Pydantic AI 2.51.0 为 OpenAI Chat/Responses（含流式）和 Gemini Developer API 提供此信息。priority 请求降级为 `default` 时按标准费率计算。费用在每个响应的原生用量累加前计算，包括继承的子级和辅助策略。
+Harness 使用 `ModelResponse.provider_details` 中的**实际服务层级**，不使用请求的 `service_tier`。Pydantic AI 为 OpenAI Chat/Responses（含流式）和 Gemini Developer API 提供此信息。priority 请求降级为 `default` 时按标准费率计算。费用在每个响应的原生用量累加前计算，包括继承的子级和辅助策略。
 
-`ModelPriceRule.service_tier` 选择确切层级；省略值描述标准定价。该层级内最后匹配的活动规则生效，与日期/时间条件独立。缺少元数据保留旧版标准估计；`default`、`standard` 和 `on_demand` 可使用无层级规则。其他层级需要显式匹配规则，不存在通用折扣/加价倍数。OpenAI 响应的 `fast` 名称选择 `priority` 费率。提供方未公布上下文上限以上价格时，`max_input_tokens` 限制费率适用范围。按 token 长度分段的费率仍由 `PriceComponent.tiers` 定义，是独立维度。
+`ModelPriceRule.service_tier` 选择确切层级；省略值描述标准定价。该层级内最后匹配的活动规则生效，与日期/时间条件独立。缺少层级元数据时使用标准价格；`default`、`standard` 和 `on_demand` 可使用无层级规则。其他层级需要显式匹配规则，不存在通用折扣/加价倍数。OpenAI 响应的 `fast` 名称选择 `priority` 费率。提供方未公布上下文上限以上价格时，`max_input_tokens` 限制费率适用范围。按 token 长度分段的费率仍由 `PriceComponent.tiers` 定义，是独立维度。
 
 未知或不支持的层级会使 Harness 放弃估值，不静默用标准费率。已有上游费用仍保留原费用来源；否则费用未知，不是零。实际层级元数据格式错误会报告定价失败，不使 Run 失败。缺少层级元数据**不能** 证明采用标准服务。
 
@@ -109,7 +111,7 @@ Harness 使用 `ModelResponse.provider_details` 中的**实际服务层级**，�
 
 这些是 token 费用估计，不能保证与账单一致：地区加价、容量承诺、存储时间、grounding、其他产品费用和议价不能从层级推导。内置层级价格随包更新，不随上游标准价格下载器改变。
 
-所选 Model 的 `TokenPricingCapability` 策略（包括已保存 Service Model 定价）需在完整条目中添加层级规则。已有仅标准条目不会静默换成公共目录价格；未显式配置前，它们对非标准层级放弃估值。Console 标准价格编辑器保留编写的层级规则。
+所选 Model 的 `TokenPricingCapability` 策略（包括已保存 Service Model 定价）需在完整条目中添加层级规则。已有仅标准条目不会静默换成公共目录价格；未显式配置前，它们对非标准层级放弃估值。在 Service 中，Console 标准价格编辑器保留编写的层级规则。
 
 ### 覆盖定价
 

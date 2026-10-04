@@ -36,9 +36,9 @@ async def run_once(configuration_file: Path, prompt: str):
 
 Pass both the loaded settings and selected configuration path. Bare `HarnessUiSettings()` does not load the user's resource tree. Reject a bad candidate before submitting work, as the example does.
 
-`load_harness_ui_settings(path=None, data_root=None)` uses the normal configuration/data-root selection rules. Use an explicit separate data root for a distinct App instance or test; do not point a fixture at the user's real conversation store. Startup opens storage, accepts/indexes configuration, prunes eligible scratch files, and can start the pricing updater. Deterministic offline fixtures disable `pricing_auto_update` and use test Model/runtime collaborators rather than provider requests.
+`load_harness_ui_settings(path=None, data_root=None)` uses the normal configuration/data-root selection rules. Use an explicit separate data root for a distinct App instance or test; do not point a fixture at the user's real saved Threads. Startup opens storage, accepts/indexes configuration, prunes eligible scratch files, and can start the pricing updater. Deterministic offline fixtures disable `pricing_auto_update` and use test Model/runtime collaborators rather than provider requests.
 
-`open_harness_ui_app()` owns startup and shutdown. `host_mode` defaults to `local`; the HTTP adapter selects `webui`. Do not construct the internal `HarnessUiApp` collaborator graph yourself. [Tracing](observation.md) explains the optional instrumentation boundary without requiring a telemetry backend for ordinary embedding.
+`open_harness_ui_app()` owns startup and shutdown. `host_mode` defaults to `local`; the HTTP adapter selects `webui`. Selecting `webui` does not start an HTTP server; it enables WebUI-mode App behavior, such as the cross-Thread collaboration Capability. Do not construct the internal `HarnessUiApp` collaborator graph yourself. [Tracing](observation.md) explains the optional instrumentation boundary without requiring a telemetry backend for ordinary embedding.
 
 ## Receipts are not saved continuation
 
@@ -54,27 +54,27 @@ flowchart TD
 
 `get_root_operation()` reads current status. `wait_root_operation(receipt_id, timeout_seconds=None)` waits for that exact operation; a bounded wait can return active state. `active_root_operation(thread_id)` discovers current local activity. Use `steer_root_operation(receipt_id=..., message=...)` and `cancel_root_operation(receipt_id)` only for that receipt's available actions.
 
-Statuses are preparing, running, completed, suspended, failed, and cancelled. A terminal view can have a preparation failure without an execution outcome. When `outcome` exists, inspect its three independent facts:
+Statuses are preparing, running, completed, suspended, failed, and cancelled. A finished operation view can have a preparation failure without an execution outcome. When `outcome` exists, inspect its three independent facts:
 
 - `execution`: status, safe output/failure, omission flag, and usage.
 - `continuation`: whether a continuation candidate was selected/persisted.
-- `environment`: target-state publication and cleanup outcome.
+- `environment`: Environment-state publication and adapter cleanup outcome.
 
 A successful execution is not proof of successful checkpoint publication or cleanup. Receipts and control authority disappear with their owning process; saved Thread continuations survive independently. After restart, read the Thread and retained transcript rather than trying to revive an old receipt.
 
 ## Thread queries and mutations
 
-| App methods                                                               | Boundary                                                                          |
-| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `create_thread`, `get_thread`, `list_threads`                             | Creation/default selection, detail, bounded collections                           |
-| `get_thread_transcript`                                                   | Retained transcript pinned by continuation and cursor                             |
-| `update_thread_metadata`                                                  | Metadata compare-and-set, including title/archive                                 |
-| `update_thread_configuration`, `patch_thread_configuration`               | Sticky configuration compare-and-set for later operations                         |
-| `stage_thread_attachment`, `read_thread_attachment`, `prune_thread_files` | Thread-scoped file handles and retention                                          |
-| `submit_thread`                                                           | Ordinary input, optional attachments, mutation, Model overrides, Skill references |
-| `respond_thread`, `respond_decisions`                                     | Exact deferred continuation responses                                             |
+| App methods                                                               | Boundary                                                                                               |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `create_thread`, `get_thread`, `list_threads`                             | Creation/default selection, detail, bounded collections                                                |
+| `get_thread_transcript`                                                   | Retained transcript pinned by continuation and cursor                                                  |
+| `update_thread_metadata`                                                  | Metadata compare-and-set, including title/archive                                                      |
+| `update_thread_configuration`, `patch_thread_configuration`               | Sticky configuration compare-and-set for later operations                                              |
+| `stage_thread_attachment`, `read_thread_attachment`, `prune_thread_files` | Thread-scoped file handles and retention                                                               |
+| `submit_thread`                                                           | Ordinary input, optional attachments, Thread configuration mutation, Model overrides, Skill references |
+| `respond_thread`, `respond_decisions`                                     | Exact deferred continuation responses                                                                  |
 
-`NewThreadDefaults` selects optional Project, Agent, `default_model_id`, Environment profile, middleware, Environment extensions, and MCP IDs. Omitted resource selections use the configured defaults; a null or omitted default Model follows the Agent. Effective Model precedence is per-operation override, saved Thread default, then Agent Model. A versioned `ThreadConfigurationPatch` can set `default_model_id`, clear it with null, or omit it to retain the current value. Per-operation `RunModelOverrides` selects Model, thinking, or service tier without rewriting a resource or sticky Thread head.
+`NewThreadDefaults` selects optional Project, Agent, `default_model_id`, Environment profile, Harness Plugin, Environment Run Extension, and MCP server IDs. Omitted resource selections use the configured defaults; a null or omitted default Model follows the Agent. Effective Model precedence is per-operation override, saved Thread default, then Agent Model. A versioned `ThreadConfigurationPatch` can set `default_model_id`, clear it with null, or omit it to retain the current value. Per-operation `RunModelOverrides` selects Model, thinking, or service tier without rewriting a resource or sticky Thread head.
 
 Metadata `expected_version`, configuration `expected_version`, and `expected_continuation_id` are different preconditions. Read the appropriate current value; never substitute one for another. Metadata omission preserves a field, explicit null can clear a title, and supplied `archived` cannot be null. Archiving requires inactive root execution.
 
@@ -84,13 +84,13 @@ Thread lists default to 20 items, transcript pages to 50; follow returned cursor
 
 Read `thread_decisions(thread_id=..., expected_continuation_id=...)` or the detailed deferred view. A response must answer every selected request exactly once, with the correct kind and continuation ID.
 
-`respond_decisions()` accepts `DecisionResponseBatch`, including questions, approvals, and external results. `respond_thread()` accepts the lower-level `ThreadDeferredResponse` with `ApprovalDecision` / `ExternalToolResult`. A denied external result needs a denial message and cannot also carry a successful result. Approval argument overrides and denial messages have mutually exclusive rules.
+`respond_decisions()` accepts `DecisionResponseBatch`, including questions, approvals, and external results. `respond_thread()` accepts the lower-level `ThreadDeferredResponse` with `ApprovalDecision` / `ExternalToolResult`. A denied external result needs a denial message and cannot also carry a successful result. An approved decision can carry argument overrides but no denial message; a denied decision can carry a denial message but no argument overrides.
 
-Authenticate the responding human or executor and submit the complete current decision set. Ordinary prompts cannot answer pending decisions. Child Runs do not create durable deferred work.
+Your adapter must authenticate the responding person or executor, then submit the complete current decision set. Ordinary prompts cannot answer pending decisions. Child Runs do not create durable deferred work.
 
 ## MCP input and integration control
 
-WebUI and interactive CLI enable [MCP human input](mcp.md#human-input-from-mcp-servers). Headless `open_harness_ui_app()` defaults to `mcp_input_enabled=False`. An embedded adapter that can answer requests may explicitly pass `mcp_input_enabled=True`; it must consume requests concurrently with the active operation rather than waiting for completion first.
+WebUI and the TUI enable [MCP human input](mcp.md#human-input-from-mcp-servers). Headless `open_harness_ui_app()` defaults to `mcp_input_enabled=False`. An embedded adapter that can answer requests may explicitly pass `mcp_input_enabled=True`; it must consume requests concurrently with the active operation rather than waiting for completion first.
 
 `mcp_input_requests(thread_id)` reads process-local form/URL requests for that Thread and its descendants. `respond_mcp_input(thread_id, request_id, McpInputResponse(...))` accepts `accept`, `decline`, or `cancel`; import `McpInputResponse` from `a13n_harness_ui.mcp_runtime.inputs`. An accepted form includes its `content` object; URL confirmation includes no form data. Exact duplicate answers reconcile and conflicting answers fail. There is no continuation ID or new Run admission here. `ThreadWatch.snapshot.mcp_inputs` closes the initial-query race, while summary invalidations request a refetch. Answers and pending requests do not survive restart.
 
@@ -112,7 +112,7 @@ Python additionally exposes `query_child_executions`, `wait_child_executions`, `
 
 ## Register trusted integrations
 
-`HarnessUiIntegrations` supplies Host capabilities, Environment providers/adapters, Harness plugin factories, Environment run-extension factories, and Provider-runtime factories. Installation/registration makes trusted code available; accepted resource selection and current Run authority determine use.
+`HarnessUiIntegrations` supplies Host Capabilities, Environment providers/adapters, Harness Plugin factories, Environment Run Extension factories, and Provider-runtime factories. Installation/registration makes trusted code available; accepted resource selection and current Run authority determine use.
 
 Keep callbacks, credentials, live clients, and operators in runtime collaborators, not YAML or persisted continuation. Reuse [configuration](configuration.md), [extension types](extensions-and-mcp.md), [Skills](skills-and-content-plugins.md), and [MCP](mcp.md) rather than creating an independent configuration language in your surface.
 

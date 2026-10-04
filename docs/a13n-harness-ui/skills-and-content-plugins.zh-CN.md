@@ -18,20 +18,20 @@ capabilities:
 
 空列表仍启用自动来源；省略该 Capability 会关闭此次 Agent Run 的 Skill 发现。编辑时保留其他 Capability 条目。
 
-在 CLI 或 WebUI 输入框中输入 `$` 可发现 Skill 名称。例如，让 Agent 使用 `$harness-ui-configuration` 检查配置。识别出的名称仍作为提示文本可见，并携带 App 在发送或补充指导前验证的引用。旧引用按名称在当前目录解析；执行指导使用活动 Run 固定的目录。未知的美元符号前缀文本仍是普通文本。引用请求使用该 Skill，不会捕获内容或增加权限。不存在 `/skill-name` 命令。
+在 TUI 或 WebUI 输入框中输入 `$` 可发现 Skill 名称。例如，让 Agent 使用 `$harness-ui-configuration` 检查配置。识别出的名称仍作为提示文本可见，并携带 App 在发送或引导前验证的引用。旧引用按名称在当前目录解析；引导使用活动 Run 固定的目录。未知的美元符号前缀文本仍是普通文本。引用请求使用该 Skill，不会捕获内容或增加权限。不存在 `/skill-name` 命令。
 
 ## 自动来源与优先级
 
 两个来源使用相同 Skill 名称时，以下优先级列表中首个可用来源生效：
 
 1. 显式 `roots`，后面的条目优先于前面的条目。
-2. 第一个 Project 根目录的 `.agents/skills`。
-3. 后续 Project 根目录的 `.agents/skills`，按 Project 顺序。
+2. 第一个本地根目录的 `.agents/skills`。
+3. 后续本地根目录的 `.agents/skills`，按选择顺序。
 4. 已安装 Content Plugin 的 Skill 根目录；字典序更靠后的插件 ID 优先。
 5. `~/.agents/skills` 中的用户 Skill。
 6. 内置挂载中由发行版提供的 Skill。
 
-没有 Project 时，仅两个 Project 层级消失。内置、用户、插件和显式来源仍可用。配置目录不会隐式成为 Project Skill 来源。
+没有本地根目录时，仅两个本地根目录层级消失。内置、用户、插件和显式来源仍可用。配置目录不会隐式成为 Project Skill 来源。
 
 目录在 Run 准备时选定。新 Run 捕获可以看到来源变化；活动 Run 不会重新扫描挂载。缺失的可选目录直接视为不存在，显式根目录不可用则导致准备失败。Skill 文件在使用时读取，不会复制到 Run 中。
 
@@ -61,11 +61,11 @@ wheel 和 sdist 包含 **`harness-ui-configuration`**，提供与发行版匹配
 /environment/builtin-skills/harness-ui-configuration
 ```
 
-该挂载不是默认挂载，仅提供文件操作：检查、读取、搜索和复制源；不提供修改、shell、进程、端口或输出操作。没有 Project、Project Provider 为沙箱或远程时仍可用。不会将文件复制到用户配置目录、Project 或 `~/.agents/skills`。
+该挂载不是默认挂载，仅提供文件操作：检查、读取、搜索和复制源；不提供修改、shell、进程、端口或输出操作。Agent 选择 `skills` 时，没有 Project、Project Provider 为沙箱或远程时仍可用。不会将文件复制到用户配置目录、Project 或 `~/.agents/skills`。
 
-该 Skill 来源优先级最低，可通过更高优先级来源的同名 Skill 覆盖。其指引仍使用普通文件操作和验证，不增加配置写入特权。章节索引中的外部引用标为在线内容，可能描述其他发行版。
+该 Skill 来源优先级最低，可通过更高优先级来源的同名 Skill 覆盖。其指令仍使用普通文件操作和验证，不增加配置写入特权。章节索引中的外部引用标为在线内容，可能描述其他发行版。
 
-源码开发时，修改 UI 文档或导航后重建内置指引：
+源码开发时，修改 Harness UI 文档或导航后重建内置 Skill：
 
 ```console
 make a13n-harness-ui-skills
@@ -144,12 +144,12 @@ subagents: ./subagents
 
 ### Marketplace 字段
 
-| 字段             | 要求                                    |
-| ---------------- | --------------------------------------- |
-| `schema_version` | 必需，值为 `"1"`                        |
-| `name`           | 必需，1–256 个字符                      |
-| `plugins`        | 必需，1–256 个条目，路径唯一            |
-| `plugins[].path` | 必需，规范的插件相对路径，3–4096 个字符 |
+| 字段             | 要求                                                  |
+| ---------------- | ----------------------------------------------------- |
+| `schema_version` | 必需，值为 `"1"`                                      |
+| `name`           | 必需，1–256 个字符                                    |
+| `plugins`        | 必需，1–256 个条目，路径唯一                          |
+| `plugins[].path` | 必需，指向插件根目录的规范仓库相对路径，3–4096 个字符 |
 
 ### Manifest 字段
 
@@ -172,4 +172,4 @@ subagents: ./subagents
 
 使用 `config validate`、`config show`、`plugin list` 和 `<data-root>/logs/terminal.log` 查看诊断。重新安装前，先检查 Agent 的 Capability 选择、实际 Environment 路径、来源优先级、manifest 路径和选中子级 ID。
 
-预览成功不会固定未来 provider 版本，也不会捕获 Skill 字节。精确的嵌入 API Skill 引用会单独验证；普通美元符号文本不提供此保证。
+Skill 目录预览成功不会固定后续 Run 的目录，也不会捕获 Skill 字节。精确的嵌入 API Skill 引用会单独验证；普通美元符号文本不提供此保证。

@@ -62,7 +62,7 @@ second = await executable.run(
 )
 ```
 
-`first.thread_id == second.thread_id`, while `first.run_id != second.run_id`. The new run reconstructs current bindings and creates a fresh context, `EnvironmentRuntime`, plugin graph, and usage accumulator.
+`first.thread_id == second.thread_id`, while `first.run_id != second.run_id`. The Host supplies fresh bindings, and the new Run creates a fresh context, `EnvironmentRuntime`, Run-bound plugins, and usage accumulator.
 
 ## Serialize State
 
@@ -79,7 +79,7 @@ Persist the complete validated envelope, not private encoded fields or raw model
 
 ## Fork a Thread
 
-Use `fork()` when copying continuation data into an independently advancing history. Omit the ID for Harness generation or pass a distinct Host-selected ID:
+Use `fork()` when copying continuation data into an independently advancing history. Omit the ID to let Harness generate one, or pass a distinct Host-selected ID:
 
 ```python
 branch_state = state.fork(thread_id="thr_productbranch1")
@@ -92,7 +92,7 @@ Do not edit serialized state manually. Use `HarnessState.new(thread_id=...)` for
 
 ## Export While Streaming
 
-An active stream can export the latest safe public boundary:
+An active stream can export a state candidate at the latest safe public boundary:
 
 ```python
 async with executable.stream("Work", bindings=fresh_bindings()) as stream:
@@ -100,11 +100,11 @@ async with executable.stream("Work", bindings=fresh_bindings()) as stream:
         checkpoint_candidate = await stream.export_state()
 ```
 
-`export_state()` does not persist anything and does not expose arbitrary token deltas. The caller decides whether a candidate is complete, current, and safe to select. The terminal result remains the simplest complete checkpoint boundary.
+`export_state()` does not persist anything and does not expose arbitrary token deltas. The Host decides whether a candidate is complete, current, and safe to select. The terminal result remains the simplest complete checkpoint boundary.
 
 ## Resume Unanswered Tool Calls
 
-A checkpoint can contain tool calls whose results were never recorded. After a crash, those operations may have run even though their results are missing. Supply any [accepted deferred input](#recover-an-interrupted-deferred-resume) retained by the Host before treating a call as unknown: external results, failures, and explicit denials remain authoritative under every recovery mode. For the remaining unresolved calls, `run()` and `stream()` use the per-run `tool_recovery` option to decide which may execute again:
+A checkpoint can contain tool calls whose results were never recorded. After a crash, those operations may have run even though their results are missing. Before treating a call as unknown, supply any [accepted deferred input](#recover-an-interrupted-deferred-resume) that the Host retained. External results, failures, and explicit denials remain authoritative under every recovery mode. For the remaining unresolved calls, `run()` and `stream()` use the per-Run `tool_recovery` option to decide which may execute again:
 
 | Mode                   | Unanswered restored calls                                                                    |
 | ---------------------- | -------------------------------------------------------------------------------------------- |
@@ -133,11 +133,11 @@ catalog = Capability(
 )
 ```
 
-The helper returns a native `Tool`. It adds metadata without wrapping execution; an existing `Tool` is copied with its settings and other metadata preserved. For instance methods, call `recovery_retryable(self.lookup_record)` when constructing the Capability. A Plugin can declare its own individual tools this way without requiring the Host to know their names.
+The helper returns a native `Tool`. It adds metadata without wrapping execution; an existing `Tool` is copied with its settings and other metadata preserved. For instance methods, call `recovery_retryable(self.lookup_record)` when constructing the Capability. A plugin can declare its own individual tools this way without requiring the Host to know their names.
 
 Dynamic Toolsets can use the same helper while building their current tools. For integrations that already produce `ToolDefinition` metadata, set `RECOVERY_RETRY_SAFE_METADATA_KEY` from `a13n_harness.tools` to the boolean `True`. Native `SetToolMetadata` also works. The declaration is read from the freshly prepared definition, not from saved messages.
 
-The declaration asserts that repeating the operation is acceptable despite an unknown earlier outcome. It is separate from provider dispatch retries and `HarnessToolMetadata.idempotency`: a provider key alone does not prove a restored call will reuse the original upstream operation.
+The declaration asserts that repeating the operation is acceptable despite an unknown earlier outcome. It is separate from provider dispatch retries and `HarnessToolMetadata.idempotency`: a provider idempotency key alone does not prove a restored call will reuse the original upstream operation.
 
 ### Resume with a Policy
 
@@ -151,19 +151,19 @@ result = await executable.run(
 
 You may also supply new input. Native Pydantic AI continuation processes the retained calls and partial results before the next model request. Recovery uses native `ToolApproved` values as programmatic permission to replay selected calls. Native argument validation still runs, tools currently requiring approval or external execution still suspend, and managed invocations are checked against fresh policy and resources. Recovery replay permission does not satisfy current approval requirements. A fresh `DeferredToolResume` uses the supplied approval/result batch independently of `tool_recovery`; an interrupted resume uses `recovery=True` and the current recovery policy. Provider-suspended responses retain their native continuation path.
 
-This option belongs to the run, not serialized state or model retry policy. It does not guarantee exactly-once effects or stop a later model decision from requesting another call.
+This option belongs to the Run, not serialized state or model retry policy. It does not guarantee exactly-once effects or stop a later model decision from requesting another call.
 
-The former `execute_pending_tools` argument is replaced by `tool_recovery`: migrate `False` to `"never"`, `True` to `"always"`, and `"auto"` to `"declared"`. The default now follows per-tool declarations; unmarked tools continue to receive unknown results.
+Under the default `"declared"` mode, unmarked tools receive unknown results.
 
 ## Structured Suspension
 
-Native deferred tools and approvals end a root logical run with `status="suspended"`. The result includes:
+Native deferred tools and approvals end a root logical Run with `status="suspended"`. The result includes:
 
 - `state`, representing the accepted history and Capability data;
 - `deferred`, the exact native pending request envelope;
 - `suspend_reason="deferred"`.
 
-The application performs external interaction after the run is closed, then starts a new run:
+The Host performs external interaction after the Run is closed, then starts a new Run:
 
 ```python
 from a13n_harness import DeferredToolResume
@@ -258,11 +258,11 @@ await context.state.write(
 )
 ```
 
-Unknown namespaces can remain opaque across a run. Only the owning Capability interprets its payload and version. Do not store credentials, clients, locks, or `EnvironmentState` in a Capability namespace.
+Unknown namespaces can remain opaque across a Run. Only the owning Capability interprets its payload and version. Do not store credentials, clients, locks, or `EnvironmentState` in a Capability namespace.
 
 ## Run-local Shell Observations
 
-`DynamicEnvironmentCapability` composes shell execution, `shell_info` discovery/inspection, explicit-offset `shell_wait`, and supported stdin/control tools from each mount's actual actions. A reference belongs to one Harness Run, not to a durable process service. Queries do not reset output, and native completion does not imply complete capture.
+`DynamicEnvironmentCapability` composes shell execution, `shell_info` discovery/inspection, explicit-offset `shell_wait`, and supported stdin/control tools from each mount's actual actions. A shell process reference belongs to one Harness Run, not to a durable process service. Queries do not reset output, and native completion does not imply complete capture.
 
 Run close releases observations without blanket process termination. A fresh adapter restored from Provider state may discover commands the backend retained; a fresh Run assigns new references and cannot use old references from history. No process reference, buffer, watcher or output cursor enters Harness Capability state. Provider state owns native recovery evidence, and the Host owns target lifetime and state publication.
 
@@ -274,7 +274,7 @@ A durable Host should keep these facts separate:
 
 | Fact                                                           | Owner                     |
 | -------------------------------------------------------------- | ------------------------- |
-| Portable conversation continuation                             | `HarnessState` candidate  |
+| Portable Thread continuation                                   | `HarnessState` candidate  |
 | Selected checkpoint and provenance                             | Host                      |
 | Definition revision and artifact lock                          | Host                      |
 | Current identity, policy, and credentials                      | Fresh Host reconstruction |

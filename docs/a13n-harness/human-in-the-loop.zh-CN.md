@@ -4,7 +4,7 @@ sidebarTitle: 人机协作
 description: 展示内置的结构化问题、定义应用自己的载荷类型，并携带关联的答案恢复执行。
 ---
 
-当 agent 需要用户选择选项或补充说明时，可以使用 Harness 内置的 `ask_user_question` 工具。应用负责展示问题、收集答案，再恢复挂起的工作。Harness 提供问题格式并校验答案，不提供表单渲染器，也不会在等待用户时保持 Run 打开。
+当 Agent 需要用户选择选项或补充说明时，可以使用 Harness 内置的 `ask_user_question` 工具。应用负责展示问题、收集答案，再恢复挂起的工作。Harness 提供问题格式并校验答案，不提供表单渲染器，也不会在等待用户时保持 Run 打开。
 
 问题属于外部工具**调用**，不是工具**审批**。二者都通过延后反馈处理，但载荷与权限含义不同：
 
@@ -18,7 +18,7 @@ description: 展示内置的结构化问题、定义应用自己的载荷类型�
 
 ## 启用结构化问题
 
-在 agent 定义中添加 `UserInteractionCapability`。以下应用已提供 `agent_spec` 和 `model`：
+在 Agent 定义中添加 `UserInteractionCapability`。以下应用已提供 `agent_spec` 和 `model`：
 
 ```python
 from a13n_harness import HarnessBuilder
@@ -32,7 +32,7 @@ executable = HarnessBuilder().build(
 )
 ```
 
-当前 Host 支持延后工具时，模型可以请求 `ask_user_question`。`RunBindings.deferred_tools_supported=False` 会移除该工具及其指导。这适用于根和子 agent；[内置内联子 agent](delegation-and-codeact.md#host-managed-feedback)禁用延后，而支持此生命周期的 Host 可以恢复自己管理的子 agent。
+当前 Host 支持延后工具时，模型可以请求 `ask_user_question`。`RunBindings.deferred_tools_supported=False` 会移除该工具及其指导。这适用于根和子 Agent；[内置内联子 Agent](delegation-and-codeact.md#host-managed-feedback)禁用延后，而支持此生命周期的 Host 可以恢复自己管理的子 Agent。
 
 ## 请求载荷
 
@@ -127,7 +127,7 @@ Harness 在外部延后之前校验完整请求。包括重复问题文本或选
 
 ## 在应用中定义类型
 
-Service 将工具参数和返回值作为通用 JSON 暴露。为应用定义需要的类型，而不要假定 SDK 导出了内置问题类型。例如，下面的 TypeScript 类型只描述协议结构；它们**由应用维护**，不是 SDK 导入：
+Service 将工具参数和返回值作为通用 JSON 暴露。为应用定义需要的类型，而不要假定 Service SDK 导出了内置问题类型。例如，下面的 TypeScript 类型只描述协议结构；它们**由应用维护**，不是 SDK 导入：
 
 ```typescript
 export interface UserQuestionOption {
@@ -232,6 +232,6 @@ Service 问题出现在等待中 Run 的 `pending.calls` 中。使用精确的�
 }
 ```
 
-将 `question-1` 替换为实际的 `tool_call_id`。两个映射都必填，并且必须覆盖完整待处理批次；只有类别为空时才能使用空映射。普通 Thread 消息无法解除等待；可选的恢复 `input` 只是附加上下文，不替代答案或审批决定。Service 恢复会创建不同的后继 Run；原 Run 仍保持等待状态。
+将 `question-1` 替换为实际的 `tool_call_id`。两个映射都必填，并且必须覆盖完整待处理批次；只有类别为空时才能使用空映射。普通 Thread 消息无法解除等待；可选的恢复 `input` 只是附加上下文，不替代答案或审批决定。Service 恢复会创建不同的后继 Run；原 Run 保持其已封存的 `waiting` 状态，不能再次恢复。
 
 发送请求时，提供 Service 的认证、工作区选择和稳定的 `Idempotency-Key`。完整提交流程见[Service 等待 Run](../a13n-service/agents-and-runs.md#resume-a-waiting-run)和 [SDK 指南](../a13n-service/sdks.md)。Harness UI 管理自己的交互表单和 Host 生命周期；这些协议示例不规定其 UI。

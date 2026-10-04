@@ -4,7 +4,7 @@ sidebarTitle: 安装
 description: 构建或下载与 EIP 客户端匹配的 Envd 二进制文件，或运行沙箱镜像。
 ---
 
-选择与 EIP 客户端版本匹配的原生守护进程。如果只使用 Harness UI，其 Local EIP 运行时已经负责获取匹配的二进制文件，无需另行安装。
+选择与 EIP 客户端版本匹配的原生守护进程。如果只使用 Harness UI 的本地 Sandbox 模式，Harness UI 会自行获取匹配的二进制文件，无需在该计算机上另行安装。要将另一台计算机作为设备连接到 Harness UI，请在那台计算机上安装 Envd。
 
 ## 构建匹配版本的二进制文件
 
@@ -22,7 +22,7 @@ export A13N_ENVD_EXECUTABLE="$PWD/target/debug/a13n-envd"
 
 Python 包 `a13n-envd-client` 不会发现、安装或启动二进制文件。进程生命周期和传输策略由 provider 或 Host 提供。
 
-使用已发布的 Local Envd 时，原生 `a13n-envd` 应与已安装的 `a13n-envd-client` 版本匹配，而不是与独立发版的 Harness 或 UI 匹配。Python RC 版本 `1.2.3rc1` 对应原生版本 `1.2.3-rc.1`。Harness UI 为 Local EIP 管理版本选择和获取；独立 Host 需要明确提供可执行文件。不要将任意下载的二进制文件与源码工作空间混用。
+使用已发布的 Local Envd 时，原生 `a13n-envd` 应与已安装的 `a13n-envd-client` 版本匹配，而不是与独立发版的 Harness 或 Harness UI 匹配。Python RC 版本 `1.2.3rc1` 对应原生版本 `1.2.3-rc.1`。Harness UI 为其 Sandbox 模式管理版本选择和获取；独立 Host 需要明确提供可执行文件。不要将任意已发布的二进制文件与从源码工作空间构建的客户端混用。
 
 ## 安装已发布的二进制文件
 
@@ -63,7 +63,7 @@ $envdVersion = python -c "from importlib.metadata import version; import re; pri
 
 | 选项                                 | 环境变量默认值                  | 行为                                                                                                                                                              |
 | ------------------------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--version X.Y.Z`                    | `A13N_ENVD_VERSION`             | 精确的原生版本；`0.0.6-rc.1` 等规范 RC 版本需要显式选择。两者都省略时，从 GitHub 按最新优先排列的发布列表中选择第一个稳定的 envd 版本，跳过其他组件和预发布版本。 |
+| `--version X.Y.Z`                    | `A13N_ENVD_VERSION`             | 精确的原生版本；`0.0.6-rc.1` 等规范 RC 版本需要显式选择。两者都省略时，从 GitHub 按最新优先排列的发布列表中选择第一个稳定的 Envd 版本，跳过其他组件和预发布版本。 |
 | `--install-dir PATH`                 | `A13N_ENVD_INSTALL_DIR`         | 绝对目标目录。POSIX 普通用户默认为 `~/.local/bin`，POSIX root 默认为 `/usr/local/bin`，Windows 默认为 `%LOCALAPPDATA%\A13N\bin`。                                 |
 | `--add-to-path` / `--no-add-to-path` | `A13N_ENVD_ADD_TO_PATH=1` / `0` | 两个选项互斥。默认不修改 PATH。显式选项覆盖环境变量值。                                                                                                           |
 | `--help`                             | —                               | 显示用法，不执行安装。                                                                                                                                            |
@@ -76,8 +76,8 @@ $envdVersion = python -c "from importlib.metadata import version; import re; pri
 
 ## 运行沙箱镜像
 
-需要可直接使用的 agent 开发容器时，使用[沙箱镜像](sandbox.md)。镜像以 root 运行 envd，而命令和文件操作使用预置的 `1000:1000` 账号，并支持免密码 sudo。shell 命令默认启用，受控出站网络需要主动开启。指南介绍本地构建、stdio 和向外连接 Host、持久化与配置覆盖。
+需要可直接使用的 agent 开发容器时，使用[沙箱镜像](sandbox.md)。镜像以 root 运行 Envd，而命令和文件操作使用预置的 `1000:1000` 账号，并支持免密码 sudo。shell 命令默认启用，受控出站网络需要主动开启。指南介绍本地构建、stdio 和向外连接 Host、持久化与配置覆盖。
 
 ## 下一步
 
-使用 [Local Envd provider](index.md#try-local-envd)；如果由你管理传输和生命周期，则[配置独立守护进程](configuration.md)。运行不可信工作前，先选定 [Host 安全边界](isolation.md)。
+使用 [Local Envd provider](index.md#try-local-envd)；如果由你管理传输和生命周期，则[配置独立守护进程](configuration.md)。运行不可信工作前，先阅读[执行边界](isolation.md)，并选定 Host 的外层边界。

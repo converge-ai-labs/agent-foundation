@@ -52,7 +52,7 @@ class LocalEnvdEnvironmentConfiguration(RemoteEnvdEnvironmentConfiguration):
 
 
 class LocalEnvdLaunchConfiguration(BaseModel):
-    """Host-selected daemon recipe, shared by every Session on this runtime."""
+    """Host-selected daemon launch configuration, shared by every Session on this runtime."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

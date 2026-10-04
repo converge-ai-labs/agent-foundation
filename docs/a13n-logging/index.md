@@ -33,7 +33,7 @@ Call `configure_logging()` once in the executable, naming the Python logger name
 | `stdout: bool`                | `True`             | Enable stdout output.                                                          |
 | `file: LogFile \| None`       | `None`             | Add a rotating JSON file, even with pretty stdout.                             |
 
-At least one output is required. Configuration applies `logging.config.dictConfig()` immediately, with `disable_existing_loggers=False`; unrelated loggers are not disabled. Default JSON writes to **stdout**, so do not use it on protocol stdout. Supply your own handler when another destination is required.
+At least one output is required. Configuration applies `logging.config.dictConfig()` immediately, with `disable_existing_loggers=False`; unrelated loggers are not disabled. Both stdout formats write to standard output. In a process whose standard output carries a protocol, such as a stdio MCP server, set `stdout=False` and use `file` or your own handler. Supply your own handler when another destination is required.
 
 ```python
 from pathlib import Path

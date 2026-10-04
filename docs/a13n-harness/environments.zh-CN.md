@@ -1,6 +1,6 @@
 ---
 title: 环境
-description: 将环境挂载到执行中，让 agent 使用文件、命令和进程。
+description: 将环境挂载到执行中，让 Agent 使用文件、命令和进程。
 ---
 
 一个环境（Environment）是针对单个 provider 目标的新建进程内适配器。[环境 provider](../environments/index.md)负责目标创建、重新进入、provider 操作、缓存状态和显式销毁。Harness 只管理一次执行的挂载名称、访问上限、路由、状态聚合和非破坏性清理。
@@ -11,7 +11,7 @@ description: 将环境挂载到执行中，让 agent 使用文件、命令和进
 
 - Host 选择可信 provider 定义、账号配置、凭据、目标配置和当前 `EnvironmentState`；
 - 定义构建新环境，只在运行时工厂中获取活跃协作对象；
-- Harness 在生成输入前进入环境，在执行终结边界后关闭；
+- Harness 在生成输入前进入环境，在执行停止全部工作后关闭；
 - `DynamicEnvironmentCapability` 按需向模型提供允许的操作；
 - `close()` 释放进程内资源，绝不销毁底层目标；
 - 只有显式 Host 策略才会创建新适配器并调用 `destroy()`。
@@ -26,7 +26,7 @@ result = await executable.run("Answer without using a workspace")
 
 ## 每次执行构建一个新环境
 
-调用 Harness 前使用可信 provider。Direct Local 无状态，所以每次执行传入 `state=None`：
+调用 Harness 前，使用可信 provider 构建环境。Direct Local 无状态，所以每次执行传入 `state=None`：
 
 ```python
 from pathlib import Path
@@ -113,7 +113,7 @@ finally:
     )
 ```
 
-销毁成功清空适配器状态。目标不兼容或外部结果未知时失败，保留最后已验证状态供 Host 后续检查或重试。provider 只移除该状态代表的精确目标和自身启动材料；外部绑定源和共享 Host 工作空间仍由 Host 管理。
+销毁成功清空适配器状态。目标不兼容或外部结果未知时失败，保留最后已验证状态供 Host 后续检查或重试。provider 只移除该状态代表的精确目标和自身启动材料；外部绑定源和共享 Host 目录仍由 Host 管理。
 
 ## 使用多个环境
 
@@ -145,7 +145,7 @@ result = await executable.run(
 | 多个条目且设置 `default_environment="name"` | 提供的名称  | 指定名称的条目 |
 | 多个条目且不设置 `default_environment`      | 提供的名称  | 无             |
 
-默认挂载提供 `/workspace`。每个命名挂载都可通过 `/environment/{name}` 访问。多个条目没有显式默认值时，`/workspace/...` 会失败，不选择映射中的首项。映射顺序绝不授予权限。
+除非挂载设置了 `mount_path`，否则默认挂载提供 `/workspace`，每个命名挂载都可通过 `/environment/{name}` 访问。设置了 `mount_path` 的挂载只能通过该根路径访问。多个条目没有显式默认值时，`/workspace/...` 会失败，不选择映射中的首项。映射顺序绝不授予权限。
 
 初始设置是原子的。Harness 在进入前验证完整输入，不发布部分挂载集合。任何适配器失败时，按反向顺序关闭所有可能持有进程内资源的已提供适配器。回退清理绝不销毁目标。
 
@@ -164,7 +164,7 @@ read_only_docs = EnvironmentMount(
 )
 ```
 
-`permission_ceiling` 是精确的 `EnvironmentPermissionSet`，默认包含全部 `EnvironmentAction`，因此挂载开放 provider 提供的所有面向 agent 的环境能力，包括支持时的命令和进程操作。`FILE_READ_ACTIONS` 和 `FILE_ACTIONS` 是文件观测和完整 `environment.file.*` 类别的共享常量。provider 能力始终进一步收窄上限。默认上限不授予 Host 管理权限，不绕过沙箱，也不覆盖操作系统安全。
+`permission_ceiling` 是精确的 `EnvironmentPermissionSet`，默认包含全部 `EnvironmentAction`，因此挂载开放 provider 提供的所有面向 Agent 的环境操作，包括支持时的命令和进程操作。`FILE_READ_ACTIONS` 和 `FILE_ACTIONS` 是文件观测和完整 `environment.file.*` 类别的共享常量。provider 支持的操作始终进一步收窄上限。默认上限不授予 Host 管理权限，不绕过沙箱，也不覆盖操作系统安全。
 
 `working_directory` 必须为 `None`，或不含 `.`、`..` 段的规范 provider 绝对路径。
 
@@ -185,13 +185,13 @@ capabilities = (
 
 三项决策相互独立：
 
-1. agent 定义是否包含动态环境 Capability；
-2. 可选执行策略是否根据当前身份和参数收窄托管调用；
+1. Agent 定义是否包含动态环境 Capability；
+2. 可选调用策略是否根据当前身份和参数收窄托管调用；
 3. 所选环境挂载和 provider 是否允许精确操作。
 
-未显式提供调用策略时，托管环境工具在 Harness 边界默认允许。默认值不会创建 provider 能力、凭据、批准或挂载访问权限。工具注入有助于发现，不能替代执行时检查。
+未显式提供调用策略（`InvocationPolicyCapability`）时，托管环境工具在 Harness 边界默认允许。默认值不会创建 provider 支持、凭据、批准或挂载访问权限。工具注入有助于发现，不能替代执行时检查。
 
-授权针对所请求操作和参数，不预留后端。规范资源描述策略检查时观测到的挂载和路径。等待策略或批准时，Host 如果替换挂载或改变默认挂载，执行会选择当前路由并检查当前权限。资源元数据和自定义批准修订号不保证分派时使用观测到的后端；要求精确目标的 Host 策略还必须在执行路径中实施，例如由 provider 或 Host 控制的稳定绑定实施。
+授权针对所请求操作和参数，不预留后端。规范资源描述策略检查时观测到的挂载和路径。等待策略或批准时，Host 如果替换挂载或改变默认挂载，执行会选择当前路由并检查当前权限。资源元数据和自定义批准修订号不保证分派时使用观测到的后端。要固定精确目标，Host 需在执行路径中实施其策略，例如在 provider 中或通过 Host 控制的稳定绑定实施。
 
 执行开始后，复合文件工作始终使用已选范围。文档转换从读取源文件到发布输出都保留该范围，下载在获取和写入时也保留。替换挂载不会把在途操作移到其他后端。精确进程句柄、代次验证、provider 排空，以及禁止自动重放未知结果的规则保持不变。
 
@@ -201,7 +201,7 @@ capabilities = (
 - `FILE_ACTIONS` 添加 `write`、`edit`、`multi_edit`、`mkdir`、`move`、`copy` 和 `delete`；
 - provider 支持 shell 执行时，默认上限添加 `shell_exec`，并按各自操作独立添加 `shell_info`、`shell_wait`、`shell_input` 和 `shell_signal`。
 
-只支持部分能力的 provider 仅开放可用工具：列表、查询和文本搜索分别启用 `ls`、`glob`、`grep`；文本写入可在没有读取权限时提供写入/创建编辑工具。文本 `view` 需要文本读取；媒体 `view` 需要同一挂载的 stat 和字节读取。编辑已有文件需要字节读取和文本写入。直接写入所选挂载根目录不要求 mkdir，包括没有默认挂载的显式根目录。工具需要创建父目录的嵌套写入才要求 mkdir。复制使用源复制和目标复制权限，包括跨挂载复制。执行时再次检查实际参数。
+只支持部分操作的 provider 仅开放可用工具：列表、查询和文本搜索分别启用 `ls`、`glob`、`grep`；文本写入可在没有读取权限时提供写入/创建编辑工具。文本 `view` 需要文本读取；媒体 `view` 需要同一挂载的 stat 和字节读取。编辑已有文件需要字节读取和文本写入。直接写入所选挂载根目录不要求 mkdir，包括没有默认挂载的显式根目录。工具需要创建父目录的嵌套写入才要求 mkdir。复制使用源复制和目标复制权限，包括跨挂载复制。执行时再次检查实际参数。
 
 只有一个启用 shell 的挂载时，`shell_exec` 仅替代 `move`、`copy` 和 `delete`；`mkdir` 仍可用。多个挂载保留文件修改工具，避免一个挂载的 shell 隐藏另一个挂载的操作。空环境不开放环境工具。
 
@@ -215,7 +215,7 @@ capabilities = (
 | `shell_input`  | 写入 UTF-8 stdin，按需关闭 stdin，不读取输出                     |
 | `shell_signal` | 请求支持的 `interrupt`、`terminate` 或 `kill` 控制，不读取输出   |
 
-`shell_exec` 的 `execution_timeout_seconds` 请求由 provider 实施的硬执行期限。原生 E2B 等 provider 无法实施时，会在启动前拒绝。`yield_time_seconds` 和 `shell_wait.timeout_seconds` 只限制等待。没有后台模式标志，也没有独立列表、状态或 kill 工具。
+`shell_exec` 的 `execution_timeout_seconds` 请求由 provider 实施的硬执行期限。原生 E2B 等 provider 无法实施时，会在启动前拒绝。`yield_time_seconds` 和 `shell_wait.timeout_seconds` 只限制等待。没有后台模式标志；`shell_info` 负责列表和状态，`shell_signal` 负责 kill。
 
 只有所选挂载支持进程列表时，才使用 `shell_info(alias="workspace", limit=50)` 发现可恢复的运行命令。Direct Local 支持检查，不支持发现：其 `shell_info` schema 要求本次执行 `shell_exec` 返回的 `process_id`，不提供 `limit`。`shell_info(process_id=...)` 只检查，不附加、读取、刷新或重置输出。列表和检查分别授权。`alias` 是环境上下文中的已有挂载名，不是命令/进程标签；省略时选择默认挂载。未知或冲突别名会失败，不会重新指定命令或引用的目标。列表绝不公开原生 PID、任意参数或环境变量。
 
@@ -251,11 +251,11 @@ sequenceDiagram
     %% class Process ext
 ```
 
-`glob` 和 `grep` 在一次调用中，将 include 模式、仓库忽略和隐藏名称策略、上下文宽度，以及扫描/结果上限传给所选 `FileOperator`。Direct Local 在一个 worker 线程中扫描；EIP 执行一个 `file.find` 或 `file.search` 请求。只有确实要搜索仓库忽略路径时，才设 `include_ignored=True`。
+`glob` 和 `grep` 在一次调用中，将 include 模式、仓库忽略和隐藏名称策略、上下文宽度，以及扫描/结果上限传给所选 `FileOperator`。Direct Local 在一个 worker 线程中扫描；Envd provider 发送一个 EIP `file.find` 或 `file.search` 请求。只有确实要搜索仓库忽略路径时，才设 `include_ignored=True`。
 
-对于支持的图像、音频和视频文件，`view` 附加原生 `BinaryContent`，或调用专用理解 agent。活跃 Harness `AgentSpec` 的 `model_characteristics` 构建值是原生输入支持的唯一依据；Harness 绝不从模型名称或 Pydantic AI `Model.profile` 推断。专用默认值读取普通进程环境变量，新执行 Capability 可覆盖。
+对于支持的图像、音频和视频文件，`view` 附加原生 `BinaryContent`，或调用专用理解 Agent。活跃 Harness `AgentSpec` 的 `model_characteristics` 构建值是原生输入支持的唯一依据；Harness 绝不从模型名称或 Pydantic AI `Model.profile` 推断。专用默认值读取普通进程环境变量，新的 `RunBindings.file_media_understanding` provider 可覆盖。
 
-能力声明、环境配置、默认提示行为、执行范围 provider、用量归因和普通工具结果失败见[多媒体理解](multimedia-understanding.md)。
+模型输入能力声明、环境配置、默认提示行为、执行范围 provider、用量归因和普通工具结果失败见[多媒体理解](multimedia-understanding.md)。
 
 ## 在 Harness 之外管理 provider 状态
 

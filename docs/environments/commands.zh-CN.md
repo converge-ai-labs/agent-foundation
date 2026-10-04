@@ -6,7 +6,7 @@ description: 在环境中运行有界命令或长时间进程，并读取输出�
 
 使用 `environment.operations.shell` 执行有界前台命令；需要跨调用持续观测命令时，使用 `environment.operations.processes`。这些是结构化 provider API，不是面向模型的 `shell_exec` / `shell_wait` 工具签名。
 
-需要时必须显式配置命令访问。仅文件操作的 Direct Local 快速入门不启用执行。Direct Local 以 Host 账号运行；映射目录不是 shell 沙箱。
+显式配置命令访问：设置 `allowed_executables` 或 shell profile 之前，Direct Local 不运行任何命令。仅文件操作的 Direct Local 快速入门不启用执行。Direct Local 以 Host 账号运行；映射目录不是 shell 沙箱。
 
 ## 执行已配置的可执行文件
 
@@ -65,16 +65,16 @@ asyncio.run(main())
 
 ## 命令请求字段
 
-| 字段              | 默认值 / 含义                                                              |
-| ----------------- | -------------------------------------------------------------------------- |
-| `command`         | 必填 `ArgvCommand` 或 `ShellCommand`                                       |
-| `cwd`             | 该环境内可选的逻辑工作路径                                                 |
-| `environment`     | `CommandEnvironment(set={}, unset=())`；修改按 provider 策略检查           |
-| `network`         | `configured`；`deny` 请求支持的网络拒绝，不是假定具备该能力                |
-| `limits`          | `CommandLimits()`，可选设置墙钟时间、stdin 字节数、进程数、内存和 CPU 时间 |
-| `initial_stdin`   | 启动时提供的可选字节                                                       |
-| `keep_stdin_open` | False；计划后续写 stdin 时选择 true                                        |
-| `output_policy`   | 必填、有限的内联/总量上限和溢出策略                                        |
+| 字段              | 默认值 / 含义                                                               |
+| ----------------- | --------------------------------------------------------------------------- |
+| `command`         | 必填 `ArgvCommand` 或 `ShellCommand`                                        |
+| `cwd`             | 该环境内可选的逻辑工作路径                                                  |
+| `environment`     | `CommandEnvironment(set={}, unset=())`；修改按 provider 策略检查            |
+| `network`         | `configured`；`deny` 请求网络拒绝，无法实施网络拒绝的 provider 会拒绝该命令 |
+| `limits`          | `CommandLimits()`，可选设置墙钟时间、stdin 字节数、进程数、内存和 CPU 时间  |
+| `initial_stdin`   | 启动时提供的可选字节                                                        |
+| `keep_stdin_open` | False；计划后续写 stdin 时选择 true                                         |
+| `output_policy`   | 必填、有限的内联/总量上限和溢出策略                                         |
 
 set/unset 中的环境变量键必须互不重复，不能包含 NUL 或 `=`。值不能包含 NUL。最多接受 1,024 个环境条目。命令字符串不能为空或含 NUL；命令结构最多 1,025 个值和 1 MiB 编码字节。provider 专属验证可以进一步收窄。
 

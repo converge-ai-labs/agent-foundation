@@ -1,9 +1,9 @@
 ---
 title: 会话出站网络
-description: 限制 Envd 会话可访问的目标，并在无需重启的情况下更新策略。
+description: 限制 Envd 会话可访问的目标，向允许的 HTTPS 请求注入凭据，并在无需重启的情况下更新策略。
 ---
 
-通过 `A13N_ENVD_EGRESS_MODE=controlled`、`--egress-mode controlled`，或存放在工作空间之外的守护进程 JSON 选择受控出站网络：
+通过 `A13N_ENVD_EGRESS_MODE=controlled`、`--egress-mode controlled`，或存放在工作目录之外的守护进程 JSON 选择受控出站网络：
 
 ```json
 {
@@ -50,7 +50,7 @@ controlled 模式在接收工作前准备私有管理运行时。每个会话使
 curl https://api.github.com/user -H "Authorization: Bearer $GH_TOKEN"
 ```
 
-无需设置 `HTTP_PROXY` 或 `HTTPS_PROXY`。内核路由将流量送入外层 broker。对于 443 端口上的 HTTPS，broker 只替换请求**头字段值** 中的占位标记，且仅对该秘密的 `inject_hosts` 生效。URL 和请求体保持原样。broker 验证上游 TLS。通过 `SSL_CERT_FILE`、`REQUESTS_CA_BUNDLE`、`CURL_CA_BUNDLE` 和 `NODE_EXTRA_CA_CERTS` 提供包含系统信任和会话 CA 的私有 bundle。使用证书固定或独立信任库的客户端需要显式集成。Envd 不会覆盖原生系统 CA bundle，因此 `update-ca-certificates` 仍可正常运行。
+无需设置 `HTTP_PROXY` 或 `HTTPS_PROXY`。内核路由将会话的所有流量送入 Envd broker；该 broker 运行在会话 worker 之外。对于 443 端口上的 HTTPS，broker 只替换请求**头字段值** 中的占位标记，且仅对该秘密的 `inject_hosts` 生效。URL 和请求体保持原样。broker 验证上游 TLS。通过 `SSL_CERT_FILE`、`REQUESTS_CA_BUNDLE`、`CURL_CA_BUNDLE` 和 `NODE_EXTRA_CA_CERTS` 提供包含系统信任和会话 CA 的私有 bundle。使用证书固定或独立信任库的客户端需要显式集成。Envd 不会覆盖原生系统 CA bundle，因此 `update-ca-certificates` 仍可正常运行。
 
 ```mermaid
 flowchart TB
@@ -59,7 +59,7 @@ flowchart TB
         Command["命令：GH_TOKEN 中是占位标记"]
     end
     Envd --> Command
-    Command -->|"所有流量，由内核路由"| Broker["外层 broker"]
+    Command -->|"所有流量，由内核路由"| Broker["Envd broker"]
     Broker -->|"允许的主机：请求头字段值换成真实秘密"| Upstream["api.github.com"]
     Broker -->|"其他主机或非公共地址"| Refused["拒绝"]
 
@@ -77,7 +77,7 @@ sudo --preserve-env=SSL_CERT_FILE,CURL_CA_BUNDLE curl https://api.github.com/
 
 也可以配置应用的信任库。Envd 不会悄悄修改 sudoers 或全局信任库。即使客户端 TLS 信任配置有误，目标限制仍然生效。
 
-响应头值、响应体字节和 trailers 中与秘密值完全相同的内容会被脱敏，包括跨块匹配。这是字面值脱敏，无法阻止上游服务故意编码或转换秘密。HTTP 使用 HTTP/1.1；协议升级和压缩响应会被拒绝。请求压缩不会被改写。80 端口上的 HTTP 不注入凭据。其他 TCP 端口和 UDP 转发允许的流量，不替换秘密。
+响应头值、响应体字节和 trailers 中与秘密值完全相同的内容会被脱敏，包括跨块匹配。这是字面值脱敏，无法阻止上游服务故意编码或转换秘密。HTTP 使用 HTTP/1.1；协议升级和压缩响应会被拒绝。请求压缩不会被改写。80 端口上的 HTTP 不注入凭据，并拒绝请求头中带有占位标记的请求。其他 TCP 端口和 UDP 转发允许的流量，不替换秘密。
 
 ## 目标策略
 
@@ -122,9 +122,9 @@ broker 拒绝私有、回环、链路本地、元数据及其他非公共上游�
 
 ## 文件、socket 与生命周期
 
-受控命令和文件操作在同一个原生身份 worker 中运行。设置 `sandbox.mode: disabled` 时，**原始沙箱系统树仍然可写**：授权的 sudo 软件安装、服务用户、权限、ACL、链接器/CA 更新和系统文件修改都会跨会话保留，并对外层沙箱可见。`/tmp`、`/run`、设备与内核视图以及共享内存使用私有挂载；`/tmp` 下的工作空间会重新绑定到原始底层目录。小型不可变管理运行时仅用于 broker 和启动，不替代工作负载镜像。
+受控命令和文件操作在同一个原生身份 worker 中运行。设置 `sandbox.mode: disabled` 时，**外层沙箱的原始系统树仍然可写**：授权的 sudo 软件安装、服务用户、权限、ACL、链接器/CA 更新和系统文件修改都会跨会话保留，并对外层沙箱可见。`/tmp`、`/run`、设备与内核视图以及共享内存使用私有挂载；`/tmp` 下的工作目录会重新绑定到原始底层目录。小型不可变管理运行时仅用于 broker 和启动，不替代工作负载镜像。
 
-Envd 隐藏其配置、传输凭据、broker 运行时和启动账号的 `.a13n` 目录。遮蔽在克隆 worker 视图前完成，因此重命名祖先目录不会向后续会话暴露受保护文件。受保护文件存在额外硬链接，或工作空间与受保护路径重叠时，准备会被拒绝。无关凭据应放在工作空间和镜像之外；这不是通用的文件系统保密策略。
+Envd 隐藏其配置、传输凭据、broker 运行时和启动账号的 `.a13n` 目录。遮蔽在克隆 worker 视图前完成，因此重命名祖先目录不会向后续会话暴露受保护文件。受保护文件存在额外硬链接，或工作目录与受保护路径重叠时，准备会被拒绝。无关凭据应放在工作目录和镜像之外；这不是通用的文件系统保密策略。
 
 禁用 Sandbox 时，默认启用原生 sudo，沿用现有 sudoers。Linux 受限 Sandbox 则移除 capabilities 并阻止提权，包括 UID 0。会话内 Unix socket、socketpair、PTY 和低端口服务可正常使用。命名空间/挂载重配置、raw/packet/VSOCK 网络、网络管理 capabilities、不安全的设备与内核控制，以及 io_uring 绕过均不可用，sudo 后也不例外。这些限制用于保护显式出站网络策略和 broker 凭据，不会让普通系统管理变为只读。Host 仍负责 CPU/内存限制和外层沙箱生命周期。
 
@@ -134,26 +134,26 @@ Envd 隐藏其配置、传输凭据、broker 运行时和启动账号的 `.a13n`
 
 启动者必须为每次守护进程启动提供可信文件。私有管理快照保护运行中的 broker 不受后续系统树修改影响；它不能让已被修改的沙箱镜像在下次启动时重新可信。按需重新构建或恢复可信启动文件。这不提供整机流量隔离，也不隔离共享可写系统树的彼此敌对会话。
 
-分离连接后，在普通会话宽限期内保留 worker 和策略。重新附加返回当前策略元数据。关闭、过期、broker 失败或守护进程死亡都会停止受控执行和网络。真实秘密与会话 CA 私钥只保留在 broker 内存中。
+分离连接后，在会话的断线宽限期内保留 worker 和策略。重新附加返回当前策略元数据。关闭、过期、broker 失败或守护进程死亡都会停止受控执行和网络。真实秘密与会话 CA 私钥只保留在 broker 内存中。
 
-每个受控会话创建时，会从设备总预算中预留已配置的会话预算。这种保守分配可能使可接纳的空闲会话数量低于 `max_sessions`；需要时提高对应设备总额。确认 worker 死亡后释放容量。如果无法证明暂存工作空间文件已清理，则其预留一直计费到守护进程销毁；重复清理失败不能绕过设备计量。
+每个受控会话创建时，会从设备总预算中预留已配置的会话预算。这种保守分配可能使可接纳的空闲会话数量低于 `max_sessions`；需要时提高对应设备总额。确认 worker 死亡后释放容量。如果无法证明暂存文件已清理，则其预留一直计费到守护进程销毁；重复清理失败不能绕过设备计量。
 
-## Provider 验证记录
+## 云平台验证记录
 
-以下结果记录于 **2026-09-22** 或之前。五个云平台使用同一个 Linux x86_64 二进制文件和生成的测试凭据。provider 凭据保留在会话之外。这些是在临时沙箱中的 envd 运行时探测，不代表验证了 provider/Service 出站网络集成或所有厂商镜像。
+以下结果记录于 **2026-09-22** 或之前。五个云平台使用同一个 Linux x86_64 二进制文件和生成的测试凭据。provider 凭据保留在会话之外。这些是在临时沙箱中的 Envd 运行时探测，不代表验证了 provider/Service 出站网络集成或所有厂商镜像。
 
 **这些结果早于 2026-09-22 引入的原生身份和 sudo 变更。** 当前出站网络要求 root 启动者、原生账号和本页开头列出的前置条件。下面旧的非 root 启动结果不能证明当前支持非 root 启动者。只读系统树和拒绝命名 Unix socket 的检查属于旧实现；当前可写系统和原生 socket 行为见[文件、socket 与生命周期](#files-sockets-and-lifetime)。这份云平台矩阵尚未针对该实现重新运行。
 
 ### 被测二进制文件的云平台结果
 
-| 平台 / 运行时     | 观测到的内核           | 被测 envd 启动身份    | 结果与覆盖范围                                                                  |
+| 平台 / 运行时     | 观测到的内核           | 被测 Envd 启动身份    | 结果与覆盖范围                                                                  |
 | ----------------- | ---------------------- | --------------------- | ------------------------------------------------------------------------------- |
 | E2B               | `6.1.158+`             | 默认账号，UID 1000    | 完整 HTTPS fixture 和受控会话生命周期通过。                                     |
 | Runloop           | `6.18.32`              | 默认账号，UID 1000    | 完整 HTTPS fixture 和受控会话生命周期通过。                                     |
 | Vercel Sandbox    | `6.18.49`              | 通过 `sudo` 使用 root | 完整 HTTPS fixture 和受控会话生命周期通过。                                     |
 | Daytona           | `6.8.0-138-generic`    | 通过 `sudo` 使用 root | GitHub 请求头 fixture 和受控会话生命周期通过；外部回显站点被阻止。              |
 | Modal 默认 gVisor | 报告为 `4.19.0-gvisor` | Root                  | 普通会话/就绪检查、shell 执行和文件读写通过。受控会话创建返回 `unsupported`。   |
-| Modal VM Sandbox  | `7.2.6`                | Root                  | 普通 envd 流程、完整 HTTPS fixture、受控会话生命周期和 VM 内 TCP/UDP 回显通过。 |
+| Modal VM Sandbox  | `7.2.6`                | Root                  | 普通 Envd 流程、完整 HTTPS fixture、受控会话生命周期和 VM 内 TCP/UDP 回显通过。 |
 
 **完整 HTTPS fixture** 验证通过替换请求头完成 Basic Auth、对回显响应中的精确秘密值脱敏，以及会话元数据不含真实秘密。**受控会话生命周期** 检查策略热更新、重放、被测版本的文件系统/socket 限制、配额复用，以及 broker 死亡后对已分离 `setsid` 后代进程的清理。探测使用公开 EIP 接口。两个 Modal 运行时还分别运行了普通会话 shell/文件冒烟检查；其他云平台使用受控会话 fixture。
 
@@ -161,7 +161,7 @@ Envd 隐藏其配置、传输凭据、broker 运行时和启动账号的 `.a13n`
 
 ### Daytona 网络限制
 
-绕过 envd 直接请求 `httpbin.org`、`httpbingo.org` 和 `example.com` 失败，而 `api.github.com` 仍可访问。这与 Daytona 的[组织套餐网络限制](https://www.daytona.io/docs/en/network-limits/)一致；被测组织的套餐未经独立核实，测试未修改其网络策略。envd allowlist 无法覆盖外层平台限制。
+绕过 Envd 直接请求 `httpbin.org`、`httpbingo.org` 和 `example.com` 失败，而 `api.github.com` 仍可访问。这与 Daytona 的[组织套餐网络限制](https://www.daytona.io/docs/en/network-limits/)一致；被测组织的套餐未经独立核实，测试未修改其网络策略。Envd allowlist 无法覆盖外层平台限制。
 
 `--http-host api.github.com` fixture 首先因不支持的 `Accept` 值收到 HTTP 415。将占位标记替换为 `application/json` 后得到 HTTP 200，响应 `Content-Type` 中的同一值也被脱敏。这证明了请求头替换和响应头脱敏，不代表通过了被阻止的 Basic Auth/响应体回显场景。
 
@@ -179,17 +179,19 @@ sandbox = modal.Sandbox.create(
 )
 ```
 
-这个 SDK 设置选择外层运行时；它不是 envd 配置字段，也不是本次验证向内置 Modal provider 添加的选项。部署新二进制文件或镜像前，准备当前 envd 的前置条件，并重新运行下方测试。
+这个 SDK 设置选择外层运行时；它不是 Envd 配置字段，也不是本次验证向内置 Modal provider 添加的选项。部署新二进制文件或镜像前，准备当前 Envd 的前置条件，并重新运行下方测试。
 
 ### 测试准备与限制
 
 测试镜像补装了缺失的网络工具和 CA 证书。临时启动探测使用 Vercel 账号接受的超时值，省略与 Daytona 默认快照不兼容的资源覆盖。Modal 的本地 SDK 客户端需要代理支持依赖，并为宿主 Python 安装显式配置 CA bundle 路径；这些是客户端连接设置，不是载荷代理配置。这些探测调整均未改动生产 provider 代码。
 
-所有临时云沙箱均已终止；原生 provider 实例已核对为不存在，五个 Modal 实例（包括连接诊断尝试）也全部确认停止。新一轮验证应一并记录日期、镜像、运行时、内核、启动身份和 fixture 覆盖范围，包括尚未重测的行为变更。某个镜像或旧 envd 二进制文件通过，不构成整个平台的支持保证。
+所有临时云沙箱均已终止；原生 provider 实例已核对为不存在，五个 Modal 实例（包括连接诊断尝试）也全部确认停止。新一轮验证应一并记录日期、镜像、运行时、内核、启动身份和 fixture 覆盖范围，包括尚未重测的行为变更。某个镜像或旧 Envd 二进制文件通过，不构成整个平台的支持保证。
 
 ## 验证沙箱镜像
 
-安装上述前置条件，预置执行账号，并以部署使用的同一个 root 启动者运行公开 EIP 集成测试：
+1. 安装上述前置条件。
+2. 预置执行账号。
+3. 以部署使用的 root 启动者运行公开 EIP 集成测试：
 
 ```bash
 python3 crates/a13n-envd/tests/egress_linux.py /path/to/a13n-envd

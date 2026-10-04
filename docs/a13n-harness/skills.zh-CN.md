@@ -1,17 +1,17 @@
 ---
-title: 在 Host 中集成 Skill 发现
+title: 发现和使用 Skill
 sidebarTitle: Skill
 description: 从文件或 Environment 中发现并准备 Skill，供 Run 使用。
 ---
 
 `a13n-harness` 的 Skill 发现可以在 Agent 执行之外复用。Host 明确选择以下两种模式之一：
 
-| Host 场景                                   | API                                              | 结果                           | 谁负责一致性                                              |
-| ------------------------------------------- | ------------------------------------------------ | ------------------------------ | --------------------------------------------------------- |
-| CLI 或嵌入式进程直接管理一个 `FileOperator` | `SkillManager.scan(files=...)`                   | `tuple[SkillCatalogItem, ...]` | 调用方保持 operator 命名空间稳定                          |
-| Host 使用已进入的 `Environment`             | `SkillManager.scan_environment(environment=...)` | `BoundSkillCatalog`            | manager 固定挂载实例，Host 在之后使用路径前检查目录仍有效 |
+| Host 场景                                   | API                                              | 结果                           | 谁负责一致性                                                        |
+| ------------------------------------------- | ------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------- |
+| CLI 或嵌入式进程直接管理一个 `FileOperator` | `SkillManager.scan(files=...)`                   | `tuple[SkillCatalogItem, ...]` | 调用方保持 operator 命名空间稳定                                    |
+| Host 使用已进入的 `BoundEnvironment`        | `SkillManager.scan_environment(environment=...)` | `BoundSkillCatalog`            | manager 固定挂载实例；Host 之后使用目录路径前，检查目录是否仍为最新 |
 
-两种模式共用 `SkillSource`、`SkillMaterializer`、frontmatter 解析器、限制、冲突策略和路径范围检查。都不会隐式扫描 home 目录、已安装软件包或相邻工作空间。
+两种模式共用 `SkillSource`、`SkillMaterializer`、frontmatter 解析器、限制、冲突策略和路径范围检查。都不会隐式扫描 home 目录、已安装软件包或相邻目录。
 
 ## 设计
 
@@ -45,7 +45,7 @@ flowchart TB
 设计将四项职责分开：
 
 - `FileSkillSource` 在明确配置的 FileOperator 根目录下发现大小受限的元数据。
-- `SkillMaterializer` 是可信 Host 代码，在一个声明的根目录下发布托管软件包。
+- `SkillMaterializer` 是可信 Host 代码，在一个配置的根目录下发布托管软件包。
 - `SkillManager` 负责准备包内容、发现、验证、冲突处理，以及可选的 Environment 挂载绑定，不依赖 Agent Run。
 - `SkillsCapability` 将一个绑定目录接入 Run 选择、模型指令、解析后的 `SkillPath`、访问观测，以及模型和工具边界的失效检查。
 
@@ -53,7 +53,7 @@ flowchart TB
 
 - `scan(files=...)` 只使用传入的 FileOperator，不会创建或探测 Environment；
 - `scan_environment(environment=...)` 只使用固定到挂载实例的作用域，不会通过未固定的 `environment.files` 门面或直接扫描模式重试；
-- 来源只读取声明的根目录，不尝试进程工作目录、home、软件包目录或其他工作空间路径；
+- 来源只读取配置的根目录，不尝试进程工作目录、home、软件包目录或其他目录；
 - 相关路由变化会触发 `skill_catalog_stale`，绝不会自动重新扫描或改换目标；
 - `FileSkillSource`、`SkillSource.roots` 和 `SkillManager.roots` 构成完整的来源与根目录接口。
 
@@ -63,11 +63,11 @@ flowchart TB
 
 内置文件发现和最终文档验证，每次操作最多使用八个读取 worker。Materializer、来源和根目录仍顺序处理；并发读取不改变来源优先级、跳过条目的诊断顺序，或按名称排序的模型目录。来源配置和内容不变时，读取完成顺序不会改变 Skill 指令前缀。取消时，会等待 worker 结束后再释放文件作用域。
 
-大小限制独立于并发：`FileSkillSource.max_entries_per_root` 默认最多列出 256 个目录条目，`SkillsPolicy.max_skills` 默认将每个来源和最终解析目录都限制为 512 条。超限会明确失败，不会静默选择前几个条目。并发是内部实现，无需增加 Host 配置或跨 Run 缓存。
+大小限制独立于并发：`FileSkillSource.max_entries_per_root` 默认最多列出 256 个目录条目，`SkillsPolicy.max_skills` 默认将每个来源和最终解析目录都限制为 512 条。超限会明确失败，不会静默选择前几个条目。并发是内部实现，不需要 Host 配置或跨 Run 缓存。
 
 ## Skill 包结构
 
-选定根目录本身可以是一个 Skill 包，它的每个直接子目录也可以是一个 Skill 包。发现不会继续递归。
+配置的根目录本身可以是一个 Skill 包，它的每个直接子目录也可以是一个 Skill 包。发现不会继续递归。
 
 ```text
 .agents/skills/
@@ -124,22 +124,22 @@ async def scan_cli_skills(
 
 此模式直接操作传入 FileOperator 的命名空间，没有 Environment 挂载路由语义。在返回目录派生出的所有路径都使用完之前，必须保持底层命名空间稳定。如果其他进程可同时替换底层目录，应提供满足 Host 所需快照或锁定行为的 operator，或改用已进入的 Environment。
 
-`SkillManager.default()` 面向由 Environment 支持的 Run，包含规范的 `/workspace/.agents/skills` 来源。直接使用 FileOperator 的 Host 通常应显式构建 manager，使用自身命名空间中的根目录。
+`SkillManager.default()` 面向由 Environment 支持的 Run，包含规范的 `/workspace/.agents/skills` 来源。只有默认挂载没有显式 `mount_path` 时，该路径才能解析；使用显式聚合根目录的 Host 应提供显式 manager。直接使用 FileOperator 的 Host 通常应显式构建 manager，使用自身命名空间中的根目录。
 
 ## 扫描已进入的 Environment
 
 路径可能通过 `/workspace` 或 `/environment/{name}` 路由，且 Host 活跃期间挂载可能变化时，应使用 Environment 感知的扫描：
 
 ```python
-from a13n_harness import Environment
 from a13n_harness.capabilities import (
     BoundSkillCatalog,
     SkillManager,
 )
+from a13n_harness.environment.advanced import BoundEnvironment
 
 
 async def scan_environment_skills(
-    environment: Environment,
+    environment: BoundEnvironment,
 ) -> BoundSkillCatalog:
     manager = SkillManager.default()
     catalog = await manager.scan_environment(environment=environment)
@@ -151,7 +151,7 @@ async def scan_environment_skills(
 
 `scan_environment()` 会：
 
-1. 在等待 provider I/O 之前，通过 `Environment.select_files()` 捕获每个配置的根目录；
+1. 在等待 provider I/O 之前，通过 `BoundEnvironment.select_files()` 捕获每个配置的根目录；
 2. 为这些根目录打开固定到挂载实例的文件作用域；
 3. 在固定作用域内准备内容、列出条目、读取 frontmatter，并最终验证 `SKILL.md`；
 4. 将每个最终条目解析为准确的目录和文档 `EnvironmentPath`；
@@ -171,7 +171,7 @@ async def scan_environment_skills(
 
 ## 添加明确的来源
 
-保留规范的 workspace 来源，追加 Host 根目录，遵循普通的后来源优先规则：
+保留规范的 `/workspace/.agents/skills` 来源，追加 Host 根目录，遵循普通的后来源优先规则：
 
 ```python
 from a13n_harness.capabilities import (
@@ -196,7 +196,7 @@ Host 如果要完全替换默认组合，应传入显式 `SkillManager(...)`。�
 
 ## 准备托管 Skill
 
-可信 Host 适配器可以实现 `SkillMaterializer`，在扫描前为一个声明的来源根目录准备内容：
+可信 Host 适配器可以实现 `SkillMaterializer`，在扫描前为一个配置的来源根目录准备内容：
 
 ```python
 from a13n_harness.environment import FileOperator
@@ -253,4 +253,11 @@ Harness 扫描器明确不负责：
 - 持久执行或重试；
 - 凭据、插件、Capabilities 或工具。
 
-导入包的 Host 应通过 `scan_environment()` 扫描，选择一个准确条目，验证目录仍有效，在同一个已进入的 Environment 中枚举并验证包内容，将其复制到 Host 管理的不可变存储，再次验证副本后才发布。
+导入包的 Host 应：
+
+1. 通过 `scan_environment()` 扫描。
+2. 选择一个准确条目。
+3. 验证目录仍为最新。
+4. 在同一个已进入的 Environment 中枚举并验证包内容。
+5. 将包复制到 Host 管理的不可变存储。
+6. 发布前再次验证副本。

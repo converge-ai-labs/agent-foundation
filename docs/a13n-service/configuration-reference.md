@@ -1,7 +1,7 @@
 ---
 title: Service settings reference
 sidebarTitle: Settings reference
-description: Every Service setting with its environment variable, type, bounds, and default.
+description: Every field of the Service settings, with its environment variable, type, bounds, and default.
 ---
 
 > [!NOTE]
@@ -200,7 +200,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | `providers.http_origins`           | `A13N_PROVIDERS__HTTP_ORIGINS`           | array of string | default=[]                                                    |
 | `providers.require_https`          | `A13N_PROVIDERS__REQUIRE_HTTPS`          | boolean         | default=true                                                  |
 | `providers.return_urls`            | `A13N_PROVIDERS__RETURN_URLS`            | array of string | default=[]                                                    |
-| `providers.mcp_servers`            | `A13N_PROVIDERS__MCP_SERVERS`            | McpServers      | default=[]                                                    |
+| `providers.mcp_servers`            | `A13N_PROVIDERS__MCP_SERVERS`            | array of object | default=[]                                                    |
 | `providers.flow_seconds`           | `A13N_PROVIDERS__FLOW_SECONDS`           | integer         | minimum=30; maximum=1800; default=600                         |
 | `providers.operation_seconds`      | `A13N_PROVIDERS__OPERATION_SECONDS`      | number          | minimum=2; maximum=30; default=10                             |
 | `providers.operation_scan_seconds` | `A13N_PROVIDERS__OPERATION_SCAN_SECONDS` | number          | maximum=3600; exclusiveMinimum=0; default=30                  |
@@ -228,7 +228,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | Setting                         | Environment variable                  | Type / choices                      | Constraints and default                                         |
 | ------------------------------- | ------------------------------------- | ----------------------------------- | --------------------------------------------------------------- |
 | `telemetry.log_level`           | `A13N_TELEMETRY__LOG_LEVEL`           | "DEBUG", "INFO", "WARNING", "ERROR" | default="INFO"                                                  |
-| `telemetry.log_format`          | `A13N_TELEMETRY__LOG_FORMAT`          | LogFormat                           | default="json"                                                  |
+| `telemetry.log_format`          | `A13N_TELEMETRY__LOG_FORMAT`          | "pretty", "json"                    | default="json"                                                  |
 | `telemetry.log_stdout`          | `A13N_TELEMETRY__LOG_STDOUT`          | boolean                             | default=true                                                    |
 | `telemetry.log_file`            | `A13N_TELEMETRY__LOG_FILE`            | string or null                      | format="path"; default=null                                     |
 | `telemetry.log_file_max_mb`     | `A13N_TELEMETRY__LOG_FILE_MAX_MB`     | integer                             | minimum=1; maximum=10240; default=100                           |

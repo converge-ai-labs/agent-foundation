@@ -1,6 +1,6 @@
 # Harness UI
 
-Harness UI is a terminal and browser workbench built on [Harness](../a13n-harness/README.md). It is for individuals and trusted small teams working with Agents, Models, tools, Skills, and local projects. Both interfaces use one process-local `HarnessUiApp`; saved conversations support continuation, but active work is not a durable job queue. For managed access and worker recovery, use [Service](../a13n-service/README.md).
+Harness UI is a TUI and WebUI workbench built on [Harness](../a13n-harness/README.md). It is for individuals and trusted small teams working with Agents, Models, tools, Skills, and local projects. Both interfaces use one process-local `HarnessUiApp`; saved conversations support continuation, but active work is not a durable job queue. For managed access and worker recovery, use [Service](../a13n-service/README.md).
 
 ## Install and Run
 
@@ -12,7 +12,7 @@ cd your-repository
 a13n-harness-ui
 ```
 
-For the browser, run `a13n-harness-ui webui` and open the printed login link. Neither installed interface requires a checkout or Node.js. If the command is not on PATH, run `uv tool update-shell` and reopen your shell.
+For WebUI, run `a13n-harness-ui webui` and open the printed login link. Neither installed interface requires a checkout or Node.js. If the command is not on PATH, run `uv tool update-shell` and reopen your shell.
 
 Upgrade a uv-tool installation with `a13n-harness-ui update` or `uv tool upgrade a13n-harness-ui`, then restart it. Use the original package manager for other installations. For source development, run `make a13n-harness-ui` from the repository root; see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
@@ -86,7 +86,7 @@ The source version is `0.0.0` with unversioned workspace dependencies. Publishab
 
 ## Packaging
 
-The wheel and sdist include the CLI, App, browser server, compiled browser assets, configuration Skill and license; installed users need no Node.js. `make a13n-harness-ui-build` builds the private browser frontend for release preparation. Sandbox can lazily acquire a native Envd matching the installed client version; Full Control does not need Envd. See [installation](../../docs/a13n-harness-ui/installation.md#sandbox-runtime).
+The wheel and sdist include the CLI, App, WebUI server, compiled WebUI assets, configuration Skill and license; installed users need no Node.js. `make a13n-harness-ui-build` builds the private browser frontend for release preparation. Sandbox can lazily acquire a native Envd matching the installed client version; Full Control does not need Envd. See [installation](../../docs/a13n-harness-ui/installation.md#sandbox-runtime).
 
 ## Versioning
 
@@ -100,7 +100,7 @@ a13n-harness-ui webui --host 127.0.0.1 --port 9000
 a13n-harness-ui webui --no-share-computer
 ```
 
-WebUI serves shared conversations, live output, approvals, setup, configuration, and native Files/Git/terminal panels. Native computer access is enabled by default and operates as the server account, independently of Agent permissions; disable it with `--no-share-computer`. Participants share instance authority rather than separate authenticated identities. Keep the server running for active work. For access-key options and browser workflows, see [Use the browser](../../docs/a13n-harness-ui/webui.md); for integration, see the [HTTP API](../../docs/a13n-harness-ui/http-api.md).
+WebUI serves shared conversations, live output, approvals, setup, configuration, and native Files/Git/terminal panels. Native computer access is enabled by default and operates as the server account, independently of Agent permissions; disable it with `--no-share-computer`. Participants share instance authority rather than separate authenticated identities. Keep the server running for active work. For access-key options and browser workflows, see [Use WebUI](../../docs/a13n-harness-ui/webui.md); for integration, see the [HTTP API](../../docs/a13n-harness-ui/http-api.md).
 
 ### Docker
 
@@ -121,6 +121,6 @@ Built-in Windows execution supports Full Control, not Sandbox. Explicit Sandbox 
 
 After switching source branches, run `make sync` or `make a13n-harness-ui` to use the checkout's locked dependencies. Installed users should upgrade through the package manager that owns their installation.
 
-### Terminal defaults
+### TUI defaults
 
-Startup can offer an update; it does not install one without confirmation. Use `--no-update-check` or `process.terminal_update_check: false` to disable the check. Run `a13n-harness-ui update` to request an immediate upgrade. For terminal controls, diagnostics, and recovery, see [Use the terminal](../../docs/a13n-harness-ui/everyday-use.md) and [Troubleshooting](../../docs/a13n-harness-ui/automation-and-troubleshooting.md).
+Startup can offer an update; it does not install one without confirmation. Use `--no-update-check` or `process.terminal_update_check: false` to disable the check. Run `a13n-harness-ui update` to request an immediate upgrade. For TUI controls, diagnostics, and recovery, see [Use the TUI](../../docs/a13n-harness-ui/everyday-use.md) and [Troubleshooting](../../docs/a13n-harness-ui/automation-and-troubleshooting.md).

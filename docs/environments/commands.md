@@ -6,7 +6,7 @@ description: Run bounded commands or long-lived processes in an Environment and 
 
 Use `environment.operations.shell` for a bounded foreground execution, or `environment.operations.processes` for a command whose observation continues across calls. These are typed Provider APIs, not the model-facing `shell_exec` / `shell_wait` tool signatures.
 
-Command access must be configured explicitly where required. The file-only Direct Local quickstart does not enable execution. Direct Local runs as your Host account; a mapped directory is not a shell sandbox.
+Configure command access explicitly: Direct Local runs no command until you set `allowed_executables` or shell profiles. The file-only Direct Local quickstart does not enable execution. Direct Local runs as your Host account; a mapped directory is not a shell sandbox.
 
 ## Execute a configured executable
 
@@ -65,16 +65,16 @@ asyncio.run(main())
 
 ## Command request fields
 
-| Field             | Default / meaning                                                                           |
-| ----------------- | ------------------------------------------------------------------------------------------- |
-| `command`         | Required `ArgvCommand` or `ShellCommand`                                                    |
-| `cwd`             | Optional logical working path in this Environment                                           |
-| `environment`     | `CommandEnvironment(set={}, unset=())`; changes are checked against Provider policy         |
-| `network`         | `configured`; `deny` requests supported denial, not an assumed capability                   |
-| `limits`          | `CommandLimits()` with optional wall time, stdin bytes, process count, memory, and CPU time |
-| `initial_stdin`   | Optional bytes supplied at launch                                                           |
-| `keep_stdin_open` | False; select true when later stdin writes are intended                                     |
-| `output_policy`   | Required finite inline/total bounds and overflow policy                                     |
+| Field             | Default / meaning                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------------------- |
+| `command`         | Required `ArgvCommand` or `ShellCommand`                                                                |
+| `cwd`             | Optional logical working path in this Environment                                                       |
+| `environment`     | `CommandEnvironment(set={}, unset=())`; changes are checked against Provider policy                     |
+| `network`         | `configured`; `deny` requests network denial, and a Provider that cannot enforce it rejects the command |
+| `limits`          | `CommandLimits()` with optional wall time, stdin bytes, process count, memory, and CPU time             |
+| `initial_stdin`   | Optional bytes supplied at launch                                                                       |
+| `keep_stdin_open` | False; select true when later stdin writes are intended                                                 |
+| `output_policy`   | Required finite inline/total bounds and overflow policy                                                 |
 
 Environment variable keys must be unique across set/unset and cannot contain NUL or `=`. Values cannot contain NUL. At most 1,024 environment entries are accepted. Command strings cannot be empty or contain NUL; command shape is bounded to 1,025 values and 1 MiB encoded bytes. Provider-specific validation can narrow it further.
 
@@ -98,7 +98,7 @@ After `ensure_ready({"processes"})`, obtain the optional `processes` facet. Its 
 | `kill(handle)`                                       | Separate forceful control operation                                                      |
 | `release(handle)`                                    | Release observation; not an implicit kill                                                |
 
-Use the exact handle returned by the Provider. A `ProcessIdentity` identifies provider, Environment, generation, and native process, but is not a portable access grant. Do not construct opaque handle payloads or copy Harness Run-local process references into Provider calls. `rebind` support does not mean all Providers can discover/recover arbitrary old processes.
+Use the exact handle returned by the Provider. A `ProcessIdentity` identifies Provider, Environment, generation, and native process, but is not a portable access grant. Do not construct opaque handle payloads or copy Harness Run-local process references into Provider calls. `rebind` support does not mean all Providers can discover/recover arbitrary old processes.
 
 Status includes phase, optional termination reason/exit code/signal/timestamps, and cleanup outcome. An initial exit can precede process-tree cleanup. Missing or unknown status is not evidence that a command never ran. Always distinguish command completion, output completion, and cleanup completion.
 

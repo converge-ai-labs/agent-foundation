@@ -16,7 +16,7 @@ curl -X POST "$A13N_URL/api/v1/uploads" \
 
 ## 资产
 
-资产是带名称的不可变内容，可用于消息，也可由 agent 发布。
+资产是带名称的不可变内容。你可以从上传创建资产，agent 可以发布资产，你可以将资产附加到消息。
 
 - **创建：** 使用 `POST /api/v1/assets` 和 `{"upload_id": ..., "name": ...}` 从上传创建。首次返回 `201`；相同上传和名称重复创建返回同一资产及 `200`。一次上传最多转换为一个资产。
 - **读取：** 使用 `GET …/assets`、`GET …/assets/{asset_id}` 和 `GET …/assets/{asset_id}/content`；内容端点将字节作为附件返回。
@@ -83,6 +83,6 @@ def verify(secret: str, headers, body: bytes) -> bool:
 
 ### 投递与重试
 
-投递至少一次，不保证顺序。`control.webhook_timeout`（默认 10 秒）内的任何 `2xx` 响应都视为成功，不跟随重定向。否则按指数退避重试（最多 2、4、8、… 秒，20% 抖动，上限一小时），直到用完 `outbox.defaults.max_attempts` 次尝试（默认 12），随后标为 `dead`。
+投递至少一次，不保证顺序。`control.webhook_timeout`（默认 10 秒）内的任何 `2xx` 响应都视为成功，不跟随重定向。否则按指数退避重试（最多 2、4、8、… 秒，20% 抖动，上限一小时），直到用完 `webhook` outbox 策略的 `max_attempts` 次尝试（取 `outbox.by_kind.webhook`，否则取 `outbox.defaults`；默认 12），随后标为 `dead`。
 
-`GET …/subscriptions/{subscription_id}/deliveries` 按从新到旧列出投递及其状态（`pending`、`delivered`、`dead`）、尝试次数、最近错误和载荷。`POST …/deliveries/{delivery_id}/redeliver` 使用排队时相同的 ID、URL、载荷和签名密钥重新发送 dead 投递。已结束投递按该类型从结束时间计算的保留策略清理（成功默认一天，dead 默认十四天）。
+`GET …/subscriptions/{subscription_id}/deliveries` 按从新到旧列出投递及其状态（`pending`、`delivered`、`dead`）、尝试次数、最近错误和载荷。`POST …/deliveries/{delivery_id}/redeliver` 使用排队时相同的 ID、URL、载荷和签名密钥重新发送 dead 投递。已结束的投递在 webhook 保留期后清理：默认在投递成功一天后，或在投递变为 dead 十四天后。

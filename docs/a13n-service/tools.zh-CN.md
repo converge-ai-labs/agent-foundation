@@ -66,9 +66,9 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 | 远程 MCP 服务器（Streamable HTTP） | `mcp`                                      | `none`, `bearer`, `headers` 或 `oauth` |
 | Connector 应用账号                 | Connector provider 的类型，例如 `composio` | `account`                              |
 
-连接的 `status` 在凭据可用前为 `pending`，可用后为 `ready`，token 刷新失败导致凭据丢失后为 `reauthorization_required`。`failure` 描述最后一次失败的授权操作。凭据只写不读，视图显示 `credential_configured` 和 `client_secret_configured`。`POST …/authorize` 用于浏览器授权；`auth` 不为 `oauth` 的 MCP 连接没有此流程，返回 `409 conflict`，原因为 `no_browser_authorization`。
+连接的 `status` 在凭据可用前为 `pending`，可用后为 `ready`，token 刷新失败导致凭据丢失后为 `reauthorization_required`。`failure` 描述最后一次失败的授权操作。凭据只写不读，视图显示 `credential_configured` 和 `client_secret_configured`。`POST …/authorize` 启动授权：浏览器流程，或为 OAuth 机器凭据直接请求 token。`auth` 不为 `oauth` 的 MCP 连接没有授权，返回 `409 conflict`，原因为 `no_browser_authorization`。
 
-连接没有删除操作。`PATCH {"enabled": false}` 立即停止所有使用，包括运行中的 agent 调用；`{"enabled": true}` 恢复使用。`POST …/revoke` 立即清除凭据，并尽力请求 provider 在远程撤销，结果记录在 `remote_revocation` 中（`revoked`、`failed`，或没有远程撤销目标时的 `skipped`）。`PATCH` 和 `revoke` 需要连接的 `If-Match`；修改前重新读取，因为授权和 token 刷新会改变版本。已禁用连接或已归档工作空间中的连接也可撤销：移除凭据属于退出管理操作。
+连接没有删除操作。`PATCH {"enabled": false}` 立即停止所有使用，包括进行中运行的工具调用；`{"enabled": true}` 恢复使用。`POST …/revoke` 立即清除凭据，并尽力请求 provider 在远程撤销，结果记录在 `remote_revocation` 中（`revoked`、`failed`，或没有远程撤销目标时的 `skipped`）。`PATCH` 和 `revoke` 需要连接的 `If-Match`；修改前重新读取，因为授权和 token 刷新会改变版本。已禁用连接或已归档工作空间中的连接也可撤销：移除凭据属于退出管理操作。
 
 ### 远程 MCP 服务器
 
@@ -89,15 +89,15 @@ curl -X POST "$A13N_URL/api/v1/connections" \
 - `bearer` 接受 `{"token": "..."}`，以 `Authorization: Bearer` 发送。`headers` 在 `config.headers` 中列出请求头名称，并以 `{"headers": {"x-api-key": "..."}}` 提供值。不能设置传输和协议请求头（`host`、`content-type`、`cookie`、`mcp-*`、`sec-*`、`proxy-*` 等）。
 - 修改 URL、认证方式或 OAuth 客户端会移除已保存凭据；只修改 `config.tools` 则保留。
 
-每次 worker attempt 为每个精确授权的 Connection/定义/调用方绑定懒加载并持有一个已进入的 MCP 客户端。内部 Run 借用新的工具投影，不共享可变请求头，也不在 Run 之间重连。客户端随 attempt 关闭，不按 URL 建立共享池，也不跨 worker 持久化。SDK 使用现代自动发现并保留旧版协商。客户端保持已进入时工具目录仍会刷新，派发继续检查当前 Connection 可用性和 worker 权限。没有持久响应通道时，Service 不声明 MCP 人工输入；这与客户端工具等待和审批不同。
+每次 attempt 在首次需要时，为它使用的每个连接、工具选择和调用方请求头组合打开一个 MCP 客户端。attempt 内的 Harness 运行（例如内联子 agent）以各自的工具列表复用该客户端；它们不共享可变请求头，客户端也不会在它们之间重连。客户端随 attempt 关闭，不按 URL 建立共享池，也不跨 worker 持久化。MCP SDK 自动协商协议版本，也支持使用旧版协商的服务器。客户端保持打开期间工具目录仍会刷新，每次调用仍会检查连接当前的可用性和 worker 权限。Service 没有用于回复的持久通道，因此不提供 MCP elicitation（服务器请求用户输入）；这与客户端工具等待和审批不同。
 
 ### OAuth
 
 使用 `auth: "oauth"` 时，连接从 MCP 服务器的授权服务器获取 token。连接持有**一份** 凭据，供工作空间中所有运行使用，与授权人无关。
 
-- **浏览器授权**（`grant_type: "authorization_code"`，默认值）。在 Console 选择 **Authorize connection** ，或调用 `POST …/connections/{connection_id}/authorize` 并传入 `{"return_url": ...}`，在 `expires_at` 前引导用户访问返回的 `redirect_url`；在此之前 `authorization_pending` 保持 true。Service 发现授权服务器，使用 PKCE（S256）和资源指示符，在自身回调处完成流程，再携结果将浏览器重定向到 `return_url`。浏览器流程始终需要登录会话，并通过限定到回调路径的 cookie 绑定启动流程的浏览器；其他浏览器完成会返回 `browser_mismatch`。API 密钥不能启动流程（`403 forbidden`）：此流程发出的链接可由任何持有者完成，只允许用户自己的会话执行。超过 `expires_at` 的回调返回 `authorization_expired`。启动新流程只终止已在进行的完成操作；保留可用凭据和未完成的刷新，刷新继续执行，直到新流程完成。
+- **浏览器授权**（`grant_type: "authorization_code"`，默认值）。在 Console 选择 **Authorize connection** ，或调用 `POST …/connections/{connection_id}/authorize` 并传入 `{"return_url": ...}`，在 `expires_at` 前让用户访问返回的 `redirect_url`；在此之前 `authorization_pending` 保持 true。Service 发现授权服务器，使用 PKCE（S256）和资源指示符，在自身回调处完成流程，再携结果将浏览器重定向到 `return_url`。浏览器流程始终需要登录会话，并通过限定到回调路径的 cookie 绑定启动流程的浏览器；其他浏览器完成会返回 `browser_mismatch`。API 密钥不能启动流程（`403 forbidden`）：此流程发出的链接可由任何持有者完成，只允许用户自己的登录会话执行。超过 `expires_at` 的回调返回 `authorization_expired`。启动新流程只终止已在进行的完成操作；保留可用凭据和未完成的刷新，刷新继续执行，直到新流程完成。
 - **客户端注册。** 未设置 `config.oauth.client_id` 时，每次授权都会动态注册公共客户端。预先注册的客户端需设置 `client_id` 和 `token_endpoint_auth_method`（`none`、`client_secret_basic` 或 `client_secret_post`），并提供只写的 `client_secret`。在 provider 中注册 Service 重定向 URI：`GET /api/v1/connections/redirect-uri` 返回它（`{public_url}/api/v1/connections/callback`），Console 连接表单也会显示。
-- **机器凭据**（`grant_type: "client_credentials"`，需客户端密钥）。`authorize` 直接获取 token，无需浏览器，返回 `redirect_url: null`。与 bearer token 一样，它供工作空间所有运行使用。这是 API 密钥唯一可以调用的授权方式。
+- **机器凭据**（`grant_type: "client_credentials"`，需客户端密钥）。`authorize` 直接获取 token，无需浏览器，返回 `redirect_url: null`。与 bearer token 一样，它供工作空间所有运行使用。这是 API 密钥唯一可以启动的授权。
 - `config.oauth.scopes` 请求指定 scope；为空时请求服务器声明的 scope。
 - 服务器提供 refresh token 时，token 在使用时通过连接唯一的刷新操作刷新；并发调用者等待同一结果，取消某个调用者不会丢失轮换后的凭据。只有服务器以 `invalid_grant` 拒绝，或请求可能已到达服务器而结果未知时，才清除凭据（`reauthorization_required`）。Service 从未发送的请求保留凭据：例如出站策略拒绝（token 请求为 `token_endpoint_denied`，发现阶段为 `authorization_server_denied`），或发送前连接失败（`token_endpoint_unreachable`）。新授权会尽力撤销被替换的授权；来自同一 OAuth 客户端的替换除外，因为撤销可能同时终止新授权。
 

@@ -127,7 +127,7 @@ Answer strings are whitespace-normalized, and extra fields are rejected. Harness
 
 ## Define types in your application
 
-Service exposes tool arguments and returned values as generic JSON. Define the types needed by your application rather than assuming its SDK exports built-in question types. For example, these TypeScript types describe the wire shape only; they are **application-owned**, not SDK imports:
+Service exposes tool arguments and returned values as generic JSON. Define the types needed by your application rather than assuming a Service SDK exports built-in question types. For example, these TypeScript types describe the wire shape only; they are **application-owned**, not SDK imports:
 
 ```typescript
 export interface UserQuestionOption {
@@ -232,6 +232,6 @@ A Service question appears in the waiting Run's `pending.calls`. Submit the stru
 }
 ```
 
-Replace `question-1` with the actual `tool_call_id`. Both maps are required and must cover the complete pending batch; use an empty map only for an empty category. An ordinary Thread message cannot resolve the wait, and optional resume `input` is additional context, not a replacement for answers or approval decisions. Service resumes into a distinct successor Run; the old Run stays waiting.
+Replace `question-1` with the actual `tool_call_id`. Both maps are required and must cover the complete pending batch; use an empty map only for an empty category. An ordinary Thread message cannot resolve the wait, and optional resume `input` is additional context, not a replacement for answers or approval decisions. Service resumes into a distinct successor Run; the original Run keeps its sealed `waiting` status and cannot be resumed again.
 
 Send the request with the Service's authentication, workspace selection, and a stable `Idempotency-Key`. See [Service waiting Runs](../a13n-service/agents-and-runs.md#resume-a-waiting-run) and the [SDK guides](../a13n-service/sdks.md) for complete submission workflows. Harness UI owns its own interactive forms and Host lifecycle; these wire examples do not prescribe its UI.

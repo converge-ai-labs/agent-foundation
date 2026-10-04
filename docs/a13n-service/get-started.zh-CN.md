@@ -20,7 +20,7 @@ curl -fL https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/mai
 docker compose -f a13n-service.yaml up -d --wait --pull always
 ```
 
-Service、Console、PostgreSQL 和 Redis 会一同启动。这套配置挂载宿主机的 Docker socket，并自动为工作空间准备 Docker 执行环境；对外只开放 <http://127.0.0.1:8080>。仓库中的配置使用已发布的 `latest` 镜像，release 附件中的配置则固定到对应的发布版本。
+Service、Console、PostgreSQL 和 Redis 会一同启动。这套配置挂载宿主机的 Docker socket，并自动为每个工作空间添加一个 Docker 环境 provider 和一个 `Linux Sandbox` 环境模板；对外只开放 <http://127.0.0.1:8080>。仓库中的配置使用已发布的 `latest` 镜像，release 附件中的配置则固定到对应的发布版本。
 
 如果已经克隆仓库，在仓库根目录运行 `make compose-up` 也会启动同一套服务，并输出 Console 的 URL。
 
@@ -34,17 +34,19 @@ Service、Console、PostgreSQL 和 Redis 会一同启动。这套配置挂载宿
 
 ## 添加模型
 
-1. 打开 **Models → Add model → Connect a new provider**，选择 provider 类型（例如 OpenAI 或 Anthropic），然后输入 API 密钥。
-2. 选择 **Connect provider**，再从目录中选择模型，或选择 **Custom model** 并输入上游模型 ID。
-3. 为模型命名，检查上游 ID 和 API，然后选择 **Add model**。如果使用 OpenAI 兼容端点，请选择它支持的 API，例如 **OpenAI Chat Completions** 。请选择你的 provider 账号有权使用的模型。
+1. 打开 **模型 → 添加模型 → 接入新的供应商**。
+2. 选择 provider 类型，例如 OpenAI 或 Anthropic。
+3. 输入它的 API 密钥。
+4. 选择 **接入供应商**，再从目录中选择模型，或选择 **自定义模型** 并输入上游模型 ID。
+5. 为模型命名，检查上游 ID 和 API，然后选择 **添加模型**。如果使用 OpenAI 兼容端点，请选择它支持的 API，例如 **OpenAI Chat Completions** 。请选择你的 provider 账号有权使用的模型。
 
 出站请求默认拒绝私有地址和明文 HTTP。要使用自己网络中的模型服务器，需先允许访问，参阅[出站请求](configuration.md#outbound-requests)。所有 provider 类型请参阅[模型](models.md)。
 
 ## 创建并试用 agent
 
-1. 打开 **Agents → Create agent**，命名为 `My first agent`，选择模型，并填写指令，例如 `You are a helpful assistant. Answer clearly and briefly.`。
-2. 保存。每次保存都会创建一个不可变版本。
-3. 选择 **Try agent**，发送 `Give me three ideas for a useful agent I could build.`。回复应当流式出现在对话中。
+1. 打开 **Agents → 手动创建**，命名为 `My first agent`，选择模型，并填写指令，例如 `You are a helpful assistant. Answer clearly and briefly.`。
+2. 保存。每次保存都会创建一个不可变的修订版本，在 Console 的 **版本** 中列出。
+3. 选择 **试用 Agent**，发送 `Give me three ideas for a useful agent I could build.`。回复应当流式出现在对话中。
 
 首次对话无需配置执行环境、工具或记忆。模型连接成功后再添加这些能力即可。
 
@@ -79,7 +81,7 @@ docker compose -f a13n-service.yaml up -d --wait
 
 ## 部署 Service
 
-本地 Compose 服务可以保留现有账号和数据，供你继续使用。用于多人共享时，请先配置公共 URL 和访问权限，再开放 Service，具体步骤见下方部署指南。Service 提供 `a13n-service` Python 包、支持 `linux/amd64` 和 `linux/arm64` 的 `ghcr.io/converge-ai-labs/a13n-service` 镜像，以及 Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`。每个部署都需要 PostgreSQL、Redis 和加密密钥，参阅[配置 Service](configuration.md#required-infrastructure)。仓库维护了两份部署指南：
+本地 Compose 服务可以保留现有账号和数据，供你继续使用。用于多人共享时，请先配置公共 URL 和访问权限，再开放 Service，具体步骤见下方部署指南。Service 提供 `a13n-service` Python 包、支持 `linux/amd64` 和 `linux/arm64` 的 `ghcr.io/converge-ai-labs/a13n-service` 镜像，以及 Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`。每个部署都需要公共 URL、PostgreSQL、Redis、共享对象存储和加密密钥，参阅[配置 Service](configuration.md#required-infrastructure)。仓库维护了两份部署指南：
 
 - [使用 Docker Compose 单机部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#single-host-deployment-with-native-docker)：在一台机器上运行 Service、PostgreSQL、Redis 和 Console，Docker 环境使用宿主机的 Docker Engine。
 - [使用 Helm 部署到 Kubernetes](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes)：分别部署 control 和 worker Deployment，并使用迁移 Job；提供本地 kind 集群的 values 配置。

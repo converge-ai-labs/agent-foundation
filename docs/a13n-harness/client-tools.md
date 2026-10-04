@@ -1,11 +1,11 @@
 ---
 title: Client-side tools
-description: Declare tools that your application executes outside the agent process, then resume with their results.
+description: Declare tools that a client application executes outside the Harness Run, then resume with their results.
 ---
 
 Use client tools when the model can request an action but a separate application must execute it: a browser action, an external application integration, or another authenticated client. The declaration supplies model guidance and JSON argument schemas, not a Python executor or credential.
 
-A root Run suspends with correlated external calls. The Host authenticates the executor, performs or collects the action, persists the result, and resumes a fresh Run. For in-process functions, use [Tools and dependencies](tools-and-dependencies.md) instead. For the built-in `ask_user_question` request and answer shapes, see [Human-in-the-loop tools](human-in-the-loop.md); no custom client-tool declaration is needed.
+A Run with deferred support suspends with correlated external calls. The Host authenticates the executor, performs or collects the action, persists the result, and starts a fresh Run with `DeferredToolResume`. For in-process functions, use [Tools and dependencies](tools-and-dependencies.md) instead. For the built-in `ask_user_question` request and answer shapes, see [Human-in-the-loop tools](human-in-the-loop.md); no custom client-tool declaration is needed.
 
 ## Declare, suspend, and resume offline
 
@@ -109,7 +109,7 @@ asyncio.run(main())
 | `default_toolsets`   | `()`    | Definition-owned default declarations                       |
 | `allow_run_override` | `False` | Whether the Host can replace the complete surface for a Run |
 
-When explicitly allowed, supply `RunBindings.client_toolsets`. This is **whole-list replacement**, not a merge; `client_toolsets=()` clears the surface, while `None` retains the defaults. A binding cannot independently install the definition owner or change its override policy. The effective declarations are validated and copied for the Run.
+When explicitly allowed, supply `RunBindings.client_toolsets`. This is **whole-list replacement**, not a merge; `client_toolsets=()` clears the surface, while `None` retains the defaults. A binding cannot install `ClientToolsCapability` or change its `allow_run_override` policy. The effective declarations are validated and copied for the Run.
 
 Use stable `toolset_id` and tool names. A resumed external call must still match the selected declaration and current continuation contract; changing a schema or swapping executors is not a way to accept mismatched pending results.
 
@@ -125,7 +125,7 @@ Use stable `toolset_id` and tool names. A resumed external call must still match
 | Argument schema                    | 64 KiB of encoded JSON |
 | Metadata                           | 16 KiB of encoded JSON |
 
-Each toolset must contain at least one tool. Toolset IDs and effective tool names are unique; names follow the declared identifier pattern. Metadata rejects reserved Harness keys and authority-bearing keys such as credentials, grants, and policy. Do not put live clients, authentication, executable callbacks, or server authorization claims in portable declarations.
+Each Toolset must contain at least one tool. Toolset IDs and effective tool names are unique; names follow the declared identifier pattern. Metadata rejects reserved Harness keys and authority-bearing keys such as credentials, grants, and policy. Do not put live clients, authentication, executable callbacks, or server authorization claims in portable declarations.
 
 ## Authority and child Runs
 

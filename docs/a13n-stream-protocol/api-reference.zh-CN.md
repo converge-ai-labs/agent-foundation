@@ -12,7 +12,7 @@ Stream Protocol 提供 AG-UI 1.0 观测与内容投影 API。它将 Harness 公�
 | ----------------------------- | ------------------------------------------------------------------- |
 | `HarnessAguiObserver`         | 绑定一个线程/执行，观测源条目、获取事件独立快照，或从有限源历史恢复 |
 | `HarnessAguiStreamObserver`   | 观测一个根流及其带归属标识的内联子执行，各自维护独立分片状态        |
-| `AUTHORED_INPUT_EVENT_NAMES`  | 用户输入与 steering 输入的事件名称集合                              |
+| `AUTHORED_INPUT_EVENT_NAMES`  | 用户输入与引导输入的事件名称集合                                    |
 | `tool_result_content`         | 将公开执行值投影为文本或有序的上游内容 part，不执行媒体 I/O         |
 | `AguiEventProcessor`          | 同步 `(source, event) -> event or None` Host 投影回调               |
 | `AguiObservationError`        | 关联、观测、重放或处理器替换无效                                    |
@@ -21,7 +21,7 @@ Stream Protocol 提供 AG-UI 1.0 观测与内容投影 API。它将 Harness 公�
 | `CustomEventAssembler`        | 在一个有界订阅内重组有序帧                                          |
 | `__version__`                 | 已安装分发包版本                                                    |
 
-`HarnessAguiObserver(processor=None)` 提供 `observe(item)`、`snapshot()`、异步 `resume(history)` 和只读 `thread_id` / `run_id`。观测成功前不绑定 ID。[事件与处理器](events.md)介绍实时流程；[重放与恢复](replay.md)介绍原子重建、验证和失败行为。
+`HarnessAguiObserver(processor=None)` 提供 `observe(item)`、`snapshot(*, start=0, stop=None)`、`event_count`、异步 `resume(history)` 和只读 `thread_id` / `run_id`。观测成功前不绑定 ID。[事件与处理器](events.md)介绍实时流程；[重放与恢复](replay.md)介绍原子重建、验证和失败行为。
 
 ## 对完整自定义事件分片
 
@@ -47,7 +47,7 @@ assert not assembler.gap
 
 assembler 默认允许 64 MiB 待处理字节和八个待处理标识；两个上限都必须为正数。整个事件重建完成前，或分片被拒绝时，返回 `None`。无效、不一致、乱序、嵌套或超预算序列会设置持续保持的 `gap` 标志。绝不发布不完整的领域事件。
 
-一个 assembler 对应一个实时订阅。重连时重置。没有后续帧时，不能仅凭静默检测缺失尾部；Host 负责流终止、超时和缺口展示。分片组装不是持久重放。
+一个 assembler 对应一个实时订阅。重连时创建新的 assembler。没有后续帧时，不能仅凭静默检测缺失尾部；Host 负责流终止、超时和缺口展示。分片组装不是持久重放。
 
 ## 输入元数据与媒体
 
@@ -66,7 +66,7 @@ assembler 默认允许 64 MiB 待处理字节和八个待处理标识；两个�
 
 ## 终结事件
 
-- 已完成输出转换为 `RUN_FINISHED`，包含成功结果和用量。不兼容 JSON 的输出会被省略，在源元数据中标记 `result_omitted`，不会任意序列化 Python 对象。
+- 已完成输出转换为 `RUN_FINISHED`，包含成功结果和用量。不兼容 JSON 的输出会被省略，在 `rawEvent` 中标记 `result_omitted`，不会任意序列化 Python 对象。
 - 暂停输出转换为 `RUN_FINISHED`，其 `outcome.type="interrupt"`，每个延后调用或审批对应一个 interrupt。`id` 和 `toolCallId` 保留原生调用 ID；待处理回答策略仍由 Host 决定。
 - 取消转换为 `RUN_FINISHED`，其 `outcome.type="cancelled"`。
 - 失败转换为 `RUN_ERROR`，包含可安全公开的失败代码、消息和用量。

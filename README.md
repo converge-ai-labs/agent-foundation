@@ -10,7 +10,7 @@
 
 Agent Foundation is an open-source library and platform for building and running your own agent systems. Managed agents, memory, sandboxes, computer use, and durable execution come together in a self-hosted service, ready to integrate into your applications.
 
-![a13n Service and Harness connect SDKs, HTTP API, Console, and Harness UI with environments, memory, models, web data, and MCP connections](.github/assets/a13n-architecture.webp)
+![Service and Harness connect SDKs, HTTP API, Console, and Harness UI with environments, memory, models, web data, and MCP connections](.github/assets/a13n-architecture.webp)
 
 - **Build with Service.** Configure agents and connect them to your product through APIs, with resource management, permissions, and execution recovery already in place.
 - **Extend with Harness.** Embed the runtime directly and shape its behavior through plugins, custom tools, and providers.
@@ -22,9 +22,9 @@ Agent Foundation is an open-source library and platform for building and running
 
 You need **Docker with Docker Compose** and either a model provider API key or an eligible ChatGPT plan. The stack includes Service, Console, PostgreSQL, Redis, and access to your host Docker Engine for agent execution. No repository clone, Make, Python, Node.js, or source build is needed.
 
-![Service Console: build agents, try runs, inspect execution traces, and monitor usage](.github/assets/console-workflow.webp)
+![Console: build agents, try runs, inspect execution traces, and monitor usage](.github/assets/console-workflow.webp)
 
-*Service Console — Build agents, try runs, inspect execution traces, and monitor usage. Shown with fictional demo data.*
+*Console — Build agents, try runs, inspect execution traces, and monitor usage. Shown with fictional demo data.*
 
 Download the [Compose file](deploy/docker/compose/a13n-service.yaml) and start the stack:
 
@@ -80,16 +80,16 @@ For individual work or trusted collaborators, Harness UI offers a terminal agent
 
 ![Harness UI showing an agent reviewing a project's quickstart alongside its Markdown preview](.github/assets/harness-ui.png)
 
-*Harness UI — Review agent output alongside project files in the browser workbench. Shown with a fictional project and a local demo model.*
+*Harness UI — Review agent output alongside project files in WebUI. Shown with a fictional project and a local demo model.*
 
 ```bash
 uv tool install a13n-harness-ui
 cd your-repository
-a13n-harness-ui          # Terminal
+a13n-harness-ui          # TUI
 # Or: a13n-harness-ui webui
 ```
 
-First-use setup connects a model and selects execution permissions. Full Control runs as your host account. Share the browser only with trusted collaborators; `--no-share-computer` disables its native host file and terminal access. See [installation](docs/a13n-harness-ui/installation.md), [execution permissions](docs/a13n-harness-ui/environments-and-projects.md#execution-permissions), and [browser access](docs/a13n-harness-ui/webui.md).
+First-use setup connects a model and selects execution permissions. Full Control runs as your host account. Share WebUI only with trusted collaborators; `--no-share-computer` disables its native host file and terminal access. See [installation](docs/a13n-harness-ui/installation.md), [execution permissions](docs/a13n-harness-ui/environments-and-projects.md#execution-permissions), and [browser access](docs/a13n-harness-ui/webui.md).
 
 ## Build on Harness
 

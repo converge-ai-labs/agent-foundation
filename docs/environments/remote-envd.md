@@ -6,7 +6,7 @@ description: Connect to an existing Envd daemon over HTTP, or let it dial back t
 
 Use `http_envd` when your Host can reach an existing daemon over HTTP(S). Use `websocket_envd` when the daemon must connect back to your Host, for example from a machine behind NAT.
 
-Both are **connect-only**: they do not create remote machines, start daemons, renew infrastructure timeouts, stop daemons or delete their workspaces. The operator owns deployment; your Host owns authentication, environment selection and scheduling. Files, shell, processes, output and ports use the same EIP-backed Provider operations as Local Envd.
+Both are **connect-only**: they do not create remote machines, start daemons, renew infrastructure timeouts, stop daemons or delete their files. The operator owns deployment; your Host owns authentication, Environment selection and scheduling. Files, shell, processes, output and ports use the same EIP-backed Provider operations as Local Envd.
 
 ## Try both locally first
 
@@ -24,7 +24,7 @@ uv run environment-provider-example remote_envd_demo \
   --transport websocket --executable ../../target/debug/a13n-envd
 ```
 
-Each demo starts a temporary local daemon, creates an external Provider adapter, writes a file, closes the adapter, then reads the file through a fresh adapter. It verifies that the daemon generation and workspace survived Provider close. Finally, the **demo operator code** stops its daemon and removes its temporary files.
+Each demo starts a temporary local daemon, creates an external Provider adapter, writes a file, closes the adapter, then reads the file through a fresh adapter. It verifies that the daemon generation and files survived adapter close. Finally, the **demo operator code** stops its daemon and removes its temporary files.
 
 Expected results include:
 
@@ -67,7 +67,7 @@ result = await executable.run("Inspect the workspace", environment=environment)
 
 `allow_create=False` is required: both remote Providers declare `supports_managed=False` and refuse a managed creation before any external call.
 
-Without Harness, use `enter()`, `ensure_ready()` and `EnvironmentOperations` as shown in `remote.py`. Construction and `enter()` are inert; preparation connects. Always close the adapter in `finally` and close the shared HTTP runtime during Host shutdown. One runtime can serve many independent adapters.
+Without Harness, use `enter()`, `ensure_ready()` and `EnvironmentOperations` as shown in `remote.py`. Construction and `enter()` are inert; preparation connects. Always close the adapter in `finally`. If you pass one `HttpEnvdProviderRuntime` to several adapters through `runtime=`, close it during Host shutdown. One runtime can serve many independent adapters.
 
 The example CLI can connect to an existing daemon too:
 
@@ -80,7 +80,7 @@ uv run environment-provider-example http_envd \
 
 This writes `provider-example.txt` under the selected Device cwd and reads it through a fresh Session. Your daemon must permit `file.write_text` and `file.read_text`. Never supply a credential in a URL or command-line argument.
 
-Public network endpoints require verified HTTPS. HTTP is accepted on loopback; a trusted provider-private link needs an explicit `allow_plaintext_private_link=True`. The runtime also accepts an SSL context or CA file through `verify`; disabling TLS verification is rejected.
+Public network endpoints require verified HTTPS. HTTP is accepted on loopback; a trusted provider-private link needs an explicit `allow_plaintext_private_link=True`. The runtime also accepts an SSL context, a CA file, or `False` through `verify`; the default verifies certificates unless the operator sets `A13N_OUTBOUND_TLS_VERIFY=false`.
 
 ## Session egress and credential references
 
@@ -112,9 +112,9 @@ The runtime resolves `HOST_GITHUB_TOKEN` freshly before Session opening. A missi
 
 ## Integrate your own WebSocket Host
 
-The connection direction is **envd to Host**; your Host still sends every EIP request. The library does not open a listener. It provides a process-local `WebSocketEnvdConnections` instance that you own during application lifespan.
+The connection direction is **Envd to Host**; your Host still sends every EIP request. The library does not open a listener. It provides a process-local `WebSocketEnvdConnections` instance that you own during application lifespan.
 
-After authenticating the upgrade and selecting the expected native identity in your Host:
+After authenticating the upgrade and selecting the expected Device ID in your Host:
 
 ```python
 async def authenticated_envd_handler(connection):
@@ -123,7 +123,7 @@ async def authenticated_envd_handler(connection):
     await connections.attach(native_id, connection)
 ```
 
-Await `attach()` for the handler's entire lifetime. The SDK immediately performs the Device handshake with zero Sessions, even before a Run exists. Do not queue an uninitialized connection until the next Run: envd has a finite initialization deadline.
+Await `attach()` for the handler's entire lifetime. The SDK immediately performs the Device handshake with zero Sessions, even before a Run exists. Do not queue an uninitialized connection until the next Run: Envd has a finite initialization deadline.
 
 To use one of those connections:
 
@@ -166,7 +166,7 @@ A `websockets.asyncio.server.ServerConnection` works directly. Other web framewo
 - `close(code=1000, reason="")` ends the accepted connection;
 - `wait_closed()` observes closure without consuming EIP messages.
 
-Translate framework disconnects into `EOFError` or `OSError`, keep frame and queue limits finite at your listener, and let EIP exclusively read accepted messages. The Host authenticates **before** handing a connection to the SDK. A negotiated subprotocol or a daemon ID is not authentication.
+Translate framework disconnects into `EOFError` or `OSError`, keep frame and queue limits finite at your listener, and let EIP exclusively read accepted messages. The Host authenticates **before** handing a connection to the SDK. A negotiated subprotocol or a Device ID is not authentication.
 
 The runnable `run_websocket()` example includes a small loopback Host listener, Bearer-token check and `eip.v1` negotiation. That listener is application example code, not a server started by the SDK. For a manually operated daemon:
 
@@ -177,11 +177,11 @@ uv run environment-provider-example websocket_envd \
   --credential-file /private/envd-token
 ```
 
-Configure the daemon to use `reverse_websocket`, the matching credential file, native identity, and `A13N_ENVD_REVERSE_WS_URL=ws://127.0.0.1:8788`. See the [envd operations guide](../a13n-envd/index.md) for the complete operator configuration. Production Hosts provide their own TLS listener, authentication and routing policy.
+Configure the daemon to use `reverse_websocket`, the matching credential file, Device ID, and `A13N_ENVD_REVERSE_WS_URL=ws://127.0.0.1:8788`. See the [Envd operations guide](../a13n-envd/index.md) for the complete operator configuration. Production Hosts provide their own TLS listener, authentication and routing policy.
 
 ## State, concurrency and recovery
 
-- The Host's logical Environment ID and envd's native ID may differ. Initialization validates the native ID; operation references belong to the logical Environment and current generation.
+- The Host's logical Environment ID and the Envd Device ID may differ. Initialization validates the Device ID; operation references belong to the logical Environment and current generation.
 - Persist only the Provider state envelope. It contains no credential, endpoint, connection, Session or daemon generation.
 - One Device admits multiple independent Sessions. Each fresh adapter opens its own Session with the captured cwd and owns its resources. Sessions are not tenant isolation boundaries.
 - Closing an adapter closes its Session, not remote infrastructure or a borrowed connection. Both HTTP and WebSocket Device connections remain Host-owned. File continuity survives; restarting the daemon invalidates native handles.
@@ -193,19 +193,19 @@ The WebSocket SDK is process-local. If the listener and executing worker live in
 
 ## Connect to Harness UI
 
-Harness UI supports self-registration. Install `a13n-envd` on the computer whose files and tools you want to use, then copy the command from **Connect device** in Harness UI's Devices settings:
+Harness UI supports self-registration. Install `a13n-envd` on the computer whose files and tools you want to use, then copy the command from **Settings → Environments → Connect Device** in Harness UI:
 
 ```bash
 a13n-envd connect https://your-host.example --host work --instance work
 ```
 
-Keep the process running. Open the approval link printed in the terminal, sign in to the Host and compare the verification code before approving. Do not approve an unfamiliar device or mismatched code. Registration alone does not start a conversation or grant a Run access to the device.
+Keep the process running. Open the approval link printed in the terminal, sign in to the Host and compare the verification code before approving. Do not approve an unfamiliar Device or mismatched code. Registration alone does not start a conversation or grant a Run access to the Device.
 
-Once the device is online, choose it and a working directory when configuring a conversation. Directory discovery works before a Run exists. A working directory is the Session's starting directory, **not** a filesystem sandbox.
+Once the Device is online, choose it and a working directory when you add an environment to a conversation or Project. Directory discovery works before a Run exists. A working directory is the Session's starting directory, **not** a filesystem sandbox.
 
 ### Enable shell execution
 
-The default connection does not implicitly grant unrestricted shell execution. To use the current operating-system account's full authority:
+By default, the connection allows file operations only; shell execution needs Full Control or manually configured shell profiles. To use the current operating-system account's full authority:
 
 ```bash
 A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://your-host.example --host work --instance work
@@ -218,11 +218,11 @@ $env:A13N_ENVD_FULL_CONTROL = "1"
 a13n-envd connect https://your-host.example --host work --instance work
 ```
 
-Alternatively, provide an explicit envd configuration for the execution policy you need. See [envd configuration](../a13n-envd/configuration.md). Full control is not tenant isolation; only connect to a Host and Workspace you trust.
+Alternatively, provide an explicit Envd configuration for the execution policy you need. See [Envd configuration](../a13n-envd/configuration.md). Full Control is not tenant isolation; only connect to a Host you trust.
 
 ### Restart or connect another Host
 
-After approval, envd saves the Host endpoint and a protected, narrow credential locally. Restart with the saved alias and the same instance:
+After approval, Envd saves the Host endpoint and a protected, narrow credential locally. Restart with the saved alias and the same instance:
 
 ```bash
 a13n-envd connect work --instance work
@@ -240,14 +240,14 @@ Instances have independent daemon identities, state and credentials. There is no
 
 ### Manage and revoke
 
-Harness UI lists approved devices in Devices settings; choose **Revoke device** there to permanently revoke a device's credential. Revocation prevents new access and fences the existing connection within its bounded authority window; it does not undo already dispatched effects, delete files/history, or remotely manage the daemon process. The revoked record remains visible.
+Harness UI lists approved Devices in **Settings → Environments**; choose **Revoke**, then **Revoke connection**, to permanently revoke a Device's credential. Revocation prevents new access and fences the existing connection within its bounded authority window; it does not undo already dispatched effects, delete files/history, or remotely manage the daemon process. The revoked record remains visible.
 
 A revoked credential is not silently replaced. If you intentionally want to enroll again, use a new `--instance` and explicitly approve it. Deleting local credentials is not a way to take over an existing registration.
 
 ### Troubleshooting
 
-- HTTPS is required except on loopback. `localhost` means the computer running envd, not a remote Host computer. Use the public reachable hostname for another computer. Use `--ca-file` for a private certificate authority rather than disabling verification.
-- If a pending approval expires, rerun the same command to request approval again. If authentication is denied after revocation, envd exits instead of generating a replacement credential.
+- HTTPS is required except on loopback. `localhost` means the computer running Envd, not a remote Host computer. Use the public reachable hostname for another computer. Use `--ca-file` for a private certificate authority rather than disabling verification.
+- If a pending approval expires, rerun the same command to request approval again. If authentication is denied after revocation, Envd exits instead of generating a replacement credential.
 
 ## Connect to the Service
 

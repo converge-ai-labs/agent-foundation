@@ -4,17 +4,17 @@ sidebarTitle: Configuration and transports
 description: Configure a standalone Envd daemon and how it connects to a Host.
 ---
 
-This is standalone Envd configuration, not Harness UI YAML or an `EnvironmentProviderSpec`. The Host owns deployment, account selection, any outer sandbox, credentials and the daemon lifetime. An adapter configuration selects a working directory, required methods and optional reference-only Session egress policy; the Device launch configuration separately fixes execution, Sandbox and network mode. The [sandbox image](sandbox.md) supplies ready-to-use account, shell and sudo defaults without changing the standalone daemon defaults.
+This is standalone Envd configuration, not Harness UI YAML or an `EnvironmentProviderSpec`. The Host owns deployment, account selection, any outer sandbox, credentials and the daemon lifetime. An adapter configuration selects a working directory, required methods and an optional Session egress policy whose secrets are references, not values. The Device launch configuration separately fixes execution, Sandbox and network mode. The [sandbox image](sandbox.md) supplies ready-to-use account, shell and sudo defaults without changing the standalone daemon defaults.
 
 ## Configuration layers
 
 Startup precedence, from lowest to highest:
 
 1. Built-in defaults.
-2. Daemon JSON selected by `--config` or `A13N_ENVD_CONFIG`.
+2. Daemon JSON selected by `--config`.
 3. `A13N_ENVD_CONFIG_JSON`, using the same strict schema as the file.
 4. Scalar `A13N_ENVD_*` environment variables.
-5. Explicit CLI arguments.
+5. Explicit command-line arguments.
 
 Objects merge recursively; arrays and scalar values replace earlier values. Each JSON layer must be valid even if a later layer overrides it. This lets a sandbox launcher configure Envd entirely through environment variables, including nested limits and shell profiles, without writing a configuration file:
 
@@ -28,9 +28,9 @@ a13n-envd
 
 Scalar shortcuts include `A13N_ENVD_ALLOW_SUDO`, `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID`, `A13N_ENVD_EGRESS_MODE`, `A13N_ENVD_FULL_CONTROL`, `A13N_ENVD_COMPUTER_USE`, `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`, `A13N_ENVD_DIRECTORY_DISCOVERY`, `A13N_ENVD_DEVICE_ID`, `A13N_ENVD_NAME`, `A13N_ENVD_DESCRIPTION`, `A13N_ENVD_DEFAULT_WORKING_DIRECTORY`, `A13N_ENVD_IDLE_TIMEOUT_MS`, and `A13N_ENVD_DISCONNECT_GRACE_MS`. Booleans accept `true`, `false`, `1`, or `0`.
 
-Device connections negotiate the carrier and protocol. EIP Sessions select a fixed cwd and own operations, processes, output and transfers; they cannot change trusted startup identity or sudo policy.
+Device initialization negotiates the protocol and verifies the Device identity. EIP Sessions select a fixed cwd and own operations, processes, output and transfers; they cannot change trusted startup identity or sudo policy.
 
-## Connect to a Host
+## Connect to Harness UI
 
 To connect to Harness UI, start one outbound connection:
 
@@ -38,7 +38,11 @@ To connect to Harness UI, start one outbound connection:
 a13n-envd connect https://host.example.com --host work
 ```
 
-Open the approval address printed by envd, sign in to the Host, and approve the matching verification code. Keep envd running. On later starts, `a13n-envd connect work` reuses its saved identity, credential and approved connection. The credential is generated on the Device and never needs to be copied into the browser. Reconnection does not require a fresh ticket or another approval. a13n Service instead connects to an HTTP daemon you register; see [Connect to the Service](../environments/remote-envd.md#connect-to-the-service).
+1. Open the approval address that Envd prints.
+2. Sign in to the Host.
+3. Approve the matching verification code.
+
+Keep Envd running. On later starts, `a13n-envd connect work` reuses its saved identity, credential and approved connection. The credential is generated on the Device and never needs to be copied into the browser. Reconnection does not require another approval. Service instead connects to an HTTP daemon you register; see [Connect to the Service](../environments/remote-envd.md#connect-to-the-service).
 
 The Host URL must be reachable from this computer. HTTPS is required except for loopback HTTP, such as `http://127.0.0.1:8765`. Add `--ca-file /path/to/ca.pem` for a private CA; TLS verification is never disabled. `--name` sets the approval display name, and `--default-working-directory` selects an existing native directory. `--config` supplies ordinary daemon JSON, including resource limits and command settings.
 
@@ -46,7 +50,7 @@ The Host URL must be reachable from this computer. HTTPS is required except for 
 
 State defaults to `~/.a13n-envd` on Unix and `%LOCALAPPDATA%/a13n-envd` on Windows (falling back to the user profile). Override it with `--state-dir` or `A13N_ENVD_STATE_DIR`. Each instance stores its identity at `instances/<instance>/device-id`; named Host configuration, credential and private runtime live under `instances/<instance>/hosts/<host>/`. The default instance name is `default`. Without `--host`, a stable name is derived from the URL. Keep this state across restarts and protect it as an account credential.
 
-Each running envd connects to **one Host**. To use two Hosts on the same physical computer, run two independent processes:
+Each running Envd process connects to **one Host**. To use two Hosts on the same physical computer, run two independent processes:
 
 ```console
 a13n-envd connect https://personal.example.com --instance personal --host personal
@@ -79,7 +83,7 @@ The Host creates and protects the runtime parent. Envd creates an unpredictable 
 }
 ```
 
-The working directory must exist. If omitted, the daemon captures its startup cwd. For ordinary Sessions it is **not an access root**: file paths address the whole filesystem available to the execution account and outer sandbox. Directory discovery is a bounded, one-level read that works before any Session exists.
+A Session can open only in an existing directory; a missing default fails Session opening, not daemon startup. If `default_working_directory` is omitted, the daemon captures its startup cwd. The working directory is **not an access root**: file paths address the whole filesystem available to the execution account, the Sandbox grants and the outer sandbox. Directory discovery is a bounded, one-level read that works before any Session exists.
 
 Explicit Device IDs can come from `--device-id`, JSON `device_id`, or `A13N_ENVD_DEVICE_ID`. Without an explicit ID, an installation state directory retains the generated identity across restart. `--default-working-directory`, `--name` and `--description` override JSON metadata. Set directory discovery through JSON or `A13N_ENVD_DIRECTORY_DISCOVERY`. EIP paths use `/C:/...` and `/UNC/server/share/...` on Windows; daemon bootstrap paths use native OS spelling.
 
@@ -93,7 +97,7 @@ A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://host.example.com
 
 Or set `"full_control": true` in daemon JSON. `A13N_ENVD_FULL_CONTROL` overrides the JSON value; `false` or `0` disables it. Full Control creates the default native shell profile automatically: `/bin/sh` on Unix, or PowerShell on Windows. Commands inherit the launching process's environment and original `PATH` order, excluding daemon bootstrap variables (`A13N_ENVD_*` and `EIP_*`). Command-level environment changes do not modify the daemon or later commands. Shell aliases and unexported variables are not inherited.
 
-Full Control is not a sandbox and is independent of the Host's local execution profile. Do not combine it with manual executable roots or shell profiles. To configure command access explicitly instead, supply trusted executable search roots and optionally fixed shell profiles:
+Envd Full Control (`full_control`) is not a sandbox. It is independent of Harness UI's local Full Control or Sandbox mode. Do not combine it with manual executable roots or shell profiles. To configure command access explicitly instead, supply trusted executable search roots and optionally fixed shell profiles:
 
 ```json
 {
@@ -114,16 +118,16 @@ Full Control is not a sandbox and is independent of the Host's local execution p
 }
 ```
 
-No command methods are advertised when Full Control is disabled and both executable roots and shell profiles are empty. Executable roots and profiles are trusted launch configuration, not a Session sandbox. The Host supplies the outer security boundary; optional [controlled Session egress](egress.md) adds per-Session destination restrictions and credential injection. See [outer security and troubleshooting](isolation.md).
+No command methods are advertised when Full Control is disabled and both executable roots and shell profiles are empty. Executable roots and profiles are trusted launch configuration, not a Session sandbox. The Host supplies the outer security boundary; optional [controlled Session egress](egress.md) adds per-Session destination restrictions and credential injection. See [execution boundaries and troubleshooting](isolation.md).
 
 Child environments are built from the daemon's supported inherited values plus explicit command inputs. Daemon control variables are not command configuration. Inspect advertised execution features instead of assuming platform support for signals, limits or executable bits.
 
 ## Native identity and sudo
 
 > [!IMPORTANT]
-> **Native sudo is allowed by default.** Envd preserves the original writable sandbox system tree. Installing packages or changing system files through authorized sudo changes that tree and persists across Sessions; no disposable copy of the payload root filesystem is introduced.
+> **Native sudo is allowed by default.** With disabled Sandbox, Envd keeps the outer sandbox's original system tree writable. Installing packages or changing system files through authorized sudo changes that tree and persists across Sessions; no disposable copy of the payload root filesystem is introduced.
 
-On Linux, **omitting execution UID/GID preserves the launching process's identity, including root**. Envd does not assume `1000:1000`, scan for a likely user, create an account, or require identity configuration merely because the launcher is root. To select a different provisioned account, set the paired `execution.uid`/`execution.gid`, `A13N_ENVD_EXECUTION_UID`/`A13N_ENVD_EXECUTION_GID`, or `--execution-uid`/`--execution-gid`. Root (`0:0`) is also a valid explicit identity. The provider or deployment owns account provisioning, home and workspace permissions. For example, a root launcher can select its provisioned sandbox account:
+On Linux, **omitting execution UID/GID preserves the launching process's identity, including root**. Envd does not assume `1000:1000`, scan for a likely user, create an account, or require identity configuration merely because the launcher is root. To select a different provisioned account, set the paired `execution.uid`/`execution.gid`, `A13N_ENVD_EXECUTION_UID`/`A13N_ENVD_EXECUTION_GID`, or `--execution-uid`/`--execution-gid`. Root (`0:0`) is also a valid explicit identity. The Provider or deployment owns account provisioning, home and working-directory permissions. For example, a root launcher can select its provisioned sandbox account:
 
 ```bash
 # Replace sandbox with the account provisioned by your image or deployment.
@@ -176,7 +180,7 @@ HTTP requires `A13N_ENVD_HTTP_BIND`, `A13N_ENVD_HTTP_CREDENTIAL_FILE`, and eithe
 
 Reverse WebSocket requires `A13N_ENVD_REVERSE_WS_URL` and `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`. `A13N_ENVD_REVERSE_WS_CA_FILE` adds deployment trust for `wss`. The daemon does not expose an inbound WebSocket listener.
 
-Credentials belong in protected files, not argv, endpoint URLs, descriptors, logs or portable Environment state. A credential authorizes Device access, not a tenant-isolated Session.
+Credentials belong in protected files, not argv, endpoint URLs, descriptors, logs or portable Environment state. A credential authorizes Device access; it does not isolate Sessions from each other.
 
 ## Lifecycle and ownership
 
@@ -184,7 +188,7 @@ One daemon generation serves a Device with multiple independent Sessions. Initia
 
 A lost framed carrier detaches its Sessions for bounded disconnect grace. An existing owner may explicitly attach the same Session in the same generation. Attachment never replays commands or resumes transfers. Expired Sessions require fresh scopes and old resource references remain invalid.
 
-The Host closes its Device connections during shutdown and terminates a daemon only when it owns that daemon's lifecycle. Workspace files are not deleted by Session close. Native processes and private output/staging storage are reclaimed under bounded cleanup; failure is reported rather than treated as successful reclamation.
+The Host closes its Device connections during shutdown and terminates a daemon only when it owns that daemon's lifecycle. Session close does not delete files in the working directory. Native processes and private output/staging storage are reclaimed under bounded cleanup; failure is reported rather than treated as successful reclamation.
 
 ## Check before admitting work
 

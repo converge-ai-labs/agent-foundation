@@ -1,10 +1,10 @@
 ---
 title: Harness UI HTTP API
 sidebarTitle: HTTP API
-description: 浏览器服务器的 HTTP API，用于初始化、对话、实时输出和 Host 面板。
+description: WebUI 服务器的 HTTP API，用于初始化、对话、实时输出和 Host 面板。
 ---
 
-浏览器服务器暴露与终端相同的进程内 App。API 支持初始化、配置、对话、实时输出，以及可选的原生 Host Files、Git 和终端面板。它与托管 Service 的 `/api/v1` API 不同：调用者共享一个实例访问密钥，操作回执属于当前运行进程，实时事件尽力投递。从[使用浏览器](webui.md)开始；不需要 HTTP 监听时可使用 [Python 嵌入](embedding.md)。
+WebUI 服务器暴露与 TUI 相同的进程内 App。API 支持初始化、配置、对话（根 Thread）、实时输出，以及可选的原生 Host Files、Git Changes 和 Terminal 面板。它与托管 Service 的 `/api/v1` API 不同：调用者共享一个实例访问密钥，操作回执属于当前运行进程，实时事件尽力投递。从 [WebUI](webui.md) 开始；不需要 HTTP 监听时可使用 [Python 嵌入](embedding.md)。
 
 ## 认证与查看协议约定
 
@@ -20,7 +20,7 @@ curl --fail-with-body "$HUI_URL/api/openapi.json" \
 
 状态响应包含 `api_version: "1"`、软件包与构建信息、App 状态、访问模式和功能标志。运行中的 OpenAPI JSON 描述精确的请求、响应模型和约束。Swagger 和 ReDoc 页面已禁用。[已检查的 schema](/reference/harness-ui-openapi.json)从源码版本生成，不能证明其他运行版本采用相同约定。
 
-认证及 Host/Origin 校验在监听器边界执行。请使用支持请求头的 HTTP/fetch 客户端。访问密钥不能放在 API 查询字符串或日志中，也不要将 `/api/auth/*` 管理的模型 provider 凭据与监听器密钥混淆。刻意提供的危险绕过模式不能作为生产认证机制。
+认证及 HTTP `Host`/`Origin` 请求头校验在监听器边界执行。请使用支持请求头的 HTTP/fetch 客户端。访问密钥不能放在 API 查询字符串或日志中，也不要将 `/api/auth/*` 管理的模型 provider 凭据与监听器密钥混淆。`webui --dangerous-skip-permissions` 选项会关闭监听器认证；它不能作为生产认证机制。
 
 ## 创建 Thread 并提交输入
 
@@ -59,13 +59,13 @@ curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/submit" \
 | `GET /api/threads/{thread_id}/mcp/inputs`                          | 该 Thread 及后代子 Thread 的输入状态 |
 | `POST /api/threads/{thread_id}/mcp/inputs/{request_id}/response`   | 回答确切实时请求，不启动另一次 Run   |
 
-表单响应为 `{"action":"accept","content":{"name":"Ada"}}`，URL 确认为 `{"action":"accept"}`，也可使用 `{"action":"decline"}` / `{"action":"cancel"}`。检查请求模式和原 schema。响应视图只确认输入已接受，不代表业务完成；继续观测原操作。完全相同的重复答案核实结果，冲突答案失败。过期、已退役或不可用请求不能授权后续发送。交付不确定时，查询并仅重试确切答案，不要重新提交业务操作。MCP 请求状态属于进程内状态，重启后消失。见[人工输入](mcp.md#human-input-from-mcp-servers)和 [Python 适配器](embedding.md#mcp-input-and-integration-control)。
+表单响应为 `{"action":"accept","content":{"name":"Ada"}}`，URL 确认为 `{"action":"accept"}`，也可使用 `{"action":"decline"}` / `{"action":"cancel"}`。检查请求模式和原 schema。响应视图只确认输入已接受，不代表 MCP 工具调用已完成；继续观测原操作。完全相同的重复答案核实结果，冲突答案失败。过期、已退役或不可用请求不能授权后续发送。交付不确定时，查询并仅重试确切答案，不要重新提交业务操作。MCP 请求状态属于进程内状态，重启后消失。见[人工输入](mcp.md#human-input-from-mcp-servers)和 [Python 适配器](embedding.md#mcp-input-and-integration-control)。
 
 ## 记忆观测
 
 `GET /api/threads?memory=true` 只选择 Memory Thread，默认列表不包含它们。Project 筛选和分页保持常规语义；`projectless=true` 选择 Global 记忆。`POST /api/threads/lookup` 接受相同的 `memory` 区分字段。Memory Thread 暴露 `memory_scope`，支持现有的对话记录、实时、配置检查和用量读取；修改或执行控制返回 `memory_thread_read_only`。
 
-`GET /api/memory/files` 列出当前 Global 记忆文件。添加 `project_id` 可选择已配置 Project 的范围。`GET /api/memory/file?path=MEMORY.md` 读取范围内相对路径文件，也接受同一可选 Project 选择字段。这些路由需要认证、只读、独立于原生计算机共享；Memory 禁用时不可用。它们不暴露任意 Host 路径或内部管理信息，也不会触发记忆整理。
+`GET /api/memory/files` 列出当前 Global 记忆文件。添加 `project_id` 可选择已配置 Project 的范围。`GET /api/memory/file?path=MEMORY.md` 读取范围内相对路径文件，也接受同一可选 Project 选择字段。这些路由需要认证、只读、独立于原生计算机共享；Memory 禁用时不可用。它们不暴露任意 Host 路径或内部管理信息，也不会触发自动记忆整理。
 
 ## Coordinator
 
@@ -75,7 +75,7 @@ curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/submit" \
 
 `POST /api/threads/{thread_id}/coordinator` 将已有、关联 Project 的普通根线程提升为 Coordinator。需要已接受的 Project、未归档且不活跃的 Thread，并且没有待处理决策。对于已符合条件的 Coordinator，此操作幂等，返回 `ThreadSummary`，不启动 Run 或模型调用。提升保留身份、历史、标题和设置。Worker 和子线程不能提升；没有降级或接管 worker 的 API。
 
-`PATCH /api/threads/{thread_id}/coordinator` 传入 `{"auto_followup": false}` 暂停该 Coordinator 的自动生命周期通知，true 启用。更新采用最后写入生效，并发布 Thread 失效通知。Sidekick 配置不限制提升或跟进。归档 Coordinator 保留角色，恢复使用普通的预期版本元数据 API。Coordinator 和 worker 不能修改或清除所属 Project。
+`PATCH /api/threads/{thread_id}/coordinator` 传入 `{"auto_followup": false}` 暂停该 Coordinator 的自动生命周期通知，true 启用。更新采用最后写入生效，并发布 Thread 失效通知。[Sidekick 配置](configuration.md#webui-sidekick)不限制提升或跟进。归档 Coordinator 保留角色，恢复使用普通的预期版本元数据 API。Coordinator 和 worker 不能修改或清除所属 Project。
 
 `GET /api/threads/activity` 接受 `coordinator_thread_id` 来选择一个所有者的 worker；`independent_only=true` 排除 worker，保留普通根线程和 Coordinator。筛选绑定游标，且在计算总计和活跃行前应用。未筛选的人类搜索包含全部根线程。`POST /api/threads` 接受 `coordinator_thread_id`，在同一可用 Project 的未归档 Coordinator 下直接创建 worker。在 `defaults` 中设置 Project，可选保留客户端生成的 `thread_id` 用于核对创建结果。所有者字段与 `coordinator: true` 互斥；所属关系和 Thread 创建原子完成，关系永久保存。用户创建使用普通提交的默认值，不使用 Sidekick 偏好。创建不运行所有者或 worker；用户向初始状态 worker 普通提交时，若启用了自动跟进，会安排尽力投递的所有者通知。创建确认未知时，必须按保留身份核对；首次提交失败也不移除所属关系。人工查看和执行继续使用常规根线程 API。
 
@@ -97,22 +97,22 @@ curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/submit" \
 }
 ```
 
-Full Control 使用 `environment-native`，Sandbox 使用 `environment-sandbox`，也可使用 `GET /api/selectors` 返回的 profile ID。省略的配置维度沿用 Thread 保存的选择；空集合清除选择，null 只清除 `default_environment`。显式选择只影响本次 Run，不更新 Thread 配置或版本。返回回执代表接收成功，不代表环境准备成功：需查看操作中的 profile 不可用或运行时失败。两种情况都不会悄悄回退到 Full Control。引导请求拒绝此字段。延迟回复保留暂停 continuation 捕获的环境选择；之后不带覆盖的普通提交再次使用已保存默认值。
+Full Control 使用 `environment-native`，Sandbox 使用 `environment-sandbox`，也可使用 `GET /api/selectors` 返回的 profile ID。省略的配置维度沿用 Thread 保存的选择；空集合清除选择，null 只清除 `default_environment`。显式选择只影响本次 Run，不更新 Thread 配置或版本。返回回执代表接收成功，不代表 Environment 准备成功：需查看操作中的 profile 不可用或运行时失败。两种情况都不会悄悄回退到 Full Control。引导请求拒绝此字段。延迟回复保留暂停 continuation 捕获的 Environment 选择；之后不带覆盖的普通提交再次使用已保存默认值。
 
 ## 设备连接与工作环境
 
-Device 资源描述可复用连接，不是 Run 或文件系统根目录。通过 `PUT /api/configuration/sources/devices/build.yaml` 创建，参阅 [Device YAML](environments-and-projects.md#add-device-working-environments)。Device 凭据与浏览器监听器密钥分开。
+Device 资源描述可复用连接，不是 Run 或文件系统根目录。通过 `PUT /api/configuration/sources/devices/build.yaml` 创建，参阅 [Device YAML](environments-and-projects.md#add-device-bindings)。Device 凭据与 WebUI 监听器密钥分开。
 
 | 路由                                       | 行为                                                     |
 | ------------------------------------------ | -------------------------------------------------------- |
 | `GET /api/devices`                         | 返回已配置 ID、名称和载体类型，不尝试连接                |
 | `GET /api/devices/{device_id}`             | 检查可用性，读取路径格式、默认工作目录和目录发现支持情况 |
-| `GET /api/devices/{device_id}/directories` | 浏览一层目录，不打开 Run Session                         |
-| `WS /api/devices/{device_id}/connect`      | 原生守护进程反向挂接，不是浏览器交互通道                 |
+| `GET /api/devices/{device_id}/directories` | 浏览一层目录，不打开 Envd Session                        |
+| `WS /api/devices/{device_id}/connect`      | 原生守护进程反向挂接，不是 WebUI 交互通道                |
 
-目录查询接受 `path`、`offset`（0–1,000,000）和 `limit`（1–200，默认 100）。省略 `path` 使用 Device 默认工作目录；下一页使用返回的 `next_offset`。路径是 Device 上的绝对 EIP 路径，不是浏览器或监听器本机路径。可用性和目录发现独立：在线 Device 可以禁用发现，目录不可读不代表设备离线。元数据和浏览不会创建 Thread 或执行 Session。这些路由不依赖原生计算机共享。
+目录查询接受 `path`、`offset`（0–1,000,000）和 `limit`（1–200，默认 100）。省略 `path` 使用 Device 默认工作目录；下一页使用返回的 `next_offset`。路径是 Device 上的绝对 EIP 路径，不是浏览器或监听器本机路径。可用性和目录发现独立：在线 Device 可以禁用发现，目录不可读不代表设备离线。元数据和浏览不会创建 Thread 或 Envd Session。这些路由不依赖原生计算机共享。
 
-守护进程的反向连接协商 `eip.v1`，并在 HTTP upgrade 请求中发送 Device bearer 凭据。它不使用浏览器首帧认证。不要通过查询参数发送凭据。
+守护进程的反向连接协商 `eip.v1`，并在 HTTP upgrade 请求中发送 Device bearer 凭据。它不使用 WebUI 首帧认证。不要通过查询参数发送凭据。
 
 Thread 创建默认值和配置 patch 接受 `environment_bindings`、`default_environment`，它们独立于 `environment_profile_id`：
 
@@ -126,7 +126,7 @@ Thread 创建默认值和配置 patch 接受 `environment_bindings`、`default_e
 }
 ```
 
-配置预览直接使用此请求体；创建 Thread 时放在 `defaults` 下。Device 离线时仍可保存已知绝对目录。每次 Run 捕获选择，并准备新的执行专属 Session；连接已配置不保证执行成功。`default_environment` 决定相对路径和省略 cwd 时的路由，不构成访问限制边界。原生 Files、Changes 和 Terminal 路由仍操作监听器 Host，不操作所选 Device。
+配置预览直接使用此请求体；创建 Thread 时放在 `defaults` 下。Device 离线时仍可保存已知绝对目录。每次 Run 捕获选择，并准备新的执行专属 Envd Session；连接已配置不保证执行成功。`default_environment` 决定相对路径和省略 cwd 时的路由，不构成访问限制边界。原生 Files、Changes 和 Terminal 路由仍操作监听器 Host，不操作所选 Device。
 
 ### 移除离线配置并修复选择
 
@@ -151,9 +151,9 @@ Thread 创建默认值和配置 patch 接受 `environment_bindings`、`default_e
 
 ## 原生终端
 
-Linux/macOS 的原生计算机共享包含真正的交互式终端。请检查 `features.host_terminal`；Windows 返回 false 和 `host_terminal_unavailable`，不会替换成非交互终端。Shell 缺失时也不可用。禁用共享返回 `host_terminal_disabled`。通过 `POST /api/host/terminals` 和 `{"cwd":"/work","rows":24,"columns":80}` 等 JSON 创建。可选 `project_id` 必须指定已接受的 Project。返回的 `terminal_id` 属于此次 App 生命周期，不是 Thread 或 Run ID。`cwd` 记录初始本机目录，不跟随后续浏览器导航变化。
+Linux/macOS 的原生计算机共享包含真正的交互式终端。请检查 `features.host_terminal`；Windows 返回 false 和 `host_terminal_unavailable`，不会替换成非交互终端。Shell 缺失时也不可用。禁用共享返回 `host_terminal_disabled`。通过 `POST /api/host/terminals` 和 `{"cwd":"/work","rows":24,"columns":80}` 等 JSON 创建。可选 `project_id` 必须指定已接受的 Project。返回的 `terminal_id` 属于此次 App 生命周期，不是 Thread 或 Run ID。`cwd` 记录初始本机目录，不跟随后续 WebUI 导航变化。
 
-使用同一监听器源连接 `ws(s)://<listener>/api/host/terminals/{terminal_id}/connect?cursor=<last-end>`。游标可选，不含凭据。十秒内发送首个文本帧 `{"api_key":"<instance key>"}`。接受连接前检查 Host 和精确 Origin，认证在资源查找前完成。密钥错误或缺失以 4401 关闭；Host/Origin 被拒绝时握手失败。危险绕过模式下发送 `{}`。不要使用 URL 密钥、cookie 或模型 provider 凭据。
+使用同一监听器源连接 `ws(s)://<listener>/api/host/terminals/{terminal_id}/connect?cursor=<last-end>`。游标可选，不含凭据。十秒内发送首个文本帧 `{"api_key":"<instance key>"}`。接受连接前检查 HTTP `Host` 请求头和精确的 `Origin` 请求头，认证在资源查找前完成。密钥错误或缺失以 4401 关闭；`Host` 或 `Origin` 请求头被拒绝时握手失败。使用 `--dangerous-skip-permissions` 时发送 `{}`。不要使用 URL 密钥、cookie 或模型 provider 凭据。
 
 生成的 OpenAPI 文档中，`x-interactive` 节引用认证、命令、输出和错误 schema。认证后，服务器发送 `TerminalFrame`，包含连接内 `participant_id`、当前 `terminal` 视图和原始 base64 输出。相邻帧之间保留流式 UTF-8 解码器；字节位置不是字符偏移量。保存 `end` 作为下次重连游标。最多保留 1 MiB；`gap: true` 表示字节缺失或所提供游标超前，不代表已恢复完整屏幕。
 
@@ -172,11 +172,11 @@ Linux/macOS 的原生计算机共享包含真正的交互式终端。请检查 `
 
 输入支持控制字符，例如 Ctrl+C 的 `\u0003`。使用 `{"kind":"control","control_epoch":1,"release":true}` 释放控制。只有当前控制者可以释放；其他查看者可使用当前 epoch 显式接管。过期命令返回 `host_terminal_control_conflict`。每帧输入最多 16,384 个字符，行列数范围为 1–1,000。背压可能在部分投递后返回 `host_terminal_input_failed`。不得自动重试按键，包括连接或确认响应丢失后。
 
-断开只移除该参与者并释放其控制。重新加入获得新参与者 ID 和保留输出。进程退出后仍可检查 `exited`；显式 HTTP DELETE 关闭 PTY、终止原生会话任务，并移除身份。刻意守护进程化的独立操作系统会话不属于此生命周期。关闭前最多可存在 32 个会话，包括已退出会话。App 关闭会关闭全部会话；重启不保留 PTY 或输出。保存的对话历史不受影响。
+断开只移除该参与者并释放其控制。重新加入获得新参与者 ID 和保留输出。进程退出后仍可检查 `exited`；显式 HTTP DELETE 关闭 PTY、终止原生会话任务，并移除身份。刻意守护进程化的独立操作系统会话不属于此生命周期。关闭前最多可存在 32 个终端会话，包括已退出的终端会话。App 关闭会关闭全部终端会话；重启不保留 PTY 或输出。保存的对话历史不受影响。
 
 ## 页面在线状态
 
-`features.page_presence` 表示支持 App 全局的临时参与者目录，即使没有打开 Thread。`GET /api/presence` 返回当前目录快照。连接 `/api/presence/connect`，使用与终端相同的首帧认证。每个连接获得新的 `participant_id`；两个标签页使用相同名称，仍是不同参与者。名称和颜色不能验证作者身份，也不授予权限。
+`features.page_presence` 表示支持 App 全局的临时参与者目录，即使没有打开 Thread。`GET /api/presence` 返回当前目录快照。连接 `/api/presence/connect`，使用与原生终端连接相同的首帧认证。每个连接获得新的 `participant_id`；两个标签页使用相同名称，仍是不同参与者。名称和颜色不能验证作者身份，也不授予权限。
 
 认证后发送 `PresenceReport`，描述标签页当前聚焦面板：
 
@@ -193,7 +193,7 @@ Linux/macOS 的原生计算机共享包含真正的交互式终端。请检查 `
 }
 ```
 
-目标使用已有 App 视图的语义身份：工作台 `home`/`settings`/`catalog`、根对话、Project、已配置资源、本机文件、Git 比较或终端。本机路径属于服务器；请使用 Files/Git 返回的规范路径。可选的容器 `root_thread_id` 与聚焦目标是不同字段。Changes 目标使用精确仓库根目录、可选仓库相对路径和比较类型。缺失或禁用目标仍保留在报告中，标为 `availability: unavailable` 并给出原因；服务器不会导航到替代目标。在线状态只检查可用性，不读取文件内容，也不创建终端或修改 Agent Environment。
+目标使用已有 App 视图的语义身份：工作台 `home`/`settings`/`catalog`、对话、Project、已配置资源、本机文件、Git 比较或终端。本机路径属于服务器；请使用 Files/Git 返回的规范路径。可选的容器 `root_thread_id` 与聚焦目标是不同字段。Changes 目标使用精确仓库根目录、可选仓库相对路径和比较类型。缺失或禁用目标仍保留在报告中，标为 `availability: unavailable` 并给出原因；服务器不会导航到替代目标。在线状态只检查可用性，不读取文件内容，也不创建终端或修改 Agent Environment。
 
 标签页隐藏或失焦时设置 `foreground: false`。变化时立即报告，并至少每 20 秒重发当前报告，即使没有变化。60 秒没有报告的连接以 4408 关闭，并失去成员资格。这衡量传输参与情况，不代表人或 Agent 是否活跃。最多 32 个在线参与者，报告最多 16 KiB。无效报告返回 `presence_invalid`，不替换已接受状态。
 
@@ -203,7 +203,7 @@ Linux/macOS 的原生计算机共享包含真正的交互式终端。请检查 `
 
 ## 已保存输出的评论
 
-`features.output_comments` 提供可编辑的人类评论，**仅针对已保存、可见的 assistant 文本**。它不会将实时或未保存输出持久化。根对话记录的 assistant 部分包含可为 null 的 `comment_target` 和显式 `text_truncated` 标志；截断的显示片段不能用作精确选区来源，应获取原始文本窗口。User、tool、thinking 部分，以及初始或未保存历史没有这些字段。已保存子运行检查使用 `GET /api/threads/{parent_thread_id}/children/{execution_id}/saved-output`，每页最多 20 个块，`next_cursor` 绑定来源。请原样使用这些目标快照，不要猜测索引，也不要将实时事件转成对象引用。
+`features.output_comments` 提供可编辑的人类评论，**仅针对已保存、可见的 assistant 文本**。WebUI 当前不显示评论控件；只有 API 客户端使用这些路由。它不会将实时或未保存输出持久化。根对话记录的 assistant 部分包含可为 null 的 `comment_target` 和显式 `text_truncated` 标志；截断的显示片段不能用作精确选区来源，应获取原始文本窗口。User、tool、thinking 部分，以及初始或未保存历史没有这些字段。已保存子运行检查使用 `GET /api/threads/{parent_thread_id}/children/{execution_id}/saved-output`，每页最多 20 个块，`next_cursor` 绑定来源。请原样使用这些目标快照，不要猜测索引，也不要将实时事件转成对象引用。
 
 通过 `POST /api/threads/{root_thread_id}/comments` 发布：
 
@@ -228,17 +228,17 @@ SQLite 提交后才返回确认。相同身份和规范化发布内容重复请�
 
 向 `/api/threads/{root_thread_id}/saved-output` POST 目标，获取原始文本。`offset` 和 `limit` 最多选择 65,536 个 Unicode 码点，`total_characters` 和 `next_offset` 表明截取情况。只能读取该 Thread 家族中当前选定或因评论保留的目标，不能读取任意不可变对象。来源损坏会显式失败，但评论仍可读。新 continuation 中的相同文本不是同一目标：除非确认精确内联身份，否则应显示 Thread 评论列表和原始输出视图。读取原始输出不会将它选为执行输入。
 
-评论返回 `version`（初始为 1）和可选 `updated_at`。`PATCH .../comments/{comment_id}` 只接受 `{"body":"Revised feedback","expected_version":1}`；身份、目标、选区和署名保持不变。`DELETE .../comments/{comment_id}?expected_version=1` 删除后返回 204。过期编辑或删除返回 `409 comment_version_conflict`。相同编辑重试可核对下一版本；重复删除成功，不会恢复记录。所有可信实例参与者都可编辑或删除；作者名称不是访问控制身份。评论正文不支持共同编辑，也没有回复或解决流程。`POST /api/threads/{root_thread_id}/comments/{comment_id}/capture` 显式将完整评论（正文、选区和署名）及完整原始 assistant 块捕获为 Thread 附件。提供 `?expected_version=<reviewed version>` 可拒绝捕获前的变化。响应使用已有 `ThreadAttachment`，带 `source.kind: comment_reference`、根线程与评论 ID、精确保存目标。新增顶层 `comment` 元数据包含有界作者、正文、引用预览和捕获版本。后续编辑或删除不改变已捕获字节。此操作不需要原生共享或模型侧 Capability。完整 UTF-8 内容（含署名）必须在 64 KiB 内；来源不可用或内容过大会失败，不截断。捕获不修改共享输入区，也不接收执行。浏览器只在成功后显式选择返回的附件 ID。
+评论返回 `version`（初始为 1）和可选 `updated_at`。`PATCH .../comments/{comment_id}` 只接受 `{"body":"Revised feedback","expected_version":1}`；身份、目标、选区和署名保持不变。`DELETE .../comments/{comment_id}?expected_version=1` 删除后返回 204。过期编辑或删除返回 `409 comment_version_conflict`。相同编辑重试可核对下一版本；重复删除成功，不会恢复记录。所有可信实例参与者都可编辑或删除；作者名称不是访问控制身份。评论正文不支持共同编辑，也没有回复或解决流程。`POST /api/threads/{root_thread_id}/comments/{comment_id}/capture` 显式将完整评论（正文、选区和署名）及完整原始 assistant 块捕获为 Thread 附件。提供 `?expected_version=<reviewed version>` 可拒绝捕获前的变化。响应使用已有 `ThreadAttachment`，带 `source.kind: comment_reference`、根线程与评论 ID、精确保存目标。新增顶层 `comment` 元数据包含有界作者、正文、引用预览和捕获版本。后续编辑或删除不改变已捕获字节。此操作不需要原生共享或模型侧 Capability。完整 UTF-8 内容（含署名）必须在 64 KiB 内；来源不可用或内容过大会失败，不截断。捕获不修改共享输入区，也不接收执行。客户端只在成功后选择返回的附件 ID。
 
-普通提交和根运行引导将不可变捕获展开为原生文本，保留现有 `harness_ui.attachment` 元数据。浏览器可显示可检查的评论引用卡片，无需在编辑器展开文本；模型仍收到完整捕获。保留策略、八个附件上限和仅捕获内容的清除规则不变。单独发布或查看永不成为模型输入。
+普通提交和根运行引导将不可变捕获展开为原生文本，保留现有 `harness_ui.attachment` 元数据。客户端可显示可检查的评论引用卡片，无需在编辑器展开文本；模型仍收到完整捕获。保留策略、八个附件上限和仅捕获内容的清除规则不变。单独发布或查看永不成为模型输入。
 
 ## 共享输入区
 
-`GET /api/drafts` 以 `{thread_id, draft_id, unsent_since}` 列出非空共享房间，不返回文本，也不加入编辑者。已选 pending/failed 附件计入非空，空白和闲置附件注册项不计入。时间戳只在空草稿变为非空时变化。`draft` 摘要失效通知标识空/非空成员状态变化的 Thread；收到提示或摘要 reset 后重新读取此索引，再使用现有 Thread 查找 API 获取标题、Project 和归档状态。索引独立于最近对话分页，App 重启后消失。它不是执行队列或持久草稿存储。
+`GET /api/drafts` 以 `{thread_id, draft_id, unsent_since}` 列出非空共享草稿，不返回文本，也不加入编辑者。已选 pending/failed 附件计入非空，空白和闲置附件注册项不计入。时间戳只在空草稿变为非空时变化。`draft` 摘要失效通知标识空/非空成员状态变化的 Thread；收到提示或摘要 reset 后重新读取此索引，再使用现有 Thread 查找 API 获取标题、Project 和归档状态。索引独立于最近对话分页，App 重启后消失。它不是执行队列或持久草稿存储。
 
-`features.shared_drafts` 表示支持浏览器使用的内存共享输入协议。连接 `/api/threads/{thread_id}/draft/connect`，使用与终端相同的首帧认证。只有根 Thread 参与，无需计算机共享。每个参与 Thread 在一个 App 中对应一份内存文档。断开移除在线状态，不移除文档或正在执行的 Run。App 关闭丢弃草稿和在线状态；对话历史仍由既有存储负责。
+`features.shared_drafts` 表示支持 WebUI 使用的内存共享输入协议。连接 `/api/threads/{thread_id}/draft/connect`，使用与原生终端连接相同的首帧认证。只有根 Thread 参与，无需计算机共享。每个参与 Thread 在一个 App 中对应一份内存文档。断开移除在线状态，不移除文档或正在执行的 Run。App 关闭丢弃草稿和在线状态；对话历史仍由既有存储负责。
 
-`x-interactive.draft` 描述 JSON 消息结构。服务器发送 `DraftFrame`，包含 `draft_id`、连接内 `participant_id`、base64 编码的 **Yjs v1 完整状态更新** 和当前参与者状态。文档使用两种根类型：`text`（`Y.Text`，仅纯文本）和 `attachments`（`Y.Map<string>`）。内联映射 key 使用 `inline-<UUID>`，值为同一 Thread 的已有附件 ID，或未完成状态 `pending`/`failed`。文本包含不透明的 `U+FFFC + key + U+FFFC` 身份 token，浏览器将其渲染为不可拆分的文件名控件。只有当前文本中的 token 选择内联输入；闲置注册项支持撤销，仍受完整 CRDT 状态限制。注册项缺失或未完成状态会阻止客户端提交。Token 不会跨过执行输入边界。原生文件或 diff 捕获使用相同 ID，不使用实时路径或重复字节。客户端按编写文本的顺序展开 token。没有 `inline-` 前缀的旧映射 key 仍按 key 排序，在文本之后选择；新客户端保留此读取兼容性。协作者通过 `GET /api/threads/{thread_id}/attachments/{attachment_id}/metadata` 检查选定引用，得到已有 `ThreadAttachment` 视图，不下载字节。此视图保留 Thread 范围和不可变文件或 diff 来源；移除草稿选择不会删除保留输入文件。服务器使用 pycrdt/Yrs，CRDT 项身份和合并由库负责。
+`x-interactive.draft` 描述 JSON 消息结构。服务器发送 `DraftFrame`，包含 `draft_id`、连接内 `participant_id`、base64 编码的 **Yjs v1 完整状态更新** 和当前参与者状态。文档使用两种根类型：`text`（`Y.Text`，仅纯文本）和 `attachments`（`Y.Map<string>`）。内联映射 key 使用 `inline-<UUID>`，值为同一 Thread 的已有附件 ID，或未完成状态 `pending`/`failed`。文本包含不透明的 `U+FFFC + key + U+FFFC` 身份 token，WebUI 将其渲染为不可拆分的文件名控件。只有当前文本中的 token 选择内联输入；闲置注册项支持撤销，仍受完整 CRDT 状态限制。注册项缺失或未完成状态会阻止客户端提交。Token 不会跨过执行输入边界。原生文件或 diff 捕获使用相同 ID，不使用实时路径或重复字节。客户端按编写文本的顺序展开 token。没有 `inline-` 前缀的旧映射 key 仍按 key 排序，在文本之后选择；新客户端保留此读取兼容性。协作者通过 `GET /api/threads/{thread_id}/attachments/{attachment_id}/metadata` 检查选定引用，得到已有 `ThreadAttachment` 视图，不下载字节。此视图保留 Thread 范围和不可变文件或 diff 来源；移除草稿选择不会删除保留输入文件。服务器使用 pycrdt/Yrs，CRDT 项身份和合并由库负责。
 
 将收到的更新应用于本地 Yjs 兼容副本。发送 `{"kind":"sync","draft_id":"...","update_base64":"..."}`，携副本的**完整** 更新，包括依赖和删除集合，而不是状态向量增量。完整更新让离线、重新加入时的合并及编辑状态重发不依赖服务器传输日志。服务器在发布前原子验证完整合并输入区。`draft_invalid` 保持服务器状态不变；请保留被拒绝的本地内容并显示错误，不要悄悄丢弃选择。限制为编码后的 CRDT 状态 512 KiB、纯文本 256 Ki 个字符、八个已选附件，以及既有附件总计 20 MiB。CRDT 历史计入状态限制；不会自动压缩并改变项身份。
 
@@ -248,7 +248,7 @@ SQLite 提交后才返回确认。相同身份和规范化发布内容重复请�
 
 1. 同步待发送的编辑，并在返回 CRDT 状态中确认。
 2. 克隆精确的当前副本；将其编写的文本和当前附件身份展开为普通 `/submit` 的有序 `parts`。
-3. 提交确认成功后，只删除捕获副本中可见的文本和旧式选择，再将完整删除更新合并回实时副本。保留内联注册项：协作者粘贴的未捕获 token 可能复用 key，并在确认后到达。这样可保留并发插入和替换、新增选择。不要按偏移量清空当前编辑器，也不要替换为空文档。
+3. 提交确认成功后，只删除捕获副本中可见的文本和旧式选择。将完整删除更新合并回实时副本。保留内联注册项：协作者粘贴的未捕获 token 可能复用 key，并在确认后到达。这样可保留并发插入和替换、新增选择。不要按偏移量清空当前编辑器，也不要替换为空文档。
 4. 被拒绝或结果未知时保留草稿。不得自动重试提交。重发 CRDT 编辑更新不等于重发执行请求。
 
 显式根运行引导接受有序 `parts`，附件准备和限制与普通提交相同。图片成为原生图片输入；普通文件、二进制或较大捕获保留可读的 Thread 附件引用。最多 64 KiB 的无 NUL UTF-8 文件、diff 或评论上下文还提供带来源的内联文本。仅附件引导有效，有序部分保留编写顺序和元数据。之后的 Host 编辑不会改变这两种路径捕获的字节或来源署名。
@@ -276,95 +276,90 @@ SQLite 提交后才返回确认。相同身份和规范化发布内容重复请�
 
 常用操作可查阅此路由索引；完整路由和字段 schema，包括上文专用路由，请以运行中的 OpenAPI 文档为准。
 
-| 方法与路由                                                          | 用途                                                   |
-| ------------------------------------------------------------------- | ------------------------------------------------------ |
-| `GET /api/status`                                                   | 监听器、API 和 App 状态                                |
-| `GET /api/presence`                                                 | 当前标签页目录和可选同页成员                           |
-| `POST /api/threads/{thread_id}/comments`                            | 发布或核对已保存输出评论                               |
-| `GET /api/threads/{thread_id}/comments`                             | 按游标分页读取根 Thread 评论，可按精确目标筛选         |
-| `GET /api/threads/{thread_id}/comments/{comment_id}`                | 读取限定范围内已提交评论                               |
-| `POST /api/threads/{thread_id}/saved-output`                        | 读取选定或评论保留的原始 assistant 文本，有大小限制    |
-| `GET /api/threads/{thread_id}/children/{execution_id}/saved-output` | 读取限定到父线程的已保存子文本块及类型化目标           |
-| `GET /api/catalog`                                                  | 已发现的实现引用，不是已配置选择项                     |
-| `GET /api/agents/{agent_id}/tool-proxy`                             | 静态 Agent 默认来源分组                                |
-| `GET /api/auth/accounts/{provider}`                                 | 不含凭据的账号和来源检查（`codex`、`grok`、`copilot`） |
-| `GET /api/auth/accounts/{provider}/sources`                         | 支持的已保存账号和来源选择，目前为 Copilot             |
-| `PUT /api/auth/accounts/{provider}/selection`                       | 显式选择 `{source, account_id}`，不接受客户端文件路径  |
-| `POST /api/auth/accounts/{provider}/models`                         | 显式获取 Copilot 认证目录，仅包含 Chat Completions ID  |
-| `DELETE /api/auth/accounts/{provider}`                              | 退出兼容账号，不取消登录流程                           |
-| `POST /api/threads/configuration-preview`                           | 创建选择及各配置维度的来源                             |
-| `GET /api/threads/{thread_id}/configuration`                        | 后续保存选择与实际捕获组合的对比                       |
-| `GET /api/operations/{receipt_id}/configuration`                    | 精确回执的捕获选择，捕获前为 null                      |
-| `GET /api/threads/{thread_id}/context-usage`                        | 最近报告的请求占用，不是累计用量                       |
-| `GET /api/threads/{thread_id}/usage`                                | 持久保存的根运行和后代观测用量                         |
-| `GET /api/threads/{thread_id}/notes`                                | 所选 continuation 的有界笔记                           |
-| `GET /api/host/files`                                               | 有界本机目录页                                         |
-| `GET /api/host/files/info`                                          | 不读取内容，返回解析后的普通文件元数据及 MIME 提示     |
-| `GET /api/host/files/metadata`                                      | 本机条目元数据，不跟随末端符号链接                     |
-| `GET /api/host/files/text`                                          | 完整可编辑 UTF-8，或明确的二进制、超大内容类型         |
-| `PUT /api/host/files/text`                                          | 使用已观测修订创建或保存文本                           |
-| `POST /api/host/files/transfers`                                    | 签发仅限一个已审阅文件修订和用途的短期访问链接         |
-| `GET /api/host/files/transfer`                                      | 支持字节范围的受限浏览器播放或下载                     |
-| `HEAD /api/host/files/transfer`                                     | 受限文件元数据，无内容正文                             |
-| `PUT /api/host/files/content`                                       | 有大小限制的原始上传，带创建或替换前置条件             |
-| `POST /api/host/files/directories`                                  | 创建一个本机目录                                       |
-| `POST /api/host/files/move`                                         | 将一个已观测条目重命名或移动到不存在的目标             |
-| `POST /api/host/files/delete`                                       | 显式非递归删除或有界递归删除                           |
-| `POST /api/threads/{thread_id}/host-file-captures`                  | 捕获已检查文件字节或行，作为 Thread 输入               |
-| `GET /api/host/git/repository`                                      | 发现本机路径实际所属仓库或 worktree                    |
-| `GET /api/host/git/status`                                          | 分页读取暂存区、工作区状态，可包含忽略项               |
-| `GET /api/host/git/diff`                                            | 读取一次 staged、unstaged 或 untracked 比较            |
-| `POST /api/threads/{thread_id}/host-git-captures`                   | 捕获已检查补丁字节或行，作为 Thread 输入               |
-| `GET /api/host/terminals`                                           | 列出 App 管理的本机终端                                |
-| `POST /api/host/terminals`                                          | 创建原生交互式 PTY                                     |
-| `GET /api/host/terminals/{terminal_id}`                             | 查看会话、输出范围和控制状态                           |
-| `DELETE /api/host/terminals/{terminal_id}`                          | 关闭共享会话并移除实时身份                             |
-| `GET /api/setup`                                                    | 当前初始化视图                                         |
-| `POST /api/setup/preview`                                           | 预览初始化选择                                         |
-| `POST /api/setup/apply`                                             | 应用初始化选择                                         |
-| `POST /api/environments/preflight`                                  | 为项目路径预检查本机或沙箱 profile                     |
-| `GET /api/auth/keys`                                                | 安全的模型 provider 密钥元数据                         |
-| `PUT /api/auth/keys`                                                | 存储 provider 凭据                                     |
-| `DELETE /api/auth/keys/{reference}`                                 | 移除 provider 密钥引用                                 |
-| `POST /api/auth/logins`                                             | 启动 provider 登录                                     |
-| `GET /api/auth/logins/{session_id}`                                 | 读取 provider 登录进度                                 |
-| `DELETE /api/auth/logins/{session_id}`                              | 取消或移除选定登录会话                                 |
-| `GET /api/configuration/sources`                                    | 已接受配置源元数据                                     |
-| `GET /api/configuration/sources/{relative_path}`                    | 可读取的已接受配置源内容                               |
-| `PUT /api/configuration/sources/{relative_path}`                    | 校验并发布配置源替换                                   |
-| `DELETE /api/configuration/sources/{relative_path}`                 | 校验并移除非根配置源                                   |
-| `POST /api/configuration/validate`                                  | 校验配置源替换，不发布                                 |
-| `POST /api/threads/preview`                                         | 解析新 Thread 选择，不创建 Thread                      |
-| `PATCH /api/threads/{thread_id}/configuration`                      | 带版本检查的精确配置修改                               |
-| `GET /api/threads/{thread_id}/project-defaults`                     | 预览所选 Project 已配置默认值                          |
-| `POST /api/threads/{thread_id}/project-defaults`                    | 检查版本与摘要后应用已检查默认值                       |
-| `GET /api/threads/{thread_id}/project-environments`                 | 预览完整 Project 环境替换                              |
-| `POST /api/threads/{thread_id}/project-environments`                | 仅应用四个已检查环境维度                               |
-| `GET /api/projects`                                                 | 可用 Project 和创建默认值                              |
-| `GET /api/selectors`                                                | 配置选择选项                                           |
-| `GET /api/threads`                                                  | 查询和分页读取 Thread                                  |
-| `GET /api/threads/activity`                                         | 导航活动和待处理摘要                                   |
-| `POST /api/threads/lookup`                                          | 按身份读取有界根线程摘要，包含已保存完成标记           |
-| `GET /api/threads/{thread_id}/tasks`                                | 所选 Working State 任务视图                            |
-| `GET /api/threads/{thread_id}/children`                             | 限定到父线程的子列表或精确查询                         |
-| `GET /api/threads/{thread_id}/children/wait`                        | 有界子运行等待或轮询                                   |
-| `GET /api/threads/{thread_id}/children/{execution_id}/review`       | 有界子运行检查                                         |
-| `POST /api/threads/{thread_id}/children/{execution_id}/steer`       | 将子运行引导文本加入队列                               |
-| `POST /api/threads/{thread_id}/children/{execution_id}/cancel`      | 请求取消子运行                                         |
-| `POST /api/threads`                                                 | 使用可选默认值和标题创建 Thread                        |
-| `GET /api/threads/{thread_id}`                                      | 详情、continuation 和可用操作                          |
-| `GET /api/threads/{thread_id}/transcript`                           | 有界保留对话记录                                       |
-| `PATCH /api/threads/{thread_id}/metadata`                           | 带版本检查的标题或归档修改                             |
-| `POST /api/threads/{thread_id}/attachments`                         | 使用文件名暂存原始字节                                 |
-| `GET /api/threads/{thread_id}/attachments/{attachment_id}`          | 下载限定范围内的附件                                   |
-| `GET /api/threads/{thread_id}/attachments/{attachment_id}/metadata` | 检查名称、大小、媒体类型和不可变捕获来源               |
-| `POST /api/threads/{thread_id}/submit`                              | 提交有序文本和附件引用                                 |
-| `GET /api/threads/{thread_id}/decisions`                            | 精确待处理决策视图                                     |
-| `POST /api/threads/{thread_id}/decisions`                           | 回复完整待处理集合                                     |
-| `GET /api/operations/{receipt_id}`                                  | 查询精确的进程内操作                                   |
-| `POST /api/operations/{receipt_id}/steer`                           | 添加引导文本                                           |
-| `POST /api/operations/{receipt_id}/cancel`                          | 请求取消                                               |
-| `WS /api/realtime/connect`                                          | 多路复用的摘要和聚焦观测通道                           |
+| 方法与路由                                                          | 用途                                                              |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `GET /api/status`                                                   | 监听器、API 和 App 状态                                           |
+| `GET /api/presence`                                                 | 当前标签页目录和可选同页成员                                      |
+| `POST /api/threads/{thread_id}/comments`                            | 发布或核对已保存输出评论                                          |
+| `GET /api/threads/{thread_id}/comments`                             | 按游标分页读取根 Thread 评论，可按精确目标筛选                    |
+| `GET /api/threads/{thread_id}/comments/{comment_id}`                | 读取限定范围内已提交评论                                          |
+| `POST /api/threads/{thread_id}/saved-output`                        | 读取选定或评论保留的原始 assistant 文本，有大小限制               |
+| `GET /api/threads/{thread_id}/children/{execution_id}/saved-output` | 读取限定到父线程的已保存子文本块及类型化目标                      |
+| `GET /api/catalog`                                                  | 已发现的实现引用，不是已配置选择项                                |
+| `GET /api/agents/{agent_id}/tool-proxy`                             | 静态 Agent 默认来源分组                                           |
+| `GET /api/auth/accounts/{provider}`                                 | 不含凭据的账号和来源检查（`codex`、`grok`、`copilot`、`chatgpt`） |
+| `GET /api/auth/accounts/{provider}/sources`                         | 支持的已保存账号和来源选择，目前为 Copilot                        |
+| `PUT /api/auth/accounts/{provider}/selection`                       | 显式选择 `{source, account_id}`，不接受客户端文件路径             |
+| `POST /api/auth/accounts/{provider}/models`                         | 显式获取 Copilot 认证目录，仅包含 Chat Completions ID             |
+| `DELETE /api/auth/accounts/{provider}`                              | 退出兼容账号，不取消登录流程                                      |
+| `POST /api/threads/configuration-preview`                           | 创建选择及各配置维度的来源                                        |
+| `GET /api/threads/{thread_id}/configuration`                        | 后续保存选择与实际捕获组合的对比                                  |
+| `GET /api/threads/{thread_id}/context-usage`                        | 最近报告的请求占用，不是累计用量                                  |
+| `GET /api/threads/{thread_id}/usage`                                | 持久保存的根运行和后代观测用量                                    |
+| `GET /api/threads/{thread_id}/work`                                 | 当前任务、笔记和子运行摘要；`include` 加入任务或笔记页            |
+| `GET /api/host/files`                                               | 有界本机目录页                                                    |
+| `GET /api/host/files/info`                                          | 不读取内容，返回解析后的普通文件元数据及 MIME 提示                |
+| `GET /api/host/files/metadata`                                      | 本机条目元数据，不跟随末端符号链接                                |
+| `GET /api/host/files/text`                                          | 完整可编辑 UTF-8，或明确的二进制、超大内容类型                    |
+| `PUT /api/host/files/text`                                          | 使用已观测修订创建或保存文本                                      |
+| `POST /api/host/files/transfers`                                    | 签发仅限一个已审阅文件修订和用途的短期访问链接                    |
+| `GET /api/host/files/transfer`                                      | 支持字节范围的受限浏览器播放或下载                                |
+| `HEAD /api/host/files/transfer`                                     | 受限文件元数据，无内容正文                                        |
+| `PUT /api/host/files/content`                                       | 有大小限制的原始上传，带创建或替换前置条件                        |
+| `POST /api/host/files/directories`                                  | 创建一个本机目录                                                  |
+| `POST /api/host/files/move`                                         | 将一个已观测条目重命名或移动到不存在的目标                        |
+| `POST /api/host/files/delete`                                       | 显式非递归删除或有界递归删除                                      |
+| `POST /api/threads/{thread_id}/host-file-captures`                  | 捕获已检查文件字节或行，作为 Thread 输入                          |
+| `GET /api/host/git/repository`                                      | 发现本机路径实际所属仓库或 worktree                               |
+| `GET /api/host/git/status`                                          | 分页读取暂存区、工作区状态，可包含忽略项                          |
+| `GET /api/host/git/diff`                                            | 读取一次 staged、unstaged 或 untracked 比较                       |
+| `POST /api/threads/{thread_id}/host-git-captures`                   | 捕获已检查补丁字节或行，作为 Thread 输入                          |
+| `GET /api/host/terminals`                                           | 列出 App 管理的本机终端                                           |
+| `POST /api/host/terminals`                                          | 创建原生交互式 PTY                                                |
+| `GET /api/host/terminals/{terminal_id}`                             | 查看终端会话、输出范围和控制状态                                  |
+| `DELETE /api/host/terminals/{terminal_id}`                          | 关闭共享终端会话并移除实时身份                                    |
+| `GET /api/setup`                                                    | 当前初始化视图                                                    |
+| `POST /api/setup/preview`                                           | 预览初始化选择                                                    |
+| `POST /api/setup/apply`                                             | 应用初始化选择                                                    |
+| `POST /api/environments/preflight`                                  | 为 Project 路径预检查 Full Control 或 Sandbox profile             |
+| `GET /api/auth/keys`                                                | 安全的模型 provider 密钥元数据                                    |
+| `PUT /api/auth/keys`                                                | 存储 provider 凭据                                                |
+| `DELETE /api/auth/keys/{reference}`                                 | 移除 provider 密钥引用                                            |
+| `POST /api/auth/logins`                                             | 启动 provider 登录                                                |
+| `GET /api/auth/logins/{session_id}`                                 | 读取 provider 登录进度                                            |
+| `DELETE /api/auth/logins/{session_id}`                              | 取消或移除选定登录会话                                            |
+| `GET /api/configuration/sources`                                    | 已接受配置源元数据                                                |
+| `GET /api/configuration/sources/{relative_path}`                    | 可读取的已接受配置源内容                                          |
+| `PUT /api/configuration/sources/{relative_path}`                    | 校验并发布配置源替换                                              |
+| `DELETE /api/configuration/sources/{relative_path}`                 | 校验并移除非根配置源                                              |
+| `POST /api/configuration/validate`                                  | 校验配置源替换，不发布                                            |
+| `PATCH /api/threads/{thread_id}/configuration`                      | 带版本检查的精确配置修改                                          |
+| `GET /api/threads/{thread_id}/project-defaults`                     | 预览所选 Project 已配置默认值                                     |
+| `POST /api/threads/{thread_id}/project-defaults`                    | 检查版本与摘要后应用已检查默认值                                  |
+| `GET /api/threads/{thread_id}/project-environments`                 | 预览完整 Project 环境替换                                         |
+| `POST /api/threads/{thread_id}/project-environments`                | 仅应用四个已检查环境维度                                          |
+| `GET /api/projects`                                                 | 可用 Project 和创建默认值                                         |
+| `GET /api/selectors`                                                | 配置选择选项                                                      |
+| `GET /api/threads`                                                  | 查询和分页读取 Thread                                             |
+| `GET /api/threads/activity`                                         | 导航活动和待处理摘要                                              |
+| `POST /api/threads/lookup`                                          | 按身份读取有界根线程摘要，包含已保存完成标记                      |
+| `GET /api/threads/{thread_id}/children`                             | 限定到父线程的子列表或精确查询                                    |
+| `POST /api/threads/{thread_id}/children/{execution_id}/steer`       | 将子运行引导文本加入队列                                          |
+| `POST /api/threads/{thread_id}/children/{execution_id}/cancel`      | 请求取消子运行                                                    |
+| `POST /api/threads`                                                 | 使用可选默认值和标题创建 Thread                                   |
+| `GET /api/threads/{thread_id}`                                      | 详情、continuation 和可用操作                                     |
+| `GET /api/threads/{thread_id}/transcript`                           | 有界保留对话记录                                                  |
+| `PATCH /api/threads/{thread_id}/metadata`                           | 带版本检查的标题或归档修改                                        |
+| `POST /api/threads/{thread_id}/attachments`                         | 使用文件名暂存原始字节                                            |
+| `GET /api/threads/{thread_id}/attachments/{attachment_id}`          | 下载限定范围内的附件                                              |
+| `GET /api/threads/{thread_id}/attachments/{attachment_id}/metadata` | 检查名称、大小、媒体类型和不可变捕获来源                          |
+| `POST /api/threads/{thread_id}/submit`                              | 提交有序文本和附件引用                                            |
+| `GET /api/threads/{thread_id}/decisions`                            | 精确待处理决策视图                                                |
+| `POST /api/threads/{thread_id}/decisions`                           | 回复完整待处理集合                                                |
+| `GET /api/operations/{receipt_id}`                                  | 查询精确的进程内操作                                              |
+| `POST /api/operations/{receipt_id}/steer`                           | 添加引导文本                                                      |
+| `POST /api/operations/{receipt_id}/cancel`                          | 请求取消                                                          |
+| `WS /api/realtime/connect`                                          | 多路复用的摘要和聚焦观测通道                                      |
 
 `GET /api/openapi.json`、`/healthz`、`/readyz` 及静态导航和资源，是 schema 未列出的其他边界。只有 App 启用原生共享时，`features.host_files` 才为 true。共享已启用且可找到 Git 可执行文件时，`features.host_git` 为 true。`features.host_terminal` 报告原生 POSIX 终端可用性。`features.shared_drafts` 报告内存共享输入协议支持情况。`features.page_presence` 和 `features.output_comments` 分别报告临时页面在线状态和持久化已保存输出评论，与原生共享独立。
 
@@ -395,7 +390,7 @@ Git Changes 只读，使用与 Files 相同的计算机共享开关。路径指�
 
 编辑前先读取 `/api/host/files/text?path=...`。`presentation: text` 提供 512 KiB 内完整、无 NUL 的 UTF-8 文本；`binary` 和 `too_large` 不提供可编辑文本。保存使用 `PUT /api/host/files/text`，JSON 包含 `path`、`text` 和观测到的 `expected_revision`。省略修订表示**仅创建**，不是最后写入生效。过期保存返回 `409 host_files_conflict`，客户端缓冲区不应丢弃。保存符号链接需显式选择解析后的目标。原子替换硬链接文件只改变选定目录项，其他别名保留原字节。原始上传使用 `PUT /api/host/files/content?path=...&expected_revision=...`，发送 octet-stream 字节，上限 10 MiB；只有新文件可省略修订。这个端点只接受上传；所有本机文件下载统一使用下面的受限流式传输。
 
-所有本机文件下载和图片、音视频预览通过带认证的 `POST /api/host/files/transfers` 获取受限链接，请求为 `{"path":"/absolute/clip.mp4","expected_revision":"<reviewed>","disposition":"inline"}`（默认值 `attachment` 表示附件下载）。响应包含 `url` 和 Unix 秒数 `expires_at`。签名链接只在当前监听实例的 30 分钟内，授权 GET/HEAD `/api/host/files/transfer` 访问该文件修订和实际 disposition，不包含实例 API key。Host/Origin 和计算机共享检查仍然生效。下载不区分文件名或整文件大小，始终使用附件 disposition 和 octet-stream 内容类型。inline 请求使用推断的图片（SVG 除外）、音频或视频 MIME，其他类型自动变成附件下载的 octet-stream，不会因为类型不受支持而拒绝传输。能否解码由浏览器决定，失败时仍可下载原文件。直接将该 URL 用作浏览器预览源或附件下载链接，不要先在 JavaScript 中收集整个文件 Blob。传输每次最多读取 256 KiB，不限制整文件大小。单个字节范围返回 206；无法满足的范围返回 416，并带 `Content-Range: bytes */{size}`。HEAD 只返回响应头，不返回正文。不支持的范围单位和多段范围会被忽略；If-Range 不匹配时返回完整表示。发送响应头前会先进行一次有界读取来验证文件。报告大小不可靠的本机普通文件读取到 EOF，不声明 Content-Length 或范围支持。发现修订变化时，若响应头尚未发送则返回 409，否则终止已开始的传输。图片预览的解码上限仍为 10 MiB，独立于下载。修订过期时，应先刷新元数据再重新获取链接。过期或无效的签名不能授权访问，监听实例重启后原链接失效。
+所有本机文件下载和图片、音视频预览通过带认证的 `POST /api/host/files/transfers` 获取受限链接，请求为 `{"path":"/absolute/clip.mp4","expected_revision":"<reviewed>","disposition":"inline"}`（默认值 `attachment` 表示附件下载）。响应包含 `url` 和 Unix 秒数 `expires_at`。签名链接只在当前监听实例的 30 分钟内，授权 GET/HEAD `/api/host/files/transfer` 访问该文件修订和实际 disposition，不包含实例 API key。`Host`/`Origin` 请求头和计算机共享检查仍然生效。下载不区分文件名或整文件大小，始终使用附件 disposition 和 octet-stream 内容类型。inline 请求使用推断的图片（SVG 除外）、音频或视频 MIME，其他类型自动变成附件下载的 octet-stream，不会因为类型不受支持而拒绝传输。能否解码由浏览器决定，失败时仍可下载原文件。直接将该 URL 用作浏览器预览源或附件下载链接，不要先在 JavaScript 中收集整个文件 Blob。传输每次最多读取 256 KiB，不限制整文件大小。单个字节范围返回 206；无法满足的范围返回 416，并带 `Content-Range: bytes */{size}`。HEAD 只返回响应头，不返回正文。不支持的范围单位和多段范围会被忽略；If-Range 不匹配时返回完整表示。发送响应头前会先进行一次有界读取来验证文件。报告大小不可靠的本机普通文件读取到 EOF，不声明 Content-Length 或范围支持。发现修订变化时，若响应头尚未发送则返回 409，否则终止已开始的传输。图片预览的解码上限仍为 10 MiB，独立于下载。修订过期时，应先刷新元数据再重新获取链接。过期或无效的签名链接不能授权访问，监听实例重启后原链接失效。
 
 创建目录接受 `{"path":"/absolute/new-directory"}`，父目录必须存在。移动接受 `path`、`destination` 和源 `expected_revision`，原子拒绝已有目标（包括并发创建），拒绝跨设备移动，不隐式复制再删除。不支持不可覆盖移动的平台或文件系统返回 `host_files_unsupported`，不会冒险覆盖。删除接受 `path`、`expected_revision` 和可选 `recursive: true`；不递归时目录必须为空。递归预检查限制最多 10000 项和 128 层目录。符号链接作为条目删除，不跟随目标。后续 `host_files_partial_failure` 会报告已完成删除；请刷新，不要盲目重试原目录树删除。
 
@@ -411,13 +406,13 @@ Git Changes 只读，使用与 Files 相同的计算机共享开关。路径指�
 
 ## 检查配置与工作状态
 
-`POST /api/threads/configuration-preview` 接受与 `/api/threads/preview` 相同的创建默认值，额外返回各配置维度的 `provenance`。最终来源为 `explicit`、`project`、`agent`、`global` 或 `builtin`；显式 null Project 和空列表保留原有含义。已有 `/preview` 保持兼容。`GET /api/threads/{thread_id}/configuration` 中，`next_run` 包含来源为 `thread` 的已保存选择；这些 ID 不保留历史继承来源。当前值等于默认值，不证明已有 Thread 曾从该来源继承。
+`POST /api/threads/configuration-preview` 接受 `NewThreadDefaults`，返回解析后的创建选择及各配置维度的 `provenance`。最终来源为 `explicit`、`project`、`agent`、`global` 或 `builtin`；显式 null Project 和空列表保留原有含义。`GET /api/threads/{thread_id}/configuration` 中，`next_run` 包含来源为 `thread` 的已保存选择；这些 ID 不保留历史继承来源。当前值等于默认值，不证明已有 Thread 曾从该来源继承。
 
-检查结果包含当前已接受配置代次、下次 Agent 模型和能力 ID，以及基于 Thread 所选 MCP、插件 ID 的静态 Tool Proxy 视图。这是配置检查，不是执行就绪检查。`/api/agents/{agent_id}/tool-proxy` 单独显示 **Agent 默认** 成员。`/api/catalog` 列出已发现实现 key，`/api/selectors` 列出已配置可选资源。闲置分组不会激活配置源，两种视图都不会连接 MCP。
+检查结果包含当前已接受配置代次、下次 Agent 的 Model 和 Capability ID，以及基于 Thread 所选 MCP、插件 ID 的静态 Tool Proxy 视图。这是配置检查，不是执行就绪检查。`/api/agents/{agent_id}/tool-proxy` 单独显示 **Agent 默认** 成员。`/api/catalog` 列出已发现实现 key，`/api/selectors` 列出已配置可选资源。闲置分组不会激活配置源，两种视图都不会连接 MCP。
 
-`captured` 是实际已发布 Run 组合的白名单视图。`capture_source: active_operation` 指定精确回执和 Run；null 捕获表示该操作尚未发布组合，不表示前一个 Run 捕获适用。没有活跃工作时，`selected_continuation` 读取保存 continuation 的组合，并包含 continuation ID。`/api/operations/{receipt_id}/configuration` 在进程仍保留回执时检查精确回执。资源内容或已保存选择的变化不会改变早先捕获。指令、凭据、模型和原生配置载荷、MCP 传输及依赖导入路径均省略，`omitted_fields` 指明这些类别。最多返回 100 个直接子选择摘要，另有 `omitted_children`；它不是可执行配置，也不是递归子图。
+`captured` 是实际已发布 Run 组合的白名单视图。`capture_source: active_operation` 指定精确回执和 Run；null 捕获表示该操作尚未发布组合，不表示前一个 Run 捕获适用。没有活跃工作时，`selected_continuation` 读取保存 continuation 的组合，并包含 continuation ID。资源内容或已保存选择的变化不会改变早先捕获。指令、凭据、模型和原生配置载荷、MCP 传输及依赖导入路径均省略，`omitted_fields` 指明这些类别。最多返回 100 个直接子选择摘要，另有 `omitted_children`；它不是可执行配置，也不是递归子图。
 
-`/api/threads/{thread_id}/context-usage` 报告最近保留的根请求占用，不实时计算 token。`/usage` 返回观测到的根、后代及合计用量，保留既有未知成本和省略字段；它不是上下文大小。`/notes` 报告所选 continuation 的有界笔记，接受 `expected_continuation_id` 拒绝过期视图。`/api/auth/accounts/{provider}` 返回不含凭据的兼容 Codex/Grok 状态。DELETE 通过既有存储退出该账号，返回是否移除条目；它不取消待处理 `/api/auth/logins/{session_id}` 会话，也不取消正在运行的执行。
+`/api/threads/{thread_id}/context-usage` 报告最近保留的根请求占用，不实时计算 token。`/usage` 返回观测到的根、后代及合计用量，保留既有未知成本和省略字段；它不是上下文大小。`/work?include=notes` 在当前工作摘要中加入有界笔记页，数据来自活动 Run 或已保存 continuation。`/api/auth/accounts/{provider}` 返回 `codex`、`grok`、`copilot` 或 `chatgpt` 的不含凭据账号状态。DELETE 通过既有存储退出该账号，返回是否移除条目；它不取消 `/api/auth/logins/{session_id}` 上待处理的登录会话，也不取消正在运行的执行。
 
 ## 配置 Project 与 Thread
 
@@ -430,13 +425,13 @@ Git Changes 只读，使用与 Files 相同的计算机共享开关。路径指�
 预览创建，不分配 Thread：
 
 ```bash
-curl --fail-with-body "$HUI_URL/api/threads/preview" \
+curl --fail-with-body "$HUI_URL/api/threads/configuration-preview" \
   -H "Authorization: Bearer $HUI_API_KEY" \
   -H 'Content-Type: application/json' \
   --data '{"project_id":null}'
 ```
 
-此请求体直接为 `NewThreadDefaults`，而创建 Thread 时嵌套在 `defaults` 下。预览从当前配置解析精确的 Agent、Environment、Plugin、Run Extension 和 MCP 选择；创建会再次解析，不预留预览结果。Null Project 屏蔽全局 Project 默认值。`/api/projects` 显示 Project 默认值，Thread 详情显示已有保存选择。
+此请求体直接为 `NewThreadDefaults`，而创建 Thread 时嵌套在 `defaults` 下。预览从当前配置解析精确的 Agent、Environment、Harness Plugin、Environment Run Extension 和 MCP 选择；创建会再次解析，不预留预览结果。Null Project 屏蔽全局 Project 默认值。`/api/projects` 显示 Project 默认值，Thread 详情显示已有保存选择。
 
 `PATCH /api/threads/{thread_id}/configuration` 接受 `expected_version` 和 `patch`。支持字段为 `project_id`、`agent_id`、`default_model_id`、`local_roots`、`environment_profile_id`、`environment_bindings`、`default_environment`、`harness_plugin_ids`、`environment_run_extension_ids` 和 `mcp_server_ids`。省略保留已保存值，`project_id: null` 清除 Project，空列表表示不选择。修改 Agent 不会隐式替换其他已保存维度。这些根 Thread 命令不修改子 Thread 或已捕获 Run。
 
@@ -463,11 +458,9 @@ curl --fail-with-body "$HUI_URL/api/threads/preview" \
 - `GET /api/threads/activity` 返回导航摘要、待处理数量、当前活动和保留的终态结果。接受 `project_id`、`query`、`include_archived`、`cursor` 和 `limit`。
 - `POST /api/threads/lookup` 接受 `{"thread_ids":["thread-..."]}`，包含 1–100 个 ID，每个 1–80 字符。返回匹配根摘要的 `ThreadPage`，包含归档根线程和不可用 Project 引用，不分页，也不加载 continuation。缺失 ID 和子 Thread 省略，重复 ID 合并。读取不改变元数据、导航顺序或执行。
 - 根摘要可包含最近一次成功保存根 Run 的 `completion: {version, run_id, continuation_id, completed_at}`。它在 App 重启后保留，失败、取消和后续检查点也保留。已有数据库初始没有历史标记。对话记录页面携带加载记录时精确 Thread 快照的 `completion_version`，首次标记成功前为零。实现个人已读状态的客户端应确认已渲染版本，不是较新的摘要版本；服务器没有按用户确认端点。
-- `GET /api/threads/{thread_id}/tasks` 返回所选任务视图。任务和决策接受 `expected_continuation_id`，不匹配返回冲突，不混合快照。
+- `GET /api/threads/{thread_id}/work` 返回当前任务、笔记和子运行摘要，数据来自活动 Run 或已保存 continuation。加入 `include=tasks` 或 `include=notes` 获取任务页或笔记页。决策接受 `expected_continuation_id`，不匹配返回冲突，不混合快照。
 - `GET /api/threads/{thread_id}/children` 列出该精确父线程下的子运行。提供 `execution_id` 查询指定子运行，或使用 `cursor`、`limit` 分页。
-- `GET /api/threads/{thread_id}/children/wait` 使用相同范围、选择字段和 `timeout_seconds`（0–60），只通过现有子操作接口等待。
-- `GET /api/threads/{thread_id}/children/{execution_id}/review` 返回有界子运行检查结果。
-- 向子运行 `/steer` POST `{"prompt":"..."}`，或调用 `/cancel`，只控制所指定父线程下的该执行。控制确认不代表终态完成。
+- 向子运行 `/steer` POST `{"prompt":"..."}`，或调用 `/cancel`，只控制所指定父线程下的该执行。控制确认不代表已完成。
 
 轮询以及精确回执的引导、取消，请使用现有根操作 GET。这些操作不引入其他执行协调器或持久工作队列。
 
@@ -487,12 +480,12 @@ curl --fail-with-body "$HUI_URL/api/threads/preview" \
 
 只在应用帧后保存游标；重连通过新订阅命令的不透明 `after` 字段恢复。有效游标假定客户端保留了显示数据，新加载页面需重新初始化。这不同于 Service Run 事件流的 `Last-Event-ID` 约定。
 
-摘要通道以 `kind: "open"` 开始，并发出 `kind: "invalidation"`；应核对受影响资源，不能将失效通知当作完整资源。Open 的 `resumed: true` 回放错过的提示，无需完整刷新；`resumed: false` 则需初始核对。通过 `POST /api/threads/activity/lookup` 批量查询待更新 Thread ID（最多 100 个），更新已加载导航行。活动分页只在首页返回活跃集合。已结束的 `root_operation` 事件还可能包含 `notice: {receipt_id, status, brief}`，Host 状态为 `completed`、`failed` 或 `suspended`，并附实际纯文本预览，最多 320 字符。通知在 continuation 选择之后尽力投递，不是持久投递。按事件 epoch 和回执 ID 去重。新订阅或事件流 reset 不应触发历史完成通知。聚焦和摘要游标互不相同，绑定范围和 epoch。稀疏序列有效，不要求全局编号连续。
+摘要通道以 `kind: "open"` 开始，并发出 `kind: "invalidation"`；应核对受影响资源，不能将失效通知当作完整资源。Open 的 `resumed: true` 回放错过的提示，无需完整刷新；`resumed: false` 则需初始核对。通过 `POST /api/threads/activity/lookup` 批量查询待更新 Thread ID（最多 100 个），更新已加载导航行。活动分页只在首页返回活跃集合。已结束的 `root_operation` 事件还可能包含 `notice: {receipt_id, status, brief}`，状态为 `completed`、`failed` 或 `suspended`，并附实际纯文本预览，最多 320 字符。通知在 continuation 选择之后尽力投递，不是持久投递。按事件 epoch 和回执 ID 去重。新订阅或事件流 reset 不应触发历史完成通知。聚焦和摘要游标互不相同，绑定范围和 epoch。稀疏序列有效，不要求全局编号连续。
 
 `kind: "reset"` 要求重新获取数据并建立新订阅。实时缓冲区有上限，仅在进程内保存。`watch_thread` 提供先订阅后查询的切换，不提供事务式持久回放。断开停止观测，不停止执行。每个通道独立恢复；根 Run 切换只替换对应聚焦通道，不替换 socket 或无关观测。
 
 ## 错误与版本
 
-App 错误使用 `{"error":{"code":"...","message":"..."}}`。常见状态映射：App 请求无效为 400，冲突、过期版本或预检查要求为 409，请求体超限为 413，资源或回执不可用为 404，App 未就绪或停止中为 503。查询验证可能返回 FastAPI 的 422 验证响应。监听器认证、Origin 和 Host 拒绝分别使用 401、403 和 400。
+App 错误使用 `{"error":{"code":"...","message":"..."}}`。常见状态映射：App 请求无效为 400，冲突、过期版本或预检查要求为 409，请求体超限为 413，资源或回执不可用为 404，App 未就绪或停止中为 503。查询验证可能返回 FastAPI 的 422 验证响应。监听器认证、`Origin` 请求头和 `Host` 请求头拒绝分别使用 401、403 和 400。
 
 根据错误码和当前状态处理，不要匹配文本。超时或客户端断开不能确定修改是否生效。假定源码文档匹配已部署监听器前，请检查 `/api/status` 和 schema 兼容性。

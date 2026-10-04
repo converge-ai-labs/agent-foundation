@@ -6,7 +6,7 @@ description: 无需 Harness、模型、Docker 或云账号，通过环境读写�
 
 ## 从当前检出安装
 
-示例跟随 `main`。使用 Python 3.13 和锁定工作空间：
+示例跟随 `main`。使用 Python 3.13 和仓库锁文件：
 
 ```console
 git clone https://github.com/converge-ai-labs/agent-foundation.git
@@ -59,7 +59,7 @@ if __name__ == "__main__":
 
 输出为 `Hello from Environment`。
 
-1. 选择明确指定 Direct Local；安装另一个 provider 不会自动启用它。
+1. 选择明确指定 Direct Local；安装另一个 provider 不会启用该 provider。
 2. 验证和构建适配器不访问目标。
 3. `async with` 进入一次性操作范围。`ensure_ready({"files"})` 准备目标并检查必需操作类别。
 4. `/hello.txt` 是该环境内的逻辑路径，不是 Host 文件系统根目录。
@@ -79,7 +79,7 @@ environment = await direct_local.create(
 result = await executable.run("Inspect the workspace", environment=environment)
 ```
 
-此片段假定工作空间仍存在，且 `executable` 已使用 `DynamicEnvironmentCapability` 构建。Harness 负责进入、使用时就绪检查和关闭。仅提供环境不会向模型添加工具。
+此片段假定 `workspace` 目录仍存在，且 `executable` 已使用 `DynamicEnvironmentCapability` 构建。Harness 负责进入、使用时就绪检查和关闭。仅提供环境不会向模型添加工具。
 
 ## 下一步
 

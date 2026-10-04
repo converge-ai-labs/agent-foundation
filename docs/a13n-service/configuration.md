@@ -11,7 +11,7 @@ Select the file with `a13n-service --config service.toml ...` or the `A13N_SETTI
 
 Unknown settings stop startup rather than falling back to defaults. Validation errors avoid printing secret values.
 
-The shared process variable `A13N_OUTBOUND_TLS_VERIFY` is also recognized outside the section override scheme. Unset or `true` verifies destination certificates; `false` explicitly disables verification for owned HTTP clients. Other values stop startup. It has no TOML field. Set it separately on each control/worker process and restart after changes; see [outbound TLS verification](../a13n-harness/models.md#outbound-tls-verification) for exact coverage, exclusions and interception risks.
+The shared process variable `A13N_OUTBOUND_TLS_VERIFY` is also recognized outside the `A13N_<SECTION>__<FIELD>` scheme. Unset or `true` verifies destination certificates; `false` explicitly disables verification for owned HTTP clients. Other values stop startup. It has no TOML field. Set it on every Service process, whatever its role, and restart after changes; see [outbound TLS verification](../a13n-harness/models.md#outbound-tls-verification) for exact coverage, exclusions and interception risks.
 
 Every field that takes a list, a map or a nested section, such as `server.trusted_proxies`, the `providers` lists (`http_origins`, `return_urls`, `mcp_servers`), `encryption.keys`, `plugins.keys` or the nested `auth.mail` section, takes JSON as an environment variable, for example `A13N_PLUGINS__KEYS='["notes"]'` or `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`.
 
@@ -66,13 +66,13 @@ Redis holds rate-limit counters, worker wakeups and provisional thread-stream ev
 
 `objects.max_bytes` bounds one stored object. `objects.upload_bytes` bounds one upload, and `upload_limit` per `upload_window_seconds` bounds uploads per principal.
 
-Use `objects.addressing_style` to select `auto` (SDK selection), `path` (`endpoint/bucket/key`) or `virtual` (`bucket.endpoint/key`). Virtual addressing requires compatible bucket names, DNS and TLS certificates; use it for providers such as Alibaba Cloud OSS that require bucket subdomains. When omitted, the existing `path_style` behavior remains: `true` forces `path`, and `false` uses `auto`. An explicit addressing style takes precedence over `path_style=false`; `path_style=true` together with `auto` or `virtual` fails configuration validation. For Helm, set `objects.addressingStyle`; environment overrides use `A13N_OBJECTS__ADDRESSING_STYLE`.
+Use `objects.addressing_style` to select `auto` (SDK selection), `path` (`endpoint/bucket/key`) or `virtual` (`bucket.endpoint/key`). Virtual addressing requires compatible bucket names, DNS and TLS certificates; use it for providers such as Alibaba Cloud OSS that require bucket subdomains. When omitted, the existing `path_style` behavior remains: `true` forces `path`, and `false` uses `auto`. An explicit addressing style takes precedence over `path_style=false`; `path_style=true` together with `auto` or `virtual` fails configuration validation. For Helm, set `objects.addressingStyle`; the environment variable is `A13N_OBJECTS__ADDRESSING_STYLE`.
 
-For S3-compatible providers that reject optional streaming checksum trailers, including Alibaba Cloud OSS, set the standard AWS SDK environment variable `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` on every Service process. This works for local, Docker and Kubernetes deployments; with Helm, include it in the environment file used to create `existingSecret`. It leaves checksums required by an operation enabled and does not change Service digest verification. When unset, SDK defaults apply. OSS needs no native write header or bucket-versioning check: the same plain `PutObject` path serves every provider. Remove the earlier experimental `objects.write_mode` / `A13N_OBJECTS__WRITE_MODE` / Helm `objects.writeMode` setting when upgrading from this branch.
+For S3-compatible providers that reject optional streaming checksum trailers, including Alibaba Cloud OSS, set the standard AWS SDK environment variable `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` on every Service process. This works for local, Docker and Kubernetes deployments; with Helm, include it in the environment file used to create `existingSecret`. It leaves checksums required by an operation enabled and does not change Service digest verification. When unset, SDK defaults apply. OSS needs no native write header or bucket-versioning check: the same plain `PutObject` path serves every provider.
 
 ### Encryption keys
 
-Provider and connection credentials, OAuth tokens and queued mail links are encrypted with AES-GCM under the active key of the key ring. Each key is 32 random bytes, base64-encoded, under an ID you choose:
+Provider and connection credentials, model provider extra headers, external target tokens, OAuth tokens, client secrets and pending authorizations, webhook signing secrets and delivery targets, and queued mail links are encrypted with AES-GCM under the active key of the key ring. Each key is 32 random bytes, base64-encoded, under an ID you choose:
 
 ```sh
 export A13N_ENCRYPTION__ACTIVE_KEY_ID=primary
@@ -95,7 +95,7 @@ Behind a proxy, list the proxy addresses or CIDRs in `server.trusted_proxies`. T
 
 `auth.session_seconds` is the lifetime of a browser login session. `auth.login_limit` per `auth.login_window_seconds` limits password logins per client address; the public connection-authorization callback has the same limit in its own budget. `auth.invitation_seconds` is how long an invitation stays acceptable, and `auth.link_seconds` how long a password-reset or email-change link stays valid.
 
-Identity mail is sent through SMTP when `auth.mail.smtp_host` is set. Without it, invitation links are returned once to the inviter, and password reset and email change are unavailable. Mail links are queued encrypted, so SMTP requires `encryption.active_key_id`. Links are never written to logs.
+Identity mail is sent through SMTP when `auth.mail.smtp_host` is set. Without it, invitation links are returned once to the inviter, and password reset and email change are unavailable. Mail links are queued encrypted, so SMTP requires an encryption key: `encryption.active_key_id` with `encryption.keys`, or `encryption.key_file`. Links are never written to logs.
 
 ```toml
 [auth.mail]
@@ -118,7 +118,7 @@ Every request the Service makes to a provider, a remote MCP server, an OAuth ser
 - With `providers.require_https = true` (the default), plain HTTP is refused except for the exact origins listed in `providers.http_origins`.
 - Host provider clients do not follow redirects, refuse compressed responses and bound response bodies with `providers.response_bytes`. TLS verification, credential rules and deadlines remain enabled.
 
-Run messages accept `options.configuration`, separately from Agent overrides:
+A message submitted to a thread accepts `options.configuration`, separately from the agent revision override:
 
 ```json
 {
@@ -129,9 +129,9 @@ Run messages accept `options.configuration`, separately from Agent overrides:
 }
 ```
 
-Include every required Model, Web, connection and remote Environment hostname. A null `allowed_hosts` is unrestricted; an empty array denies all; ordinary entries match exact normalized hostnames/IPs, while `regex:<pattern>` entries use Python full-string matching against the normalized hostname. The JSON example uses doubled backslashes for literal dots and allows only `api.example.com` or `docs.example.com`, not arbitrary subdomains or suffixes. Invalid/empty patterns are rejected at acceptance. See [host rules and regular expressions](../a13n-harness/context.md#host-rules-and-regular-expressions) for normalization, subdomain patterns and escaping. Globs, ports and CIDRs are not host rules. Acceptance freezes this snapshot for input URL reads, execution, recovery, resume and children. Steering can omit configuration or name the identical value; changing it on an active Run fails with `run_configuration_immutable`. Submit `delivery: "next_run"` to select a new snapshot. Namespaced JSON extensions are read only by consumers that explicitly support them. Console controls are tracked separately in #823; the API accepts this configuration now.
+List in `allowed_hosts` the hostname of every model provider, web provider, connection and remote environment endpoint the run calls. A null `allowed_hosts` is unrestricted; an empty array denies all; ordinary entries match exact normalized hostnames/IPs, while `regex:<pattern>` entries use Python full-string matching against the normalized hostname. The JSON example uses doubled backslashes for literal dots and allows only `api.example.com` or `docs.example.com`, not arbitrary subdomains or suffixes. Invalid/empty patterns are rejected at acceptance. See [host rules and regular expressions](../a13n-harness/context.md#host-rules-and-regular-expressions) for normalization, subdomain patterns and escaping. Globs, ports and CIDRs are not host rules. Acceptance freezes this snapshot for input URL reads, execution, recovery, resume and children. Steering can omit configuration or name the identical value; changing it on an active run fails with `run_configuration_immutable`. Submit `delivery: "next_run"` to select a new snapshot. Namespaced JSON extensions are read only by consumers that explicitly support them. Console has no controls for this configuration; set it through the API.
 
-Authorization checks declared URL hostnames without DNS prechecks, address classification or IP pinning. Management operations outside a Run retain process URL/HTTPS policy, not a Run's configuration. Enforce network restrictions for arbitrary shell, third-party plugin and opaque SDK traffic at the deployment or Environment boundary.
+The `allowed_hosts` check compares declared URL hostnames only: it does no DNS precheck, address classification or IP pinning. Management operations outside a run retain process URL/HTTPS policy, not a run's configuration. Enforce network restrictions for arbitrary shell, third-party plugin and opaque SDK traffic at the deployment or environment boundary.
 
 ### Outbound proxies
 
@@ -145,13 +145,13 @@ export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
 
 Uppercase forms and `ALL_PROXY` are supported; selection and bypass matching follow `httpx2`. An HTTP proxy URL can carry HTTPS traffic through CONNECT. Models, Remote MCP/OAuth, connectors, record memory, web requests, model catalogs, webhooks and other callers of the host HTTP client use these routes.
 
-**The deployment operator's proxy is trusted outbound infrastructure.** Declared-host authorization and TLS verification apply independently of routing. The proxy owns final DNS and destination network restrictions; direct and `NO_PROXY` routes also use native transport DNS without application-level IP pinning. A failed proxy request never silently falls back to direct.
+**The deployment operator's proxy is trusted outbound infrastructure.** The `allowed_hosts` check and TLS verification apply independently of routing. The proxy owns final DNS and destination network restrictions; direct and `NO_PROXY` routes also use native transport DNS without application-level IP pinning. A failed proxy request never silently falls back to direct.
 
-HTTPS Envd attachments also use environment proxies; plaintext local/provider-private Envd links remain direct. Other SDK-owned environment and storage transports retain their own proxy behavior. This does not change the Envd controlled-egress broker or its execution isolation policy.
+Connections to `a13n-envd` over HTTPS also use these proxy variables; plain-HTTP connections to a local or provider-private `a13n-envd` stay direct. Other SDK-owned environment and storage transports retain their own proxy behavior. This does not change the Envd controlled-egress broker or its execution isolation policy.
 
-API-serving processes also read the public model catalog from `https://models.dev/catalog.json`, at most every 60 seconds by default, for the Console's model picker. Without access to it, the catalog is unavailable and models are added by ID.
+API-serving processes also read the public model catalog from `https://models.dev/catalog.json` for the Console's model picker. A read refreshes a catalog that is one hour old, and a failed refresh is retried no sooner than 60 seconds later; no setting changes this. Without access to it, the catalog is unavailable and models are added by ID.
 
-For example, to use a model server on the Docker host:
+For example, to allow plain HTTP to a model server on the Docker host with `providers.http_origins`:
 
 ```toml
 [providers]
@@ -211,7 +211,7 @@ The `a13n-service` image runs every role through the same `a13n-service` entry p
 
 ## Workspace provisioning
 
-Automatic Local and Docker setup runs only in the single-host `all` role. Both default off. For example:
+Automatic setup of the Local and Docker environment providers and their templates runs only in the single-host `all` role. Both default off. For example:
 
 ```toml
 [provisioning.local]
@@ -222,10 +222,10 @@ root = "/srv/a13n/environments"
 enabled = true
 ```
 
-Local requires an explicit absolute root on the machine running the Service; there is no generic default. It also enables the Local provider type. `make dev` supplies its own checkout path. Replace the retired `environments.allow_local` setting with this Local section. Disabling Local preserves directories and resources, but future execution requires it to be enabled again.
+Local requires an explicit absolute root on the machine running the Service; there is no generic default. It also enables the Local provider type. `make dev` supplies its own checkout path. Disabling Local keeps its directories, provider and templates, but runs cannot use Local environments until you enable Local again.
 
 Docker uses the existing operator Engine setting, `environments.docker_host`, or the process Docker environment. Running inside Compose requires access to the Engine, normally the socket mount in the supplied single-host stack. Installing a Docker CLI alone is insufficient. Docker provisioning does not affect manual Docker providers.
 
-Environment overrides use a JSON object for each component, for example `A13N_PROVISIONING__DOCKER='{"enabled":true}'`. The default Docker template pins the GHCR companion image matching the installed Service version and pulls it when an instance is first created if needed. The supplied socket-enabled Compose stack enables Docker and leaves Local off; `A13N_DOCKER_ENVIRONMENT_IMAGE` overrides the initial template's image there.
+Environment variables take a JSON object for each nested section, for example `A13N_PROVISIONING__DOCKER='{"enabled":true}'`. The default Docker template pins the GHCR companion image matching the installed Service version and pulls it when an instance is first created if needed. The supplied socket-enabled Compose stack enables Docker and leaves Local off; `A13N_DOCKER_ENVIRONMENT_IMAGE` overrides the initial template's image there.
 
-To use a locally built image, run `make image-docker-environment`, set `image = "a13n-docker-environment:local"` and `pull_policy = "never"`. Settings initialize resources once; change an existing template through Console or the API to change future instances. Existing instances keep their original image. See [automatic local setup](environments.md#automatic-local-setup) for retry and ownership behavior.
+To use a locally built image, run `make image-docker-environment`. Then set `image = "a13n-docker-environment:local"` and `pull_policy = "never"` in `[provisioning.docker]`. Settings initialize resources once; change an existing template through Console or the API to change future instances. Existing instances keep their original image. See [workspace provisioning](environments.md#workspace-provisioning) for retry and ownership behavior.

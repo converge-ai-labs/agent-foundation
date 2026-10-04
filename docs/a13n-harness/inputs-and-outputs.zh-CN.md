@@ -9,7 +9,7 @@ Harness 使用 Pydantic AI 原生的输入和输出类型，并提供统一的�
 
 ## 返回结构化结果
 
-以下完整离线示例会校验一个 Pydantic 模型。在[快速入门的工作目录](getting-started.md)中，将它保存为 `output_example.py`，再运行 `uv run python output_example.py`。
+以下完整离线示例会校验一个 Pydantic 模型。在[快速入门中克隆的仓库目录](getting-started.md)中，将它保存为 `output_example.py`，再运行 `uv run python output_example.py`。
 
 ```python
 import asyncio
@@ -117,7 +117,7 @@ result = await executable.run(input_factory=make_input, environment=environment)
 
 ## 延续历史或流式获取进度
 
-传入 `previous_state=first.state` 可以在线程中继续执行。要支持重启恢复，应持久化完整的 `HarnessState`，而不只是界面显示的文本。`all_messages()` 返回独立于内部状态的已记录历史，`new_messages()` 返回本次执行新增的消息。
+传入 `previous_state=first.state` 可以在线程中继续执行。要支持重启恢复，应持久化完整的 `HarnessState`，而不只是界面显示的文本。`all_messages()` 返回结果的完整独立消息历史，`new_messages()` 只返回本次执行新增的消息。
 
 使用 `async with executable.stream(...)` 可以逐步接收公开事件。文本增量表示进度，不能代替最终结果。父级流中还可能出现关联到其他执行的子事件，不能把子执行的结束事件误判为根执行完成。
 

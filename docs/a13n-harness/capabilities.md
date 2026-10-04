@@ -1,9 +1,9 @@
 ---
 title: Capabilities
-description: First-party Pydantic AI Capabilities for context, tools, working state, and lifecycle hooks.
+description: First-party Harness Capabilities for context, tools, permissions, web, working state, and lifecycle hooks.
 ---
 
-Pydantic AI Capabilities are the primary feature-composition mechanism inside the Agent loop. Agent Harness provides first-party Capabilities that compose model context, Toolsets, portable state, run collaborators, and lifecycle hooks without introducing another registry or tool dispatcher.
+Pydantic AI Capabilities are the primary feature-composition mechanism inside the Agent loop. Harness provides first-party Capabilities that compose model context, Toolsets, portable state, run collaborators, and lifecycle hooks without introducing another registry or tool dispatcher.
 
 ## Composition Sources
 
@@ -101,9 +101,9 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 
 ## Common Definition Capabilities
 
-Video input support is built in, not an optional definition Capability. `video_understanding` supports inline video and bounded direct URL downloads; `url_input.video: [youtube]` declares native YouTube support. Permissions still control `media.read_video_url`. Local files use `view` and share the inline video budget.
+Video input support is built in, not an optional definition Capability. The model input capability `video_understanding` declares binary video input, which enables inline video and bounded direct URL downloads; `model_characteristics.url_input.video: [youtube]` declares native YouTube support. Permissions still control `media.read_video_url`. Local files use `view` and share the inline video budget.
 
-| Capability                     | Adds                                                                                        | Needs fresh run collaborator                                   |
+| Capability                     | Adds                                                                                        | Needs collaborator                                             |
 | ------------------------------ | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `RuntimeContextCapability`     | Bounded current time, elapsed time, usage, context-window, and selected metadata projection | No                                                             |
 | `WorkspaceOutlineCapability`   | Bounded metadata-only file outline from the current Environment                             | Environment file facet                                         |
@@ -112,15 +112,20 @@ Video input support is built in, not an optional definition Capability. `video_u
 | `ToolPermissionsCapability`    | Stable-ID permissions and optional risk review, with shell input specialization             | Fresh invocation policy still authorizes every managed call    |
 | `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `RunBindings.skill_selection` |
 | `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateBinding` in provider mode                   |
-| `FileMemoryCapability`         | Mounted file memories: guides, `memory_file_*` tools, and changed-file context at run start | One opened `FileStore` per mount; optional `MemoryCursors`     |
-| `RecordMemoryCapability`       | Mounted record memories: guides, `memory_record_*` tools, and recall at run start           | One opened `RecordStore` per mount                             |
+| `FileMemoryCapability`         | Mounted file memories: guides, `memory_file_*` tools, and changed-file context at Run start | One opened `FileStore` per mount; optional `MemoryCursors`     |
+| `RecordMemoryCapability`       | Mounted record memories: guides, `memory_record_*` tools, and recall at Run start           | One opened `RecordStore` per mount                             |
 | `UserInteractionCapability`    | Structured user questions through native deferred tools                                     | Host handles suspension and resume                             |
-
-| `DocumentsCapability` | Document-conversion Toolset | `RunBindings.document_converter` | | `WebCapability` | Search, fetch, and scrape Toolset | `WebBinding` with current client and policy | | `HandoffCapability` | Explicit `summarize` tool and continuation reminder | No | | `CompactionCapability` | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay | No | | `SubagentCapability` | Inline or asynchronous execution of exact declared children | Definition-selected `SubagentOperator` | | `CodeActCapability` | Restricted Python runners and explicit key-to-JSON stored values | Explicit eligible tools and Environment files for programs | | `ContextualMCP` | URL-based MCP with headers resolved once from the current logical run | Current `AgentContext` supplied by the Harness |
+| `DocumentsCapability`          | Document-conversion Toolset                                                                 | `RunBindings.document_converter`                               |
+| `WebCapability`                | Search, fetch, and scrape Toolset                                                           | `WebBinding` with current client and policy                    |
+| `HandoffCapability`            | Explicit `summarize` tool and continuation reminder                                         | No                                                             |
+| `CompactionCapability`         | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay   | No                                                             |
+| `SubagentCapability`           | Inline or asynchronous execution of exact declared children                                 | Definition-selected `SubagentOperator`                         |
+| `CodeActCapability`            | Restricted Python runners and explicit key-to-JSON stored values                            | Explicit eligible tools and Environment files for programs     |
+| `ContextualMCP`                | URL-based MCP with headers resolved once from the current logical Run                       | Current `AgentContext` supplied by the Harness                 |
 
 For large local tool collections, [ToolProxyCapability](tool-proxy.md) accepts a `groups` mapping of passive `ToolProxyGroup(source=..., description=...)` values. This single code-first entry provides grouped discovery with dynamic schemas and CodeAct compatibility, without replacing native execution. The [Host integration guide](tool-proxy.md#host-integration) covers source selection and plugin composition.
 
-Each feature has one public Capability. Its internal active replacement stays private and is reused across ModelAttempts in the same logical Run, not across Runs. Host collaborators use `RunBindings.web`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`. `WebBinding` and `TaskStateBinding` are passive frozen values, not Capabilities. These fields do not enable a missing feature, and never enter `HarnessState`. The Host owns provider lifetime and may share a transport when its provider contract permits it.
+Each feature has one public Capability. Its internal run-bound instance stays private and is reused across model attempts in the same logical Run, not across Runs. Host collaborators use `RunBindings.web`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`. `WebBinding` and `TaskStateBinding` are passive frozen values, not Capabilities. These fields do not enable a missing feature, and never enter `HarnessState`. The Host owns provider lifetime and may share a transport when its provider contract permits it.
 
 For inline children, `SubagentDefinition.run_bindings_factory` receives the child's baseline `RunBindings` and returns a replacement with that child's collaborators. It must preserve the child instance, borrowed Environment, and inherited invocation policy. Parent feature bindings are not inherited automatically; an explicit shared task-state policy supplies the borrowed cell and rejects a conflicting factory binding.
 
@@ -202,7 +207,7 @@ agent_spec = AgentSpec(
 )
 ```
 
-Without an explicit review permission or trusted tool default, all tools default to `allow` without review. Installing a reviewer or defining its risk rules alone does not activate it. The single reviewer Agent and common prompt assess risk and reason; runtime policy chooses the action. Shell inputs separate the command from working directory, timing, Environment alias, and environment variable names (never values). Other tools retain their structured schema and arguments. Compact previous reviews and action observations provide context, never authorization or automatic risk reduction.
+Without an explicit review permission or trusted tool default, all tools default to `allow` without review. Installing a reviewer or defining its risk rules alone does not activate it. The single reviewer Agent and common prompt assess the risk level and give an optional reason; runtime policy chooses the action. Shell inputs separate the command from working directory, timing, Environment alias, and environment variable names (never values). Other tools retain their structured schema and arguments. Compact previous reviews and action observations provide context, never authorization or automatic risk reduction.
 
 The Harness defaults to `extra_high` triggering `deny`; configure `on_flagged: approval_required` to ask instead. Non-timeout failures follow `on_error` (default `approval_required`, or `deny` or explicit `allow`). A reviewer timeout always denies before dispatch, regardless of error policy or an earlier approval. Hosts separately own human interaction timeouts. See [reviewer configuration](managed-tools.md#configure-or-replace-the-reviewer) for per-tool rules and custom reviewers.
 
@@ -212,7 +217,7 @@ See [Context and working state](context.md#working-state) for configuration, exa
 
 ## Structured User Interaction
 
-`UserInteractionCapability` exposes `ask_user_question` when current `RunBindings.deferred_tools_supported` is enabled, for both roots and children. The call does not hold an open Harness run while waiting for a person. It produces `status="suspended"` with native requests and portable state. A Host later supplies fresh bindings, previous state, and a correlated `DeferredToolResume`. [Built-in inline children](delegation-and-codeact.md#host-managed-feedback) explicitly disable deferred tools; Host-managed children use the native resume boundary. Unsupported Runs receive neither the tool nor its guidance.
+`UserInteractionCapability` exposes `ask_user_question` when current `RunBindings.deferred_tools_supported` is enabled, for both roots and children. The call does not hold an open Harness Run while waiting for a person. It produces `status="suspended"` with native requests and portable state. A Host later supplies fresh bindings, previous state, and a correlated `DeferredToolResume`. [Built-in inline children](delegation-and-codeact.md#host-managed-feedback) explicitly disable deferred tools; Host-managed children use the native resume boundary. Unsupported Runs receive neither the tool nor its guidance.
 
 See [Human-in-the-loop tools](human-in-the-loop.md) for request and answer payloads, application-owned types, and correlated resume examples. [State and Resume](state-and-resume.md) covers the general continuation lifecycle.
 
@@ -238,33 +243,36 @@ bindings = RunBindings.embedded(
 )
 ```
 
-Video URLs need no provider binding. The default `VideoUrlCapability` provides `read_video_url` for binary-video or native-video-URL models. Direct HTTP(S) resources become bounded raw-byte `BinaryContent`; the SDK encodes Base64, with a default 10 MiB encoded budget per video and in aggregate per request. YouTube uses only explicitly declared native URL support, with no download or conversion fallback. Request projection preserves saved history; there is no reader, compression, splitting, or helper Model. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path: native support comes from the active `AgentSpec.model_characteristics.capabilities` value supplied through the `model_characteristics` construction key, and dedicated image, video, or audio Agents can be configured directly through process environment variables without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
+Video URLs need no provider binding. The default `VideoUrlCapability` provides `read_video_url` for binary-video or native-video-URL models. Direct HTTP(S) resources become bounded raw-byte `BinaryContent`; the SDK encodes Base64, with a default 10 MiB encoded budget per video and in aggregate per request. YouTube uses only explicitly declared native URL support, with no download or conversion fallback. Request projection preserves saved history; there is no reader, compression, splitting, or helper Model. Environment file [multimedia understanding](multimedia-understanding.md) is a separate first-party path. Native support comes from the active `AgentSpec.model_characteristics.capabilities` value. Process environment variables can configure dedicated image, video, or audio Agents without a Host collaborator. Web additionally evaluates a live `WebPolicy` for each Host request.
 
 ### Restrict Web domains
 
-`WebConfiguration` restricts fetch/download/scrape destinations; nested `WebSearchConfiguration` independently filters returned search URLs:
+`WebConfiguration.fetch`, `download`, and `scrape` each restrict destinations for their own operation; `WebConfiguration.search` independently filters returned search URLs:
 
 ```python
 from a13n_harness.capabilities import (
     WebCapability,
     WebConfiguration,
+    WebFetchConfiguration,
     WebSearchConfiguration,
 )
 
 web = WebCapability(
     WebConfiguration(
-        allow_domains=("example.org", "*.example.org"),
-        deny_domains=("private.example.org",),
+        fetch=WebFetchConfiguration(
+            allow_domains=("example.org",),
+            deny_domains=("private.example.org",),
+        ),
         search=WebSearchConfiguration(
             mode="host",
-            allow_domains=("example.org", "*.example.org"),
+            allow_domains=("example.org",),
             deny_domains=("private.example.org",),
         ),
     )
 )
 ```
 
-An exact host matches only itself; `*.example.org` matches subdomains but not the apex. Entries normalize case, IDNA, and trailing dots. Deny wins; empty lists add no restrictions. Set both destination and search fields when you need both behaviors. Search can return fewer or zero results after filtering. Restricted `native` search is rejected; restricted `auto` uses Host search and needs a bound backend.
+A bare hostname matches itself and every subdomain at a label boundary; wildcard entries such as `*.example.org` are rejected. Entries normalize case, IDNA, and trailing dots. Deny wins; empty lists add no restrictions. Set the lists on each operation that needs them; one operation's lists never apply to another. Search can return fewer or zero results after filtering. Restricted `native` search is rejected; restricted `auto` uses Host search and needs a bound backend.
 
 Host transports must retain `WebDomainPolicy` checks on each redirect before DNS/network work as well as their normal address and credential checks. These controls are not universal egress restrictions for shell, remote MCP, installed plugins, or model-provider tools.
 
@@ -315,7 +323,7 @@ bindings = RunBindings.embedded(
 )
 ```
 
-With no configured preference, tuple order is the default priority. `backend_priority` moves available named backends first and then retains the remaining bound order. Set `backend="tavily"` to require exactly one Host backend with no fallback. A selected backend that is not bound fails before model dispatch. Use `search.mode="host"` to forbid native search, `search.mode="native"` to forbid Host search, and `search.mode="off"` when the Web capability is used only for fetch, scrape, or download. Scrape supports `mode="host"` and `mode="off"` and has its own exact selection or priority.
+With no configured preference, tuple order is the default priority. `backend_priority` moves available named backends first and then retains the remaining bound order. Set `backend="tavily"` to require exactly one Host backend with no fallback. A selected backend that is not bound fails before model dispatch. Use `search.mode="host"` to forbid native search, `search.mode="native"` to forbid Host search, and `search.mode="off"` when `WebCapability` is used only for fetch, scrape, or download. Scrape supports `mode="host"` and `mode="off"` and has its own exact selection or priority.
 
 One search or scrape call shares a single operation deadline across its ordered backends. A provider error, invalid response, or provider exception advances to the next backend. A timeout, cancellation, Harness `RunError`, policy failure, or post-result authorization failure ends the operation without fallback. A valid empty search result is successful and also stops fallback.
 
@@ -365,10 +373,10 @@ capabilities = (Capability(id="math", tools=[double]),)
 
 Unannotated native tools remain trusted in-process calls. Managed tool metadata activates the additional Harness policy, credential, grant, retry, event, and bounded-output path. Do not infer managed authority from a tool name.
 
-## State and Identity
+## State, identity, and compaction events
 
 A stateful Capability owns one stable namespace in `AgentContext.state` and one exact codec version. It can read and write typed Pydantic values through `AgentContextState`; the Harness snapshots namespaces without interpreting feature-specific data.
 
 Capability IDs, tool IDs, binding IDs, and other compact selectors are correlation and composition identities. They do not grant permissions or restore provider authority.
 
-Successful compaction emits `CompactionSummaryEvent` from `a13n_harness.capabilities` through the native Capability event channel. Its `operation_id` matches the compaction lifecycle events and `summary` contains the generated replacement text. Treat it as content-bearing output, not an assistant answer or proof of a saved checkpoint. The lifecycle extensions themselves remain metadata-only.
+Successful compaction emits `CompactionSummaryEvent` from `a13n_harness.capabilities` through the native Capability event channel. Its `operation_id` matches the compaction lifecycle events and `summary` contains the generated replacement text. Treat it as content-bearing output, not the Agent's answer or proof of a saved checkpoint. The lifecycle extensions themselves remain metadata-only.

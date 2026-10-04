@@ -1,7 +1,7 @@
 ---
 title: Harness 快速入门
 sidebarTitle: 快速入门
-description: 构建并运行一个离线 agent，然后接入模型 provider。
+description: 构建并运行一个离线 Agent，然后接入模型 provider。
 ---
 
 ## 环境要求
@@ -17,7 +17,7 @@ cd agent-foundation
 uv sync --locked --package a13n-harness
 ```
 
-离线示例使用已安装的运行时依赖提供的 `FunctionModel`，不需要 provider 密钥。
+离线示例使用随 Harness 一起安装的 Pydantic AI `FunctionModel`，不需要 provider 密钥。
 
 ## 运行离线 Agent
 
@@ -143,7 +143,7 @@ async def main() -> None:
 
 ## 添加能力
 
-Agent 需要相应工具时，可以加入可选的 Capabilities：
+Agent 需要相应上下文或工具时，可以加入可选的 Capabilities：
 
 ```python
 from a13n_harness.capabilities import (
@@ -167,4 +167,4 @@ executable = HarnessBuilder().build(
 - 阅读 [Agent 与执行](agents-and-runs.md)，了解模型路由、流式输出、结果、清理和用量。
 - 阅读 [Capabilities](capabilities.md)，选择项目提供的可选能力。
 - 通过[环境](../environments/index.md)接入文件、命令、进程和端口。
-- 运行 [Agent 应用示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)，了解连续的流式对话轮次、状态持久化和重启恢复。
+- 运行 [Agent 应用示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)，了解多轮流式执行、状态持久化和重启恢复。

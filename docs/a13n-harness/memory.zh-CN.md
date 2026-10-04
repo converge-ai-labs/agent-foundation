@@ -1,9 +1,9 @@
 ---
 title: 记忆
-description: 通过文件或记录，让 agent 的记忆跨越单次对话。
+description: 通过文件或记录，让 Agent 的记忆跨越单个 Thread。
 ---
 
-记忆让 Agent 在对话结束后仍保留偏好、决策、约定和事实。多个对话可以共享同一份记忆。记忆分为两种：
+记忆让 Agent 拥有跨越单个 Thread 的知识，例如偏好、决策、约定和事实。多个 Thread 可以共享同一份记忆。记忆分为两种：
 
 |              | 文件记忆                                   | 记录记忆                                                             |
 | ------------ | ------------------------------------------ | -------------------------------------------------------------------- |
@@ -12,11 +12,11 @@ description: 通过文件或记录，让 agent 的记忆跨越单次对话。
 | 写入方式     | 每次写入都对照当前文件检查前提条件         | 后写覆盖前写                                                         |
 | 存储实现     | `DirectoryFileStore`，或自定义 `FileStore` | 通过 `MEM0_PLATFORM` 或 `MEM0_OSS` 使用 mem0，或自定义 `RecordStore` |
 
-只属于单次对话的任务和笔记，请使用[工作状态](context.md#working-state)。
+只属于单个 Thread 的任务和笔记，请使用[工作状态](context.md#working-state)。
 
 ## 文件记忆
 
-文件记忆保存一棵小型文本文件树。每次写入执行时，都会对照当前文件检查前提条件。因此，基于旧内容的修改会失败，不会覆盖另一个对话的工作。
+文件记忆保存一棵小型文本文件树。每次写入执行时，都会对照当前文件检查前提条件。因此，基于旧内容的修改会失败，不会覆盖另一个 Thread 的工作。
 
 ### 挂载本地记忆
 
@@ -58,7 +58,7 @@ asyncio.run(main())
 
 - **指令。** 每个挂载点都列出名称、访问权限和指引。`guide=None` 使用 `DEFAULT_FILE_GUIDE`，简要说明应保存什么、如何组织；也可传入自定义文字，或用 `""` 不提供指引。
 - **工具。** 只有 `memory_file_*` 工具能够读取和修改记忆。Shell 和 Environment 文件工具无法访问。
-- **上下文。** 每次 Run 开始时，每份记忆对应一个 `<memory-context>` 块，展示 `always_load` 文件和索引，索引中每个文件占一行 `path: description`；也可能只展示自此对话上次读取后发生变化的文件。
+- **上下文。** 每次 Run 开始时，每份记忆对应一个 `<memory-context>` 块，展示 `always_load` 文件和索引，索引中每个文件占一行 `path: description`。使用游标时，后续 Run 只收到变化的路径和有变化的 `always_load` 文件的新内容；没有变化时不添加块。
 
 | 工具                 | 功能                                             | 失败条件                           |
 | -------------------- | ------------------------------------------------ | ---------------------------------- |
@@ -70,13 +70,13 @@ asyncio.run(main())
 | `memory_file_move`   | 重命名文件                                       | 源文件不存在，或目标已存在         |
 | `memory_file_delete` | 删除模型此前查看的版本                           | 文件已变化或已不存在               |
 
-调用失败时不会修改任何内容，并返回当前文件，让模型重新读取并判断。例如，两个对话都查看了包含“喜欢茶”和“用英语回答”的文件。一个将“用英语回答”改为“用中文回答”，另一个之后将“喜欢茶”改为“喜欢咖啡”，两次修改都会保留。随后再尝试修改“用英语回答”会失败，并返回文件当前内容。
+调用因前提条件或版本检查失败时，不会修改任何内容，并返回当前文件，让模型重新读取并判断。例如，两个 Thread 都查看了包含“喜欢茶”和“用英语回答”的文件。一个 Thread 将“用英语回答”改为“用中文回答”。另一个 Thread 随后将“喜欢茶”改为“喜欢咖啡”。两次修改都会保留。之后任一 Thread 再尝试修改“用英语回答”都会失败，并返回文件当前内容。
 
 `read` 挂载只提供 `memory_file_view` 和 `memory_file_grep`。`tools=("view", "grep")` 会缩小所有挂载的工具范围。工具权限规则可以指定从 `memory.file.view` 到 `memory.file.delete` 的工具 ID。
 
 ### 编写合适的记忆文件
 
-文件必须是 UTF-8 文本，最大 64 KiB。索引行优先使用 frontmatter 中的 `description`，否则使用第一个非空行：
+文件必须是 UTF-8 文本，默认最大 64 KiB。索引行优先使用 frontmatter 中的 `description`，否则使用第一个非空行：
 
 ```markdown
 ---
@@ -86,11 +86,11 @@ description: Language and tone preferences
 - Keep answers short.
 ```
 
-路径是相对路径，例如 `prefs/language.md`，目录隐式存在。`always_load` 指定每次 Run 开始时完整读取的文件。只有构建挂载的代码能选择这些文件，因此对话不能将自己写入的内容固定到所有后续对话中。
+路径是相对路径，例如 `prefs/language.md`，目录隐式存在。`always_load` 指定的文件，其完整内容位于该记忆完整上下文的开头；使用游标时，后续 Run 只在这些文件变化后再次收到它们。只有构建挂载的代码能选择这些文件，因此 Thread 不能将自己写入的内容固定到所有后续 Thread 中。
 
 ### 在多次 Run 之间控制上下文大小
 
-`MemoryCursors` 记录对话已经读取到的记忆上下文位置。复用同一组游标时，后续 Run 只收到上次送达上下文后变化的文件，没有变化则不添加内容。将 `cursors.snapshot()` 与对话的 `HarnessState` 一起持久化，构建下次 Run 的 Capability 时传入 `MemoryCursors(saved)`。不使用游标时，每次 Run 都会收到完整上下文。自动压缩或 handoff 替换历史后，Capability 会清空游标，使下次 Run 重新获取完整上下文。
+`MemoryCursors` 为每份记忆记录最近一次送达该 Thread 的上下文所对应的存储游标。复用同一组游标时，后续 Run 只收到上次送达上下文之后的变化，没有变化则不添加内容。将 `cursors.snapshot()` 与该 Thread 的 `HarnessState` 一起持久化，构建下次 Run 的 Capability 时传入 `MemoryCursors(saved)`。不使用游标时，每次 Run 都会收到完整上下文。自动压缩或 handoff 替换历史后，Capability 会清空游标，使下次 Run 重新获取完整上下文。
 
 `DirectoryFileStore` 没有变更日志。记忆发生任何变化后，下次 Run 收到的都是完整上下文，而非变更列表。
 
@@ -107,7 +107,7 @@ memory = FileMemoryCapability([FileMount("user", store, "write")], limits=limits
 
 ### 在多个进程之间共享记忆
 
-多个进程可以挂载同一目录。`DirectoryFileStore` 使用 `.a13n-memory/` 下的锁文件串行处理每次修改，这些文件不会被列出。游标属于具体对话，每个对话应有自己的 `MemoryCursors`。目录存储不保留历史，请自行备份，或使用 Service 等支持历史的存储。
+多个进程可以挂载同一目录。`DirectoryFileStore` 使用 `.a13n-memory/` 下的锁文件串行处理每次修改，这些文件不会被列出。游标属于具体 Thread，每个 Thread 应有自己的 `MemoryCursors`，并与其 `HarnessState` 保存在一起。目录存储不保留历史，请自行备份目录，或实现保留历史的 `FileStore`，就像 Service 的文件记忆存储那样。
 
 ### 使用自己的文件存储
 
@@ -147,7 +147,7 @@ async def main() -> None:
 
         first = await executable.run("I drink green tea. Remember that.")
         print(first.output_or_raise())
-        # A new conversation recalls the record.
+        # A new Thread recalls the record.
         second = await executable.run("What should I order at the cafe?")
         print(second.output_or_raise())
 
@@ -182,7 +182,7 @@ async with MEM0_PLATFORM.open({}, {"api_key": os.environ["MEM0_API_KEY"]}, names
 | `memory_record_update` | 替换记录的完整文字         | 此记忆中没有该记录               |
 | `memory_record_delete` | 删除记录                   | 此记忆中没有该记录               |
 
-存储无法确认写入时，返回 `write_unconfirmed`：操作可能已经发生，也可能没有，模型必须先搜索再重新写入。`read` 挂载只提供搜索和列表；`tools=("search", "add")` 缩小所有挂载的工具范围。工具权限规则可以指定从 `memory.record.search` 到 `memory.record.delete` 的工具 ID。
+存储无法确认写入时，返回 `write_unconfirmed`：操作可能已经发生，也可能没有，因此工具说明会要求模型先搜索再重新写入。`read` 挂载只提供搜索和列表；`tools=("search", "add")` 缩小所有挂载的工具范围。工具权限规则可以指定从 `memory.record.search` 到 `memory.record.delete` 的工具 ID。
 
 `RecordMemoryLimits` 设置记录大小和每次 Run 的召回限制：
 

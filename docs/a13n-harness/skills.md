@@ -1,17 +1,17 @@
 ---
-title: Integrate Skill discovery in a Host
+title: Discover and use Skills
 sidebarTitle: Skills
 description: Discover and materialize Skills from files or Environments, and make them available to a Run.
 ---
 
 `a13n-harness` keeps Skill discovery reusable outside Agent execution. A Host chooses one of two explicit modes:
 
-| Host situation                                                 | API                                              | Result                         | Consistency owner                                                                           |
-| -------------------------------------------------------------- | ------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------- |
-| A CLI or embedded process directly controls one `FileOperator` | `SkillManager.scan(files=...)`                   | `tuple[SkillCatalogItem, ...]` | The caller keeps the operator's namespace stable                                            |
-| A Host uses an entered `Environment`                           | `SkillManager.scan_environment(environment=...)` | `BoundSkillCatalog`            | The manager pins mount incarnations; the Host checks catalog currency before later path use |
+| Host situation                                                 | API                                              | Result                         | Consistency owner                                                                                                          |
+| -------------------------------------------------------------- | ------------------------------------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| A CLI or embedded process directly controls one `FileOperator` | `SkillManager.scan(files=...)`                   | `tuple[SkillCatalogItem, ...]` | The caller keeps the operator's namespace stable                                                                           |
+| A Host uses an entered `BoundEnvironment`                      | `SkillManager.scan_environment(environment=...)` | `BoundSkillCatalog`            | The manager pins mount incarnations; the Host checks that the catalog is still current before it uses a catalog path later |
 
-Both modes use the same `SkillSource`, `SkillMaterializer`, frontmatter parser, limits, conflict policy, and path-containment checks. Neither mode scans a home directory, installed package, or sibling workspace implicitly.
+Both modes use the same `SkillSource`, `SkillMaterializer`, frontmatter parser, limits, conflict policy, and path-containment checks. Neither mode scans a home directory, installed package, or sibling directory implicitly.
 
 ## Design
 
@@ -45,15 +45,15 @@ flowchart TB
 The design separates four responsibilities:
 
 - `FileSkillSource` discovers bounded metadata below explicitly configured FileOperator roots.
-- `SkillMaterializer` is trusted Host code that publishes managed packages beneath one declared root.
-- `SkillManager` performs materialization, discovery, validation, conflict resolution, and optional Environment mount binding without depending on an Agent run.
-- `SkillsCapability` adapts one bound catalog into run selection, model instructions, resolved `SkillPath` values, access observations, and model/tool-boundary stale checks.
+- `SkillMaterializer` is trusted Host code that publishes managed packages beneath one configured root.
+- `SkillManager` performs materialization, discovery, validation, conflict resolution, and optional Environment mount binding without depending on an Agent Run.
+- `SkillsCapability` adapts one bound catalog into Run selection, model instructions, resolved `SkillPath` values, access observations, and model/tool-boundary stale checks.
 
 The two APIs have exact, non-overlapping behavior:
 
 - `scan(files=...)` uses exactly the supplied FileOperator and never constructs or probes an Environment;
 - `scan_environment(environment=...)` uses only mount-incarnation-pinned scopes and never retries through the unpinned `environment.files` facade or direct scan mode;
-- a source reads only its declared roots and never tries the process working directory, home directory, package locations, or alternate workspace paths;
+- a source reads only its configured roots and never tries the process working directory, home directory, package locations, or alternate directories;
 - a relevant route change raises `skill_catalog_stale`; it never triggers an automatic rescan or retarget;
 - `FileSkillSource`, `SkillSource.roots`, and `SkillManager.roots` are the complete source/root surface.
 
@@ -63,11 +63,11 @@ The two APIs have exact, non-overlapping behavior:
 
 Built-in file discovery and final document validation use at most eight read workers per operation. Materializers, sources, and roots remain sequential; parallel reads do not change source precedence, skipped-entry diagnostic order, or the name-sorted model catalog. With unchanged source configuration and content, read completion order does not change the Skill instruction prefix. Cancellation joins the workers before releasing their file scopes.
 
-Existing size limits remain independent of concurrency: `FileSkillSource.max_entries_per_root` defaults to 256 listed directory entries, and `SkillsPolicy.max_skills` defaults to 512 entries per source and in the final resolved catalog. Oversized catalogs fail explicitly rather than silently selecting the first entries. Concurrency is internal; no new Host configuration or cross-run cache is required.
+Size limits are independent of concurrency: `FileSkillSource.max_entries_per_root` defaults to 256 listed directory entries, and `SkillsPolicy.max_skills` defaults to 512 entries per source and in the final resolved catalog. Oversized catalogs fail explicitly rather than silently selecting the first entries. Concurrency is internal; it needs no Host configuration or cross-Run cache.
 
 ## Skill Package Layout
 
-A selected root can itself be a Skill package, and each immediate child directory can be one Skill package. Discovery does not recurse beyond that level.
+A configured root can itself be a Skill package, and each immediate child directory can be one Skill package. Discovery does not recurse beyond that level.
 
 ```text
 .agents/skills/
@@ -92,7 +92,7 @@ description: Review a code change for correctness and maintainability.
 Follow the repository review workflow.
 ```
 
-`name` is the conflict and run-selection identity. Skill content is untrusted model context; it grants no tools, credentials, filesystem access, plugin loading, or package authority.
+`name` is the conflict and Run-selection identity. Skill content is untrusted model context; it grants no tools, credentials, filesystem access, plugin loading, or package authority.
 
 ## Scan a Direct FileOperator
 
@@ -124,22 +124,22 @@ async def scan_cli_skills(
 
 This mode operates directly in the supplied FileOperator namespace and has no Environment mount-routing semantics. Keep that backing namespace stable until every path derived from the returned catalog has been consumed. If another process can replace the backing directory concurrently, provide an operator with the snapshot or locking behavior your Host requires, or use an entered Environment instead.
 
-`SkillManager.default()` is designed for Environment-backed runs and contains the canonical `/workspace/.agents/skills` source. A direct FileOperator Host normally constructs an explicit manager with roots in its own namespace.
+`SkillManager.default()` is designed for Environment-backed Runs and contains the canonical `/workspace/.agents/skills` source. That path resolves only when the default mount has no explicit `mount_path`; a Host with explicit aggregate roots supplies an explicit manager. A direct FileOperator Host normally constructs an explicit manager with roots in its own namespace.
 
 ## Scan an Entered Environment
 
 Use Environment-aware scanning when paths can route through `/workspace` or `/environment/{name}` and mounts can change while the Host is active:
 
 ```python
-from a13n_harness import Environment
 from a13n_harness.capabilities import (
     BoundSkillCatalog,
     SkillManager,
 )
+from a13n_harness.environment.advanced import BoundEnvironment
 
 
 async def scan_environment_skills(
-    environment: Environment,
+    environment: BoundEnvironment,
 ) -> BoundSkillCatalog:
     manager = SkillManager.default()
     catalog = await manager.scan_environment(environment=environment)
@@ -151,7 +151,7 @@ async def scan_environment_skills(
 
 `scan_environment()`:
 
-1. captures every configured root with `Environment.select_files()` before awaiting provider I/O;
+1. captures every configured root with `BoundEnvironment.select_files()` before awaiting provider I/O;
 2. opens mount-incarnation-pinned file scopes for those roots;
 3. runs materialization, listing, frontmatter reads, and final `SKILL.md` validation through the pinned scopes;
 4. resolves every final item to exact directory and document `EnvironmentPath` values;
@@ -171,7 +171,7 @@ Do not persist `EnvironmentPath` values as durable authority. They describe one 
 
 ## Add Explicit Sources
 
-Retain the canonical workspace source and append Host roots with normal later-source precedence:
+Retain the canonical `/workspace/.agents/skills` source and append Host roots with normal later-source precedence:
 
 ```python
 from a13n_harness.capabilities import (
@@ -196,7 +196,7 @@ With `required=False`, each missing, unroutable, or unsupported root is skipped 
 
 ## Materialize Managed Skills
 
-A trusted Host adapter can implement `SkillMaterializer` to populate one declared source root before scanning:
+A trusted Host adapter can implement `SkillMaterializer` to populate one configured source root before scanning:
 
 ```python
 from a13n_harness.environment import FileOperator
@@ -232,14 +232,14 @@ bindings = RunBindings.embedded(
 )
 ```
 
-Selection is exact and fresh for each root, resumed, or child run:
+Selection is exact and fresh for each root, resumed, or child Run:
 
 - leave `RunBindings.skill_selection=None` to expose the complete conflict-resolved catalog;
 - provide a non-empty set to expose only those names;
 - provide an empty set to inject no Skill instructions or paths;
-- an unknown name fails run preparation with `skill_selection_unknown`.
+- an unknown name fails Run preparation with `skill_selection_unknown`.
 
-Selection is not portable `HarnessState` and grants no source or file authority. If a relevant Environment route changes, the current run fails with `skill_catalog_stale`; it does not silently rescan or retarget frozen instructions.
+Selection is not portable `HarnessState` and grants no source or file authority. If a relevant Environment route changes, the current Run fails with `skill_catalog_stale`; it does not silently rescan or retarget frozen instructions.
 
 ## Host Responsibilities
 
@@ -253,4 +253,11 @@ The Harness scanner deliberately does not own:
 - durable execution or retry;
 - credentials, plugins, Capabilities, or tools.
 
-An importing Host should scan through `scan_environment()`, select one exact item, verify the catalog remains current, enumerate and validate the package through the same entered Environment, copy it into Host-owned immutable storage, and validate the copied package again before publication.
+An importing Host should:
+
+1. Scan through `scan_environment()`.
+2. Select one exact item.
+3. Verify that the catalog remains current.
+4. Enumerate and validate the package through the same entered Environment.
+5. Copy the package into Host-owned immutable storage.
+6. Validate the copied package again before publication.

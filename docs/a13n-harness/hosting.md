@@ -48,7 +48,7 @@ Scope streams with `async with executable.stream(...)`. The executable has no `c
 
 ## Fresh Authority
 
-On every Run, select the current user/policy, model credentials, Provider state, and fresh Environment adapters. Saved `HarnessState` restores conversation and feature data, not clients or permissions. `RunBindings` supplies current collaborators, including optional `model_call_check`; see [Agents and Runs](agents-and-runs.md) and [Environments](environments.md).
+On every Run, select the current user/policy, model credentials, Provider state, and fresh Environment adapters. Saved `HarnessState` restores the Thread's message history and Capability state, not clients or permissions. `RunBindings` supplies current collaborators, including optional `model_call_check`; see [Agents and Runs](agents-and-runs.md) and [Environments](environments.md).
 
 ### Check Model Calls Before Dispatch
 
@@ -60,7 +60,7 @@ Persist the returned `HarnessState` alongside your Host's definition revision, r
 
 ## Attempts and Recovery
 
-Harness may retry a model within one Run; those attempts share its `run_id`. A replacement worker attempt is a **new** Run with a fresh `run_id`, current bindings, new Environment adapters, and the Host-selected checkpoint. If a previous tool mutation has an uncertain outcome, reconcile it before replaying. See [State and Resume](state-and-resume.md).
+When `ModelRecoveryPolicy` is enabled, Harness may retry an interrupted model attempt within one Run; those model attempts share its `run_id`. A replacement worker attempt is a **new** Run with a fresh `run_id`, current bindings, new Environment adapters, and the Host-selected checkpoint. If a previous tool mutation has an uncertain outcome, reconcile it before replaying. See [State and Resume](state-and-resume.md).
 
 ## Events and Streaming
 
@@ -70,7 +70,7 @@ Consume `HarnessRunStream` within its async scope and project its public events 
 
 A suspended Run is closed. Store its pending request and checkpoint, authenticate the external result, then start a new Run with `DeferredToolResume`. Retain accepted results when a resume is interrupted before they enter history. [Deferred resume](state-and-resume.md#resume-unanswered-tool-calls) covers the request/result contract.
 
-For async child deferrals, the Host must explicitly support them through fresh `RunBindings.deferred_tools_supported` and retain child checkpoint plus pending requests. Otherwise leave that feature disabled; ordinary prompt continuation does not require it.
+`RunBindings.deferred_tools_supported` defaults to `True`, so async children can suspend unless the Host disables it. A Host that supports async child deferrals retains the child checkpoint and pending requests. A Host without that lifecycle sets `deferred_tools_supported=False` for each async child Run; ordinary prompt continuation does not require deferred support.
 
 ## Environments
 
@@ -78,11 +78,11 @@ Construct one fresh `Environment` per Run and pass it through `environment=` or 
 
 ## Run-local Shell Observations
 
-Harness issues process references only within the current Run and releases its observations on close; it does **not** kill every backend command. A later Run constructs a new adapter and uses Provider state/native discovery if the backend retained the process. Do not persist `process-*` references as a recovery mechanism.
+Harness issues process references only within the current Run and releases the Run's process observations when the Run closes; it does **not** kill every backend command. A later Run constructs a new adapter and uses Provider state/native discovery if the backend retained the process. Do not persist `process-*` references as a recovery mechanism.
 
 ## Minimal vs. Production Host
 
-A single-process application can use embedded bindings and persist only successful conversation state. Add durable acceptance, fencing, separate Environment state, pending-call records, and delivery tracking when multiple workers or deferred actions require them. These are Host workflows, not extra Harness loop APIs.
+A single-process application can use embedded bindings and persist only the `HarnessState` of successful Runs. Add durable acceptance, fencing, separate Environment state, pending-call records, and delivery tracking when multiple workers or deferred actions require them. These are Host workflows, not extra Harness loop APIs.
 
 ## Runnable Example
 

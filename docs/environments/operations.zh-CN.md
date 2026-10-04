@@ -11,7 +11,7 @@ description: 环境提供的结构化文件与命令操作、路径规则和限�
 | 类别      | 用途                                   | 主要边界                                   |
 | --------- | -------------------------------------- | ------------------------------------------ |
 | Files     | 读写、元数据、列表、查询、搜索和修改   | 逻辑路径及 provider 实施的访问限制         |
-| Shell     | 启动命令                               | 命令语法、继承、期限和隔离因 provider 而异 |
+| Shell     | 运行一个有界命令并返回结果             | 命令语法、继承、期限和隔离因 provider 而异 |
 | Processes | 在支持时检查、等待、写入输入和发送信号 | 发现与控制分别提供支持                     |
 | Outputs   | 按显式偏移量读取保留 stdout/stderr     | 观测可能不完整或已被驱逐；不是持久日志     |
 | Ports     | 观测支持的目标                         | 不提供公共入口或自动端口共享服务           |
@@ -20,15 +20,15 @@ description: 环境提供的结构化文件与命令操作、路径规则和限�
 
 ## 路径遵循所调用边界的规则
 
-单环境 API 遵循各 provider 的路径契约。Direct Local 和采用根映射的原生 provider 使用配置根目录内的路径，例如 `/hello.txt`。Envd provider 使用设备绝对文件系统路径：`/home/user/hello.txt`、`/C:/Users/example/hello.txt` 或 `/UNC/server/share/hello.txt`。固定工作目录不限制文件访问。
+单环境 API 遵循各 provider 的路径契约。Direct Local 和六个云 provider 使用配置根目录内的路径，例如 `/hello.txt`；Docker 使用原生容器路径。Envd provider 使用设备绝对文件系统路径：`/home/user/hello.txt`、`/C:/Users/example/hello.txt` 或 `/UNC/server/share/hello.txt`。固定工作目录不限制文件访问。
 
-Harness 添加挂载选择和相对路径解析。除非聚合 Harness 路径也是该 provider 的有效路径，否则不要直接传给底层 provider 文件操作接口。根映射不为获准命令提供 OS 隔离；Envd 隔离由外层 Host 负责。
+Harness 添加挂载选择和相对路径解析。除非聚合 Harness 路径也是该 provider 的有效路径，否则不要直接传给底层 provider 文件操作接口。根映射不为获准命令提供 OS 隔离。Envd 实施设备的启动 Sandbox 和出站网络模式；外层 Host 边界仍决定可用权限。
 
 ## 环境操作与工具
 
 provider 包定义结构化文件、shell、进程、保留输出和端口操作契约。已进入的适配器只声明能够实施的操作类别和精确操作。
 
-Agent Harness 应用挂载名称、访问上限、路由、操作超时、状态聚合和可选模型工具。添加环境不会自动向模型提供工具。执行输入和 `DynamicEnvironmentCapability` 配置见[在 Agent Harness 中使用环境](../a13n-harness/environments.md)。
+Harness 应用挂载名称、访问上限、路由、操作超时、状态聚合和可选模型工具。添加环境不会自动向模型提供工具。执行输入和 `DynamicEnvironmentCapability` 配置见[在 Harness 中使用环境](../a13n-harness/environments.md)。
 
 ## 文件操作参考
 
@@ -63,7 +63,7 @@ Agent Harness 应用挂载名称、访问上限、路由、操作超时、状态
 
 ## 文件搜索模式
 
-Direct Local、Docker、六个云 provider 和 envd provider 的文件查询模式与文本搜索 `include` 过滤使用相同路径语法：
+Direct Local、Docker、六个云 provider 和 Envd provider 的文件查询模式与文本搜索 `include` 过滤使用相同路径语法：
 
 | 模式                       | 选择范围                         |
 | -------------------------- | -------------------------------- |
@@ -74,13 +74,13 @@ Direct Local、Docker、六个云 provider 和 envd provider 的文件查询模�
 
 花括号组不能嵌套，至少包含两个非空选项，最多展开为 256 个模式。模式最多 16 KiB。反斜杠转义和数字范围不会按 shell 方式展开。递归匹配使用完整 `**` 路径段。
 
-环境 API 的文本搜索默认字面匹配。面向模型的 Harness `grep` 工具默认 `regex=true`，也提供 `regex=false` 和 `case_sensitive=false`。包含标点的代码片段优先使用字面模式。可移植正则表达式使用字面量、字符类、分组、选择、锚点和量词。Direct Local、Docker 和六个云 provider 使用 Python `re`；envd 使用 Rust `regex`，拒绝前后查找和反向引用。引擎专属扩展和 Unicode 边界情况可能不同。
+环境 API 的文本搜索默认字面匹配。面向模型的 Harness `grep` 工具默认 `regex=true`，也提供 `regex=false` 和 `case_sensitive=false`。包含标点的代码片段优先使用字面模式。可移植正则表达式使用字面量、字符类、分组、选择、锚点和量词。Direct Local、Docker 和六个云 provider 使用 Python `re`；Envd 使用 Rust `regex`，拒绝前后查找和反向引用。引擎专属扩展和 Unicode 边界情况可能不同。
 
 无效模式产生 `environment_request_invalid` 错误，携带可安全公开的字段、原因和修正提示。零结果仍为成功。使用返回偏移量继续有界分页，保持过滤条件和文件系统稳定。逐文件匹配上限限制该文件返回的匹配数；符合条件文件的扫描上限触发限制错误，不会悄悄声称结果完整。提高限制前，先收窄根目录和 include 过滤。
 
 ## 等待期限不是命令期限
 
-有界等待返回当前已知结果，不一定停止命令。命令期限需要 provider 支持。例如，E2B 有沙箱 TTL 和 SDK 请求期限，但在启动前拒绝逐命令 `execution_timeout_seconds`。
+有界等待返回当前已知结果，不一定停止命令。命令期限需要 provider 支持。例如，E2B 有沙箱 TTL 和 SDK 请求期限，但在启动前拒绝逐命令 `limits.wall_time_seconds`。
 
 输出记录报告来源、可用范围、偏移量和观测不完整的信息。后续读取使用返回偏移量。重复检查或等待不重置观测预算。需要完整输出时，将其写入有明确保留策略的应用日志文件。
 

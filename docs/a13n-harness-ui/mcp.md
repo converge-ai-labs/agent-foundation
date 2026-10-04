@@ -51,7 +51,7 @@ Empty literal strings and whitespace are preserved. References require non-empty
 
 Direct token configuration is supported; environment references are optional. Keep credential-bearing source files private and out of version control. Harness UI does not copy MCP source text or literal environment/header values into `config show`, accepted generations, or Run compositions: it retains source locations and digests, then reads values at Run startup. A captured Run requires that literal-bearing source file to remain present and byte-identical until client construction. Editing it is supported for newly captured Runs, but an older captured Run or child continuation may fail with `mcp_source_changed`; use current configuration for a new Run. Already constructed ordinary clients keep their Run-local values. [Host-owned connections](#connection-lifetime-and-protocol) outlive a Run but retain an exact effective binding; later operations and SDK follow-up rounds cannot use a retired binding. Environment references can rotate without editing the source file.
 
-After editing, run `a13n-harness-ui config validate` and start a new session if you changed default MCP selections. Validation does not connect to servers or verify credentials.
+After editing, run `a13n-harness-ui config validate` and start a new conversation (a new root Thread) if you changed default MCP selections. Validation does not connect to servers or verify credentials.
 
 ## Command transport
 
@@ -105,7 +105,7 @@ defaults:
   mcp_servers: [mcp-github]
 ```
 
-An Agent's `mcp_servers: null` inherits the root defaults; `[]` explicitly selects none. Existing sessions retain exact sticky selections. By default, clients/processes are constructed fresh for logical Runs. Root lifetime policy can retain selected clients, and enabled [MCP Apps](mcp-apps.md) automatically retain theirs. Neither client state nor pending MCP input is serialized into continuations. Model Sandbox selection does not imply that an arbitrary external MCP command or remote service is sandboxed.
+An Agent's `mcp_servers: null` inherits the root defaults; `[]` explicitly selects none. Existing conversations retain exact sticky selections. By default, clients/processes are constructed fresh for logical Runs. Root lifetime policy can retain selected clients, and enabled [MCP Apps](mcp-apps.md) automatically retain theirs. Neither client state nor pending MCP input is serialized into continuations. Selecting the Sandbox Environment mode does not sandbox an external MCP command or remote service.
 
 ## Connection lifetime and protocol
 
@@ -118,13 +118,13 @@ mcp:
     mcp-docs: auto
 ```
 
-`host_owned_servers` defaults to `[]`. It changes lifetime only: the server must still be selected on the Agent or Thread, and existing tool filters and permissions still apply. Each owning Thread/server keeps its own entered client for an exact transport, credential and protocol binding. Child Threads do not borrow their parent's client. There is no idle or browser-viewer timeout; Host shutdown, explicit close, Thread disposal or binding retirement ends the generation. Clients and generation IDs are process-local, not durable MCP sessions. A disconnected generation does not silently reconnect or replay business calls; App activation can explicitly establish a replacement.
+`host_owned_servers` defaults to `[]`. It changes lifetime only: the server must still be selected on the Agent or Thread, and existing tool filters and permissions still apply. Each owning Thread/server keeps its own entered client for an exact transport, credential and protocol binding. Child Threads do not borrow their parent's client. There is no idle or browser-viewer timeout; Host shutdown, explicit close, Thread disposal or binding retirement ends the connection generation (that entered client). Clients and generation IDs are process-local, not durable MCP sessions. A disconnected connection generation does not silently reconnect or replay business calls; activating an MCP App can explicitly establish a replacement.
 
 `protocol_overrides` defaults to `{}`. Each configured server ID accepts `auto`, `legacy`, or `2026-07-28`; an omitted ID uses `auto`. The override controls the upstream SDK's Core negotiation, independently of connection lifetime and the [MCP Apps UI wire protocol](mcp-apps.md). All policy IDs must name existing MCP resources. Existing YAML/JSON and saved recipes without these fields retain Run-local lifetime and automatic negotiation.
 
 ## Human input from MCP servers
 
-CLI and WebUI present supported MCP form and URL requests while the original operation remains active. These are not `ask_user_question`, deferred continuation decisions, or another Run. A root conversation can see requests from its child Threads, with the source Thread/server and available Run, tool-call or App View attribution.
+The TUI and WebUI present supported MCP form and URL requests while the original operation remains active. These are not `ask_user_question`, deferred continuation decisions, or another Run. A conversation can see requests from its child Threads, with the source Thread/server and available Run, tool-call or App View attribution.
 
 Forms support primitive string, numeric and boolean fields, single-select enums and multi-select string enums, including titled options. The Host validates answers against the original schema. Unsupported schemas, remote references and declared sensitive fields are rejected; never enter passwords, tokens or other secrets into MCP forms. URL requests show the destination and require an explicit browser action outside the App iframe; complete the external flow before confirming.
 

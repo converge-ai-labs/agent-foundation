@@ -16,7 +16,7 @@ The response gives the `upload_id`, filename, content type, size and SHA-256 `di
 
 ## Assets
 
-An asset is immutable content with a name, usable in messages and published by agents.
+An asset is immutable, named content. You create assets from uploads, agents can publish them, and you attach them to messages.
 
 - **Create** from an upload with `POST /api/v1/assets` and `{"upload_id": ..., "name": ...}`. The first creation returns `201`; repeating it with the same upload and name returns the same asset with `200`. An upload becomes at most one asset.
 - **Read** with `GET …/assets`, `GET …/assets/{asset_id}`, and `GET …/assets/{asset_id}/content`, which returns the bytes as an attachment.
@@ -83,6 +83,6 @@ def verify(secret: str, headers, body: bytes) -> bool:
 
 ### Delivery and retries
 
-Delivery is at least once and not ordered. Any `2xx` response within `control.webhook_timeout` (10 seconds by default) counts as delivered; redirects are not followed. Otherwise the delivery is retried with exponential backoff (up to 2, 4, 8, … seconds with 20% jitter, capped at one hour) until it has used `outbox.defaults.max_attempts` attempts (12 by default), and is then marked `dead`.
+Delivery is at least once and not ordered. Any `2xx` response within `control.webhook_timeout` (10 seconds by default) counts as delivered; redirects are not followed. Otherwise the delivery is retried with exponential backoff (up to 2, 4, 8, … seconds with 20% jitter, capped at one hour) until it has used the `webhook` outbox policy's `max_attempts` attempts (`outbox.by_kind.webhook`, else `outbox.defaults`; 12 by default), and is then marked `dead`.
 
-`GET …/subscriptions/{subscription_id}/deliveries` lists deliveries newest first with their status (`pending`, `delivered`, `dead`), attempts, last error and payload. `POST …/deliveries/{delivery_id}/redeliver` sends a dead delivery again with the same ID, URL, payload and signing secret it was queued with. Settled deliveries are purged according to the kind’s settlement-based retention (success: one day; dead: fourteen days by default).
+`GET …/subscriptions/{subscription_id}/deliveries` lists deliveries newest first with their status (`pending`, `delivered`, `dead`), attempts, last error and payload. `POST …/deliveries/{delivery_id}/redeliver` sends a dead delivery again with the same ID, URL, payload and signing secret it was queued with. Settled deliveries are purged after the webhook retention period: by default one day after delivery, and fourteen days after a delivery became dead.

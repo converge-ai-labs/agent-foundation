@@ -1,10 +1,10 @@
 ---
 title: Stream Protocol 快速入门
 sidebarTitle: 快速入门
-description: 将离线 Harness 执行转换为 AG-UI 事件。示例使用真实 Harness 流和转换器，无需 provider 凭据、浏览器、服务器或网络传输。
+description: 将离线 Harness 执行转换为 AG-UI 事件。示例使用真实 Harness 流和 observer，无需 provider 凭据、浏览器、服务器或网络传输。
 ---
 
-## 准备源码工作空间
+## 准备源码检出
 
 使用 Python 3.13 和仓库锁文件：
 
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-每行打印一个 JSON 编码的 AG-UI 事件。输出包含文本事件、公开自定义观测和终结事件；ID 和时间戳会变化。这是 **JSON Lines，不是 SSE**。应用需要另行选择交付的消息帧格式。
+每行打印一个 JSON 编码的 AG-UI 事件。输出包含文本事件、公开自定义观测和终结事件；ID 和时间戳会变化。这是 **JSON Lines，不是 SSE**。Host 需要另行选择交付的消息帧格式。
 
 1. Harness 负责 agent 执行和相应资源范围内的清理。
 2. `observe(item)` 转换一个公开源条目，可能产生多个 AG-UI 事件。
@@ -68,11 +68,11 @@ if __name__ == "__main__":
 
 对于转发内联子执行观测的根流，使用 `HarnessAguiStreamObserver`。它保留源关联，并输出带子执行归属的内容，不嵌套根执行生命周期。独立运行的根执行或异步子执行各自使用独立 stream observer。`HarnessAguiObserver` 会拒绝其他执行的关联标识，只适用于严格包含单次执行的源。
 
-启用委派前，先参考[多执行路由示例](events.md#observe-a-harness-run)。
+启用委派前，先阅读 [stream observer 示例](events.md#observe-a-harness-run)。
 
 ## 明确添加传输层
 
-转换器不提供 HTTP 路由、重放游标、持久事件 ID、保留策略或重连循环。Host 必须决定：
+Stream Protocol 不提供 HTTP 路由、重放游标、持久事件 ID、保留策略或重连循环。Host 必须决定：
 
 - 保留源观测、投影事件，还是两者都保留；
 - 消费端可见的内容；

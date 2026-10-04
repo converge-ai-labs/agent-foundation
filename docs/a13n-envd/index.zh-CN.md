@@ -12,12 +12,12 @@ Envd（`a13n-envd`）通过 stdio、HTTP(S) 或向外建立的反向 WebSocket �
 
 | 使用场景                             | 从这里开始                                                             |
 | ------------------------------------ | ---------------------------------------------------------------------- |
-| 使用终端产品                         | [Harness UI 执行权限](../a13n-harness-ui/environments-and-projects.md) |
+| 使用 Harness UI                      | [Harness UI 执行权限](../a13n-harness-ui/environments-and-projects.md) |
 | 不连接模型，试用本地 EIP 环境        | [Local Envd 示例](#try-local-envd)                                     |
 | 安装版本匹配的原生可执行文件         | [安装](installation.md)                                                |
 | 运行 agent 开发容器                  | [沙箱镜像](sandbox.md)                                                 |
 | 运维自己的守护进程或 EIP 传输        | [配置与传输](configuration.md)                                         |
-| 排查访问问题或缺失的方法             | [外层安全边界与故障排查](isolation.md)                                 |
+| 排查访问问题或缺失的方法             | [执行边界与故障排查](isolation.md)                                     |
 | 通过环境 provider 连接               | [Remote Envd](../environments/remote-envd.md)                          |
 | 实现 EIP 客户端或 provider           | [Python EIP 客户端](python-client.md)                                  |
 | 管理会话、保留输出和结果不确定的操作 | [会话与输出](operations.md)                                            |
@@ -26,6 +26,8 @@ Envd（`a13n-envd`）通过 stdio、HTTP(S) 或向外建立的反向 WebSocket �
 
 - 读取、写入、搜索和传输文件。
 - 运行命令、发送输入、读取输出和停止进程。
+- 检查端口并等待端口开放。
+- 可选：观测和控制共享桌面（[电脑操作](computer-use.md)）。
 - 检查操作结果、取消工作和查看错误。
 - 查询不同平台与配置下可用的操作。
 
@@ -44,7 +46,7 @@ flowchart TB
     class Files store
 ```
 
-一个守护进程服务于一个设备（Device）和多个独立会话（Session）。每个会话分别管理自己的操作、进程、保留输出、传输和执行证据。工作目录是默认值，不是访问边界。彼此不信任的工作负载需要由宿主（Host）提供独立的外层边界；EIP 会话不提供租户隔离。
+一个守护进程服务于一个设备（Device）和多个独立会话（Session）。每个会话分别管理自己的操作、进程、保留输出、传输和执行证据。工作目录是默认值，不是访问边界。彼此不信任的工作负载需要由宿主（Host）提供独立的外层边界；EIP 会话之间不相互隔离工作负载。
 
 ## 试用 Local Envd
 
@@ -58,7 +60,7 @@ uv run environment-provider-example local_envd \
   --executable ../../target/debug/a13n-envd
 ```
 
-示例自行管理工作空间，通过 stdio 启动私有守护进程，为适配器创建一个会话，并验证关闭适配器后工作空间仍然保留。随后由 Host 运行时关闭守护进程。接入 agent 时，通过 `DynamicEnvironmentCapability` 向 Harness 提供一个**新建的** Local Envd 适配器；[Harness 集成](../a13n-harness/environments.md)介绍了这条边界。Host 可以在多个适配器之间复用 `LocalEnvdProviderRuntime`，但每个适配器都会打开独立会话。
+示例创建自己的工作目录，通过 stdio 启动私有守护进程，为适配器创建一个会话，并验证关闭适配器后该目录仍然保留。随后由示例的 `LocalEnvdProviderRuntime` 关闭守护进程。接入 agent 时，通过 `DynamicEnvironmentCapability` 向 Harness 提供一个**新建的** Local Envd 适配器；[Harness 集成](../a13n-harness/environments.md)介绍了这条边界。Host 可以在多个适配器之间复用 `LocalEnvdProviderRuntime`，但每个适配器都会打开独立会话。
 
 需要设置执行身份、Sandbox 目录授权、出站网络模式、可执行文件根目录、shell 配置或限制时，在运行时上配置 `LocalEnvdLaunchConfiguration`。Envd 管理会话 worker；Host 管理外层容器或虚拟机隔离。参见[执行边界](isolation.md)和[会话凭据引用](../environments/remote-envd.md#session-egress-and-credential-references)。
 

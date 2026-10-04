@@ -9,7 +9,7 @@ Harness 不替换 Pydantic AI 的工具 schema 或调度器。它增加必需的
 
 ## 离线运行函数工具
 
-这个完整示例无需网络，通过真实 Agent 执行循环调用 `double(4)`。在[源码快速入门](getting-started.md)的工作空间中保存为 `tools_example.py`，运行 `uv run python tools_example.py`。
+这个完整示例无需网络，通过真实 Agent 执行循环调用 `double(4)`。在[快速入门](getting-started.md)克隆的仓库目录中保存为 `tools_example.py`，运行 `uv run python tools_example.py`。
 
 ```python
 import asyncio
@@ -70,7 +70,7 @@ if __name__ == "__main__":
 1. 类型注解定义参数 schema，docstring 向模型说明操作。
 2. `Capability(tools=[double])` 将函数纳入原生组合。
 3. 确定性模型发出工具调用，收到结果，再返回文字。
-4. `output_or_raise()` 返回最终校验后的回答，不是某个工具的返回值。
+4. `output_or_raise()` 返回最终校验后的输出，不是某个工具的返回值。
 
 工具较多时，可使用 `Capability(toolsets=[FunctionToolset([...], id="...")])`，其中 `FunctionToolset` 来自 `pydantic_ai.toolsets`。工具仍属于各自 Capability，没有另一套并行的 Harness 工具注册 API。
 
@@ -96,7 +96,7 @@ capability = Capability(id="request-context", tools=[request_label])
 bindings = RunBindings.embedded(metadata={"request_label": "support-triage"})
 ```
 
-构建时传入 `capability`，调用 `run()` 或 `stream()` 时传入新的 `bindings`。`ctx` 包含原生消息、用量和限制；`ctx.deps` 包含 Harness 身份、Thread/Run 关联、Environment、插件、状态和元数据。
+构建时传入 `capability`，调用 `run()` 或 `stream()` 时传入新的 `bindings`。`ctx` 包含原生消息、用量和限制；`ctx.deps` 包含 Agent 身份和实例、Thread/Run 关联、Environment、插件、状态和元数据。
 
 元数据是大小受限的应用上下文，**不是授权依据**。不要放入密钥、token 或活跃数据库 session。可信身份 claim 也必须结合当前策略，才能授权某个操作。
 
@@ -131,19 +131,19 @@ async def inspect_inventory(inventory, model):
 
 服务必须自行约束作用范围，不能让模型选择租户或凭据。数据库事务应围绕单次操作，不要覆盖整个模型和工具循环。应用或所属扩展必须明确管理资源获取和清理，`for_run()` 本身不会关闭客户端。绝不要把活跃服务放进 `metadata`、序列化进 `HarnessState`，或把已经认证的 Run 绑定实例当作续接状态复用。
 
-## 原生工具、托管工具与 Provider 原生工具
+## 工具执行路径
 
 | 工具路径              | 示例                           | 边界                                                   |
 | --------------------- | ------------------------------ | ------------------------------------------------------ |
 | 可信 Python 函数      | `double`、应用服务             | 原生工具调度与 Harness 结果处理，Python 代码负责副作用 |
 | 托管 Environment 工具 | 文件编辑或 shell 执行          | 类型化资源、当前策略、Provider 强制约束和有界结果      |
 | 本地 MCP 工具         | 来自已连接 MCP server 的工具   | 原生 MCP 传输与本地函数工具结果边界                    |
-| Provider 原生工具     | 模型 provider 的搜索或图像工具 | 由 provider 执行，不是本地 Python 工具调用             |
+| Provider 原生工具     | 模型 provider 的搜索或图像工具 | 由模型 provider 执行，不是本地 Python 工具调用         |
 | 延后工具              | 人工审批或外部、客户端执行     | 根 Run 暂停，Host 在新 Run 中提供关联输入              |
 
 名字叫 `safe_shell` 不意味着工具已纳入管理；托管元数据才会选择额外的策略路径。Python 回调仍可使用其进程的环境权限，工具可见性不等于 OS 隔离。
 
-完整 `HarnessTool` 示例和调用策略参考，参阅[托管工具与策略](managed-tools.md)。浏览器或其他外部客户端执行声明的工具时，参阅[客户端工具](client-tools.md)。[环境工具](environments.md)、[MCP 工具](mcp.md)和[延后恢复](state-and-resume.md)说明了对应的集成与续接方式。
+完整 `HarnessTool` 示例和调用策略参考，参阅[托管工具与策略](managed-tools.md)。浏览器或其他外部客户端执行声明的工具时，参阅[客户端工具](client-tools.md)。[Environment 工具](environments.md)、[MCP 工具](mcp.md)和[延后恢复](state-and-resume.md)说明了对应的集成与续接方式。
 
 ## 错误、重试与输出限制
 

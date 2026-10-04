@@ -3,9 +3,9 @@ title: 记忆
 description: 工作空间记忆，让 agent 跨对话保留版本化文件或可召回记录。
 ---
 
-记忆是 agent 跨对话保留的偏好、决策、约定和参考事实。它属于工作空间，可供多次对话同时使用。记忆有两种：
+记忆是 agent 跨对话保留的偏好、决策、约定和参考事实。它属于工作空间，可同时挂载到多个线程。记忆有两种：
 
-- **文件型记忆** 是一棵小型文本文件树。Service 在 PostgreSQL 中保存文件和每次修改的历史。每次写入都检查执行当时的文件版本，基于旧内容的修改会失败并返回当前文件，避免覆盖其他对话的工作。[文件型记忆](../a13n-harness/memory.md)介绍模型看到的内容和记忆文件的编写方法。
+- **文件型记忆** 是一棵小型文本文件树。Service 在 PostgreSQL 中保存文件和每次修改的历史。每次写入都检查执行当时的文件版本，基于旧内容的修改会失败并返回当前文件，避免覆盖其他运行的工作。[文件型记忆](../a13n-harness/memory.md)介绍模型看到的内容和记忆文件的编写方法。
 - **记录型记忆** 是一组简短文本记录，例如“用户偏好公制单位”，通过[记忆 provider](#set-up-a-memory-provider) 保存在 [mem0](https://mem0.ai) 后端。每次运行开始时，与输入最相关的记录会被**召回**。记录没有版本，最后一次写入生效。
 
 线程按名称**挂载** 记忆。每次运行接收时固定线程记忆挂载，启动时读取各记忆的上下文或召回记录，并通过 `memory_file_*` 和 `memory_record_*` 工具修改。
@@ -40,8 +40,8 @@ curl -X POST "$A13N_URL/api/v1/memories" \
 
 - `type` 为 `postgres`，即 Service 自身存储，也是默认值。响应的 `id`（`mem_…`）标识记忆；记忆没有 key。
 - `guide` 告诉 agent 应保存什么、如何组织，最多 `memory.guide_bytes`。省略或设为 `null` 时，使用部署按记忆类别设置的指南（`memory.default_guide.file` 或 `memory.default_guide.record`，未设置则使用内置指南）；`""` 表示没有指南。`inherited_guide` 显示 `null` 最终对应的指南。
-- `always_load` 最多指定 64 个路径；每次运行的记忆上下文首先加载这些路径的完整内容。路径可以尚不存在。只有有权修改记忆的人能选择它们，因此一次对话不能将自己的写入固定到所有后续对话。
-- `PATCH …/memories/{memory_id}` 使用记忆的 `If-Match` 修改 `name`、`description`、`labels`、`guide` 和 `always_load`。之后启动的运行使用修改后的配置。
+- `always_load` 最多指定 64 个路径；这些路径的完整内容位于记忆完整上下文的开头，线程首次看到该记忆时获得完整上下文。路径可以尚不存在。只有对记忆拥有 `write` 的主体能设置它们，因此运行不能将自己的写入固定到所有后续线程。
+- `PATCH …/memories/{memory_id}` 使用记忆的 `If-Match` 修改 `name`、`description`、`labels`、`guide` 和 `always_load`。之后启动的尝试使用修改后的配置，包括已在执行的运行的后续尝试。
 - `DELETE …/memories/{memory_id}` 使用 `If-Match` 删除记忆及其文件、历史和线程挂载。正在使用它的运行在下一次记忆工具调用时收到 `memory_deleted`。
 
 `GET …/memories` 列出工作空间记忆，可按 `label`、`kind`（`file` 或 `record`）和 `type` 筛选。文件型记忆显示 `file_count`、`content_bytes` 和 `history_bytes`；记录型记忆中这些值为 null。
@@ -85,7 +85,7 @@ curl -X POST "$A13N_URL/api/v1/memories" \
 - `type` 为 provider 类型，provider 必须是工作空间中已启用的记忆 provider。`always_load` 不适用。
 - 每份记录型记忆拥有后端中的一个**命名空间**，即 mem0 的 `user_id`。默认值为 `a13n-` 加上从记忆 ID 派生的 32 位十六进制字符。设置 `namespace` 可接管已有 `user_id` 下的记录，例如应用已写入的记录；长度为 1–256 个可打印字符，不含空白或 `*`。一个命名空间只属于一份记忆；其他记忆重复使用时返回 `409 already_exists`。
 - `type`、`provider_id` 和 `namespace` 永不改变。
-- 删除记录型记忆也会在后台删除命名空间中的记录。完成前，新记忆不能使用该命名空间（`409 conflict`，原因为 `namespace_purging`）。后端持续拒绝时，清理在 `outbox.defaults.max_attempts` 次尝试后停止，记录保留在后端。mem0 Platform 接收清理后自行完成，因此记录可能短暂保留。
+- 删除记录型记忆也会在后台删除命名空间中的记录。完成前，新记忆不能使用该命名空间（`409 conflict`，原因为 `namespace_purging`）。后端持续拒绝时，清理在 `memory_purge` outbox 策略的 `max_attempts` 次尝试后停止（取 `outbox.by_kind.memory_purge`，否则取 `outbox.defaults`），记录保留在后端。mem0 Platform 接收清理后自行完成，因此记录可能短暂保留。
 
 ### 读取与编辑记录
 
@@ -122,7 +122,7 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/memories" \
 - 挂载修改使用**线程** 的 `If-Match`，返回新 ETag，需要 `run`，影响之后接收的运行。`GET …/threads/{thread_id}/memories` 列出挂载及线程 ETag，`DELETE …/threads/{thread_id}/memories/{name}` 移除挂载。
 - 新线程和分叉线程通过 `memories` 字段指定初始挂载。分叉复制源线程的记忆挂载。归档线程会移除挂载。
 
-要让 agent 的每次对话都使用记忆，将 `memory_mounts` 设为 `[{name, memory_id, access, recall}]`。线程首次接收运行时，会添加线程尚未使用的名称和记忆。此后由线程自身挂载决定，所以删除后不会自动恢复。默认记忆已被删除时，首次运行以 `invalid_argument` 失败；默认挂载导致超限时，以 `memory_mount_limit` 失败。
+要让 agent 的每个线程都使用记忆，将 agent 的 `memory_mounts` 设为 `[{name, memory_id, access, recall}]`。线程首次接收运行时，会添加线程尚未使用的名称和记忆。此后由线程自身挂载决定，所以删除后不会自动恢复。默认记忆已被删除时，首次运行以 `invalid_argument` 失败；默认挂载导致超限时，以 `memory_mount_limit` 失败。
 
 异步[子 agent](agents-and-runs.md#subagents) 的线程先继承父运行记忆挂载，再添加自身 agent 的默认挂载。内联子 agent 没有记忆工具或上下文。
 
@@ -135,7 +135,7 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/memories" \
 
 禁用工具会从所有挂载中移除它；禁用工具集仍保留记忆上下文和召回内容，但没有工具。
 
-运行开始时，每份文件型记忆添加一个上下文块：对话首次看到记忆时包含始终加载的文件和文件索引，之后只包含发生变化的文件，包括其他对话和用户的修改。历史被压缩后，会重新获得完整上下文。运行中的记忆上下文共享 `memory.context_bytes`（默认 32 KiB），各记忆始终加载的文件最多占用 `memory.always_load_bytes`。
+运行开始时，每份文件型记忆添加一个上下文块：线程首次看到记忆时包含始终加载的文件和文件索引，之后只包含发生变化的文件，包括其他线程和用户的修改。历史被压缩的线程会重新获得完整上下文。运行中的记忆上下文共享 `memory.context_bytes`（默认 32 KiB），各记忆始终加载的文件最多占用 `memory.always_load_bytes`。
 
 每次记忆调用检查运行对工作空间的访问：查看、列出和搜索需要 `read`，修改文件或记录需要 `run`。拒绝调用返回 `forbidden`；记录型记忆的 provider 被禁用时返回 `unavailable`。失败的文件调用不做修改；模型重新读取文件再决定。
 
@@ -158,6 +158,6 @@ Worker 可能在写入记忆后、记录运行进度前停止。恢复后的尝�
 | `POST …/memories/{id}/revisions/{seq}/restore` | 以新修改恢复该次修改之前的内容；若当前路径有文件，`If-Match` 指定该文件       |
 | `DELETE …/memories/{id}/revisions?path=`       | 删除一个路径保留的历史，文件保持不变                                          |
 
-每个修订版本记录修改者：agent 工具调用记录 `run_id` 和 `tool_call_id`，agent 和用户均记录 `principal_id`。每次修改都改变文件 ETag，因此基于旧读取结果的编辑返回 `412 precondition_failed`。
+每个修订版本记录修改者：始终记录 `principal_id`（agent 的修改记录运行的主体），agent 工具调用还记录 `run_id` 和 `tool_call_id`。每次修改都改变文件 ETag，因此基于旧读取结果的编辑返回 `412 precondition_failed`。
 
 单文件最多 `memory.max_file_bytes`（默认 64 KiB）。每个文件保留最近 `memory.revisions_per_file` 次修改（默认 10）；一份记忆的内容和历史合计不得超过 `memory.max_total_bytes`（默认 32 MiB）：优先清理最旧历史，只有内容本身超限才拒绝修改，返回 `409 conflict`，原因为 `memory_full`。全部 `memory.*` 设置请参阅[设置参考](configuration-reference.md#memory)。

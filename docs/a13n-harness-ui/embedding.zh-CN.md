@@ -6,7 +6,7 @@ description: 在其他本地界面中使用 Harness UI 应用边界。
 
 在其他本地界面中需要使用 Harness UI 的已接受配置、已保存 Thread、附件、根操作回执和子级协调时，应使用 Python App 边界。如果应用需要自己负责这些产品决策，则[直接使用 Harness](../a13n-harness/hosting.md)。
 
-App 的状态和控制限于当前进程；如果任务必须在进程故障后由其他 worker 恢复，请使用 [Service](../a13n-service/index.md)。从各 API 所属的子模块导入（`a13n_harness_ui` 本身只导出版本）。
+App 的状态和控制限于当前进程；如果工作必须在进程故障后由其他 worker 恢复，请使用 [Service](../a13n-service/index.md)。从各 API 所属的子模块导入（`a13n_harness_ui` 本身只导出版本）。
 
 ## 打开、提交与等待
 
@@ -34,11 +34,11 @@ async def run_once(configuration_file: Path, prompt: str):
         return thread.thread_id, operation
 ```
 
-传入加载后的设置和选中的配置路径。单独构造 `HarnessUiSettings()` 不会加载用户资源树。应像示例一样，在提交任务前拒绝无效候选配置。
+传入加载后的设置和选中的配置路径。单独构造 `HarnessUiSettings()` 不会加载用户资源树。应像示例一样，在提交工作前拒绝无效候选配置。
 
-`load_harness_ui_settings(path=None, data_root=None)` 使用通常的配置/数据根选择规则。独立 App 实例或测试应显式使用独立的数据根；不要让测试夹具指向用户的真实对话存储。启动会打开存储、接受配置并建立索引、清理符合条件的临时文件，并可能启动价格更新器。确定性的离线夹具应关闭 `pricing_auto_update`，使用测试 Model/运行时协作者，不向提供方发出请求。
+`load_harness_ui_settings(path=None, data_root=None)` 使用通常的配置/数据根选择规则。独立 App 实例或测试应显式使用独立的数据根；不要让测试夹具指向用户真实的已保存 Thread。启动会打开存储、接受配置并建立索引、清理符合条件的临时文件，并可能启动价格更新器。确定性的离线夹具应关闭 `pricing_auto_update`，使用测试 Model/运行时协作者，不向提供方发出请求。
 
-`open_harness_ui_app()` 负责启动和关闭。`host_mode` 默认为 `local`；HTTP 适配器选择 `webui`。不要自己构造内部 `HarnessUiApp` 协作者依赖图。[追踪](observation.md)说明可选的观测边界；普通嵌入无须遥测后端。
+`open_harness_ui_app()` 负责启动和关闭。`host_mode` 默认为 `local`；HTTP 适配器选择 `webui`。选择 `webui` 不会启动 HTTP 服务器；它开启 WebUI 模式的 App 行为，例如跨 Thread 协作 Capability。不要自己构造内部 `HarnessUiApp` 协作者依赖图。[追踪](observation.md)说明可选的观测边界；普通嵌入无须遥测后端。
 
 ## 回执与已保存续接不同
 
@@ -58,23 +58,23 @@ flowchart TD
 
 - `execution`：状态、安全输出/失败信息、省略标记和用量。
 - `continuation`：是否选择并持久化续接候选。
-- `environment`：目标状态发布和清理结果。
+- `environment`：Environment 状态发布和适配器清理结果。
 
 执行成功不能证明检查点发布或清理成功。回执和控制权限随所属进程消失；已保存的 Thread 续接独立保留。重启后应读取 Thread 和保留的对话记录，不要尝试恢复旧回执。
 
 ## Thread 查询与修改
 
-| App 方法                                                                  | 边界                                              |
-| ------------------------------------------------------------------------- | ------------------------------------------------- |
-| `create_thread`、`get_thread`、`list_threads`                             | 创建/默认选择、详情、有上限的集合                 |
-| `get_thread_transcript`                                                   | 由续接和游标固定的保留对话记录                    |
-| `update_thread_metadata`                                                  | 元数据比较并设置，包括标题/归档                   |
-| `update_thread_configuration`、`patch_thread_configuration`               | 为后续操作比较并设置持久配置                      |
-| `stage_thread_attachment`、`read_thread_attachment`、`prune_thread_files` | Thread 范围内的文件句柄和保留                     |
-| `submit_thread`                                                           | 普通输入、可选附件、修改、Model 覆盖和 Skill 引用 |
-| `respond_thread`、`respond_decisions`                                     | 针对确切延迟续接的响应                            |
+| App 方法                                                                  | 边界                                                         |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `create_thread`、`get_thread`、`list_threads`                             | 创建/默认选择、详情、有上限的集合                            |
+| `get_thread_transcript`                                                   | 由续接和游标固定的保留对话记录                               |
+| `update_thread_metadata`                                                  | 元数据比较并设置，包括标题/归档                              |
+| `update_thread_configuration`、`patch_thread_configuration`               | 为后续操作比较并设置持久配置                                 |
+| `stage_thread_attachment`、`read_thread_attachment`、`prune_thread_files` | Thread 范围内的文件句柄和保留                                |
+| `submit_thread`                                                           | 普通输入、可选附件、Thread 配置修改、Model 覆盖和 Skill 引用 |
+| `respond_thread`、`respond_decisions`                                     | 针对确切延迟续接的响应                                       |
 
-`NewThreadDefaults` 可选择 Project、Agent、`default_model_id`、Environment 配置、中间件、Environment 扩展和 MCP ID。省略的资源选择使用配置的默认值；默认 Model 为 null 或省略时跟随 Agent。实际 Model 优先级为单次操作覆盖、Thread 已保存默认值、Agent Model。带版本的 `ThreadConfigurationPatch` 可以设置 `default_model_id`，以 null 清除，或省略以保留当前值。单次操作的 `RunModelOverrides` 选择 Model、推理或服务层级，不会改写资源或 Thread 的持久配置头。
+`NewThreadDefaults` 可选择 Project、Agent、`default_model_id`、Environment 配置、Harness Plugin、Environment Run Extension 和 MCP 服务器 ID。省略的资源选择使用配置的默认值；默认 Model 为 null 或省略时跟随 Agent。实际 Model 优先级为单次操作覆盖、Thread 已保存默认值、Agent Model。带版本的 `ThreadConfigurationPatch` 可以设置 `default_model_id`，以 null 清除，或省略以保留当前值。单次操作的 `RunModelOverrides` 选择 Model、推理或服务层级，不会改写资源或 Thread 的持久配置头。
 
 元数据 `expected_version`、配置 `expected_version` 和 `expected_continuation_id` 是不同的前置条件。读取对应当前值，不能互相替代。元数据字段省略时保留原值；显式 null 可清除标题；提供的 `archived` 不得为 null。归档要求根执行处于非活动状态。
 
@@ -84,13 +84,13 @@ Thread 列表默认每页 20 项，对话记录默认每页 50 项；后续游�
 
 读取 `thread_decisions(thread_id=..., expected_continuation_id=...)` 或详细延迟视图。响应必须使用正确的类型和续接 ID，对每个选中的请求恰好回答一次。
 
-`respond_decisions()` 接受 `DecisionResponseBatch`，包括问题、审批和外部结果。`respond_thread()` 接受更底层的 `ThreadDeferredResponse`，使用 `ApprovalDecision` / `ExternalToolResult`。拒绝外部结果时需要拒绝消息，不能同时携带成功结果。审批参数覆盖与拒绝消息有互斥规则。
+`respond_decisions()` 接受 `DecisionResponseBatch`，包括问题、审批和外部结果。`respond_thread()` 接受更底层的 `ThreadDeferredResponse`，使用 `ApprovalDecision` / `ExternalToolResult`。拒绝外部结果时需要拒绝消息，不能同时携带成功结果。批准的决策可以携带参数覆盖，但不能携带拒绝消息；拒绝的决策可以携带拒绝消息，但不能携带参数覆盖。
 
-验证回答者或执行者的身份，并提交当前完整决策集。普通提示不能回答待处理决策。子 Run 不会创建持久化的延迟任务。
+你的适配器必须验证回答者或执行者的身份，然后提交当前完整决策集。普通提示不能回答待处理决策。子 Run 不会创建持久化的延迟工作。
 
 ## MCP 输入与集成控制
 
-WebUI 和交互式 CLI 开启 [MCP 人工输入](mcp.md#human-input-from-mcp-servers)。无界面的 `open_harness_ui_app()` 默认 `mcp_input_enabled=False`。能够回答请求的嵌入适配器可以显式传入 `mcp_input_enabled=True`；须在操作运行时并行消费请求，不能先等待完成。
+WebUI 和 TUI 开启 [MCP 人工输入](mcp.md#human-input-from-mcp-servers)。无界面的 `open_harness_ui_app()` 默认 `mcp_input_enabled=False`。能够回答请求的嵌入适配器可以显式传入 `mcp_input_enabled=True`；须在操作运行时并行消费请求，不能先等待完成。
 
 `mcp_input_requests(thread_id)` 读取该 Thread 及其后代的进程内表单/URL 请求。`respond_mcp_input(thread_id, request_id, McpInputResponse(...))` 接受 `accept`、`decline` 或 `cancel`；从 `a13n_harness_ui.mcp_runtime.inputs` 导入 `McpInputResponse`。接受表单时传入 `content` 对象；URL 确认不包含表单数据。完全相同的重复答案核实结果，冲突答案失败。这不需要续接 ID，也不受理新 Run。`ThreadWatch.snapshot.mcp_inputs` 消除初始查询竞态，摘要失效通知要求重新获取。答案和待处理请求不跨重启保留。
 
@@ -112,7 +112,7 @@ Python 还提供 `query_child_executions`、`wait_child_executions`、`steer_chi
 
 ## 注册可信集成
 
-`HarnessUiIntegrations` 提供 Host 能力、Environment provider/适配器、Harness 插件工厂、Environment 运行扩展工厂和 Provider 运行时工厂。安装/注册让可信代码可用；已接受的资源选择和当前 Run 权限决定其使用。
+`HarnessUiIntegrations` 提供 Host Capability、Environment provider/适配器、Harness Plugin 工厂、Environment Run Extension 工厂和 Provider 运行时工厂。安装/注册让可信代码可用；已接受的资源选择和当前 Run 权限决定其使用。
 
 回调、凭据、活动客户端和 operator 应留在运行时协作者中，不应写入 YAML 或持久化续接。在界面中复用[配置](configuration.md)、[扩展类型](extensions-and-mcp.md)、[Skill](skills-and-content-plugins.md) 和 [MCP](mcp.md)，不要另建配置语言。
 

@@ -33,7 +33,7 @@ stdout 上的 JSON 记录包含 `timestamp`（UTC）、`level`、`logger`、`mes
 | `stdout: bool`                | `True`             | 启用 stdout 输出。                                      |
 | `file: LogFile \| None`       | `None`             | 添加轮转 JSON 文件，即使 stdout 使用 pretty。           |
 
-至少需要一个输出。配置立即调用 `logging.config.dictConfig()`，设置 `disable_existing_loggers=False`；不会禁用无关 logger。默认 JSON 写入 **stdout**，因此不能用于协议 stdout。需要其他目标时，提供自己的 handler。
+至少需要一个输出。配置立即调用 `logging.config.dictConfig()`，设置 `disable_existing_loggers=False`；不会禁用无关 logger。两种 stdout 格式都写入标准输出。如果进程的标准输出承载协议（例如 stdio MCP 服务器），请设置 `stdout=False`，并使用 `file` 或自己的 handler。需要其他目标时，提供自己的 handler。
 
 ```python
 from pathlib import Path

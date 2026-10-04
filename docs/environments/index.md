@@ -4,7 +4,7 @@ sidebarTitle: Overview
 description: Portable access to files, commands, processes, and ports in local, container, cloud, and remote targets.
 ---
 
-An Environment gives portable access to files, commands, processes, retained output, and ports. Use it directly in automation, or supply a fresh adapter to Harness so an Agent can work in a selected workspace, sandbox, container, VM, or remote execution target. It requires no Agent, model credential, or hosted service.
+An Environment gives portable access to files, commands, processes, retained output, and ports. Use it directly in automation, or supply a fresh adapter to Harness so an Agent can work in a selected working directory, sandbox, container, VM, or remote execution target. It requires no Agent, model credential, or hosted service.
 
 Environment Providers ship in `a13n-harness`; only vendor SDKs live behind [extras](../a13n-harness/plugins.md#harness-extras). You do not need an Environment for an Agent that only calls ordinary application tools or remote APIs.
 
@@ -16,7 +16,7 @@ Environment Providers ship in `a13n-harness`; only vendor SDKs live behind [extr
 | Choose local, sandbox, container, or remote execution       | [Choose a backend](#choose-a-backend)                  |
 | Understand close, state, re-entry, and destruction          | [Lifecycle and state](lifecycle.md)                    |
 | Configure built-ins, credentials, and runtime collaborators | [Provider configuration](configuration.md)             |
-| Compare the six cloud providers                             | [Cloud providers](providers.md#cloud-providers)        |
+| Compare the six cloud Providers                             | [Cloud Providers](providers.md#cloud-providers)        |
 | Implement a Provider or supply Host runtimes                | [Providers and runtime](providers.md)                  |
 | Run commands, inspect processes, and read retained output   | [Commands and processes](commands.md)                  |
 | Understand paths, search patterns, and output limits        | [Operations](operations.md)                            |
@@ -36,19 +36,19 @@ Environment Providers ship in `a13n-harness`; only vendor SDKs live behind [extr
 
 Use no Environment when the Agent needs only ordinary tools or remote APIs. Otherwise select a Native or Envd route:
 
-| Route  | Provider         | Use it for                               | Operation and ownership boundary                            |
-| ------ | ---------------- | ---------------------------------------- | ----------------------------------------------------------- |
-| Native | `direct_local`   | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
-| Native | `e2b`            | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
-| Native | `daytona`        | Cloud sandbox                            | Native stop/start and preserved files                       |
-| Native | `modal`          | Cloud sandbox                            | Snapshot-backed stop/resume; fixed running lifetime         |
-| Native | `vercel`         | Cloud sandbox                            | Named persistent sandbox with native sessions               |
-| Native | `sprites`        | Cloud sandbox                            | Persistent disk and automatic sleep/wake                    |
-| Native | `runloop`        | Cloud sandbox                            | Devbox suspend/resume and idle keepalive                    |
-| Envd   | `local_envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
-| Native | `docker`         | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
-| Envd   | `http_envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
-| Envd   | `websocket_envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
+| Route  | Provider         | Use it for                          | Operation and ownership boundary                            |
+| ------ | ---------------- | ----------------------------------- | ----------------------------------------------------------- |
+| Native | `direct_local`   | Trusted local automation            | Host OS operations; existing directory, no sandbox claim    |
+| Native | `e2b`            | Native managed cloud sandbox        | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Native | `daytona`        | Cloud sandbox                       | Native stop/start and preserved files                       |
+| Native | `modal`          | Cloud sandbox                       | Snapshot-backed stop/resume; fixed running lifetime         |
+| Native | `vercel`         | Cloud sandbox                       | Named persistent sandbox with native sessions               |
+| Native | `sprites`        | Cloud sandbox                       | Persistent disk and automatic sleep/wake                    |
+| Native | `runloop`        | Cloud sandbox                       | Devbox suspend/resume and idle keepalive                    |
+| Envd   | `local_envd`     | CLI and local Agents                | Private stdio daemon; close preserves files                 |
+| Native | `docker`         | Single-host services                | Docker Engine lifecycle and exec; close preserves container |
+| Envd   | `http_envd`      | Network-reachable external daemons  | HTTP(S) EIP; connect-only                                   |
+| Envd   | `websocket_envd` | Daemons that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
 [Try the remote examples locally](remote-envd.md) without a model, Docker or cloud account.
 
@@ -58,9 +58,9 @@ Use no Environment when the Agent needs only ordinary tools or remote APIs. Othe
 flowchart TB
     Host[Host policy, configuration, state, and credentials] --> Definition[EnvironmentProviderDefinition]
     Definition --> Environment[Fresh Environment adapter]
-    Environment --> Harness[Agent Harness Run]
+    Environment --> Harness[Harness Run]
     Harness --> Tools[Selected model-facing tools]
-    Environment --> Direct[Native Local, Docker or cloud operations]
+    Environment --> Direct[Direct Local, Docker or cloud operations]
     Environment --> EIP[EIP operations]
     EIP --> Envd[a13n-envd or remote backend]
 
@@ -69,11 +69,11 @@ flowchart TB
     class Direct ext
 ```
 
-- **Host** selects a trusted Provider, desired configuration, current state, runtime collaborators, retention policy, and authorization.
+- **Host** selects a trusted Provider, the desired target recipe, account configuration, current state, runtime collaborators, retention policy, and authorization.
 - **Environment Provider definition** validates account inputs, credentials, and the target recipe, then constructs fresh single-use adapters; it acquires a live collaborator only in its runtime factory.
-- **Environment** enters or creates one exact target, exposes typed operations, caches the latest state, closes process-local resources, and supports explicit Host destruction.
-- **Agent Harness** owns Run-local mount names, access ceilings, routing, state aggregation, and non-destructive cleanup.
-- **EIP** is the typed operation protocol used by `a13n-envd` and remote backends.
+- **Environment** prepares one exact target (connects to, resumes, or creates it), exposes typed operations, caches the latest state, closes process-local resources, and supports explicit Host destruction.
+- **Harness** owns Run-local mount names, access ceilings, routing, state aggregation, and non-destructive cleanup.
+- **EIP** (Environment Interaction Protocol) is the typed operation protocol used by `a13n-envd` and remote backends.
 
 `EnvironmentState` and `HarnessState` are different records. The former is a Provider-owned soft reference to a target; the latter is Agent continuation state. Neither restores current credentials or authorization.
 
@@ -120,13 +120,13 @@ result = await executable.run(
 )
 ```
 
-The Provider inspects the directory during preparation, not scope entry. Harness closes the adapter after the Run but never destroys a target. Direct Local preserves the directory on close and rejects target destruction.
+The Provider inspects the directory during preparation, not scope entry. Harness closes the adapter after the Run but never destroys a target. Direct Local preserves the directory on close; its `destroy()` is a declared no-op that never deletes the directory.
 
 Direct Local restrictions apply through the current Environment mount. They do not isolate an allowed child process from the Host user account.
 
 ## Use Local Envd
 
-The Host owns a shared Local Envd runtime and its lazily launched Device. Each fresh adapter opens an independent Session with a fixed Device working directory:
+The Host owns a shared Local Envd runtime, which launches the daemon lazily and holds its Device connection. Each fresh adapter opens an independent Session with a fixed Device working directory:
 
 ```python
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
@@ -156,7 +156,7 @@ async with LocalEnvdProviderRuntime(
 
 Executable resolution checks an explicit argument, `A13N_ENVD_EXECUTABLE`, then `a13n-envd` on `PATH`. The client and Provider packages do not install or download the native binary.
 
-Local Envd validates exact daemon/client compatibility and never falls back to Direct Local. Envd paths address the Device filesystem; a fixed cwd is not containment. Host-managed accounts, containers, or sandboxes own filesystem and network isolation. Read the [`a13n-envd` guide](../a13n-envd/index.md) for setup and security boundaries.
+Local Envd validates exact daemon/client compatibility and never falls back to Direct Local. Envd paths address the Device filesystem; a fixed cwd is not containment. The Host selects the daemon's Sandbox and egress mode at launch, and Envd enforces them for every Session; the Host's account, container, or VM still sets the outer isolation boundary. Read the [`a13n-envd` guide](../a13n-envd/index.md) for setup and security boundaries.
 
 ## Re-enter and retain a target
 
@@ -181,7 +181,7 @@ finally:
     await state_store.publish(environment_key, environment.dump_state())
 ```
 
-`dump_state()` is a synchronous detached read of the adapter's latest validated cache. The Host can call it after entry failure, cancellation, Run failure, or close failure without causing more provider I/O.
+`dump_state()` is a synchronous detached read of the adapter's latest validated cache. The Host can call it after entry failure, cancellation, Run failure, or close failure without causing more Provider I/O.
 
 Close and destruction are deliberately separate:
 
@@ -215,9 +215,9 @@ result = await executable.run(
 )
 ```
 
-The default mount is available at `/workspace`; named mounts are available at `/environment/{name}`. When several entries are present, select `default_environment` explicitly or leave `/workspace` unbound. Mapping order never grants authority.
+Unless a mount sets `mount_path`, the default mount is available at `/workspace` and each named mount at `/environment/{name}`; a mount with `mount_path` is available only at that root. When several entries are present, select `default_environment` explicitly or leave `/workspace` unbound. Mapping order never grants authority.
 
-Harness validates the complete mount set before entry. If one adapter fails, it closes every supplied adapter that may own process-local resources and publishes no partial mount set. It never destroys a target during unwind.
+Harness validates the complete mount set before entry. If one adapter fails, Harness closes every supplied adapter that may own process-local resources and publishes no partial mount set. It never destroys a target during unwind.
 
 ## Select only required operations
 
@@ -228,13 +228,13 @@ The [Harness Environment guide](../a13n-harness/environments.md) covers complete
 ## Next steps
 
 - [Run the built-in Provider examples](examples.md)
-- [Use Environments from Agent Harness](../a13n-harness/environments.md)
+- [Use Environments from Harness](../a13n-harness/environments.md)
 - [Manage Provider state](lifecycle.md) and [implement a Provider plugin](providers.md#provider-catalog-and-plugins)
 - [Operate and configure `a13n-envd`](../a13n-envd/index.md)
-- [Read the EIP and a13n-envd specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-envd)
+- [Read the EIP and Envd specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-envd)
 
-## Hosted preparation and recovery
+## Environments in Service
 
-The Service builds on these providers: it creates managed Docker and cloud sandbox environments from templates, connects to external envd targets by endpoint and token, and freezes each run's mounts; see [Service environments](../a13n-service/environments.md). The embedded Provider lifecycle described above remains usable independently.
+The Service builds on these Providers: it creates managed Docker and cloud sandbox environments from templates, connects to external Envd targets by endpoint and token, and freezes each run's mounts; see [Service environments](../a13n-service/environments.md). The embedded Provider lifecycle described above remains usable independently.
 
 For direct SDK integrations, use [Environment lifecycle and errors](lifecycle.md) and [remote Envd](remote-envd.md).

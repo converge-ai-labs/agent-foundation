@@ -3,16 +3,16 @@ title: 重放与恢复
 description: 重建同一次执行的 UI 投影，并判断何时应创建新的 Harness 执行。
 ---
 
-重启有两种不同问题：为**同一次** 执行重建 UI 投影，以及从检查点启动**新的** Harness 执行。`HarnessAguiObserver.resume()` 只解决前者。
+重启有两种不同问题：为**同一次** 执行重建 UI 投影，以及从保存的 `HarnessState` 启动**新的** Harness 执行。`HarnessAguiObserver.resume()` 只解决前者。
 
 ## 选择恢复路径
 
-| 发生了什么变化？                    | 处理方式                                                |
-| ----------------------------------- | ------------------------------------------------------- |
-| 观测消费端重启；同一次源执行仍可用  | 将精确、有限的源前缀重放到新 observer，再消费后续实时流 |
-| agent worker 从 `HarnessState` 重启 | 为新的执行 ID 创建新 observer                           |
-| 只保留了渲染消息或 AG-UI 记录       | 不能声称这些记录足以重建 Harness 多 part 源状态         |
-| 源历史存在缺口                      | 在 Host 中报告并核对，不能悄悄跳过                      |
+| 发生了什么变化？                               | 处理方式                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------- |
+| 观测消费端重启；同一次源执行仍可用             | 将精确、有限的源前缀重放到新 observer，再消费后续实时流        |
+| Host 从 `HarnessState` 启动了新的 Harness 执行 | 为新的执行 ID 创建新 observer                                  |
+| 只保留了渲染消息或 AG-UI 记录                  | 不要将它们传给 `resume()`；它们无法重建 Harness 多 part 源状态 |
+| 源历史存在缺口                                 | 在 Host 中报告并核对，不能悄悄跳过                             |
 
 ## 从源历史恢复
 
@@ -36,7 +36,7 @@ async for item in source_journal.tail(
     await host.persist_and_publish(new_events)
 ```
 
-参数是有限的 `AsyncIterable[HarnessStreamEvent[Any]]`。它必须按原顺序产出一次执行的精确公开源前缀，并在 Host 选择的交接点结束。`resume()` 返回后，将后续实时条目传给 `observe()`。
+参数是有限的 `AsyncIterable[HarnessStreamEvent[Any]]`。它必须按原顺序产出一次执行（`HarnessAguiObserver`）或一个根流及其内联子执行（`HarnessAguiStreamObserver`）的精确公开源前缀，并在 Host 选择的交接点结束。`resume()` 返回后，将后续实时条目传给 `observe()`。
 
 `resume()`:
 
@@ -59,7 +59,7 @@ next_events = observer.observe(next_live_item)
 Host 负责 `resume()` 周围的源历史契约：
 
 - 保留或重建结构化公开 `HarnessStreamEvent` 值；
-- 为精确的一个 `run_id` 选择有限前缀；
+- 为精确的一个 `run_id`（`HarnessAguiObserver`）或一个根流及其内联子执行（`HarnessAguiStreamObserver`）选择有限前缀；
 - 保留源顺序并排除重复交付；
 - 检测保留缺口，不悄悄省略源条目；
 - 从重放切换到实时流时，既没有缺口也没有重叠；

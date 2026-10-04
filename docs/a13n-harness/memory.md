@@ -1,22 +1,22 @@
 ---
 title: Memory
-description: Give an agent file or record memory that outlives a single conversation.
+description: Give an Agent file or record memory that outlives a single Thread.
 ---
 
-Memory gives an Agent knowledge that outlives one conversation: preferences, decisions, conventions, and facts. Several conversations can share one memory. A memory comes in one of two kinds:
+Memory gives an Agent knowledge that outlives one Thread: preferences, decisions, conventions, and facts. Several Threads can share one memory. A memory comes in one of two kinds:
 
 |                        | File memory                                              | Record memory                                                         |
 | ---------------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
 | Unit                   | A text file with a path                                  | A short record with an ID                                             |
-| How the model finds it | An index at the start of a run, then view and grep       | Recall at the start of a run, then similarity search                  |
+| How the model finds it | An index at the start of a Run, then view and grep       | Recall at the start of a Run, then similarity search                  |
 | Writes                 | Each write checks its condition against the current file | The last write wins                                                   |
 | Stores                 | `DirectoryFileStore`, or your own `FileStore`            | mem0 through `MEM0_PLATFORM` or `MEM0_OSS`, or your own `RecordStore` |
 
-Use [working state](context.md#working-state) for tasks and notes that belong to one conversation.
+Use [working state](context.md#working-state) for tasks and notes that belong to one Thread.
 
 ## File memory
 
-File memory keeps a small tree of text files. Each write checks its condition against the current file when it runs, so a change based on stale content fails instead of overwriting another conversation's work.
+File memory keeps a small tree of text files. Each write checks its condition against the current file when it runs, so a change based on stale content fails instead of overwriting another Thread's work.
 
 ### Mount a local memory
 
@@ -58,7 +58,7 @@ The model addresses the memory by its mount name, `user`. It never sees the dire
 
 - **Instructions.** Each mount is listed with its name, access, and guide. `guide=None` uses `DEFAULT_FILE_GUIDE`, a short rule for what to keep and how to organize it; pass your own text, or `""` for no guide.
 - **Tools.** The `memory_file_*` tools are the only way to read and change a memory. Shell and Environment file tools cannot reach it.
-- **Context.** At the start of each run, one `<memory-context>` block per memory shows its `always_load` files and an index with one `path: description` line per file, or only the files that changed since the conversation last saw it.
+- **Context.** At the start of each Run, one `<memory-context>` block per memory shows its `always_load` files and an index with one `path: description` line per file. With cursors, a later Run instead gets only the changed paths and the new content of changed `always_load` files, or no block when nothing changed.
 
 | Tool                 | Does                                                     | Fails when                                            |
 | -------------------- | -------------------------------------------------------- | ----------------------------------------------------- |
@@ -70,13 +70,13 @@ The model addresses the memory by its mount name, `user`. It never sees the dire
 | `memory_file_move`   | Renames a file                                           | The source is missing or the destination exists       |
 | `memory_file_delete` | Deletes a file at the version the model viewed           | The file changed or no longer exists                  |
 
-A failed call changes nothing and returns the current file, so the model can read it and decide again. For example, when two conversations viewed a file containing "likes tea" and "reply in English", one can edit "reply in English" to "reply in Chinese" and the other can then edit "likes tea" to "likes coffee": both changes remain. A later edit of "reply in English" fails and returns the file as it is now.
+A call that fails its condition or a version check changes nothing and returns the current file, so the model can read it and decide again. For example, two Threads viewed a file that contains "likes tea" and "reply in English". One Thread edits "reply in English" to "reply in Chinese". The other Thread then edits "likes tea" to "likes coffee". Both changes remain. A later edit of "reply in English" by either Thread fails and returns the file as it is now.
 
 A `read` mount offers only `memory_file_view` and `memory_file_grep`. `tools=("view", "grep")` narrows the tools for every mount. Tool permission rules can target the tool IDs `memory.file.view` through `memory.file.delete`.
 
 ### Write good memory files
 
-A file is UTF-8 text, at most 64 KiB. Its index line uses the frontmatter `description` when present, otherwise its first non-empty line:
+A file is UTF-8 text, at most 64 KiB by default. Its index line uses the frontmatter `description` when present, otherwise its first non-empty line:
 
 ```markdown
 ---
@@ -86,15 +86,15 @@ description: Language and tone preferences
 - Keep answers short.
 ```
 
-Paths are relative, such as `prefs/language.md`; directories exist implicitly. `always_load` names files whose full content every run starts with. Only the code that builds the mount chooses them, so a conversation cannot pin its own writes into every later conversation.
+Paths are relative, such as `prefs/language.md`; directories exist implicitly. `always_load` names files whose full content leads the memory's full context; with cursors, a later Run gets such a file again only when it changed. Only the code that builds the mount chooses them, so a Thread cannot pin its own writes into every later Thread.
 
-### Keep context small across runs
+### Keep context small across Runs
 
-`MemoryCursors` records where each memory's context in the conversation stands. With the same cursors, a later run gets only the files changed since the last delivered context, or nothing when nothing changed. Persist `cursors.snapshot()` next to the conversation's `HarnessState` and pass `MemoryCursors(saved)` when you build the next run's Capability. Without cursors, every run gets full context. After automatic compaction or a handoff replaces the history, the Capability clears the cursors, so the next run gets full context again.
+`MemoryCursors` records, for each memory, the store cursor of the context last delivered to the Thread. With the same cursors, a later Run gets only the changes since the last delivered context, or nothing when nothing changed. Persist `cursors.snapshot()` next to the Thread's `HarnessState` and pass `MemoryCursors(saved)` when you build the next Run's Capability. Without cursors, every Run gets full context. After automatic compaction or a handoff replaces the history, the Capability clears the cursors, so the next Run gets full context again.
 
-`DirectoryFileStore` has no change journal. Any change to the memory gives the next run full context rather than a change list.
+`DirectoryFileStore` has no change journal. Any change to the memory gives the next Run full context rather than a change list.
 
-All memory context of one run shares a budget:
+All memory context of one Run shares a budget:
 
 ```python
 from a13n_harness.capabilities import FileMemoryLimits
@@ -107,17 +107,17 @@ memory = FileMemoryCapability([FileMount("user", store, "write")], limits=limits
 
 ### Share a memory between processes
 
-Several processes can mount the same directory. `DirectoryFileStore` serializes each change with a lock file under `.a13n-memory/`, which it never lists. Cursors belong to a conversation, so keep one `MemoryCursors` per conversation. The directory store keeps no history; back the directory up yourself, or use a store with history, such as the Service's.
+Several processes can mount the same directory. `DirectoryFileStore` serializes each change with a lock file under `.a13n-memory/`, which it never lists. Cursors belong to a Thread, so keep one `MemoryCursors` per Thread, next to its `HarnessState`. The directory store keeps no history; back the directory up yourself, or implement a `FileStore` that keeps history, as the Service's file memory store does.
 
 ### Bring your own file store
 
-A store implements the `FileStore` protocol from `a13n_harness.providers.memory`: `list`, `read`, compare-and-swap `write`, `move`, and `delete`, `changes` for the context cursor, and `purge`. Add `search` to implement `SearchableFileStore`; otherwise `memory_file_grep` reads the files. `validate_path()` and `describe()` apply the shared file rules. `Origin` tells a store with history which run, principal, and tool call made each change.
+A store implements the `FileStore` protocol from `a13n_harness.providers.memory`: `list`, `read`, compare-and-swap `write`, `move`, and `delete`, `changes` for the context cursor, and `purge`. Add `search` to implement `SearchableFileStore`; otherwise `memory_file_grep` reads the files. `validate_path()` and `describe()` apply the shared file rules. `Origin` tells a store with history which Run, principal, and tool call made each change.
 
 The [File Memory specification](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/21-file-memory.md) defines the complete store contract, context budget, and failure codes.
 
 ## Record memory
 
-Record memory keeps short records, such as "prefers green tea", and recalls the ones closest in meaning to each run's input. Records have no versions: the last write wins.
+Record memory keeps short records, such as "prefers green tea", and recalls the ones closest in meaning to each Run's input. Records have no versions: the last write wins.
 
 ### Mount mem0
 
@@ -147,7 +147,7 @@ async def main() -> None:
 
         first = await executable.run("I drink green tea. Remember that.")
         print(first.output_or_raise())
-        # A new conversation recalls the record.
+        # A new Thread recalls the record.
         second = await executable.run("What should I order at the cafe?")
         print(second.output_or_raise())
 
@@ -171,7 +171,7 @@ Both add records verbatim, confirm every write by reading it back, and never sho
 ### What the model gets from records
 
 - **Instructions.** Each mount is listed with its name, access, and guide. `guide=None` uses `DEFAULT_RECORD_GUIDE`; pass your own text, or `""` for no guide.
-- **Recall.** At the start of each run, one `<memory-recall>` block per memory shows the records closest to the input's text. `recall=False` on a mount turns it off. A recall that fails or takes longer than `recall_seconds` is skipped, and the run goes on.
+- **Recall.** At the start of each Run, one `<memory-recall>` block per memory shows the records closest to the input's text. `recall=False` on a mount turns it off. A recall that fails or takes longer than `recall_seconds` is skipped, and the Run goes on.
 - **Tools.** The `memory_record_*` tools search, list, and change records.
 
 | Tool                   | Does                                            | Fails when                                           |
@@ -182,9 +182,9 @@ Both add records verbatim, confirm every write by reading it back, and never sho
 | `memory_record_update` | Replaces a record's whole text                  | The record does not exist in this memory             |
 | `memory_record_delete` | Deletes a record                                | The record does not exist in this memory             |
 
-A write that the store cannot confirm fails with `write_unconfirmed`: it may or may not have happened, so the model searches before it writes again. A `read` mount offers only search and list, and `tools=("search", "add")` narrows the tools for every mount. Tool permission rules can target the tool IDs `memory.record.search` through `memory.record.delete`.
+A write that the store cannot confirm fails with `write_unconfirmed`: it may or may not have happened, so the tool instructions tell the model to search before it writes again. A `read` mount offers only search and list, and `tools=("search", "add")` narrows the tools for every mount. Tool permission rules can target the tool IDs `memory.record.search` through `memory.record.delete`.
 
-`RecordMemoryLimits` sets the record size and each run's recall:
+`RecordMemoryLimits` sets the record size and each Run's recall:
 
 ```python
 from a13n_harness.capabilities import RecordMemoryLimits

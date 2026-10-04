@@ -3,7 +3,7 @@ title: Delegation and CodeAct
 description: Run declared subagents inline or asynchronously, and let CodeAct execute restricted Python over eligible tools.
 ---
 
-Agent Harness provides two advanced orchestration features without adding a workflow engine:
+Harness provides two advanced orchestration features without adding a workflow engine:
 
 - subagent execution runs an exact declared child inline or through an asynchronous operator;
 - CodeAct runs restricted Python over an explicitly eligible subset of the active tool surface.
@@ -52,11 +52,11 @@ Build recursively validates a finite acyclic graph and unique sibling names. Eac
 
 ### Inline Execution and Continuation
 
-The default Capability needs no Host scheduler or child-binding callback. Its private inline executor:
+`SubagentCapability()` in its default inline mode needs no Host scheduler or child-binding callback. Its private inline executor:
 
 1. selects one declared child;
 2. derives fresh child instance lineage and intersects authored usage ceilings;
-3. applies the edge context policy;
+3. applies the child's `SubagentDefinition.context` policy;
 4. borrows the parent's already-entered Environment mapping without re-entering or closing adapters;
 5. runs the child through its canonical `ExecutableAgent.stream()` path;
 6. forwards validated child observations into the parent stream;
@@ -98,7 +98,7 @@ Implement those semantics behind `SubagentOperator` according to the owning Host
 
 ### Deferred Tools in Child Runs
 
-Deferred support is selected by fresh `RunBindings.deferred_tools_supported`, not by whether an invocation has a parent. The default is `True`. Roots and children can use native deferred calls, approvals, and Host-configured handlers.
+Deferred support is selected by fresh `RunBindings.deferred_tools_supported`, not by whether an invocation has a parent. The default is `True`. Roots and Host-managed children can use native deferred calls, approvals, and Host-configured handlers; built-in inline children cannot.
 
 A Host without a child-feedback lifecycle sets `deferred_tools_supported=False`. Declaratively deferred tools and their first-party guidance are then omitted. Runtime `CallDeferred` and `ApprovalRequired` become `ToolDenied("Deferred tool interaction is unavailable for this Run.")` results inside the same model loop. A custom handler cannot bypass that setting. Unexpected terminal deferral fails with `deferred_tools_unsupported`. Harness UI currently selects this unsupported mode for async children; ordinary async prompt continuation remains available.
 
@@ -110,7 +110,7 @@ A Host that owns child execution can enable deferred tools and use the same [nat
 
 Declare only the child's business `output_type`, including structured Pydantic models. Harness automatically adds native `DeferredToolRequests` support when building roots and children; explicitly including that reserved type in the business output is rejected. Suspended results carry `deferred` and no business output. After successful resume, `output_or_raise()` returns the declared business type.
 
-Usage limits are independent per child Run. Each child receives the strictest per-field intersection of its own definition limits and the authored edge, not its parent's budget or accumulator. An async Host may narrow that ceiling. Child events remain attributed separately; Hosts can aggregate usage for display without introducing a shared enforcement cap.
+Usage limits are independent per child Run. Each child receives the strictest per-field intersection of its own definition limits and its `SubagentDefinition.usage_limits`, not its parent's budget or accumulator. An async Host may narrow that ceiling. Child events remain attributed separately; Hosts can aggregate usage for display without introducing a shared enforcement cap.
 
 ## CodeAct
 
@@ -160,7 +160,7 @@ Eligibility is not inferred from arbitrary metadata, model visibility, or a tool
 
 ### Nested Dispatch
 
-Restricted code receives generated typed host functions. A nested call validates and executes through the active final Pydantic AI `ToolManager`, not through a second dispatcher. Therefore ordinary Capability hooks, Harness managed-tool policy, provider enforcement, events, usage, and deferred behavior still apply. A root inline deferred handler can supply the nested result. A child denial or unresolved root request fails only the current CodeAct runner invocation; CodeAct never persists or resumes an interpreter frame.
+Restricted code receives generated typed host functions. A nested call validates and executes through the active final Pydantic AI `ToolManager`, not through a second dispatcher. Therefore ordinary Capability hooks, Harness managed-tool policy, provider enforcement, events, usage, and deferred behavior still apply. A deferred handler of the root Run that resolves the request before the nested call returns can supply the nested result. A child denial or unresolved root request fails only the current CodeAct runner invocation; CodeAct never persists or resumes an interpreter frame.
 
 Source validation, unavailable functions, sandbox execution errors, and resource-limit failures return failed tool results so the Agent can correct its code or choose another tool. They do not consume the runner's model-retry budget, even when no nested tool has started. Outer tool-call schema validation and runner-isolation rules still use their normal retry policy.
 
@@ -172,29 +172,17 @@ A nested call that may have reached an external side effect is never reported as
 
 ### Runtime State
 
-`run_code` state lasts for the current logical Harness run. Calls can retain ordinary interpreter values across invocations and clear them with `restart=True`. It does not enter `HarnessState` and does not survive a new run.
+`run_code` state lasts for the current logical Harness Run. Calls can retain ordinary interpreter values across invocations and clear them with `restart=True`. It does not enter `HarnessState` and does not survive a new Run.
 
 `run_program`:
 
 - accepts only a strict UTF-8 `*.codeact.py` file;
 - reads it through the current Environment;
 - requires exactly `async def main(inputs)`;
-- creates a fresh interpreter session for each invocation;
+- creates a fresh interpreter for each invocation;
 - receives JSON-compatible inputs.
 
 The Environment path grants no additional tool eligibility. The code can call only injected host functions.
-
-## Choosing Between Them
-
-| Need                                                               | Use                                                                        |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Give a named child Agent one bounded task and wait                 | Inline delegation                                                          |
-| Combine several eligible tool calls with local Python control flow | CodeAct                                                                    |
-| Submit durable work that outlives the current process/run          | Host-owned asynchronous child or task service                              |
-| Execute arbitrary trusted application Python                       | Ordinary application code, not CodeAct                                     |
-| Run untrusted OS code                                              | An actual isolated Environment provider, not the CodeAct interpreter alone |
-
-Both features are optional. A simple Agent application should begin with ordinary native Capabilities and tools, then add delegation or CodeAct only when the execution shape requires them.
 
 ### Save data explicitly, not the interpreter
 
@@ -204,7 +192,7 @@ With `CodeActCapability`, use meaningful keys to save JSON data from either runn
 await store(key="search.results", value={"ids": [12, 34], "next_page": 3})
 ```
 
-A later feed, program, or continued run can read it without rerunning the search:
+A later `run_code` call, `run_program` invocation, or continued Run can read it without rerunning the search:
 
 ```python
 results = await load(key="search.results")
@@ -213,8 +201,20 @@ results["ids"]
 
 `load()` lists all keys; `forget(key="search.results")` deletes one and returns whether it existed. There is no message/description field. A missing key raises an error, while a stored null loads as `None`. Loaded objects are detached: mutate and call `store` again to publish changes.
 
-Successful writes survive subsequent sandbox failure and `run_code(restart=True)`. Cross-run continuity requires the host to save and restore `HarnessState`; this is not durable storage by itself. Ordinary variables and functions still disappear when a run ends. A new child has separate state; a host-created state fork is a detached copy, never a shared map. Restoring data does not restore old tool permissions.
+Successful writes survive subsequent sandbox failure and `run_code(restart=True)`. Cross-Run continuity requires the Host to save and restore `HarnessState`; this is not durable storage by itself. Ordinary variables and functions still disappear when a Run ends. A new child has separate state; a Host-created state fork is a detached copy, never a shared map. Restoring data does not restore old tool permissions.
 
 The model receives only a bounded key directory (up to 32 keys and 4 KiB), not all stored values. Use `load()` to discover omitted keys. `CodeActConfig.max_state_entries` defaults to 256 and `max_state_bytes` to 10 MiB for the whole compact JSON namespace, including keys. Keys must contain 1–256 characters. Values must be finite JSON; rejected writes do not replace existing data. These limits also apply when restoring state.
 
 CodeAct lets Monty resolve Python names rather than rejecting calls with an approximate static scope checker. Actual host calls must still be eligible in the current tool catalog. A later unavailable call can fail after earlier tools have run; completed effects and explicit writes are not rolled back or automatically replayed.
+
+## Choosing Between Them
+
+| Need                                                               | Use                                                                        |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| Give a named child Agent one bounded task and wait                 | Inline delegation                                                          |
+| Combine several eligible tool calls with local Python control flow | CodeAct                                                                    |
+| Submit durable work that outlives the current process/Run          | Host-owned asynchronous child or task service                              |
+| Execute arbitrary trusted application Python                       | Ordinary application code, not CodeAct                                     |
+| Run untrusted shell commands or native programs                    | An actual isolated Environment provider, not the CodeAct interpreter alone |
+
+Both features are optional. A simple Agent application should begin with ordinary native Capabilities and tools, then add delegation or CodeAct only when the execution shape requires them.

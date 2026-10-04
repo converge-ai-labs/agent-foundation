@@ -1,6 +1,6 @@
 ---
 title: Environments
-description: Mount Environments into a Run so the agent can work with files, commands, and processes.
+description: Mount Environments into a Run so the Agent can work with files, commands, and processes.
 ---
 
 An Environment is one fresh process-local adapter for a single provider target. The [Environment Provider domain](../environments/index.md) owns target creation, re-entry, provider operations, cached state, and explicit destruction. Harness owns only one Run's mount names, access ceilings, routing, state aggregation, and non-destructive cleanup.
@@ -11,7 +11,7 @@ Environment lifecycle is separate from model-facing tools:
 
 - a Host selects a trusted Provider definition, account configuration, credential, target recipe, and current `EnvironmentState`;
 - the definition constructs a fresh Environment, acquiring a live collaborator only in its runtime factory;
-- Harness enters the Environment before input production and closes it after the terminal Run fence;
+- Harness enters the Environment before input production and closes it after the Run stops all work;
 - `DynamicEnvironmentCapability` optionally exposes permitted operations to the model;
 - `close()` releases process-local resources and never destroys the backing target;
 - only explicit Host policy creates a fresh adapter and calls `destroy()`.
@@ -26,7 +26,7 @@ result = await executable.run("Answer without using a workspace")
 
 ## Construct one fresh Environment per Run
 
-Use a trusted Provider before calling Harness. Direct Local is stateless, so each Run passes `state=None`:
+Construct the Environment with a trusted Provider before calling Harness. Direct Local is stateless, so each Run passes `state=None`:
 
 ```python
 from pathlib import Path
@@ -113,7 +113,7 @@ finally:
     )
 ```
 
-Successful destruction clears the adapter's state. An incompatible target or unknown external outcome fails and preserves the last validated state for later Host inspection or retry. The Provider removes only the exact target and provider-owned bootstrap material represented by that state; external bind sources and shared Host workspaces remain Host-owned.
+Successful destruction clears the adapter's state. An incompatible target or unknown external outcome fails and preserves the last validated state for later Host inspection or retry. The Provider removes only the exact target and provider-owned bootstrap material represented by that state; external bind sources and shared Host directories remain Host-owned.
 
 ## Use several Environments
 
@@ -145,7 +145,7 @@ The routing rules are deterministic:
 | several entries with `default_environment="name"` | supplied names | named entry   |
 | several entries without `default_environment`     | supplied names | none          |
 
-The default mount serves `/workspace`. Every named mount is addressable at `/environment/{name}`. With several entries and no explicit default, `/workspace/...` fails instead of selecting the first mapping entry. Mapping order never grants authority.
+Unless a mount sets `mount_path`, the default mount serves `/workspace` and every named mount is addressable at `/environment/{name}`. A mount with `mount_path` is addressable only at that root. With several entries and no explicit default, `/workspace/...` fails instead of selecting the first mapping entry. Mapping order never grants authority.
 
 Initial setup is atomic. Harness validates the complete input before entry and publishes no partial mount set. If any adapter fails, Harness closes every supplied adapter that may own process-local resources in reverse order. It never destroys a target during unwind.
 
@@ -164,7 +164,7 @@ read_only_docs = EnvironmentMount(
 )
 ```
 
-`permission_ceiling` is an exact `EnvironmentPermissionSet`. It defaults to every `EnvironmentAction`, so a mount exposes every Agent-facing Environment capability the Provider offers, including command and process operations when supported. `FILE_READ_ACTIONS` and `FILE_ACTIONS` are the shared constants for file observation and for the complete `environment.file.*` family. Provider capabilities always narrow the ceiling. The default ceiling does not grant Host administration, bypass a sandbox, or override operating-system security.
+`permission_ceiling` is an exact `EnvironmentPermissionSet`. It defaults to every `EnvironmentAction`, so a mount exposes every Agent-facing Environment operation the Provider offers, including command and process operations when supported. `FILE_READ_ACTIONS` and `FILE_ACTIONS` are the shared constants for file observation and for the complete `environment.file.*` family. The Provider's supported operations always narrow the ceiling. The default ceiling does not grant Host administration, bypass a sandbox, or override operating-system security.
 
 `working_directory` must be `None` or a canonical absolute provider path without `.` or `..` segments.
 
@@ -186,12 +186,12 @@ capabilities = (
 Three decisions remain separate:
 
 1. the Agent definition includes or omits the dynamic Environment Capability;
-2. an optional run policy can narrow a managed invocation for the current identity and arguments;
+2. an optional invocation policy can narrow a managed invocation for the current identity and arguments;
 3. the selected Environment mount and Provider enforce the exact operation.
 
-Without an explicit Invocation Policy, managed Environment tools default to allow at the Harness boundary. That default does not create Provider capability, credentials, approval, or mount access. Tool injection improves discovery and cannot replace execution-time checks.
+Without an explicit invocation policy (`InvocationPolicyCapability`), managed Environment tools default to allow at the Harness boundary. That default does not create Provider support, credentials, approval, or mount access. Tool injection improves discovery and cannot replace execution-time checks.
 
-Authorization applies to the requested operation and arguments, not a reserved backend. Canonical resources describe the mount and path observed during policy evaluation. If the Host replaces a mount or changes the default while policy or approval is waiting, execution selects the current route and checks its current permissions. Resource metadata and custom approval revisions do not guarantee that dispatch uses the observed backend; exact-target Host policy must also be enforced on the execution path, such as by the Provider or a Host-controlled stable binding.
+Authorization applies to the requested operation and arguments, not a reserved backend. Canonical resources describe the mount and path observed during policy evaluation. If the Host replaces a mount or changes the default while policy or approval is waiting, execution selects the current route and checks its current permissions. Resource metadata and custom approval revisions do not guarantee that dispatch uses the observed backend. To pin the exact target, the Host enforces its policy on the execution path, for example in the Provider or through a Host-controlled stable binding.
 
 After execution starts, compound file work stays on its selected scope. Document conversion retains that scope from source read through output publication, and downloads retain it while fetching and writing. Replacing a mount does not move an in-flight operation to another backend. Exact process handles, generation validation, Provider draining, and the prohibition on automatically replaying unknown outcomes remain unchanged.
 
@@ -201,7 +201,7 @@ The tool surface follows the effective actions of current mounts:
 - `FILE_ACTIONS` adds `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, and `delete`;
 - the default ceiling adds `shell_exec` when a Provider offers shell execution, and independently adds `shell_info`, `shell_wait`, `shell_input`, and `shell_signal` according to their actions.
 
-Partial-capability Providers expose only usable tools: list, query, and text-search independently enable `ls`, `glob`, and `grep`; text-write can expose write/create-edit tools without read permission. Text `view` needs text-read, while media `view` needs stat plus byte-read on the same mount. Existing edits need byte-read plus text-write. Writing directly under a selected mount root does not require mkdir, including explicit roots without a default mount. Nested writes require mkdir when the tool creates the parent. Copy uses copy-source and copy-destination permissions, including across mounts. Actual arguments are checked again at execution.
+Providers with partial operation support expose only usable tools: list, query, and text-search independently enable `ls`, `glob`, and `grep`; text-write can expose write/create-edit tools without read permission. Text `view` needs text-read, while media `view` needs stat plus byte-read on the same mount. Existing edits need byte-read plus text-write. Writing directly under a selected mount root does not require mkdir, including explicit roots without a default mount. Nested writes require mkdir when the tool creates the parent. Copy uses copy-source and copy-destination permissions, including across mounts. Actual arguments are checked again at execution.
 
 On a single shell-enabled mount, `shell_exec` supersedes exactly `move`, `copy`, and `delete`; `mkdir` remains available. Multiple mounts retain file mutations so a shell on one mount does not hide operations on another. An empty Environment exposes no Environment tools.
 
@@ -215,7 +215,7 @@ A foreground-only mount exposes `shell_exec` with bounded inline output; it does
 | `shell_input`  | Writes UTF-8 stdin and optionally closes stdin without reading output                                    |
 | `shell_signal` | Requests supported `interrupt`, `terminate`, or `kill` control without reading output                    |
 
-`execution_timeout_seconds` on `shell_exec` requests a Provider-enforced hard execution deadline. Providers such as native E2B reject it before starting when they cannot enforce it. `yield_time_seconds` and `shell_wait.timeout_seconds` only bound waiting. There is no background mode flag and no separate list, status or kill tool.
+`execution_timeout_seconds` on `shell_exec` requests a Provider-enforced hard execution deadline. Providers such as native E2B reject it before starting when they cannot enforce it. `yield_time_seconds` and `shell_wait.timeout_seconds` only bound waiting. There is no background mode flag; `shell_info` covers listing and status, and `shell_signal` covers kill.
 
 Use `shell_info(alias="workspace", limit=50)` to discover recoverable running commands only when the selected mount supports process listing. Direct Local supports inspection, not discovery: its `shell_info` schema requires a `process_id` returned by `shell_exec` in the current Run and omits `limit`. `shell_info(process_id=...)` only inspects; it does not attach, read, refresh or reset output. Listing and inspection are independently authorized. `alias` is an existing mount name from the Environment context, not a command/process label; omit it for default selection. An unknown or conflicting alias fails instead of retargeting a command or reference. Listing never exposes native PIDs, arbitrary arguments or environment variables.
 
@@ -251,11 +251,11 @@ sequenceDiagram
     %% class Process ext
 ```
 
-`glob` and `grep` send their include pattern, repository-ignore and hidden-name policy, context width, and scan/result ceilings to the selected `FileOperator` in one call. Direct Local performs one worker-thread scan; EIP performs one `file.find` or `file.search` request. Set `include_ignored=True` only when ignored repository paths should be searched.
+`glob` and `grep` send their include pattern, repository-ignore and hidden-name policy, context width, and scan/result ceilings to the selected `FileOperator` in one call. Direct Local performs one worker-thread scan; Envd-backed Providers send one EIP `file.find` or `file.search` request. Set `include_ignored=True` only when ignored repository paths should be searched.
 
-For supported image, audio, and video files, `view` either attaches native `BinaryContent` or invokes a dedicated understanding Agent. The `model_characteristics` construction value on the active Harness `AgentSpec` is the sole native-input authority; Harness never infers support from a model name or Pydantic AI `Model.profile`. Dedicated defaults read ordinary process environment variables, and a fresh run Capability can override them.
+For supported image, audio, and video files, `view` either attaches native `BinaryContent` or invokes a dedicated understanding Agent. The `model_characteristics` construction value on the active Harness `AgentSpec` is the sole native-input authority; Harness never infers support from a model name or Pydantic AI `Model.profile`. Dedicated defaults read ordinary process environment variables, and a fresh `RunBindings.file_media_understanding` provider can override them.
 
-See [Multimedia Understanding](multimedia-understanding.md) for capability declarations, environment configuration, default prompt behavior, run-scoped providers, usage attribution, and ordinary tool-result failures.
+See [Multimedia Understanding](multimedia-understanding.md) for model input capability declarations, environment configuration, default prompt behavior, Run-scoped providers, usage attribution, and ordinary tool-result failures.
 
 ## Manage Provider state outside Harness
 
@@ -293,4 +293,4 @@ Use Local Envd or Docker when untrusted code needs an isolated execution boundar
 
 ## Temporary tool-result files
 
-Large tool results may include an `output_file_path` under a run-private directory. It uses an explicit mount root or `/environment/{name}`, so changing the default mount does not redirect an earlier result. Cleanup removes owned temporary directories through their original mount selections. If that mount is replaced, unmounted, or unavailable, cleanup can leave temporary files behind rather than deleting anything on a replacement. These paths are not durable artifacts or permanent handles across mount replacement. Downloaded files and document-conversion exports are user output and are not removed by this cleanup.
+Large tool results may include an `output_file_path` under a Run-private directory. It uses an explicit mount root or `/environment/{name}`, so changing the default mount does not redirect an earlier result. Cleanup removes owned temporary directories through their original mount selections. If that mount is replaced, unmounted, or unavailable, cleanup can leave temporary files behind rather than deleting anything on a replacement. These paths are not durable artifacts or permanent handles across mount replacement. Downloaded files and document-conversion exports are user output and are not removed by this cleanup.

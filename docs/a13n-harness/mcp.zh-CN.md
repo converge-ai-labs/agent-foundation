@@ -1,6 +1,6 @@
 ---
 title: MCP 工具
-description: 连接 MCP server 提供的工具，并根据当前身份或 Run 生成请求头。
+description: 连接 MCP server 提供的工具，并发送根据当前身份或 Run 生成的请求头。
 ---
 
 通过 MCP 接入其他进程或服务提供的工具。Harness 组合 Pydantic AI 的 MCP Capability，不额外实现传输客户端。
@@ -9,15 +9,15 @@ description: 连接 MCP server 提供的工具，并根据当前身份或 Run �
 | ----------------------------------------------------------- | ------------------------------------------------ |
 | 静态 server、stdio 进程、进程内 server 或预先构建的 Toolset | 原生 `MCP`                                       |
 | 根据当前 Harness 身份或 Run 生成 URL server 的请求头        | `ContextualMCP`                                  |
-| 终端产品的命令或 JSON 配置                                  | [Harness UI MCP 配置](../a13n-harness-ui/mcp.md) |
+| Harness UI 中的命令或 JSON server 配置                      | [Harness UI MCP 配置](../a13n-harness-ui/mcp.md) |
 
 Harness SDK 的 `AgentSpec` **不接受** Harness UI 顶层的 `mcp_servers` 资源字段。SDK 使用 Capabilities，资源 ID 和配置文件由应用管理。
 
 ## 原生 MCP
 
-MCP 使用 Pydantic AI 原生的 `MCP` Capability，放在 `AgentSpec.capabilities` 中。Agent Harness 不定义另一套 MCP 客户端、协议、server schema，或与之并列的 `mcp_servers` 字段。
+MCP 使用 Pydantic AI 原生的 `MCP` Capability，放在 `AgentSpec.capabilities` 中。Harness 不定义另一套 MCP 客户端、协议、server schema，或与之并列的 `mcp_servers` 字段。
 
-可以直接从 AgentSpec 文档重建本地执行的 URL server：
+可以直接从 AgentSpec 文档重建本地执行（`local: True`）的 URL server：
 
 ```python
 from a13n_harness import AgentSpec
@@ -39,7 +39,7 @@ agent_spec = AgentSpec.from_dict(
 )
 ```
 
-默认安装的 `a13n-harness` 已包含 Pydantic AI 的 MCP 客户端运行时，本地 URL 和 stdio 传输无需额外的 Harness extra。如果需要进程内 server、传输对象、脚本路径或预构建的 `MCPToolset` 等更丰富的进程内输入，在可信代码中构建 `pydantic_ai.capabilities.MCP`，通过定义的 Capability 组合传入。Host 可以将新的上游 `MCP` 投影附加到 `RunBindings.capabilities`，同时单独管理已进入的客户端生命周期。不要复用可变的 Run 投影，也不要在不同权限或请求头绑定之间共享认证客户端。`defer_loading=True` 使用上游 `load_capability`，仍遵循相同的 Harness 工具边界。需要选定模型 provider 原生执行 URL MCP server 时，使用 `native=True, local=False`。
+默认安装的 `a13n-harness` 已包含 Pydantic AI 的 MCP 客户端运行时，通过 URL 和 stdio 传输进行本地执行无需额外的 Harness extra。如果需要进程内 server、传输对象、脚本路径或预构建的 `MCPToolset` 等进程内输入，在可信代码中构建 `pydantic_ai.capabilities.MCP`，并传给 `HarnessBuilder().build(..., capabilities=...)`。Host 可以将新的上游 `MCP` 投影附加到 `RunBindings.capabilities`，同时单独管理已进入的客户端生命周期。不要复用可变的 Run 投影，也不要在不同权限或请求头绑定之间共享认证客户端。`defer_loading=True` 使用上游 `load_capability`，仍遵循相同的 Harness 工具边界。需要选定模型 provider 原生执行 URL MCP server 时，使用 `native=True, local=False`。
 
 ## Host 持有的客户端
 
@@ -65,13 +65,13 @@ async def use_host_client(executable):
         return results
 ```
 
-进入 Host 客户端前配置认证和输入处理器。Host 负责关闭、当前授权、回调路由和精确绑定隔离；Harness 不维护连接池，也不将客户端持久化到续接状态。`auto` 将现代发现和旧版协商交给 SDK。代码构造的客户端也支持显式 `legacy` 和 `2026-07-28` 模式。多轮输入及请求状态由 SDK 管理，不需要另一个 Harness agent 循环。客户端断开不代表可以重放结果未知的业务调用。
+进入 Host 客户端前配置认证和输入处理器。Host 负责关闭、当前授权、回调路由和精确绑定隔离；Harness 不维护连接池，也不将客户端持久化到续接状态。`auto` 将现代发现和旧版协商交给 FastMCP 客户端。代码构造的客户端也支持显式 `legacy` 和 `2026-07-28` 模式。多轮输入及请求状态由 FastMCP 客户端管理，不需要另一个 Harness Agent 循环。客户端断开不代表可以重放结果未知的业务调用。
 
 ## 用 `ContextualMCP` 生成当前 Run 的请求头
 
-URL MCP server 的请求头需要根据当前逻辑 Harness Run 生成时，使用 `ContextualMCP`。定义只保存不执行任何操作的 URL 配置。在 Pydantic Capability 的 Run 绑定阶段，它会解析请求头并构建新的上游 `MCP`，之后才提取原生工具或本地 MCP Toolset。
+URL MCP server 的请求头需要根据当前逻辑 Harness Run 生成时，使用 `ContextualMCP`。`ContextualMCP` 定义只保存不执行任何操作的 URL 配置。Pydantic AI 为 Run 绑定 Capabilities 时，`ContextualMCP` 会解析请求头并构建新的上游 `MCP`，之后才提取原生工具或本地 MCP Toolset。
 
-常见的 Identity、关联关系、Run 和元数据值，可使用声明式解析器：
+常见的身份、关联关系、Run 和元数据值，可使用声明式解析器：
 
 ```python
 from a13n_harness import (
@@ -133,19 +133,19 @@ result = await executable.run("Find the account record", bindings=bindings)
 
 `RunBindings.metadata` 用于附加每次 Run 的 JSON 值。先放入准确的顶层键，再通过 `context.metadata.<key>` 选择。不要临时给 `AgentContext` 添加属性，也不要编码嵌套反射路径。
 
-声明式解析器只支持以下准确的来源类别：
+声明式解析器只支持以下准确的来源：
 
 | 来源                                | 解析值                                       |
 | ----------------------------------- | -------------------------------------------- |
-| `identity.issuer`                   | Workload Identity 的签发方                   |
-| `identity.subject`                  | Workload Identity 的主体                     |
-| `identity.<claim>`                  | 一个准确的 Identity claim，例如 `user_id`    |
+| `identity.issuer`                   | 工作负载身份的签发方                         |
+| `identity.subject`                  | 工作负载身份的主体                           |
+| `identity.<claim>`                  | 一个准确的身份 claim，例如 `user_id`         |
 | `instance.agent_instance_id`        | 当前由 Host 管理的 Agent 实例 ID             |
 | `instance.parent_agent_instance_id` | 可选的父 Agent 实例 ID                       |
 | `instance.delegation_id`            | 可选的委派关联标识                           |
 | `instance.actor`                    | 可选的 actor 字符串                          |
 | `context.run_id`                    | 当前逻辑 Harness Run ID                      |
-| `context.thread_id`                 | 当前独立推进的 Thread ID                     |
+| `context.thread_id`                 | 当前 Thread 的 ID                            |
 | `context.metadata.<top-level-key>`  | 不可变 `RunBindings.metadata` 中的一个准确值 |
 
 选中的字符串原样发送。JSON 数字、布尔值、对象和数组使用只含有限数值、键排序的紧凑 JSON。例如，`{"region": "us-east", "labels": ["interactive"]}` 会变成 `{"labels":["interactive"],"region":"us-east"}`。值缺失或为 `None` 时，必需绑定会失败，可选绑定则省略。
@@ -154,7 +154,7 @@ result = await executable.run("Find the account record", bindings=bindings)
 
 ## 自定义请求头 Factory
 
-内置选择器不足时，可以使用自定义同步或异步 factory。它接收逻辑 Run 的完整可信 `AgentContext`，返回准确的字符串到字符串映射：
+声明式解析器的来源不足时，可以使用自定义同步或异步 factory。它接收逻辑 Run 的完整可信 `AgentContext`，返回准确的字符串到字符串映射：
 
 ```python
 from collections.abc import Mapping
@@ -188,7 +188,7 @@ async def resolve_mcp_headers(context: AgentContext) -> Mapping[str, str]:
     return {"X-Route": route}
 ```
 
-Factory 每个逻辑 Harness Run 只运行一次。内部模型恢复尝试复用同一个活跃的上游 MCP 和请求头快照；另一个逻辑 Run 则重新解析。Factory 是可信 Host 代码，可以主动读取当前 Run 服务，但模型内容无法选择 selector，也无法直接调用它。
+Factory 每个逻辑 Harness Run 只运行一次。内部模型恢复尝试复用同一个活跃的上游 MCP 和请求头快照；另一个逻辑 Run 则重新解析。Factory 是可信 Host 代码，可以主动读取当前 Run 服务，但模型内容无法选择来源，也无法直接调用 factory。
 
 ## 本地与 Provider 原生执行
 
@@ -203,7 +203,7 @@ Factory 每个逻辑 Harness Run 只运行一次。内部模型恢复尝试复�
 
 预构建客户端、传输对象、进程内 server、脚本和预构建 Toolset 已自行管理连接设置。这些值直接使用原生 `MCP`，不要与 `ContextualMCP` 组合。
 
-URL 是明确的可信配置。Harness 要求 `ContextualMCP` 使用 HTTP(S) URL，除此之外，URL、传输、授权和 provider 验证都交给上游 MCP 集成。它不会猜测 URL 的各部分是否包含凭据。
+URL 是明确的可信配置。Harness 要求 `ContextualMCP` 使用 HTTP(S) URL。上游 MCP 集成负责验证 URL、传输、授权和 provider。Harness 不会猜测 URL 的各部分是否包含凭据。
 
 ## Host 提供的配置
 
@@ -211,7 +211,7 @@ Host 可以通过自身的可信配置模型暴露同一条 URL 接入路径。�
 
 每个 server 的 `id` 唯一时，一个 Agent 可以选择多个 MCP server。如果配置需要 callable factory、当前身份、静态请求头或独立的秘密解析器，应通过代码构建 `ContextualMCP`。
 
-## 对大量本地 MCP 工具分组
+## 将大型本地 MCP server 的工具分组
 
 在 `ToolProxyCapability(groups=...)` 中，将本地 `MCP` 或 `ContextualMCP` Capability 作为 [ToolProxyGroup 来源](tool-proxy.md#group-a-run-bound-mcp-capability)，可以暴露分组发现接口，而不是所有工具 schema。选择 `native=False, local=True`；provider 原生工具和延后加载来源不能作为代理目标。原生组合保留新的 Run 绑定和上下文请求头，调用仍使用原 MCP Toolset 和传输。这减少的是模型上下文，不减少 MCP 初始化或工具列表读取工作。
 

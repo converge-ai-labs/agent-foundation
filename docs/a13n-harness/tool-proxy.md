@@ -1,9 +1,9 @@
 ---
 title: Grouped ToolProxy
-description: Expose large tool collections through search and call entries so the model sees a compact list.
+description: Expose large tool collections through search and call tools so the model sees a compact list of tool groups.
 ---
 
-ToolProxy exposes large collections of local tools through two model-facing entries: `search_proxy_tools` and `call_proxy_tool`. The model sees a compact list of domains, discovers exact argument schemas when needed, and invokes the selected tool with an arguments object.
+ToolProxy exposes large collections of local tools through two model-facing control tools: `search_proxy_tools` and `call_proxy_tool`. The model sees a compact list of domains, discovers exact argument schemas when needed, and invokes the selected tool with an arguments object.
 
 ToolProxy changes discovery and call presentation only. Pydantic AI's current `ToolManager`, the original Toolset, and the normal Harness execution boundary still own validation, policy, credentials, hooks, results, and usage. It is not a second execution engine or an MCP client.
 
@@ -64,11 +64,11 @@ Use groups for domains such as `crm`, `knowledge`, and `billing`, not one group 
 
 ## Instructions and dynamic parameters
 
-Only current group summaries are placed in the control descriptions. Source Toolset instructions are returned with discovered tools instead of eagerly filling every model request. Separate Capability-level instructions keep their native behavior.
+Only current group summaries are placed in the control tool descriptions. Source Toolset instructions are returned with discovered tools instead of eagerly filling every model request. Separate Capability-level instructions keep their native behavior.
 
-The prepared controls include a current `group` enum. Search returns the current member schema after source preparation and Harness surface resolution, so unavailable or superseded tools do not remain callable through an old index. The call envelope stays small: it does not contain a union of every member's arguments.
+The prepared control tools include a current `group` enum. Search returns the current member schema after source preparation and Harness surface resolution, so unavailable or superseded tools do not remain callable through an old index. The `call_proxy_tool` schema stays small: it does not contain a union of every member's arguments.
 
-The generated guidance teaches the model to:
+The generated instructions teach the model to:
 
 1. select a domain and discover the exact schema;
 2. use the returned local name and an arguments object matching that schema;
@@ -76,7 +76,7 @@ The generated guidance teaches the model to:
 4. paginate results and refresh discovery when a tool becomes unavailable;
 5. inspect uncertain side effects rather than blindly retry a mutation.
 
-An empty query browses a group or all groups. Keyword matching uses group names, tool names, and descriptions; it is deterministic local search, not semantic retrieval. `offset` and `next_offset` apply to the current step's query results, not a durable cursor. Disabling Toolset instructions also disables generated proxy guidance and source instructions in search results.
+An empty query browses a group or all groups. Keyword matching uses group names, tool names, and descriptions; it is deterministic local search, not semantic retrieval. `offset` and `next_offset` apply to the current step's query results, not a durable cursor. Disabling Toolset instructions also disables generated proxy instructions and source instructions in search results.
 
 ## Configure names and discovery limits
 
@@ -98,11 +98,11 @@ Generated descriptions and instructions use the configured names. Names must dif
 
 `max_results` accepts 1-100. Search's omitted or null `limit` defaults to `min(5, max_results)`. The UTF-8 JSON search budget accepts 1,024-32,768 bytes. A page contains only complete schemas and instructions: entries that do not fit move to the next page. If one entry cannot fit by itself, search fails explicitly. Expose that tool directly or simplify its schema instead of relying on a truncated contract.
 
-When no grouped tools survive preparation, neither proxy control nor generated proxy instructions are exposed. Grouping reduces model context; sources still initialize and prepare their tools normally. It does not eliminate MCP tool-listing traffic or make a thousand Toolsets free to construct.
+When no grouped tools survive preparation, neither proxy control tool nor generated proxy instructions are exposed. Grouping reduces model context; sources still initialize and prepare their tools normally. It does not eliminate MCP tool-listing traffic or make a thousand Toolsets free to construct.
 
-## Group a run-bound MCP Capability
+## Group a Run-bound MCP Capability
 
-Pass the Capability instance as the group's `source`, especially when it replaces itself during run binding. Do not extract a `ContextualMCP` Toolset at definition time:
+Pass the Capability instance as the group's `source`, especially when it replaces itself during Run binding. Do not extract a `ContextualMCP` Toolset at definition time:
 
 ```python
 from a13n_harness.capabilities import ToolProxyCapability, ToolProxyGroup
@@ -157,7 +157,7 @@ proxy = ToolProxyCapability(
 capabilities = (proxy, CodeActCapability())
 ```
 
-The runner directory contains the proxy controls, not every grouped tool declaration. Restricted Python can discover and call within one `run_code` invocation:
+The runner directory contains the proxy control tools, not every grouped tool declaration. Restricted Python can discover and call within one `run_code` invocation:
 
 ```python
 found = await search_proxy_tools(query="customer name", group="crm")
@@ -181,13 +181,13 @@ async def main(inputs):
     )
 ```
 
-Call `run_program(path="lookup.codeact.py", inputs={"customer_id": 42})` with the file accessible through the current Environment. Every host call is awaited. Proxy calls are conservatively sequential barriers, including inside `asyncio.gather`.
+The model calls `run_program(path="lookup.codeact.py", inputs={"customer_id": 42})`; the file must be accessible through the current Environment. Every host-function call from restricted Python is awaited. Proxy calls are conservatively sequential barriers, including inside `asyncio.gather`.
 
 Grouping does not grant CodeAct eligibility. The bridge resolves the target and checks its own typed policy before dispatch. An MCP source without an explicit owner policy can be used through ordinary model proxy calls but is not automatically CodeAct-callable. See [CodeAct](delegation-and-codeact.md#codeact) for policy and runtime boundaries.
 
 ## Host integration
 
-The Host decides presentation when constructing the Agent definition. For already constructed sources, use `ToolProxyCapability`. To group ordinary Harness Plugin contributions alongside selected Capabilities, pass a typed `ToolProxyPlan` to `AgentDefinition.tool_proxy` or `HarnessBuilder.build(tool_proxy=...)`. Harness retains plugin ownership during its normal once-only binding; no plugin scan or special source factory API is needed.
+The Host decides presentation when constructing the Agent definition. For already constructed sources, use `ToolProxyCapability`. To group ordinary Harness plugin contributions alongside selected Capabilities, pass a typed `ToolProxyPlan` to `AgentDefinition.tool_proxy` or `HarnessBuilder.build(tool_proxy=...)`. Harness retains plugin ownership during its normal once-only binding; no plugin scan or special source factory API is needed.
 
 ```python
 from a13n_harness import AgentDefinition, AgentSpec
@@ -237,17 +237,17 @@ tool_sources:
 
 This is an **illustrative Host schema**, not a built-in Harness or Harness UI resource. Store stable IDs and validated options, not serialized Python objects, import targets, or literal credentials. Source factories and credential resolution remain trusted Host/plugin code. Group descriptions guide discovery; they do not grant authorization or CodeAct eligibility.
 
-Construct a source once, then choose where to put that instance. A third-party `AbstractCapability` works as `ToolProxyGroup(source=capability, description=...)` without a ToolProxy-specific implementation. Native composition preserves its Agent/run binding, hooks, and Capability-level instructions. Supply the Capability itself for run-bound sources such as `ContextualMCP`, rather than calling `get_toolset()` early.
+Construct a source once, then choose where to put that instance. A third-party `AbstractCapability` works as `ToolProxyGroup(source=capability, description=...)` without a ToolProxy-specific implementation. Native composition preserves its Agent/Run binding, hooks, and Capability-level instructions. Supply the Capability itself for Run-bound sources such as `ContextualMCP`, rather than calling `get_toolset()` early.
 
-The groups mapping is consumed at construction. To change presentation, build a replacement executable; changing the original mapping does not reconfigure an existing Agent. An empty mapping exposes no proxy controls and leaves direct tools unchanged.
+The groups mapping is consumed at construction. To change presentation, build a replacement executable; changing the original mapping does not reconfigure an existing Agent. An empty mapping exposes no proxy control tools and leaves direct tools unchanged.
 
 ### Plugin-contributed sources
 
-`AbstractHarnessPlugin.get_capabilities()` is a contribution boundary, not a general-purpose source lookup API. Prefer `ToolProxyPlan` to group existing plugins without changing them. Harness calls each plugin's `for_agent()` and `get_capabilities()` exactly once and validates the original source before grouping. Middleware remains installed, and grouping never authorizes reserved capabilities.
+`AbstractHarnessPlugin.get_capabilities()` is a contribution boundary, not a general-purpose source lookup API. Prefer `ToolProxyPlan` to group existing plugins without changing them. Harness calls each plugin's `for_agent()` and `get_capabilities()` exactly once and validates the original source before grouping. Middleware remains installed, and grouping never authorizes reserved Capabilities.
 
 A plugin can alternatively own its presentation using `ToolProxyCapability`, as below. Aggregate groups at one composition point rather than installing competing proxy surfaces.
 
-The following Host-owned plugin illustrates that boundary. Its factory constructs source definitions once per executable; `get_capabilities()` selects direct versus grouped presentation. Source run binding remains native:
+The following Host-owned plugin illustrates that boundary. Its `source_factory` callable constructs the source Capabilities once per executable in `for_agent()`; `get_capabilities()` selects direct versus grouped presentation. Source Run binding remains native:
 
 ```python
 from collections.abc import Callable, Mapping, Sequence
@@ -295,7 +295,7 @@ For an existing third-party middleware plugin, a `ToolProxyPlan` selects its ord
 ## Execution, usage, and limitations
 
 - **One execution path:** target validation, Capability hooks, managed authorization, credentials, timeouts, result bounds, and Toolset dispatch remain native. Search is discovery, not authorization.
-- **Native accounting:** a successful ordinary proxy invocation counts the envelope and target, for two successful tool calls. CodeAct resolves the envelope without executing an extra proxy layer: a runner plus one target also counts two; one additional search makes three. Usage limits are checked before target dispatch.
+- **Native accounting:** a successful ordinary proxy invocation counts the `call_proxy_tool` call and the target, for two successful tool calls. CodeAct resolves the `call_proxy_tool` call without executing an extra proxy layer: a runner plus one target also counts two; one additional search makes three. Usage limits are checked before target dispatch.
 - **Retries:** ordinary target validation and `ModelRetry` retain the target's native retry state. ToolProxy does not replay effects or maintain a retry engine. CodeAct retains its bounded runner-failure semantics.
 - **Inline approval only:** native handlers can approve or deny within the current invocation. Unresolved approval or external deferral fails the proxy call rather than suspending a nested continuation. Expose tools requiring cross-turn Host interaction directly.
 - **Supported targets:** local function tools, including locally executed MCP tools and inline approval-gated tools. External/client tools, provider-native tools, control/output tools, CodeAct runners, and deferred-loading tools are not supported as grouped targets.

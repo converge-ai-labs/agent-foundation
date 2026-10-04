@@ -6,7 +6,7 @@ description: Use API keys or subscription logins for models, and own the HTTP cl
 
 Use native Provider credentials for API-key Models. Use `a13n_harness.providers.model.oauth` when your application needs the implemented subscription login and credential-source integration. Harness supplies protocol/model building blocks, not an account database, browser UI, or permission to replace a user's account.
 
-For a ready-to-use local login experience, follow [Harness UI Models and authentication](../a13n-harness-ui/models-and-authentication.md). The examples below describe source APIs; login functions contact external services when called and must be initiated by the user. They are not offline tests or a guarantee of provider account eligibility.
+For a ready-to-use local login experience, follow [Harness UI Models and authentication](../a13n-harness-ui/models-and-authentication.md). The examples below show Python APIs; login functions contact external services when called and must be initiated by the user. The examples are not offline tests or a guarantee of provider account eligibility.
 
 ## Separate login, storage, and model use
 
@@ -19,7 +19,7 @@ Never store access/refresh/ID tokens in `AgentSpec`, `HarnessState`, tool metada
 
 ## Codex browser and device flows
 
-`CodexLoginFlow` specializes the upstream browser flow only where native-store publication needs the real ID token. It inherits PKCE/callback handling and exposes `authorization_url()` and `exchange_login_from_callback()`:
+`CodexLoginFlow` specializes the upstream Pydantic AI browser flow only to keep the real ID token, which a shared native Codex credential store requires. It inherits PKCE/callback handling and exposes `authorization_url()` and `exchange_login_from_callback()`:
 
 ```python
 from a13n_harness.providers.model.oauth import CodexLoginFlow
@@ -32,7 +32,7 @@ async def browser_login(show_authorization_url, publish_login):
     await publish_login(login)
 ```
 
-Both callbacks are application-owned async functions. Present the URL to the user who requested login; `publish_login` must save the credential set and required native-store ID token without logging them. Browser callback availability depends on the local listener and environment. Do not invent a callback-timeout parameter on the inherited Codex API.
+Both callbacks are application-owned async functions. Present the URL to the user who requested login; `publish_login` must save the credential set and the ID token that a shared native Codex credential store requires, without logging them. Browser callback availability depends on the local listener and environment. The inherited Codex API has no callback-timeout parameter.
 
 For a headless environment, `CodexDeviceAuthorizationFlow.start()` returns a `CodexDeviceAuthorization`:
 
@@ -47,15 +47,15 @@ async def device_login(show_device_code, publish_login):
     await publish_login(login)
 ```
 
-The authorization exposes verification URI, user code, expiry, and polling interval; its private device token remains process-local. `wait_for_login()` owns bounded polling. It is the implemented Codex two-stage device flow, not a generic RFC 8628 grant. Do not repeat login automatically after cancellation or an uncertain persistence result.
+The authorization exposes verification URI, user code, expiry, and polling interval; its private device token remains process-local. `wait_for_login()` owns bounded polling. `CodexDeviceAuthorizationFlow` implements the Codex two-stage device flow, not a generic RFC 8628 grant. Do not repeat login automatically after cancellation or an uncertain persistence result.
 
-`CodexLoginResult` contains upstream `OpenAICodexCredentials` and the ID token needed for login publication. Model requests use the upstream credential value; Harness does not introduce a second Codex refresh store.
+`CodexLoginResult` contains upstream `OpenAICodexCredentials` and the ID token that a shared native Codex credential store requires. Model requests use the upstream credential value; Harness does not introduce a second Codex refresh store.
 
 ### Build the Model
 
-`a13n_harness.models.codex.CodexRequestModel(model_name, *, credential_source, http_client=None, thread_id=None)` accepts the upstream `OpenAICodexCredentialSource` protocol (`async load()` / `async save(credentials)`). In your Model resolver, pass `thread_id=context.deps.thread_id` to bind native Codex session headers for both streaming and non-streaming requests. The adapter applies the shared [UUID v5 affinity derivation](models.md#automatic-model-request-affinity) to that raw Thread ID; do not pre-derive it. Explicit native headers remain unchanged. These no longer derive from `x-session-id` or any other gateway header. Rebind from the current context for child Threads and forks; do not capture a parent's ID. Upstream Pydantic AI owns authentication, refresh, retries, and Responses rendering.
+`a13n_harness.models.codex.CodexRequestModel(model_name, *, credential_source, http_client=None, thread_id=None)` accepts the upstream `OpenAICodexCredentialSource` protocol (`async load()` / `async save(credentials)`). In your Model resolver, pass `thread_id=context.deps.thread_id` to bind native Codex session headers for both streaming and non-streaming requests. The adapter applies the shared [UUID v5 affinity derivation](models.md#model-request-affinity) to that raw Thread ID; do not pre-derive it. Explicit native headers remain unchanged. The Codex session headers do not derive from `x-session-id` or any other gateway header. Rebind from the current context for child Threads and forks; do not capture a parent's ID. Upstream Pydantic AI owns authentication, refresh, retries, and Responses rendering.
 
-The wrapper owns its HTTP client only when it creates one. An injected client stays caller-owned. Harness scopes the Model for a Run; the wrapper's request/response hooks must not outlive their owning model use. Reconstruct account selection for a new Run instead of swapping accounts behind an active request.
+The adapter owns its HTTP client only when it creates one. An injected client stays caller-owned. Harness scopes the Model for a Run; the adapter's request/response hooks must not outlive their owning model use. Reconstruct account selection for a new Run instead of swapping accounts behind an active request.
 
 ## Grok browser and device flows
 
@@ -84,26 +84,30 @@ async def grok_device_login(issuer, client_id, scopes, show_device_code, source)
 
 ### Credential sources and refresh
 
-`GrokCredentials` holds account identity, auth mode, creation/expiry times, issuer/client ID, access token, and optional refresh token. `GrokCredentialSource` requires `async load()` and `async rotate(expected, exchange)`. The host coordinates the complete read, grant spend, and durable publication interval.
+`GrokCredentials` holds account identity, auth mode, creation/expiry times, issuer/client ID, access token, and optional refresh token. `GrokCredentialSource` requires `async load()` and `async rotate(expected, exchange)`. The Host coordinates the complete read, grant spend, and durable publication interval.
 
 `build_grok_model(model_name, *, credential_source, refresh=None, refresh_window=timedelta(minutes=5), http_client=None)` constructs a native Responses Model backed by that source. `refresh_grok_credentials(credentials, *, http_client=None)` is the standalone refresh operation; it returns credentials and does not publish them to a Host store for you.
 
-The model credential manager checks identity across refresh/reload and persists rotation before using it. Handle persistence failure as a failed credential transition, not success merely because the remote token endpoint answered. An injected HTTP client remains caller-owned; the adapter owns clients it creates.
+The Model that `build_grok_model` constructs checks account identity across refresh and reload, and persists rotated credentials before it uses them. Handle persistence failure as a failed credential transition, not success merely because the remote token endpoint answered. An injected HTTP client remains caller-owned; the adapter owns clients it creates.
+
+For a Grok credential store that exposes only `load()` and `save()`, wrap it once in `ProcessGrokCredentialSource` and share the wrapper across Models. Its lock and uncertain-grant evidence last only for that process. A possibly consumed grant is blocked after response loss, cancellation, or save failure; changing its metadata does not make it safe to retry. Reauthenticate with a new grant. `RefreshNotDispatched` distinguishes a proven failure before token dispatch.
+
+Harness UI supplies stronger file-store coordination: cooperating processes share one lock and a durable non-secret grant-fingerprint sidecar. This protects fresh Runs and restarts without storing a second token copy. Other CLI programs that write the same auth file do not take that lock. Harness UI checks for their edits just before it replaces the file, and fails publication instead of overwriting a detected edit.
 
 ## ChatGPT sign-in and native Model
 
 The portable integration keeps OAuth, Provider and Model dialect independent of Host storage:
 
-- `providers.model.oauth.chatgpt.OpenAIChatGPTOAuthFlow.start(ext_agent_host_id=..., agent_name=..., redirect_uri=..., client_id=None, credentials=None)` creates a bounded PKCE registration or returning authorization. Present `authorization_url()`, then pass the complete URL to `validate_callback()` and `exchange_callback()`. Neither function fetches that URL. The Host must consume a valid pending attempt durably before exchange and persist the verified complete credential result before reporting success.
+- `providers.model.oauth.chatgpt.OpenAIChatGPTOAuthFlow.start(ext_agent_host_id=..., agent_name=..., redirect_uri=..., client_id=None, credentials=None)` creates a bounded PKCE registration or returning authorization. Present `authorization_url()`, then pass the complete callback URL to `validate_callback()` and `exchange_callback()`. Neither function fetches that URL. The Host must consume a valid pending attempt durably before exchange and persist the verified complete credential result before reporting success.
 - `OpenAIChatGPTCredentials` and `OpenAIChatGPTCredentialSource` define the boundary. A source implements `async load()` and `async rotate(expected, exchange)` with same-account arbitration and durable publication. `refresh_chatgpt_credentials` and `revoke_chatgpt_credentials` perform protocol operations, not storage.
 - `providers.model.chatgpt.OpenAIChatGPTProvider(credential_source=..., http_client=None)` is a native OpenAI Provider with a fixed public endpoint, request-fresh authentication, coordinated rotation and one 401 replay. An injected client remains caller-owned and must not already have authentication.
-- `models.chatgpt.OpenAIChatGPTResponsesModel(model_name, provider=...)` subclasses native Responses rendering and retains its ordinary-request stream collector. It enforces `store=false`, `stream=true`, complete input history, developer instructions, supported tool placement and a natural `response.completed` terminal event. Unsupported SIWC settings and hosted tools fail explicitly.
+- `models.chatgpt.OpenAIChatGPTResponsesModel(model_name, provider=...)` subclasses native Responses rendering and retains its ordinary-request stream collector. It enforces `store=false`, `stream=true`, complete input history, developer instructions, supported tool placement and a natural `response.completed` terminal event. Unsupported Sign in with ChatGPT (SIWC) settings and hosted tools fail explicitly.
 
-These APIs neither discover local account files nor embed Harness UI or Service storage. `discover_chatgpt_models(credential_source=..., http_client=None)` returns account-visible slugs/display names in server order; manual IDs remain valid inputs. ChatGPT plan eligibility and model access remain upstream decisions, separate from Codex and API-key authorization.
+These APIs neither discover local account files nor embed Harness UI or Service storage. `discover_chatgpt_models(credential_source=..., http_client=None)` returns account-visible slugs/display names in server order; manual IDs remain valid inputs. ChatGPT plan eligibility and model access remain OpenAI decisions, separate from Codex and API-key authorization.
 
-### Preconfigured public client
+### Preconfigured client
 
-The default OSS flow, including returning sign-in with an issued client ID, requires `http://127.0.0.1:<port>/auth/callback`; only the port may change. To use a different registered callback, explicitly select a separately provisioned **public** client:
+The default flow registers a client through OpenAI's OSS dynamic registration. That flow, including returning sign-in with an issued client ID, requires `http://127.0.0.1:<port>/auth/callback`; only the port may change. To use a different registered callback, explicitly select a separately provisioned **public** client:
 
 ```python
 flow = OpenAIChatGPTOAuthFlow.start(
@@ -114,9 +118,9 @@ flow = OpenAIChatGPTOAuthFlow.start(
 )
 ```
 
-The URI must exactly match the client's OpenAI registration, use HTTPS or HTTP `127.0.0.1`, and contain a path but no userinfo, query or fragment. Restore the complete `flow.authorization`, including its `preconfigured_client` flag, from protected Host storage. Reauthorization may pass credentials only for that same client and host; account switching starts without retained credentials but keeps the explicit `client_id`.
+The URI must exactly match the client's OpenAI registration, use HTTPS or HTTP `127.0.0.1`, and contain a path but no userinfo, query or fragment. Restore the complete `flow.authorization`, including its `preconfigured_client` flag, from protected Host storage. Reauthorization may pass credentials only for that same client and Host; account switching starts without retained credentials but keeps the explicit `client_id`.
 
-This configuration does not grant ChatGPT plan usage. Identity-only website grants are rejected because the integration still requires renewable tokens and `resource.invoke` / `chatgpt.tokens.use.direct`. Hosted/commercial use needs separate OpenAI approval. For a provisioned confidential client, also pass `token_endpoint_auth_method="client_secret_basic"` and `client_secret` read from protected server-side storage. Public clients use `none` and no secret. Pending attempts and renewable credentials freeze that authentication for code exchange, refresh, and revocation; the secret is never placed in the authorization URL or form body, only the server-side HTTP Basic header. Keep the complete pending value and credential set encrypted at rest. See [Service setup](../a13n-service/models.md#self-hosted-callback) for deployment overrides and the browser receiver.
+This configuration does not grant ChatGPT plan usage. Identity-only website grants are rejected because the integration still requires renewable tokens and `resource.invoke` / `chatgpt.tokens.use.direct`. Hosted/commercial use needs separate OpenAI approval. For a provisioned confidential client, also pass `token_endpoint_auth_method="client_secret_basic"` and `client_secret` read from protected server-side storage. Public clients use `none` and no secret. Pending attempts and renewable credentials keep that authentication method for code exchange, refresh, and revocation. The secret goes only in the server-side HTTP Basic header, never in the authorization URL or form body. Keep the complete pending value and credential set encrypted at rest. See [Service setup](../a13n-service/models.md#self-hosted-callback) for deployment overrides and the browser receiver.
 
 ## Authentication failures
 
@@ -168,7 +172,3 @@ The helper also retries supported timeout/connect/read errors. Attempt count mus
 | Host worker replacement / user retry  | A new execution selected and owned by the Host                                                      |
 
 `ModelRecoveryPolicy` is disabled by default, with `max_attempts=5` consecutive failed attempts when enabled, initial backoff 1 second, and maximum 30 seconds. An accepted primary model response resets the count and backoff. Only recognized transient failures are eligible; permanent or unknown provider errors are not retried. It accepts a continuation prompt or a prompt factory. Internal model attempts share Run context and usage; they are not new durable worker attempts. [Agents and Runs](agents-and-runs.md) owns the build/run API and recovery behavior.
-
-For a simple embedding store exposing `load()` and `save()`, wrap it once in `ProcessGrokCredentialSource` and share the wrapper across Models. Its lock and uncertain-grant evidence last only for that process. A possibly consumed grant is blocked after response loss, cancellation, or save failure; changing its metadata does not make it safe to retry. Reauthenticate with a new grant. `RefreshNotDispatched` distinguishes a proven failure before token dispatch.
-
-Harness UI supplies stronger file-store coordination: cooperating processes share one lock and a durable non-secret grant-fingerprint sidecar. This protects fresh Runs and restarts without storing a second token copy. Product CLI writers do not participate in that lock; their detected edits cause a conflict rather than an overwrite.

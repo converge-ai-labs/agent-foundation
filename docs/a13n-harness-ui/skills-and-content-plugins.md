@@ -18,20 +18,20 @@ capabilities:
 
 An empty list keeps automatic sources enabled; omitting the Capability disables Skill discovery for that Agent Run. Preserve other Capability entries when editing.
 
-Type `$` in the CLI or WebUI composer to discover Skill names. For example, ask the Agent to use `$harness-ui-configuration` to inspect its configuration. Recognized names remain visible prompt text and carry references that the App validates before Send or steering. Older references resolve by name against the current catalog; steering uses the active Run's pinned catalog. Unknown dollar-prefixed text stays ordinary text. A reference requests that Skill without capturing its contents or granting extra authority. There is no `/skill-name` command.
+Type `$` in the TUI or WebUI composer to discover Skill names. For example, ask the Agent to use `$harness-ui-configuration` to inspect its configuration. Recognized names remain visible prompt text and carry references that the App validates before Send or steering. Older references resolve by name against the current catalog; steering uses the active Run's pinned catalog. Unknown dollar-prefixed text stays ordinary text. A reference requests that Skill without capturing its contents or granting extra authority. There is no `/skill-name` command.
 
 ## Automatic sources and precedence
 
 If two sources use the same Skill name, the first available source in this precedence list wins:
 
 1. Explicit `roots`, with a later entry winning over an earlier one.
-2. The first Project root's `.agents/skills` directory.
-3. Later Project roots' `.agents/skills` directories in Project order.
+2. The first local root's `.agents/skills` directory.
+3. Later local roots' `.agents/skills` directories in selection order.
 4. Installed Content Plugin Skill roots; a lexicographically later plugin ID wins.
 5. User Skills from `~/.agents/skills`.
 6. Release-owned Skills from the built-in mount.
 
-Without a Project, only the two Project tiers disappear. Built-in, user, plugin, and explicit sources still work. The configuration directory does not implicitly become a Project Skill source.
+Without local roots, only the two local-root tiers disappear. Built-in, user, plugin, and explicit sources still work. The configuration directory does not implicitly become a Project Skill source.
 
 The catalog is selected at Run preparation. New Run captures can see source changes; the active Run does not rescan mounts. Missing optional directories are simply absent, while unavailable explicit roots fail preparation. Skill file contents are read when used, not copied into the Run.
 
@@ -61,11 +61,11 @@ The read-only `builtin-skills` mount uses the stable path:
 /environment/builtin-skills/harness-ui-configuration
 ```
 
-It is non-default and file-only: inspection, reading, search, and copy-source operations, but no mutation, shell, processes, ports, or output operations. It remains available without a Project and with a sandboxed or remote Project Provider. No files are copied into the user's configuration directory, Project, or `~/.agents/skills`.
+It is non-default and file-only: inspection, reading, search, and copy-source operations, but no mutation, shell, processes, ports, or output operations. When the Agent selects `skills`, it remains available without a Project and with a sandboxed or remote Project Provider. No files are copied into the user's configuration directory, Project, or `~/.agents/skills`.
 
-The Skill has lowest source priority and can be overridden by name through a higher-priority source. Its guidance still uses ordinary file operations and validation; it introduces no configuration-write privilege. External references in its section index are marked as online and may describe another release.
+The Skill has lowest source priority and can be overridden by name through a higher-priority source. Its instructions still use ordinary file operations and validation; it introduces no configuration-write privilege. External references in its section index are marked as online and may describe another release.
 
-For source development, rebuild the bundled guidance after editing the UI documentation or navigation:
+For source development, rebuild the bundled Skill after editing the Harness UI documentation or navigation:
 
 ```console
 make a13n-harness-ui-skills
@@ -105,7 +105,7 @@ Reinstalling copies repository content; it does not restore deleted local edits.
 
 ## Use contributed subagents
 
-Select a plugin's Markdown child on the Agent just like another Markdown role:
+Select a plugin's Markdown child on the Agent like any other Markdown role:
 
 ```yaml
 subagents:
@@ -144,12 +144,12 @@ The two declared directories are relative to that plugin root. Put each Skill's 
 
 ### Marketplace fields
 
-| Field            | Requirement                                                |
-| ---------------- | ---------------------------------------------------------- |
-| `schema_version` | Required `"1"`                                             |
-| `name`           | Required 1–256 characters                                  |
-| `plugins`        | Required 1–256 entries with unique paths                   |
-| `plugins[].path` | Required canonical plugin-relative path, 3–4096 characters |
+| Field            | Requirement                                                                       |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `schema_version` | Required `"1"`                                                                    |
+| `name`           | Required 1–256 characters                                                         |
+| `plugins`        | Required 1–256 entries with unique paths                                          |
+| `plugins[].path` | Required canonical repository-relative path to the plugin root, 3–4096 characters |
 
 ### Manifest fields
 
@@ -172,4 +172,4 @@ Installation enforces size, file-type, Git-operation and YAML-parser limits rath
 
 Use `config validate`, `config show`, `plugin list`, and `<data-root>/logs/terminal.log` to inspect diagnostics. Check the Agent's Capability selection, effective Environment paths, source precedence, manifest paths, and selected child IDs before reinstalling anything.
 
-A successful preview does not pin the future provider generation or capture Skill bytes. Exact embedding-API Skill references are validated separately; plain dollar text does not provide that guarantee.
+A successful Skill catalog preview does not pin the catalog of a later Run or capture Skill bytes. Exact embedding-API Skill references are validated separately; plain dollar text does not provide that guarantee.
