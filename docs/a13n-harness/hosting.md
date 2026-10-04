@@ -19,6 +19,9 @@ sequenceDiagram
     Harness-->>Host: events and terminal result
     Host->>Host: accept and persist result
     Host-->>Client: deliver outcome
+
+    %% class Client,Host app
+    %% class Harness a13n
 ```
 
 Harness executes one Run; the Host decides which result becomes durable.

@@ -38,6 +38,10 @@ flowchart TB
     Daemon --> SessionB["会话 B：固定 cwd"]
     SessionA --> Files["设备文件系统"]
     SessionB --> Files
+
+    class Host app
+    class Client,Daemon a13n
+    class Files store
 ```
 
 一个守护进程服务于一个设备（Device）和多个独立会话（Session）。每个会话分别管理自己的操作、进程、保留输出、传输和执行证据。工作目录是默认值，不是访问边界。彼此不信任的工作负载需要由宿主（Host）提供独立的外层边界；EIP 会话不提供租户隔离。

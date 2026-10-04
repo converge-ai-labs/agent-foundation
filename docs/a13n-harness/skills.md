@@ -36,6 +36,10 @@ flowchart TB
     Capability --> Instructions[Model instructions]
     Capability --> Paths[Resolved SkillPath values]
     Capability --> Events[Catalog and access events]
+
+    class Host,Direct app
+    class Manager,Capability a13n
+    class Catalog,BoundCatalog store
 ```
 
 The design separates four responsibilities:

@@ -35,6 +35,11 @@ flowchart TB
     Worker -->|"Live events"| Redis[(Redis)]
     Redis -->|"Live output"| Control
     Control -->|"Thread stream"| Client
+
+    class Client app
+    class Control,Worker a13n
+    class Postgres,Objects,Redis store
+    class External ext
 ```
 
 1. A client sends a message. The Service adds it to the thread's inbox and starts a run when the thread is ready.

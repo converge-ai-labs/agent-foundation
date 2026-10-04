@@ -246,6 +246,9 @@ sequenceDiagram
         Controller-->>Agent: 不会消费记录的输出分页
     end
     Controller->>Environment: Run 清理：释放本地观测
+
+    %% class Agent,Controller,Environment a13n
+    %% class Process ext
 ```
 
 `glob` 和 `grep` 在一次调用中，将 include 模式、仓库忽略和隐藏名称策略、上下文宽度，以及扫描/结果上限传给所选 `FileOperator`。Direct Local 在一个 worker 线程中扫描；EIP 执行一个 `file.find` 或 `file.search` 请求。只有确实要搜索仓库忽略路径时，才设 `include_ignored=True`。

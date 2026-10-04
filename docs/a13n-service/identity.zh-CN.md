@@ -5,6 +5,20 @@ description: 组织、工作空间、角色、授权、登录会话、API 密钥
 
 每个请求都以一个**主体** 的身份执行：通过邮箱和密码登录的用户，或供应用使用的服务账号。主体通过组织或工作空间中的**授权** 获得**角色**，并使用登录会话或 API 密钥认证。
 
+```mermaid
+flowchart TB
+    User["用户：登录会话或 API 密钥"]
+    Account["服务账号：仅 API 密钥"]
+    User -->|"组织授权"| Organization["组织：其授权适用于每个工作空间"]
+    Organization -.-> Workspace1["工作空间：agent、会话和资源"]
+    Organization -.-> Workspace2["工作空间"]
+    User -->|"工作空间授权"| Workspace1
+    Account -->|"工作空间授权，默认 runner"| Workspace2
+
+    class User,Account app
+    class Organization,Workspace1,Workspace2 a13n
+```
+
 ## 组织与工作空间
 
 **组织** 是管理边界，包含成员和工作空间。**工作空间** 是工作边界：agent、会话、provider、模型、连接、环境和其他资源都只属于一个工作空间。

@@ -29,9 +29,18 @@ description: 通过一次对话理解工作空间、agent、会话、线程和�
 
 ```mermaid
 flowchart TB
-    Message["发送消息"] --> Run["Agent 处理请求"]
-    Run --> Calls["模型和工具调用"]
-    Calls --> Result["回复或请求补充输入"]
+    You["你或你的应用"] -->|"发送消息"| Thread
+    subgraph Session["会话"]
+        Thread["线程：历史和收件箱"] -. "分叉" .-> Fork["分叉出的线程"]
+    end
+    Thread --> Run["运行"]
+    Agent["Agent 修订版本：模型、指令和工具"] --> Run
+    Run <-->|"调用"| External["模型和工具"]
+    Run -->|"流式输出"| Output["回答或请求补充输入"]
+
+    class You app
+    class Run,Agent a13n
+    class External ext
 ```
 
 输出会实时流式显示。执行期间发送的消息可以引导当前运行，也可以留在收件箱中，等待后续处理。

@@ -5,6 +5,23 @@ description: Configure agents, start conversations, and follow, steer, or answer
 
 An **agent** is a named, versioned configuration: a model, instructions, tools and policies. People and applications talk to agents in **sessions**. A session holds one or more **threads**, each a single line of conversation; messages you send go to the thread's **inbox**, and each turn of the agent is a **run**. A run executes on a worker as one or more **attempts** and ends `completed`, `waiting`, `failed` or `cancelled`.
 
+```mermaid
+stateDiagram-v2
+    [*] --> accepted: Message or resume
+    accepted --> running: A worker starts it
+    running --> accepted: Worker lost or handed off
+    running --> waiting: Needs approvals or results
+    running --> completed
+    running --> failed
+    running --> cancelled: Interrupt
+    accepted --> failed
+    accepted --> cancelled: Interrupt
+
+    class completed success
+    class waiting warning
+    class failed danger
+```
+
 All paths below are under `/api/v1` and act in the request's [workspace](http.md#workspace). Reading needs `read`; starting, steering, answering and stopping runs needs `run`; changing agents needs `write`. See [Identity and access](identity.md#roles).
 
 ## Agents
@@ -69,6 +86,25 @@ Every built-in tool, connection tool and client tool has a permission:
 | `review`   | The `reviewer` model approves or denies the call; with its default `on_error: approval_required`, a failed review asks a person. A revision that uses `review` must set `reviewer`. |
 | `deny`     | The call is refused.                                                                                                                                                                |
 | `inherit`  | The default, which allows.                                                                                                                                                          |
+
+```mermaid
+flowchart TB
+    Call["The model calls a tool"] --> Permission(["Permission"])
+    Permission -->|"allow or inherit"| Run["The tool runs"]
+    Permission -->|"review"| Reviewer["The reviewer model decides"]
+    Permission -->|"ask"| Person["The run waits for a person"]
+    Permission -->|"deny"| Refuse["The call is refused"]
+    Reviewer -->|"review fails"| Person
+    Reviewer --> Decision(["Approved?"])
+    Person --> Decision
+    Decision -->|"yes"| Run
+    Decision -->|"no"| Refuse
+
+    class Run success
+    class Refuse danger
+    class Person warning
+    class Reviewer ext
+```
 
 Set it per built-in tool in `toolsets.<toolset>.tools.<tool>.permission`, per connection in `connection_tools[].permission` with per-tool overrides in `permissions`, and per client tool in `client_tools[].permission` (`inherit`, `allow` or `deny`). The configuration toolset's writing tools default to `ask`.
 
@@ -261,6 +297,25 @@ A run that needs something from outside ends `waiting`. Its `pending.approvals` 
     "calls": []
   }
 }
+```
+
+```mermaid
+sequenceDiagram
+    participant App as Your application
+    participant Service
+    participant Worker
+    App->>Service: Submit a message
+    Service->>Worker: Run 1
+    Note over Service,Worker: A tool call needs approval
+    Worker-->>Service: Run 1 ends waiting
+    Service-->>App: Pending approvals and calls
+    App->>Service: Resume Run 1 with every result
+    Service->>Worker: Run 2 with the results
+    Worker-->>Service: Run 2 ends completed
+    Service-->>App: Answer
+
+    %% class App app
+    %% class Service,Worker a13n
 ```
 
 ### Resume a waiting run

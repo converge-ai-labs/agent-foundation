@@ -29,9 +29,18 @@ A **session** groups the conversation's **threads**. Each thread has its own his
 
 ```mermaid
 flowchart TB
-    Message["Send a message"] --> Run["Agent works on the request"]
-    Run --> Calls["Model and tool calls"]
-    Calls --> Result["Answer or request for input"]
+    You["You or your application"] -->|"Send a message"| Thread
+    subgraph Session["Session"]
+        Thread["Thread: history and inbox"] -. "Fork" .-> Fork["Forked thread"]
+    end
+    Thread --> Run["Run"]
+    Agent["Agent revision: model, instructions, tools"] --> Run
+    Run <-->|"Calls"| External["Model and tools"]
+    Run -->|"Streams"| Output["Answer or request for input"]
+
+    class You app
+    class Run,Agent a13n
+    class External ext
 ```
 
 You see output as it streams. A message sent during execution can guide the active run or wait in the inbox for later work.

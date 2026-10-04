@@ -63,6 +63,10 @@ flowchart TB
     Environment --> Direct[Native Local, Docker or cloud operations]
     Environment --> EIP[EIP operations]
     EIP --> Envd[a13n-envd or remote backend]
+
+    class Host app
+    class Definition,Environment,Harness,Envd a13n
+    class Direct ext
 ```
 
 - **Host** selects a trusted Provider, desired configuration, current state, runtime collaborators, retention policy, and authorization.

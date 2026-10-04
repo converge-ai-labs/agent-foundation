@@ -22,6 +22,9 @@ flowchart TB
     Observer --> Events["结构化 AG-UI 事件"]
     Events --> Host["Host 持久化与传输"]
     Host --> UI["渲染器"]
+
+    class Run,Observer a13n
+    class Host,UI app
 ```
 
 ## 一个 observer 对应一次执行

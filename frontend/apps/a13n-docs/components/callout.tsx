@@ -9,7 +9,7 @@ import type { Icon } from "@phosphor-icons/react";
 import type { Locale } from "@/lib/i18n";
 import type { ReactNode } from "react";
 
-/** GitHub alert kinds. Notes and tips stay on the neutral surface; warnings are tinted. */
+/** GitHub alert kinds, each on a surface tinted with its own hue. */
 const kinds: Record<
   string,
   { label: string; icon: Icon; tone: string; surface: string }
@@ -18,31 +18,31 @@ const kinds: Record<
     label: "Note",
     icon: Info,
     tone: "text-(--info-foreground)",
-    surface: "bg-(--a13n-surface)",
+    surface: "bg-(--info)/10",
   },
   tip: {
     label: "Tip",
     icon: Lightbulb,
     tone: "text-(--success-foreground)",
-    surface: "bg-(--a13n-surface)",
+    surface: "bg-(--success)/10",
   },
   important: {
     label: "Important",
     icon: SealWarning,
-    tone: "text-fd-foreground",
-    surface: "bg-(--a13n-surface)",
+    tone: "text-violet-700 dark:text-violet-400",
+    surface: "bg-violet-500/10",
   },
   warning: {
     label: "Warning",
     icon: Warning,
     tone: "text-(--warning-foreground)",
-    surface: "bg-(--warning)/10",
+    surface: "bg-(--warning)/12",
   },
   caution: {
     label: "Caution",
     icon: WarningOctagon,
     tone: "text-(--destructive-foreground)",
-    surface: "bg-(--destructive)/8",
+    surface: "bg-(--destructive)/10",
   },
 };
 
@@ -71,7 +71,7 @@ export function Callout({
       className={`my-6 rounded-xl px-4 py-3.5 text-sm ${kind.surface}`}
     >
       <div
-        className={`mb-1 flex items-center gap-1.5 text-[13px] font-medium ${kind.tone}`}
+        className={`mb-1 flex items-center gap-1.5 text-[13px] font-semibold ${kind.tone}`}
       >
         <Icon weight="duotone" className="size-4" />
         {label}

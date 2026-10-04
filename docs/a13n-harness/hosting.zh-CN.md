@@ -19,6 +19,9 @@ sequenceDiagram
     Harness-->>Host: 事件与终结结果
     Host->>Host: 确认并持久化结果
     Host-->>Client: 交付结果
+
+    %% class Client,Host app
+    %% class Harness a13n
 ```
 
 Harness 负责执行一次 Run；哪些结果最终持久化，由 Host 决定。

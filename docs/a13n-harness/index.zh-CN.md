@@ -18,6 +18,10 @@ flowchart TB
     Bindings["当前绑定与环境"] --> Run
     State["上一次 HarnessState"] --> Run
     Run --> Result["结果与下一次状态"]
+
+    class Spec,Build,Agent,Run a13n
+    class Bindings app
+    class State,Result store
 ```
 
 构建一次，即可在之后的每次执行中传入当前输入。保存返回的状态，就能在线程中继续工作。

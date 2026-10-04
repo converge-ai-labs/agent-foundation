@@ -8,6 +8,21 @@ Harness UI 是面向个人和可信小团队的 [Harness](../a13n-harness/index.
 
 终端提供个人编程 agent 工作流；浏览器则支持共享对话和草稿、实时执行、文件、Git 变更、终端和配置编辑。两者使用同一个应用和 agent 执行基础，无须编写 SDK 代码或部署 Service。
 
+```mermaid
+flowchart TB
+    Terminal["终端：个人 agent 工作流"] --> App["Harness UI 应用"]
+    Browser["浏览器：共享对话、文件、Git 和终端"] --> App
+    App <-.- Config["~/.a13n-harness-ui 中的配置"]
+    App --> Harness["Harness 运行 agent"]
+    Harness --> Model["模型 provider"]
+    Harness --> Execution["命令和文件：Full Control 或 Sandbox"]
+
+    class Terminal,Browser app
+    class App,Harness a13n
+    class Config store
+    class Model,Execution ext
+```
+
 ## 安装并启动
 
 使用 [uv](https://docs.astral.sh/uv/getting-started/installation/) 安装 `a13n-harness-ui` 命令：

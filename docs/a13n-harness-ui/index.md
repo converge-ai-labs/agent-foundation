@@ -8,6 +8,21 @@ Harness UI is the [Harness](../a13n-harness/index.md) playground for individuals
 
 The terminal offers a personal coding-agent workflow. The browser adds shared conversations and drafts, live execution, files, Git changes, terminals, and configuration editing. Both use the same application and agent foundation; neither requires SDK code or a Service deployment.
 
+```mermaid
+flowchart TB
+    Terminal["Terminal: personal agent workflow"] --> App["Harness UI application"]
+    Browser["Browser: shared conversations, files, Git, terminals"] --> App
+    App <-.- Config["Configuration in ~/.a13n-harness-ui"]
+    App --> Harness["Harness runs the agent"]
+    Harness --> Model["Model provider"]
+    Harness --> Execution["Commands and files: Full Control or Sandbox"]
+
+    class Terminal,Browser app
+    class App,Harness a13n
+    class Config store
+    class Model,Execution ext
+```
+
 ## Install and start
 
 Install the `a13n-harness-ui` command with [uv](https://docs.astral.sh/uv/getting-started/installation/):

@@ -36,6 +36,10 @@ flowchart TB
     Capability --> Instructions[模型指令]
     Capability --> Paths[解析后的 SkillPath]
     Capability --> Events[目录与访问事件]
+
+    class Host,Direct app
+    class Manager,Capability a13n
+    class Catalog,BoundCatalog store
 ```
 
 设计将四项职责分开：

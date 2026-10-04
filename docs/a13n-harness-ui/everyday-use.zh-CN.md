@@ -8,11 +8,15 @@ description: 在终端中发送任务、指导正在运行的工作，并回答�
 在仓库目录中启动 `a13n-harness-ui`，输入任务并按 Enter。Agent 工作期间，Enter 会向当前 Run 补充指导，不会将另一轮执行排队；如有待回答的问题或审批，请直接操作对应卡片。
 
 ```mermaid
-flowchart LR
+flowchart TB
     Idle[空闲：Enter 发送提示词] --> Running[执行中：Enter 引导当前 Run]
     Running -->|问题或审批| Decision[回答待处理卡片]
     Decision --> Running
     Running --> Result[读取结果或恢复已保存 Thread]
+
+    class Running a13n
+    class Decision warning
+    class Result success
 ```
 
 | 操作                           | 命令或按键                                                         |

@@ -38,6 +38,10 @@ flowchart TB
     Daemon --> SessionB["Session B: fixed cwd"]
     SessionA --> Files["Device filesystem"]
     SessionB --> Files
+
+    class Host app
+    class Client,Daemon a13n
+    class Files store
 ```
 
 One daemon serves a Device and multiple independent Sessions. Each Session owns its operations, processes, retained output, transfers and evidence. Working directory is a default, not an access boundary. Mutually untrusted workloads need separate Host-enforced outer boundaries; EIP Sessions are not tenant isolation.

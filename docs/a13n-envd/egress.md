@@ -52,6 +52,23 @@ curl https://api.github.com/user -H "Authorization: Bearer $GH_TOKEN"
 
 No `HTTP_PROXY` or `HTTPS_PROXY` setting is needed. Kernel routing sends traffic through the outer broker. For HTTPS on port 443, it replaces sentinels in request **header values** only, and only for that secret's `inject_hosts`. URLs and request bodies are unchanged. The broker validates upstream TLS. A private bundle combining system trust and the Session CA is supplied through `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, and `NODE_EXTRA_CA_CERTS`. Clients with certificate pinning or a separate trust store need explicit integration. Envd does not bind over the native system CA bundle, so `update-ca-certificates` keeps working.
 
+```mermaid
+flowchart TB
+    Caller["Trusted caller"] -->|"session.open with secret values"| Envd["Envd"]
+    subgraph Session["Controlled Session"]
+        Command["Command: GH_TOKEN holds the sentinel"]
+    end
+    Envd --> Command
+    Command -->|"All traffic, by kernel routing"| Broker["Outer broker"]
+    Broker -->|"Allowed host: real secret in header values"| Upstream["api.github.com"]
+    Broker -->|"Other host or nonpublic address"| Refused["Refused"]
+
+    class Caller app
+    class Envd,Broker a13n
+    class Upstream ext
+    class Refused danger
+```
+
 Native sudo normally strips these environment variables. For root HTTPS commands, preserve the required variables according to your existing sudoers policy, for example:
 
 ```bash

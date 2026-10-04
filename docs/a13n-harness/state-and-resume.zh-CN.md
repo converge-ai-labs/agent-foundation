@@ -5,6 +5,19 @@ description: 保存 HarnessState，以跨进程继续、fork 或恢复 Thread。
 
 `HarnessState` 是单个独立推进 Thread 的可移植续接值。它保留模型历史、带版本的 Capability 命名空间和可选的可移植 Environment 数据，有意不保留权限或 Host 生命周期状态。
 
+```mermaid
+flowchart TB
+    New["HarnessState.new()"] --> Run1["Run 1"]
+    Run1 -->|"result.state"| State["HarnessState"]
+    State --> Run2["同一 Thread 上的 Run 2"]
+    State -->|"fork()"| Branch["带新 Thread ID 的 HarnessState"]
+    Branch --> Run3["分叉 Thread 上的 Run"]
+    State <-->|"序列化和恢复"| Storage["Host 存储"]
+
+    class Run1,Run2,Run3 a13n
+    class State,Branch,Storage store
+```
+
 ## 状态内容
 
 状态结构包含：

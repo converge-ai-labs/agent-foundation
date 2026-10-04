@@ -5,6 +5,23 @@ description: 配置 agent，开始对话，并跟踪、引导或回复运行。
 
 **Agent** 是有名称、带版本的配置，包括模型、指令、工具和策略。用户和应用在**会话**中与 agent 对话。会话包含一个或多个 **线程** ，每个线程是一条独立对话线；发送的消息进入线程**收件箱** ，agent 的每一轮处理都是一次**运行** 。运行在 worker 上通过一次或多次**执行尝试** 完成，最终状态为 `completed`、`waiting`、`failed` 或 `cancelled`。
 
+```mermaid
+stateDiagram-v2
+    [*] --> accepted: 消息或恢复
+    accepted --> running: 某个 worker 开始执行
+    running --> accepted: worker 丢失或移交
+    running --> waiting: 需要审批或结果
+    running --> completed
+    running --> failed
+    running --> cancelled: 中断
+    accepted --> failed
+    accepted --> cancelled: 中断
+
+    class completed success
+    class waiting warning
+    class failed danger
+```
+
 下文路径均位于 `/api/v1` 下，作用于请求的[工作空间](http.md#workspace)。读取需要 `read`；启动、引导、回复和停止运行需要 `run`；修改 agent 需要 `write`。参阅[身份与访问](identity.md#roles)。
 
 ## Agent
@@ -69,6 +86,25 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 | `review`  | `reviewer` 模型批准或拒绝；默认 `on_error: approval_required` 下，review 失败会转交用户。使用 `review` 的修订版本必须设置 `reviewer`。 |
 | `deny`    | 拒绝调用。                                                                                                                             |
 | `inherit` | 默认值，允许调用。                                                                                                                     |
+
+```mermaid
+flowchart TB
+    Call["模型调用工具"] --> Permission(["权限"])
+    Permission -->|"allow 或 inherit"| Run["执行工具"]
+    Permission -->|"review"| Reviewer["reviewer 模型决定"]
+    Permission -->|"ask"| Person["运行等待用户处理"]
+    Permission -->|"deny"| Refuse["拒绝调用"]
+    Reviewer -->|"review 失败"| Person
+    Reviewer --> Decision(["是否批准？"])
+    Person --> Decision
+    Decision -->|"是"| Run
+    Decision -->|"否"| Refuse
+
+    class Run success
+    class Refuse danger
+    class Person warning
+    class Reviewer ext
+```
 
 内置工具通过 `toolsets.<toolset>.tools.<tool>.permission` 设置；连接通过 `connection_tools[].permission` 设置，`permissions` 按工具覆盖；客户端工具通过 `client_tools[].permission` 设置（`inherit`、`allow` 或 `deny`）。配置工具集中的写入工具默认 `ask`。
 
@@ -261,6 +297,25 @@ Thread 保留不可变导入内容供回读，但不会据此生成历史 Run、
     "calls": []
   }
 }
+```
+
+```mermaid
+sequenceDiagram
+    participant App as 你的应用
+    participant Service
+    participant Worker
+    App->>Service: 提交消息
+    Service->>Worker: 运行 1
+    Note over Service,Worker: 某个工具调用需要审批
+    Worker-->>Service: 运行 1 以 waiting 结束
+    Service-->>App: 待处理的审批和调用
+    App->>Service: 恢复运行 1，提交全部结果
+    Service->>Worker: 运行 2 带着结果继续
+    Worker-->>Service: 运行 2 以 completed 结束
+    Service-->>App: 回答
+
+    %% class App app
+    %% class Service,Worker a13n
 ```
 
 ### 恢复等待中的运行

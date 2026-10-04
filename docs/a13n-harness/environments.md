@@ -246,6 +246,9 @@ sequenceDiagram
         Controller-->>Agent: non-consuming output page
     end
     Controller->>Environment: Run cleanup: release local observations
+
+    %% class Agent,Controller,Environment a13n
+    %% class Process ext
 ```
 
 `glob` and `grep` send their include pattern, repository-ignore and hidden-name policy, context width, and scan/result ceilings to the selected `FileOperator` in one call. Direct Local performs one worker-thread scan; EIP performs one `file.find` or `file.search` request. Set `include_ignored=True` only when ignored repository paths should be searched.

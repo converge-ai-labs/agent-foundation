@@ -8,11 +8,15 @@ description: Send tasks, guide running work, and answer questions and approvals 
 Start in your repository with `a13n-harness-ui`. Type a task and press Enter. While the Agent works, Enter sends guidance to that Run rather than queuing another one; if a question or approval is pending, answer its card directly.
 
 ```mermaid
-flowchart LR
+flowchart TB
     Idle[Idle: Enter sends a prompt] --> Running[Running: Enter steers the Run]
     Running -->|Question or approval| Decision[Answer the pending card]
     Decision --> Running
     Running --> Result[Read result or resume saved Thread]
+
+    class Running a13n
+    class Decision warning
+    class Result success
 ```
 
 | Action                                              | Command or key                                                     |

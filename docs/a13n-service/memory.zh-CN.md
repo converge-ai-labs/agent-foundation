@@ -10,6 +10,20 @@ description: 工作空间记忆，让 agent 跨对话保留版本化文件或可
 
 线程按名称**挂载** 记忆。每次运行接收时固定线程记忆挂载，启动时读取各记忆的上下文或召回记录，并通过 `memory_file_*` 和 `memory_record_*` 工具修改。
 
+```mermaid
+flowchart TB
+    Thread["线程：按名称挂载记忆，只读或可写"] --> Run["运行"]
+    subgraph Workspace["工作空间"]
+        File["文件型记忆：带版本的文本文件"]
+        Record["记录型记忆：mem0 中的记录"]
+    end
+    Run <-->|"启动时读取上下文，文件工具"| File
+    Run <-->|"启动时召回，记录工具"| Record
+
+    class Thread,Run a13n
+    class File,Record store
+```
+
 下文所有 API 路径均位于 `/api/v1` 下。
 
 ## 创建文件型记忆
