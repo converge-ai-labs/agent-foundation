@@ -18,7 +18,7 @@ import openapiChinese from "./locales/openapi.zh-CN.json";
 import { translateOpenAPI } from "./translate-openapi";
 import { remarkTranslationHeadings } from "./remark-translation-headings";
 import { remarkAlerts } from "./remark-alerts";
-import { referenceFiles } from "./site";
+import { absoluteLinks, referenceFiles } from "./site";
 
 const docs = defineDocs({
   dir: "../../../docs",
@@ -218,6 +218,8 @@ export type DocsPage = InferPageType<typeof source>;
 export const docsLlms = llms(source, {
   async renderPage(page) {
     if (page.type !== "docs") return "";
-    return `# ${page.data.title}\n\n${await page.data.getText("processed")}`;
+    return absoluteLinks(
+      `# ${page.data.title}\n\n${await page.data.getText("processed")}`,
+    );
   },
 });

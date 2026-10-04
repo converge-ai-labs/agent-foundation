@@ -1,4 +1,4 @@
-name: Docs
+name: Site
 
 on:
   pull_request:
@@ -7,22 +7,26 @@ on:
       - "docs/**"
       - "frontend/*"
       - "frontend/apps/a13n-docs/**"
+      - "frontend/apps/a13n-site/**"
       - "frontend/packages/a13n-ui/**"
       - "frontend/apps/a13n-harness-ui/src/openapi.json"
       - "proto/a13n-service/openapi.json"
       - "scripts/docs/service-settings.schema.json"
-      - ".github/workflows/docs.yml"
+      - "Makefile"
+      - ".github/workflows/site.yml"
   push:
     branches: [main]
     paths:
       - "docs/**"
       - "frontend/*"
       - "frontend/apps/a13n-docs/**"
+      - "frontend/apps/a13n-site/**"
       - "frontend/packages/a13n-ui/**"
       - "frontend/apps/a13n-harness-ui/src/openapi.json"
       - "proto/a13n-service/openapi.json"
       - "scripts/docs/service-settings.schema.json"
-      - ".github/workflows/docs.yml"
+      - "Makefile"
+      - ".github/workflows/site.yml"
   workflow_dispatch:
 
 env:
@@ -32,7 +36,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: docs-${{ github.ref }}
+  group: site-${{ github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -41,7 +45,7 @@ defaults:
 
 jobs:
   build:
-    name: Build docs
+    name: Build site
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -66,39 +70,46 @@ jobs:
       - name: Install frontend workspace
         run: pnpm --dir frontend install --frozen-lockfile
 
-      - name: Check docs site
+      - name: Check docs
         run: pnpm --dir frontend --filter a13n-docs run check
 
       - name: Test docs localization
         run: pnpm --dir frontend --filter a13n-docs run test
 
-      # The build fails on any broken internal link or anchor.
-      - name: Build docs site
-        run: pnpm --dir frontend --filter a13n-docs run build
+      - name: Check landing page
+        run: pnpm --dir frontend --filter a13n-site run check
 
-      - name: Upload docs artifact
+      - name: Test landing page
+        run: pnpm --dir frontend --filter a13n-site run test
+
+      # The docs build fails on any broken internal link or anchor.
+      - name: Build site
+        run: make site-build
+
+      - name: Upload site artifact
         uses: actions/upload-artifact@v4
         with:
-          name: docs-site
-          path: frontend/apps/a13n-docs/out
+          name: site
+          path: frontend/apps/a13n-site/dist
           if-no-files-found: error
 
   deploy:
-    name: Deploy docs
+    name: Deploy site
     runs-on: ubuntu-latest
     needs: build
     permissions:
       contents: read
       deployments: write
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # The environment predates the landing page; the Cloudflare secrets are scoped to it.
     environment:
       name: docs
-      url: https://a13n-docs.converge.ai/
+      url: https://a13n.converge.ai/
     steps:
-      - name: Download docs artifact
+      - name: Download site artifact
         uses: actions/download-artifact@v4
         with:
-          name: docs-site
+          name: site
           path: site
 
       - name: Deploy to Cloudflare Pages
@@ -106,4 +117,4 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy site --project-name=agent-foundation-docs --branch=main
+          command: pages deploy site --project-name=a13n-site --branch=main

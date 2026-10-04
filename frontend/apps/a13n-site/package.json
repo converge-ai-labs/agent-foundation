@@ -1,0 +1,29 @@
+{
+  "name": "a13n-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "vite build",
+    "check": "pnpm run typecheck",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "dev": "vite",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@fontsource-variable/space-grotesk": "^5.3.0",
+    "a13n-ui": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
+  }
+}

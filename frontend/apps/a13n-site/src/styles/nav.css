@@ -1,0 +1,79 @@
+.nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 50;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--pad);
+}
+.nav::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(251, 251, 253, 0.8);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow: 0 1px 0 var(--rule);
+  opacity: 0;
+}
+.nav.solid::before {
+  opacity: 1;
+}
+/* over the night the bar turns dark with it */
+.nav.dark::before {
+  background: rgba(9, 9, 10, 0.72);
+  box-shadow: 0 1px 0 var(--night-rule);
+}
+.nav.dark .brand-word,
+.nav.dark .nav-links a:hover {
+  color: var(--night-ink);
+}
+.nav.dark .nav-links a {
+  color: #8d8d97;
+}
+.nav::before,
+.brand-word {
+  transition:
+    opacity 0.3s,
+    color 0.3s,
+    background-color 0.3s,
+    box-shadow 0.3s;
+}
+/* the brand comes in once the bar fills */
+.brand {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition:
+    opacity 0.3s,
+    transform 0.5s var(--out);
+}
+.nav.solid .brand {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.brand-word {
+  font: 700 22px/1 var(--display);
+  letter-spacing: -0.065em;
+  transform: translateY(-1px);
+}
+.nav-links {
+  position: relative;
+  display: flex;
+  gap: 28px;
+}
+.nav-links a {
+  font: 500 14px/1 var(--text);
+  color: var(--muted);
+  transition: color 0.2s;
+}
+.nav-links a:hover {
+  color: var(--ink);
+}

@@ -1,0 +1,66 @@
+/* one lockup in the middle of the screen: the name, what it is for, and
+   where to go next */
+.hero {
+  position: relative;
+  height: 100svh;
+  min-height: 600px;
+  max-height: 1080px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-top: 60px;
+}
+/* the folded name: its glyphs and the mark, placed by the script */
+.name {
+  position: relative;
+  flex: none;
+  margin: 0;
+  outline: none;
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+.glyphs {
+  position: absolute;
+  inset: 0;
+  perspective: 1800px;
+}
+.g {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font: 700 var(--s, 300px) / 1 var(--display);
+  font-kerning: none;
+  white-space: pre;
+  color: var(--ink);
+  backface-visibility: hidden;
+  will-change: transform;
+}
+.name .mk {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+.name .mk > svg {
+  transition: none;
+}
+.pitch {
+  text-align: center;
+}
+.pitch .links {
+  justify-content: center;
+  margin-top: clamp(28px, 3.2vw, 44px);
+}
+.slogan {
+  margin: 0;
+  font: 500 clamp(24px, 2.9vw, 42px) / 1.16 var(--display);
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.slogan > span {
+  display: block;
+}
+.slogan .dim {
+  color: var(--dim);
+}

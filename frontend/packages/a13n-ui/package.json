@@ -10,7 +10,9 @@
     "./theme.css": "./src/styles/theme.css",
     "./tokens.css": "./src/styles/tokens.css",
     "./fonts.css": "./src/styles/fonts.css",
+    "./brand/brands": "./src/brand/brands.ts",
     "./brand/logo.svg": "./src/brand/a13n-logo.svg",
+    "./brand/mark": "./src/brand/mark.ts",
     "./brand/wordmark": "./src/brand/wordmark.tsx"
   },
   "sideEffects": [

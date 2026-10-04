@@ -1,0 +1,190 @@
+:root {
+  color-scheme: light;
+  /* the page is the mark's cutout white, so the cutout reads as a hole in the page */
+  --paper: #fbfbfd;
+  --ink: #0b0b0c;
+  --ink-2: #2b2b30;
+  --muted: #6b6b74;
+  --dim: #9898a1;
+  --rule: rgba(11, 11, 12, 0.08);
+  --indigo: #4f46e5;
+  --night: #09090a;
+  --night-ink: #f3f3f5;
+  --night-dim: #6f6f79;
+  --night-rule: rgba(255, 255, 255, 0.09);
+  --display: "Space Grotesk Variable", system-ui, sans-serif;
+  --text: "Inter Variable", system-ui, sans-serif;
+  --mono: "JetBrains Mono Variable", Menlo, Consolas, monospace;
+  --pad: clamp(20px, 5vw, 64px);
+  --max: 1240px;
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+html {
+  background: var(--paper);
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 16px/1.6 var(--text);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: clip;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+::selection {
+  background: rgba(79, 70, 229, 0.16);
+}
+:focus-visible {
+  outline: 2px solid var(--indigo);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.wrap {
+  width: 100%;
+  max-width: calc(var(--max) + 2 * var(--pad));
+  margin: 0 auto;
+  padding: 0 var(--pad);
+}
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- the mark: a13n-ui LogoAnimation's two layers, turned by --r; the
+   shadow follows a beat behind with a little overshoot ---- */
+.mk {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  --r: 0deg;
+}
+.mk > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  rotate: var(--r);
+}
+.mk > svg:first-child {
+  translate: calc(100% * 27 / 690) calc(100% * 23 / 690);
+  transition: rotate 0.96s cubic-bezier(0.63, 0, 0.39, 1.14) 0.105s;
+}
+.mk > svg:last-child {
+  translate: calc(-100% * 27 / 690) calc(-100% * 23 / 690);
+  transition: rotate 0.96s cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* ---- links ---- */
+.link {
+  display: inline-flex;
+  align-items: baseline;
+  padding-bottom: 4px;
+  font: 500 16px/1.2 var(--display);
+  letter-spacing: -0.01em;
+  color: var(--muted);
+  background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px
+    no-repeat;
+  transition:
+    color 0.2s,
+    background-size 0.5s var(--out);
+}
+.link:hover {
+  color: var(--ink);
+  background-size: 100% 1px;
+}
+.link-ink {
+  color: var(--ink);
+}
+.arr {
+  display: inline-block;
+  margin-left: 0.4em;
+  transition: transform 0.4s var(--out);
+}
+.link:hover .arr {
+  transform: translateX(3px);
+}
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+}
+
+/* ---- statements: two tones, rising word by word ---- */
+.sec {
+  padding-top: clamp(120px, 15vw, 210px);
+}
+.statement {
+  max-width: 18.5em;
+  margin: 0;
+  font: 500 clamp(30px, 4vw, 58px) / 1.06 var(--display);
+  letter-spacing: -0.036em;
+  text-wrap: pretty;
+}
+.statement .dim {
+  color: var(--dim);
+}
+.statement .w {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.4em);
+  filter: blur(6px);
+  transition:
+    opacity 0.7s var(--out),
+    transform 1s var(--out),
+    filter 0.8s var(--out);
+  transition-delay: calc(var(--i) * 16ms);
+}
+.statement.in .w {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 0.9s var(--out),
+    transform 1.1s var(--out);
+  transition-delay: var(--d, 0ms);
+}
+[data-reveal].in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal],
+  .statement .w {
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+  .mk > svg {
+    transition: none !important;
+  }
+}

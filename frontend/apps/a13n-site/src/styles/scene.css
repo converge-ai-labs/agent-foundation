@@ -1,0 +1,101 @@
+/* ---- the Service scene: one pinned stage in three acts ---- */
+.scene {
+  position: relative;
+  height: 440vh;
+}
+.stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+  background: var(--paper);
+}
+.layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 64px 0 32px;
+}
+.layer > .wrap {
+  width: 100%;
+}
+.night {
+  position: absolute;
+  inset: 0;
+  background: var(--night);
+  clip-path: circle(0 at 0 0);
+}
+/* the acts after the first play on the night */
+.call,
+.run {
+  visibility: hidden;
+  color: var(--night-ink);
+}
+.call .statement .dim,
+.run .statement .dim {
+  color: var(--night-dim);
+}
+.call ::selection,
+.run ::selection {
+  background: rgba(143, 136, 255, 0.3);
+}
+
+/* the agent, shipped: a point of light */
+.light {
+  position: absolute;
+  left: -6px;
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 0 0 2px rgba(150, 142, 255, 0.9),
+    0 0 18px 6px rgba(124, 114, 255, 0.65),
+    0 0 64px 20px rgba(91, 82, 255, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+/* the mark on its way from the Service down into the wall */
+.flyer {
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  display: flex;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* a value that rolls: the old and the new share one cell while they pass */
+.slot {
+  display: grid;
+  overflow: clip;
+  overflow-clip-margin: 8px;
+}
+.slot > .v {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  gap: 0 28px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.it {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 860px) {
+  .slot > .v {
+    gap: 0 16px;
+  }
+  .it {
+    gap: 7px;
+  }
+}

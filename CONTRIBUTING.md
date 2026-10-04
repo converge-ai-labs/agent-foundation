@@ -121,8 +121,10 @@ Use the Makefile as the stable development interface:
 | `make lint`                      | Run non-mutating repository lint checks                            |
 | `make deps-check`                | Check each Python package's dependency declarations with deptry    |
 | `make typecheck`                 | Type-check Python package sources with Pyright                     |
-| `make docs-serve`                | Serve the documentation site with live reload                      |
+| `make docs-serve`                | Serve the documentation site at `/docs` with live reload           |
 | `make docs-build`                | Build the static documentation site and check its links            |
+| `make site-serve`                | Serve the landing page with live reload                            |
+| `make site-build`                | Build the landing page with the documentation under `/docs`        |
 | `make service-e2e`               | Run Service end-to-end scenarios with disposable stores (Docker)   |
 | `make service-e2e-check`         | Check E2E code, fixtures and selection without Docker              |
 | `make service-e2e-docker`        | Build and test the native Docker environment provider              |
@@ -285,10 +287,10 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 - Translate user-facing prose into natural technical Chinese, preserving meaning, prerequisites, and limitations. Keep product names, identifiers, commands, and terms such as agent and skill where appropriate. Synchronize affected translations when canonical prose changes.
 - Link other pages by relative English file path, such as `models.md#credentials`. The site resolves the target in the current language and keeps the canonical English heading IDs in translated pages. Preserve heading count, order, and depth in translations. The site build fails on any broken internal link or anchor.
 - Use `.mdx` only for composed pages such as the site home page. Pages under `docs/a13n-harness-ui/` stay `.md` because the Skill bundles them verbatim.
-- `frontend/apps/a13n-docs` owns the site: layout, theme, and Service API reference pages generated from `proto/a13n-service/openapi.json`. English pages keep their existing URLs; Simplified Chinese human pages use `/zh-CN/`. It also publishes English-only `llms.txt`, `llms-full.txt`, and Markdown under `/md/`; the bundled Harness UI configuration Skill stays English. Machine-readable OpenAPI and Schema downloads remain unchanged.
+- `frontend/apps/a13n-docs` owns the documentation site: layout, theme, and Service API reference pages generated from `proto/a13n-service/openapi.json`. English pages use unprefixed paths under `/docs/`; Simplified Chinese human pages use `/docs/zh-CN/`. It also publishes English-only `llms.txt`, `llms-full.txt`, and Markdown under `/docs/md/`; the bundled Harness UI configuration Skill stays English. Machine-readable OpenAPI and Schema downloads remain unchanged.
 - Run `make docs-build` after documentation or site changes.
-- The canonical public site is [a13n-docs.converge.ai](https://a13n-docs.converge.ai/).
-- The `Docs` GitHub Actions workflow publishes build artifacts for pull requests and deploys `main` to the `agent-foundation-docs` Cloudflare Pages project.
+- The canonical documentation site is [a13n.converge.ai/docs](https://a13n.converge.ai/docs/). The landing page in `frontend/apps/a13n-site` owns the site root.
+- The `Site` GitHub Actions workflow builds both applications, publishes build artifacts for pull requests, and deploys `main` to the `a13n-site` Cloudflare Pages project.
 
 ## Specification Changes
 

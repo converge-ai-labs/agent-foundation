@@ -1,0 +1,6 @@
+# Cloudflare Pages response headers. Hashed build output never changes under its name.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/docs/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable

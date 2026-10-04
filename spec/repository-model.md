@@ -74,14 +74,15 @@ Trivial corrections may start as a pull request when no material discussion or t
 
 ## Documentation System
 
-Documentation sources live in `docs/` as Markdown pages with front matter; each language's navigation JSON owns its navigation order. English sources keep their existing paths; Simplified Chinese translations use `.zh-CN.md` or `.zh-CN.mdx` with `meta.zh-CN.json` navigation and the same logical page slugs. Markdown is the single content source: the same pages read correctly on GitHub and in the bundled Harness UI configuration Skill, and the site renders a few portable forms (GitHub alerts, fence titles and tabs, Mermaid) as richer components. `.mdx` is reserved for composed pages such as `docs/index.mdx`, the site home page. The canonical public site is `https://a13n-docs.converge.ai/`.
+Documentation sources live in `docs/` as Markdown pages with front matter; each language's navigation JSON owns its navigation order. English sources keep their existing paths; Simplified Chinese translations use `.zh-CN.md` or `.zh-CN.mdx` with `meta.zh-CN.json` navigation and the same logical page slugs. Markdown is the single content source: the same pages read correctly on GitHub and in the bundled Harness UI configuration Skill, and the site renders a few portable forms (GitHub alerts, fence titles and tabs, Mermaid) as richer components. `.mdx` is reserved for composed pages such as `docs/index.mdx`, the site home page. The canonical documentation site is `https://a13n.converge.ai/docs/`.
 
 - `frontend/apps/a13n-docs` is the private Fumadocs (Next.js) application in the frontend workspace that owns site layout, theme, and search, and generates the Service API reference from `proto/a13n-service/openapi.json`. It has no release identity.
-- English human pages retain their existing URLs; Simplified Chinese pages use `/zh-CN/`. Navigation, search, page metadata, and site controls follow the page language. Corresponding headings retain the English source IDs so section links remain stable across languages.
-- `llms.txt`, `llms-full.txt`, `/md/`, and the bundled Harness UI configuration Skill consume English sources only. Published OpenAPI and Schema downloads retain the canonical machine contract; translations of API descriptions apply only to the human-facing reference.
+- English human pages use unprefixed paths under `/docs/`; Simplified Chinese pages use `/docs/zh-CN/`. Navigation, search, page metadata, and site controls follow the page language. Corresponding headings retain the English source IDs so section links remain stable across languages.
+- `llms.txt`, `llms-full.txt`, `/md/`, and the bundled Harness UI configuration Skill consume English sources only. Published OpenAPI and Schema downloads retain the canonical machine contract; translations of API descriptions apply only to the human-facing reference. The Markdown outputs link site pages by absolute URL, because readers use them away from the site.
 - `make docs-serve` runs the local documentation server.
 - `make docs-build` performs the static export into `frontend/apps/a13n-docs/out/` and fails on any broken internal link or anchor.
-- `.github/workflows/docs.yml` builds pull-request artifacts and deploys `main` to Cloudflare Pages through Wrangler.
+- `frontend/apps/a13n-site` is the private Vite landing page at the site root. It has no release identity.
+- `.github/workflows/site.yml` builds both applications into one site, with the documentation export under `/docs/`, uploads pull-request artifacts, and deploys `main` to Cloudflare Pages through Wrangler.
 
 Site configuration and generated output do not live in `docs/`, which holds only pages and navigation JSON.
 

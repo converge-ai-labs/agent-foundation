@@ -1,8 +1,6 @@
 import type { ComponentProps } from "react";
 import styles from "./logo-animation.module.css";
-
-// The a13n-logo.svg geometry: three rounded bars rotated around the mark center.
-const BAR_ANGLES = [0, 60, -60];
+import { markColors, markGeometry } from "./mark";
 
 export type LogoAnimationProps = Omit<ComponentProps<"span">, "children"> & {
   size?: number;
@@ -21,8 +19,12 @@ export function LogoAnimation({
       className={`${styles.animation} ${className}`}
       style={{ width: size, height: size, ...style }}
     >
-      <MarkLayer className={styles.shadow} fill="#3730a3" />
-      <MarkLayer className={styles.face} fill="#4f46e5" cutout="#fbfbfd" />
+      <MarkLayer className={styles.shadow} fill={markColors.shadow} />
+      <MarkLayer
+        className={styles.face}
+        fill={markColors.face}
+        cutout={markColors.cutout}
+      />
     </span>
   );
 }
@@ -38,35 +40,30 @@ function MarkLayer({
   cutout?: string;
 }) {
   return (
-    <svg className={className} viewBox="167 167 690 690" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox={markGeometry.viewBox}
+      aria-hidden="true"
+    >
       <g fill={fill}>
-        {BAR_ANGLES.map((angle) => (
-          <rect
-            key={angle}
-            x={417}
-            y={236}
-            width={190}
-            height={552}
-            rx={16}
-            transform={`rotate(${angle} 512 512)`}
-          />
-        ))}
+        <Bars {...markGeometry.bar} />
       </g>
       {cutout && (
         <g fill={cutout}>
-          {BAR_ANGLES.map((angle) => (
-            <rect
-              key={angle}
-              x={468}
-              y={312}
-              width={88}
-              height={400}
-              rx={7}
-              transform={`rotate(${angle} 512 512)`}
-            />
-          ))}
+          <Bars {...markGeometry.cutout} />
         </g>
       )}
     </svg>
   );
+}
+
+function Bars(bar: (typeof markGeometry)["bar" | "cutout"]) {
+  const { center } = markGeometry;
+  return markGeometry.angles.map((angle) => (
+    <rect
+      key={angle}
+      {...bar}
+      transform={`rotate(${angle} ${center} ${center})`}
+    />
+  ));
 }

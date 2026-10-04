@@ -1,0 +1,95 @@
+/* ---- act one: the agent, a spec sheet on the page grid; --c draws it
+   back into a point ---- */
+.agent {
+  --c: 0;
+  position: relative;
+  margin: clamp(40px, 6vh, 72px) 0 0;
+  perspective: 1600px;
+}
+.agent::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: var(--ink);
+  transform: scaleX(calc(1 - var(--c)));
+  transform-origin: var(--ox, 0) 0;
+}
+.agent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 9fr);
+  gap: 40px;
+  align-items: center;
+  min-height: 62px;
+  border-bottom: 1px solid var(--rule);
+  transform-origin: 50% 0;
+  backface-visibility: hidden;
+}
+.agent-row dt {
+  font: 400 14px/1 var(--text);
+  color: var(--muted);
+}
+.agent-row dd {
+  margin: 0;
+  font: 400 16.5px/1.4 var(--text);
+}
+.agent-name {
+  min-height: 80px;
+  border-bottom-color: rgba(11, 11, 12, calc(0.08 * (1 - var(--c))));
+}
+.agent-name dt {
+  opacity: calc(1 - 2 * var(--c));
+}
+.agent-name dd {
+  font: 500 clamp(26px, 2.4vw, 34px) / 1.1 var(--display);
+  letter-spacing: -0.03em;
+  opacity: calc(1 - var(--c));
+  transform: scale(calc(1 - var(--c)));
+  transform-origin: 0 50%;
+}
+.agent [data-field="name"] > .v,
+.agent [data-field="instructions"] > .v {
+  flex-wrap: wrap;
+  gap: 0 0.26em;
+  white-space: normal;
+}
+.agent [data-field="model"] > .v {
+  gap: 12px;
+}
+.agent .mono {
+  font: 400 15px/1 var(--mono);
+}
+.agent .mono .it {
+  white-space: pre;
+}
+.agent .ic {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+@media (max-width: 860px) {
+  .agent-row {
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 14px;
+    min-height: 52px;
+    padding: 10px 0;
+  }
+  .agent-name {
+    min-height: 62px;
+  }
+  .agent-row dt {
+    font-size: 12.5px;
+  }
+  .agent-row dd {
+    font-size: 14.5px;
+  }
+  .agent .mono {
+    font-size: 13.5px;
+  }
+  .agent .ic {
+    width: 18px;
+    height: 18px;
+  }
+}

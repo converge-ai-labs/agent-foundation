@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Page not found — a13n</title>
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#fbfbfd" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/node_modules/a13n-ui/src/brand/a13n-logo.svg"
+    />
+    <script type="module" src="/src/not-found.ts"></script>
+  </head>
+  <body>
+    <header class="nav solid">
+      <a class="brand" href="/" aria-label="a13n home">
+        <span data-mark="20"></span>
+        <span class="brand-word">a13n</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="/docs/">Docs</a>
+        <a href="https://github.com/converge-ai-labs/agent-foundation"
+          >GitHub</a
+        >
+      </nav>
+    </header>
+    <main class="missing wrap">
+      <h1 class="statement">
+        Page not found.
+        <span class="dim">It may have moved, or never existed.</span>
+      </h1>
+      <div class="links">
+        <a class="link link-ink" href="/"
+          >Home<span class="arr" aria-hidden="true">→</span></a
+        >
+        <a class="link" href="/docs/"
+          >Read the docs<span class="arr" aria-hidden="true">→</span></a
+        >
+      </div>
+    </main>
+  </body>
+</html>
