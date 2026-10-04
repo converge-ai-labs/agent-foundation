@@ -12,9 +12,11 @@ from a13n_harness_ui.display_history import (
     DisplayHistory,
     DisplayHistoryCollector,
     detach_display_history,
+    import_display_history,
     saved_display_history,
     with_display_history,
 )
+from a13n_harness_ui.display_projection import display_entries
 from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
 from a13n_harness_ui.thread_projection import _message_entry
 from pydantic_ai.agent.spec import AgentSpec
@@ -28,8 +30,8 @@ pytestmark = pytest.mark.anyio
 def visible(history: DisplayHistory) -> list[str]:
     return [
         part.text
-        for index, message in enumerate(history.messages)
-        for part in _message_entry(index, message).parts
+        for entry in display_entries(history)
+        for part in entry.parts
         if part.text and part.metadata.display is not False and part.kind != "system"
     ]
 
@@ -122,14 +124,15 @@ async def test_display_history_survives_repeated_context_replacement_and_reload(
             output_type=str,
             model=FunctionModel(stream_function=model),
             capabilities=(
-                collector,
                 RootCheckpointCapability(save),
                 HandoffCapability(),
                 *((CompactionCapability(CompactionPolicy(trigger_tokens=1)),) if kind == "compaction" else ()),
             ),
         )
         async with executable.stream(
-            f"Request {round_number}", bindings=RunBindings.embedded(), previous_state=previous
+            f"Request {round_number}",
+            bindings=RunBindings.embedded(producer_observer=collector.observe),
+            previous_state=previous,
         ) as run:
             async for _ in run:
                 pass
@@ -144,9 +147,9 @@ async def test_display_history_survives_repeated_context_replacement_and_reload(
         for number in range(round_number + 1):
             assert text.count(f"Request {number}") == 1
             assert text.count(f"Answer {number}") == 1
-        summaries = [message for message in display.messages if (message.metadata or {}).get("operation_id")]
+        summaries = [item for item in display.items if item.content.get("name") == f"a13n.context.{kind}_summary"]
         assert len(summaries) == round_number + 1
-        assert len({message.metadata["operation_id"] for message in summaries if message.metadata}) == len(summaries)
+        assert len({item.content["value"]["event"]["operation_id"] for item in summaries}) == len(summaries)
         assert not any(_COMPACTION_PROMPT in item for item in text)
         assert not any(
             isinstance(message, ModelResponse)
@@ -164,24 +167,23 @@ async def test_display_history_survives_repeated_context_replacement_and_reload(
 
 async def test_repeated_identical_messages_keep_distinct_positions_and_detached_snapshots() -> None:
     message = ModelRequest(parts=[UserPromptPart("Same input")])
-    collector = DisplayHistoryCollector([])
-    snapshot = collector.capture([message, message])
+    collector = DisplayHistoryCollector([message, message])
+    snapshot = collector.capture()
     message.parts = [UserPromptPart("Updated input")]
     assert visible(snapshot) == ["Same input", "Same input"]
     messages = [message, message, ModelResponse(parts=[TextPart("Answer")])]
-    updated = collector.capture(messages)
+    updated = import_display_history(messages)
     assert visible(updated) == ["Updated input", "Updated input", "Answer"]
     assert visible(snapshot) == ["Same input", "Same input"]
     native = HarnessState.new(message_history=messages)
     stored = with_display_history(native, updated)
     assert saved_display_history(stored) == updated
-    # Old writers can keep unknown state while advancing model history. The
-    # stale UI mapping must not corrupt their next transcript or block resume.
+    # Compact presentation is independent of model-context replacement.
     advanced = HarnessState.new(
         message_history=[*native.message_history, ModelRequest(parts=[UserPromptPart("New")])],
         agent_context_state=stored.agent_context_state,
     )
-    assert saved_display_history(advanced) is None
+    assert saved_display_history(advanced) == updated
 
 
 async def test_restore_decodes_saved_messages_once_and_keeps_copies_detached(
@@ -190,7 +192,8 @@ async def test_restore_decodes_saved_messages_once_and_keeps_copies_detached(
     from a13n_harness_ui import display_history
 
     history = [ModelRequest(parts=[UserPromptPart("Input")]), ModelResponse(parts=[TextPart("Answer")])]
-    saved = DisplayHistoryCollector([]).capture(history, completed=True)
+    history[-1].metadata = {"a13n.harness-ui.completed": True}
+    saved = import_display_history(history)
     decode = display_history.decode_messages
     calls = 0
 
@@ -201,14 +204,13 @@ async def test_restore_decodes_saved_messages_once_and_keeps_copies_detached(
 
     monkeypatch.setattr(display_history, "decode_messages", counted_decode)
     collector = DisplayHistoryCollector(history, saved)
-    assert calls == 1
+    assert calls == 0
     history[-1].parts = [TextPart("Changed answer")]
     updated = collector.capture(history)
-    assert visible(updated) == ["Input", "Changed answer"]
-    assert updated.completed_responses == (1,)
+    assert visible(updated) == ["Input", "Answer"]
+    assert updated.completed == ("import:1",)
     assert visible(saved) == ["Input", "Answer"]
-    assert saved.completed_responses == (1,)
-    assert history[-1].metadata is None
+    assert saved.completed == ("import:1",)
 
 
 @pytest.mark.parametrize("kind", ["plain", "handoff", "compaction"])
@@ -216,7 +218,7 @@ async def test_collection_hooks_do_not_serialize_unused_snapshots(kind: str, mon
     from a13n_harness_ui import display_history
 
     collector = DisplayHistoryCollector([])
-    encode = display_history.encode_messages
+    encode = display_history.DisplayHistory.model_dump
     encoded = 0
 
     def counted_encode(messages: object) -> bytes:
@@ -224,7 +226,7 @@ async def test_collection_hooks_do_not_serialize_unused_snapshots(kind: str, mon
         encoded += 1
         return encode(messages)
 
-    monkeypatch.setattr(display_history, "encode_messages", counted_encode)
+    monkeypatch.setattr(display_history.DisplayHistory, "model_dump", counted_encode)
     requests = 0
 
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -240,7 +242,6 @@ async def test_collection_hooks_do_not_serialize_unused_snapshots(kind: str, mon
         output_type=str,
         model=FunctionModel(stream_function=model),
         capabilities=[
-            collector,
             HandoffCapability(),
             *([CompactionCapability(CompactionPolicy(trigger_tokens=1))] if kind == "compaction" else []),
         ],
@@ -251,15 +252,17 @@ async def test_collection_hooks_do_not_serialize_unused_snapshots(kind: str, mon
             ModelResponse(parts=[TextPart("Old answer")], usage=RequestUsage(input_tokens=1000)),
         ]
     )
-    result = await executable.run("Input", bindings=RunBindings.embedded(), previous_state=previous)
+    result = await executable.run(
+        "Input", bindings=RunBindings.embedded(producer_observer=collector.observe), previous_state=previous
+    )
     result.output_or_raise()
     assert result.state is not None
     assert encoded == 0
     snapshot = collector.capture(result.state.message_history, completed=True)
-    assert encoded == 2  # Display messages and the unchanged native-history digest.
+    assert encoded == 0  # Serialization belongs only to checkpoint publication.
     assert "Input" in visible(snapshot)
     assert visible(snapshot)[-1] == "Answer"
-    assert snapshot.completed_responses
+    assert snapshot.completed
 
 
 @pytest.mark.parametrize("checkpoint", [False, True])
@@ -288,32 +291,31 @@ async def test_suspended_response_replaces_its_display_slot_on_resume(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=model),
-        capabilities=[collector, *([RootCheckpointCapability(save)] if checkpoint else [])],
+        capabilities=[*([RootCheckpointCapability(save)] if checkpoint else [])],
     )
-    result = await executable.run(None, bindings=RunBindings.embedded(), previous_state=previous)
+    result = await executable.run(
+        None, bindings=RunBindings.embedded(producer_observer=collector.observe), previous_state=previous
+    )
     result.output_or_raise()
     assert result.state is not None
     final = collector.capture(result.state.message_history)
     inputs = ["First", "Continue"] if adjacent_requests else ["Continue"]
     assert visible(final) == [*inputs, "partial ", "finished"]
-    assert len(final.messages) == len(inputs) + 1
-    assert isinstance(final.messages[-1], ModelResponse)
-    assert final.messages[-1].state == "complete"
-    assert final.pending_response_position is None
+    assert len(display_entries(final)) == len(inputs) + 1
+    assert final.pending_response is None
     if checkpoint:
         state, saved = snapshots[0]
         assert visible(saved) == [*inputs, "partial "]
-        assert len(saved.model_positions) == len(state.message_history)
-        assert saved.pending_response_position == len(inputs)
+        assert saved.pending_response == f"import:{len(inputs)}"
         # A crash after the provider-boundary checkpoint must not strand the
         # partial response in display history alongside the retried response.
         reopened = DisplayHistoryCollector(
             state.message_history, DisplayHistory.model_validate_json(saved.model_dump_json())
         )
-        retry = HarnessBuilder().build(
-            AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=[reopened]
+        retry = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=model))
+        retried = await retry.run(
+            None, bindings=RunBindings.embedded(producer_observer=reopened.observe), previous_state=state
         )
-        retried = await retry.run(None, bindings=RunBindings.embedded(), previous_state=state)
         retried.output_or_raise()
         assert retried.state is not None
         assert visible(reopened.capture(retried.state.message_history)) == [*inputs, "finished"]
@@ -363,9 +365,11 @@ async def test_preparation_failure_preserves_saved_display_after_native_request_
             AgentSpec(),
             output_type=str,
             model=FunctionModel(stream_function=model),
-            capabilities=[collector, RootCheckpointCapability(save), HandoffCapability()],
+            capabilities=[RootCheckpointCapability(save), HandoffCapability()],
         )
-        result = await executable.run("Original input", bindings=RunBindings.embedded())
+        result = await executable.run(
+            "Original input", bindings=RunBindings.embedded(producer_observer=collector.observe)
+        )
         assert result.output_or_raise() == "Saved answer" and result.state is not None
         state = result.state
     else:
@@ -376,7 +380,9 @@ async def test_preparation_failure_preserves_saved_display_after_native_request_
                 ModelResponse(parts=[TextPart("Saved answer")]),
             ]
         )
-    display = collector.capture(state.message_history, completed=True)
+    if history_kind != "handoff":
+        collector = DisplayHistoryCollector(state.message_history)
+    display = collector.capture(completed=True)
     previous = HarnessState.model_validate_json(with_display_history(state, display).model_dump_json())
     reopened = DisplayHistoryCollector(previous.message_history, saved_display_history(previous))
 
@@ -395,13 +401,115 @@ async def test_preparation_failure_preserves_saved_display_after_native_request_
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=unexpected_model),
-        capabilities=[reopened, FailInstructions()],
+        capabilities=[FailInstructions()],
     )
-    failed = await executable.run("New input", bindings=RunBindings.embedded(), previous_state=previous)
+    failed = await executable.run(
+        "New input", bindings=RunBindings.embedded(producer_observer=reopened.observe), previous_state=previous
+    )
     assert failed.status == "failed" and failed.state is not None
     updated = reopened.capture(failed.state.message_history)
     assert visible(updated) == [*visible(display), "New input"]
-    assert updated.completed_responses == display.completed_responses
-    assert all(isinstance(updated.messages[position], ModelResponse) for position in updated.completed_responses)
+    assert updated.completed == display.completed
     saved = HarnessState.model_validate_json(with_display_history(failed.state, updated).model_dump_json())
     assert saved_display_history(saved) == updated
+
+
+def test_legacy_compact_migration_preserves_full_original_message_part_addresses() -> None:
+    from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
+    from a13n_harness_ui.display_history import _message_digest
+    from a13n_harness_ui.display_projection import original_text
+    from pydantic_ai.messages import ThinkingPart
+
+    text = "original " * 40000
+    native = HarnessState.new(
+        message_history=[
+            ModelRequest(parts=[UserPromptPart("Question")]),
+            ModelResponse(parts=[ThinkingPart("Thinking"), TextPart(text), TextPart("Same"), TextPart("Same")]),
+        ]
+    )
+    old = native.model_copy(
+        update={
+            "agent_context_state": AgentContextStateSnapshot(
+                entries={
+                    "a13n.harness-ui.display-history": CapabilityState(
+                        version="1",
+                        data={
+                            "messages": native.model_dump(mode="json")["message_history"],
+                            "model_positions": [0, 1],
+                            "pending_response_position": None,
+                            "model_history_digest": _message_digest(native.message_history_json),
+                        },
+                    ),
+                }
+            )
+        }
+    )
+    display = saved_display_history(old)
+    assert display is not None
+    assert original_text(display, 1, 1) == text
+    assert original_text(display, 1, 2) == original_text(display, 1, 3) == "Same"
+    assert original_text(display, 1, 0) is None
+    compact = with_display_history(native, display)
+    envelope = compact.agent_context_state.get("a13n.harness-ui.display-history")
+    assert envelope.version == "2" and "messages" not in envelope.data
+    restored = saved_display_history(HarnessState.model_validate_json(compact.model_dump_json()))
+    assert restored is not None and original_text(restored, 1, 1) == text
+    preview = display_entries(restored)[1].parts[1]
+    assert preview.text_truncated and len(preview.text) <= 65536
+
+
+def test_failed_live_publication_retries_a_baseline_without_losing_durable_capture() -> None:
+    from datetime import UTC, datetime
+
+    from a13n_harness import HarnessEvent
+    from a13n_stream_protocol.display import SetItem, apply_changes
+    from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPartDelta
+
+    collector = DisplayHistoryCollector(())
+
+    def observe(sequence, event):
+        collector.observe(
+            HarnessEvent(
+                thread_id="thread", run_id="run", sequence=sequence, occurred_at=datetime.now(UTC), event=event
+            )
+        )
+
+    observe(1, PartStartEvent(index=0, part=TextPart("first")))
+    collector.drain()
+    collector.publication_failed()
+    observe(2, PartDeltaEvent(index=0, delta=TextPartDelta(" second")))
+    retry = collector.drain()
+    assert retry and all(isinstance(change, SetItem) for change in retry)
+    items = {}
+    apply_changes(items, retry)
+    assert any(item.content.get("text") == "first second" for item in items.values())
+    assert visible(collector.capture()) == ["first second"]
+    assert collector.fold.observer.event_count == 0
+
+
+def test_tool_result_does_not_renumber_later_comment_parts() -> None:
+    from a13n_stream_protocol.display import DisplayFold
+
+    fold = DisplayFold("run", full_content=True)
+    fold.fold(
+        [
+            {"type": "TOOL_CALL_START", "toolCallId": "call", "toolCallName": "inspect"},
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "answer", "delta": "Comment here"},
+        ]
+    )
+    # Both items belong to the same native response, even when the result arrives later.
+    for key, item in fold.items.items():
+        fold.items[key] = item.model_copy(update={"content": {**item.content, "responseGroup": "response"}})
+
+    def address():
+        entries = display_entries(DisplayHistory(items=tuple(fold.items.values())))
+        return next(
+            (entry.position, index)
+            for entry in entries
+            for index, part in enumerate(entry.parts)
+            if part.text == "Comment here"
+        )
+
+    before = address()
+    fold.fold([{"type": "TOOL_CALL_RESULT", "toolCallId": "call", "content": "done"}])
+    assert address() == before

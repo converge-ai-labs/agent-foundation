@@ -429,6 +429,20 @@ class _Attempt:
             output = await stack.enter_async_context(
                 Coalescer(self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds)
             )
+
+            def freeze_display(open_calls: frozenset[str]) -> Snapshot:
+                output.flush()
+                return self._snapshot(open_calls)
+
+            def capture(item: HarnessEvent) -> None:
+                if not isinstance(item.event, SafeBoundary):
+                    output.observe(item)
+
+            self.boundaries.freeze_display = freeze_display
+            bindings = replace(
+                host.bindings(root, self._bindings(agent.model_resolver(root, models))),
+                producer_observer=capture,
+            )
             start = partial(
                 executable.stream,
                 input_factory=self._assigned_input if self.plan.assigned or self.plan.resume_input else None,
@@ -437,7 +451,7 @@ class _Attempt:
                 resume_usage=False,
                 deferred_resume=self.plan.resume,
                 tool_recovery=self.plan.tool_recovery,
-                bindings=host.bindings(root, self._bindings(agent.model_resolver(root, models))),
+                bindings=bindings,
                 # The call check enforces the run's own request limit across attempts.
                 usage_limits=UsageLimits(request_limit=None),
             )
@@ -496,15 +510,22 @@ class _Attempt:
             if item.run_id == stream.run_id:
                 await self._boundary(event, stream, output)
             return
-        output.observe(item)
+        if not isinstance(item, HarnessEvent):
+            # Only the validated post-teardown terminal comes from public delivery.
+            output.observe(item)
 
     async def _boundary(self, boundary: SafeBoundary, stream: HarnessRunStream, output: Coalescer) -> None:
         if boundary.at == "model":
             self.offers.requested = True
-        output.flush()  # The checkpoint's display covers every event observed before the boundary.
         staged = self.boundaries.take(boundary.token)
-        steers = await self._commit(staged.state, cursors=staged.cursors, open_calls=staged.open_calls)
-        output.boundary()
+        assert staged.display is not None
+        steers = await self._commit(
+            staged.state,
+            cursors=staged.cursors,
+            open_calls=staged.open_calls,
+            snapshot=staged.display,
+        )
+        output.stream.boundary(staged.display.tail.position.sequence)
         if boundary.at == "model" and self.control.handoff.is_set():
             # Yield where the request in flight is simply sent again; at a tool boundary recovery would have to
             # treat calls that never ran as unknown effects. Steers just assigned stay with the run.
@@ -523,12 +544,13 @@ class _Attempt:
         open_calls: Collection[str],
         outcome: Outcome | None = None,
         deferred: JsonValue = None,
+        snapshot: Snapshot | None = None,
     ) -> list[Offered]:
         """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
         the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned.
 
         `open_calls` are the tool calls the state leaves unanswered, whose display items stay unfinished."""
-        snapshot = self._snapshot(open_calls)
+        snapshot = self.fold.pending(snapshot) if snapshot is not None else self._snapshot(open_calls)
         if near_deadline(self.runtime, self.control):
             raise LeaseLost()
         started = time.monotonic()

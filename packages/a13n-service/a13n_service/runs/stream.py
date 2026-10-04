@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from a13n_logging import exception_details, get_logger
+from a13n_stream_protocol.display import ItemChange
 from pydantic import BaseModel, Field
 from pydantic.json_schema import JsonSchemaMode, models_json_schema
 from redis.asyncio import Redis
@@ -27,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.redis import StreamEntry, append, last_id, read, read_entry, read_range, trim
-from a13n_service.runs.display import ItemRef, Observed, StreamPosition
+from a13n_service.runs.display import Observed, StreamPosition
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import AttemptRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread
@@ -58,13 +59,13 @@ def stream_key(thread_id: str) -> str:
 
 
 class Delta(BaseModel):
-    """A data frame: one AG-UI event of a run's attempt at its per-attempt sequence, and the item it changed."""
+    """One atomic compact-display batch; raw event clients must upgrade with this contract."""
 
     run_id: str
     attempt: int
     sequence: int
-    event: dict[str, Any]
-    item: ItemRef | None
+    format: Literal["display-ops-v1"] = "display-ops-v1"
+    changes: list[ItemChange]
 
 
 class Boundary(BaseModel):
@@ -158,13 +159,10 @@ class ThreadStream:
             self.writer.cancel()
 
     def delta(self, observed: Observed) -> None:
-        event = json.dumps(observed.event, separators=(",", ":"))
-        if len(event) > MAX_DELTA_BYTES:
+        changes = json.dumps([change.model_dump(mode="json") for change in observed.changes], separators=(",", ":"))
+        if len(changes.encode()) > MAX_DELTA_BYTES:
             return
-        fields = {"sequence": str(observed.sequence), "event": event}
-        if observed.item is not None:
-            fields["item"] = observed.item.model_dump_json()
-        self._put(fields)
+        self._put({"sequence": str(observed.sequence), "changes": changes})
 
     def boundary(self, sequence: int) -> None:
         self._put({"sequence": str(sequence), "boundary": "1"})
@@ -233,11 +231,28 @@ class Reader:
     thread_id: str
     signals: asyncio.Queue[Signal] = field(default_factory=lambda: asyncio.Queue(READ_BUFFER))
     overflowed: bool = False
+    dropped: Gap | None = None
+    revoked: bool = False
 
     def send(self, signal: Signal) -> None:
+        # Revocation is sticky, including when the bounded delivery queue is full.
+        if isinstance(signal, Revoked):
+            self.revoked = True
         try:
             self.signals.put_nowait(signal)
         except asyncio.QueueFull:
+            if isinstance(signal, StreamEntry):
+                fields = signal.fields
+                target = Gap(run_id=fields["run_id"], position=f"{fields['attempt']}-{fields['sequence']}")
+                if not self.overflowed:
+                    self.dropped = target
+                elif self.dropped is not None:
+                    if self.dropped.run_id != target.run_id:
+                        self.dropped = None
+                    elif _order(target.position or "0-0") > _order(self.dropped.position or "0-0"):
+                        self.dropped = target
+            else:
+                self.dropped = None
             self.overflowed = True
 
 
@@ -440,12 +455,14 @@ class _View:
         if sequence > expected:
             frames.append(_frame("gap", Gap(run_id=run_id, position=f"{attempt}-{sequence - 1}")))
         self.sequences[(run_id, attempt)] = sequence
+        if "changes" not in fields:
+            # A retained pre-upgrade Redis frame cannot be interpreted as operations.
+            return [*frames, _frame("gap", Gap(run_id=run_id, position=f"{attempt}-{sequence}"))]
         delta = Delta(
             run_id=run_id,
             attempt=attempt,
             sequence=sequence,
-            event=json.loads(fields["event"]),
-            item=ItemRef.model_validate_json(fields["item"]) if "item" in fields else None,
+            changes=json.loads(fields["changes"]),
         )
         return [*frames, _frame("delta", delta, entry.id)]
 
@@ -502,10 +519,27 @@ async def frames(
             except TimeoutError:
                 yield ": keepalive\n\n"
                 continue
+            if reader.revoked:
+                return
             if reader.overflowed:
-                reader.overflowed = False
-                for frame in view.gap():
-                    yield frame
+                dropped = reader.dropped
+                reader.overflowed, reader.dropped = False, None
+                if dropped is not None:
+                    yield _frame("gap", dropped)
+                else:
+                    # Loss across identities/control signals has no single coverage
+                    # target. Discard queued stale evidence and reload the baseline.
+                    while not reader.signals.empty():
+                        reader.signals.get_nowait()
+                    refreshed = await hub.snapshot(reader.thread_id)
+                    if reader.revoked or refreshed is None:
+                        return
+                    for frame in view.update(refreshed):
+                        yield frame
+                    view.sequences.clear()
+                    if view.snapshot.run_id is not None:
+                        yield _frame("reset", RunSignal(run_id=view.snapshot.run_id))
+                    continue
             match signal:
                 case StreamEntry():
                     for frame in await view.entry(signal):

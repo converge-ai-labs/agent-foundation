@@ -9739,6 +9739,17 @@
             ],
             "title": "Current Attempt Id"
           },
+          "display_position": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Position"
+          },
           "environment_mounts": {
             "items": {
               "$ref": "#/components/schemas/EnvironmentMount"

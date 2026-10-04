@@ -639,3 +639,46 @@ def test_status_token_abbreviations_keep_one_decimal_at_every_width(tokens: int,
     for width in (24, 80, 160, None):
         assert f"{'tok' if width == 24 else 'tokens'} {label}" in status.line(width)
     assert f"{tokens:,} total tokens" in status.usage_details()
+
+
+@pytest.mark.parametrize("baseline", [False, True])
+def test_compact_tool_arguments_complete_before_result(baseline: bool) -> None:
+    from a13n_stream_protocol.display import DisplayFold, SetItem
+
+    fold = DisplayFold("run")
+    renderer = StreamRenderer(Status())
+    events = [
+        {"type": "TOOL_CALL_START", "toolCallId": "call", "toolCallName": "shell_exec"},
+        {"type": "TOOL_CALL_ARGS", "toolCallId": "call", "delta": '{"command":"echo hello"}'},
+        {"type": "TOOL_CALL_END", "toolCallId": "call"},
+    ]
+    for event in events:
+        batch = fold.fold([event])[0]
+        if not baseline:
+            renderer.ingest(
+                "CUSTOM",
+                {
+                    "name": "a13n.display.changes",
+                    "value": {
+                        "format": "display-ops-v1",
+                        "changes": [change.model_dump(mode="json") for change in batch.changes],
+                    },
+                },
+                run_id="run",
+            )
+    if baseline:
+        renderer.ingest(
+            "CUSTOM",
+            {
+                "name": "a13n.display.changes",
+                "value": {
+                    "format": "display-ops-v1",
+                    "changes": [SetItem(item=item).model_dump(mode="json") for item in fold.items.values()],
+                },
+            },
+            run_id="run",
+        )
+    preview = renderer._tools[("run", "call")]
+    assert "echo hello" in preview.arguments
+    assert preview.summary == "echo hello"
+    assert preview.parts is None

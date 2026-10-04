@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
@@ -11,9 +11,15 @@ from weakref import WeakKeyDictionary
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, field_validator, model_validator
 from pydantic_ai import RunContext
-from pydantic_ai.messages import AgentStreamEvent, CapabilityEvent, UserContent
+from pydantic_ai.messages import AgentStreamEvent, CapabilityEvent, EnqueuedMessagesEvent, ModelRequest, UserContent
 
-from a13n_harness.content import ContentItem, ContentMetadata, content_items, project_input_content
+from a13n_harness.content import (
+    ContentItem,
+    ContentMetadata,
+    content_items,
+    project_input_content,
+    request_input_content,
+)
 
 if TYPE_CHECKING:
     from a13n_harness.context import AgentContext
@@ -41,7 +47,7 @@ type InputSource = Literal["user", "steering", "context", "recovery", "async_sub
 
 
 @dataclass(kw_only=True)
-class InputTextEvent(CapabilityEvent, namespace="a13n.input", name="text"):
+class InputTextEvent(CapabilityEvent, namespace="a13n.input", name="text", dispatch="immediate"):
     """One source-typed text observation, separate from native model content."""
 
     input_id: str
@@ -51,7 +57,7 @@ class InputTextEvent(CapabilityEvent, namespace="a13n.input", name="text"):
 
 
 @dataclass(kw_only=True)
-class InputMediaEvent(CapabilityEvent, namespace="a13n.input", name="media"):
+class InputMediaEvent(CapabilityEvent, namespace="a13n.input", name="media", dispatch="immediate"):
     """One payload-free media observation belonging to an input group."""
 
     input_id: str
@@ -78,6 +84,18 @@ def input_events(
         else:
             events.append(InputMediaEvent(input_id=input_id, source=source, content=value, metadata=metadata))
     return events
+
+
+def enqueued_input_events(event: EnqueuedMessagesEvent) -> list[InputEvent]:
+    """Project native delivered input identically for producer capture and public delivery."""
+    observed: list[InputEvent] = []
+    for message in event.messages:
+        if not isinstance(message, ModelRequest):
+            continue
+        notification = (message.metadata or {}).get("a13n.steering-source")
+        source: InputSource = notification if notification in {"async_subagent", "background_process"} else "steering"
+        observed.extend(input_events(request_input_content(message), source=source, input_id=event.enqueue_id))
+    return observed
 
 
 class HarnessExtensionEvent(BaseModel):
@@ -537,7 +555,16 @@ class _ChildEventForwarder:
 class _RunEventEmitter:
     """Bounded queue consumed concurrently with the active Pydantic event iterator."""
 
-    def __init__(self, thread_id: str, run_id: str, *, capacity: int = 64) -> None:
+    def __init__(
+        self,
+        thread_id: str,
+        run_id: str,
+        *,
+        capacity: int = 64,
+        observer: Callable[[HarnessEvent], None] | None = None,
+    ) -> None:
+        self.observer = observer
+        self._producer_sequence = 0
         self.thread_id = thread_id
         self.run_id = run_id
         self._queue: asyncio.Queue[HarnessExtensionEvent | HarnessEvent] = asyncio.Queue(maxsize=capacity)
@@ -559,7 +586,27 @@ class _RunEventEmitter:
             validated = HarnessExtensionEvent.model_validate(event.model_dump(), strict=True)
         except ValueError as exc:
             raise RunError("Harness extension event is invalid.", code="event_invalid") from exc
+        self.observe(validated)
         await self._put(validated)
+
+    def observe(self, event: AgentStreamEvent | HarnessExtensionEvent) -> None:
+        """Synchronously observe production, independently of public delivery cursors."""
+        if self.observer is not None:
+            self._producer_sequence += 1
+            self.observer(
+                HarnessEvent(
+                    thread_id=self.thread_id,
+                    run_id=self.run_id,
+                    sequence=self._producer_sequence,
+                    occurred_at=datetime.now(UTC),
+                    event=event,
+                )
+            )
+
+    def observe_input(self, event: EnqueuedMessagesEvent) -> None:
+        """Capture delivered Harness input once, at canonical history acceptance."""
+        for observed in enqueued_input_events(event):
+            self.observe(observed)
 
     def bind_child(self, child: _RunEventEmitter) -> _ChildEventForwarder:
         """Create a private forwarding proof for one exact child stream emitter."""
@@ -573,6 +620,7 @@ class _RunEventEmitter:
         ):
             raise RunError("Inline child correlation is invalid.", code="child_event_invalid")
         self._child_runs[child.run_id] = child.thread_id
+        child.observer = self.observer
         return _ChildEventForwarder(self, child)
 
     async def _forward_from_child(self, event: HarnessEvent, *, source: _RunEventEmitter) -> None:

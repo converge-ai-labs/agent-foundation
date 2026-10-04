@@ -1556,3 +1556,197 @@ it("isolates inline standard and custom tools without treating child progress as
   expect(display.gap).toBe(true);
   expect(display.blocks.has("run-one:bad")).toBe(false);
 });
+
+function compactItem(
+  id: string,
+  sequence: number,
+  content: Record<string, unknown>,
+  kind = "text_message",
+) {
+  return {
+    type: "set",
+    item: {
+      id,
+      ordinal: sequence,
+      kind,
+      state: "completed",
+      first_stream_id: `1-${sequence}`,
+      last_stream_id: `1-${sequence}`,
+      started_at: "2026-10-04T00:00:00Z",
+      ended_at: null,
+      content,
+    },
+  };
+}
+function compactFrame(sequence: number, changes: unknown[]) {
+  const frame = event(sequence);
+  if (frame.kind !== "event") throw new Error("event fixture");
+  frame.event.event_type = "CUSTOM";
+  frame.event.payload = {
+    type: "CUSTOM",
+    name: "a13n.display.changes",
+    value: { format: "display-ops-v1", changes },
+  } as typeof frame.event.payload;
+  return frame;
+}
+it("uses frozen compact coverage, not the later checkpoint notification position", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  const changes = [
+    compactItem("saved", 2, { role: "assistant", text: "saved text" }),
+    compactItem("child", 4, {
+      role: "assistant",
+      text: "concurrent child",
+      subagentRunId: "child-run",
+    }),
+    compactItem(
+      "checkpoint",
+      5,
+      {
+        name: "a13n.harness_ui.checkpoint",
+        value: {
+          event: {
+            continuation_id: "checkpoint-one",
+            display_position: "1-3",
+          },
+        },
+      },
+      "observation",
+    ),
+  ];
+  display.accept(compactFrame(101, changes));
+  expect(
+    display.blocksAfter("checkpoint-one").map((block) => block.text),
+  ).toEqual(["concurrent child"]);
+  display.accept(
+    compactFrame(102, [
+      {
+        type: "append",
+        id: "child",
+        field: "text",
+        text: " done",
+        after_stream_id: "1-4",
+        last_stream_id: "1-6",
+        state: "completed",
+        ended_at: null,
+      },
+    ]),
+  );
+  expect(display.blocks.get("child")?.text).toBe("concurrent child done");
+  expect(() =>
+    display.accept(
+      compactFrame(103, [
+        {
+          type: "append",
+          id: "child",
+          field: "text",
+          text: "bad",
+          after_stream_id: "1-4",
+          last_stream_id: "1-7",
+          state: "completed",
+          ended_at: null,
+        },
+      ]),
+    ),
+  ).toThrow();
+  expect(display.blocks.get("child")?.text).toBe("concurrent child done");
+});
+it("refreshes checkpoint and usage queries from compact observations and resumes retry status", async () => {
+  const { focusRefresh } = await import("./stream");
+  const checkpoint = compactItem(
+    "checkpoint",
+    2,
+    {
+      name: "a13n.harness_ui.checkpoint",
+      value: {
+        event: {
+          continuation_id: "saved",
+          display_position: "1-1",
+        },
+      },
+    },
+    "observation",
+  );
+  expect(focusRefresh(compactFrame(101, [checkpoint]))).toBe("checkpoint");
+  expect(
+    focusRefresh(
+      compactFrame(102, [
+        compactItem(
+          "usage",
+          3,
+          {
+            name: "a13n.harness.usage",
+            value: {
+              event: {
+                payload: { type: "usage_report", records: [] },
+              },
+            },
+          },
+          "observation",
+        ),
+      ]),
+    ),
+  ).toBe("usage");
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  display.accept(
+    compactFrame(101, [
+      compactItem(
+        "retry",
+        1,
+        {
+          name: "a13n.harness.recovery",
+          value: {
+            event: {
+              payload: { type: "model_retry_scheduled", attempt: 2 },
+            },
+          },
+        },
+        "observation",
+      ),
+      compactItem("answer", 2, { text: "resumed", role: "assistant" }),
+    ]),
+  );
+  expect(display.recovery?.state).toBe("resumed");
+});
+
+it("removes covered compact context summaries without hiding later observations", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  const summary = (id: string, sequence: number) =>
+    compactItem(
+      id,
+      sequence,
+      {
+        name: "a13n.context.compaction_summary",
+        value: { event: { operation_id: id, summary: id } },
+      },
+      "observation",
+    );
+  display.accept(
+    compactFrame(101, [
+      summary("saved-context", 5),
+      summary("later-context", 10),
+      compactItem(
+        "checkpoint",
+        11,
+        {
+          name: "a13n.harness_ui.checkpoint",
+          value: {
+            event: {
+              continuation_id: "saved",
+              display_position: "1-9",
+            },
+          },
+        },
+        "observation",
+      ),
+    ]),
+  );
+  expect(display.blocksAfter("saved").map((block) => block.id)).toEqual([
+    "context:later-context",
+  ]);
+});

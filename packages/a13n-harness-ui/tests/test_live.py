@@ -256,18 +256,18 @@ async def test_child_display_does_not_treat_input_or_compaction_as_an_answer() -
     assert [activity.text for activity in display.snapshot().activities] == ["actual answer"]
 
 
-async def test_root_observer_bootstrap_survives_ring_eviction_and_publication_races() -> None:
+async def test_root_compact_bootstrap_survives_ring_eviction_and_publication_races() -> None:
     from datetime import UTC, datetime
 
     from a13n_harness import HarnessEvent
-    from a13n_stream_protocol import HarnessAguiObserver
+    from a13n_harness_ui.display_history import DisplayHistoryCollector
     from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
 
-    observer = HarnessAguiObserver()
+    collector = DisplayHistoryCollector(())
     hub = HarnessUiLiveHub(ring_size=2)
 
     def observe(sequence, value):
-        return observer.observe(
+        collector.observe(
             HarnessEvent(
                 thread_id="thread-root",
                 run_id="run-root",
@@ -276,41 +276,42 @@ async def test_root_observer_bootstrap_survives_ring_eviction_and_publication_ra
                 event=value,
             )
         )
+        return collector.drain()
 
-    async def publish(events):
+    async def publish(changes):
         await hub.publish(
             run_kind="root",
             root_thread_id="thread-root",
             parent_thread_id=None,
             thread_id="thread-root",
             run_id="run-root",
-            events=events,
-            observer=observer,
+            events=(),
+            changes=changes,
             base_continuation_id="saved-before",
         )
 
     await publish(observe(1, PartStartEvent(index=0, part=TextPart(content="begin"))))
     for index in range(2, 40):
         await publish(observe(index, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta=str(index)))))
-    count = observer.event_count
+    count = len(collector.fold.items)
     # Accumulated but not published yet: this must appear only in subsequent live delivery.
     pending = observe(40, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="pending")))
     async with hub.subscribe(root_thread_id="thread-root") as subscription:
         replay = subscription.root_stream
         assert replay is not None
-        assert replay.observer is observer  # Existing owner, no second payload store.
+        assert collector.fold.observer.event_count == 0
         assert replay.summary.event_count == count
         assert replay.summary.base_continuation_id == "saved-before"
         batches = list(replay.batches())
         events = [item for batch in batches for item in batch]
         assert all(len(batch) <= 16 for batch in batches)
         assert [item.index for item in events] == list(range(count))
-        assert any(item.payload and item.payload.get("delta") == "begin" for item in events)
-        assert not any(item.payload and item.payload.get("delta") == "pending" for item in events)
+        assert events[0].payload["value"]["changes"][0]["item"]["content"]["text"].startswith("begin")
+        assert "pending" not in str(events)
         await publish(pending)
         delivered = await subscription.receive()
         assert delivered.sequence > subscription.root_stream.summary.event_count
-        assert delivered.payload is not None and delivered.payload["delta"] == "pending"
+        assert delivered.payload is not None and delivered.payload["value"]["changes"][0]["text"] == "pending"
         assert [item for batch in replay.batches() for item in batch] == events
         await hub.finish_root(thread_id="thread-root", run_id="run-root", saved_continuation_id="saved-after")
         assert "thread-root" not in hub._root_streams
@@ -324,14 +325,15 @@ async def test_unsaved_root_retention_is_bounded_and_never_evicts_active_runs() 
     from datetime import UTC, datetime
 
     from a13n_harness import HarnessEvent
-    from a13n_stream_protocol import HarnessAguiObserver
     from pydantic_ai.messages import PartStartEvent, TextPart
 
     hub = HarnessUiLiveHub(ring_size=2)
 
+    from a13n_harness_ui.display_history import DisplayHistoryCollector
+
     async def start(thread_id, run_id):
-        observer = HarnessAguiObserver()
-        events = observer.observe(
+        collector = DisplayHistoryCollector(())
+        collector.observe(
             HarnessEvent(
                 thread_id=thread_id,
                 run_id=run_id,
@@ -346,8 +348,8 @@ async def test_unsaved_root_retention_is_bounded_and_never_evicts_active_runs() 
             parent_thread_id=None,
             thread_id=thread_id,
             run_id=run_id,
-            events=events,
-            observer=observer,
+            events=(),
+            changes=collector.drain(),
         )
 
     for index in range(20):

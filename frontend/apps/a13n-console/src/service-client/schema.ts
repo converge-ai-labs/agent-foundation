@@ -6217,6 +6217,8 @@ export interface components {
       created_at: string;
       /** Current Attempt Id */
       current_attempt_id: string | null;
+      /** Display Position */
+      display_position?: string | null;
       /** Environment Mounts */
       environment_mounts: components["schemas"]["EnvironmentMount"][];
       failure: components["schemas"]["Failure"] | null;

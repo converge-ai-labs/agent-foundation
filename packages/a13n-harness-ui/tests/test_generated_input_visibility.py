@@ -154,12 +154,21 @@ async def test_supplemental_content_never_becomes_authored_input(runner: bool, s
 
     # Canonical continuation and the separate retained display survive export/reload.
     state = HarnessState.model_validate_json(result.state.model_dump_json())
-    collector = DisplayHistoryCollector([])
-    display = collector.capture(state.message_history, completed=True)
+    collector = DisplayHistoryCollector(state.message_history)
+    display = collector.capture(completed=True)
     saved = HarnessState.model_validate_json(with_display_history(state, display).model_dump_json())
     restored = saved_display_history(saved)
     assert restored is not None
-    for history in (state.message_history, restored.messages):
+    from a13n_harness_ui.display_projection import display_entries, display_turns
+
+    assert [turn.preview for turn in display_turns(restored)] == ["same", "same"]
+    assert [
+        part.text
+        for entry in display_entries(restored)
+        for part in entry.parts
+        if part.kind in {"user", "media"} and part.metadata.display
+    ] == ["same", "same"]
+    for history in (state.message_history,):
         assert [turn.preview for turn in _transcript_turns(history)] == ["same", "same"]
         assert checkpoint_excerpt(ConversationExcerpt(), history).latest_input == "same"
         parts = [part for index, message in enumerate(history) for part in _message_entry(index, message).parts]

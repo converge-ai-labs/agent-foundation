@@ -700,8 +700,10 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         raise ThreadError("Thread state belongs to another Thread.", code="thread_continuation_incompatible")
     display = stored.display_history if isinstance(stored, StoredContinuation) else None
     model_history = state.message_history
-    history = display.messages if display is not None else model_history
-    completed = display.completed_responses if display is not None else ()
+    from a13n_harness_ui.display_history import import_display_history
+    from a13n_harness_ui.display_projection import display_entries, display_turns
+
+    display = display if display is not None else import_display_history(model_history)
     continuation_id = thread.continuation.logical_digest if thread.continuation else None
     notes = NotePage(continuation_id=continuation_id)
     tasks = TaskPage(continuation_id=continuation_id)
@@ -723,13 +725,10 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
         notes=notes,
         tasks=tasks,
     )
-    turns = _transcript_turns(history, completed)
+    turns = display_turns(display)
     return InspectionData(
         metadata_json=metadata.model_dump_json(),
-        entries=tuple(
-            _message_entry(position, message, thread=thread).model_dump_json()
-            for position, message in enumerate(history)
-        ),
+        entries=tuple(entry.model_dump_json() for entry in display_entries(display, thread)),
         turns=tuple(
             InspectionTurn(turn.turn_id, turn.input_position, turn.end_position, turn.model_dump_json())
             for turn in turns

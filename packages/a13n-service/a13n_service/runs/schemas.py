@@ -460,6 +460,8 @@ class RunView(BaseModel):
     output: JsonValue | None
     failure: Failure | None
     usage_at_seal: dict[str, JsonValue] | None
+    # Durable display progress from the existing tail pointer; no object read required.
+    display_position: str | None = None
     labels: dict[str, str]
     cancel_requested_at: datetime | None
     version: int

@@ -444,17 +444,17 @@ The detailed live hub performs bounded best-effort fan-out and retains small ind
 
 A focused watch establishes a subscribe-before-query boundary:
 
-1. read the selected history identity, then install the exact root-lineage subscriber and atomically capture its epoch, `cutover_sequence`, and the root observer's published prefix;
+1. read the selected history identity, then install the exact root-lineage subscriber and atomically capture its epoch, `cutover_sequence`, and the root's published compact item baseline;
 2. query only detached Thread and root-operation projections, then recheck the selected identity; require a fresh watch if it changed across cutover, including when no observer existed at subscription. Child and task inspection use independent lazy queries and never gate the first focused snapshot;
 3. when present, describe `root_stream` by its exact Run, original base continuation, and finite replay event count; the selected history must match that base or a successfully selected checkpoint whose native marker is inside the captured prefix. Otherwise require a fresh watch rather than mixing histories. Mid-Run saves never rewrite the original Run base;
 4. attach `recent_events`, the newest available root-lineage ring tail at or below cutover, bounded to 128 KiB of encoded events and intended only as incomplete diagnostic context; and
-5. return the snapshot, bounded root observer replay batches, and subscription, whose subsequent delivery contains only matching events strictly after cutover.
+5. return the snapshot, bounded compact baseline replay batches, and subscription, whose subsequent delivery contains only matching events strictly after cutover.
 
-The snapshot is not a transaction across execution, SQLite, and the live hub. Its detached activity projections can be newer than cutover; they are separate facts, not a complete materialized event fold. Root replay reuses the existing Stream Protocol observer for native events. Host presentation supplements, including App references and retained tool images, are included at their original publication positions without changing native observation or duplicating its payloads. Replay indexes count both native frames and supplements; they are Run-local positions, distinct from native observer indexes and the hub's global sequence. Only events already published at cutover belong to the replay; observation that precedes publication is delivered later through the subscription. Replay uses the same bounded payload projection and explicit omission markers as live delivery.
+The snapshot is not a transaction across execution, SQLite, and the live hub. Its detached activity projections can be newer than cutover; they are separate facts. Root delivery uses `CUSTOM a13n.display.changes` with `{format: "display-ops-v1", changes}`. Shared typed set/append operations update compact items atomically; surfaces present those items rather than folding raw root token events. Host supplements update their owning tool item. Replay emits detached set operations from the published item map, fragmented with the Stream Protocol framing when necessary; replay indexes count baseline frames, not original events. Only published changes at cutover belong to that baseline. A live oversized or missing batch requires a fresh compact baseline, never silently advancing complete coverage. Raw async-child observation remains a separate bounded delivery path.
 
 `recent_events` is not an alternative source to append beside root replay and saved history. Child inspection remains a bounded compact projection of closed activities through parent-scoped queries; reconnect does not expose unfinished child activities or bypass child publication boundaries. Consumers render retained history independently, apply the root replay once, and refetch authoritative Thread/receipt projections for controls rather than deriving acceptance from a replayed lifecycle event. When the selected continuation advances, replace the provisional root display with saved history instead of appending both. A concurrent continuation change fails or resets a retained query instead of combining histories from unrelated continuations.
 
-The hub retains the existing observer and Host presentation supplements for the latest root Run per Thread. Successful continuation selection releases them; an already-open replay may retain its finite prefix until delivery closes. Unsaved terminal output has bounded process-local inspection retention. App restart restores selected history, not observers, subscriptions, or old root control. There is no new durable replay storage.
+The hub retains compact published items and App membership for the latest root Run per Thread, not an observer event journal. Terminal continuation selection releases them; an already-open replay retains its detached finite baseline until delivery closes. Request-boundary selection preserves the Run baseline and records the exact frozen display coverage, so a delayed checkpoint notification cannot hide later concurrent output. Unsaved terminal output has bounded process-local inspection retention. App restart restores selected history, not subscriptions or old root control. There is no new durable replay storage.
 
 Subscription installation and retained replay are atomic within the owning hub, so events after cutover remain buffered even while snapshot queries run. Ring loss or a subscriber gap requests reset; it never invents historical output. Closing or cancelling delivery releases the registered subscriber even under task cancellation, without cancelling the producing Run.
 
@@ -541,7 +541,7 @@ class FocusSnapshotFrame:
 class FocusReplayFrame:
     kind: Literal["root_stream"]
     run_id: str
-    events: tuple[RootStreamEvent, ...]  # At most 16 bounded events, with observer indexes.
+    events: tuple[RootStreamEvent, ...]  # At most 16 bounded events, with baseline frame indexes.
 
 
 class FocusReadyFrame:

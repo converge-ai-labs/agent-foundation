@@ -23,6 +23,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    TextContent,
     TextPart,
     ToolCallPart,
     UserPromptPart,
@@ -41,7 +42,7 @@ def _user_text(messages: Sequence[ModelMessage]) -> str:
         for part in message.parts
         if isinstance(part, UserPromptPart)
         for item in user_prompt_content(part)
-        if isinstance(item.content, str)
+        if isinstance(item, TextContent)
     )
 
 
@@ -251,11 +252,17 @@ async def test_failed_checkpoint_emits_no_marker_or_model_request_and_can_be_reu
 async def test_consumed_steering_is_saved_once_before_its_native_checkpoint_marker(compaction_enabled: bool) -> None:
     saved: list[HarnessState] = []
     events: list[HarnessEvent] = []
+    captured: list[HarnessEvent] = []
     first_started = asyncio.Event()
     release_first = asyncio.Event()
     calls = 0
 
     async def save(state: HarnessState) -> str:
+        if saved:
+            assert any(
+                isinstance(item.event, InputTextEvent) and item.event.content == "Focus on correctness"
+                for item in captured
+            )
         saved.append(state)
         return f"checkpoint-{len(saved)}"
 
@@ -280,7 +287,9 @@ async def test_consumed_steering_is_saved_once_before_its_native_checkpoint_mark
             *((CompactionCapability(CompactionPolicy(trigger_tokens=1_000_000)),) if compaction_enabled else ()),
         ),
     )
-    async with executable.stream("Initial task", bindings=RunBindings.embedded()) as run:
+    async with executable.stream(
+        "Initial task", bindings=RunBindings.embedded(producer_observer=captured.append)
+    ) as run:
         consumer = asyncio.create_task(_consume(run, events))
         try:
             await asyncio.wait_for(first_started.wait(), timeout=5)
@@ -359,3 +368,148 @@ async def test_checkpoint_rebinds_to_native_recovery_attempt_in_the_same_harness
     markers = [event for event in events if isinstance(event.event, ThreadCheckpointEvent)]
     assert len({event.run_id for event in markers}) == 1
     assert [event.event.continuation_id for event in markers] == ["checkpoint-1", "checkpoint-2"]
+
+
+@pytest.mark.parametrize("compact", [False, True])
+async def test_producer_capture_precedes_checkpoint_with_paused_public_consumer(compact: bool) -> None:
+    from a13n_harness.capabilities.context import CompactionSummaryEvent
+    from a13n_harness.events import InputMediaEvent
+    from pydantic_ai.messages import ImageUrl, PartStartEvent
+
+    captured: list[HarnessEvent] = []
+    saved: list[HarnessState] = []
+    reached = asyncio.Event()
+
+    async def save(state: HarnessState) -> str:
+        assert any(
+            isinstance(item.event, InputTextEvent) and item.event.content == "Visible input" for item in captured
+        )
+        assert any(isinstance(item.event, InputMediaEvent) for item in captured)
+        if compact:
+            assert any(isinstance(item.event, CompactionSummaryEvent) for item in captured)
+            assert not any(
+                isinstance(item.event, PartStartEvent)
+                and isinstance(item.event.part, TextPart)
+                and "Helper summary" in item.event.part.content
+                for item in captured
+            )
+        saved.append(state)
+        reached.set()
+        return "checkpoint"
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        if _COMPACTION_PROMPT in _user_text(messages):
+            yield "Helper summary"
+        else:
+            assert saved, "Provider dispatch must wait for publication"
+            yield "done"
+
+    capabilities = [RootCheckpointCapability(save)]
+    previous = None
+    if compact:
+        capabilities.append(CompactionCapability(CompactionPolicy(trigger_tokens=2000)))
+        previous = HarnessState.new(
+            message_history=(
+                ModelRequest(parts=[UserPromptPart("Original task")]),
+                ModelResponse(parts=[TextPart("Previous answer")], usage=RequestUsage(input_tokens=2100)),
+            )
+        )
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=capabilities,
+    )
+    async with executable.stream(
+        ["Visible input", ImageUrl("https://example.com/image.png")],
+        previous_state=previous,
+        bindings=RunBindings.embedded(producer_observer=captured.append),
+    ) as run:
+        await anext(run)
+        await asyncio.wait_for(reached.wait(), timeout=5)
+        # Only RUN_STARTED has been pulled; capture and save do not depend on delivery.
+        assert len(saved) == 1
+        async for _ in run:
+            pass
+        assert run.result is not None and run.result.output_or_raise() == "done"
+    assert [item.sequence for item in captured] == list(range(1, len(captured) + 1))
+
+
+async def test_tool_presentation_retention_finishes_before_next_checkpoint() -> None:
+    from a13n_harness_ui.display_history import DisplayHistoryCollector
+    from a13n_harness_ui.root_execution import _ToolPresentationCapability
+    from ag_ui.core import CustomEvent
+    from pydantic_ai.capabilities import Capability
+    from pydantic_ai.messages import FunctionToolResultEvent
+    from pydantic_ai.tools import Tool
+
+    collector = DisplayHistoryCollector(())
+    retaining = asyncio.Event()
+    release = asyncio.Event()
+    saved = []
+    calls = 0
+
+    async def retain(event):
+        if not isinstance(event, FunctionToolResultEvent):
+            return
+        retaining.set()
+        await release.wait()
+        collector.supplement(
+            [
+                CustomEvent(
+                    name="a13n.harness-ui.tool_images",
+                    value={
+                        "event": {
+                            "tool_call_id": "call",
+                            "images": [{"path": "retained.png"}],
+                        }
+                    },
+                ),
+                CustomEvent(
+                    name="a13n.harness-ui.mcp_apps",
+                    value={
+                        "event": {
+                            "tool_call_id": "call",
+                            "apps": [{"snapshot_id": "retained-app"}],
+                        }
+                    },
+                ),
+            ]
+        )
+
+    async def save(state):
+        saved.append(collector.capture(state.message_history))
+        return f"checkpoint-{len(saved)}"
+
+    async def screenshot() -> str:
+        return "image and app"
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield {0: DeltaToolCall(name="screenshot", json_args="{}", tool_call_id="call")}
+        else:
+            item = next(item for item in saved[-1].items if item.kind == "tool_call")
+            assert item.content["tool_images"] == [{"path": "retained.png"}]
+            assert item.content["mcp_apps"] == [{"snapshot_id": "retained-app"}]
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            RootCheckpointCapability(save),
+            _ToolPresentationCapability(retain),
+            Capability(tools=[Tool(screenshot)]),
+        ),
+    )
+    async with executable.stream("Capture", bindings=RunBindings.embedded(producer_observer=collector.observe)) as run:
+        consumer = asyncio.create_task(_consume(run, []))
+        await asyncio.wait_for(retaining.wait(), timeout=5)
+        assert calls == len(saved) == 1
+        release.set()
+        await consumer
+        assert run.result is not None and run.result.output_or_raise() == "done"
+    assert len(saved) == 2

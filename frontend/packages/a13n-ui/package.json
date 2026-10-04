@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./vite": "./vite.ts",
+    "./display": "./src/display.ts",
     "./styles.css": "./src/styles/index.css",
     "./theme.css": "./src/styles/theme.css",
     "./tokens.css": "./src/styles/tokens.css",

@@ -58,7 +58,7 @@ export async function* decodeSse(
         throw new ProtocolError("SSE frame exceeds the size limit.");
       if (chunk.done) {
         if (buffer || values.length)
-          throw new ProtocolError("The stream ended inside an SSE frame.");
+          throw new Error("The stream ended inside an SSE frame.");
         return;
       }
     }

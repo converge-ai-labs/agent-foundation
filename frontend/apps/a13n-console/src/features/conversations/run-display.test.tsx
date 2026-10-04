@@ -135,8 +135,27 @@ const delta = (
     run_id: "run_one",
     attempt,
     sequence,
-    event: { type: "TEXT_MESSAGE_CONTENT", messageId: item, delta: text },
-    item: { id: item, kind: "text_message", state: "in_progress" },
+    format: "display-ops-v1",
+    changes:
+      sequence === 1
+        ? [
+            {
+              type: "set",
+              item: { ...message(text, `${attempt}-1`), id: item },
+            },
+          ]
+        : [
+            {
+              type: "append",
+              id: item,
+              field: "text",
+              text,
+              after_stream_id: `${attempt}-${sequence - 1}`,
+              last_stream_id: `${attempt}-${sequence}`,
+              state: "in_progress",
+              ended_at: null,
+            },
+          ],
   },
 });
 const boundary = (attempt: number, sequence: number): ThreadFrame => ({
@@ -498,8 +517,24 @@ const observed = (
     run_id: "run_one",
     attempt: 1,
     sequence,
-    event: { type: "CUSTOM", name, value },
-    item: { id: `obs_${sequence}`, kind: "observation", state: "completed" },
+    format: "display-ops-v1",
+    changes: [
+      {
+        type: "set",
+        item: {
+          ...message(
+            "",
+            `1-${sequence}`,
+            `1-${sequence}`,
+            "completed",
+            sequence,
+          ),
+          id: `obs_${sequence}`,
+          kind: "observation",
+          content: { name, value },
+        },
+      },
+    ],
   },
 });
 
@@ -524,12 +559,12 @@ it("reads the execution from the observations the stream delivers", async () => 
   );
 });
 
-it("waits for the next boundary's display to hold an event the stream fragmented", async () => {
+it("refreshes durable coverage after a complete observation batch", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
   expect(pathRequests("/items")).toHaveLength(1);
   await act(async () => {
-    frames.push(observed(2, "a13n.stream.fragment", { part: 1 }));
+    frames.push(observed(2, "plugin.large", "whole"));
   });
   display = {
     ...display,
@@ -816,3 +851,41 @@ it("uses the final display to resolve a gap and discard an uncovered provisional
   expect(screen.getByTestId("gap").textContent).toBe("false");
   expect(screen.getByTestId("live").textContent).toBe("closed");
 });
+
+it.each([false, true])(
+  "repairs quiet durable progress without a final stream notification (sealed: %s)",
+  async (sealed) => {
+    const intervals = vi.spyOn(globalThis, "setInterval");
+    render(<View />);
+    await waitFor(() => expect(text()).toBe("Hello"));
+    await waitFor(() =>
+      expect(intervals.mock.calls.some(([, ms]) => ms === 10000)).toBe(true),
+    );
+    display = {
+      ...display,
+      run: run({
+        display_position: "1-5",
+        ...(sealed
+          ? { status: "completed", sealed_at: "2026-09-20T10:00:09Z" }
+          : {}),
+      }),
+      items: [
+        message(
+          "Quiet progress",
+          "1-0",
+          "1-5",
+          sealed ? "completed" : "in_progress",
+        ),
+      ],
+      position: "1-5",
+      complete: sealed,
+    };
+    const check = intervals.mock.calls.find(([, ms]) => ms === 10000)![0];
+    await act(async () => {
+      if (typeof check === "function") check();
+    });
+    await waitFor(() => expect(text()).toBe("Quiet progress"));
+    expect(pathRequests("/items")).toHaveLength(2);
+    intervals.mockRestore();
+  },
+);

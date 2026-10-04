@@ -1,18 +1,15 @@
-import { EventSchema } from "@ag-ui/core/schemas";
+import { isDisplayChange, type DisplayChange } from "a13n-ui/display";
 import { ApiError, isRecord, ProtocolError } from "../errors.js";
-import type { components } from "../schema.js";
 import { delay, workspaceHeaders, type Transport } from "../transport.js";
 import { decodeSse } from "./sse.js";
 
-type ItemRef = Pick<components["schemas"]["Item"], "id" | "kind" | "state">;
-
-/** One AG-UI event of a run attempt at its per-attempt sequence, and the display item it changed. */
+/** One atomic compact display batch at its per-attempt sequence. */
 export interface ThreadDelta {
   run_id: string;
   attempt: number;
   sequence: number;
-  event: Record<string, unknown> & { type: string };
-  item: ItemRef | null;
+  format: "display-ops-v1";
+  changes: DisplayChange[];
 }
 
 /**
@@ -98,14 +95,14 @@ function parseFrame(event: string, id: string, text: string): ThreadFrame {
         sequence: data.sequence,
       };
     if (
-      isRecord(data.event) &&
-      EventSchema.safeParse(data.event).success &&
-      (data.item === null || isRecord(data.item))
+      data.format === "display-ops-v1" &&
+      Array.isArray(data.changes) &&
+      data.changes.every(isDisplayChange)
     )
       return {
         type: "delta",
         cursor: id,
-        // Validate canonical AG-UI 1.0 inside the Host-owned envelope.
+        // Old raw-event clients cannot silently reinterpret this wire format.
         delta: data as unknown as ThreadDelta,
       };
   }
@@ -160,7 +157,9 @@ export async function* threadStream(
         // Resume advances only when the consumer requests the next frame.
         if ("cursor" in frame) cursor = frame.cursor;
       }
-      return;
+      throw new Error(
+        "The thread stream ended; reconnecting from applied coverage.",
+      );
     } catch (error) {
       if (
         signal.aborted ||

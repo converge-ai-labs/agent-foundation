@@ -20,7 +20,7 @@ The package does not define another execution or lifecycle layer. It does not ru
 | History retention, selection, and live cutover | Host                           | Supplies an exact finite source prefix and selects where subsequent live observation begins              |
 | Persistence, event IDs, replay, and fan-out    | Host                           | Stores or delivers returned events under its own Session or Execution contract                           |
 | HTTP, SSE, WebSocket, or in-process delivery   | Host transport                 | Serializes and carries AG-UI events without becoming their execution authority                           |
-| Display state                                  | Renderer                       | Interprets AG-UI events for one surface                                                                  |
+| Display semantics                              | Agent Stream Protocol          | Folds converted events into compact items and typed changes; renderers apply those changes               |
 
 The [Harness event contract](../a13n-harness/12-events-observability-and-usage.md) owns the source stream. [Harness UI local storage and recovery](../a13n-harness-ui/03-local-storage-and-recovery.md) own local retention. [Service facts and delivery](../a13n-service/07-facts-and-delivery.md) owns hosted run facts, display and the thread stream.
 
@@ -55,6 +55,7 @@ class HarnessAguiObserver:
         self,
         *,
         processor: AguiEventProcessor | None = None,
+        retain_events: bool = True,
     ) -> None: ...
 
     @property
@@ -80,6 +81,8 @@ class HarnessAguiObserver:
 ```
 
 `event_count` counts accumulated post-processor frames. `snapshot` returns detached frames in the half-open range `[start, stop)`; omission of `stop` uses the current count, and the no-argument call returns all frames. Invalid ranges fail explicitly. A Host can capture the count once and read that fixed prefix in bounded batches while later events accumulate. These positions are local to one observer, not Harness source sequence numbers or Host transport cursors. The Host still owns publication visibility and replay-to-live cutover.
+
+With `retain_events=False`, conversion and processing remain identical but no event journal is retained. `event_count` is zero and `snapshot()` rejects the request rather than returning an apparently complete empty history. Atomic `resume()` rebuilds conversion continuity without retaining historical frames in this mode. Hosts using compact display choose this mode. Child multipart converters are released at the parent's accepted delegation completion, not at a child provider's last token.
 
 The first successfully observed item binds `HarnessAguiObserver` to the source `thread_id` and `run_id`. Later items must carry the same correlation.
 
@@ -109,6 +112,14 @@ Without a processor, every converted event is retained unchanged. A replacement 
 All events produced from one source item are converted and processed before the observer changes its state or accumulator. A conversion failure, invalid processor replacement, or processor exception leaves the current source item unaccumulated. `snapshot()` returns detached copies of the complete post-processor event sequence. The observer does not compact chunks, remove lifecycle boundaries, create cursors, or apply a retention limit.
 
 A Host persists incrementally from the values returned by live `observe()` calls rather than injecting a storage callback into the observer. Historical events reconstructed by `resume()` are accumulated for state and snapshot continuity but are not returned for duplicate publication. This keeps event conversion and reconstruction independent from asynchronous databases, brokers, and transports.
+
+## Compact display semantics
+
+The shared display fold consumes converted, post-processor events and maintains ordered text, reasoning, tool-call and observation items. Stable identity includes inline scope; argument completion does not imply tool success. Host-assigned coverage records the position that created and last changed each item. Host preview limits preserve truncation metadata without changing canonical execution state. Service owns its immutable pages, mutable tail, publication and retirement; these are not Protocol storage abstractions.
+
+Changes use two discriminated operations: `set` replaces a complete item, and `append` extends only an existing `text` or `arguments` field. An append identifies the expected predecessor via `after_stream_id`; unknown items or a different predecessor reject the batch. Metadata and lifecycle changes use replacement. Applying a batch is atomic: invalid operations do not partially mutate the baseline or advance coverage. Hosts coalesce unpublished adjacent fragments before allocating display sequences and flush them before freezing a checkpoint. Published operations are never rewritten.
+
+A compact baseline plus a contiguous change suffix reconstructs the same items as the fold. It is not execution history, a terminal authority, or a promise that uncommitted output survives transport loss. The memory target is retained display content plus active conversion state and bounded delivery buffers, not constant total conversation memory.
 
 ## Standard Event Conversion
 

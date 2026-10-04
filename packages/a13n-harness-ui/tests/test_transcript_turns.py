@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import pytest
-from a13n_harness import HarnessState
+from a13n_harness import HarnessBuilder, HarnessState, RunBindings
 from a13n_harness_ui.display_history import (
     DisplayHistory,
     DisplayHistoryCollector,
+    import_display_history,
     saved_display_history,
     with_display_history,
 )
+from a13n_harness_ui.display_projection import display_entries, display_turns
 from a13n_harness_ui.thread_projection import _transcript_turns
+from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
@@ -19,6 +22,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models.function import FunctionModel
 
 
 def input_message(text: str, source: str) -> ModelRequest:
@@ -57,26 +61,41 @@ def test_app_presentations_are_turn_boundaries_independent_of_execution_pages():
     assert turn.input_position == 0 and turn.output_position == 3
 
 
-def test_only_successful_saved_completion_marks_final_and_survives_reload():
+@pytest.mark.anyio
+async def test_only_successful_saved_completion_marks_final_and_survives_reload():
     messages = [
         input_message("Question", "input-1"),
-        ModelResponse(parts=[TextPart("Progress"), ToolCallPart("read", {})]),
-        ModelRequest(parts=[ToolReturnPart("read", "ok")]),
-        ModelResponse(parts=[ThinkingPart("Plan"), TextPart("First part"), TextPart("Second part")]),
+        ModelResponse(parts=[TextPart("Progress"), ToolCallPart("read", {}, tool_call_id="call-read")]),
+        ModelRequest(parts=[ToolReturnPart("read", "ok", tool_call_id="call-read")]),
     ]
-    collector = DisplayHistoryCollector([])
-    assert collector.capture(messages).completed_responses == ()
-    completed = collector.capture(messages, completed=True)
-    assert completed.completed_responses == (3,)
-    state = with_display_history(HarnessState.new(message_history=messages), completed)
+    collector = DisplayHistoryCollector(messages)
+
+    async def model(messages, info):
+        yield "First part Second part"
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=model))
+    result = await executable.run(
+        None,
+        previous_state=HarnessState.new(message_history=messages),
+        bindings=RunBindings.embedded(producer_observer=collector.observe),
+    )
+    result.output_or_raise()
+    assert collector.capture().completed == ()
+    completed = collector.capture(completed=True)
+    final_position = len(display_entries(completed)) - 1
+    assert display_turns(completed)[0].final_position == final_position
+    state = with_display_history(result.state, completed)
     reopened = saved_display_history(HarnessState.model_validate_json(state.model_dump_json()))
     assert reopened is not None
-    assert _transcript_turns(reopened.messages, reopened.completed_responses)[0].final_position == 3
-    assert collector.capture(messages, completed=True).completed_responses == (3,)
+    assert display_turns(reopened)[0].final_position == final_position
+    assert collector.capture(completed=True).completed == completed.completed
     # Further work without another ordinary input stays in the same turn, but
     # its old final is not evidence that the new work completed.
-    more = collector.capture([*messages, ModelRequest(parts=[ToolReturnPart("read", "resume")])])
-    assert _transcript_turns(more.messages, more.completed_responses)[0].final_position is None
+    continued = DisplayHistoryCollector(result.state.message_history, reopened)
+    await executable.run(
+        None, previous_state=result.state, bindings=RunBindings.embedded(producer_observer=continued.observe)
+    )
+    assert display_turns(continued.capture())[0].final_position is None
 
 
 def test_steering_context_and_hidden_input_do_not_start_turns():
@@ -138,17 +157,17 @@ def test_multiple_parts_and_attachment_only_input_are_single_turns():
     ],
 )
 def test_suspended_or_synthetic_responses_are_not_final(response):
-    assert DisplayHistoryCollector([]).capture([response], completed=True).completed_responses == ()
+    assert DisplayHistoryCollector([response]).capture(completed=True).completed == ()
 
 
 def test_completion_preserves_legacy_envelope_and_never_changes_model_messages():
-    old = DisplayHistory(messages=[input_message("Old", "old")])
-    assert old.completed_responses == ()
+    old = import_display_history([input_message("Old", "old")])
+    assert old.completed == ()
     messages = [input_message("New", "new"), ModelResponse(parts=[TextPart("Answer")])]
-    completed = DisplayHistoryCollector([]).capture(messages, completed=True)
+    completed = import_display_history(messages).model_copy(update={"completed": ("import:1",)})
     assert completed.model_dump().keys() == old.model_dump().keys()
     assert messages[-1].metadata is None
-    assert DisplayHistory.model_validate_json(completed.model_dump_json()).completed_responses == (1,)
+    assert DisplayHistory.model_validate_json(completed.model_dump_json()).completed == ("import:1",)
 
 
 def test_legacy_closing_output_is_readable_without_claiming_success():

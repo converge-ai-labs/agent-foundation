@@ -107,8 +107,9 @@ class _ObserverState:
 class HarnessAguiObserver:
     """Convert and accumulate one public Harness run as typed AG-UI events."""
 
-    def __init__(self, *, processor: AguiEventProcessor | None = None) -> None:
+    def __init__(self, *, processor: AguiEventProcessor | None = None, retain_events: bool = True) -> None:
         self._processor = processor
+        self._retain_events = retain_events
         self._thread_id: str | None = None
         self._run_id: str | None = None
         self._state = _ObserverState()
@@ -139,7 +140,7 @@ class HarnessAguiObserver:
         if self._resume_completed or self._thread_id is not None or self._run_id is not None:
             raise AguiObservationError("Observer resumption requires a fresh observer")
 
-        staged = type(self)(processor=self._processor)
+        staged = type(self)(processor=self._processor, retain_events=self._retain_events)
         self._resuming = True
         try:
             async for item in history:
@@ -184,8 +185,10 @@ class HarnessAguiObserver:
         self._thread_id = self._thread_id or item.thread_id
         self._run_id = self._run_id or item.run_id
         self._state = staged_state
-        self._events.extend(stored)
-        return _copy_events(stored)
+        if self._retain_events:
+            self._events.extend(stored)
+            return _copy_events(stored)
+        return stored
 
     @property
     def event_count(self) -> int:
@@ -199,6 +202,8 @@ class HarnessAguiObserver:
         growing observer in batches. Positions are observer-local, not transport
         sequence numbers. The no-argument form retains the complete snapshot.
         """
+        if not self._retain_events:
+            raise AguiObservationError("Snapshots require retain_events=True")
         end = len(self._events) if stop is None else stop
         if start < 0 or end < start or end > len(self._events):
             raise ValueError("snapshot range is outside the accumulated events")
@@ -443,6 +448,10 @@ class HarnessAguiStreamObserver(HarnessAguiObserver):
                             code=payload.status,
                         )
                     )
+            if payload.action != "started":
+                # The parent emits completion only after accepting the child outcome.
+                # Keep correlation, but release the child's multipart converter.
+                state.children.pop(child_id, None)
             # The custom fact retains Harness invocation/ownership details.
             custom = _custom_harness_event(item, source)
             events.extend(_attribute([custom], item.run_id) if is_child else [custom])

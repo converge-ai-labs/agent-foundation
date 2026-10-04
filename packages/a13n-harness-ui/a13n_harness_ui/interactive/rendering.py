@@ -8,7 +8,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+from a13n_stream_protocol.display import Item, ItemChange, SetItem, apply_changes
+from pydantic import TypeAdapter
 
 from .context_activity import ContextActivity
 from .input_display import composer_piece
@@ -23,6 +26,8 @@ from .tool_rows import (
     subagent_result_row,
 )
 from .transcript import Transcript
+
+_DISPLAY_CHANGES = TypeAdapter(list[ItemChange])
 
 if TYPE_CHECKING:
     from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
@@ -281,6 +286,8 @@ class StreamRenderer:
         self._line_open = False
         self._local_output: dict[str, int] = {}
         self._custom_events = CustomEventAssembler()
+        self._display_items: dict[str, Item] = {}
+        self._display_blocks: dict[str, int] = {}
         self._exploration: ExplorationGroup | None = None
         self._context: dict[tuple[str, str], ContextActivity] = {}
         self._write_notices: dict[tuple[str, str, str], None] = {}
@@ -628,6 +635,140 @@ class StreamRenderer:
                 self.append("[Output display limit reached; remaining output was drained and discarded.]\n")
             self.boundary = True
 
+    def _display_changes(self, payload: Mapping[str, object], *, run_id: str) -> None:
+        value = payload.get("value")
+        if not isinstance(value, dict) or value.get("format") != "display-ops-v1":
+            self.gap = True
+            return
+        try:
+            changes = _DISPLAY_CHANGES.validate_python(value.get("changes"))
+            previous = self._display_items.copy()
+            apply_changes(self._display_items, changes)
+        except ValueError:
+            self.gap = True
+            return
+        for change in changes:
+            key = change.item.id if isinstance(change, SetItem) else change.id
+            item = self._display_items[key]
+            before = previous.get(key)
+            content = item.content
+            scope = content.get("subagentRunId")
+            child = isinstance(scope, str)
+            identity = scope if child else run_id
+            metadata = content.get("metadata")
+            if isinstance(metadata, dict) and metadata.get("display") is False:
+                continue
+            if child and self.status.mode != "detailed":
+                continue
+            if item.kind == "observation":
+                event: dict[str, Any] = dict(content)
+                event.setdefault("type", "CUSTOM")
+                self.ingest(str(event["type"]), event, run_id=identity, child=child)
+            elif item.kind == "tool_call":
+                call_id = content.get("toolCallId")
+                if content.get("provider"):
+                    call_id = f"native:{content['provider']}:{call_id}"
+                common = {"toolCallId": call_id, "toolCallName": content.get("toolCallName")}
+                if before is None:
+                    self.ingest("TOOL_CALL_START", common, run_id=identity, child=child)
+                args = str(content.get("arguments", ""))
+                old_args = str(before.content.get("arguments", "")) if before is not None else ""
+                if args != old_args:
+                    self.ingest(
+                        "TOOL_CALL_ARGS", {**common, "delta": args[len(old_args) :]}, run_id=identity, child=child
+                    )
+                if content.get("arguments_complete") and (
+                    before is None or not before.content.get("arguments_complete")
+                ):
+                    self.ingest("TOOL_CALL_END", common, run_id=identity, child=child)
+                edit = content.get("applied_edit")
+                if isinstance(edit, dict) and (before is None or before.content.get("applied_edit") != edit):
+                    self.ingest(
+                        "CUSTOM",
+                        {
+                            "name": "a13n.filesystem.edit_applied",
+                            "value": {
+                                "event": {
+                                    **edit,
+                                    "tool_call_id": call_id,
+                                }
+                            },
+                        },
+                        run_id=identity,
+                        child=child,
+                    )
+                if item.state in {"completed", "failed"} and (
+                    before is None or before.content != content or before.state != item.state
+                ):
+                    result = content.get(
+                        "value", content.get("result", content.get("result_parts", content.get("failure")))
+                    )
+                    self.ingest(
+                        "CUSTOM",
+                        {
+                            "name": "a13n.pydantic_ai.function_tool_result",
+                            "value": {
+                                "event": {
+                                    "part": {
+                                        "tool_call_id": common["toolCallId"],
+                                        "tool_name": common["toolCallName"],
+                                        "part_kind": "retry-prompt" if content.get("retry") else "tool-return",
+                                        "outcome": content.get("outcome")
+                                        or ("failed" if item.state == "failed" else "success"),
+                                        "content": result,
+                                    }
+                                }
+                            },
+                        },
+                        run_id=identity,
+                        child=child,
+                    )
+            else:
+                from a13n_stream_protocol.messages import ContentMetadata
+
+                meta = ContentMetadata.from_native(metadata)
+                if content.get("role") == "user" and not child and meta.source_id in self._local_inputs:
+                    continue
+                text = str(content.get("text", ""))
+                media = content.get("input_media")
+                if content.get("role") == "user" and composer_piece(meta) is not None:
+                    if before is None:
+                        self.ingest(
+                            "CUSTOM",
+                            {
+                                "name": "a13n.input.media" if media is not None else "a13n.input.text",
+                                "metadata": metadata,
+                                "value": {"event": {"role": "user", "content": media if media is not None else text}},
+                            },
+                            run_id=identity,
+                            child=child,
+                        )
+                    continue
+                if media is not None:
+                    piece = composer_piece(meta)
+                    text = f"[{piece[1]}]" if piece and piece[1] else "[attachment]"
+                kind = (
+                    "thinking"
+                    if item.kind == "reasoning_message"
+                    else "user"
+                    if content.get("role") == "user"
+                    else "text"
+                )
+                prefix = f"Subagent {identity} · " if child else "> " if kind == "user" else ""
+                rendered = terminal_text(prefix + text)
+                block = self._display_blocks.get(key)
+                if block is None or not self.transcript.replace(block, rendered):
+                    self._display_blocks[key] = self.transcript.append(
+                        rendered, kind=kind, markdown=kind != "user", streaming=item.state == "in_progress"
+                    )
+                if item.state != "in_progress":
+                    self.transcript.complete(self._display_blocks[key])
+                if kind == "text" and not child:
+                    self.assistant_seen = True
+                self.append(
+                    text[len(str(before.content.get("text", ""))) if before is not None else 0 :], display=False
+                )
+
     def ingest(
         self,
         event_type: str,
@@ -647,6 +788,9 @@ class StreamRenderer:
             self.gap |= self._custom_events.gap
             if payload is None:
                 return
+        if event_type == "CUSTOM" and payload.get("name") == "a13n.display.changes":
+            self._display_changes(payload, run_id=run_id)
+            return
         inline_child = payload.get("subagentRunId")
         if isinstance(inline_child, str):
             child, run_id = True, inline_child
