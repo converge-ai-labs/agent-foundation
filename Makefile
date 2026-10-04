@@ -260,6 +260,15 @@ docs-serve: frontend-sync ## Serve the documentation site locally with live relo
 docs-build: frontend-sync ## Build the static documentation site and check its links
 	@pnpm --dir frontend --filter a13n-docs run build
 
+.PHONY: site-serve
+site-serve: frontend-sync ## Serve the landing page locally with live reload
+	@pnpm --dir frontend --filter a13n-site run dev
+
+.PHONY: site-build
+site-build: docs-build ## Build the public site: the landing page, with the documentation under /docs
+	@pnpm --dir frontend --filter a13n-site run build
+	@cp -R frontend/apps/a13n-docs/out frontend/apps/a13n-site/dist/docs
+
 .PHONY: verify
 verify: ## Run only the checks and tests that local changes can affect (VERIFY_ARGS=--full for every gate)
 	@uv run --locked python -m scripts.verify $(VERIFY_ARGS)
@@ -412,7 +421,7 @@ frontend-test: frontend-sync ## Run frontend unit and interaction tests
 	@pnpm --dir frontend run test
 
 .PHONY: frontend-build
-frontend-build: a13n-ui-build a13n-console-build a13n-harness-ui-webui-build docs-build ## Build frontend applications, the UI showcase, and the documentation site
+frontend-build: a13n-ui-build a13n-console-build a13n-harness-ui-webui-build site-build ## Build frontend applications, the UI showcase, and the public site
 
 .PHONY: frontend-check-all
 frontend-check-all: frontend-check frontend-test frontend-build ## Run the complete frontend gate

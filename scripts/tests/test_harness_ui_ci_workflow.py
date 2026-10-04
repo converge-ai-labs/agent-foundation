@@ -110,9 +110,9 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
         )
         assert jobs["changes"]["outputs"][name] == "${{ steps.filter.outputs." + name + " }}"
     frontend = "\n".join(step.get("run", "") for step in jobs["frontend"]["steps"])
-    assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run check" in frontend
-    assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run test" in frontend
-    assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run build" in frontend
+    assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run check" in frontend
+    assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run test" in frontend
+    assert "--filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run build" in frontend
     distribution = {step["name"]: step for step in jobs["distribution"]["steps"]}
     webui = "\n".join(step.get("run", "") for step in jobs["distribution"]["steps"])
     for script, name in (("check", "Check WebUI"), ("test", "Test WebUI"), ("build", "Build WebUI assets")):

@@ -1,8 +1,12 @@
+import { basePath } from "./base-path.mjs";
+
+export { basePath };
+
 export const site = {
   name: "Agent Foundation",
   description:
     "The open-source, self-hosted foundation for AI agents: the Harness library, the managed Service, and the Harness UI workbench.",
-  url: "https://a13n-docs.converge.ai",
+  url: `https://a13n.converge.ai${basePath}`,
   repository: "https://github.com/converge-ai-labs/agent-foundation",
   branch: "main",
 };
@@ -26,5 +30,10 @@ export function markdownSegments(slugs: string[]) {
 }
 
 export function markdownUrl(slugs: string[]) {
-  return `/md/${markdownSegments(slugs).join("/")}`;
+  return `${basePath}/md/${markdownSegments(slugs).join("/")}`;
+}
+
+/** Markdown is read away from the site, so its site links carry the full URL. */
+export function absoluteLinks(markdown: string) {
+  return markdown.replaceAll("](/", `](${site.url}/`);
 }

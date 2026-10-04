@@ -1,6 +1,7 @@
 // Check every internal link and anchor in the exported site; fail the build on any broken one.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { basePath } from "../lib/base-path.mjs";
 
 const out = new URL("../out/", import.meta.url).pathname;
 
@@ -30,9 +31,14 @@ for (const file of htmlFiles(out)) {
   });
 }
 
+// Root links carry the base path; anything else leaves the docs.
 function resolveTarget(file, path) {
-  const base = path.startsWith("/") ? out : join(file, "..");
-  let target = join(base, decodeURIComponent(path));
+  let target;
+  if (!path.startsWith("/"))
+    target = join(file, "..", decodeURIComponent(path));
+  else if (path === basePath || path.startsWith(`${basePath}/`))
+    target = join(out, decodeURIComponent(path.slice(basePath.length)));
+  else return undefined;
   if (existsSync(target) && statSync(target).isDirectory())
     target = join(target, "index.html");
   return target;
@@ -45,7 +51,9 @@ for (const [file, page] of pages) {
     const [path, fragment] = link.split("#", 2);
     const target = path ? resolveTarget(file, path) : file;
     const source = relative(out, file);
-    if (!existsSync(target)) errors.push(`${source} -> ${link}: missing page`);
+    if (!target) errors.push(`${source} -> ${link}: outside ${basePath}`);
+    else if (!existsSync(target))
+      errors.push(`${source} -> ${link}: missing page`);
     else if (
       fragment &&
       pages.has(target) &&

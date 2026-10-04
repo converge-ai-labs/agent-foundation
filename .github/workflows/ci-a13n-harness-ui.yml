@@ -268,11 +268,11 @@ jobs:
         run: |
           pnpm --dir frontend run format:check
           pnpm --dir frontend --filter a13n-console run generate:check
-          pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run check
+          pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run check
 
       - name: Test Console and shared frontend
         run: >-
-          pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run test
+          pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run test
           --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
 
       - name: Retain frontend test reports
@@ -284,7 +284,7 @@ jobs:
           retention-days: 7
 
       - name: Build frontend workspace
-        run: pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' -r run build
+        run: pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run build
 
   distribution:
     name: UI distribution

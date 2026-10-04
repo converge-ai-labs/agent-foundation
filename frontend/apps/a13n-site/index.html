@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>a13n — the open-source foundation for AI agents</title>
+    <meta
+      name="description"
+      content="a13n (agent foundation) is the open-source foundation for AI agents. Build AI agents and run them on cloud."
+    />
+    <meta name="theme-color" content="#fbfbfd" />
+    <link rel="canonical" href="https://a13n.converge.ai/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://a13n.converge.ai/" />
+    <meta
+      property="og:title"
+      content="a13n — the open-source foundation for AI agents"
+    />
+    <meta
+      property="og:description"
+      content="Build AI agents and run them on cloud."
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/node_modules/a13n-ui/src/brand/a13n-logo.svg"
+    />
+    <!-- the faces above the fold, fetched before the stylesheet asks for them -->
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin
+      href="/node_modules/@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2"
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      crossorigin
+      href="/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"
+    />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <header class="nav" id="nav">
+      <a class="brand" href="#top" aria-label="a13n home">
+        <span data-mark="20"></span>
+        <span class="brand-word">a13n</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="/docs/">Docs</a>
+        <a href="https://github.com/converge-ai-labs/agent-foundation"
+          >GitHub</a
+        >
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" id="top">
+        <h1
+          class="name"
+          id="name"
+          tabindex="0"
+          role="button"
+          aria-expanded="false"
+          aria-label="a13n, short for agent foundation"
+        >
+          <span class="glyphs" id="glyphs" aria-hidden="true"></span>
+        </h1>
+        <div class="pitch wrap">
+          <p class="slogan">Build AI agents and run them on cloud.</p>
+          <div class="links">
+            <a class="link link-ink" href="/docs/"
+              >Read the docs<span class="arr" aria-hidden="true">→</span></a
+            >
+            <a
+              class="link"
+              href="https://github.com/converge-ai-labs/agent-foundation"
+              >GitHub<span class="arr" aria-hidden="true">↗</span></a
+            >
+          </div>
+        </div>
+      </section>
+
+      <!-- one pinned stage in three acts: build an agent, call it, run it at scale -->
+      <section class="scene" id="service">
+        <div class="stage" id="stage">
+          <div class="layer build" id="build">
+            <div class="wrap">
+              <h2 class="statement" data-words>
+                Build an agent in minutes.
+                <span class="dim"
+                  >Instructions, model, skills, connections, and a sandbox. Swap
+                  any part at any time.</span
+                >
+              </h2>
+              <dl class="agent" id="agent" data-reveal>
+                <div class="agent-row agent-name">
+                  <dt>Agent</dt>
+                  <dd class="slot" data-field="name"></dd>
+                </div>
+                <div class="agent-row">
+                  <dt>Instructions</dt>
+                  <dd class="slot" data-field="instructions"></dd>
+                </div>
+                <div class="agent-row">
+                  <dt>Model</dt>
+                  <dd class="slot" data-field="model"></dd>
+                </div>
+                <div class="agent-row">
+                  <dt>Skills</dt>
+                  <dd class="slot" data-field="skills"></dd>
+                </div>
+                <div class="agent-row">
+                  <dt>Connections</dt>
+                  <dd class="slot" data-field="connections"></dd>
+                </div>
+                <div class="agent-row">
+                  <dt>Sandbox</dt>
+                  <dd class="slot" data-field="sandbox"></dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+          <div class="night" id="night" aria-hidden="true"></div>
+          <div class="layer call" id="call">
+            <div class="wrap">
+              <h2 class="statement" id="call-title" data-words data-scroll>
+                Call it from anywhere.
+                <span class="dim"
+                  >Deploy Service on your own cloud, then start your agents from
+                  an SDK or plain HTTP.</span
+                >
+              </h2>
+              <figure class="calls" id="calls">
+                <canvas
+                  class="calls-canvas"
+                  id="calls-canvas"
+                  aria-hidden="true"
+                ></canvas>
+                <div class="caller">
+                  <!-- one button per call in CALLS, in the same order -->
+                  <div class="langs" id="langs" aria-label="SDKs and HTTP">
+                    <button type="button">
+                      <img
+                        src="https://svgl.app/library/python.svg"
+                        alt="Python"
+                      /><span aria-hidden="true">Python</span>
+                    </button>
+                    <button type="button">
+                      <img
+                        src="https://svgl.app/library/typescript.svg"
+                        alt="TypeScript"
+                      /><span aria-hidden="true">TypeScript</span>
+                    </button>
+                    <button type="button">
+                      <img
+                        class="gopher"
+                        src="https://cdn.jsdelivr.net/npm/devicon@2.16.0/icons/go/go-original.svg"
+                        alt="Go"
+                      /><span aria-hidden="true">Go</span>
+                    </button>
+                    <button type="button">
+                      <img
+                        src="https://svgl.app/library/rust_dark.svg"
+                        alt="Rust"
+                      /><span aria-hidden="true">Rust</span>
+                    </button>
+                    <button type="button">
+                      <img
+                        src="https://cdn.simpleicons.org/curl/ffffff"
+                        alt="HTTP"
+                      /><span aria-hidden="true">HTTP</span>
+                    </button>
+                  </div>
+                  <pre class="code" id="code"></pre>
+                </div>
+                <figcaption class="board">
+                  <span class="board-head">
+                    <span class="board-mark" id="service-node"
+                      ><span data-mark="18"></span
+                    ></span>
+                    <span class="board-title"><b>a13n</b> Service</span>
+                  </span>
+                  <ol class="threads" id="threads" aria-label="Threads"></ol>
+                </figcaption>
+              </figure>
+              <div class="sub deploys-sub">
+                <div class="sub-head">
+                  <h3>Deploy</h3>
+                  <p>
+                    <span class="deploy-say"
+                      >One machine, or a fleet of workers.</span
+                    >
+                    <a class="link" href="/docs/a13n-service/"
+                      >Service docs<span class="arr" aria-hidden="true"
+                        >→</span
+                      ></a
+                    >
+                  </p>
+                </div>
+                <div class="deploys">
+                  <div class="deploy">
+                    <span class="deploy-name"
+                      ><img data-brand="Docker" alt="" />Docker Compose</span
+                    >
+                    <button
+                      type="button"
+                      class="copy"
+                      data-copy="docker compose -f a13n-service.yaml up -d"
+                    >
+                      <span class="copy-cmd"
+                        >docker compose -f a13n-service.yaml up -d</span
+                      ><span class="copy-say"></span>
+                    </button>
+                  </div>
+                  <div class="deploy">
+                    <span class="deploy-name"
+                      ><img
+                        src="https://cdn.simpleicons.org/kubernetes"
+                        alt=""
+                      />Kubernetes</span
+                    >
+                    <button
+                      type="button"
+                      class="copy"
+                      data-copy="helm install a13n oci://ghcr.io/converge-ai-labs/charts/a13n-service"
+                    >
+                      <span class="copy-cmd"
+                        >helm install a13n
+                        oci://ghcr.io/converge-ai-labs/charts/a13n-service</span
+                      ><span class="copy-say"></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="layer run" id="run">
+            <div class="wrap">
+              <h2 class="statement" id="run-title" data-words data-scroll>
+                Run it at cloud scale.
+                <span class="dim"
+                  >As many sessions as you need, on your own cloud. Each one
+                  checkpoints as it works and outlives any worker.</span
+                >
+              </h2>
+              <figure class="fleet" id="fleet">
+                <div class="fleet-stats" aria-hidden="true">
+                  <div>
+                    <b id="st-running">0</b><span>sessions running</span>
+                  </div>
+                  <div><b id="st-workers">0</b><span>workers online</span></div>
+                  <div>
+                    <b id="st-done">0</b><span>sessions completed</span>
+                  </div>
+                  <div><b>0</b><span>sessions lost</span></div>
+                </div>
+                <canvas
+                  id="fleet-canvas"
+                  role="img"
+                  aria-label="A wall of agent sessions across many workers. When a worker goes offline, its sessions move to other workers and continue."
+                ></canvas>
+                <figcaption class="fleet-foot">
+                  <span class="fleet-key">
+                    <span><i class="key-run"></i>Running</span>
+                    <span><i class="key-wait"></i>Waiting for input</span>
+                    <span><i class="key-move"></i>Moved to another worker</span>
+                  </span>
+                  <span
+                    class="fleet-say"
+                    id="fleet-say"
+                    aria-live="polite"
+                  ></span>
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+          <span class="light" id="light" aria-hidden="true"></span>
+          <span class="flyer" id="flyer" aria-hidden="true"
+            ><span data-mark="18"></span
+          ></span>
+        </div>
+      </section>
+
+      <section class="sec" id="providers">
+        <div class="wrap">
+          <h2 class="statement" data-words>
+            Bring your own stack.
+            <span class="dim"
+              >Pick the model, sandbox, web data, and connections for each
+              agent, with your own keys.</span
+            >
+          </h2>
+          <div class="stack" id="stack"></div>
+        </div>
+      </section>
+
+      <!-- the end answers the start, in the same lines -->
+      <section class="sec end" id="end">
+        <div class="pitch wrap" data-reveal>
+          <p class="slogan" aria-hidden="true">
+            <span>Build AI agents and run them on cloud.</span>
+            <span class="dim">Start with the docs, or read the source.</span>
+          </p>
+          <h2 class="vh">
+            Build AI agents and run them on cloud. Start with the docs, or read
+            the source.
+          </h2>
+          <div class="links">
+            <a class="link link-ink" href="/docs/"
+              >Read the docs<span class="arr" aria-hidden="true">→</span></a
+            >
+            <a
+              class="link"
+              href="https://github.com/converge-ai-labs/agent-foundation"
+              >GitHub<span class="arr" aria-hidden="true">↗</span></a
+            >
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap foot-row">
+        <img src="/src/assets/converge-ai-lockup.svg" alt="Converge AI" />
+        <nav aria-label="Footer">
+          <a href="/docs/">Docs</a>
+          <a href="https://github.com/converge-ai-labs/agent-foundation"
+            >GitHub</a
+          >
+          <span>Apache 2.0</span>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>

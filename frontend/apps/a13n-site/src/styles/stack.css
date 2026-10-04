@@ -1,0 +1,101 @@
+/* ---- providers: a row of brand icons per kind; names show on hover ---- */
+.stack {
+  margin-top: clamp(64px, 8vw, 104px);
+  border-top: 1px solid var(--ink);
+}
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 9fr);
+  gap: 24px 40px;
+  padding: 34px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.row h3 {
+  margin: 0;
+  font: 500 21px/30px var(--display);
+  letter-spacing: -0.02em;
+}
+.logos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  align-items: center;
+  justify-items: start;
+  row-gap: 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.logo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 0.6s var(--out),
+    transform 0.9s var(--out);
+  transition-delay: calc(var(--i) * 24ms);
+}
+.row.in .logo,
+.row.in .more {
+  opacity: 1;
+  transform: none;
+}
+.logo img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  transition: transform 0.5s var(--out);
+}
+.logo:hover img {
+  transform: translateY(-2px) scale(1.12);
+}
+.logo::after {
+  content: attr(data-name);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  translate: -50% 4px;
+  font: 500 11px/1 var(--mono);
+  white-space: nowrap;
+  color: var(--ink-2);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.2s,
+    translate 0.4s var(--out);
+}
+.logo:hover::after {
+  opacity: 1;
+  translate: -50% 0;
+}
+.more {
+  grid-column: span 6;
+  font: 400 14px/30px var(--text);
+  color: var(--dim);
+  opacity: 0;
+  transition: opacity 0.6s var(--out);
+  transition-delay: calc(var(--i) * 24ms);
+}
+
+@media (max-width: 860px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    padding: 28px 0;
+  }
+  .logos {
+    row-gap: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo,
+  .more {
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

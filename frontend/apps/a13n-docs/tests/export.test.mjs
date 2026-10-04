@@ -45,7 +45,7 @@ test("every human document has a Chinese static page with matching section ancho
     assert.match(chinese, /rel="alternate" hrefLang="zh-CN"/);
     assert.match(
       chinese,
-      /<link rel="canonical" href="https:\/\/a13n-docs\.converge\.ai\/zh-CN\//,
+      /<link rel="canonical" href="https:\/\/a13n\.converge\.ai\/docs\/zh-CN\//,
     );
   }
 });

@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-FRONTEND_PROJECTS = ("apps/a13n-console", "apps/a13n-harness-ui", "packages/a13n-ui")
+FRONTEND_PROJECTS = ("apps/a13n-console", "apps/a13n-harness-ui", "apps/a13n-site", "packages/a13n-ui")
 PYTHON_METADATA = {
     "version",
     "description",

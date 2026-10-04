@@ -3258,7 +3258,7 @@ export interface components {
             instructions?: string[];
             /**
              * Documentation Url
-             * @default https://a13n-docs.converge.ai/a13n-envd/
+             * @default https://a13n.converge.ai/docs/a13n-envd/
              */
             documentation_url?: string;
         };
@@ -4870,7 +4870,7 @@ export interface components {
              *
              *     <project_info>
              *     GitHub: https://github.com/converge-ai-labs/agent-foundation
-             *     Documentation: https://a13n-docs.converge.ai/a13n-harness-ui/
+             *     Documentation: https://a13n.converge.ai/docs/a13n-harness-ui/
              *     CLI command: a13n-harness-ui
              *     Python distribution: a13n-harness-ui
              *     </project_info>

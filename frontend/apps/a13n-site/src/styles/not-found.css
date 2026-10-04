@@ -1,0 +1,9 @@
+.missing {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 40px;
+  min-height: 100svh;
+  padding-top: 60px;
+  padding-bottom: 60px;
+}
