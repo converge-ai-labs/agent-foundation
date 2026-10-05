@@ -339,7 +339,7 @@ function finished(
   let next = execution;
   if (item.display === false) return next;
   if (item.toolName === "delegate") {
-    const result = parseItemValue(item.result);
+    const result = parseItemValue(item.result, item.incomplete);
     if (
       isRecord(result) &&
       typeof result.execution_id === "string" &&

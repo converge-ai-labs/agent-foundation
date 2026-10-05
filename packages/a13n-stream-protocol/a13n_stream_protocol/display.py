@@ -1,4 +1,6 @@
-"""Shared semantic display items and atomic changes; Hosts own persistence and paging."""
+"""Shared semantic display snapshots and raw-event normalization; Hosts own persistence and paging."""
+
+from __future__ import annotations
 
 import copy
 import hashlib
@@ -6,7 +8,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated, Any, Literal, cast
+from typing import Any, Literal, cast
 
 from a13n_harness import HarnessEvent, HarnessStreamEvent
 from a13n_harness.tools._output import tool_execution_value
@@ -23,7 +25,8 @@ from pydantic_ai.messages import (
 )
 
 from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiStreamObserver, tool_result_content
-from a13n_stream_protocol.fragments import CustomEventAssembler
+from a13n_stream_protocol.fragments import CustomEventAssembler, FragmentState
+from a13n_stream_protocol.observer import ObserverContinuation
 
 type ItemKind = Literal["text_message", "reasoning_message", "tool_call", "observation"]
 type ItemState = Literal["in_progress", "completed", "interrupted", "failed"]
@@ -97,83 +100,10 @@ class ItemRef(BaseModel):
     id: str
     kind: ItemKind
     state: ItemState
-
-
-class SetItem(BaseModel):
-    """Insert or replace one compact item; the Host assigns its stable identity."""
-
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["set"] = "set"
-    item: Item
-
-
-class AppendItem(BaseModel):
-    """Append only new text, without retransmitting the growing item."""
-
-    model_config = ConfigDict(extra="forbid")
-    type: Literal["append"] = "append"
-    id: str
-    field: Literal["text", "arguments"]
-    text: str
-    after_stream_id: str
-    last_stream_id: str
-    state: ItemState
-    ended_at: datetime | None
-
-
-type ItemChange = Annotated[SetItem | AppendItem, Field(discriminator="type")]
-
-
-def apply_changes(items: dict[str, Item], changes: Sequence[ItemChange]) -> None:
-    """Apply one contiguous batch to a compact baseline, without interpreting source events."""
-    staged: dict[str, Item] = {}
-    for change in changes:
-        if isinstance(change, SetItem):
-            staged[change.item.id] = change.item.model_copy(deep=True)
-        else:
-            previous = staged.get(change.id) or items.get(change.id)
-            if previous is None or previous.last_stream_id != change.after_stream_id:
-                raise ValueError("Display append is missing its predecessor")
-            text = previous.content.get(change.field)
-            if not isinstance(text, str):
-                raise ValueError("Display append requires an existing text field")
-            content = {**previous.content, change.field: text + change.text}
-            staged[change.id] = previous.model_copy(
-                update={
-                    "content": content,
-                    "last_stream_id": change.last_stream_id,
-                    "state": change.state,
-                    "ended_at": change.ended_at,
-                }
-            )
-    items.update(staged)
-
-
-def item_change(previous: Item | None, item: Item) -> ItemChange:
-    """Choose an append when only accumulating text changed, otherwise replace."""
-    if previous is not None:
-        for field in ("text", "arguments"):
-            before, after = previous.content.get(field), item.content.get(field)
-            if (
-                isinstance(before, str)
-                and isinstance(after, str)
-                and len(after) > len(before)
-                and after.startswith(before)
-                and previous.state == item.state
-                and previous.ended_at == item.ended_at
-                and {k: v for k, v in previous.content.items() if k != field}
-                == {k: v for k, v in item.content.items() if k != field}
-            ):
-                return AppendItem(
-                    id=item.id,
-                    field=field,
-                    text=after[len(before) :],
-                    after_stream_id=previous.last_stream_id,
-                    last_stream_id=item.last_stream_id,
-                    state=item.state,
-                    ended_at=item.ended_at,
-                )
-    return SetItem(item=item.model_copy(deep=True))
+    ordinal: int | None = Field(default=None, ge=1)
+    # Host-selected grouping and native failure diagnostics are not text deltas.
+    response_group: str | None = None
+    failure: dict[str, JsonValue] | None = None
 
 
 class Observed(BaseModel):
@@ -182,7 +112,6 @@ class Observed(BaseModel):
     sequence: int
     event: dict[str, Any]
     item: ItemRef | None
-    changes: list[ItemChange] = Field(default_factory=list)
 
 
 _OMITTED: dict[str, JsonValue] = {"omitted": True}
@@ -207,7 +136,7 @@ def _streamed_arguments(event: dict[str, Any]) -> dict[str, Any] | None:
     return delta if arguments and not delta.get("tool_name_delta") else None
 
 
-def fragment(event: dict[str, Any]) -> tuple[object, str] | None:
+def fragment(event: dict[str, Any]) -> tuple[JsonValue, str] | None:
     """The stream a fragment event continues and the text it appends; None for any other event.
 
     Text, reasoning and tool-call argument deltas continue their message or tool call, and a streamed tool-call
@@ -220,7 +149,7 @@ def fragment(event: dict[str, Any]) -> tuple[object, str] | None:
         return None
     value = event["value"]
     source = {**value["event"], "delta": {**delta, "args_delta": None}}
-    return (event["name"], value["thread_id"], value["run_id"], source), delta["args_delta"]
+    return [event["name"], value["thread_id"], value["run_id"], source], delta["args_delta"]
 
 
 def extend(event: dict[str, Any], text: str) -> None:
@@ -235,7 +164,7 @@ def extend(event: dict[str, Any], text: str) -> None:
 class _Arguments:
     """A tool-call part's streamed arguments so far and the one observation item that holds them."""
 
-    stream: object
+    stream: JsonValue
     key: str
     at: datetime
     # The sequence of the last delta folded in: only the next event continues the item.
@@ -243,6 +172,28 @@ class _Arguments:
     # The whole observation until its value outgrows the observation limit.
     event: dict[str, Any] | None
     size: int
+
+
+class DisplayContinuation(BaseModel):
+    """Parsing state at a semantic cut; Host paging may retire only immutable items."""
+
+    model_config = ConfigDict(extra="forbid")
+    run_id: str
+    position: StreamPosition
+    next_ordinal: int = Field(ge=1)
+    full_content: bool = False
+    response_groups: dict[str, str] = Field(default_factory=dict)
+    arguments: _Arguments | None = None
+    fragments: FragmentState = Field(default_factory=FragmentState)
+    observer: ObserverContinuation = Field(default_factory=ObserverContinuation)
+
+
+class DisplaySnapshot(BaseModel):
+    """Completed blocks and active accumulations, with enough state for an intact suffix."""
+
+    model_config = ConfigDict(extra="forbid")
+    items: list[Item]
+    continuation: DisplayContinuation
 
 
 def item_id(run_id: str, kind: ItemKind, source_id: str) -> str:
@@ -321,6 +272,7 @@ class DisplayFold:
         attempt: int = 0,
         first: int = 1,
         full_content: bool = False,
+        continuation: DisplayContinuation | None = None,
     ):
         self.run_id, self.attempt = run_id, attempt
         self.items = {item.id: item.model_copy(deep=True) for item in items}
@@ -335,8 +287,47 @@ class DisplayFold:
         )
         self.assembler = CustomEventAssembler()
         self.arguments: _Arguments | None = None
-        self._changes: list[ItemChange] = []
-        self._announced: set[str] = set()
+        if continuation is not None:
+            state = continuation.model_copy(deep=True)
+            if state.run_id != run_id or state.position.attempt != attempt or state.full_content != full_content:
+                raise ValueError("Display continuation does not match the run, attempt or content policy")
+            self.next, self.sequence = state.next_ordinal, state.position.sequence
+            self.response_groups, self.arguments = state.response_groups, state.arguments
+            self.assembler = CustomEventAssembler.restore(state.fragments)
+            self.observer = HarnessAguiStreamObserver.restore(
+                state.observer, processor=None if full_content else _bound_payloads
+            )
+
+    def export(self) -> DisplaySnapshot:
+        """Detach a pure cut. Export never ends, interrupts or pages active content."""
+        return DisplaySnapshot(
+            items=list(self.items.values()),
+            continuation=self.export_continuation(),
+        ).model_copy(deep=True)
+
+    def export_continuation(self) -> DisplayContinuation:
+        """Detach parser state without copying the accumulated display prefix."""
+        return DisplayContinuation(
+            run_id=self.run_id,
+            position=self.position,
+            next_ordinal=self.next,
+            full_content=self.full_content,
+            response_groups=self.response_groups,
+            arguments=self.arguments,
+            fragments=self.assembler.export(),
+            observer=self.observer.export(),
+        ).model_copy(deep=True)
+
+    @staticmethod
+    def restore(snapshot: DisplaySnapshot) -> DisplayFold:
+        state = snapshot.continuation
+        return DisplayFold(
+            state.run_id,
+            snapshot.items,
+            attempt=state.position.attempt,
+            full_content=state.full_content,
+            continuation=state,
+        )
 
     def _bounded(self, content: dict[str, JsonValue], field: str, value: str) -> None:
         if self.full_content:
@@ -358,20 +349,16 @@ class DisplayFold:
         observed: list[Observed] = []
         for payload in events:
             self.sequence += 1
-            self._changes = []
             ref = self._fold(payload)
-            observed.append(Observed(sequence=self.sequence, event=payload, item=ref, changes=self._changes))
+            observed.append(Observed(sequence=self.sequence, event=payload, item=ref))
         if observed and source is not None and (failed := _failed_tool_call(source)) is not None:
-            self._changes = []
             ref = self._fail_tool_call(
                 *failed,
                 at=_occurred(observed[-1].event),
                 subagent_run_id=source.run_id if source.run_id != self.observer.run_id else None,
             )
             if ref is not None:
-                observed[-1] = observed[-1].model_copy(
-                    update={"item": ref, "changes": [*observed[-1].changes, *self._changes]}
-                )
+                observed[-1] = observed[-1].model_copy(update={"item": ref})
         return observed
 
     def _fold(self, payload: dict[str, Any]) -> ItemRef | None:
@@ -517,7 +504,11 @@ class DisplayFold:
                 content["mcp_apps"] = source.get("apps", [])
         elif source.get("part_kind") == "builtin-tool-call":
             args = source.get("args")
-            self._bounded(content, "arguments", args if isinstance(args, str) else json.dumps(args, ensure_ascii=False))
+            self._bounded(
+                content,
+                "arguments",
+                args if isinstance(args, str) else json.dumps(args, ensure_ascii=False, separators=(",", ":")),
+            )
             content["arguments_complete"] = True
         else:
             result_value = source.get("content")
@@ -534,7 +525,7 @@ class DisplayFold:
             )
         return self._put(key, "tool_call", state, content, at=_occurred(event))
 
-    def _arguments(self, event: dict[str, Any], stream: object, text: str) -> ItemRef:
+    def _arguments(self, event: dict[str, Any], stream: JsonValue, text: str) -> ItemRef:
         """Consecutive argument deltas of one tool-call part fold into one observation: the first delta's, with the
         argument text of all of them and the first one's time."""
         held = self.arguments
@@ -595,6 +586,12 @@ class DisplayFold:
             content=content,
         )
         self.changed.add(key)
-        self._changes.append(item_change(previous if key in self._announced else None, self.items[key]))
-        self._announced.add(key)
-        return ItemRef(id=key, kind=kind, state=state)
+        group, failure = content.get("responseGroup"), content.get("failure")
+        return ItemRef(
+            id=key,
+            kind=kind,
+            state=state,
+            ordinal=ordinal,
+            response_group=group if isinstance(group, str) else None,
+            failure=failure if isinstance(failure, dict) else None,
+        )

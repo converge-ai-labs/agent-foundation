@@ -30,7 +30,6 @@ from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot
 from a13n_logging import get_logger
-from a13n_stream_protocol.display import ItemChange
 from anyio import CancelScope, get_cancelled_exc_class, to_thread
 from opentelemetry.trace import StatusCode
 from pydantic_ai import RunContext, ToolDenied, ToolFailed
@@ -53,6 +52,7 @@ from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.display_history import (
     DisplayHistory,
     DisplayHistoryCollector,
+    DisplayPublication,
     detach_display_history,
     saved_display_history,
     with_display_history,
@@ -518,13 +518,13 @@ class RootRunExecutor:
                         if isinstance(item, HarnessRunResultEvent):
                             display.observe(item)
                             result = item.result
-                        changes = display.drain()
-                        if changes:
+                        publication = display.drain()
+                        if publication is not None:
                             try:
                                 await self._publish_live(
                                     thread_id=thread.thread_id,
                                     run_id=stream.run_id,
-                                    changes=changes,
+                                    display=publication,
                                     base_continuation_id=base_continuation_id,
                                 )
                             except Exception:
@@ -854,7 +854,7 @@ class RootRunExecutor:
         *,
         thread_id: str,
         run_id: str,
-        changes: list[ItemChange],
+        display: DisplayPublication,
         base_continuation_id: str | None,
     ) -> None:
         if self._live_hub is None:
@@ -866,7 +866,7 @@ class RootRunExecutor:
             thread_id=thread_id,
             run_id=run_id,
             events=(),
-            changes=changes,
+            display=display,
             base_continuation_id=base_continuation_id,
         )
 

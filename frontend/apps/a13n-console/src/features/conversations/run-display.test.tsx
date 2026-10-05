@@ -21,6 +21,7 @@ import {
 import type { Schema } from "../../shared/api";
 import { conversationQueries, invalidateConversation } from "./api";
 import { useRunDisplay } from "./run-display";
+import { useEarlierItems } from "./earlier-items";
 import {
   fixtureAttempt,
   fixtureRun,
@@ -135,27 +136,8 @@ const delta = (
     run_id: "run_one",
     attempt,
     sequence,
-    format: "display-ops-v1",
-    changes:
-      sequence === 1
-        ? [
-            {
-              type: "set",
-              item: { ...message(text, `${attempt}-1`), id: item },
-            },
-          ]
-        : [
-            {
-              type: "append",
-              id: item,
-              field: "text",
-              text,
-              after_stream_id: `${attempt}-${sequence - 1}`,
-              last_stream_id: `${attempt}-${sequence}`,
-              state: "in_progress",
-              ended_at: null,
-            },
-          ],
+    event: { type: "TEXT_MESSAGE_CONTENT", messageId: item, delta: text },
+    item: { id: item, kind: "text_message", state: "in_progress" },
   },
 });
 const boundary = (attempt: number, sequence: number): ThreadFrame => ({
@@ -225,6 +207,7 @@ beforeEach(() => {
   attempts = [1];
   display = {
     run: run(),
+    baseline: true,
     items: [message("Hello", "1-0", "1-1")],
     position: "1-1",
     complete: false,
@@ -497,8 +480,23 @@ it("learns a new attempt's identity once before folding its deltas", async () =>
   attempts = [1, 2];
   await act(async () => {
     frames.push(
-      delta(2, 1, "Second", "item_2-1"),
-      delta(2, 2, " try", "item_2-1"),
+      {
+        type: "delta",
+        cursor: "c2-1",
+        delta: {
+          run_id: "run_one",
+          attempt: 2,
+          sequence: 1,
+          event: {
+            type: "TEXT_MESSAGE_START",
+            messageId: "item_2-1",
+            role: "assistant",
+          },
+          item: { id: "item_2-1", kind: "text_message", state: "in_progress" },
+        },
+      },
+      delta(2, 2, "Second", "item_2-1"),
+      delta(2, 3, " try", "item_2-1"),
     );
   });
   await waitFor(() => expect(text()).toBe("Hello|Second try"));
@@ -517,24 +515,13 @@ const observed = (
     run_id: "run_one",
     attempt: 1,
     sequence,
-    format: "display-ops-v1",
-    changes: [
-      {
-        type: "set",
-        item: {
-          ...message(
-            "",
-            `1-${sequence}`,
-            `1-${sequence}`,
-            "completed",
-            sequence,
-          ),
-          id: `obs_${sequence}`,
-          kind: "observation",
-          content: { name, value },
-        },
-      },
-    ],
+    event: { type: "CUSTOM", name, value },
+    item: {
+      id: `obs_${sequence}`,
+      kind: "observation",
+      state: "completed",
+      ordinal: sequence,
+    },
   },
 });
 
@@ -596,6 +583,7 @@ it("reconciles the sealed display once the Thread's current Run moves on", async
   thread = { ...thread, current_run_id: null, version: 5 };
   display = {
     run: run({ status: "completed", sealed_at: "2026-09-20T10:00:09.000Z" }),
+    baseline: true,
     items: [message("Hello", "1-0", "1-2", "completed")],
     position: "1-2",
     complete: true,
@@ -725,7 +713,9 @@ it.each([true, false])(
     if (alreadyCovered) display = repaired;
     await act(async () => frames.push({ type: "gap", run_id: "run_one" }));
     await waitFor(() =>
-      expect(screen.getByTestId("gap").textContent).toBe("true"),
+      expect(screen.getByTestId("gap").textContent).toBe(
+        alreadyCovered ? "false" : "true",
+      ),
     );
     expect(pathRequests("/items")).toHaveLength(2);
 
@@ -777,7 +767,7 @@ it("keeps an unknown gap incomplete when its clarified range is not yet covered"
   expect(screen.getByTestId("coverage").textContent).toBe("complete");
 });
 
-it("does not advance coverage across a hole and waits for a covering checkpoint", async () => {
+it("displays a degraded suffix across a hole until a covering checkpoint repairs it", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
   await act(async () =>
@@ -789,8 +779,8 @@ it("does not advance coverage across a hole and waits for a covering checkpoint"
   await waitFor(() =>
     expect(screen.getByTestId("gap").textContent).toBe("true"),
   );
-  expect(text()).toBe("Hello");
-  expect(resumeOptions()?.position).toBe("1-1");
+  await waitFor(() => expect(text()).toBe("Hello!"));
+  expect(resumeOptions()?.position).toBe("1-4");
   expect(pathRequests("/items")).toHaveLength(2);
   await act(async () => frames.push(boundary(1, 2), boundary(1, 2)));
   await waitFor(() => expect(pathRequests("/items")).toHaveLength(3));
@@ -826,7 +816,7 @@ it("drops superseded provisional output before a new attempt's first checkpoint"
   expect(resumeOptions()?.position).toBe("2-1");
 });
 
-it("uses the final display to resolve a gap and discard an uncovered provisional suffix", async () => {
+it("discards a terminal provisional suffix without falsely healing uncovered missing events", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
   await act(async () =>
@@ -848,7 +838,7 @@ it("uses the final display to resolve a gap and discard an uncovered provisional
   thread = { ...thread, current_run_id: null, version: 5 };
   await act(async () => frames.push({ type: "changed", version: 5 }));
   await waitFor(() => expect(text()).toBe("Saved"));
-  expect(screen.getByTestId("gap").textContent).toBe("false");
+  expect(screen.getByTestId("gap").textContent).toBe("true");
   expect(screen.getByTestId("live").textContent).toBe("closed");
 });
 
@@ -889,3 +879,71 @@ it.each([false, true])(
     intervals.mockRestore();
   },
 );
+
+it("catches up a moving newest window after an older page resolves without advancing the latest ordinal", async () => {
+  const item = (ordinal: number) =>
+    message(
+      `Item ${ordinal}`,
+      `1-${ordinal}`,
+      `1-${ordinal}`,
+      "completed",
+      ordinal,
+    );
+  let finishOlder!: (response: Response) => void;
+  const older = new Promise<Response>((resolve) => {
+    finishOlder = resolve;
+  });
+  read = async (request) => {
+    const query = new URL(request.url).searchParams;
+    if (query.get("before") === "3")
+      return Response.json({ ...display, baseline: false, items: [item(2)] });
+    if (query.get("before") === "2") return older;
+    if (query.get("after") === "2")
+      return Response.json({
+        ...display,
+        baseline: false,
+        items: [item(3), item(4), item(5)],
+      });
+    return response(request);
+  };
+  function Earlier({ first }: { first: number }) {
+    const history = useEarlierItems("run_one", first);
+    return (
+      <>
+        <output data-testid="history">
+          {history.items.map((entry) => entry.ordinal).join(",")}
+        </output>
+        <button onClick={history.load}>Load history</button>
+      </>
+    );
+  }
+  const view = render(
+    <QueryClientProvider client={cache}>
+      <Earlier first={3} />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Load history" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("history").textContent).toBe("2"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Load history" }));
+  await waitFor(() => expect(pathRequests("/items")).toHaveLength(2));
+  fireEvent.click(screen.getByRole("button", { name: "Load history" }));
+  expect(pathRequests("/items")).toHaveLength(2);
+  view.rerender(
+    <QueryClientProvider client={cache}>
+      <Earlier first={6} />
+    </QueryClientProvider>,
+  );
+  await act(async () => {
+    finishOlder(
+      Response.json({ ...display, baseline: false, items: [item(1)] }),
+    );
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("history").textContent).toBe("1,2,3,4,5"),
+  );
+  expect(
+    pathRequests("/items").map((request) => new URL(request.url).search),
+  ).toEqual(["?before=3", "?before=2", "?after=2&limit=3"]);
+});

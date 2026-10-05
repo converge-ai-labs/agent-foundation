@@ -1,0 +1,3808 @@
+[
+  {
+    "initial": {
+      "run_id": "run",
+      "position": {
+        "attempt": 2,
+        "sequence": 0
+      },
+      "next_ordinal": 1,
+      "full_content": false,
+      "response_groups": {},
+      "arguments": null,
+      "fragments": {
+        "pending": {},
+        "gap": false,
+        "max_bytes": 67108864,
+        "max_pending": 8
+      },
+      "observer": {
+        "thread_id": null,
+        "run_id": null,
+        "state": {
+          "request_index": 0,
+          "parts": {},
+          "children": {},
+          "threads": {}
+        }
+      }
+    },
+    "steps": [
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 1,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.harness.lifecycle",
+            "value": {
+              "event": {
+                "payload": {
+                  "type": "model_request_started"
+                }
+              }
+            },
+            "timestamp": 1700000000000
+          },
+          "item": {
+            "id": "itm_65f91c9028f85faf17ae80c8c20261b1",
+            "kind": "observation",
+            "state": "completed",
+            "ordinal": 1,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 1
+          },
+          "next_ordinal": 2,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_65f91c9028f85faf17ae80c8c20261b1",
+          "ordinal": 1,
+          "kind": "observation",
+          "state": "completed",
+          "first_stream_id": "2-1",
+          "last_stream_id": "2-1",
+          "started_at": "2023-11-14T22:13:20Z",
+          "ended_at": "2023-11-14T22:13:20Z",
+          "content": {
+            "name": "a13n.harness.lifecycle",
+            "value": {
+              "event": {
+                "payload": {
+                  "type": "model_request_started"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 2,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.input.user",
+            "value": {
+              "event": {
+                "message_id": "user",
+                "content": "Question",
+                "source": "user"
+              }
+            },
+            "timestamp": 1700000000001
+          },
+          "item": {
+            "id": "itm_431de69745d869393b82c0e3755bbb44",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 2,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 2
+          },
+          "next_ordinal": 3,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_431de69745d869393b82c0e3755bbb44",
+          "ordinal": 2,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-2",
+          "last_stream_id": "2-2",
+          "started_at": "2023-11-14T22:13:20.001000Z",
+          "ended_at": "2023-11-14T22:13:20.001000Z",
+          "content": {
+            "messageId": "user",
+            "role": "user",
+            "text": "Question",
+            "input_source": "user",
+            "input_group": null
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 3,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.input.media",
+            "value": {
+              "event": {
+                "message_id": "media",
+                "content": [
+                  {
+                    "type": "image",
+                    "url": "asset://image"
+                  }
+                ],
+                "source": "steering",
+                "input_id": "input"
+              }
+            },
+            "timestamp": 1700000000002
+          },
+          "item": {
+            "id": "itm_487908cff6b55affa66d283bf3250784",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 3,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 3
+          },
+          "next_ordinal": 4,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_487908cff6b55affa66d283bf3250784",
+          "ordinal": 3,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-3",
+          "last_stream_id": "2-3",
+          "started_at": "2023-11-14T22:13:20.002000Z",
+          "ended_at": "2023-11-14T22:13:20.002000Z",
+          "content": {
+            "messageId": "media",
+            "role": "user",
+            "input_media": [
+              {
+                "type": "image",
+                "url": "asset://image"
+              }
+            ],
+            "input_source": "steering",
+            "input_group": "input"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 4,
+          "event": {
+            "type": "TEXT_MESSAGE_START",
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "timestamp": 1700000000003
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "in_progress",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 4
+          },
+          "next_ordinal": 5,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "in_progress",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-4",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": null,
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 5,
+          "event": {
+            "type": "TEXT_MESSAGE_CONTENT",
+            "messageId": "m",
+            "delta": "Hello 🐍",
+            "timestamp": 1700000000004
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "in_progress",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 5
+          },
+          "next_ordinal": 5,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "in_progress",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-5",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": null,
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 6,
+          "event": {
+            "type": "REASONING_MESSAGE_START",
+            "messageId": "r",
+            "subagentRunId": "child",
+            "timestamp": 1700000000005
+          },
+          "item": {
+            "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+            "kind": "reasoning_message",
+            "state": "in_progress",
+            "ordinal": 5,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 6
+          },
+          "next_ordinal": 6,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+          "ordinal": 5,
+          "kind": "reasoning_message",
+          "state": "in_progress",
+          "first_stream_id": "2-6",
+          "last_stream_id": "2-6",
+          "started_at": "2023-11-14T22:13:20.005000Z",
+          "ended_at": null,
+          "content": {
+            "messageId": "r",
+            "subagentRunId": "child"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 7,
+          "event": {
+            "type": "REASONING_MESSAGE_CONTENT",
+            "messageId": "r",
+            "subagentRunId": "child",
+            "delta": "Think",
+            "timestamp": 1700000000006
+          },
+          "item": {
+            "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+            "kind": "reasoning_message",
+            "state": "in_progress",
+            "ordinal": 5,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 7
+          },
+          "next_ordinal": 6,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+          "ordinal": 5,
+          "kind": "reasoning_message",
+          "state": "in_progress",
+          "first_stream_id": "2-6",
+          "last_stream_id": "2-7",
+          "started_at": "2023-11-14T22:13:20.005000Z",
+          "ended_at": null,
+          "content": {
+            "messageId": "r",
+            "subagentRunId": "child",
+            "text": "Think"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 8,
+          "event": {
+            "type": "TOOL_CALL_START",
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "timestamp": 1700000000007
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "in_progress",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 8
+          },
+          "next_ordinal": 7,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "in_progress",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-8",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": null,
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 9,
+          "event": {
+            "type": "TOOL_CALL_ARGS",
+            "toolCallId": "t",
+            "delta": "{\"q\":",
+            "timestamp": 1700000000008
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "in_progress",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 9
+          },
+          "next_ordinal": 7,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "in_progress",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-9",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": null,
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 10,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.stream.fragment",
+            "value": {
+              "id": "f",
+              "index": 0,
+              "count": 2,
+              "data": "{\"type\": \"CUSTOM\", \"name\": \"a13n.co"
+            },
+            "timestamp": 1700000000009
+          },
+          "item": null
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 10
+          },
+          "next_ordinal": 7,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {
+              "f": {
+                "count": 2,
+                "parts": [
+                  "{\"type\": \"CUSTOM\", \"name\": \"a13n.co"
+                ],
+                "size": 35
+              }
+            },
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 11,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.stream.fragment",
+            "value": {
+              "id": "f",
+              "index": 1,
+              "count": 2,
+              "data": "ntext.compaction_summary\", \"value\": {\"event\": {\"summary\": \"Keep this summary\"}}}"
+            },
+            "timestamp": 1700000000010
+          },
+          "item": {
+            "id": "itm_450571ed7c9766a075e7a0dc9b26b859",
+            "kind": "observation",
+            "state": "completed",
+            "ordinal": 7,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 11
+          },
+          "next_ordinal": 8,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_450571ed7c9766a075e7a0dc9b26b859",
+          "ordinal": 7,
+          "kind": "observation",
+          "state": "completed",
+          "first_stream_id": "2-11",
+          "last_stream_id": "2-11",
+          "started_at": "2023-11-14T22:13:20.010000Z",
+          "ended_at": "2023-11-14T22:13:20.010000Z",
+          "content": {
+            "name": "a13n.context.compaction_summary",
+            "value": {
+              "event": {
+                "summary": "Keep this summary"
+              }
+            }
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 12,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.pydantic_ai.part_delta",
+            "value": {
+              "thread_id": "thread",
+              "run_id": "run",
+              "sequence": 11,
+              "event": {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": "{\"q\":"
+                }
+              }
+            },
+            "timestamp": 1700000000011
+          },
+          "item": {
+            "id": "itm_394bda20bbc545817493febe30009794",
+            "kind": "observation",
+            "state": "completed",
+            "ordinal": 8,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 12
+          },
+          "next_ordinal": 9,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 12,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 134
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_394bda20bbc545817493febe30009794",
+          "ordinal": 8,
+          "kind": "observation",
+          "state": "completed",
+          "first_stream_id": "2-12",
+          "last_stream_id": "2-12",
+          "started_at": "2023-11-14T22:13:20.011000Z",
+          "ended_at": "2023-11-14T22:13:20.011000Z",
+          "content": {
+            "name": "a13n.pydantic_ai.part_delta",
+            "value": {
+              "thread_id": "thread",
+              "run_id": "run",
+              "sequence": 11,
+              "event": {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": "{\"q\":"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 13,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.pydantic_ai.part_delta",
+            "value": {
+              "thread_id": "thread",
+              "run_id": "run",
+              "sequence": 12,
+              "event": {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": "\"查\"}"
+                }
+              }
+            },
+            "timestamp": 1700000000012
+          },
+          "item": {
+            "id": "itm_394bda20bbc545817493febe30009794",
+            "kind": "observation",
+            "state": "completed",
+            "ordinal": 8,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 13
+          },
+          "next_ordinal": 9,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_394bda20bbc545817493febe30009794",
+          "ordinal": 8,
+          "kind": "observation",
+          "state": "completed",
+          "first_stream_id": "2-12",
+          "last_stream_id": "2-13",
+          "started_at": "2023-11-14T22:13:20.011000Z",
+          "ended_at": "2023-11-14T22:13:20.011000Z",
+          "content": {
+            "name": "a13n.pydantic_ai.part_delta",
+            "value": {
+              "thread_id": "thread",
+              "run_id": "run",
+              "sequence": 11,
+              "event": {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": "{\"q\":\"查\"}"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 14,
+          "event": {
+            "type": "TEXT_MESSAGE_CONTENT",
+            "messageId": "m",
+            "delta": " world",
+            "timestamp": 1700000000013
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "in_progress",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 14
+          },
+          "next_ordinal": 9,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "in_progress",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-14",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": null,
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍 world"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 15,
+          "event": {
+            "type": "TEXT_MESSAGE_END",
+            "messageId": "m",
+            "timestamp": 1700000000014
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 15
+          },
+          "next_ordinal": 9,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-15",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": "2023-11-14T22:13:20.014000Z",
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍 world"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 16,
+          "event": {
+            "type": "REASONING_MESSAGE_END",
+            "messageId": "r",
+            "subagentRunId": "child",
+            "timestamp": 1700000000015
+          },
+          "item": {
+            "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+            "kind": "reasoning_message",
+            "state": "completed",
+            "ordinal": 5,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 16
+          },
+          "next_ordinal": 9,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+          "ordinal": 5,
+          "kind": "reasoning_message",
+          "state": "completed",
+          "first_stream_id": "2-6",
+          "last_stream_id": "2-16",
+          "started_at": "2023-11-14T22:13:20.005000Z",
+          "ended_at": "2023-11-14T22:13:20.015000Z",
+          "content": {
+            "messageId": "r",
+            "subagentRunId": "child",
+            "text": "Think"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 17,
+          "event": {
+            "type": "TOOL_CALL_ARGS",
+            "toolCallId": "t",
+            "delta": "\"query\"}",
+            "timestamp": 1700000000016
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "in_progress",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 17
+          },
+          "next_ordinal": 9,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "in_progress",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-17",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": null,
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":\"query\"}"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 18,
+          "event": {
+            "type": "TOOL_CALL_END",
+            "toolCallId": "t",
+            "timestamp": 1700000000017
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "in_progress",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 18
+          },
+          "next_ordinal": 9,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "in_progress",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-18",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": null,
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":\"query\"}",
+            "arguments_complete": true
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 19,
+          "event": {
+            "type": "TOOL_CALL_RESULT",
+            "toolCallId": "t",
+            "content": [
+              {
+                "type": "image",
+                "url": "asset://result"
+              }
+            ],
+            "timestamp": 1700000000018
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "completed",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 19
+          },
+          "next_ordinal": 9,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "completed",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-19",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": "2023-11-14T22:13:20.018000Z",
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":\"query\"}",
+            "arguments_complete": true,
+            "result_parts": [
+              {
+                "type": "image",
+                "url": "asset://result"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 20,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.harness-ui.tool_images",
+            "value": {
+              "event": {
+                "tool_call_id": "t",
+                "images": [
+                  {
+                    "path": "image.png"
+                  }
+                ],
+                "unavailable": false
+              }
+            },
+            "timestamp": 1700000000019
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "completed",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 20
+          },
+          "next_ordinal": 9,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "completed",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-20",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": "2023-11-14T22:13:20.019000Z",
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":\"query\"}",
+            "arguments_complete": true,
+            "result_parts": [
+              {
+                "type": "image",
+                "url": "asset://result"
+              }
+            ],
+            "tool_images": [
+              {
+                "path": "image.png"
+              }
+            ],
+            "tool_image_unavailable": false
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 21,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.harness-ui.mcp_apps",
+            "value": {
+              "event": {
+                "tool_call_id": "t",
+                "apps": [
+                  {
+                    "app_id": "app"
+                  }
+                ]
+              }
+            },
+            "timestamp": 1700000000020
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "completed",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 21
+          },
+          "next_ordinal": 9,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "completed",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-21",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": "2023-11-14T22:13:20.020000Z",
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":\"query\"}",
+            "arguments_complete": true,
+            "result_parts": [
+              {
+                "type": "image",
+                "url": "asset://result"
+              }
+            ],
+            "tool_images": [
+              {
+                "path": "image.png"
+              }
+            ],
+            "tool_image_unavailable": false,
+            "mcp_apps": [
+              {
+                "app_id": "app"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 22,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.pydantic_ai.part_start",
+            "value": {
+              "event": {
+                "part": {
+                  "part_kind": "builtin-tool-call",
+                  "tool_call_id": "native",
+                  "tool_name": "browse",
+                  "args": {
+                    "query": "search",
+                    "options": [
+                      true,
+                      null
+                    ]
+                  },
+                  "provider_name": "p"
+                }
+              }
+            },
+            "subagentRunId": "child",
+            "timestamp": 1700000000021
+          },
+          "item": {
+            "id": "itm_87631589d2e393911542dc41c58fe87a",
+            "kind": "tool_call",
+            "state": "in_progress",
+            "ordinal": 9,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 22
+          },
+          "next_ordinal": 10,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_87631589d2e393911542dc41c58fe87a",
+          "ordinal": 9,
+          "kind": "tool_call",
+          "state": "in_progress",
+          "first_stream_id": "2-22",
+          "last_stream_id": "2-22",
+          "started_at": "2023-11-14T22:13:20.021000Z",
+          "ended_at": null,
+          "content": {
+            "toolCallId": "native",
+            "subagentRunId": "child",
+            "provider": "p",
+            "toolCallName": "browse",
+            "arguments": "{\"query\":\"search\",\"options\":[true,null]}",
+            "arguments_complete": true
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 23,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.pydantic_ai.part_end",
+            "value": {
+              "event": {
+                "part": {
+                  "part_kind": "builtin-tool-return",
+                  "tool_call_id": "native",
+                  "tool_name": "browse",
+                  "content": {
+                    "ok": true
+                  },
+                  "provider_name": "p"
+                }
+              }
+            },
+            "subagentRunId": "child",
+            "timestamp": 1700000000022
+          },
+          "item": {
+            "id": "itm_87631589d2e393911542dc41c58fe87a",
+            "kind": "tool_call",
+            "state": "completed",
+            "ordinal": 9,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 23
+          },
+          "next_ordinal": 10,
+          "full_content": false,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": {
+            "stream": [
+              "a13n.pydantic_ai.part_delta",
+              "thread",
+              "run",
+              {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": null
+                }
+              }
+            ],
+            "key": "itm_394bda20bbc545817493febe30009794",
+            "at": "2023-11-14T22:13:20.011000Z",
+            "sequence": 13,
+            "event": {
+              "type": "CUSTOM",
+              "name": "a13n.pydantic_ai.part_delta",
+              "value": {
+                "thread_id": "thread",
+                "run_id": "run",
+                "sequence": 11,
+                "event": {
+                  "index": 1,
+                  "delta": {
+                    "part_delta_kind": "tool_call",
+                    "args_delta": "{\"q\":\"查\"}"
+                  }
+                }
+              },
+              "timestamp": 1700000000011
+            },
+            "size": 145
+          },
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_87631589d2e393911542dc41c58fe87a",
+          "ordinal": 9,
+          "kind": "tool_call",
+          "state": "completed",
+          "first_stream_id": "2-22",
+          "last_stream_id": "2-23",
+          "started_at": "2023-11-14T22:13:20.021000Z",
+          "ended_at": "2023-11-14T22:13:20.022000Z",
+          "content": {
+            "toolCallId": "native",
+            "subagentRunId": "child",
+            "provider": "p",
+            "toolCallName": "browse",
+            "arguments": "{\"query\":\"search\",\"options\":[true,null]}",
+            "arguments_complete": true,
+            "value": {
+              "ok": true
+            },
+            "outcome": null,
+            "retry": false
+          }
+        }
+      }
+    ]
+  },
+  {
+    "initial": {
+      "run_id": "run",
+      "position": {
+        "attempt": 2,
+        "sequence": 0
+      },
+      "next_ordinal": 1,
+      "full_content": true,
+      "response_groups": {},
+      "arguments": null,
+      "fragments": {
+        "pending": {},
+        "gap": false,
+        "max_bytes": 67108864,
+        "max_pending": 8
+      },
+      "observer": {
+        "thread_id": null,
+        "run_id": null,
+        "state": {
+          "request_index": 0,
+          "parts": {},
+          "children": {},
+          "threads": {}
+        }
+      }
+    },
+    "steps": [
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 1,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.harness.lifecycle",
+            "value": {
+              "event": {
+                "payload": {
+                  "type": "model_request_started"
+                }
+              }
+            },
+            "timestamp": 1700000000000
+          },
+          "item": {
+            "id": "itm_65f91c9028f85faf17ae80c8c20261b1",
+            "kind": "observation",
+            "state": "completed",
+            "ordinal": 1,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 1
+          },
+          "next_ordinal": 2,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_65f91c9028f85faf17ae80c8c20261b1",
+          "ordinal": 1,
+          "kind": "observation",
+          "state": "completed",
+          "first_stream_id": "2-1",
+          "last_stream_id": "2-1",
+          "started_at": "2023-11-14T22:13:20Z",
+          "ended_at": "2023-11-14T22:13:20Z",
+          "content": {
+            "name": "a13n.harness.lifecycle",
+            "value": {
+              "event": {
+                "payload": {
+                  "type": "model_request_started"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 2,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.input.user",
+            "value": {
+              "event": {
+                "message_id": "user",
+                "content": "Question",
+                "source": "user"
+              }
+            },
+            "timestamp": 1700000000001
+          },
+          "item": {
+            "id": "itm_431de69745d869393b82c0e3755bbb44",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 2,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 2
+          },
+          "next_ordinal": 3,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_431de69745d869393b82c0e3755bbb44",
+          "ordinal": 2,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-2",
+          "last_stream_id": "2-2",
+          "started_at": "2023-11-14T22:13:20.001000Z",
+          "ended_at": "2023-11-14T22:13:20.001000Z",
+          "content": {
+            "messageId": "user",
+            "role": "user",
+            "text": "Question",
+            "input_source": "user",
+            "input_group": null
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 3,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.input.media",
+            "value": {
+              "event": {
+                "message_id": "media",
+                "content": [
+                  {
+                    "type": "image",
+                    "url": "asset://image"
+                  }
+                ],
+                "source": "steering",
+                "input_id": "input"
+              }
+            },
+            "timestamp": 1700000000002
+          },
+          "item": {
+            "id": "itm_487908cff6b55affa66d283bf3250784",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 3,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 3
+          },
+          "next_ordinal": 4,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_487908cff6b55affa66d283bf3250784",
+          "ordinal": 3,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-3",
+          "last_stream_id": "2-3",
+          "started_at": "2023-11-14T22:13:20.002000Z",
+          "ended_at": "2023-11-14T22:13:20.002000Z",
+          "content": {
+            "messageId": "media",
+            "role": "user",
+            "input_media": [
+              {
+                "type": "image",
+                "url": "asset://image"
+              }
+            ],
+            "input_source": "steering",
+            "input_group": "input"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 4,
+          "event": {
+            "type": "TEXT_MESSAGE_START",
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "timestamp": 1700000000003
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "in_progress",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 4
+          },
+          "next_ordinal": 5,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "in_progress",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-4",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": null,
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 5,
+          "event": {
+            "type": "TEXT_MESSAGE_CONTENT",
+            "messageId": "m",
+            "delta": "Hello 🐍",
+            "timestamp": 1700000000004
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "in_progress",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 5
+          },
+          "next_ordinal": 5,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "in_progress",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-5",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": null,
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 6,
+          "event": {
+            "type": "REASONING_MESSAGE_START",
+            "messageId": "r",
+            "subagentRunId": "child",
+            "timestamp": 1700000000005
+          },
+          "item": {
+            "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+            "kind": "reasoning_message",
+            "state": "in_progress",
+            "ordinal": 5,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 6
+          },
+          "next_ordinal": 6,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+          "ordinal": 5,
+          "kind": "reasoning_message",
+          "state": "in_progress",
+          "first_stream_id": "2-6",
+          "last_stream_id": "2-6",
+          "started_at": "2023-11-14T22:13:20.005000Z",
+          "ended_at": null,
+          "content": {
+            "messageId": "r",
+            "subagentRunId": "child"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 7,
+          "event": {
+            "type": "REASONING_MESSAGE_CONTENT",
+            "messageId": "r",
+            "subagentRunId": "child",
+            "delta": "Think",
+            "timestamp": 1700000000006
+          },
+          "item": {
+            "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+            "kind": "reasoning_message",
+            "state": "in_progress",
+            "ordinal": 5,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 7
+          },
+          "next_ordinal": 6,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+          "ordinal": 5,
+          "kind": "reasoning_message",
+          "state": "in_progress",
+          "first_stream_id": "2-6",
+          "last_stream_id": "2-7",
+          "started_at": "2023-11-14T22:13:20.005000Z",
+          "ended_at": null,
+          "content": {
+            "messageId": "r",
+            "subagentRunId": "child",
+            "text": "Think"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 8,
+          "event": {
+            "type": "TOOL_CALL_START",
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "timestamp": 1700000000007
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "in_progress",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 8
+          },
+          "next_ordinal": 7,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "in_progress",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-8",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": null,
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 9,
+          "event": {
+            "type": "TOOL_CALL_ARGS",
+            "toolCallId": "t",
+            "delta": "{\"q\":",
+            "timestamp": 1700000000008
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "in_progress",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 9
+          },
+          "next_ordinal": 7,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "in_progress",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-9",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": null,
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 10,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.stream.fragment",
+            "value": {
+              "id": "f",
+              "index": 0,
+              "count": 2,
+              "data": "{\"type\": \"CUSTOM\", \"name\": \"a13n.co"
+            },
+            "timestamp": 1700000000009
+          },
+          "item": null
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 10
+          },
+          "next_ordinal": 7,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {
+              "f": {
+                "count": 2,
+                "parts": [
+                  "{\"type\": \"CUSTOM\", \"name\": \"a13n.co"
+                ],
+                "size": 35
+              }
+            },
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 11,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.stream.fragment",
+            "value": {
+              "id": "f",
+              "index": 1,
+              "count": 2,
+              "data": "ntext.compaction_summary\", \"value\": {\"event\": {\"summary\": \"Keep this summary\"}}}"
+            },
+            "timestamp": 1700000000010
+          },
+          "item": {
+            "id": "itm_450571ed7c9766a075e7a0dc9b26b859",
+            "kind": "observation",
+            "state": "completed",
+            "ordinal": 7,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 11
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_450571ed7c9766a075e7a0dc9b26b859",
+          "ordinal": 7,
+          "kind": "observation",
+          "state": "completed",
+          "first_stream_id": "2-11",
+          "last_stream_id": "2-11",
+          "started_at": "2023-11-14T22:13:20.010000Z",
+          "ended_at": "2023-11-14T22:13:20.010000Z",
+          "content": {
+            "name": "a13n.context.compaction_summary",
+            "value": {
+              "event": {
+                "summary": "Keep this summary"
+              }
+            }
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 12,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.pydantic_ai.part_delta",
+            "value": {
+              "thread_id": "thread",
+              "run_id": "run",
+              "sequence": 11,
+              "event": {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": "{\"q\":"
+                }
+              }
+            },
+            "timestamp": 1700000000011
+          },
+          "item": null
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 12
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 13,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.pydantic_ai.part_delta",
+            "value": {
+              "thread_id": "thread",
+              "run_id": "run",
+              "sequence": 12,
+              "event": {
+                "index": 1,
+                "delta": {
+                  "part_delta_kind": "tool_call",
+                  "args_delta": "\"查\"}"
+                }
+              }
+            },
+            "timestamp": 1700000000012
+          },
+          "item": null
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 13
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 14,
+          "event": {
+            "type": "TEXT_MESSAGE_CONTENT",
+            "messageId": "m",
+            "delta": " world",
+            "timestamp": 1700000000013
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "in_progress",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 14
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "in_progress",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-14",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": null,
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍 world"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 15,
+          "event": {
+            "type": "TEXT_MESSAGE_END",
+            "messageId": "m",
+            "timestamp": 1700000000014
+          },
+          "item": {
+            "id": "itm_34b1c47b6338df3d761051e4181751d5",
+            "kind": "text_message",
+            "state": "completed",
+            "ordinal": 4,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 15
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_34b1c47b6338df3d761051e4181751d5",
+          "ordinal": 4,
+          "kind": "text_message",
+          "state": "completed",
+          "first_stream_id": "2-4",
+          "last_stream_id": "2-15",
+          "started_at": "2023-11-14T22:13:20.003000Z",
+          "ended_at": "2023-11-14T22:13:20.014000Z",
+          "content": {
+            "messageId": "m",
+            "role": "assistant",
+            "metadata": {
+              "display": true
+            },
+            "responseGroup": "run:2:1",
+            "text": "Hello 🐍 world"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 16,
+          "event": {
+            "type": "REASONING_MESSAGE_END",
+            "messageId": "r",
+            "subagentRunId": "child",
+            "timestamp": 1700000000015
+          },
+          "item": {
+            "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+            "kind": "reasoning_message",
+            "state": "completed",
+            "ordinal": 5,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 16
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_91adf4740ce16b799dedb4903d6dd045",
+          "ordinal": 5,
+          "kind": "reasoning_message",
+          "state": "completed",
+          "first_stream_id": "2-6",
+          "last_stream_id": "2-16",
+          "started_at": "2023-11-14T22:13:20.005000Z",
+          "ended_at": "2023-11-14T22:13:20.015000Z",
+          "content": {
+            "messageId": "r",
+            "subagentRunId": "child",
+            "text": "Think"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 17,
+          "event": {
+            "type": "TOOL_CALL_ARGS",
+            "toolCallId": "t",
+            "delta": "\"query\"}",
+            "timestamp": 1700000000016
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "in_progress",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 17
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "in_progress",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-17",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": null,
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":\"query\"}"
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 18,
+          "event": {
+            "type": "TOOL_CALL_END",
+            "toolCallId": "t",
+            "timestamp": 1700000000017
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "in_progress",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 18
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "in_progress",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-18",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": null,
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":\"query\"}",
+            "arguments_complete": true
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 19,
+          "event": {
+            "type": "TOOL_CALL_RESULT",
+            "toolCallId": "t",
+            "content": [
+              {
+                "type": "image",
+                "url": "asset://result"
+              }
+            ],
+            "timestamp": 1700000000018
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "completed",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 19
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "completed",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-19",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": "2023-11-14T22:13:20.018000Z",
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":\"query\"}",
+            "arguments_complete": true,
+            "result_parts": [
+              {
+                "type": "image",
+                "url": "asset://result"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 20,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.harness-ui.tool_images",
+            "value": {
+              "event": {
+                "tool_call_id": "t",
+                "images": [
+                  {
+                    "path": "image.png"
+                  }
+                ],
+                "unavailable": false
+              }
+            },
+            "timestamp": 1700000000019
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "completed",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 20
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "completed",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-20",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": "2023-11-14T22:13:20.019000Z",
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":\"query\"}",
+            "arguments_complete": true,
+            "result_parts": [
+              {
+                "type": "image",
+                "url": "asset://result"
+              }
+            ],
+            "tool_images": [
+              {
+                "path": "image.png"
+              }
+            ],
+            "tool_image_unavailable": false
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 21,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.harness-ui.mcp_apps",
+            "value": {
+              "event": {
+                "tool_call_id": "t",
+                "apps": [
+                  {
+                    "app_id": "app"
+                  }
+                ]
+              }
+            },
+            "timestamp": 1700000000020
+          },
+          "item": {
+            "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+            "kind": "tool_call",
+            "state": "completed",
+            "ordinal": 6,
+            "response_group": "run:2:1",
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 21
+          },
+          "next_ordinal": 8,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_a22095e4994eb7e68751b61bcfc68f61",
+          "ordinal": 6,
+          "kind": "tool_call",
+          "state": "completed",
+          "first_stream_id": "2-8",
+          "last_stream_id": "2-21",
+          "started_at": "2023-11-14T22:13:20.007000Z",
+          "ended_at": "2023-11-14T22:13:20.020000Z",
+          "content": {
+            "toolCallId": "t",
+            "toolCallName": "search",
+            "responseGroup": "run:2:1",
+            "arguments": "{\"q\":\"query\"}",
+            "arguments_complete": true,
+            "result_parts": [
+              {
+                "type": "image",
+                "url": "asset://result"
+              }
+            ],
+            "tool_images": [
+              {
+                "path": "image.png"
+              }
+            ],
+            "tool_image_unavailable": false,
+            "mcp_apps": [
+              {
+                "app_id": "app"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 22,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.pydantic_ai.part_start",
+            "value": {
+              "event": {
+                "part": {
+                  "part_kind": "builtin-tool-call",
+                  "tool_call_id": "native",
+                  "tool_name": "browse",
+                  "args": {
+                    "query": "search",
+                    "options": [
+                      true,
+                      null
+                    ]
+                  },
+                  "provider_name": "p"
+                }
+              }
+            },
+            "subagentRunId": "child",
+            "timestamp": 1700000000021
+          },
+          "item": {
+            "id": "itm_87631589d2e393911542dc41c58fe87a",
+            "kind": "tool_call",
+            "state": "in_progress",
+            "ordinal": 8,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 22
+          },
+          "next_ordinal": 9,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_87631589d2e393911542dc41c58fe87a",
+          "ordinal": 8,
+          "kind": "tool_call",
+          "state": "in_progress",
+          "first_stream_id": "2-22",
+          "last_stream_id": "2-22",
+          "started_at": "2023-11-14T22:13:20.021000Z",
+          "ended_at": null,
+          "content": {
+            "toolCallId": "native",
+            "subagentRunId": "child",
+            "provider": "p",
+            "toolCallName": "browse",
+            "arguments": "{\"query\":\"search\",\"options\":[true,null]}",
+            "arguments_complete": true
+          }
+        }
+      },
+      {
+        "delta": {
+          "run_id": "run",
+          "attempt": 2,
+          "sequence": 23,
+          "event": {
+            "type": "CUSTOM",
+            "name": "a13n.pydantic_ai.part_end",
+            "value": {
+              "event": {
+                "part": {
+                  "part_kind": "builtin-tool-return",
+                  "tool_call_id": "native",
+                  "tool_name": "browse",
+                  "content": {
+                    "ok": true
+                  },
+                  "provider_name": "p"
+                }
+              }
+            },
+            "subagentRunId": "child",
+            "timestamp": 1700000000022
+          },
+          "item": {
+            "id": "itm_87631589d2e393911542dc41c58fe87a",
+            "kind": "tool_call",
+            "state": "completed",
+            "ordinal": 8,
+            "response_group": null,
+            "failure": null
+          }
+        },
+        "continuation": {
+          "run_id": "run",
+          "position": {
+            "attempt": 2,
+            "sequence": 23
+          },
+          "next_ordinal": 9,
+          "full_content": true,
+          "response_groups": {
+            "root": "run:2:1"
+          },
+          "arguments": null,
+          "fragments": {
+            "pending": {},
+            "gap": false,
+            "max_bytes": 67108864,
+            "max_pending": 8
+          },
+          "observer": {
+            "thread_id": null,
+            "run_id": null,
+            "state": {
+              "request_index": 0,
+              "parts": {},
+              "children": {},
+              "threads": {}
+            }
+          }
+        },
+        "item": {
+          "id": "itm_87631589d2e393911542dc41c58fe87a",
+          "ordinal": 8,
+          "kind": "tool_call",
+          "state": "completed",
+          "first_stream_id": "2-22",
+          "last_stream_id": "2-23",
+          "started_at": "2023-11-14T22:13:20.021000Z",
+          "ended_at": "2023-11-14T22:13:20.022000Z",
+          "content": {
+            "toolCallId": "native",
+            "subagentRunId": "child",
+            "provider": "p",
+            "toolCallName": "browse",
+            "arguments": "{\"query\":\"search\",\"options\":[true,null]}",
+            "arguments_complete": true,
+            "value": {
+              "ok": true
+            },
+            "outcome": null,
+            "retry": false
+          }
+        }
+      }
+    ]
+  }
+]

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
@@ -39,6 +39,9 @@ export function useEarlierItems(
     cache = useQueryClient();
   const held = conversationQueries(client, workspace.id).earlierItems(runId);
   const kept = useQuery(held).data ?? NONE;
+  const inFlight = useRef<{ runId: string; workspaceId: string } | undefined>(
+    undefined,
+  );
   const [status, setStatus] = useState<{
     runId: string;
     loading: boolean;
@@ -55,6 +58,13 @@ export function useEarlierItems(
   const latest = items.at(-1)?.ordinal ?? end - 1;
   const missing = latest < end - 1;
   function load() {
+    if (
+      inFlight.current?.runId === runId &&
+      inFlight.current.workspaceId === workspace.id
+    )
+      return;
+    const request = { runId, workspaceId: workspace.id };
+    inFlight.current = request;
     const window = missing
       ? { after: latest, limit: Math.min(READ_LIMIT, end - 1 - latest) }
       : { before: earliest };
@@ -66,15 +76,23 @@ export function useEarlierItems(
         cache.setQueryData(held.queryKey, (current = []) =>
           inOrdinalOrder([...current, ...final]),
         );
-        setStatus({ runId, loading: false });
+        if (inFlight.current === request) {
+          inFlight.current = undefined;
+          setStatus({ runId, loading: false });
+        }
       },
-      (error: unknown) => setStatus({ runId, loading: false, error }),
+      (error: unknown) => {
+        if (inFlight.current === request) {
+          inFlight.current = undefined;
+          setStatus({ runId, loading: false, error });
+        }
+      },
     );
   }
   // Once read, history stays connected to the newest window as it moves on.
   useEffect(() => {
     if (missing && !loading && !error) load();
-  }, [runId, end, latest]);
+  }, [runId, end, latest, loading, error]);
   return { items, more: earliest > 1 || missing, loading, error, load };
 }
 

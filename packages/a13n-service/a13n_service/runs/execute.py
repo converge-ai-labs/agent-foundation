@@ -14,7 +14,6 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 import time
-from collections.abc import Collection
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, replace
 from functools import partial
@@ -341,6 +340,8 @@ class _Attempt:
         self.fold = DisplayFold(
             lease.run_id, plan.tail, attempt=lease.number, page_items=worker.page_items, page_bytes=worker.page_bytes
         )
+        if plan.tail.position.attempt != lease.number:
+            self.fold.interrupt(open_tool_calls(plan.state.message_history))
         self.offers = _Offers(plan.assigned)
         self.recipient = Recipient(
             plan.agent.model.config.characteristics.capabilities,
@@ -430,9 +431,9 @@ class _Attempt:
                 Coalescer(self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds)
             )
 
-            def freeze_display(open_calls: frozenset[str]) -> Snapshot:
+            def freeze_display(_open_calls: frozenset[str]) -> Snapshot:
                 output.flush()
-                return self._snapshot(open_calls)
+                return self._snapshot()
 
             def capture(item: HarnessEvent) -> None:
                 if not isinstance(item.event, SafeBoundary):
@@ -524,7 +525,7 @@ class _Attempt:
             cursors=staged.cursors,
             snapshot=staged.display,
         )
-        output.stream.boundary(staged.display.tail.position.sequence)
+        output.stream.boundary(staged.display.tail.position.sequence, resume_after=staged.display.tail.resume_after)
         if boundary.at == "model" and self.control.handoff.is_set():
             # Yield where the request in flight is simply sent again; at a tool boundary recovery would have to
             # treat calls that never ran as unknown effects. Steers just assigned stay with the run.
@@ -692,7 +693,8 @@ class _Attempt:
             return
         # Completed and suspended results always carry their state; a waiting one leaves its pending calls open.
         assert result.state is not None
-        snapshot = self._snapshot(open_tool_calls(result.all_messages()))
+        self.fold.interrupt(open_tool_calls(result.all_messages()))
+        snapshot = self._snapshot()
         if result.status == "completed":
             outcome = Outcome(status="completed", output=self._output(result.output))
             await self._commit(result.state, cursors=self.cursors.snapshot(), snapshot=snapshot, outcome=outcome)
@@ -710,16 +712,17 @@ class _Attempt:
     async def _seal_interrupted(self, outcome: Outcome) -> None:
         """Seal a failure or cancellation with the display this attempt folded, its unfinished items interrupted."""
         display = None
+        self.fold.interrupt()
         if not near_deadline(self.runtime, self.control):
             display = await checkpoints.publish_display(self.runtime, self.lease, self._snapshot())
         await seal_attempt(self.runtime, self.lease, outcome, display=display)
 
-    def _snapshot(self, open_calls: Collection[str] = ()) -> Snapshot:
+    def _snapshot(self) -> Snapshot:
         """The display to commit, with a safe resume hint captured without waiting for queued Redis writes.
 
         The writer replaces one immutable value on the same event loop. Terminal callers read it after close.
         """
-        snapshot = self.fold.snapshot(open_calls)
+        snapshot = self.fold.snapshot()
         tail, written = snapshot.tail, self.live.last_written if self.live is not None else None
         if (
             written is not None

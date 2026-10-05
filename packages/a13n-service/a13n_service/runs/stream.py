@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from a13n_logging import exception_details, get_logger
-from a13n_stream_protocol.display import ItemChange
+from a13n_stream_protocol.display import ItemRef
 from pydantic import BaseModel, Field
 from pydantic.json_schema import JsonSchemaMode, models_json_schema
 from redis.asyncio import Redis
@@ -59,13 +59,13 @@ def stream_key(thread_id: str) -> str:
 
 
 class Delta(BaseModel):
-    """One atomic compact-display batch; raw event clients must upgrade with this contract."""
+    """One raw AG-UI event, sequenced by the producer and correlated to its display item."""
 
     run_id: str
     attempt: int
     sequence: int
-    format: Literal["display-ops-v1"] = "display-ops-v1"
-    changes: list[ItemChange]
+    event: dict[str, Any]
+    item: ItemRef | None
 
 
 class Boundary(BaseModel):
@@ -159,13 +159,24 @@ class ThreadStream:
             self.writer.cancel()
 
     def delta(self, observed: Observed) -> None:
-        changes = json.dumps([change.model_dump(mode="json") for change in observed.changes], separators=(",", ":"))
-        if len(changes.encode()) > MAX_DELTA_BYTES:
+        event = json.dumps(observed.event, separators=(",", ":"))
+        if len(event.encode()) > MAX_DELTA_BYTES:
             return
-        self._put({"sequence": str(observed.sequence), "changes": changes})
+        self._put(
+            {
+                "sequence": str(observed.sequence),
+                "event": event,
+                "item": observed.item.model_dump_json() if observed.item is not None else "null",
+            }
+        )
 
-    def boundary(self, sequence: int) -> None:
-        self._put({"sequence": str(sequence), "boundary": "1"})
+    def boundary(self, sequence: int, *, resume_after: str | None = None) -> None:
+        # Commit may finish after newer deltas were appended. Only the frozen
+        # checkpoint's confirmed lower bound is safe for checkpoint-driven trim.
+        fields = {"sequence": str(sequence), "boundary": "1"}
+        if resume_after is not None:
+            fields["resume_after"] = resume_after
+        self._put(fields)
 
     def _put(self, fields: dict[str, str]) -> None:
         try:
@@ -185,10 +196,15 @@ class ThreadStream:
             for entry_id, fields in zip(ids, entries, strict=bool(ids)):
                 if "boundary" not in fields:
                     self.last_written = WrittenPosition(self.attempt, int(fields["sequence"]), entry_id)
-            # Redis returns no IDs for entries it dropped; their boundary trims nothing.
-            boundaries = [entry_id for entry_id, fields in zip(ids, entries, strict=bool(ids)) if "boundary" in fields]
-            if boundaries:
-                retained = _retained_from(boundaries[-1], worker.stream_trim_seconds)
+            # A late marker's physical ID can follow uncovered deltas. Never
+            # trim from it, even when appending the marker succeeded.
+            anchors = [
+                fields["resume_after"]
+                for _, fields in zip(ids, entries, strict=bool(ids))
+                if "boundary" in fields and "resume_after" in fields
+            ]
+            if anchors:
+                retained = _retained_from(anchors[-1], worker.stream_trim_seconds)
                 await trim(self.redis, self.key, min_id=retained, timeout=timeout)
             for _ in entries:
                 self.buffer.task_done()
@@ -455,14 +471,15 @@ class _View:
         if sequence > expected:
             frames.append(_frame("gap", Gap(run_id=run_id, position=f"{attempt}-{sequence - 1}")))
         self.sequences[(run_id, attempt)] = sequence
-        if "changes" not in fields:
-            # A retained pre-upgrade Redis frame cannot be interpreted as operations.
+        if "event" not in fields:
+            # An incompatible retained frame cannot be interpreted as a raw event.
             return [*frames, _frame("gap", Gap(run_id=run_id, position=f"{attempt}-{sequence}"))]
         delta = Delta(
             run_id=run_id,
             attempt=attempt,
             sequence=sequence,
-            changes=json.loads(fields["changes"]),
+            event=json.loads(fields["event"]),
+            item=json.loads(fields.get("item", "null")),
         )
         return [*frames, _frame("delta", delta, entry.id)]
 
@@ -496,6 +513,7 @@ async def frames(
                 if (
                     snapshot.run_id == resume.run_id
                     and snapshot.attempt == resume.position.attempt
+                    and "boundary" not in fields
                     and fields["run_id"] == resume.run_id
                     and int(fields["attempt"]) == resume.position.attempt
                     and int(fields["sequence"]) <= resume.position.sequence

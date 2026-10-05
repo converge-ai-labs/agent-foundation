@@ -3401,6 +3401,59 @@
         "title": "Deny",
         "type": "object"
       },
+      "DisplayContinuation": {
+        "additionalProperties": false,
+        "description": "Parsing state at a semantic cut; Host paging may retire only immutable items.",
+        "properties": {
+          "arguments": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/_Arguments"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fragments": {
+            "$ref": "#/components/schemas/FragmentState"
+          },
+          "full_content": {
+            "default": false,
+            "title": "Full Content",
+            "type": "boolean"
+          },
+          "next_ordinal": {
+            "minimum": 1.0,
+            "title": "Next Ordinal",
+            "type": "integer"
+          },
+          "observer": {
+            "$ref": "#/components/schemas/ObserverContinuation"
+          },
+          "position": {
+            "$ref": "#/components/schemas/StreamPosition"
+          },
+          "response_groups": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Response Groups",
+            "type": "object"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "position",
+          "next_ordinal"
+        ],
+        "title": "DisplayContinuation",
+        "type": "object"
+      },
       "EmailChangeConfirm": {
         "additionalProperties": false,
         "properties": {
@@ -4210,6 +4263,38 @@
           "agent_id"
         ],
         "title": "Fork",
+        "type": "object"
+      },
+      "FragmentState": {
+        "additionalProperties": false,
+        "description": "Incomplete custom payloads, not a journal of completed events.",
+        "properties": {
+          "gap": {
+            "default": false,
+            "title": "Gap",
+            "type": "boolean"
+          },
+          "max_bytes": {
+            "default": 67108864,
+            "minimum": 1.0,
+            "title": "Max Bytes",
+            "type": "integer"
+          },
+          "max_pending": {
+            "default": 8,
+            "minimum": 1.0,
+            "title": "Max Pending",
+            "type": "integer"
+          },
+          "pending": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/_Assembly"
+            },
+            "title": "Pending",
+            "type": "object"
+          }
+        },
+        "title": "FragmentState",
         "type": "object"
       },
       "GitHubSource": {
@@ -7811,6 +7896,39 @@
         "title": "OAuthSettings",
         "type": "object"
       },
+      "ObserverContinuation": {
+        "additionalProperties": false,
+        "description": "Native conversion cursors required to resume mid-part, without raw history.",
+        "properties": {
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/_ObserverState"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          }
+        },
+        "title": "ObserverContinuation",
+        "type": "object"
+      },
       "OperationKind": {
         "enum": [
           "setup",
@@ -9462,9 +9580,23 @@
       "RunItems": {
         "description": "Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,\nso the first item's ordinal tells whether earlier ones exist. Live output continues after `position`.",
         "properties": {
+          "baseline": {
+            "title": "Baseline",
+            "type": "boolean"
+          },
           "complete": {
             "title": "Complete",
             "type": "boolean"
+          },
+          "continuation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayContinuation"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "items": {
             "items": {
@@ -9502,6 +9634,7 @@
         "required": [
           "run",
           "items",
+          "baseline",
           "position",
           "complete"
         ],
@@ -11249,6 +11382,27 @@
           "next_cursor"
         ],
         "title": "SpanPage",
+        "type": "object"
+      },
+      "StreamPosition": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "minimum": 0.0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "sequence": {
+            "minimum": 0.0,
+            "title": "Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempt",
+          "sequence"
+        ],
+        "title": "StreamPosition",
         "type": "object"
       },
       "SubagentOverride-Input": {
@@ -13488,6 +13642,154 @@
           }
         },
         "title": "WorkspaceUpdate",
+        "type": "object"
+      },
+      "_Arguments": {
+        "description": "A tool-call part's streamed arguments so far and the one observation item that holds them.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "event": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "sequence": {
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "stream": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "required": [
+          "stream",
+          "key",
+          "at",
+          "sequence",
+          "event",
+          "size"
+        ],
+        "title": "_Arguments",
+        "type": "object"
+      },
+      "_Assembly": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "parts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Parts",
+            "type": "array"
+          },
+          "size": {
+            "default": 0,
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "_Assembly",
+        "type": "object"
+      },
+      "_ObserverState": {
+        "properties": {
+          "children": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/_ObserverState"
+            },
+            "title": "Children",
+            "type": "object"
+          },
+          "parts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/_PartCursor"
+            },
+            "title": "Parts",
+            "type": "object"
+          },
+          "request_index": {
+            "default": 0,
+            "title": "Request Index",
+            "type": "integer"
+          },
+          "threads": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Threads",
+            "type": "object"
+          }
+        },
+        "title": "_ObserverState",
+        "type": "object"
+      },
+      "_PartCursor": {
+        "properties": {
+          "emitted_content": {
+            "default": false,
+            "title": "Emitted Content",
+            "type": "boolean"
+          },
+          "emitted_signature": {
+            "default": false,
+            "title": "Emitted Signature",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "text",
+              "reasoning",
+              "tool_call"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "part_id": {
+            "title": "Part Id",
+            "type": "string"
+          },
+          "tool_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Name"
+          }
+        },
+        "required": [
+          "kind",
+          "part_id"
+        ],
+        "title": "_PartCursor",
         "type": "object"
       }
     },

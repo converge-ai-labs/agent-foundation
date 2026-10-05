@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
@@ -26,7 +26,7 @@ from .transcript import Transcript
 
 if TYPE_CHECKING:
     from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
-    from a13n_stream_protocol.display import Item
+    from a13n_stream_protocol.display import Item, ItemRef, StreamPosition
 
     from a13n_harness_ui.goal import GoalView
     from a13n_harness_ui.storage.usage import UsageTotals
@@ -260,8 +260,7 @@ class StreamRenderer:
 
     def __init__(self, status: Status, *, limit: int | None = None) -> None:
         from a13n_stream_protocol import CustomEventAssembler
-        from a13n_stream_protocol.display import ItemChange
-        from pydantic import TypeAdapter
+        from a13n_stream_protocol.display import DisplayFold
 
         from .tasks import TaskPanel
 
@@ -284,9 +283,10 @@ class StreamRenderer:
         self._line_open = False
         self._local_output: dict[str, int] = {}
         self._custom_events = CustomEventAssembler()
-        self._display_changes_adapter = TypeAdapter(list[ItemChange])
+        self._display_fold: DisplayFold | None = None
         self._display_items: dict[str, Item] = {}
         self._display_blocks: dict[str, int] = {}
+        self._display_staged: list[Item] = []
         self._exploration: ExplorationGroup | None = None
         self._context: dict[tuple[str, str], ContextActivity] = {}
         self._write_notices: dict[tuple[str, str, str], None] = {}
@@ -634,24 +634,11 @@ class StreamRenderer:
                 self.append("[Output display limit reached; remaining output was drained and discarded.]\n")
             self.boundary = True
 
-    def _display_changes(self, payload: Mapping[str, object], *, run_id: str) -> None:
-        from a13n_stream_protocol.display import SetItem, apply_changes
-
-        value = payload.get("value")
-        if not isinstance(value, dict) or value.get("format") != "display-ops-v1":
-            self.gap = True
-            return
-        try:
-            changes = self._display_changes_adapter.validate_python(value.get("changes"))
-            previous = self._display_items.copy()
-            apply_changes(self._display_items, changes)
-        except ValueError:
-            self.gap = True
-            return
-        for change in changes:
-            key = change.item.id if isinstance(change, SetItem) else change.id
-            item = self._display_items[key]
-            before = previous.get(key)
+    def _display_rows(self, items: Sequence[Item], *, run_id: str) -> None:
+        for item in items:
+            key = item.id
+            before = self._display_items.get(key)
+            self._display_items[key] = item
             content = item.content
             scope = content.get("subagentRunId")
             child = isinstance(scope, str)
@@ -778,19 +765,61 @@ class StreamRenderer:
         child: bool = False,
         run_id: str = "root",
         execution_id: str | None = None,
+        display_position: StreamPosition | None = None,
+        item: ItemRef | None = None,
     ) -> None:
         from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, ContentMetadata
+        from a13n_stream_protocol.display import DisplayFold, DisplaySnapshot, Item
 
         if payload is None:
             self.gap = True
+            return
+        if display_position is not None:
+            fold = self._display_fold
+            if fold is None or fold.run_id != run_id or fold.attempt != display_position.attempt:
+                fold = self._display_fold = DisplayFold(run_id, attempt=display_position.attempt, full_content=True)
+            if display_position.sequence <= fold.sequence:
+                return
+            if display_position.sequence != fold.sequence + 1:
+                # Do not pretend printed output can be rewound or missing bytes recovered.
+                self.gap = True
+                return
+            fold.fold([dict(payload)])
+            if item is not None and item.id in fold.items:
+                current = fold.items[item.id]
+                content = dict(current.content)
+                if item.response_group is not None:
+                    content["responseGroup"] = item.response_group
+                if item.failure is not None:
+                    content["failure"] = item.failure
+                fold.items[item.id] = current.model_copy(update={"state": item.state, "content": content})
+            self._display_rows(
+                [fold.items[key] for key in sorted(fold.changed, key=lambda key: fold.items[key].ordinal)],
+                run_id=run_id,
+            )
+            fold.changed.clear()
             return
         if event_type == "CUSTOM":
             payload = self._custom_events.accept(payload)
             self.gap |= self._custom_events.gap
             if payload is None:
                 return
-        if event_type == "CUSTOM" and payload.get("name") == "a13n.display.changes":
-            self._display_changes(payload, run_id=run_id)
+        if event_type == "CUSTOM" and payload.get("name") == "a13n.display.reset":
+            self.gap = True
+            return
+        if event_type == "CUSTOM" and payload.get("name") == "a13n.display.snapshot":
+            value = payload.get("value")
+            if not isinstance(value, dict) or not isinstance(value.get("items"), list):
+                self.gap = True
+                return
+            self._display_staged.extend(Item.model_validate(row) for row in value["items"])
+            if value.get("continuation") is None:
+                return
+            snapshot = DisplaySnapshot.model_validate({**value, "items": self._display_staged})
+            self._display_staged.clear()
+            self._display_fold = DisplayFold.restore(snapshot)
+            self._display_fold.changed.clear()
+            self._display_rows(snapshot.items, run_id=run_id)
             return
         inline_child = payload.get("subagentRunId")
         if isinstance(inline_child, str):

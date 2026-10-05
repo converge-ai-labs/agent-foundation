@@ -227,8 +227,8 @@ test("Thread stream resumes after its last cursor and reports control frames", a
     run_id: "run_one",
     attempt: 1,
     sequence: 2,
-    format: "display-ops-v1",
-    changes: [],
+    event: { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "tail" },
+    item: null,
   };
   const client = createClient({
     baseUrl,

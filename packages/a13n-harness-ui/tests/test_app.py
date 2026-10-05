@@ -2223,12 +2223,12 @@ async def test_root_input_checkpoint_is_saved_before_model_output_and_advances_a
                         replay = watch.root_stream
                         if replay is not None:
                             markers = [
-                                change["item"]["content"]
+                                row["content"]
                                 for batch in replay.batches()
                                 for item in batch
-                                if item.payload is not None and item.payload.get("name") == "a13n.display.changes"
-                                for change in item.payload["value"]["changes"]
-                                if change["item"]["content"].get("name") == "a13n.harness_ui.checkpoint"
+                                if item.payload is not None and item.payload.get("name") == "a13n.display.snapshot"
+                                for row in item.payload["value"]["items"]
+                                if row["content"].get("name") == "a13n.harness_ui.checkpoint"
                             ]
                             if markers:
                                 assert watch.snapshot.thread.continuation_id == detail.continuation_id

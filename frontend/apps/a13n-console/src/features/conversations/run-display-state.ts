@@ -1,3 +1,4 @@
+import { DisplayNormalizer } from "a13n-ui/display";
 import type { ThreadDelta } from "../../service-client";
 import type { Schema } from "../../shared/api";
 import { applyDelta, comparePositions, type DisplayItem } from "./display";
@@ -12,7 +13,7 @@ const successor = (position: string) => {
   return `${attempt}-${BigInt(sequence!) + 1n}`;
 };
 
-/** A durable baseline plus a bounded contiguous live suffix, across reconnects. */
+/** A durable baseline plus a bounded raw suffix; read progress is not proof of completeness. */
 export class RunDisplayState {
   read?: Schema["RunItems"];
   attempt = 0;
@@ -20,6 +21,7 @@ export class RunDisplayState {
   position?: string;
   after?: string;
   private savedPosition?: string;
+  private normalizer = new DisplayNormalizer();
   private pending: { delta: ThreadDelta; cursor: string; bytes: number }[] = [];
   private pendingBytes = 0;
   private missingThrough?: string;
@@ -31,7 +33,8 @@ export class RunDisplayState {
     return (
       this.uncertain ||
       this.missingThrough !== undefined ||
-      this.discardedThrough !== undefined
+      this.discardedThrough !== undefined ||
+      [...this.items.values()].some((item) => item.content.incomplete === true)
     );
   }
 
@@ -43,16 +46,16 @@ export class RunDisplayState {
 
   /** A durable read may lag live coverage, but never an already installed durable read. */
   reconcile(next: Schema["RunItems"], attempt: number, discard = false) {
+    if (!next.baseline) return false;
     const incoming = next.position ?? "0-0";
     if (this.read?.complete && !next.complete) return false;
     if (
-      !next.complete &&
       this.savedPosition &&
       comparePositions(incoming, this.savedPosition) < 0
     )
       return false;
     attempt = Math.max(attempt, this.attempt, Number(incoming.split("-")[0]));
-    if (discard || attempt !== this.attempt || next.complete) {
+    if (discard || attempt !== this.attempt) {
       this.pending = [];
       this.pendingBytes = 0;
       this.missingThrough = undefined;
@@ -64,21 +67,25 @@ export class RunDisplayState {
     this.savedPosition = incoming;
     this.read = next;
     this.items = new Map(next.items.map((item) => [item.id, item]));
+    this.normalizer = new DisplayNormalizer(next.continuation);
     const sameAttempt = incoming.split("-")[0] === String(attempt);
     this.position = sameAttempt ? incoming : `${attempt}-0`;
     this.after = sameAttempt ? (next.resume_after ?? undefined) : undefined;
-    if (next.complete) return true;
     // A completed baseline read resolves unknown transport loss only through
     // the coverage it actually has, not merely because a request succeeded.
     if (this.missingThrough && atLeast(this.position, this.missingThrough)) {
       this.missingThrough = undefined;
+      this.uncertain = false;
     }
     if (this.discardedThrough && atLeast(this.position, this.discardedThrough))
       this.discardedThrough = undefined;
-    this.pending = this.pending.filter(
-      ({ delta }) =>
-        delta.attempt === attempt && !atLeast(this.position, positionOf(delta)),
-    );
+    this.pending = next.complete
+      ? []
+      : this.pending.filter(
+          ({ delta }) =>
+            delta.attempt === attempt &&
+            !atLeast(this.position, positionOf(delta)),
+        );
     this.pendingBytes = this.pending.reduce(
       (sum, frame) => sum + frame.bytes,
       0,
@@ -97,11 +104,7 @@ export class RunDisplayState {
     const clarified = this.uncertain && Boolean(position);
     if (position) {
       this.uncertain = false;
-      if (atLeast(this.position, position)) {
-        if (this.missingThrough && atLeast(this.position, this.missingThrough))
-          this.missingThrough = undefined;
-        return false;
-      }
+      if (atLeast(this.savedPosition, position)) return false;
       if (!atLeast(this.missingThrough, position))
         this.missingThrough = position;
     } else {
@@ -109,6 +112,8 @@ export class RunDisplayState {
       const target = successor(this.position ?? `${this.attempt}-0`);
       if (!atLeast(this.missingThrough, target)) this.missingThrough = target;
     }
+    this.normalizer.gap();
+    this.markActiveIncomplete();
     return !wasIncomplete || clarified;
   }
 
@@ -141,38 +146,43 @@ export class RunDisplayState {
     return !wasIncomplete && this.incomplete;
   }
 
+  private markActiveIncomplete() {
+    for (const [id, item] of this.items) {
+      if (item.state === "in_progress")
+        this.items.set(id, {
+          ...item,
+          content: { ...item.content, incomplete: true },
+        });
+    }
+  }
+
   private missing(position: string) {
     if (!atLeast(this.missingThrough, position)) this.missingThrough = position;
+    this.normalizer.gap();
+    this.markActiveIncomplete();
   }
 
   private apply(delta: ThreadDelta, cursor: string) {
     const position = positionOf(delta);
     if (this.position && position !== successor(this.position)) {
       this.missing(`${delta.attempt}-${BigInt(delta.sequence) - 1n}`);
-      return;
     }
     try {
-      applyDelta(this.items, delta);
+      const incomplete = this.normalizer.incomplete;
+      applyDelta(this.items, delta, this.normalizer);
+      if (!incomplete && this.normalizer.incomplete) this.missing(position);
     } catch {
       this.missing(position);
-      return;
     }
     this.position = position;
     this.after = cursor;
-    if (
-      !this.uncertain &&
-      this.missingThrough &&
-      atLeast(position, this.missingThrough)
-    )
-      this.missingThrough = undefined;
   }
 
-  boundary(attempt: number, sequence: number, cursor: string) {
+  boundary(attempt: number, sequence: number, _cursor: string) {
     if (this.read?.complete || attempt < this.attempt) return false;
     const position = `${attempt}-${sequence}`;
-    this.gap(position);
-    if (atLeast(this.position, position) && attempt === this.attempt)
-      this.after = cursor;
+    if (!atLeast(this.position, position)) this.gap(position);
+    // A marker can be appended after uncovered deltas. It is never a seek hint.
     // Even a fully received boundary advances durability and frees pending data.
     if (
       atLeast(this.savedPosition, position) ||

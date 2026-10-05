@@ -789,19 +789,21 @@ class SessionBackend:
 
             async def ingest(event: LiveEvent) -> bool:
                 nonlocal last_ordinal
-                if event.event_type == "CUSTOM" and event.payload is not None:
-                    payload = custom_events.accept(event.payload)
-                    renderer.gap |= custom_events.gap
-                    if payload is None:
-                        return False
-                    event = event.model_copy(update={"payload": payload})
                 renderer.ingest(
                     event.event_type,
                     event.payload,
                     child=event.run_kind == "child",
                     run_id=event.run_id,
                     execution_id=event.execution_id,
+                    display_position=event.display_position,
+                    item=event.item,
                 )
+                if event.event_type == "CUSTOM" and event.payload is not None:
+                    payload = custom_events.accept(event.payload)
+                    renderer.gap |= custom_events.gap
+                    if payload is None:
+                        return False
+                    event = event.model_copy(update={"payload": payload})
                 records = model_usage(event)
                 if records:
                     # Observation commits before publication. Replace from the
@@ -816,6 +818,12 @@ class SessionBackend:
 
             async def consume() -> None:
                 try:
+                    if subscription.root_stream is not None:
+                        for batch in subscription.root_stream.batches():
+                            for event in batch:
+                                renderer.ingest(
+                                    event.event_type, event.payload, run_id=subscription.root_stream.summary.run_id
+                                )
                     async for event in subscription:
                         usage_changed = await ingest(event)
                         if flush is not None and (usage_changed or renderer.should_flush):

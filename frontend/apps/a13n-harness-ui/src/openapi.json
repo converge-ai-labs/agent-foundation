@@ -16718,6 +16718,86 @@
         "title": "FocusSnapshotFrame",
         "type": "object"
       },
+      "ItemKind": {
+        "enum": [
+          "text_message",
+          "reasoning_message",
+          "tool_call",
+          "observation"
+        ],
+        "type": "string"
+      },
+      "ItemRef": {
+        "description": "The item a live event changed, and its state after the event.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ItemKind"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ItemState"
+          },
+          "ordinal": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ordinal"
+          },
+          "response_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Response Group"
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Failure"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "state"
+        ],
+        "title": "ItemRef",
+        "type": "object"
+      },
+      "ItemState": {
+        "enum": [
+          "in_progress",
+          "completed",
+          "interrupted",
+          "failed"
+        ],
+        "type": "string"
+      },
       "LiveEvent": {
         "additionalProperties": false,
         "description": "Detached bounded AG-UI event correlated to one complete root lineage.",
@@ -16810,6 +16890,28 @@
           "payload_omitted": {
             "title": "Payload Omitted",
             "type": "boolean"
+          },
+          "display_position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StreamPosition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ItemRef"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -16955,6 +17057,27 @@
           "event_count"
         ],
         "title": "RootStreamSummary",
+        "type": "object"
+      },
+      "StreamPosition": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt": {
+            "minimum": 0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "sequence": {
+            "minimum": 0,
+            "title": "Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attempt",
+          "sequence"
+        ],
+        "title": "StreamPosition",
         "type": "object"
       },
       "SummaryCursor": {

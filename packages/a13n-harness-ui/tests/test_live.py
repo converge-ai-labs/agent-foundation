@@ -286,7 +286,7 @@ async def test_root_compact_bootstrap_survives_ring_eviction_and_publication_rac
             thread_id="thread-root",
             run_id="run-root",
             events=(),
-            changes=changes,
+            display=changes,
             base_continuation_id="saved-before",
         )
 
@@ -300,18 +300,21 @@ async def test_root_compact_bootstrap_survives_ring_eviction_and_publication_rac
         replay = subscription.root_stream
         assert replay is not None
         assert collector.fold.observer.event_count == 0
-        assert replay.summary.event_count == count
+        assert replay.summary.event_count == count + 1
         assert replay.summary.base_continuation_id == "saved-before"
         batches = list(replay.batches())
         events = [item for batch in batches for item in batch]
         assert all(len(batch) <= 16 for batch in batches)
-        assert [item.index for item in events] == list(range(count))
-        assert events[0].payload["value"]["changes"][0]["item"]["content"]["text"].startswith("begin")
-        assert "pending" not in str(events)
+        assert [item.index for item in events] == list(range(count + 1))
+        assert (
+            events[-1].payload["value"]["continuation"]["position"]["sequence"] < pending.continuation.position.sequence
+        )
+        assert events[0].payload["value"]["items"][0]["content"]["text"].startswith("begin")
+        assert "pending" not in str(events[0].payload["value"]["items"])
         await publish(pending)
         delivered = await subscription.receive()
         assert delivered.sequence > subscription.root_stream.summary.event_count
-        assert delivered.payload is not None and delivered.payload["value"]["changes"][0]["text"] == "pending"
+        assert delivered.payload is not None and delivered.payload["delta"] == "pending"
         assert [item for batch in replay.batches() for item in batch] == events
         await hub.finish_root(thread_id="thread-root", run_id="run-root", saved_continuation_id="saved-after")
         assert "thread-root" not in hub._root_streams
@@ -349,7 +352,7 @@ async def test_unsaved_root_retention_is_bounded_and_never_evicts_active_runs() 
             thread_id=thread_id,
             run_id=run_id,
             events=(),
-            changes=collector.drain(),
+            display=collector.drain(),
         )
 
     for index in range(20):
@@ -438,3 +441,105 @@ def test_compact_child_display_retains_scoped_media_after_serialization() -> Non
         activity.content_parts[0]["source"]["value"] == "https://example.com/result.png"
         for activity in restored.activities
     )
+
+
+async def test_overflow_installs_one_compact_cut_and_requires_a_fresh_subscription() -> None:
+    from datetime import UTC, datetime
+
+    from a13n_harness import HarnessEvent
+    from a13n_harness_ui.display_history import DisplayHistoryCollector
+    from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
+
+    collector = DisplayHistoryCollector(())
+    hub = HarnessUiLiveHub()
+
+    def observe(sequence, event):
+        collector.observe(
+            HarnessEvent(
+                thread_id="root",
+                run_id="run",
+                sequence=sequence,
+                occurred_at=datetime.now(UTC),
+                event=event,
+            )
+        )
+
+    observe(1, PartStartEvent(index=0, part=TextPart("prefix")))
+    for sequence in range(2, 102):
+        observe(sequence, PartDeltaEvent(index=0, delta=TextPartDelta("x")))
+    assert not collector._observations
+    cut = collector.drain()
+    assert cut is not None and cut.reset
+    async with hub.subscribe(root_thread_id="root") as subscription:
+        await hub.publish(
+            run_kind="root",
+            root_thread_id="root",
+            parent_thread_id=None,
+            thread_id="root",
+            run_id="run",
+            events=(),
+            display=cut,
+        )
+        reset = await subscription.receive()
+        assert reset.payload["name"] == "a13n.display.reset"
+        async with hub.subscribe(root_thread_id="root") as recovered:
+            replay = recovered.root_stream
+            assert replay is not None
+            frames = [frame for batch in replay.batches() for frame in batch]
+            assert frames[0].payload["value"]["items"][0]["content"]["text"] == "prefix" + "x" * 100
+            assert frames[-1].payload["value"]["continuation"]["position"] == cut.continuation.position.model_dump()
+            observe(102, PartDeltaEvent(index=0, delta=TextPartDelta("tail")))
+            await hub.publish(
+                run_kind="root",
+                root_thread_id="root",
+                parent_thread_id=None,
+                thread_id="root",
+                run_id="run",
+                events=(),
+                display=collector.drain(),
+            )
+            delta = await recovered.receive()
+            assert delta.payload["delta"] == "tail"
+            assert delta.display_position.sequence == cut.continuation.position.sequence + 1
+    await hub.close()
+
+
+async def test_subscribe_never_captures_half_of_a_raw_publication_batch() -> None:
+    from a13n_harness_ui.display_history import DisplayPublication
+    from a13n_stream_protocol.display import DisplayFold
+    from anyio import create_task_group
+
+    fold = DisplayFold("run", full_content=True)
+    observations = fold.fold(
+        [{"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": str(index)} for index in range(20)]
+    )
+    cut = DisplayPublication(tuple(observations), tuple(fold.items.values()), fold.export_continuation())
+    hub = HarnessUiLiveHub()
+    captured = []
+
+    async def publish():
+        await hub.publish(
+            run_kind="root",
+            root_thread_id="root",
+            parent_thread_id=None,
+            thread_id="root",
+            run_id="run",
+            events=(),
+            display=cut,
+        )
+
+    async def subscribe():
+        async with hub.subscribe(root_thread_id="root") as subscription:
+            if subscription.root_stream is not None:
+                captured.append(subscription.root_stream)
+                assert subscription.cursor.sequence == len(observations)
+
+    async with create_task_group() as tasks:
+        tasks.start_soon(publish)
+        tasks.start_soon(subscribe)
+    assert len(captured) == 1
+    for replay in captured:
+        frames = [frame for batch in replay.batches() for frame in batch]
+        assert frames[0].payload["value"]["items"][0]["content"]["text"] == "".join(map(str, range(20)))
+        assert frames[-1].payload["value"]["continuation"]["position"]["sequence"] == len(observations)
+    await hub.close()

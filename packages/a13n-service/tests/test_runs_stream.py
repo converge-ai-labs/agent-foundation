@@ -78,43 +78,15 @@ async def _entries(redis: Redis, thread_id: str) -> list[tuple[str, dict[str, st
 
 
 def _events(entries: list[tuple[str, dict[str, str]]]) -> list[dict[str, Any]]:
-    return [change for _, fields in entries if "changes" in fields for change in json.loads(fields["changes"])]
+    return [json.loads(fields["event"]) for _, fields in entries if "event" in fields]
 
 
 def _contents(events: list[dict[str, Any]], kind: str = "TEXT_MESSAGE_CONTENT") -> list[str]:
-    item_kind = "reasoning_message" if kind == "REASONING_MESSAGE_CONTENT" else "text_message"
-    kinds: dict[str, str] = {}
-    texts: dict[str, str] = {}
-    pieces = []
-    for change in events:
-        if change["type"] == "set":
-            item = change["item"]
-            kinds[item["id"]] = item["kind"]
-            text = item["content"].get("text", "")
-            previous = texts.get(item["id"], "")
-            if item["kind"] == item_kind and text != previous:
-                pieces.append(text[len(previous) :])
-            texts[item["id"]] = text
-        elif change["field"] == "text" and kinds.get(change["id"]) == item_kind:
-            pieces.append(change["text"])
-            texts[change["id"]] = texts.get(change["id"], "") + change["text"]
-    return pieces
+    return [event["delta"] for event in events if event["type"] == kind]
 
 
 def _streamed_arguments(events: list[dict[str, Any]]) -> list[str]:
-    held: dict[str, str] = {}
-    pieces = []
-    for change in events:
-        if change["type"] != "set":
-            continue
-        item = change["item"]
-        content = item["content"]
-        if content.get("name") != PART_DELTA or content["value"] == {"omitted": True}:
-            continue
-        text = content["value"]["event"]["delta"]["args_delta"]
-        pieces.append(text[len(held.get(item["id"], "")) :])
-        held[item["id"]] = text
-    return pieces
+    return [event["value"]["event"]["delta"]["args_delta"] for event in events if event.get("name") == PART_DELTA]
 
 
 def _argument_items(display: Tail) -> list[str | None]:
@@ -129,18 +101,11 @@ def _argument_items(display: Tail) -> list[str | None]:
 
 def _replies(events: list[dict[str, Any]]) -> list[str]:
     """The streamed text deltas of assistant messages."""
-    users = {
-        change["item"]["id"]
-        for change in events
-        if change["type"] == "set" and change["item"]["content"].get("role") == "user"
-    }
-    return _contents(
-        [
-            change
-            for change in events
-            if (change["item"]["id"] if change["type"] == "set" else change["id"]) not in users
-        ]
-    )
+    replies = {event["messageId"] for event in events if event["type"] == "TEXT_MESSAGE_START"}
+    replies &= {event["messageId"] for event in events if event.get("role") == "assistant"}
+    return [
+        event["delta"] for event in events if event["type"] == "TEXT_MESSAGE_CONTENT" and event["messageId"] in replies
+    ]
 
 
 async def _coalesce(
@@ -225,8 +190,8 @@ async def test_a_long_streamed_tool_call_is_one_item_and_few_entries(runtime: Ru
     each, unmerged = await _coalesce(runtime, sources, window=0)
     merged_entries, merged = await _coalesce(runtime, sources, window=60)
 
-    assert len(_streamed_arguments(_events(each))) == 3001
-    assert len(_streamed_arguments(_events(merged_entries))) == 3
+    assert len(_streamed_arguments(_events(each))) == 3002
+    assert len(_streamed_arguments(_events(merged_entries))) == 4
     assert "".join(_streamed_arguments(_events(merged_entries))[:2]) == "".join(pieces)
     assert _argument_items(merged) == ["".join(pieces), None]
     assert _positionless(merged) == _positionless(unmerged)
@@ -468,9 +433,12 @@ async def test_a_boundary_trims_what_its_display_covers(runtime: Runtime) -> Non
     ) as live:
         live.delta(_delta(1))
         live.delta(_delta(2))
-        live.boundary(2)
+        await live.buffer.join()
+        assert live.last_written is not None
+        live.boundary(2, resume_after=live.last_written.redis_id)
         live.delta(_delta(3))
     assert [(fields["sequence"], "boundary" in fields) for _, fields in await _entries(runtime.redis, thread_id)] == [
+        ("2", False),
         ("2", True),
         ("3", False),
     ]
@@ -483,7 +451,9 @@ async def test_a_boundary_trims_what_its_display_covers(runtime: Runtime) -> Non
         live.delta(_delta(1))
         await asyncio.sleep(0.6)
         live.delta(_delta(2))
-        live.boundary(2)
+        await live.buffer.join()
+        assert live.last_written is not None
+        live.boundary(2, resume_after=live.last_written.redis_id)
         live.delta(_delta(3))
     assert [(fields["sequence"], "boundary" in fields) for _, fields in await _entries(runtime.redis, thread_id)] == [
         ("2", False),
@@ -502,9 +472,11 @@ async def test_a_run_keeps_only_the_tail_after_its_latest_boundary(serve, settin
         entries = await _entries(service.runtime.redis, run["thread_id"])
         listing = await runs_kit.items(service, run["id"])
 
-    # A zero-window terminal boundary may trim the reply too. Durable display,
-    # not Redis retention timing, owns the completed answer.
-    assert "boundary" in entries[0][1] and "Removed" not in json.dumps(entries)
+    # The first retained entry is the conservative confirmed anchor, never a
+    # late commit marker. A lagging/missing anchor may retain additional output.
+    markers = [fields for _, fields in entries if "resume_after" in fields]
+    if markers:
+        assert entries[0][0] == markers[-1]["resume_after"]
     assert runs_kit.texts(listing) == [("user", "Removed"), ("assistant", "Kept")]
 
 
@@ -527,15 +499,19 @@ async def test_readers_after_a_trim_receive_the_tail_and_gaps(service, scripted_
     ) as live:
         live.delta(_delta(1))
         live.delta(_delta(2))
-        live.boundary(2)
+        await live.buffer.join()
+        assert live.last_written is not None
+        live.boundary(2, resume_after=live.last_written.redis_id)
         live.delta(_delta(3))
-    boundary_id = (await _entries(service.runtime.redis, run["thread_id"]))[0][0]
+    boundary_id = next(
+        entry_id for entry_id, fields in await _entries(service.runtime.redis, run["thread_id"]) if "boundary" in fields
+    )
     headers = await runs_kit.bearer(service)
     async with listen(service.app) as base:
         url = f"{base}{service.api}/threads/{run['thread_id']}/stream"
-        # A new reader receives only the tail; the boundary past what it received tells it to re-read the display.
+        # A new reader sees the conservative covered anchor and the intact suffix.
         async with runs_kit.frames(url, headers) as stream:
-            assert await _frames(stream, 3) == [("gap", None), ("boundary", 2), ("delta", 3)]
+            assert await _frames(stream, 4) == [("gap", None), ("delta", 2), ("boundary", 2), ("delta", 3)]
         # A reader resuming exactly at the boundary continues without a gap.
         async with runs_kit.frames(url, {**headers, "last-event-id": boundary_id}) as stream:
             assert await _frames(stream, 1) == [("delta", 3)]
@@ -550,7 +526,12 @@ async def test_a_live_reader_skipped_past_removed_entries_gets_a_gap(service, sc
     fields = {"run_id": run["id"], "attempt": "1"}
 
     def delta(sequence: int) -> dict[str, str]:
-        return {**fields, "sequence": str(sequence), "changes": "[]"}
+        return {
+            **fields,
+            "sequence": str(sequence),
+            "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
+            "item": "null",
+        }
 
     first = await redis.xadd(key, delta(1))
     headers = await runs_kit.bearer(service)
@@ -613,7 +594,8 @@ async def test_snapshot_position_filters_replay_and_ignores_unsafe_hints(
                 "run_id": run["id"],
                 "attempt": "1",
                 "sequence": str(sequence),
-                "changes": "[]",
+                "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
+                "item": "null",
                 **extra,
             },
         )
@@ -652,7 +634,8 @@ async def test_snapshot_position_reports_only_the_missing_suffix(service, script
             "run_id": run["id"],
             "attempt": "1",
             "sequence": "151",
-            "changes": "[]",
+            "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
+            "item": "null",
         },
     )
     async with listen(service.app) as base:
@@ -704,10 +687,37 @@ async def test_resuming_an_older_attempt_resets_before_the_new_attempt_tail(
     second = (await claim(service.runtime, worker_id="resume-test-2", worker_build="test", limit=1))[0]
     assert second.number == 2
     redis, key = service.runtime.redis, stream_key(run["thread_id"])
-    await redis.xadd(key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "changes": "[]"})
-    await redis.xadd(key, {"run_id": run["id"], "attempt": "2", "sequence": "1", "changes": "[]"})
+    await redis.xadd(
+        key,
+        {
+            "run_id": run["id"],
+            "attempt": "1",
+            "sequence": "100",
+            "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
+            "item": "null",
+        },
+    )
+    await redis.xadd(
+        key,
+        {
+            "run_id": run["id"],
+            "attempt": "2",
+            "sequence": "1",
+            "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
+            "item": "null",
+        },
+    )
     # A fenced-out worker can finish an old Redis write after the new attempt starts.
-    cursor = await redis.xadd(key, {"run_id": run["id"], "attempt": "1", "sequence": "100", "changes": "[]"})
+    cursor = await redis.xadd(
+        key,
+        {
+            "run_id": run["id"],
+            "attempt": "1",
+            "sequence": "100",
+            "event": '{"type":"TEXT_MESSAGE_CONTENT","messageId":"m","delta":"x"}',
+            "item": "null",
+        },
+    )
     headers = {**await runs_kit.bearer(service), "Last-Event-ID": cursor}
     async with listen(service.app) as base:
         url = f"{base}{service.api}/threads/{run['thread_id']}/stream?run={run['id']}&position=1-100"
@@ -767,7 +777,8 @@ async def test_display_retains_standard_interrupt_and_scopes_child_native_ids() 
     observed = fold.fold(events)
     assert observed[-1].item is not None
     # The root call is the primary run's open one; the child's call of the same ID is another item.
-    saved = fold.snapshot(open_calls={"same"}).tail
+    fold.interrupt(open_calls={"same"})
+    saved = fold.snapshot().tail
     root, child, interrupt = saved.items
     assert root.id != child.id and root.state == "in_progress" and child.state == "completed"
     assert child.content["subagentRunId"] == "child"
@@ -779,7 +790,7 @@ async def test_display_retains_standard_interrupt_and_scopes_child_native_ids() 
     assert restored.snapshot().tail.items[-1].content == interrupt.content
 
 
-async def test_retained_raw_delta_requires_recovery_unless_already_covered() -> None:
+async def test_retained_operation_delta_requires_recovery_unless_already_covered() -> None:
     from types import SimpleNamespace
 
     from a13n_service.infra.redis import StreamEntry
@@ -793,7 +804,7 @@ async def test_retained_raw_delta_requires_recovery_unless_already_covered() -> 
             "run_id": RUN,
             "attempt": "1",
             "sequence": "1",
-            "event": '{"type":"RUN_STARTED"}',
+            "changes": "[]",
         },
     )
     frames = await view.entry(old)
@@ -808,3 +819,26 @@ async def test_reader_overflow_keeps_revocation_terminal() -> None:
     reader.send(Snapshot(1, RUN, 1))
     reader.send(Revoked())
     assert reader.revoked and reader.overflowed and reader.dropped is None
+
+
+@pytest.mark.parametrize("hint", [True, False])
+async def test_late_checkpoint_marker_never_trims_uncovered_deltas(runtime: Runtime, hint: bool) -> None:
+    thread_id = f"thr_{uuid4().hex}"
+    async with ThreadStream(
+        runtime.redis, _trimming(runtime.settings, 0), thread_id=thread_id, run_id=RUN, attempt=1
+    ) as live:
+        for sequence in range(1, 4):
+            live.delta(_delta(sequence))
+        await live.buffer.join()
+        assert live.last_written is not None
+        frozen_hint = live.last_written.redis_id if hint else None
+        # Freeze at 4 with a lagging confirmed hint at 3. Persistence yields;
+        # 4, 5 and 6 are written before the checkpoint's commit marker.
+        for sequence in range(4, 7):
+            live.delta(_delta(sequence))
+        await live.buffer.join()
+        live.boundary(4, resume_after=frozen_hint)
+    retained = [
+        int(fields["sequence"]) for _, fields in await _entries(runtime.redis, thread_id) if "boundary" not in fields
+    ]
+    assert retained == (list(range(3, 7)) if hint else list(range(1, 7)))

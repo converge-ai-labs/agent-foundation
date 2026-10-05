@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any, cast
 
 from a13n_harness import HarnessStreamEvent
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, HarnessState, decode_messages
-from a13n_stream_protocol.display import DisplayFold, Item, ItemChange, StreamPosition, item_change
+from a13n_stream_protocol.display import DisplayContinuation, DisplayFold, Item, Observed, StreamPosition
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 
@@ -24,6 +25,7 @@ class DisplayHistory(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     run_id: str | None = None
     items: tuple[Item, ...] = ()
+    continuation: DisplayContinuation | None = None
     position: StreamPosition = Field(default_factory=lambda: StreamPosition(attempt=0, sequence=0))
     completed: tuple[str, ...] = ()
     pending_response: str | None = None
@@ -128,6 +130,16 @@ def detach_display_history(state: HarnessState) -> tuple[HarnessState, DisplayHi
     return runtime, display
 
 
+@dataclass(frozen=True)
+class DisplayPublication:
+    """One producer cut: raw suffix, changed immutable rows and detached parser state."""
+
+    observations: tuple[Observed, ...]
+    items: tuple[Item, ...]
+    continuation: DisplayContinuation
+    reset: bool = False
+
+
 class DisplayHistoryCollector:
     """Fold producer observations synchronously; publication never owns capture."""
 
@@ -153,7 +165,10 @@ class DisplayHistoryCollector:
                 items.append(item)
             self.saved = self.saved.model_copy(update={"items": tuple(items)})
         self.fold: DisplayFold | None = None
-        self._published: dict[str, Item] = {}
+        self._observations: list[Observed] = []
+        self._observation_bytes = 0
+        self._reset = False
+        self._live_keys: set[str] = set()
 
     def observe(self, source: HarnessStreamEvent[Any]) -> None:
         if self.fold is None:
@@ -164,7 +179,7 @@ class DisplayHistoryCollector:
                 full_content=True,
             )
             self.fold.changed.clear()
-        self.fold.fold(self.fold.events(source), source)
+        self._enqueue(self.fold.fold(self.fold.events(source), source))
         if (
             self._pending_response is not None
             and not self._resume_group_assigned
@@ -175,29 +190,49 @@ class DisplayHistoryCollector:
 
     def supplement(self, events: Sequence[Any]) -> None:
         if self.fold is not None:
-            self.fold.fold([event.model_dump(mode="json", by_alias=True) for event in events])
+            self._enqueue(self.fold.fold([event.model_dump(mode="json", by_alias=True) for event in events]))
 
-    def drain(self) -> list[ItemChange]:
-        if self.fold is None:
-            return []
-        changes = []
+    def _enqueue(self, observations: Sequence[Observed]) -> None:
+        for observation in observations:
+            if self._reset:
+                return
+            size = len(json.dumps(observation.event, ensure_ascii=False).encode())
+            # Smaller than the default live subscriber buffer. Loss replaces the
+            # entire suffix with an explicit reset, never a partial raw journal.
+            if len(self._observations) >= 32 or self._observation_bytes + size > 256 * 1024:
+                self.publication_failed()
+                return
+            self._observations.append(observation)
+            self._observation_bytes += size
+
+    def drain(self) -> DisplayPublication | None:
         fold = self.fold
-        for key in sorted(fold.changed, key=lambda key: fold.items[key].ordinal):
-            item = fold.items[key]
-            changes.append(item_change(self._published.get(key), item))
-            self._published[key] = item
+        if fold is None or (not self._observations and not self._reset):
+            return None
+        self._live_keys.update(fold.changed)
+        keys = self._live_keys if self._reset else fold.changed
+        publication = DisplayPublication(
+            observations=tuple(self._observations),
+            items=tuple(fold.items[key] for key in sorted(keys, key=lambda key: fold.items[key].ordinal)),
+            continuation=fold.export_continuation(),
+            reset=self._reset,
+        )
         fold.changed.clear()
-        return changes
+        self._observations.clear()
+        self._observation_bytes = 0
+        self._reset = False
+        return publication
 
     def publication_failed(self) -> None:
-        if self.fold is not None:
-            self.fold.changed.update(self._published)
-        self._published.clear()
+        self._observations.clear()
+        self._observation_bytes = 0
+        self._reset = True
 
     def capture(self, history: Sequence[ModelMessage] = (), *, completed: bool = False) -> DisplayHistory:
         if self.fold is None:
             return self.saved.model_copy(deep=True)
-        items = tuple(item.model_copy(deep=True) for item in self.fold.items.values())
+        frozen = self.fold.export()
+        items = tuple(frozen.items)
         marks = set(self.saved.completed)
         last_input = next((item.ordinal for item in reversed(items) if ordinary_input(item)), 0)
         # Resuming a turn makes its former answer provisional again.
@@ -211,6 +246,7 @@ class DisplayHistoryCollector:
             run_id=self.fold.run_id,
             items=items,
             position=self.fold.position,
+            continuation=frozen.continuation,
             completed=tuple(sorted(marks)),
             pending_response=group
             if history and isinstance(history[-1], ModelResponse) and history[-1].state == "suspended"

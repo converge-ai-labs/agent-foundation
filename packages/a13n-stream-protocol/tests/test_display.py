@@ -1,17 +1,16 @@
-"""Shared item changes reconstruct the fold without replaying source semantics."""
+"""Compact snapshots preserve raw-event continuation at every semantic cut."""
 
 from datetime import UTC, datetime
 
 import pytest
 from a13n_harness import HarnessEvent
 from a13n_stream_protocol import AguiObservationError, HarnessAguiObserver
-from a13n_stream_protocol.display import AppendItem, DisplayFold, Item, SetItem, apply_changes
+from a13n_stream_protocol.display import DisplayFold
 from pydantic_ai.messages import PartDeltaEvent, PartEndEvent, PartStartEvent, TextPart, TextPartDelta
 
 
-def test_changes_reconstruct_text_and_tool_lifecycle() -> None:
+def test_snapshot_and_raw_suffix_reconstruct_text_and_tool_lifecycle() -> None:
     fold = DisplayFold("run", attempt=1)
-    reconstructed: dict[str, Item] = {}
     events = [
         {"type": "TEXT_MESSAGE_START", "messageId": "message", "role": "assistant"},
         {"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": "hello"},
@@ -23,29 +22,25 @@ def test_changes_reconstruct_text_and_tool_lifecycle() -> None:
         {"type": "TOOL_CALL_RESULT", "toolCallId": "call", "content": "found"},
     ]
     for event in events:
+        restored = DisplayFold.restore(fold.export())
+        event["timestamp"] = 1000
         batch = fold.fold([event])[0]
-        apply_changes(reconstructed, batch.changes)
-        assert reconstructed == fold.items
+        restored.fold([event])
+        assert restored.items == fold.items
         if event["type"] == "TOOL_CALL_END":
             assert batch.item is not None and batch.item.state == "in_progress"
         if event["type"] == "TEXT_MESSAGE_END":
-            assert isinstance(batch.changes[0], SetItem)
+            assert batch.item is not None and batch.item.state == "completed"
 
 
-def test_changes_are_atomic_on_missing_or_stale_predecessor() -> None:
+def test_snapshot_is_detached_from_later_raw_events() -> None:
     fold = DisplayFold("run")
     fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": "a"}])
-    initial = next(iter(fold.items.values())).model_copy(deep=True)
-    change = fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": "b"}])[0].changes[0]
-    assert isinstance(change, AppendItem)
-    items = {initial.id: initial}
-    with pytest.raises(ValueError, match="predecessor"):
-        apply_changes(items, [change, change.model_copy(update={"id": "missing"})])
-    assert items == {initial.id: initial}
-    apply_changes(items, [change])
-    with pytest.raises(ValueError, match="predecessor"):
-        apply_changes(items, [change])
-    assert items == fold.items
+    frozen = fold.export()
+    before = frozen.model_dump_json()
+    fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": "b"}])
+    assert frozen.model_dump_json() == before
+    assert next(iter(fold.items.values())).content["text"] == "ab"
 
 
 @pytest.mark.parametrize("chunks", [100, 1000])
@@ -74,3 +69,120 @@ def test_inline_scopes_do_not_collide() -> None:
         fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "same", "subagentRunId": scope, "delta": scope}])
     assert len(fold.items) == 2
     assert {item.content["text"] for item in fold.items.values()} == {"first", "second"}
+
+
+@pytest.mark.parametrize("full_content", [False, True])
+def test_every_event_cut_roundtrips_normalized_state(full_content: bool) -> None:
+    from a13n_stream_protocol.display import DisplaySnapshot
+    from a13n_stream_protocol.fragments import fragment_custom_event
+    from ag_ui.core.events import CustomEvent
+
+    events = [
+        {
+            "type": "CUSTOM",
+            "name": "a13n.harness.lifecycle",
+            "value": {"event": {"payload": {"type": "model_request_started"}}},
+        },
+        {"type": "TEXT_MESSAGE_START", "messageId": "m", "role": "assistant"},
+        {"type": "TEXT_MESSAGE_CONTENT", "messageId": "m", "delta": "hello"},
+        {"type": "REASONING_MESSAGE_START", "messageId": "r", "subagentRunId": "child"},
+        {"type": "REASONING_MESSAGE_CONTENT", "messageId": "r", "subagentRunId": "child", "delta": "think"},
+        {"type": "TOOL_CALL_START", "toolCallId": "t", "toolCallName": "search"},
+        {"type": "TOOL_CALL_ARGS", "toolCallId": "t", "delta": '{"query":'},
+    ]
+    events.extend(
+        frame.model_dump(mode="json", by_alias=True)
+        for frame in fragment_custom_event(CustomEvent(name="large", value={"data": "x" * 60000}), identity="fragment")
+    )
+    for text in ('{"a":', "1}"):
+        events.append(
+            {
+                "type": "CUSTOM",
+                "name": "a13n.pydantic_ai.part_delta",
+                "value": {
+                    "thread_id": "thread",
+                    "run_id": "run",
+                    "event": {"index": 1, "delta": {"part_delta_kind": "tool_call", "args_delta": text}},
+                },
+            }
+        )
+    events.extend(
+        [
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "m", "delta": " world"},
+            {"type": "TEXT_MESSAGE_END", "messageId": "m"},
+            {"type": "REASONING_MESSAGE_END", "messageId": "r", "subagentRunId": "child"},
+            {"type": "TOOL_CALL_ARGS", "toolCallId": "t", "delta": '"a"}'},
+            {"type": "TOOL_CALL_END", "toolCallId": "t"},
+            {"type": "TOOL_CALL_RESULT", "toolCallId": "t", "content": "found"},
+        ]
+    )
+    for index, event in enumerate(events):
+        event["timestamp"] = 1700000000000 + index
+    uninterrupted = DisplayFold("run", attempt=2, full_content=full_content)
+    uninterrupted.fold(events)
+    expected = uninterrupted.export()
+    for cut in range(len(events) + 1):
+        fold = DisplayFold("run", attempt=2, full_content=full_content)
+        fold.fold(events[:cut])
+        frozen = fold.export()
+        encoded = frozen.model_dump_json()
+        restored = DisplayFold.restore(DisplaySnapshot.model_validate_json(encoded))
+        assert fold.export() == frozen  # Export does not synthesize an END.
+        restored.fold(events[cut:])
+        assert restored.export() == expected, cut
+        assert frozen.model_dump_json() == encoded  # No mutable aliases.
+
+
+def test_native_converter_continues_after_each_serialized_cut() -> None:
+    from a13n_stream_protocol.display import DisplaySnapshot
+
+    sources = [
+        PartStartEvent(index=0, part=TextPart("hello")),
+        PartDeltaEvent(index=0, delta=TextPartDelta(" world")),
+        PartEndEvent(index=0, part=TextPart("hello world")),
+    ]
+    wrapped = [
+        HarnessEvent(
+            thread_id="thread",
+            run_id="run",
+            sequence=index + 1,
+            occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+            event=event,
+        )
+        for index, event in enumerate(sources)
+    ]
+    expected = DisplayFold("run")
+    for source in wrapped:
+        expected.fold(expected.events(source), source)
+    for cut in range(len(wrapped) + 1):
+        fold = DisplayFold("run")
+        for source in wrapped[:cut]:
+            fold.fold(fold.events(source), source)
+        restored = DisplayFold.restore(DisplaySnapshot.model_validate_json(fold.export().model_dump_json()))
+        for source in wrapped[cut:]:
+            restored.fold(restored.events(source), source)
+        assert restored.export() == expected.export()
+        assert restored.observer.event_count == 0
+
+
+def test_cross_language_normalization_fixture() -> None:
+    """The same raw events and cuts are consumed by the TypeScript normalizer."""
+    import json
+    from pathlib import Path
+
+    from a13n_stream_protocol.display import DisplayContinuation, DisplaySnapshot
+
+    cases = json.loads((Path(__file__).parent / "fixtures/display-normalization.json").read_text())
+    for case in cases:
+        fold = DisplayFold.restore(
+            DisplaySnapshot(items=[], continuation=DisplayContinuation.model_validate(case["initial"]))
+        )
+        for step in case["steps"]:
+            observed = fold.fold([step["delta"]["event"]])[0]
+            assert observed.model_dump(mode="json", exclude={"changes"}) == {
+                key: value for key, value in step["delta"].items() if key not in {"run_id", "attempt"}
+            }
+            if observed.item is not None:
+                assert fold.items[observed.item.id].model_dump(mode="json") == step["item"]
+            assert fold.export().continuation.model_dump(mode="json") == step["continuation"]
+            fold = DisplayFold.restore(DisplaySnapshot.model_validate_json(fold.export().model_dump_json()))

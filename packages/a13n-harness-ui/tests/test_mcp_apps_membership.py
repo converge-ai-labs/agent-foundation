@@ -72,7 +72,7 @@ async def _publish(hub, observer, reference, *, sequence=1, apps=True):
         parent_thread_id=None,
         thread_id=reference.thread_id,
         run_id=reference.run_id,
-        changes=observer.drain(),
+        display=observer.drain(),
         events=(),
     )
 
@@ -114,13 +114,13 @@ async def test_live_replay_keeps_supplements_ordered_and_membership_outlives_rin
         captured = subscription.root_stream
         assert captured is not None
         prefix = [event for batch in captured.batches() for event in batch]
-        assert prefix[-1].payload["name"] == "a13n.display.changes"
+        assert prefix[-1].payload["name"] == "a13n.display.snapshot"
         assert captured.summary.event_count == len(prefix)
         assert reference.model_dump(mode="json") in [
             app
             for event in prefix
-            for change in event.payload["value"]["changes"]
-            for app in change["item"]["content"].get("mcp_apps", [])
+            for item in event.payload["value"]["items"]
+            for app in item["content"].get("mcp_apps", [])
         ]
         for sequence in range(2, 10):
             await _publish(hub, observer, reference, sequence=sequence, apps=False)
@@ -132,7 +132,7 @@ async def test_live_replay_keeps_supplements_ordered_and_membership_outlives_rin
         events = [event for batch in replay.batches() for event in batch]
         assert len(events) == replay.summary.event_count
         assert [event.index for event in events] == list(range(len(events)))
-        assert all(event.payload["name"] == "a13n.display.changes" for event in events)
+        assert all(event.payload["name"] == "a13n.display.snapshot" for event in events)
     await hub.finish_root(thread_id=reference.thread_id, run_id=reference.run_id, saved_continuation_id="saved")
     assert not await hub.retains_mcp_app(reference)
     await hub.close()

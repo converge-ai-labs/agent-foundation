@@ -1564,30 +1564,62 @@ function compactItem(
   kind = "text_message",
 ) {
   return {
-    type: "set",
-    item: {
-      id,
-      ordinal: sequence,
-      kind,
-      state: "completed",
-      first_stream_id: `1-${sequence}`,
-      last_stream_id: `1-${sequence}`,
-      started_at: "2026-10-04T00:00:00Z",
-      ended_at: null,
-      content,
-    },
+    id,
+    ordinal: sequence,
+    kind,
+    state: "completed",
+    first_stream_id: `1-${sequence}`,
+    last_stream_id: `1-${sequence}`,
+    started_at: "2026-10-04T00:00:00Z",
+    ended_at: null,
+    content,
   };
 }
-function compactFrame(sequence: number, changes: unknown[]) {
+function compactFrame(
+  sequence: number,
+  items: ReturnType<typeof compactItem>[],
+) {
   const frame = event(sequence);
   if (frame.kind !== "event") throw new Error("event fixture");
   frame.event.event_type = "CUSTOM";
   frame.event.payload = {
     type: "CUSTOM",
-    name: "a13n.display.changes",
-    value: { format: "display-ops-v1", changes },
+    name: "a13n.display.snapshot",
+    value: {
+      items,
+      continuation: {
+        full_content: true,
+        position: {
+          attempt: 1,
+          sequence: Math.max(
+            ...items.map((item) => Number(item.last_stream_id.split("-")[1])),
+          ),
+        },
+      },
+    },
   } as typeof frame.event.payload;
   return frame;
+}
+function rawFrame(
+  sequence: number,
+  position: number,
+  payload: Record<string, unknown>,
+  id: string,
+  kind = "text_message",
+  state = "in_progress",
+) {
+  const frame = event(sequence);
+  if (frame.kind !== "event") throw new Error("event fixture");
+  return focusFrame({
+    ...frame,
+    event: {
+      ...frame.event,
+      event_type: payload.type,
+      payload,
+      display_position: { attempt: 1, sequence: position },
+      item: { id, kind, state },
+    },
+  });
 }
 it("uses frozen compact coverage, not the later checkpoint notification position", () => {
   const display = new FocusDisplay();
@@ -1620,34 +1652,31 @@ it("uses frozen compact coverage, not the later checkpoint notification position
     display.blocksAfter("checkpoint-one").map((block) => block.text),
   ).toEqual(["concurrent child"]);
   display.accept(
-    compactFrame(102, [
+    rawFrame(
+      102,
+      6,
       {
-        type: "append",
-        id: "child",
-        field: "text",
-        text: " done",
-        after_stream_id: "1-4",
-        last_stream_id: "1-6",
-        state: "completed",
-        ended_at: null,
+        type: "TEXT_MESSAGE_CONTENT",
+        messageId: "child-native",
+        subagentRunId: "child-run",
+        delta: " done",
       },
-    ]),
+      "child",
+    ),
   );
   expect(display.blocks.get("child")?.text).toBe("concurrent child done");
   expect(() =>
     display.accept(
-      compactFrame(103, [
+      rawFrame(
+        103,
+        8,
         {
-          type: "append",
-          id: "child",
-          field: "text",
-          text: "bad",
-          after_stream_id: "1-4",
-          last_stream_id: "1-7",
-          state: "completed",
-          ended_at: null,
+          type: "TEXT_MESSAGE_CONTENT",
+          messageId: "child-native",
+          delta: "bad",
         },
-      ]),
+        "child",
+      ),
     ),
   ).toThrow();
   expect(display.blocks.get("child")?.text).toBe("concurrent child done");
@@ -1749,4 +1778,79 @@ it("removes covered compact context summaries without hiding later observations"
   expect(display.blocksAfter("saved").map((block) => block.id)).toEqual([
     "context:later-context",
   ]);
+});
+
+it("continues active snapshot text and tool arguments without duplicate blocks after a checkpoint", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  display.accept(
+    compactFrame(101, [
+      {
+        ...compactItem("text", 1, {
+          messageId: "native",
+          role: "assistant",
+          text: "hello",
+        }),
+        state: "in_progress",
+      },
+      {
+        ...compactItem(
+          "tool",
+          2,
+          {
+            toolCallId: "call",
+            toolCallName: "shell_exec",
+            arguments: '{"command":"echo',
+          },
+          "tool_call",
+        ),
+        state: "in_progress",
+      },
+      compactItem(
+        "checkpoint",
+        3,
+        {
+          name: "a13n.harness_ui.checkpoint",
+          value: {
+            event: { continuation_id: "saved", display_position: "1-2" },
+          },
+        },
+        "observation",
+      ),
+    ]),
+  );
+  expect(display.blocksAfter("saved")).toEqual([]);
+  display.accept(
+    rawFrame(
+      102,
+      4,
+      { type: "TEXT_MESSAGE_CONTENT", messageId: "native", delta: " world" },
+      "text",
+    ),
+  );
+  display.accept(
+    rawFrame(
+      103,
+      5,
+      { type: "TOOL_CALL_ARGS", toolCallId: "call", delta: ' hello"}' },
+      "tool",
+      "tool_call",
+    ),
+  );
+  display.accept(
+    rawFrame(
+      104,
+      6,
+      { type: "TOOL_CALL_END", toolCallId: "call" },
+      "tool",
+      "tool_call",
+    ),
+  );
+  expect(display.blocks.size).toBe(2);
+  expect(display.blocksAfter("saved").map((block) => block.text)).toEqual([
+    "hello world",
+    '{"command":"echo hello"}',
+  ]);
+  expect(display.gap).toBe(false);
 });

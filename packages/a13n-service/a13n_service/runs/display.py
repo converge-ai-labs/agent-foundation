@@ -8,6 +8,7 @@ from a13n_stream_protocol.display import (
     FRAGMENTS,
     MAX_FIELD_CHARS,
     MAX_OBSERVATION_BYTES,
+    DisplayContinuation,
     Item,
     ItemKind,
     ItemRef,
@@ -56,6 +57,7 @@ class Tail(BaseModel):
     position: StreamPosition = StreamPosition(attempt=0, sequence=0)
     # Optional Redis resume hint; attempts without confirmed writes have none.
     resume_after: str | None = None
+    continuation: DisplayContinuation | None = None
 
 
 class Page(BaseModel):
@@ -81,38 +83,55 @@ class DisplayFold(SemanticDisplayFold):
     """Add Service page selection and retirement to the shared semantic fold."""
 
     def __init__(self, run_id: str, tail: Tail, *, attempt: int, page_items: int, page_bytes: int):
-        super().__init__(run_id, tail.items, attempt=attempt, first=tail.first)
+        super().__init__(
+            run_id,
+            tail.items,
+            attempt=attempt,
+            first=tail.first,
+            continuation=tail.continuation if tail.position.attempt == attempt else None,
+        )
         self.first = tail.first
         self.page_items, self.page_bytes = page_items, page_bytes
         self.paged: set[str] = set()
         self.sizes: dict[str, int] = {}
 
-    def snapshot(self, open_calls: Collection[str] = ()) -> Snapshot:
-        """The display to commit with a state whose open tool calls are `open_calls`: every other unfinished item
-        is interrupted, and the final items before the first unfinished one fill as many pages as they can.
-
-        The items stay in the fold until `committed` confirms their pages were. Only a snapshot interrupts items: it
-        alone knows which calls the state leaves open, and a takeover continues those in place.
-        """
+    def interrupt(self, open_calls: Collection[str] = ()) -> None:
+        """Host terminal/retry policy, separate from pure checkpoint capture."""
         kept = {item_id(self.run_id, "tool_call", call) for call in open_calls}
         for key, item in self.items.items():
             if item.state == "in_progress" and key not in kept:
                 self.items[key] = item.model_copy(update={"state": "interrupted"})
                 self.changed.add(key)
+
+    def snapshot(self) -> Snapshot:
+        """Freeze active continuation and page only the immutable prefix; do not close active blocks."""
         for key in self.changed & self.items.keys():
             self.sizes[key] = _size(self.items[key])
         self.changed.clear()
-        items = [item.model_copy(deep=True) for item in self.items.values()]
+        frozen = self.export()
+        items = frozen.items
         pages: list[Page] = []
         start, size = 0, 0
         for end, item in enumerate(items, 1):
-            if item.state == "in_progress":
+            if item.state == "in_progress" or (
+                self.arguments is not None
+                and item.id == self.arguments.key
+                and self.arguments.sequence == self.sequence
+            ):
                 break
             size += self.sizes[item.id]
             if end - start == self.page_items or size >= self.page_bytes:
                 pages.append(Page(items=items[start:end]))
                 start, size = end, 0
-        return Snapshot(pages, Tail(first=self.first + start, items=items[start:], position=self.position))
+        return Snapshot(
+            pages,
+            Tail(
+                first=self.first + start,
+                items=items[start:],
+                position=self.position,
+                continuation=frozen.continuation,
+            ),
+        )
 
     def pending(self, snapshot: Snapshot) -> Snapshot:
         """Drop pages an earlier frozen boundary published while production advanced."""

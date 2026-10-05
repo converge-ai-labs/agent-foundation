@@ -22,7 +22,7 @@ async def test_producer_freezes_matching_display_before_parallel_tool_acknowledg
     calls = 0
 
     def freeze(open_calls: frozenset[str]) -> Snapshot:
-        return fold.snapshot(open_calls)
+        return fold.snapshot()
 
     boundaries.freeze_display = freeze
 

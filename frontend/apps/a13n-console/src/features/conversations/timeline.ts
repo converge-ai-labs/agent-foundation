@@ -316,9 +316,11 @@ function actionEntry(
     subagentRunId: step.subagentRunId,
     name: step.name ?? null,
     arguments: item
-      ? parseItemValue(item.arguments)
+      ? parseItemValue(item.arguments, item.incomplete)
       : parseItemValue(detail.arguments),
-    result: item ? parseItemValue(item.result) : parseItemValue(detail.result),
+    result: item
+      ? parseItemValue(item.result, item.incomplete)
+      : parseItemValue(detail.result),
     resultParts: item?.resultParts,
     failure: item?.failure ?? null,
     edit: step.edit
@@ -351,8 +353,8 @@ function retainedAction(item: PresentedItem): ActionEntry {
     id: item.id,
     subagentRunId: item.subagentRunId,
     name: item.toolName || null,
-    arguments: parseItemValue(item.arguments),
-    result: parseItemValue(item.result),
+    arguments: parseItemValue(item.arguments, item.incomplete),
+    result: parseItemValue(item.result, item.incomplete),
     resultParts: item.resultParts,
     failure: item.failure ?? null,
     edit: null,

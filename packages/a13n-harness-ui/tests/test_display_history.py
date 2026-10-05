@@ -462,7 +462,6 @@ def test_failed_live_publication_retries_a_baseline_without_losing_durable_captu
     from datetime import UTC, datetime
 
     from a13n_harness import HarnessEvent
-    from a13n_stream_protocol.display import SetItem, apply_changes
     from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPartDelta
 
     collector = DisplayHistoryCollector(())
@@ -479,9 +478,8 @@ def test_failed_live_publication_retries_a_baseline_without_losing_durable_captu
     collector.publication_failed()
     observe(2, PartDeltaEvent(index=0, delta=TextPartDelta(" second")))
     retry = collector.drain()
-    assert retry and all(isinstance(change, SetItem) for change in retry)
-    items = {}
-    apply_changes(items, retry)
+    assert retry is not None and retry.reset and not retry.observations
+    items = {item.id: item for item in retry.items}
     assert any(item.content.get("text") == "first second" for item in items.values())
     assert visible(collector.capture()) == ["first second"]
     assert collector.fold.observer.event_count == 0
@@ -491,7 +489,6 @@ def test_capture_and_supplements_share_one_dirty_set_without_consuming_publicati
     from datetime import UTC, datetime
 
     from a13n_harness import HarnessEvent
-    from a13n_stream_protocol.display import AppendItem, SetItem, apply_changes
     from ag_ui.core import CustomEvent
     from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPartDelta, ToolCallPart
 
@@ -518,26 +515,27 @@ def test_capture_and_supplements_share_one_dirty_set_without_consuming_publicati
     frozen = collector.capture()
     frozen_json = frozen.model_dump_json()
     changes = collector.drain()
-    assert all(isinstance(change, SetItem) for change in changes)
-    assert [change.item.id for change in changes] == [item.id for item in frozen.items]
-    assert len({change.item.id for change in changes}) == len(changes)
-    assert collector.drain() == []
+    assert changes is not None and not changes.reset
+    assert changes.items == frozen.items
+    assert changes.continuation == frozen.continuation
+    assert len({item.id for item in changes.items}) == len(changes.items)
+    assert collector.drain() is None
     assert next(item for item in frozen.items if item.kind == "tool_call").content["tool_images"] == [
         {"path": "retained.png"}
     ]
 
     observe(4, PartDeltaEvent(index=0, delta=TextPartDelta(" third")))
     appended = collector.drain()
-    assert len(appended) == 1 and isinstance(appended[0], AppendItem)
+    assert appended is not None and len(appended.items) == 1
+    assert any(o.event.get("delta") == " third" for o in appended.observations)
     collector.publication_failed()
     observe(5, PartDeltaEvent(index=0, delta=TextPartDelta(" fourth")))
     retry = collector.drain()
-    assert retry and all(isinstance(change, SetItem) for change in retry)
-    items = {}
-    apply_changes(items, retry)
+    assert retry is not None and retry.reset and not retry.observations
+    items = {item.id: item for item in retry.items}
     assert tuple(items.values()) == collector.capture().items
     assert any(item.content.get("text") == "first second third fourth" for item in items.values())
-    assert collector.drain() == []
+    assert collector.drain() is None
     assert frozen.model_dump_json() == frozen_json
 
 

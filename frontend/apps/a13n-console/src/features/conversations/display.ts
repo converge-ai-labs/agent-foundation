@@ -1,4 +1,4 @@
-import { applyDisplayChanges, type DisplayItem } from "a13n-ui/display";
+import { DisplayNormalizer, type DisplayItem } from "a13n-ui/display";
 import { isRecord, type Client, type ThreadDelta } from "../../service-client";
 import { data } from "../../shared/api";
 
@@ -8,7 +8,7 @@ export const AUTHORED_INPUT_EVENT_NAMES: ReadonlySet<string> = new Set([
   "a13n.input.steering",
 ]);
 
-/** Read a committed display window; Hosts, not clients, interpret source events. */
+/** Read a committed display window; only the default window is a live baseline. */
 export function readDisplay(
   client: Client,
   workspaceId: string,
@@ -60,6 +60,7 @@ export function isOmitted(content: unknown) {
 export function applyDelta(
   items: Map<string, DisplayItem>,
   delta: ThreadDelta,
+  normalizer = new DisplayNormalizer(),
 ) {
-  applyDisplayChanges(items, delta.changes);
+  normalizer.apply(items, delta);
 }

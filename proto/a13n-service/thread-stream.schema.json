@@ -1,67 +1,5 @@
 {
   "$defs": {
-    "AppendItem": {
-      "additionalProperties": false,
-      "description": "Append only new text, without retransmitting the growing item.",
-      "properties": {
-        "after_stream_id": {
-          "title": "After Stream Id",
-          "type": "string"
-        },
-        "ended_at": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Ended At"
-        },
-        "field": {
-          "enum": [
-            "text",
-            "arguments"
-          ],
-          "title": "Field",
-          "type": "string"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "last_stream_id": {
-          "title": "Last Stream Id",
-          "type": "string"
-        },
-        "state": {
-          "$ref": "#/$defs/ItemState"
-        },
-        "text": {
-          "title": "Text",
-          "type": "string"
-        },
-        "type": {
-          "const": "append",
-          "default": "append",
-          "title": "Type",
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "field",
-        "text",
-        "after_stream_id",
-        "last_stream_id",
-        "state",
-        "ended_at"
-      ],
-      "title": "AppendItem",
-      "type": "object"
-    },
     "Boundary": {
       "description": "The run committed a checkpoint whose display covers the attempt up to `sequence`.",
       "properties": {
@@ -100,24 +38,26 @@
       "type": "object"
     },
     "Delta": {
-      "description": "One atomic compact-display batch; raw event clients must upgrade with this contract.",
+      "description": "One raw AG-UI event, sequenced by the producer and correlated to its display item.",
       "properties": {
         "attempt": {
           "title": "Attempt",
           "type": "integer"
         },
-        "changes": {
-          "items": {
-            "$ref": "#/$defs/ItemChange"
-          },
-          "title": "Changes",
-          "type": "array"
+        "event": {
+          "additionalProperties": true,
+          "title": "Event",
+          "type": "object"
         },
-        "format": {
-          "const": "display-ops-v1",
-          "default": "display-ops-v1",
-          "title": "Format",
-          "type": "string"
+        "item": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ItemRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "run_id": {
           "title": "Run Id",
@@ -132,7 +72,8 @@
         "run_id",
         "attempt",
         "sequence",
-        "changes"
+        "event",
+        "item"
       ],
       "title": "Delta",
       "type": "object"
@@ -164,88 +105,6 @@
       "title": "Gap",
       "type": "object"
     },
-    "Item": {
-      "additionalProperties": false,
-      "properties": {
-        "content": {
-          "additionalProperties": {
-            "$ref": "#/$defs/JsonValue"
-          },
-          "title": "Content",
-          "type": "object"
-        },
-        "ended_at": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Ended At"
-        },
-        "first_stream_id": {
-          "title": "First Stream Id",
-          "type": "string"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "kind": {
-          "$ref": "#/$defs/ItemKind"
-        },
-        "last_stream_id": {
-          "title": "Last Stream Id",
-          "type": "string"
-        },
-        "ordinal": {
-          "minimum": 1,
-          "title": "Ordinal",
-          "type": "integer"
-        },
-        "started_at": {
-          "format": "date-time",
-          "title": "Started At",
-          "type": "string"
-        },
-        "state": {
-          "$ref": "#/$defs/ItemState"
-        }
-      },
-      "required": [
-        "id",
-        "ordinal",
-        "kind",
-        "state",
-        "first_stream_id",
-        "last_stream_id",
-        "started_at",
-        "content"
-      ],
-      "title": "Item",
-      "type": "object"
-    },
-    "ItemChange": {
-      "discriminator": {
-        "mapping": {
-          "append": "#/$defs/AppendItem",
-          "set": "#/$defs/SetItem"
-        },
-        "propertyName": "type"
-      },
-      "oneOf": [
-        {
-          "$ref": "#/$defs/SetItem"
-        },
-        {
-          "$ref": "#/$defs/AppendItem"
-        }
-      ]
-    },
     "ItemKind": {
       "enum": [
         "text_message",
@@ -254,6 +113,68 @@
         "observation"
       ],
       "type": "string"
+    },
+    "ItemRef": {
+      "description": "The item a live event changed, and its state after the event.",
+      "properties": {
+        "failure": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ItemKind"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "response_group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response Group"
+        },
+        "state": {
+          "$ref": "#/$defs/ItemState"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "state"
+      ],
+      "title": "ItemRef",
+      "type": "object"
     },
     "ItemState": {
       "enum": [
@@ -277,26 +198,6 @@
         "run_id"
       ],
       "title": "RunSignal",
-      "type": "object"
-    },
-    "SetItem": {
-      "additionalProperties": false,
-      "description": "Insert or replace one compact item; the Host assigns its stable identity.",
-      "properties": {
-        "item": {
-          "$ref": "#/$defs/Item"
-        },
-        "type": {
-          "const": "set",
-          "default": "set",
-          "title": "Type",
-          "type": "string"
-        }
-      },
-      "required": [
-        "item"
-      ],
-      "title": "SetItem",
       "type": "object"
     }
   },

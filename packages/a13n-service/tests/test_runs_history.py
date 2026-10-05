@@ -249,6 +249,7 @@ async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scri
     await (await runs_kit.attempt(service, runtime=runtime))
 
     newest = await runs_kit.items(service, run_id)
+    assert newest["baseline"] is True and newest["continuation"] is not None
     count = newest["items"][-1]["ordinal"]
     assert count > 32
     assert [item["ordinal"] for item in newest["items"]] == list(range(count - len(newest["items"]) + 1, count + 1)), (
@@ -267,7 +268,12 @@ async def test_run_items_page_by_ordinal_across_pages_and_the_tail(service, scri
     async def window(**params: int) -> list[int]:
         response = await service.client.get(f"{service.api}/runs/{run_id}/items", params=params)
         assert response.status_code == 200, response.text
-        return [item["ordinal"] for item in response.json()["items"]]
+        body = response.json()
+        historical = "before" in params or "after" in params
+        assert body["baseline"] is not historical
+        if historical:
+            assert body["continuation"] is None and body["position"] is None and body["resume_after"] is None
+        return [item["ordinal"] for item in body["items"]]
 
     # The newest items, then each earlier window, until the first item.
     windows, before = [await window(limit=10)], None
@@ -335,3 +341,50 @@ async def test_question_resume_arbitrates_concurrent_replies_and_inbox_scans(
     assert (await runs_kit.get_thread(service, thread_id))["current_run_id"] == winner.json()["id"]
     runs = (await service.client.get(f"{service.api}/threads/{thread_id}/runs")).json()["items"]
     assert len(runs) == 2 and sum(run["trigger"] == "resume" for run in runs) == 1
+
+
+async def test_default_window_includes_whole_active_tail_beyond_limit(service, scripted_model, runs_kit, monkeypatch):
+    from a13n_service.infra.db import transaction
+    from a13n_service.runs import checkpoints
+    from a13n_service.runs.checkpoints import TailPointer
+    from a13n_service.runs.display import DisplayFold, Tail
+    from a13n_service.runs.tables import RunRow
+
+    agent = await runs_kit.create_agent(service, scripted_model)
+    run_id = (await runs_kit.start_thread(service, agent, "start"))["run"]["id"]
+    fold = DisplayFold(run_id, Tail(), attempt=1, page_items=16, page_bytes=1048576)
+    for index in range(10):
+        fold.fold(
+            [
+                {"type": "TEXT_MESSAGE_START", "messageId": f"m{index}", "role": "assistant"},
+                {"type": "TEXT_MESSAGE_CONTENT", "messageId": f"m{index}", "delta": "active"},
+            ]
+        )
+    frozen = fold.snapshot().tail
+    pointer = TailPointer(
+        key="test-tail", digest="0" * 64, size=0, format=1, position=frozen.position, first=1, count=10
+    )
+    # Seed only the pointer; keep object I/O controlled to exercise the real
+    # short-session window selection and HTTP response semantics.
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(RunRow, run_id)
+        assert row is not None
+        row.tail = pointer.model_dump(mode="json")
+
+    async def load_tail(objects, selected):
+        assert selected == pointer
+        return frozen.model_copy(deep=True)
+
+    monkeypatch.setattr(checkpoints, "load_tail", load_tail)
+    path = f"{service.api}/runs/{run_id}/items"
+    default = (await service.client.get(path, params={"limit": 2})).json()
+    assert default["baseline"] is True and default["complete"] is False
+    assert len(default["items"]) == 10
+    assert all(item["state"] == "in_progress" for item in default["items"])
+    assert default["continuation"]["next_ordinal"] == 11
+    for window in ({"before": 5}, {"after": 2}):
+        historical = (await service.client.get(path, params={"limit": 2, **window})).json()
+        assert [item["ordinal"] for item in historical["items"]] == [3, 4]
+        assert historical["baseline"] is False
+        assert historical["continuation"] is None and historical["position"] is None
+        assert historical["resume_after"] is None

@@ -11,7 +11,7 @@ from typing import Literal
 from uuid import uuid4
 
 from a13n_harness.usage import ModelUsageRecord
-from a13n_stream_protocol.display import Item, ItemChange, SetItem, apply_changes
+from a13n_stream_protocol.display import DisplayContinuation, Item, ItemRef, StreamPosition
 from a13n_stream_protocol.fragments import fragment_custom_event
 from ag_ui.core import CustomEvent
 from ag_ui.core import Event as AguiEvent
@@ -28,10 +28,12 @@ from anyio.lowlevel import checkpoint
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
+from a13n_harness_ui.display_history import DisplayPublication
 from a13n_harness_ui.errors import LivePresentationError
 from a13n_harness_ui.mcp_apps.models import AppReference
 
 _LIVE_PAYLOAD_ADAPTER = TypeAdapter(dict[str, JsonValue])
+_AGUI_ADAPTER = TypeAdapter(AguiEvent)
 _DEFAULT_RING_SIZE = 256
 _DEFAULT_SUBSCRIBER_BUFFER_SIZE = 64
 _MAX_EVENT_BYTES = 64 * 1024
@@ -60,6 +62,8 @@ class LiveEvent(_StreamModel):
     event_type: str = Field(min_length=1, max_length=128)
     payload: dict[str, JsonValue] | None
     payload_omitted: bool
+    display_position: StreamPosition | None = None
+    item: ItemRef | None = None
 
 
 class RootStreamSummary(_StreamModel):
@@ -107,6 +111,7 @@ class _RootStream:
     base_continuation_id: str | None
     items: dict[str, Item] = field(default_factory=dict)
     apps: dict[str, AppReference] = field(default_factory=dict)
+    continuation: DisplayContinuation | None = None
 
     def capture(self) -> RootStreamReplay:
         events = []
@@ -117,18 +122,32 @@ class _RootStream:
             if item.content.get("name") == "a13n.harness_ui.checkpoint" and isinstance(source, dict):
                 if isinstance(continuation := source.get("continuation_id"), str):
                     checkpoints.add(continuation)
+            # Frame rows separately: the accumulated prefix must not share one
+            # custom-event assembly budget or require one giant JSON document.
             events.extend(
                 fragment_custom_event(
                     CustomEvent(
-                        name="a13n.display.changes",
+                        name="a13n.display.snapshot",
                         value={
-                            "format": "display-ops-v1",
-                            "changes": [SetItem(item=item).model_dump(mode="json")],
+                            "items": [item.model_dump(mode="json")],
+                            "continuation": None,
                         },
                     ),
                     identity=f"{self.run_id}:{item.id}:{item.last_stream_id}",
                 )
             )
+        events.extend(
+            fragment_custom_event(
+                CustomEvent(
+                    name="a13n.display.snapshot",
+                    value={
+                        "items": [],
+                        "continuation": self.continuation.model_dump(mode="json") if self.continuation else None,
+                    },
+                ),
+                identity=f"{self.run_id}:snapshot:{self.continuation.position if self.continuation else '0-0'}",
+            )
+        )
         return RootStreamReplay(
             summary=RootStreamSummary(
                 thread_id=self.thread_id,
@@ -149,15 +168,14 @@ class RequestContextSample(_StreamModel):
 
 def _compact_observations(event: LiveEvent) -> tuple[LiveEvent, ...] | None:
     payload = event.payload or {}
-    if payload.get("name") != "a13n.display.changes":
+    if payload.get("name") != "a13n.display.snapshot":
         return None
     value = payload.get("value")
-    changes = value.get("changes", []) if isinstance(value, dict) else []
+    items = value.get("items", []) if isinstance(value, dict) else []
     observations = []
-    if not isinstance(changes, list):
+    if not isinstance(items, list):
         return ()
-    for change in changes:
-        item = change.get("item") if isinstance(change, dict) and change.get("type") == "set" else None
+    for item in items:
         if isinstance(item, dict) and item.get("kind") == "observation":
             content = item.get("content")
             if isinstance(content, dict):
@@ -335,85 +353,93 @@ class HarnessUiLiveHub:
         run_id: str,
         events: Sequence[AguiEvent],
         execution_id: str | None = None,
-        changes: Sequence[ItemChange] | None = None,
+        display: DisplayPublication | None = None,
         base_continuation_id: str | None = None,
         supplements: Sequence[AguiEvent] = (),
     ) -> None:
-        """Publish detached events while marking slow subscribers for reset.
+        """Install a producer cut atomically with its bounded raw suffix.
 
-        Compact root changes and their replay baseline advance under the same
-        lock. Other process-local observations retain their existing delivery.
+        A discarded suffix asks consumers to reconnect to the compact baseline.
+        Child observations keep per-frame scheduling for large framed payloads.
         """
-        if changes is not None:
+        if display is not None:
             if run_kind != "root":
                 raise ValueError("Compact baseline publication requires a root Run")
-            events = (
-                CustomEvent(
-                    name="a13n.display.changes",
-                    value={
-                        "format": "display-ops-v1",
-                        "changes": [change.model_dump(mode="json") for change in changes],
-                    },
-                ),
-            )
-        for source in (*events, *supplements):
+            frames = [
+                (
+                    _AGUI_ADAPTER.validate_python(observation.event),
+                    StreamPosition(attempt=display.continuation.position.attempt, sequence=observation.sequence),
+                    observation.item,
+                )
+                for observation in display.observations
+            ]
+            if display.reset:
+                frames = [(CustomEvent(name="a13n.display.reset", value={}), None, None)]
+            batches = [frames]
+        else:
+            batches = [[(source, None, None)] for source in (*events, *supplements)]
+        for batch in batches:
             async with self._lock:
                 if self._closed:
                     return
-                stale: list[_LiveSubscriber] = []
-                self._sequence += 1
-                payload, omitted = _bounded_payload(source)
-                event = LiveEvent(
-                    epoch=self._epoch,
-                    sequence=self._sequence,
-                    run_kind=run_kind,
-                    root_thread_id=root_thread_id,
-                    parent_thread_id=parent_thread_id,
-                    thread_id=thread_id,
-                    run_id=run_id,
-                    execution_id=execution_id,
-                    event_type=source.type.value,
-                    payload=payload,
-                    payload_omitted=omitted,
-                )
-                self._ring.append(event)
-                ring = self._root_rings.get(root_thread_id)
-                if ring is None:
-                    ring = deque(maxlen=self._ring_size)
-                    self._root_rings[root_thread_id] = ring
-                    self._root_floors[root_thread_id] = self._evicted_root_floor
-                if len(ring) == self._ring_size:
-                    self._root_floors[root_thread_id] = ring[0].sequence
-                ring.append(event)
-                self._root_rings.move_to_end(root_thread_id)
-                if changes is not None:
+                if display is not None:
                     current = self._root_streams.get(thread_id)
                     if current is None or current.run_id != run_id:
                         current = _RootStream(thread_id, run_id, base_continuation_id)
                         self._root_streams[thread_id] = current
                         self._terminal_streams.pop(thread_id, None)
-                    apply_changes(current.items, changes)
-                    for item in current.items.values():
+                    if display.reset:
+                        current.items.clear()
+                        current.apps.clear()
+                    current.items.update((item.id, item) for item in display.items)
+                    current.continuation = display.continuation
+                    for item in display.items:
                         apps = item.content.get("mcp_apps")
                         if isinstance(apps, list):
                             for value in apps:
                                 reference = AppReference.model_validate(value, strict=False)
                                 current.apps[reference.app_id] = reference
-                    changes = None
-                self._trim_root_rings()
-                for subscriber in self._subscribers:
-                    if not subscriber.accepts(event) or subscriber.gap:
-                        continue
-                    try:
-                        subscriber.send.send_nowait(event.model_copy(deep=True))
-                    except WouldBlock:
-                        subscriber.gap = True
-                    except (BrokenResourceError, ClosedResourceError):
-                        stale.append(subscriber)
-                for subscriber in stale:
-                    self._discard_subscriber(subscriber)
-            # A large framed event must not overflow even a ready consumer merely
-            # because its producer submitted one batch. Never await under the lock.
+                for source, position, reference in batch:
+                    stale: list[_LiveSubscriber] = []
+                    self._sequence += 1
+                    payload, omitted = _bounded_payload(source)
+                    event = LiveEvent(
+                        epoch=self._epoch,
+                        sequence=self._sequence,
+                        run_kind=run_kind,
+                        root_thread_id=root_thread_id,
+                        parent_thread_id=parent_thread_id,
+                        thread_id=thread_id,
+                        run_id=run_id,
+                        execution_id=execution_id,
+                        event_type=source.type.value,
+                        payload=payload,
+                        payload_omitted=omitted,
+                        display_position=position,
+                        item=reference,
+                    )
+                    self._ring.append(event)
+                    ring = self._root_rings.get(root_thread_id)
+                    if ring is None:
+                        ring = deque(maxlen=self._ring_size)
+                        self._root_rings[root_thread_id] = ring
+                        self._root_floors[root_thread_id] = self._evicted_root_floor
+                    if len(ring) == self._ring_size:
+                        self._root_floors[root_thread_id] = ring[0].sequence
+                    ring.append(event)
+                    self._root_rings.move_to_end(root_thread_id)
+                    self._trim_root_rings()
+                    for subscriber in self._subscribers:
+                        if not subscriber.accepts(event) or subscriber.gap:
+                            continue
+                        try:
+                            subscriber.send.send_nowait(event.model_copy(deep=True))
+                        except WouldBlock:
+                            subscriber.gap = True
+                        except (BrokenResourceError, ClosedResourceError):
+                            stale.append(subscriber)
+                    for subscriber in stale:
+                        self._discard_subscriber(subscriber)
             await checkpoint()
 
     async def retains_mcp_app(self, reference: AppReference) -> bool:

@@ -1,16 +1,11 @@
-import { isDisplayChange, type DisplayChange } from "a13n-ui/display";
+import { EventSchema } from "@ag-ui/core/schemas";
+import { isItemRef, type DisplayEvent } from "a13n-ui/display";
 import { ApiError, isRecord, ProtocolError } from "../errors.js";
 import { delay, workspaceHeaders, type Transport } from "../transport.js";
 import { decodeSse } from "./sse.js";
 
-/** One atomic compact display batch at its per-attempt sequence. */
-export interface ThreadDelta {
-  run_id: string;
-  attempt: number;
-  sequence: number;
-  format: "display-ops-v1";
-  changes: DisplayChange[];
-}
+/** One raw AG-UI event at its producer-assigned position. */
+export type ThreadDelta = DisplayEvent;
 
 /**
  * Frames of one thread stream. `delta` and `boundary` carry the resumable
@@ -95,14 +90,14 @@ function parseFrame(event: string, id: string, text: string): ThreadFrame {
         sequence: data.sequence,
       };
     if (
-      data.format === "display-ops-v1" &&
-      Array.isArray(data.changes) &&
-      data.changes.every(isDisplayChange)
+      isRecord(data.event) &&
+      EventSchema.safeParse(data.event).success &&
+      (data.item === null || isItemRef(data.item))
     )
       return {
         type: "delta",
         cursor: id,
-        // Old raw-event clients cannot silently reinterpret this wire format.
+        // Validate AG-UI within the Host-owned position and identity envelope.
         delta: data as unknown as ThreadDelta,
       };
   }

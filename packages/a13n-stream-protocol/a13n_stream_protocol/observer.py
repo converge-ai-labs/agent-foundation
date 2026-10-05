@@ -6,7 +6,7 @@ import json
 from collections.abc import AsyncIterable, Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, cast
+from typing import Any, Literal, Self, cast
 
 from a13n_harness import (
     AgentStreamEventProtocol,
@@ -42,7 +42,7 @@ from ag_ui.core.events import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     CapabilityEvent,
     DeferredToolResultsEvent,
@@ -104,6 +104,15 @@ class _ObserverState:
     threads: dict[str, str] = field(default_factory=dict)
 
 
+class ObserverContinuation(BaseModel):
+    """Native conversion cursors required to resume mid-part, without raw history."""
+
+    model_config = ConfigDict(extra="forbid")
+    thread_id: str | None = None
+    run_id: str | None = None
+    state: _ObserverState = Field(default_factory=_ObserverState)
+
+
 class HarnessAguiObserver:
     """Convert and accumulate one public Harness run as typed AG-UI events."""
 
@@ -116,6 +125,24 @@ class HarnessAguiObserver:
         self._events: list[Event] = []
         self._resuming = False
         self._resume_completed = False
+
+    def export(self) -> ObserverContinuation:
+        """Freeze conversion state; accumulated delivery frames are deliberately excluded."""
+        if self._resuming:
+            raise AguiObservationError("Cannot export while observer resumption is in progress")
+        return ObserverContinuation(thread_id=self._thread_id, run_id=self._run_id, state=self._state).model_copy(
+            deep=True
+        )
+
+    @classmethod
+    def restore(cls, continuation: ObserverContinuation, *, processor: AguiEventProcessor | None = None) -> Self:
+        """Continue conversion without reconstructing or retaining the old token journal."""
+        saved = continuation.model_copy(deep=True)
+        observer = cls(processor=processor, retain_events=False)
+        observer._thread_id, observer._run_id = saved.thread_id, saved.run_id
+        observer._state = saved.state
+        observer._resume_completed = True
+        return observer
 
     @property
     def thread_id(self) -> str | None:
