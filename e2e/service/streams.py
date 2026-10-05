@@ -8,12 +8,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx2
-from a13n_stream_protocol.display import Item, ItemChange, apply_changes
-from pydantic import TypeAdapter
+from a13n_stream_protocol.display import DisplayFold
 
 from .api import TIMEOUT, Workspace
-
-_CHANGES = TypeAdapter(list[ItemChange])
 
 
 @dataclass(frozen=True)
@@ -29,19 +26,8 @@ class Frame:
 
     @property
     def kind(self) -> str | None:
-        """The terminal observation type, if this compact batch contains one."""
-        if self.event != "delta":
-            return None
-        return next(
-            (
-                change["item"]["content"].get("type")
-                for change in self.data["changes"]
-                if change["type"] == "set"
-                and change["item"]["kind"] == "observation"
-                and "type" in change["item"]["content"]
-            ),
-            None,
-        )
+        """The raw AG-UI event type, if this frame carries a delta."""
+        return self.data["event"]["type"] if self.event == "delta" else None
 
 
 @asynccontextmanager
@@ -83,13 +69,15 @@ async def read_until(frames: AsyncIterator[Frame], done: Callable[[Frame], bool]
 
 def assistant_text(frames: list[Frame], run_id: str) -> str:
     """The assistant text the deltas of `run_id` stream, in arrival order."""
-    items: dict[str, Item] = {}
+    display = DisplayFold(run_id)
     for frame in frames:
         if frame.of(run_id) and frame.event == "delta":
-            apply_changes(items, _CHANGES.validate_python(frame.data["changes"]))
+            display.attempt = frame.data["attempt"]
+            display.sequence = frame.data["sequence"] - 1
+            display.fold([frame.data["event"]])
     return "".join(
         str(item.content.get("text", ""))
-        for item in items.values()
+        for item in display.items.values()
         if item.kind == "text_message" and item.content.get("role") == "assistant"
     )
 
