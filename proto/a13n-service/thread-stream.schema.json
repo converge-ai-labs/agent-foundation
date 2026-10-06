@@ -38,7 +38,7 @@
       "type": "object"
     },
     "Delta": {
-      "description": "A data frame: one AG-UI event of a run's attempt at its per-attempt sequence, and the item it changed.",
+      "description": "One raw AG-UI event, sequenced by the producer and correlated to its display item.",
       "properties": {
         "attempt": {
           "title": "Attempt",
@@ -117,12 +117,52 @@
     "ItemRef": {
       "description": "The item a live event changed, and its state after the event.",
       "properties": {
+        "failure": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure"
+        },
         "id": {
           "title": "Id",
           "type": "string"
         },
         "kind": {
           "$ref": "#/$defs/ItemKind"
+        },
+        "ordinal": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ordinal"
+        },
+        "response_group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response Group"
         },
         "state": {
           "$ref": "#/$defs/ItemState"
@@ -145,6 +185,7 @@
       ],
       "type": "string"
     },
+    "JsonValue": {},
     "RunSignal": {
       "description": "The payload of `reset` and `gap`.",
       "properties": {

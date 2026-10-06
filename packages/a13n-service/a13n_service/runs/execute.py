@@ -14,7 +14,6 @@ run persistence, and no database session survives an external call.
 
 import asyncio
 import time
-from collections.abc import Collection
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, replace
 from functools import partial
@@ -341,6 +340,8 @@ class _Attempt:
         self.fold = DisplayFold(
             lease.run_id, plan.tail, attempt=lease.number, page_items=worker.page_items, page_bytes=worker.page_bytes
         )
+        if plan.tail.position.attempt != lease.number:
+            self.fold.interrupt(open_tool_calls(plan.state.message_history))
         self.offers = _Offers(plan.assigned)
         self.recipient = Recipient(
             plan.agent.model.config.characteristics.capabilities,
@@ -429,6 +430,20 @@ class _Attempt:
             output = await stack.enter_async_context(
                 Coalescer(self.fold, live, window=runtime.settings.worker.stream_coalesce_seconds)
             )
+
+            def freeze_display(_open_calls: frozenset[str]) -> Snapshot:
+                output.flush()
+                return self._snapshot()
+
+            def capture(item: HarnessEvent) -> None:
+                if not isinstance(item.event, SafeBoundary):
+                    output.observe(item)
+
+            self.boundaries.freeze_display = freeze_display
+            bindings = replace(
+                host.bindings(root, self._bindings(agent.model_resolver(root, models))),
+                producer_observer=capture,
+            )
             start = partial(
                 executable.stream,
                 input_factory=self._assigned_input if self.plan.assigned or self.plan.resume_input else None,
@@ -437,7 +452,7 @@ class _Attempt:
                 resume_usage=False,
                 deferred_resume=self.plan.resume,
                 tool_recovery=self.plan.tool_recovery,
-                bindings=host.bindings(root, self._bindings(agent.model_resolver(root, models))),
+                bindings=bindings,
                 # The call check enforces the run's own request limit across attempts.
                 usage_limits=UsageLimits(request_limit=None),
             )
@@ -496,15 +511,21 @@ class _Attempt:
             if item.run_id == stream.run_id:
                 await self._boundary(event, stream, output)
             return
-        output.observe(item)
+        if not isinstance(item, HarnessEvent):
+            # Only the validated post-teardown terminal comes from public delivery.
+            output.observe(item)
 
     async def _boundary(self, boundary: SafeBoundary, stream: HarnessRunStream, output: Coalescer) -> None:
         if boundary.at == "model":
             self.offers.requested = True
-        output.flush()  # The checkpoint's display covers every event observed before the boundary.
         staged = self.boundaries.take(boundary.token)
-        steers = await self._commit(staged.state, cursors=staged.cursors, open_calls=staged.open_calls)
-        output.boundary()
+        assert staged.display is not None
+        steers = await self._commit(
+            staged.state,
+            cursors=staged.cursors,
+            snapshot=staged.display,
+        )
+        output.stream.boundary(staged.display.tail.position.sequence, resume_after=staged.display.tail.resume_after)
         if boundary.at == "model" and self.control.handoff.is_set():
             # Yield where the request in flight is simply sent again; at a tool boundary recovery would have to
             # treat calls that never ran as unknown effects. Steers just assigned stay with the run.
@@ -520,15 +541,14 @@ class _Attempt:
         state: HarnessState,
         *,
         cursors: dict[str, str | None],
-        open_calls: Collection[str],
+        snapshot: Snapshot,
         outcome: Outcome | None = None,
         deferred: JsonValue = None,
     ) -> list[Offered]:
         """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
         the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned.
-
-        `open_calls` are the tool calls the state leaves unanswered, whose display items stay unfinished."""
-        snapshot = self._snapshot(open_calls)
+        The caller freezes the matching display before entering this persistence path."""
+        snapshot = self.fold.pending(snapshot)
         if near_deadline(self.runtime, self.control):
             raise LeaseLost()
         started = time.monotonic()
@@ -673,17 +693,18 @@ class _Attempt:
             return
         # Completed and suspended results always carry their state; a waiting one leaves its pending calls open.
         assert result.state is not None
-        open_calls = open_tool_calls(result.all_messages())
+        self.fold.interrupt(open_tool_calls(result.all_messages()))
+        snapshot = self._snapshot()
         if result.status == "completed":
             outcome = Outcome(status="completed", output=self._output(result.output))
-            await self._commit(result.state, cursors=self.cursors.snapshot(), open_calls=open_calls, outcome=outcome)
+            await self._commit(result.state, cursors=self.cursors.snapshot(), snapshot=snapshot, outcome=outcome)
         else:
             assert result.deferred is not None
             outcome = Outcome(status="waiting", pending=deferred.pending(result.deferred))
             await self._commit(
                 result.state,
                 cursors=self.cursors.snapshot(),
-                open_calls=open_calls,
+                snapshot=snapshot,
                 outcome=outcome,
                 deferred=deferred.dump(result.deferred),
             )
@@ -691,16 +712,17 @@ class _Attempt:
     async def _seal_interrupted(self, outcome: Outcome) -> None:
         """Seal a failure or cancellation with the display this attempt folded, its unfinished items interrupted."""
         display = None
+        self.fold.interrupt()
         if not near_deadline(self.runtime, self.control):
             display = await checkpoints.publish_display(self.runtime, self.lease, self._snapshot())
         await seal_attempt(self.runtime, self.lease, outcome, display=display)
 
-    def _snapshot(self, open_calls: Collection[str] = ()) -> Snapshot:
+    def _snapshot(self) -> Snapshot:
         """The display to commit, with a safe resume hint captured without waiting for queued Redis writes.
 
         The writer replaces one immutable value on the same event loop. Terminal callers read it after close.
         """
-        snapshot = self.fold.snapshot(open_calls)
+        snapshot = self.fold.snapshot()
         tail, written = snapshot.tail, self.live.last_written if self.live is not None else None
         if (
             written is not None

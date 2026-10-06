@@ -149,7 +149,7 @@ def test_inspection_reuses_native_history_and_preserves_display_context_split(ki
     if kind in {"display", "cleared"}:
         display = DisplayHistoryCollector(messages).capture(messages, completed=True)
         if kind == "cleared":
-            display = DisplayHistoryCollector((), DisplayHistory(messages=display.messages)).capture(())
+            display = DisplayHistoryCollector((), DisplayHistory(items=display.items)).capture()
         state = with_display_history(state, display)
     composition = ObjectRef(object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64)
     initial = ObjectRef(object_kind=ObjectKind.thread_initial_state, object_schema_version="1", logical_digest="b" * 64)
@@ -175,9 +175,9 @@ def test_inspection_reuses_native_history_and_preserves_display_context_split(ki
     decode = Mock(wraps=state_module.decode_messages)
     monkeypatch.setattr(state_module, "decode_messages", decode)
     inspection = build_thread_inspection(thread, stored)
-    # Saved display validation also checks the native mapping once. Projection
-    # itself reuses one decoded native history for context and token metadata.
-    assert decode.call_count == (2 if kind in {"display", "cleared"} else 1)
+    # Compact display does not decode another native history. Context and
+    # token metadata reuse one native decode even with a saved presentation.
+    assert decode.call_count == 1
     metadata = ThreadInspection.model_validate_json(inspection.metadata_json)
     assert metadata.context_empty is (kind == "cleared")
     assert metadata.latest_request_tokens == (None if kind == "cleared" else 10)

@@ -58,6 +58,14 @@ class HarnessExtensionEvent(BaseModel):
 
 Extension payloads are small discriminated schemas owned by their subsystem. First-party producers construct a frozen typed Pydantic payload and pass only `model_dump(mode="json")` output to the open envelope; they do not assemble payload dictionaries ad hoc. The event envelope does not duplicate definition, lineage, policy, or host lifecycle fields already available from run context. [`Public API and Packaging`](14-public-api-and-packaging.md) owns `HarnessRunResultEvent` and the `HarnessStreamEvent` union.
 
+## Producer observation
+
+`RunBindings.producer_observer` optionally receives synchronous, process-local `HarnessEvent` observations before external stream consumption. Native events are captured for the primary native attempt; reentrant helper-model events are excluded. Validated Harness extensions are observed before enqueueing, including logical start and recovery notices. Inline children inherit the observer at their bound forwarding seam, use independent capture state, and are not observed again when their public events are forwarded.
+
+Producer sequences are local to this observation channel, not public stream cursors or Host display-batch positions. Authored input/media, delivered steering and context summaries are observable before the corresponding model checkpoint. The callback updates local state only and performs no asynchronous persistence or transport I/O. Hosts freeze their display at their existing checkpoint boundaries; producer observation neither selects a checkpoint nor acknowledges an effect.
+
+Public stream plugins remain independent observation middleware. Later rewrites do not redefine producer-captured display; display filtering uses the Host's existing pre-fold processor. Native completion does not establish terminal success: Hosts finalize only from the validated Harness result after teardown. Child observations remain provisional until the parent accepts and retains the child outcome, including retained failed outcomes.
+
 ## Adaptation
 
 ```mermaid

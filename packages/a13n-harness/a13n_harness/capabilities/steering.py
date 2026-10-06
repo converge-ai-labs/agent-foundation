@@ -11,7 +11,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.messages import EnqueuedMessagesEvent, ModelRequest, UserPromptPart
 
 from a13n_harness.content import ContentItem, ContentMetadata, input_request
 from a13n_harness.errors import DefinitionError, RunError
@@ -31,6 +31,7 @@ _STEERING_STATE_VERSION = "1"
 _SOURCE_RUN_METADATA_KEY = "a13n.steering-run"
 _INPUT_ID_METADATA_KEY = "a13n.steering-input"
 _NOTIFICATION_SOURCE_METADATA_KEY = "a13n.steering-source"
+_NOTIFICATION_ID_METADATA_KEY = "a13n.notification-input"
 
 type SteeringInputSource = Literal["external", "async_subagent", "background_process"]
 
@@ -59,11 +60,13 @@ class SteeringBridge:
         run_id: str,
         retain_inputs: bool,
         events: HarnessEventEmitter,
+        delivered: Callable[[EnqueuedMessagesEvent], None] | None = None,
     ) -> None:
         self._state = state
         self._run_id = run_id
         self._retain_inputs = retain_inputs
         self._events = events
+        self._delivered = delivered
         self._retained_requests: tuple[ModelRequest, ...] = ()
         self._pending_requests: dict[str, ModelRequest] = {}
         self._active_context: RunContext[Any] | None = None
@@ -162,6 +165,7 @@ class SteeringBridge:
             metadata={
                 _SOURCE_RUN_METADATA_KEY: self._run_id,
                 _NOTIFICATION_SOURCE_METADATA_KEY: source,
+                _NOTIFICATION_ID_METADATA_KEY: uuid4().hex,
             },
         )
         try:
@@ -170,31 +174,45 @@ class SteeringBridge:
             return None
         if enqueue_id is None:
             return None
+        async with self._lock:
+            self._pending_requests[enqueue_id] = deepcopy(request)
         await self._emit_enqueued(enqueue_id, source=source, references=tuple(references))
         return enqueue_id
 
     async def resolve_delivered(self, messages: Sequence[ModelMessage]) -> None:
         """Resolve pending public inputs already present in canonical history."""
-        delivered_ids = set(steering_input_ids(messages))
+        delivered_ids = set((*steering_input_ids(messages), *_input_ids(messages, _NOTIFICATION_ID_METADATA_KEY)))
         if not delivered_ids:
             return
         async with self._lock:
             applied_enqueue_ids = [
                 enqueue_id
                 for enqueue_id, request in self._pending_requests.items()
-                if request.metadata is not None and request.metadata.get(_INPUT_ID_METADATA_KEY) in delivered_ids
+                if request.metadata is not None
+                and (
+                    request.metadata.get(_INPUT_ID_METADATA_KEY) in delivered_ids
+                    or request.metadata.get(_NOTIFICATION_ID_METADATA_KEY) in delivered_ids
+                )
             ]
             if not applied_enqueue_ids:
                 return
             if self._retain_inputs:
                 retained = (
                     *self._retained_requests,
-                    *(self._pending_requests[enqueue_id] for enqueue_id in applied_enqueue_ids),
+                    *(
+                        self._pending_requests[enqueue_id]
+                        for enqueue_id in applied_enqueue_ids
+                        if _NOTIFICATION_SOURCE_METADATA_KEY not in (self._pending_requests[enqueue_id].metadata or {})
+                    ),
                 )
                 await self._write(retained)
                 self._retained_requests = deepcopy(retained)
             for enqueue_id in applied_enqueue_ids:
-                self._pending_requests.pop(enqueue_id)
+                self._observe_delivered(enqueue_id, self._pending_requests.pop(enqueue_id))
+
+    def _observe_delivered(self, enqueue_id: str, request: ModelRequest) -> None:
+        if self._delivered is not None:
+            self._delivered(EnqueuedMessagesEvent(enqueue_id=enqueue_id, messages=(request,)))
 
     async def mark_applied(self, enqueue_id: str) -> None:
         """Resolve one public steering value after native history delivery is observed."""
@@ -202,11 +220,11 @@ class SteeringBridge:
             request = self._pending_requests.get(enqueue_id)
             if request is None:
                 return
-            if self._retain_inputs:
+            if self._retain_inputs and _NOTIFICATION_SOURCE_METADATA_KEY not in (request.metadata or {}):
                 retained = (*self._retained_requests, request)
                 await self._write(retained)
                 self._retained_requests = deepcopy(retained)
-            self._pending_requests.pop(enqueue_id)
+            self._observe_delivered(enqueue_id, self._pending_requests.pop(enqueue_id))
 
     async def bind(self, ctx: RunContext[Any]) -> bool:
         """Bind the outer native attempt and redeliver its unresolved public inputs."""
@@ -264,12 +282,16 @@ class SteeringBridge:
 
 
 def steering_input_ids(messages: Sequence[ModelMessage]) -> tuple[str, ...]:
-    """Input IDs of the steering values delivered into `messages`, in history order."""
+    """Input IDs of public steering values delivered into `messages`, in history order."""
+    return _input_ids(messages, _INPUT_ID_METADATA_KEY)
+
+
+def _input_ids(messages: Sequence[ModelMessage], key: str) -> tuple[str, ...]:
     return tuple(
         input_id
         for message in messages
         if isinstance(message, ModelRequest) and message.metadata is not None
-        for value in [message.metadata.get(_INPUT_ID_METADATA_KEY)]
+        for value in [message.metadata.get(key)]
         for input_id in (value if isinstance(value, list) else [value])
         if isinstance(input_id, str)
     )

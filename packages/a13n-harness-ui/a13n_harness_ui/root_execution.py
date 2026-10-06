@@ -14,6 +14,7 @@ from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     DeferredToolResume,
+    HarnessEvent,
     HarnessRunResult,
     HarnessRunResultEvent,
     HarnessRunStream,
@@ -29,11 +30,11 @@ from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageSnapshot
 from a13n_logging import get_logger
-from a13n_stream_protocol import HarnessAguiStreamObserver
 from anyio import CancelScope, get_cancelled_exc_class, to_thread
 from opentelemetry.trace import StatusCode
-from pydantic_ai import ToolDenied, ToolFailed
+from pydantic_ai import RunContext, ToolDenied, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, ToolApproved
 
 from a13n_harness_ui.capability_runtime import production_run_bindings
@@ -51,6 +52,7 @@ from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.display_history import (
     DisplayHistory,
     DisplayHistoryCollector,
+    DisplayPublication,
     detach_display_history,
     saved_display_history,
     with_display_history,
@@ -214,9 +216,7 @@ class RootRunExecutor:
 
             def prepare_memory_history() -> HarnessState:
                 saved = saved_display_history(previous)
-                display = DisplayHistoryCollector(
-                    (), DisplayHistory(messages=previous.message_history if saved is None else saved.messages)
-                ).capture(())
+                display = DisplayHistoryCollector(previous.message_history, saved).capture()
                 return with_display_history(HarnessState.new(thread_id=thread_id), display)
 
             fresh = await to_thread.run_sync(prepare_memory_history)
@@ -352,9 +352,10 @@ class RootRunExecutor:
             goal_capability = GoalCapability(goal, changed=on_goal)
             base_continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
 
-            async def save_checkpoint(state: HarnessState) -> str:
+            async def save_checkpoint(state: HarnessState) -> tuple[str, str]:
                 nonlocal thread
                 assert stream is not None
+                frozen = display.capture(state.message_history)
                 excerpt = await to_thread.run_sync(lambda: checkpoint_excerpt(thread.excerpt, state.message_history))
                 # RootCheckpointCapability joins this operation and its marker
                 # before propagating either native or AnyIO cancellation.
@@ -364,7 +365,7 @@ class RootRunExecutor:
                     memory_positions=reconstructed.memory_cursors.snapshot(),
                     accepted=stream.pending_deferred_input,
                     state=state,
-                    display=display,
+                    display=frozen,
                     excerpt=excerpt,
                     activity_changed=excerpt != thread.excerpt,
                 )
@@ -374,7 +375,26 @@ class RootRunExecutor:
                 thread = thread.model_copy(update={"continuation": selected.reference, "excerpt": excerpt})
                 if self._summary_hub is not None:
                     await self._summary_hub.publish(kind="thread", thread_id=thread_id)
-                return selected.reference.logical_digest
+                return selected.reference.logical_digest, str(frozen.position)
+
+            async def retain_tool_presentation(event: AgentStreamEvent) -> None:
+                if not isinstance(event, FunctionToolResultEvent):
+                    return
+                assert stream is not None
+                observed = HarnessEvent(
+                    thread_id=thread_id,
+                    run_id=stream.run_id,
+                    sequence=0,
+                    occurred_at=datetime.now(UTC),
+                    event=event,
+                )
+                image_events = await tool_images.observe(observed)
+                app_events = (
+                    await self._mcp_apps.observe(observed, thread_id=thread_id, run_id=stream.run_id)
+                    if self._mcp_apps is not None
+                    else ()
+                )
+                display.supplement((*image_events, *app_events))
 
             preparation_span.set_attribute("a13n.phase.step", "reconstruction")
             pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
@@ -386,8 +406,8 @@ class RootRunExecutor:
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
                     goal_capability,
-                    display,
                     RootCheckpointCapability(save_checkpoint),
+                    _ToolPresentationCapability(retain_tool_presentation),
                     *(
                         (RestartPauseCapability(self._restart, thread_id),)
                         if self._restart is not None and admission.organization is None
@@ -443,6 +463,7 @@ class RootRunExecutor:
                 tool_result_directory=None if environment is None else environment.tool_result_directory,
                 model_resolver=reconstructed.model_resolver,
                 usage_reporter=self._store.usage.reporter(thread_id),
+                producer_observer=display.observe,
                 file_media_understanding=reconstructed.file_media_understanding(previous_state.thread_id),
                 working_state_observer=(
                     partial(self._work.observe, thread_id, base_continuation_id=base_continuation_id)
@@ -481,7 +502,6 @@ class RootRunExecutor:
             tool_images = ToolImageCollector(run_id=stream.run_id, thread_id=thread.thread_id, files=self._thread_files)
             if on_stream is not None:
                 await on_stream(stream, input_files)
-            observer = HarnessAguiStreamObserver()
             async with self._bind_subagent_parent(
                 thread_id=thread.thread_id,
                 run_id=stream.run_id,
@@ -494,26 +514,21 @@ class RootRunExecutor:
                         record_skill_event(item)
                         excerpts.observe(item)
                         tool_evidence.observe(item)
-                        image_events = await tool_images.observe(item)
-                        app_events = (
-                            await self._mcp_apps.observe(item, thread_id=thread.thread_id, run_id=stream.run_id)
-                            if self._mcp_apps is not None
-                            else ()
-                        )
                         await self._store.usage.observe(thread_id=thread.thread_id, item=item)
-                        try:
-                            await self._publish_live(
-                                thread_id=thread.thread_id,
-                                run_id=stream.run_id,
-                                events=observer.observe(item),
-                                supplements=(*image_events, *app_events),
-                                observer=observer,
-                                base_continuation_id=base_continuation_id,
-                            )
-                        except Exception:
-                            pass
                         if isinstance(item, HarnessRunResultEvent):
+                            display.observe(item)
                             result = item.result
+                        publication = display.drain()
+                        if publication is not None:
+                            try:
+                                await self._publish_live(
+                                    thread_id=thread.thread_id,
+                                    run_id=stream.run_id,
+                                    display=publication,
+                                    base_continuation_id=base_continuation_id,
+                                )
+                            except Exception:
+                                display.publication_failed()
         except BaseException as exc:
             run_error = exc
             if result is None and stream is not None:
@@ -567,7 +582,7 @@ class RootRunExecutor:
                         memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=paused_state,
-                        display=display,
+                        display=display.capture(paused_state.message_history) if display is not None else None,
                         excerpt=checkpoint_excerpt(thread.excerpt, paused_state.message_history),
                         activity_changed=True,
                     )
@@ -606,19 +621,24 @@ class RootRunExecutor:
                                 usage=result.usage,
                             )
                         )
+                    completed_run_id = (
+                        stream.run_id
+                        if stream is not None and result.status == "completed" and run_error is None
+                        else None
+                    )
                     continuation = await self._select_state(
                         thread=thread,
                         composition=published.reference,
                         memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=result.state,
-                        display=display,
-                        deferred=result.deferred,
-                        completed_run_id=(
-                            stream.run_id
-                            if stream is not None and result.status == "completed" and run_error is None
+                        display=(
+                            display.capture(result.state.message_history, completed=completed_run_id is not None)
+                            if display is not None and result.state is not None
                             else None
                         ),
+                        deferred=result.deferred,
+                        completed_run_id=completed_run_id,
                         excerpt=thread.excerpt if excerpts is None else excerpts.finish(result),
                         activity_changed=excerpts is not None and excerpts.changed,
                     )
@@ -638,7 +658,7 @@ class RootRunExecutor:
                             memory_positions=reconstructed.memory_cursors.snapshot(),
                             accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                             state=state,
-                            display=display,
+                            display=display.capture(state.message_history) if display is not None else None,
                             excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
                             activity_changed=excerpts is not None and excerpts.changed,
                         )
@@ -771,7 +791,7 @@ class RootRunExecutor:
         thread: Thread,
         composition: ObjectRef,
         state: HarnessState | None,
-        display: DisplayHistoryCollector | None = None,
+        display: DisplayHistory | None = None,
         deferred: DeferredToolRequests | None = None,
         accepted: DeferredToolResume | None = None,
         excerpt: ConversationExcerpt,
@@ -779,6 +799,7 @@ class RootRunExecutor:
         completed_run_id: str | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> RootContinuationSelection:
+        """Select native state with a display already frozen on the producer's event loop."""
         if state is None:
             return RootContinuationSelection(status="not_available")
         published_ref: ObjectRef | None = None
@@ -788,11 +809,7 @@ class RootRunExecutor:
                 harness_release=harness_version,
                 run_composition=composition,
                 memory_cursors=dict(memory_positions or {}),
-                harness_state=with_display_history(
-                    state, display.capture(state.message_history, completed=completed_run_id is not None)
-                )
-                if display is not None
-                else state,
+                harness_state=with_display_history(state, display) if display is not None else state,
                 excerpt=excerpt,
                 deferred_requests=deferred,
                 accepted_input=StoredDeferredInput.capture(accepted, state),
@@ -803,7 +820,7 @@ class RootRunExecutor:
         try:
             # The request checkpoint joins this work before model execution or
             # cancellation; terminal saving starts only after stream teardown.
-            # Never abandon a worker that still owns mutable display collection.
+            # Join serialization before propagating cancellation.
             continuation, read_model = await to_thread.run_sync(prepare_continuation)
             published_ref = (
                 await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=continuation)
@@ -837,10 +854,8 @@ class RootRunExecutor:
         *,
         thread_id: str,
         run_id: str,
-        events: tuple[Any, ...],
-        observer: HarnessAguiStreamObserver,
+        display: DisplayPublication,
         base_continuation_id: str | None,
-        supplements: tuple[Any, ...] = (),
     ) -> None:
         if self._live_hub is None:
             return
@@ -850,11 +865,20 @@ class RootRunExecutor:
             parent_thread_id=None,
             thread_id=thread_id,
             run_id=run_id,
-            events=events,
-            supplements=supplements,
-            observer=observer,
+            events=(),
+            display=display,
             base_continuation_id=base_continuation_id,
         )
+
+
+class _ToolPresentationCapability(AbstractCapability[AgentContext]):
+    """Join Host asset retention before the next native execution checkpoint."""
+
+    def __init__(self, retain: Callable[[AgentStreamEvent], Awaitable[None]]) -> None:
+        self._retain = retain
+
+    async def on_event(self, ctx: RunContext[AgentContext], *, event: AgentStreamEvent) -> None:
+        await self._retain(event)
 
 
 def _deferred_resume(

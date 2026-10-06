@@ -5960,6 +5960,37 @@ export interface components {
             /** Resume Cursor */
             resume_cursor: string | null;
         };
+        /** @enum {string} */
+        ItemKind: "text_message" | "reasoning_message" | "tool_call" | "observation";
+        /**
+         * ItemRef
+         * @description The item a live event changed, and its state after the event.
+         */
+        ItemRef: {
+            /** Id */
+            id: string;
+            kind: components["schemas"]["ItemKind"];
+            state: components["schemas"]["ItemState"];
+            /**
+             * Ordinal
+             * @default null
+             */
+            ordinal?: number | null;
+            /**
+             * Response Group
+             * @default null
+             */
+            response_group?: string | null;
+            /**
+             * Failure
+             * @default null
+             */
+            failure?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+        };
+        /** @enum {string} */
+        ItemState: "in_progress" | "completed" | "interrupted" | "failed";
         /**
          * LiveEvent
          * @description Detached bounded AG-UI event correlated to one complete root lineage.
@@ -5998,6 +6029,10 @@ export interface components {
             } | null;
             /** Payload Omitted */
             payload_omitted: boolean;
+            /** @default null */
+            display_position?: components["schemas"]["StreamPosition"] | null;
+            /** @default null */
+            item?: components["schemas"]["ItemRef"] | null;
         };
         /** ResetFrame */
         ResetFrame: {
@@ -6047,6 +6082,13 @@ export interface components {
             base_continuation_id: string | null;
             /** Event Count */
             event_count: number;
+        };
+        /** StreamPosition */
+        StreamPosition: {
+            /** Attempt */
+            attempt: number;
+            /** Sequence */
+            sequence: number;
         };
         /** SummaryCursor */
         SummaryCursor: {

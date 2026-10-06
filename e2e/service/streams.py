@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx2
+from a13n_stream_protocol.display import DisplayFold
 
 from .api import TIMEOUT, Workspace
 
@@ -25,7 +26,7 @@ class Frame:
 
     @property
     def kind(self) -> str | None:
-        """The AG-UI event type of a delta."""
+        """The raw AG-UI event type, if this frame carries a delta."""
         return self.data["event"]["type"] if self.event == "delta" else None
 
 
@@ -68,16 +69,17 @@ async def read_until(frames: AsyncIterator[Frame], done: Callable[[Frame], bool]
 
 def assistant_text(frames: list[Frame], run_id: str) -> str:
     """The assistant text the deltas of `run_id` stream, in arrival order."""
-    assistant, text = set(), []
+    display = DisplayFold(run_id)
     for frame in frames:
-        if not frame.of(run_id) or frame.kind is None:
-            continue
-        event = frame.data["event"]
-        if frame.kind == "TEXT_MESSAGE_START" and event.get("role") == "assistant":
-            assistant.add(event["messageId"])
-        elif frame.kind == "TEXT_MESSAGE_CONTENT" and event["messageId"] in assistant:
-            text.append(event["delta"])
-    return "".join(text)
+        if frame.of(run_id) and frame.event == "delta":
+            display.attempt = frame.data["attempt"]
+            display.sequence = frame.data["sequence"] - 1
+            display.fold([frame.data["event"]])
+    return "".join(
+        str(item.content.get("text", ""))
+        for item in display.items.values()
+        if item.kind == "text_message" and item.content.get("role") == "assistant"
+    )
 
 
 def finished(run_id: str) -> Callable[[Frame], bool]:

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from ag_ui.core.events import CustomEvent
+from pydantic import BaseModel, ConfigDict, Field
 
 FRAGMENT_EVENT_NAME = "a13n.stream.fragment"
 
@@ -36,11 +37,21 @@ class _Assembly:
     size: int = 0
 
 
+class FragmentState(BaseModel):
+    """Incomplete custom payloads, not a journal of completed events."""
+
+    model_config = ConfigDict(extra="forbid")
+    pending: dict[str, _Assembly] = Field(default_factory=dict)
+    gap: bool = False
+    max_bytes: int = Field(default=64 * 1024 * 1024, ge=1)
+    max_pending: int = Field(default=8, ge=1)
+
+
 class CustomEventAssembler:
     """Reassemble bounded ordered frames; gaps never produce partial domain events.
 
-    One instance belongs to one live subscription. Reconnects start fresh. A
-    caller may display its existing observation-gap notice when a frame is lost.
+    Restore continuation when reconnecting from a normalized snapshot. A caller
+    may display its existing observation-gap notice when a frame is lost.
     """
 
     def __init__(self, *, max_bytes: int = 64 * 1024 * 1024, max_pending: int = 8) -> None:
@@ -51,6 +62,20 @@ class CustomEventAssembler:
         self._pending: dict[str, _Assembly] = {}
         self._size = 0
         self.gap = False
+
+    def export(self) -> FragmentState:
+        return FragmentState(
+            pending=self._pending, gap=self.gap, max_bytes=self.max_bytes, max_pending=self.max_pending
+        ).model_copy(deep=True)
+
+    @classmethod
+    def restore(cls, state: FragmentState) -> CustomEventAssembler:
+        state = state.model_copy(deep=True)
+        assembler = cls(max_bytes=state.max_bytes, max_pending=state.max_pending)
+        assembler._pending = state.pending
+        assembler._size = sum(part.size for part in state.pending.values())
+        assembler.gap = state.gap
+        return assembler
 
     def _discard(self, identity: str) -> None:
         assembly = self._pending.pop(identity, None)

@@ -5,7 +5,7 @@ import { revalidateSession, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { conversationQueries, invalidateConversation } from "./api";
-import { isOmitted, type DisplayItem } from "./display";
+import { comparePositions, isOmitted, type DisplayItem } from "./display";
 import { useEarlierItems } from "./earlier-items";
 import { RunDisplayState } from "./run-display-state";
 import {
@@ -121,19 +121,19 @@ export function useRunDisplay(
         ),
       ]);
       signal.throwIfAborted();
-      read = next;
       known = list;
-      cache.setQueryData(queries.run(runId).queryKey, next.run);
       buffer.reconcile(
         next,
         Math.max(0, ...list.map((attempt) => attempt.number)),
         discard,
       );
-      omitted = next.items.some((item) => isOmitted(item.content));
+      read = buffer.read;
+      cache.setQueryData(queries.run(runId).queryKey, read!.run);
+      omitted = read!.items.some((item) => isOmitted(item.content));
       setIncomplete(omitted);
       setGap(omitted || buffer.incomplete);
       publish();
-      return next;
+      return read!;
     }
     async function receive(delta: ThreadDelta, cursor: string) {
       if (delta.attempt < buffer.attempt || read?.complete) return;
@@ -157,7 +157,15 @@ export function useRunDisplay(
         void current(() =>
           cache.fetchQuery({ ...queries.run(runId), staleTime: 0 }),
         )
-          .then((run) => (run.sealed_at ? reconcile() : undefined))
+          .then((run) =>
+            run.sealed_at ||
+            buffer.incomplete ||
+            (run.display_position &&
+              (!read?.position ||
+                comparePositions(run.display_position, read.position) > 0))
+              ? reconcile()
+              : undefined,
+          )
           .catch(() => undefined);
       }, SEAL_CHECK_MS);
       try {

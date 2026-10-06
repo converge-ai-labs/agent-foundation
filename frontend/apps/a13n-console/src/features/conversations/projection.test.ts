@@ -4,6 +4,7 @@ import { parseItemValue, presentItem, presentItems } from "./projection";
 
 const item = (fields: Partial<DisplayItem>): DisplayItem => ({
   id: "itm_message",
+  ordinal: 1,
   kind: "text_message",
   state: "completed",
   first_stream_id: "1-1",
@@ -64,9 +65,10 @@ it("leaves an unfinished or untimed Item without the times it never reported", (
   expect(
     presentItem(item({ state: "interrupted", ended_at: null })),
   ).toMatchObject({ startedAt: "2026-09-08T00:00:01Z", endedAt: null });
-  expect(
-    presentItem(item({ started_at: null, ended_at: undefined })),
-  ).toMatchObject({ startedAt: null, endedAt: null });
+  expect(presentItem(item({ ended_at: undefined }))).toMatchObject({
+    startedAt: "2026-09-08T00:00:01Z",
+    endedAt: null,
+  });
 });
 
 it("keeps steering provenance so an enqueued notice is not read as authored input", () => {

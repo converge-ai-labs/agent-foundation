@@ -21,6 +21,7 @@ import {
 import type { Schema } from "../../shared/api";
 import { conversationQueries, invalidateConversation } from "./api";
 import { useRunDisplay } from "./run-display";
+import { useEarlierItems } from "./earlier-items";
 import {
   fixtureAttempt,
   fixtureRun,
@@ -206,6 +207,7 @@ beforeEach(() => {
   attempts = [1];
   display = {
     run: run(),
+    baseline: true,
     items: [message("Hello", "1-0", "1-1")],
     position: "1-1",
     complete: false,
@@ -478,8 +480,23 @@ it("learns a new attempt's identity once before folding its deltas", async () =>
   attempts = [1, 2];
   await act(async () => {
     frames.push(
-      delta(2, 1, "Second", "item_2-1"),
-      delta(2, 2, " try", "item_2-1"),
+      {
+        type: "delta",
+        cursor: "c2-1",
+        delta: {
+          run_id: "run_one",
+          attempt: 2,
+          sequence: 1,
+          event: {
+            type: "TEXT_MESSAGE_START",
+            messageId: "item_2-1",
+            role: "assistant",
+          },
+          item: { id: "item_2-1", kind: "text_message", state: "in_progress" },
+        },
+      },
+      delta(2, 2, "Second", "item_2-1"),
+      delta(2, 3, " try", "item_2-1"),
     );
   });
   await waitFor(() => expect(text()).toBe("Hello|Second try"));
@@ -499,7 +516,12 @@ const observed = (
     attempt: 1,
     sequence,
     event: { type: "CUSTOM", name, value },
-    item: { id: `obs_${sequence}`, kind: "observation", state: "completed" },
+    item: {
+      id: `obs_${sequence}`,
+      kind: "observation",
+      state: "completed",
+      ordinal: sequence,
+    },
   },
 });
 
@@ -524,12 +546,12 @@ it("reads the execution from the observations the stream delivers", async () => 
   );
 });
 
-it("waits for the next boundary's display to hold an event the stream fragmented", async () => {
+it("refreshes durable coverage after a complete observation batch", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
   expect(pathRequests("/items")).toHaveLength(1);
   await act(async () => {
-    frames.push(observed(2, "a13n.stream.fragment", { part: 1 }));
+    frames.push(observed(2, "plugin.large", "whole"));
   });
   display = {
     ...display,
@@ -561,6 +583,7 @@ it("reconciles the sealed display once the Thread's current Run moves on", async
   thread = { ...thread, current_run_id: null, version: 5 };
   display = {
     run: run({ status: "completed", sealed_at: "2026-09-20T10:00:09.000Z" }),
+    baseline: true,
     items: [message("Hello", "1-0", "1-2", "completed")],
     position: "1-2",
     complete: true,
@@ -690,7 +713,9 @@ it.each([true, false])(
     if (alreadyCovered) display = repaired;
     await act(async () => frames.push({ type: "gap", run_id: "run_one" }));
     await waitFor(() =>
-      expect(screen.getByTestId("gap").textContent).toBe("true"),
+      expect(screen.getByTestId("gap").textContent).toBe(
+        alreadyCovered ? "false" : "true",
+      ),
     );
     expect(pathRequests("/items")).toHaveLength(2);
 
@@ -742,7 +767,7 @@ it("keeps an unknown gap incomplete when its clarified range is not yet covered"
   expect(screen.getByTestId("coverage").textContent).toBe("complete");
 });
 
-it("does not advance coverage across a hole and waits for a covering checkpoint", async () => {
+it("displays a degraded suffix across a hole until a covering checkpoint repairs it", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
   await act(async () =>
@@ -754,8 +779,8 @@ it("does not advance coverage across a hole and waits for a covering checkpoint"
   await waitFor(() =>
     expect(screen.getByTestId("gap").textContent).toBe("true"),
   );
-  expect(text()).toBe("Hello");
-  expect(resumeOptions()?.position).toBe("1-1");
+  await waitFor(() => expect(text()).toBe("Hello!"));
+  expect(resumeOptions()?.position).toBe("1-4");
   expect(pathRequests("/items")).toHaveLength(2);
   await act(async () => frames.push(boundary(1, 2), boundary(1, 2)));
   await waitFor(() => expect(pathRequests("/items")).toHaveLength(3));
@@ -791,7 +816,7 @@ it("drops superseded provisional output before a new attempt's first checkpoint"
   expect(resumeOptions()?.position).toBe("2-1");
 });
 
-it("uses the final display to resolve a gap and discard an uncovered provisional suffix", async () => {
+it("discards a terminal provisional suffix without falsely healing uncovered missing events", async () => {
   render(<View />);
   await waitFor(() => expect(text()).toBe("Hello"));
   await act(async () =>
@@ -813,6 +838,112 @@ it("uses the final display to resolve a gap and discard an uncovered provisional
   thread = { ...thread, current_run_id: null, version: 5 };
   await act(async () => frames.push({ type: "changed", version: 5 }));
   await waitFor(() => expect(text()).toBe("Saved"));
-  expect(screen.getByTestId("gap").textContent).toBe("false");
+  expect(screen.getByTestId("gap").textContent).toBe("true");
   expect(screen.getByTestId("live").textContent).toBe("closed");
+});
+
+it.each([false, true])(
+  "repairs quiet durable progress without a final stream notification (sealed: %s)",
+  async (sealed) => {
+    const intervals = vi.spyOn(globalThis, "setInterval");
+    render(<View />);
+    await waitFor(() => expect(text()).toBe("Hello"));
+    await waitFor(() =>
+      expect(intervals.mock.calls.some(([, ms]) => ms === 10000)).toBe(true),
+    );
+    display = {
+      ...display,
+      run: run({
+        display_position: "1-5",
+        ...(sealed
+          ? { status: "completed", sealed_at: "2026-09-20T10:00:09Z" }
+          : {}),
+      }),
+      items: [
+        message(
+          "Quiet progress",
+          "1-0",
+          "1-5",
+          sealed ? "completed" : "in_progress",
+        ),
+      ],
+      position: "1-5",
+      complete: sealed,
+    };
+    const check = intervals.mock.calls.find(([, ms]) => ms === 10000)![0];
+    await act(async () => {
+      if (typeof check === "function") check();
+    });
+    await waitFor(() => expect(text()).toBe("Quiet progress"));
+    expect(pathRequests("/items")).toHaveLength(2);
+    intervals.mockRestore();
+  },
+);
+
+it("catches up a moving newest window after an older page resolves without advancing the latest ordinal", async () => {
+  const item = (ordinal: number) =>
+    message(
+      `Item ${ordinal}`,
+      `1-${ordinal}`,
+      `1-${ordinal}`,
+      "completed",
+      ordinal,
+    );
+  let finishOlder!: (response: Response) => void;
+  const older = new Promise<Response>((resolve) => {
+    finishOlder = resolve;
+  });
+  read = async (request) => {
+    const query = new URL(request.url).searchParams;
+    if (query.get("before") === "3")
+      return Response.json({ ...display, baseline: false, items: [item(2)] });
+    if (query.get("before") === "2") return older;
+    if (query.get("after") === "2")
+      return Response.json({
+        ...display,
+        baseline: false,
+        items: [item(3), item(4), item(5)],
+      });
+    return response(request);
+  };
+  function Earlier({ first }: { first: number }) {
+    const history = useEarlierItems("run_one", first);
+    return (
+      <>
+        <output data-testid="history">
+          {history.items.map((entry) => entry.ordinal).join(",")}
+        </output>
+        <button onClick={history.load}>Load history</button>
+      </>
+    );
+  }
+  const view = render(
+    <QueryClientProvider client={cache}>
+      <Earlier first={3} />
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Load history" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("history").textContent).toBe("2"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Load history" }));
+  await waitFor(() => expect(pathRequests("/items")).toHaveLength(2));
+  fireEvent.click(screen.getByRole("button", { name: "Load history" }));
+  expect(pathRequests("/items")).toHaveLength(2);
+  view.rerender(
+    <QueryClientProvider client={cache}>
+      <Earlier first={6} />
+    </QueryClientProvider>,
+  );
+  await act(async () => {
+    finishOlder(
+      Response.json({ ...display, baseline: false, items: [item(1)] }),
+    );
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("history").textContent).toBe("1,2,3,4,5"),
+  );
+  expect(
+    pathRequests("/items").map((request) => new URL(request.url).search),
+  ).toEqual(["?before=3", "?before=2", "?after=2&limit=3"]);
 });

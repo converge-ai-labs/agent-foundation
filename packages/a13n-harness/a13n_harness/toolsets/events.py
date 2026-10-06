@@ -17,7 +17,7 @@ class FileEditAppliedEvent(CapabilityEvent, namespace="a13n.filesystem", name="e
 
 
 @dataclass(kw_only=True)
-class HandoffSummaryEvent(CapabilityEvent, namespace="a13n.context", name="handoff_summary"):
+class HandoffSummaryEvent(CapabilityEvent, namespace="a13n.context", name="handoff_summary", dispatch="immediate"):
     """Persisted summary awaiting application at the next model boundary."""
 
     operation_id: str

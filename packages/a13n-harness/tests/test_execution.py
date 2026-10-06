@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
-from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.messages import ModelMessage, ModelResponse, PartStartEvent
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.output import NativeOutput, PromptedOutput, TextOutput, ToolOutput
 from pydantic_ai.tools import DeferredToolRequests, Tool
@@ -813,7 +813,7 @@ async def test_started_stream_closes_the_model_when_the_caller_stops_early() -> 
         while True:
             item = await stream.__anext__()
             assert isinstance(item, HarnessEvent)
-            if not isinstance(item.event, HarnessExtensionEvent):
+            if isinstance(item.event, PartStartEvent):
                 break
 
     await asyncio.wait_for(closed.wait(), timeout=2)

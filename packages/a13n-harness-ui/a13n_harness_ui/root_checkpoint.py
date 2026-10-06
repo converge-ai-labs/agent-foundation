@@ -20,6 +20,7 @@ from pydantic_ai.models import ModelRequestContext
 @dataclass(kw_only=True)
 class ThreadCheckpointEvent(CapabilityEvent, namespace="a13n.harness_ui", name="checkpoint"):
     continuation_id: str
+    display_position: str | None = None
 
 
 class RootCheckpointCapability(AbstractCapability[AgentContext]):
@@ -27,7 +28,7 @@ class RootCheckpointCapability(AbstractCapability[AgentContext]):
 
     id = "a13n.harness-ui.root-checkpoint"
 
-    def __init__(self, save: Callable[[HarnessState], Awaitable[str]]) -> None:
+    def __init__(self, save: Callable[[HarnessState], Awaitable[str | tuple[str, str]]]) -> None:
         self._save = save
         self._active_run_id: str | None = None
 
@@ -70,5 +71,6 @@ class RootCheckpointCapability(AbstractCapability[AgentContext]):
         return request_context
 
     async def _checkpoint(self, ctx: RunContext[AgentContext], state: HarnessState) -> None:
-        continuation_id = await self._save(state)
-        await ctx.emit(ThreadCheckpointEvent(continuation_id=continuation_id))
+        saved = await self._save(state)
+        continuation_id, position = saved if isinstance(saved, tuple) else (saved, None)
+        await ctx.emit(ThreadCheckpointEvent(continuation_id=continuation_id, display_position=position))

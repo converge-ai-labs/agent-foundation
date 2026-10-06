@@ -13,7 +13,7 @@ from a13n_service.runs.admission import CallContext
 from a13n_service.runs.seal import expire_leases
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, UsageRecordRow
 from a13n_service.tenancy.tables import GrantRow
-from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES
+from a13n_stream_protocol.display import DisplayFold
 from sqlalchemy import delete, select, update
 
 pytestmark = pytest.mark.anyio
@@ -143,7 +143,8 @@ async def test_an_interrupt_cancels_the_model_call_in_flight(executing, scripted
     saved = await executing.runtime.redis.xrange(
         f"a13n:thread:{run['thread_id']}", min=listing["resume_after"], max=listing["resume_after"]
     )
-    assert saved and "event" in saved[0][1]
+    assert saved and {"event", "item"} <= saved[0][1].keys()
+    assert int(saved[0][1]["sequence"]) <= int(listing["position"].split("-")[1])
     entry = await executing.client.get(f"{executing.api}/threads/{run['thread_id']}/inbox")
     # The request carried the input and its checkpoint committed before the call: it was consumed.
     assert [item["status"] for item in entry.json()["items"]] == ["consumed"]
@@ -231,12 +232,14 @@ async def test_the_thread_stream_carries_live_output_and_resumes(executing, scri
         async with runs_kit.frames(url, headers) as stream:
             before = await runs_kit.until(stream, lambda frame: frame[0] == "boundary")
             # The input the run was offered streams before the checkpoint that consumed it.
+            display = DisplayFold(created.json()["run"]["id"], attempt=1)
+            for event, _, data in before:
+                if event == "delta":
+                    display.fold([data["event"]])
             inputs = [
-                data["event"]["value"]["event"]["content"]
-                for event, _, data in before
-                if event == "delta"
-                and data["event"]["type"] == "CUSTOM"
-                and data["event"].get("name") in AUTHORED_INPUT_EVENT_NAMES
+                item.content.get("text")
+                for item in display.items.values()
+                if item.kind == "text_message" and item.content.get("role") == "user"
             ]
             assert "stream this" in inputs
             first_delta = next(entry_id for event, entry_id, _ in before if event == "delta")
@@ -245,7 +248,9 @@ async def test_the_thread_stream_carries_live_output_and_resumes(executing, scri
                 stream, lambda frame: frame[0] == "delta" and "Streaming reply" in str(frame[2])
             )
         assert all(
-            data["item"] is None or data["item"]["id"].startswith("itm_") for e, _, data in after if e == "delta"
+            data["item"] is None or data["item"]["id"].startswith("itm_")
+            for event, _, data in after
+            if event == "delta"
         )
 
         # Resuming after the first delta continues its sequence without a gap.
@@ -375,7 +380,8 @@ async def test_an_admission_refusal_prevents_the_call_and_fails_the_run(service,
     saved = await service.runtime.redis.xrange(
         f"a13n:thread:{run['thread_id']}", min=listing["resume_after"], max=listing["resume_after"]
     )
-    assert saved and "event" in saved[0][1]
+    assert saved and {"event", "item"} <= saved[0][1].keys()
+    assert int(saved[0][1]["sequence"]) <= int(listing["position"].split("-")[1])
 
 
 async def test_an_inline_subagent_runs_inside_its_parents_run(executing, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

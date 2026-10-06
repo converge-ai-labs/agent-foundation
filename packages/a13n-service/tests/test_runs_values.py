@@ -183,7 +183,8 @@ def test_snapshots_page_final_items_and_keep_only_open_tool_calls_unfinished():
     fold.fold([{"type": "TOOL_CALL_START", "toolCallId": "call_open", "toolCallName": "find"}])
     fold.fold(_message(20))
 
-    snapshot = fold.snapshot(open_calls={"call_open"})
+    fold.interrupt(open_calls={"call_open"})
+    snapshot = fold.snapshot()
 
     (page,) = snapshot.pages
     assert [item.ordinal for item in page.items] == list(range(1, 17))
@@ -216,3 +217,49 @@ def test_a_page_ends_at_its_byte_limit():
     snapshot = fold.snapshot()
     assert [[item.ordinal for item in page.items] for page in snapshot.pages] == [[1, 2], [3, 4]]
     assert [item.ordinal for item in snapshot.tail.items] == [5]
+
+
+def test_frozen_boundaries_exclude_already_published_pages_and_do_not_alias_live_items():
+    fold = DisplayFold("run", Tail(), attempt=1, page_items=2, page_bytes=65536)
+    for number in range(4):
+        fold.fold(_message(number))
+    first = fold.snapshot()
+    first_bytes = first.tail.model_dump_json()
+    for number in range(4, 8):
+        fold.fold(_message(number))
+    second = fold.snapshot()
+    fold.committed(first)
+    remaining = fold.pending(second)
+    assert [[item.ordinal for item in page.items] for page in remaining.pages] == [[5, 6], [7, 8]]
+    assert first.tail.model_dump_json() == first_bytes
+    fold.committed(remaining)
+    assert fold.first == 9
+    assert fold.items == {}
+
+
+def test_active_tail_roundtrips_without_interrupting_or_renumbering():
+    fold = DisplayFold("run", Tail(), attempt=1, page_items=2, page_bytes=65536)
+    fold.fold(_message(1) + _message(2))
+    fold.fold(
+        [
+            {"type": "TEXT_MESSAGE_START", "messageId": "active", "role": "assistant", "timestamp": 1},
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "active", "delta": "half", "timestamp": 2},
+        ]
+    )
+    frozen = fold.snapshot()
+    assert len(frozen.pages) == 1
+    assert frozen.tail.first == 3
+    assert frozen.tail.items[0].state == "in_progress"
+    fold.committed(frozen)
+    restored = DisplayFold(
+        "run", Tail.model_validate_json(frozen.tail.model_dump_json()), attempt=1, page_items=2, page_bytes=65536
+    )
+    suffix = [
+        {"type": "TEXT_MESSAGE_CONTENT", "messageId": "active", "delta": " done", "timestamp": 3},
+        {"type": "TEXT_MESSAGE_END", "messageId": "active", "timestamp": 4},
+    ]
+    fold.fold(suffix)
+    restored.fold(suffix)
+    assert restored.export() == fold.export()
+    assert restored.snapshot().tail.items[0].ordinal == 3
+    assert frozen.tail.items[0].content["text"] == "half"

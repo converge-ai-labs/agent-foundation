@@ -37,6 +37,7 @@ from a13n_harness.capabilities.context import (
     COMPACTION_CAPABILITY_ID,
     HANDOFF_CAPABILITY_ID,
 )
+from a13n_harness.capabilities.producer import ProducerCaptureCapability
 from a13n_harness.capabilities.steering import (
     SteeringBridge,
 )
@@ -45,7 +46,6 @@ from a13n_harness.content import (
     merge_request_history,
     native_content,
     replace_request_parts,
-    request_input_content,
     request_parts,
 )
 from a13n_harness.context import (
@@ -72,12 +72,11 @@ from a13n_harness.events import (
     HarnessExtensionEvent,
     HarnessRunResultEvent,
     HarnessStreamEvent,
-    InputSource,
     ModelRetryScheduledPayload,
     RunStartedPayload,
     _ChildEventForwarder,
     _RunEventEmitter,
-    input_events,
+    enqueued_input_events,
 )
 from a13n_harness.input import (
     RunInputFactory,
@@ -629,7 +628,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._new_message_index = len(self._latest_messages)
         self._cancel_event = asyncio.Event()
 
-        self._emitter = _RunEventEmitter(self.thread_id, self.run_id)
+        self._emitter = _RunEventEmitter(self.thread_id, self.run_id, observer=self._bindings.producer_observer)
         self._environment_change_drain = _EnvironmentChangeDrain()
         self._environment_event_task: asyncio.Task[None] | None = None
         self._response_pump_task: asyncio.Task[None] | None = None
@@ -865,6 +864,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     & self._executable._definition_reserved_capability_ids
                 ),
                 events=self._emitter,
+                delivered=self._emitter.observe_input,
             ),
             web=bindings.web,
             document_converter=bindings.document_converter,
@@ -1000,12 +1000,14 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         try:
             if not self._logical_events_started:
                 self._start_logical_event_mux()
+                started = HarnessExtensionEvent(kind="lifecycle", payload=RunStartedPayload().model_dump())
+                self._emitter.observe(started)
                 return HarnessEvent(
                     thread_id=self.thread_id,
                     run_id=self.run_id,
                     sequence=self._next_public_sequence(),
                     occurred_at=datetime.now(UTC),
-                    event=HarnessExtensionEvent(kind="lifecycle", payload=RunStartedPayload().model_dump()),
+                    event=started,
                 )
             if self._pending_result is None:
                 if self._response_next_task is None:
@@ -1681,7 +1683,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 deps=self.context,
                 usage=self._usage,
                 usage_limits=self._usage_limits,
-                capabilities=self._bindings.capabilities,
+                capabilities=(
+                    ProducerCaptureCapability(self._emitter, recovery.attempt_id),
+                    *self._bindings.capabilities,
+                ),
             )
             try:
                 async with manager as events:
@@ -1709,21 +1714,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                                 return
                             yield self._adapt_event(cast(AgentStreamEvent, event))
                             if isinstance(event, EnqueuedMessagesEvent):
-                                for message in event.messages:
-                                    if not isinstance(message, ModelRequest):
-                                        continue
-                                    notification = (message.metadata or {}).get("a13n.steering-source")
-                                    source: InputSource = (
-                                        notification
-                                        if notification in {"async_subagent", "background_process"}
-                                        else "steering"
-                                    )
-                                    for observed in input_events(
-                                        request_input_content(message),
-                                        source=source,
-                                        input_id=event.enqueue_id,
-                                    ):
-                                        yield self._adapt_event(observed)
+                                for observed in enqueued_input_events(event):
+                                    yield self._adapt_event(observed)
                     except RunCancelled as exc:
                         if exc.run_id is None:
                             # Native execution has not started; its empty history cannot
@@ -1844,16 +1836,16 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             assert retry_error is not None
             retry_index = recovery.consecutive_failures
             delay = policy.delay(retry_index)
-            yield self._adapt_extension_event(
-                HarnessExtensionEvent(
-                    kind="recovery",
-                    payload=ModelRetryScheduledPayload(
-                        attempt=retry_index + 1,
-                        max_attempts=max_attempts,
-                        delay_seconds=delay,
-                    ).model_dump(mode="json"),
-                )
+            retry_event = HarnessExtensionEvent(
+                kind="recovery",
+                payload=ModelRetryScheduledPayload(
+                    attempt=retry_index + 1,
+                    max_attempts=max_attempts,
+                    delay_seconds=delay,
+                ).model_dump(mode="json"),
             )
+            self._emitter.observe(retry_event)
+            yield self._adapt_extension_event(retry_event)
             if delay > 0:
                 with observe_operation("recovery") as span:
                     record_span_metadata(

@@ -1,6 +1,12 @@
 import type { ContentPart } from "@ag-ui/core";
 import { EventSchema } from "@ag-ui/core/schemas";
 import { readContentParts } from "a13n-ui";
+import {
+  DisplayNormalizer,
+  isDisplayItem,
+  type DisplayContinuation,
+  type DisplayItem,
+} from "a13n-ui/display";
 import type { Schema, Transport } from "../transport/client";
 import type { ThreadRefresh } from "./refresh";
 import { ProcessObservations } from "./process-observations";
@@ -111,6 +117,9 @@ export class FocusDisplay {
   runId?: string;
   baseContinuation?: string | null;
   blocks = new Map<string, DisplayBlock>();
+  private items = new Map<string, DisplayItem>();
+  private normalizer = new DisplayNormalizer({ full_content: true });
+  private displayPosition?: { attempt: number; sequence: number };
   ready = false;
   replayCount = 0;
   sequence = 0;
@@ -161,6 +170,9 @@ export class FocusDisplay {
     this.runId = undefined;
     this.baseContinuation = undefined;
     this.blocks.clear();
+    this.items.clear();
+    this.normalizer = new DisplayNormalizer({ full_content: true });
+    this.displayPosition = undefined;
     this.children.clear();
     this.processes.clear();
     this.fragments.clear();
@@ -235,12 +247,41 @@ export class FocusDisplay {
         this.foldChild(frame.event);
         return;
       }
-      this.fold(
-        frame.event.event_type,
-        frame.event.payload,
-        frame.event.payload_omitted,
-      );
+      this.foldRoot(frame.event);
     }
+  }
+  private foldRoot(event: Schema<"LiveEvent">) {
+    const position = event.display_position;
+    if (!position) {
+      this.fold(event.event_type, event.payload, event.payload_omitted);
+      return;
+    }
+    if (event.payload_omitted || !event.payload)
+      throw new Error("Incomplete root display event; reload its snapshot.");
+    if (this.displayPosition) {
+      if (
+        position.attempt === this.displayPosition.attempt &&
+        position.sequence <= this.displayPosition.sequence
+      )
+        return;
+      if (
+        position.attempt !== this.displayPosition.attempt ||
+        position.sequence !== this.displayPosition.sequence + 1
+      )
+        throw new Error("Missing root display suffix; reload its snapshot.");
+    }
+    this.normalizer.apply(this.items, {
+      run_id: event.run_id,
+      ...position,
+      event: event.payload,
+      item: event.item ?? null,
+    });
+    this.displayPosition = position;
+    if (event.item) {
+      const item = this.items.get(event.item.id);
+      if (item) this.displayItem(item);
+    }
+    this.gap ||= this.normalizer.incomplete;
   }
   private foldChild(event: Schema<"LiveEvent">) {
     if (
@@ -373,7 +414,10 @@ export class FocusDisplay {
     this.gap = true;
   }
   private fold(type: string, payload: Payload | null, omitted: boolean) {
-    if (omitted) this.gap = true;
+    if (omitted)
+      throw new Error(
+        "Display delivery omitted content; reload its compact baseline.",
+      );
     if (!payload) return;
     if (payload.type !== type || !EventSchema.safeParse(payload).success) {
       this.gap = true;
@@ -555,8 +599,125 @@ export class FocusDisplay {
         this.blocks.set(key, { ...block, stopped: true });
     }
   }
+  private displayItem(item: DisplayItem) {
+    const content = item.content;
+    const metadata = object(content.metadata) ? content.metadata : undefined;
+    if (metadata?.display === false) return;
+    const sequence = Number(item.last_stream_id.split("-")[1]);
+    if (item.kind === "observation") {
+      const previous = new Map(this.blocks);
+      if (content.name === "a13n.harness_ui.checkpoint") {
+        const value = object(content.value) ? content.value : {};
+        const source = object(value.event) ? value.event : {};
+        if (
+          typeof source.continuation_id === "string" &&
+          typeof source.display_position === "string"
+        )
+          this.checkpoints.set(
+            source.continuation_id,
+            Number(source.display_position.split("-")[1]),
+          );
+      } else if (typeof content.type === "string") {
+        this.fold(content.type, content, false);
+      } else {
+        this.foldCustom({ type: "CUSTOM", ...content });
+      }
+      for (const [id, block] of this.blocks) {
+        if (previous.get(id) !== block) this.savedBlocks.set(id, sequence);
+      }
+      return;
+    }
+    if (
+      !content.subagentRunId &&
+      content.role !== "user" &&
+      this.recovery?.state === "retrying"
+    )
+      this.recovery = { ...this.recovery, state: "resumed" };
+    const block: DisplayBlock = {
+      id: item.id,
+      kind:
+        item.kind === "tool_call"
+          ? "tool"
+          : item.kind === "reasoning_message"
+            ? "thinking"
+            : content.input_media
+              ? "media"
+              : content.role === "user"
+                ? "user"
+                : "assistant",
+      text: string(
+        item.kind === "tool_call" ? content.arguments : content.text,
+      ),
+      metadata,
+      subagentRunId: string(content.subagentRunId) || undefined,
+      done: item.state !== "in_progress",
+    };
+    if (item.kind === "tool_call") {
+      block.name = string(content.toolCallName);
+      block.toolCallId = string(content.toolCallId);
+      block.result =
+        string(content.result) ||
+        (content.value !== undefined
+          ? JSON.stringify(content.value)
+          : undefined);
+      block.resultParts = readContentParts(content.result_parts);
+      block.outcome = content.outcome as ToolView["outcome"];
+      block.failure = object(content.failure)
+        ? string(content.failure.message)
+        : undefined;
+      block.retry = content.retry === true;
+      block.images = content.tool_images as
+        Schema<"ToolImageView">[] | undefined;
+      block.apps = content.mcp_apps as Schema<"AppReference">[] | undefined;
+      block.edit = content.applied_edit as AppliedEdit | undefined;
+      block.imageUnavailable = content.tool_image_unavailable === true;
+      block.provider = string(content.provider) || undefined;
+      if (this.runId && item.state !== "in_progress")
+        this.processes.result(
+          block.subagentRunId
+            ? `${this.runId}:${block.subagentRunId}`
+            : this.runId,
+          block.name,
+          block.text,
+          content.value ?? content.result,
+        );
+    } else if (content.input_media) {
+      block.value = content.input_media;
+    }
+    this.blocks.set(item.id, block);
+    this.savedBlocks.set(item.id, sequence);
+  }
   private foldCustom(event: Payload) {
     const name = string(event.name);
+    if (name === "a13n.display.reset")
+      throw new Error(
+        "Root display suffix was discarded; reload its snapshot.",
+      );
+    if (name === "a13n.display.snapshot") {
+      const value = object(event.value) ? event.value : {};
+      if (!Array.isArray(value.items) || !value.items.every(isDisplayItem))
+        throw new Error("Invalid compact display snapshot.");
+      for (const item of value.items) this.items.set(item.id, item);
+      if (value.continuation == null) return;
+      if (!object(value.continuation))
+        throw new Error("Invalid compact display continuation.");
+      this.normalizer = new DisplayNormalizer(
+        value.continuation as DisplayContinuation,
+      );
+      const position = value.continuation.position;
+      if (
+        !object(position) ||
+        typeof position.attempt !== "number" ||
+        typeof position.sequence !== "number"
+      )
+        throw new Error("Invalid compact display position.");
+      this.displayPosition = {
+        attempt: position.attempt,
+        sequence: position.sequence,
+      };
+      for (const item of this.items.values()) this.displayItem(item);
+      return;
+    }
     const subagentRunId = string(event.subagentRunId) || undefined;
     const scope = subagentRunId ? `${this.runId}:${subagentRunId}` : this.runId;
     const setBlock = (key: string, block: DisplayBlock) =>
@@ -941,6 +1102,26 @@ export function focusRefresh(frame: FocusFrame): ThreadRefresh | undefined {
     return "lifecycle";
   const content = object(event.payload) ? event.payload : {};
   const value = object(content.value) ? content.value : {};
+  if (content.name === "a13n.display.snapshot" && Array.isArray(value.items)) {
+    const reasons = value.items.filter(isDisplayItem).flatMap((item) => {
+      if (item.kind !== "observation") return [];
+      const payload = item.content;
+      const reason = focusRefresh({
+        ...frame,
+        event: {
+          ...event,
+          event_type: string(payload.type) || "CUSTOM",
+          payload: payload as typeof event.payload,
+        },
+      });
+      return reason ? [reason] : [];
+    });
+    return reasons.includes("lifecycle")
+      ? "lifecycle"
+      : reasons.includes("checkpoint")
+        ? "checkpoint"
+        : reasons[0];
+  }
   const source = object(value.event) ? value.event : {};
   const payload = object(source.payload) ? source.payload : {};
   if (content.name === "a13n.harness_ui.checkpoint") return "checkpoint";

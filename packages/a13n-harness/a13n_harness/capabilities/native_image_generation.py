@@ -23,6 +23,7 @@ from pydantic_ai.native_tools import ImageGenerationTool
 from pydantic_ai.run import AgentRunResult
 
 from a13n_harness.context import AgentContext
+from a13n_harness.events import _RunEventEmitter
 
 NativeImageSaver = Callable[[RunContext[AgentContext], FilePart], Awaitable[str]]
 
@@ -110,6 +111,13 @@ class NativeImageGenerationCapability(AbstractCapability[AgentContext]):
                 )
                 parts.append(reference)
                 self._pending.append((index, reference))
+                # These replacement parts are synthesized after native on_event
+                # dispatch. Capture their saved references before a checkpoint,
+                # independently of the later public stream wrapper.
+                emitter = ctx.deps.events
+                if isinstance(emitter, _RunEventEmitter) and ctx.run_id == ctx.deps._model_input.attempt_id:
+                    emitter.observe(PartStartEvent(index=index, part=reference))
+                    emitter.observe(PartEndEvent(index=index, part=reference))
             else:
                 parts.append(part)
         return replace(response, parts=parts)

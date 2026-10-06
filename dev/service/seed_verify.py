@@ -230,9 +230,9 @@ def _execution(api: Api, index: dict[str, str]) -> Iterator[Check]:
     )
     native, inline, placed = (api.get(f"/api/v1/runs/{index[name]}/items")["items"] for name in DELIVERIES)
     media_types = {
-        item["content"]["value"]["event"]["content"]["media_type"]
+        item["content"]["input_media"]["media_type"]
         for item in native
-        if item["content"].get("name") == "a13n.input.media"
+        if item["kind"] == "text_message" and "input_media" in item["content"]
     }
     yield (
         "Attachments reach the model natively, as inline text, and placed in the environment",

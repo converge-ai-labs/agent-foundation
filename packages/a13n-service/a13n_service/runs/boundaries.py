@@ -1,9 +1,9 @@
 """Safe boundaries of a Harness run, where the worker commits a checkpoint.
 
 The capability exports the state at each boundary, with the memory cursors that history was delivered, and marks
-the boundary's position in the event stream with a `SafeBoundary` event. The worker folds every event before the
-marker into the display, so the display it commits with that state covers exactly the same history, then
-acknowledges the boundary.
+the boundary in the public event stream with a `SafeBoundary` event. Producer capture freezes the matching
+display after canonical input reconciliation; consuming the marker commits that fixed state/display pair even when production has
+advanced, then acknowledges the boundary.
 
 - Before a model request the hook does not wait: the marker only reaches the stream once the request starts,
   and a model call needs no durable checkpoint first. The request can always be sent again, so this is where
@@ -27,7 +27,7 @@ from pydantic_ai.messages import CapabilityEvent, ModelMessage, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
 
-from a13n_service.runs.display import open_tool_calls
+from a13n_service.runs.display import Snapshot, open_tool_calls
 
 
 @dataclass(kw_only=True)
@@ -39,12 +39,11 @@ class SafeBoundary(CapabilityEvent, namespace="a13n.service"):
 
 @dataclass(frozen=True, slots=True)
 class Staged:
-    """What one boundary commits: the exported state, the memory cursors its history holds context as of, and the
-    tool calls it leaves open."""
+    """The exported state, its delivered memory cursors, and matching frozen display."""
 
     state: HarnessState
     cursors: dict[str, str | None]
-    open_calls: frozenset[str]
+    display: Snapshot | None = None
 
 
 class Boundaries(AbstractCapability[AgentContext]):
@@ -53,6 +52,7 @@ class Boundaries(AbstractCapability[AgentContext]):
     def __init__(self, cursors: Callable[[], dict[str, str | None]]) -> None:
         # The run's delivered memory cursors, snapshotted with each exported state.
         self.cursors = cursors
+        self.freeze_display: Callable[[frozenset[str]], Snapshot] | None = None
         self.primary: str | None = None
         self.states: dict[int, Staged] = {}
         self.acknowledged: dict[int, asyncio.Future[None]] = {}
@@ -108,6 +108,8 @@ class Boundaries(AbstractCapability[AgentContext]):
         self.acknowledged[token] = asyncio.get_running_loop().create_future()
         # Taken with `messages`, before the export awaits.
         cursors, open_calls = self.cursors(), open_tool_calls(messages)
-        self.states[token] = Staged(await ctx.deps.export_state(messages), cursors, open_calls)
+        state = await ctx.deps.export_state(messages)
+        display = self.freeze_display(open_calls) if self.freeze_display is not None else None
+        self.states[token] = Staged(state, cursors, display)
         await ctx.emit(SafeBoundary(token=token, at=at))
         return token

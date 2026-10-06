@@ -21,6 +21,7 @@ export interface PresentedItem {
   role: string;
   toolName: string;
   arguments: string;
+  incomplete?: boolean;
   result?: unknown;
   resultParts?: ContentPart[];
   subagentRunId?: string;
@@ -49,6 +50,7 @@ export function presentItem(item: DisplayItem): PresentedItem {
     role: text(content.role) || "assistant",
     toolName: text(content.toolCallName),
     arguments: text(content.arguments),
+    ...(content.incomplete === true ? { incomplete: true } : {}),
     result: content.result,
     resultParts: readContentParts(content.result_parts),
     subagentRunId: text(content.subagentRunId) || undefined,
@@ -68,8 +70,8 @@ export function presentItems(items: Iterable<DisplayItem>): PresentedItem[] {
     .map(presentItem);
 }
 
-export function parseItemValue(value: unknown): unknown {
-  if (typeof value !== "string") return value;
+export function parseItemValue(value: unknown, incomplete = false): unknown {
+  if (incomplete || typeof value !== "string") return value;
   try {
     return JSON.parse(value);
   } catch {

@@ -242,12 +242,18 @@ class OutputComments:
         location = target.location
         if isinstance(location, RootOutputLocation):
             continuation = await self._store.objects.read_model(source, StoredContinuation)
-            history = (
-                display.messages
-                if (display := continuation.display_history) is not None
-                else continuation.harness_state.message_history
-            )
-            if continuation.harness_state.thread_id == target.producing_thread_id and location.message < len(history):
+            from a13n_harness_ui.display_projection import original_text
+
+            if continuation.harness_state.thread_id != target.producing_thread_id:
+                raise ThreadError("Root output belongs to another Thread.", code="comment_target_invalid")
+            display = continuation.display_history
+            if display is not None:
+                text = original_text(display, location.message, location.part)
+                if text is not None:
+                    return text
+                raise ThreadError("Target is not saved visible assistant text.", code="comment_target_invalid")
+            history = continuation.harness_state.message_history
+            if location.message < len(history):
                 message = history[location.message]
                 if isinstance(message, ModelResponse) and location.part < len(message.parts):
                     part = message.parts[location.part]

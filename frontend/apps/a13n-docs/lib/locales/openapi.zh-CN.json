@@ -1,4 +1,8 @@
 {
+  "A tool-call part's streamed arguments so far and the one observation item that holds them.": "工具调用片段目前已流式接收的参数，以及承载这些参数的唯一观察项。",
+  "Incomplete custom payloads, not a journal of completed events.": "尚未完整接收的自定义载荷，而非已完成事件的日志。",
+  "Native conversion cursors required to resume mid-part, without raw history.": "从片段中途恢复所需的原生转换游标，不包含原始历史。",
+  "Parsing state at a semantic cut; Host paging may retire only immutable items.": "语义切点处的解析状态；Host 分页只能移出不可变的条目。",
   "Allowed normalized hostnames/IP literals or regex:<Python pattern> rules matched against the entire normalized hostname. Null is unrestricted; an empty array denies all.": "允许访问的规范化主机名/IP 字面值，或对完整规范化主机名匹配的 regex:<Python pattern> 规则。null 表示不限制；空数组拒绝所有目标。",
   "An accepted snapshot, independent of Agent definitions and Capability configuration.\n\nConsumers explicitly opt into namespaced extensions and own their validation.\nExtension lookups return detached values, not mutable shared state.": "接受的配置快照，独立于 Agent 定义和 Capability 配置。\n\n消费者显式接入带命名空间的扩展，并负责验证。\n扩展查询返回独立副本，而非可变的共享状态。",
   "URL subtypes consumed natively by the selected transport.": "所选传输原生支持的 URL 子类型。",

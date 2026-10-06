@@ -4109,6 +4109,29 @@ export interface components {
       /** Reason */
       reason?: string | null;
     };
+    /**
+     * DisplayContinuation
+     * @description Parsing state at a semantic cut; Host paging may retire only immutable items.
+     */
+    DisplayContinuation: {
+      arguments?: components["schemas"]["_Arguments"] | null;
+      fragments?: components["schemas"]["FragmentState"];
+      /**
+       * Full Content
+       * @default false
+       */
+      full_content?: boolean;
+      /** Next Ordinal */
+      next_ordinal: number;
+      observer?: components["schemas"]["ObserverContinuation"];
+      position: components["schemas"]["StreamPosition"];
+      /** Response Groups */
+      response_groups?: {
+        [key: string]: string;
+      };
+      /** Run Id */
+      run_id: string;
+    };
     /** EmailChangeConfirm */
     EmailChangeConfirm: {
       /** Token */
@@ -4376,6 +4399,31 @@ export interface components {
       memories?: components["schemas"]["MemoryMount"][];
       options?: components["schemas"]["RunOptions-Input"];
       payload: components["schemas"]["MessagePayload"];
+    };
+    /**
+     * FragmentState
+     * @description Incomplete custom payloads, not a journal of completed events.
+     */
+    FragmentState: {
+      /**
+       * Gap
+       * @default false
+       */
+      gap?: boolean;
+      /**
+       * Max Bytes
+       * @default 67108864
+       */
+      max_bytes?: number;
+      /**
+       * Max Pending
+       * @default 8
+       */
+      max_pending?: number;
+      /** Pending */
+      pending?: {
+        [key: string]: components["schemas"]["_Assembly"];
+      };
     };
     /**
      * GitHubSource
@@ -5560,6 +5608,17 @@ export interface components {
       /** @default none */
       token_endpoint_auth_method?: components["schemas"]["ClientAuthentication"];
     };
+    /**
+     * ObserverContinuation
+     * @description Native conversion cursors required to resume mid-part, without raw history.
+     */
+    ObserverContinuation: {
+      /** Run Id */
+      run_id?: string | null;
+      state?: components["schemas"]["_ObserverState"];
+      /** Thread Id */
+      thread_id?: string | null;
+    };
     /** @enum {string} */
     OperationKind: "setup" | "complete" | "refresh" | "revoke";
     /** Organization */
@@ -6140,8 +6199,11 @@ export interface components {
      *     so the first item's ordinal tells whether earlier ones exist. Live output continues after `position`.
      */
     RunItems: {
+      /** Baseline */
+      baseline: boolean;
       /** Complete */
       complete: boolean;
+      continuation?: components["schemas"]["DisplayContinuation"] | null;
       /** Items */
       items: components["schemas"]["Item"][];
       /** Position */
@@ -6217,6 +6279,8 @@ export interface components {
       created_at: string;
       /** Current Attempt Id */
       current_attempt_id: string | null;
+      /** Display Position */
+      display_position?: string | null;
       /** Environment Mounts */
       environment_mounts: components["schemas"]["EnvironmentMount"][];
       failure: components["schemas"]["Failure"] | null;
@@ -6707,6 +6771,13 @@ export interface components {
       items: components["schemas"]["Span"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** StreamPosition */
+    StreamPosition: {
+      /** Attempt */
+      attempt: number;
+      /** Sequence */
+      sequence: number;
     };
     /**
      * SubagentOverride
@@ -7438,6 +7509,82 @@ export interface components {
     WorkspaceUpdate: {
       /** Name */
       name?: string | null;
+    };
+    /**
+     * _Arguments
+     * @description A tool-call part's streamed arguments so far and the one observation item that holds them.
+     */
+    _Arguments: {
+      /**
+       * At
+       * Format: date-time
+       */
+      at: string;
+      /** Event */
+      event: {
+        [key: string]: unknown;
+      } | null;
+      /** Key */
+      key: string;
+      /** Sequence */
+      sequence: number;
+      /** Size */
+      size: number;
+      stream: components["schemas"]["JsonValue"];
+    };
+    /** _Assembly */
+    _Assembly: {
+      /** Count */
+      count: number;
+      /** Parts */
+      parts?: string[];
+      /**
+       * Size
+       * @default 0
+       */
+      size?: number;
+    };
+    /** _ObserverState */
+    _ObserverState: {
+      /** Children */
+      children?: {
+        [key: string]: components["schemas"]["_ObserverState"];
+      };
+      /** Parts */
+      parts?: {
+        [key: string]: components["schemas"]["_PartCursor"];
+      };
+      /**
+       * Request Index
+       * @default 0
+       */
+      request_index?: number;
+      /** Threads */
+      threads?: {
+        [key: string]: string;
+      };
+    };
+    /** _PartCursor */
+    _PartCursor: {
+      /**
+       * Emitted Content
+       * @default false
+       */
+      emitted_content?: boolean;
+      /**
+       * Emitted Signature
+       * @default false
+       */
+      emitted_signature?: boolean;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "text" | "reasoning" | "tool_call";
+      /** Part Id */
+      part_id: string;
+      /** Tool Name */
+      tool_name?: string | null;
     };
   };
   responses: {

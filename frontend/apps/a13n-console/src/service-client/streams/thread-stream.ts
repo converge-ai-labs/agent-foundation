@@ -1,19 +1,11 @@
 import { EventSchema } from "@ag-ui/core/schemas";
+import { isItemRef, type DisplayEvent } from "a13n-ui/display";
 import { ApiError, isRecord, ProtocolError } from "../errors.js";
-import type { components } from "../schema.js";
 import { delay, workspaceHeaders, type Transport } from "../transport.js";
 import { decodeSse } from "./sse.js";
 
-type ItemRef = Pick<components["schemas"]["Item"], "id" | "kind" | "state">;
-
-/** One AG-UI event of a run attempt at its per-attempt sequence, and the display item it changed. */
-export interface ThreadDelta {
-  run_id: string;
-  attempt: number;
-  sequence: number;
-  event: Record<string, unknown> & { type: string };
-  item: ItemRef | null;
-}
+/** One raw AG-UI event at its producer-assigned position. */
+export type ThreadDelta = DisplayEvent;
 
 /**
  * Frames of one thread stream. `delta` and `boundary` carry the resumable
@@ -100,12 +92,12 @@ function parseFrame(event: string, id: string, text: string): ThreadFrame {
     if (
       isRecord(data.event) &&
       EventSchema.safeParse(data.event).success &&
-      (data.item === null || isRecord(data.item))
+      (data.item === null || isItemRef(data.item))
     )
       return {
         type: "delta",
         cursor: id,
-        // Validate canonical AG-UI 1.0 inside the Host-owned envelope.
+        // Validate AG-UI within the Host-owned position and identity envelope.
         delta: data as unknown as ThreadDelta,
       };
   }
@@ -160,7 +152,9 @@ export async function* threadStream(
         // Resume advances only when the consumer requests the next frame.
         if ("cursor" in frame) cursor = frame.cursor;
       }
-      return;
+      throw new Error(
+        "The thread stream ended; reconnecting from applied coverage.",
+      );
     } catch (error) {
       if (
         signal.aborted ||

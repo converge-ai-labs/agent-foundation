@@ -207,7 +207,7 @@ test("SSE handles split UTF-8, CRLF, multiline payloads and cancellation", async
   await assert.rejects(async () => {
     for await (const _ of decodeSse(chunks("data: partial"))) {
     }
-  }, ProtocolError);
+  }, /ended inside an SSE frame/);
   let canceled = false;
   const body = new ReadableStream({
     start(controller) {
@@ -227,8 +227,8 @@ test("Thread stream resumes after its last cursor and reports control frames", a
     run_id: "run_one",
     attempt: 1,
     sequence: 2,
-    event: { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "hi" },
-    item: { id: "itm_one", kind: "text_message", state: "in_progress" },
+    event: { type: "TEXT_MESSAGE_CONTENT", messageId: "m", delta: "tail" },
+    item: null,
   };
   const client = createClient({
     baseUrl,
@@ -317,4 +317,51 @@ test("reconnects with the consumer's current complete position and matching hint
   assert.equal(new URL(requests[1].url).searchParams.get("run"), "run_one");
   assert.equal(new URL(requests[1].url).searchParams.get("position"), "1-160");
   assert.equal(requests[1].headers.get("Last-Event-ID"), "8-0");
+});
+
+for (const ending of ["clean", "truncated"]) {
+  test(`reconnects after ${ending} EOF using applied coverage`, async () => {
+    const requests = [];
+    const client = createClient({
+      baseUrl,
+      auth: { type: "session" },
+      fetch: async (request) => {
+        requests.push(request);
+        return new Response(
+          chunks(
+            requests.length === 1
+              ? 'event: changed\ndata: {"version":1}\n\n' +
+                  (ending === "truncated" ? 'data: {"unfinished"' : "")
+              : 'event: changed\ndata: {"version":2}\n\n',
+          ),
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      },
+    });
+    let resume = { run: "run_one", position: "1-1", after: "1-0" };
+    const stream = client.streamThread("ws_one", "th_one", {
+      resume: () => resume,
+    });
+    assert.equal((await stream.next()).value.version, 1);
+    resume = { run: "run_one", position: "1-2", after: "2-0" };
+    assert.equal((await stream.next()).value.version, 2);
+    assert.equal(requests[1].headers.get("Last-Event-ID"), "2-0");
+    await stream.return();
+  });
+}
+
+test("rejects raw-event deltas at the explicit compact-format boundary", async () => {
+  const client = createClient({
+    baseUrl,
+    auth: { type: "session" },
+    fetch: async () =>
+      new Response(
+        chunks(
+          'id: 1-0\nevent: delta\ndata: {"run_id":"run","attempt":1,"sequence":1,"event":{"type":"RUN_STARTED"},"item":null}\n\n',
+        ),
+        { headers: { "Content-Type": "text/event-stream" } },
+      ),
+  });
+  const stream = client.streamThread("ws", "thread");
+  await assert.rejects(stream.next(), ProtocolError);
 });

@@ -43,7 +43,14 @@ async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunVi
         else {}
     )
     return [
-        RunView.model_validate(run).model_copy(update={"input": payloads.get(run.source_entry_id or "")})
+        RunView.model_validate(run).model_copy(
+            update={
+                "input": payloads.get(run.source_entry_id or ""),
+                "display_position": str(TailPointer.model_validate(run.tail).position)
+                if run.tail is not None
+                else None,
+            }
+        )
         for run in runs
     ]
 
@@ -129,8 +136,10 @@ async def items(
             for item in (*(item for page in pages for item in page.items), *tail.items)
             if window.first <= item.ordinal <= window.last
         ],
-        position=str(window.tail.position) if window.tail is not None else None,
-        resume_after=tail.resume_after,
+        baseline=before is None and after is None,
+        continuation=tail.continuation if before is None and after is None else None,
+        position=str(window.tail.position) if window.tail is not None and before is None and after is None else None,
+        resume_after=tail.resume_after if before is None and after is None else None,
         complete=sealed,
     )
 

@@ -639,3 +639,65 @@ def test_status_token_abbreviations_keep_one_decimal_at_every_width(tokens: int,
     for width in (24, 80, 160, None):
         assert f"{'tok' if width == 24 else 'tokens'} {label}" in status.line(width)
     assert f"{tokens:,} total tokens" in status.usage_details()
+
+
+@pytest.mark.parametrize("baseline", [False, True])
+def test_compact_tool_arguments_complete_before_result(baseline: bool) -> None:
+    from a13n_stream_protocol.display import DisplayFold
+
+    fold = DisplayFold("run")
+    renderer = StreamRenderer(Status())
+    events = [
+        {"type": "TOOL_CALL_START", "toolCallId": "call", "toolCallName": "shell_exec"},
+        {"type": "TOOL_CALL_ARGS", "toolCallId": "call", "delta": '{"command":"echo hello"}'},
+        {"type": "TOOL_CALL_END", "toolCallId": "call"},
+    ]
+    for event in events:
+        batch = fold.fold([event])[0]
+        if not baseline:
+            renderer.ingest(event["type"], event, run_id="run", display_position=fold.position, item=batch.item)
+    if baseline:
+        renderer.ingest(
+            "CUSTOM",
+            {"name": "a13n.display.snapshot", "value": fold.export().model_dump(mode="json")},
+            run_id="run",
+        )
+    preview = renderer._tools[("run", "call")]
+    assert "echo hello" in preview.arguments
+    assert preview.summary == "echo hello"
+    assert preview.parts is None
+
+
+@pytest.mark.parametrize("cut", range(7))
+def test_active_snapshot_raw_suffix_keeps_cli_text_and_tools_single(cut: int) -> None:
+    from a13n_stream_protocol.display import DisplayFold
+
+    events = [
+        {"type": "TEXT_MESSAGE_START", "messageId": "message", "role": "assistant"},
+        {"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": "hello"},
+        {"type": "TOOL_CALL_START", "toolCallId": "call", "toolCallName": "shell_exec"},
+        {"type": "TOOL_CALL_ARGS", "toolCallId": "call", "delta": '{"command":"echo'},
+        {"type": "TEXT_MESSAGE_CONTENT", "messageId": "message", "delta": " world"},
+        {"type": "TOOL_CALL_ARGS", "toolCallId": "call", "delta": ' hello"}'},
+        {"type": "TOOL_CALL_END", "toolCallId": "call"},
+    ]
+    fold = DisplayFold("run", full_content=True)
+    fold.fold(events[:cut])
+    renderer = StreamRenderer(Status())
+    renderer.ingest(
+        "CUSTOM", {"name": "a13n.display.snapshot", "value": fold.export().model_dump(mode="json")}, run_id="run"
+    )
+    for payload in events[cut:]:
+        observation = fold.fold([payload])[0]
+        renderer.ingest(payload["type"], payload, run_id="run", display_position=fold.position, item=observation.item)
+    assert len(renderer._display_blocks) == 1
+    assert len(renderer._tools) == 1
+    import json
+
+    assert json.loads(renderer._tools[("run", "call")].arguments) == {"command": "echo hello"}
+    assert renderer._tools[("run", "call")].summary == "echo hello"
+    assert (
+        next(item for item in renderer._display_items.values() if item.kind == "text_message").content["text"]
+        == "hello world"
+    )
+    assert not renderer.gap

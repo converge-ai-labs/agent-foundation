@@ -180,15 +180,16 @@ def merge_request_history(messages: Sequence[ModelMessage]) -> tuple[ModelMessag
             parts = request_parts(previous) + request_parts(message)
             parts.sort(key=lambda item: 0 if isinstance(item[0], ToolReturnPart | RetryPromptPart) else 1)
             metadata = {**(previous.metadata or {}), **(message.metadata or {})}
-            input_ids = [
-                input_id
-                for request in (previous, message)
-                for value in [(request.metadata or {}).get("a13n.steering-input")]
-                for input_id in (value if isinstance(value, list) else [value])
-                if isinstance(input_id, str)
-            ]
-            if input_ids:
-                metadata["a13n.steering-input"] = input_ids
+            for key in ("a13n.steering-input", "a13n.notification-input"):
+                input_ids = [
+                    input_id
+                    for request in (previous, message)
+                    for value in [(request.metadata or {}).get(key)]
+                    for input_id in (value if isinstance(value, list) else [value])
+                    if isinstance(input_id, str)
+                ]
+                if input_ids:
+                    metadata[key] = input_ids
             previous_framework = (previous.metadata or {}).get("__pydantic_ai__")
             current_framework = (message.metadata or {}).get("__pydantic_ai__")
             if isinstance(previous_framework, dict) and isinstance(current_framework, dict):

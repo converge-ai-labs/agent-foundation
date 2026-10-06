@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from a13n_harness.capabilities.working_state import TaskStateBinding, WorkingStateObserver
     from a13n_harness.environment.providers import BoundEnvironment as Environment
     from a13n_harness.environment.providers import EnvironmentRuntime
-    from a13n_harness.events import HarnessEventEmitter
+    from a13n_harness.events import HarnessEvent, HarnessEventEmitter
     from a13n_harness.execution import ExecutableAgent
     from a13n_harness.model_context import (
         ModelContextMiddleware,
@@ -153,6 +153,7 @@ class RunBindings:
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
     working_state_observer: WorkingStateObserver | None = None
+    producer_observer: Callable[[HarnessEvent], None] | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
@@ -235,6 +236,7 @@ class RunBindings:
         skill_selection: frozenset[str] | None = None,
         task_state: TaskStateBinding | None = None,
         working_state_observer: WorkingStateObserver | None = None,
+        producer_observer: Callable[[HarnessEvent], None] | None = None,
         client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
@@ -263,6 +265,7 @@ class RunBindings:
             skill_selection=skill_selection,
             task_state=task_state,
             working_state_observer=working_state_observer,
+            producer_observer=producer_observer,
             client_toolsets=client_toolsets,
             tool_result_directory=tool_result_directory,
             metadata=metadata or {},

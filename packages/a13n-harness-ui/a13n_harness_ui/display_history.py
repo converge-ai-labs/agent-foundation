@@ -1,118 +1,128 @@
-"""Root display history, independent of the model's replaceable context."""
+"""UI-owned compact display snapshots, independent of replaceable model context."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable, Sequence
-from copy import deepcopy
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from hashlib import sha256
-from typing import Any, Self, cast
+from typing import Any, cast
 
-from a13n_harness.capabilities.context import CompactionCapability, CompactionSummaryEvent, HandoffCapability
-from a13n_harness.context import AgentContext
-from a13n_harness.state import (
-    AgentContextStateSnapshot,
-    CapabilityState,
-    HarnessState,
-    clone_messages,
-    decode_messages,
-    encode_messages,
-)
-from a13n_harness.toolsets.events import HandoffSummaryEvent
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
-from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.messages import (
-    AgentStreamEvent,
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    TextContent,
-    TextPart,
-    UserPromptPart,
-)
-from pydantic_ai.models import ModelRequestContext
+from a13n_harness import HarnessStreamEvent
+from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, HarnessState, decode_messages
+from a13n_stream_protocol.display import DisplayContinuation, DisplayFold, Item, Observed, StreamPosition
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 
 _STATE_KEY = "a13n.harness-ui.display-history"
 _COMPLETED_KEY = "a13n.harness-ui.completed"
 
 
 class DisplayHistory(BaseModel):
-    """Inspection-only messages and their current native-history positions."""
+    """A detached compact prefix selected with one native execution checkpoint."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    messages_json: bytes | Sequence[ModelMessage] = Field(default=b"[]", alias="messages", exclude=True, repr=False)
-    model_positions: tuple[int | None, ...] = ()
-    pending_response_position: int | None = None
-    model_history_digest: str = ""
-
-    @field_validator("messages_json", mode="before")
-    @classmethod
-    def _encode_messages(cls, value: Any) -> bytes:
-        return encode_messages(value)
-
-    @computed_field
-    @property
-    def messages(self) -> tuple[ModelMessage, ...]:
-        return decode_messages(cast(bytes, self.messages_json))
-
-    @property
-    def completed_responses(self) -> tuple[int, ...]:
-        return tuple(
-            position
-            for position, message in enumerate(self.messages)
-            if isinstance(message, ModelResponse) and (message.metadata or {}).get(_COMPLETED_KEY) is True
-        )
-
-    @model_validator(mode="after")
-    def _valid_positions(self) -> Self:
-        messages = self.messages
-        message_count = len(messages)
-        if any(
-            position is not None and not 0 <= position < message_count
-            for position in (*self.model_positions, self.pending_response_position)
-        ):
-            raise ValueError("Display history position is outside the saved messages")
-        return self
+    run_id: str | None = None
+    items: tuple[Item, ...] = ()
+    continuation: DisplayContinuation | None = None
+    position: StreamPosition = Field(default_factory=lambda: StreamPosition(attempt=0, sequence=0))
+    completed: tuple[str, ...] = ()
+    pending_response: str | None = None
 
 
 def _message_digest(encoded: bytes) -> str:
     return sha256(json.dumps(json.loads(encoded), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def import_display_history(messages: Sequence[ModelMessage]) -> DisplayHistory:
+    """One ingress for native initial state and version-1 display envelopes.
+
+    Imported rows retain their original message/part coordinates. They contain
+    presentation data, not serialized native messages or executable model state.
+    """
+    from a13n_harness_ui.thread_projection import _additional_input_count, _message_entry, _transcript_turns
+
+    completed = tuple(
+        position
+        for position, message in enumerate(messages)
+        if isinstance(message, ModelResponse) and (message.metadata or {}).get(_COMPLETED_KEY) is True
+    )
+    turns = {turn.input_position: turn for turn in _transcript_turns(tuple(messages), completed)}
+    items: list[Item] = []
+    for position, message in enumerate(messages):
+        entry = _message_entry(position, message).model_dump(mode="json")
+        # The transcript DTO bounds previews. Comments resolve the original full
+        # text, stored once in this compact row, never a truncated preview.
+        if isinstance(message, ModelResponse):
+            for index, part in enumerate(message.parts):
+                if isinstance(part, TextPart):
+                    entry["parts"][index]["text"] = part.content
+                    entry["parts"][index]["text_truncated"] = False
+        content = {"entry": entry, "steering_count": _additional_input_count((message,))}
+        if isinstance(message, ModelResponse):
+            content["response_state"] = message.state
+        if position in turns:
+            content["turn"] = turns[position].model_dump(mode="json")
+        items.append(
+            Item(
+                id=f"import:{position}",
+                ordinal=position + 1,
+                kind="observation",
+                state="completed",
+                first_stream_id="0-0",
+                last_stream_id="0-0",
+                started_at=message.timestamp or datetime.now(UTC),
+                content=content,
+            )
+        )
+    return DisplayHistory(
+        items=tuple(items),
+        completed=tuple(f"import:{position}" for position in completed),
+        pending_response=items[-1].id
+        if messages and isinstance(messages[-1], ModelResponse) and messages[-1].state == "suspended"
+        else None,
+    )
+
+
 def saved_display_history(state: HarnessState) -> DisplayHistory | None:
-    """Read inspection state without changing the continuation's stored schema."""
     return _read_display_history(state, state.agent_context_state.get(_STATE_KEY))
 
 
 def _read_display_history(state: HarnessState, entry: CapabilityState | None) -> DisplayHistory | None:
     if entry is None:
         return None
+    if entry.version == "2":
+        return DisplayHistory.model_validate(entry.data)
     if entry.version != "1":
         raise ValueError("Unsupported display history version")
-    display = DisplayHistory.model_validate(entry.data)
-    # Older Apps preserve unknown Capability namespaces but do not advance this
-    # inspection snapshot. Never apply its positional mapping to different input.
-    if display.model_history_digest != _message_digest(cast(bytes, state.message_history_json)):
+    data = entry.data
+    if not isinstance(data, dict):
+        raise ValueError("Invalid legacy display history")
+    if data.get("model_history_digest") != _message_digest(cast(bytes, state.message_history_json)):
         return None
-    if len(display.model_positions) != len(state.message_history):
-        raise ValueError("Display history must map the selected model history")
-    return display
+    messages = decode_messages(json.dumps(data.get("messages", [])).encode())
+    positions = data.get("model_positions", [])
+    pending = data.get("pending_response_position")
+    if (
+        not isinstance(positions, list)
+        or len(positions) != len(state.message_history)
+        or any(
+            position is not None and (not isinstance(position, int) or not 0 <= position < len(messages))
+            for position in [*positions, pending]
+        )
+    ):
+        raise ValueError("Invalid legacy display history positions")
+    return import_display_history(messages)
 
 
 def with_display_history(state: HarnessState, display: DisplayHistory) -> HarnessState:
-    """Attach UI-owned state in the existing extensible Capability envelope."""
     entries = state.agent_context_state.entries
-    entries[_STATE_KEY] = CapabilityState(version="1", data=display.model_dump(mode="json"))
+    entries[_STATE_KEY] = CapabilityState(version="2", data=display.model_dump(mode="json"))
     return state.model_copy(update={"agent_context_state": AgentContextStateSnapshot(entries=entries)})
 
 
 def detach_display_history(state: HarnessState) -> tuple[HarnessState, DisplayHistory | None]:
-    """Restore and remove inspection state with one namespace decode.
-
-    Validate before returning native execution state. Every durable root selection
-    must reattach the collector's current history with ``with_display_history``.
-    """
     entries = state.agent_context_state.entries
     entry = entries.pop(_STATE_KEY, None)
     display = _read_display_history(state, entry)
@@ -122,194 +132,149 @@ def detach_display_history(state: HarnessState) -> tuple[HarnessState, DisplayHi
     return runtime, display
 
 
-def _context_boundary(messages: Sequence[ModelMessage]) -> tuple[object, ...]:
-    """Compare only owned replacement summaries, never ordinary message timestamps."""
-    for message in messages:
-        metadata = message.metadata or {}
-        if isinstance(message, ModelRequest):
-            for part in message.parts:
-                if isinstance(part, UserPromptPart) and not isinstance(part.content, str):
-                    for item in part.content:
-                        if isinstance(item, TextContent) and (item.metadata or {}).get("a13n.context") == "handoff":
-                            return ("handoff", (item.metadata or {}).get("operation_id"), item.content)
-            if metadata.get("a13n.context") == "handoff":
-                return ("handoff", message.timestamp)
-        if isinstance(message, ModelResponse) and metadata.get("keep") == "compact":
-            return (
-                "compaction",
-                message.timestamp,
-                *(part.content for part in message.parts if isinstance(part, TextPart)),
-            )
-    return ()
+@dataclass(frozen=True)
+class DisplayPublication:
+    """One producer cut: raw suffix, changed immutable rows and detached parser state."""
+
+    observations: tuple[Observed, ...]
+    items: tuple[Item, ...]
+    continuation: DisplayContinuation
+    reset: bool = False
 
 
-class DisplayHistoryCollector(AbstractCapability[AgentContext]):
-    """Capture complete root messages before context replacement, not helper Runs."""
-
-    id = _STATE_KEY
+class DisplayHistoryCollector:
+    """Fold producer observations synchronously; publication never owns capture."""
 
     def __init__(self, model_history: Sequence[ModelMessage], saved: DisplayHistory | None = None) -> None:
-        # Saved messages are already freshly decoded and detached from their envelope.
-        self._messages = list(clone_messages(model_history) if saved is None else saved.messages)
-        self._positions: list[int | None] = (
-            list(range(len(model_history))) if saved is None else list(saved.model_positions)
-        )
-        if len(self._positions) != len(model_history):
-            raise ValueError("Display history does not match the selected model history")
-        self._pending_response_position = saved.pending_response_position if saved is not None else None
-        self._boundary = deepcopy(_context_boundary(model_history))
-        self._completed_responses = {
-            position
-            for position, message in enumerate(self._messages)
-            if saved is not None
-            and isinstance(message, ModelResponse)
-            and (message.metadata or {}).get(_COMPLETED_KEY) is True
-        }
-        self._active_run_id: str | None = None
-        self._unmapped_run_id: str | None = None
-        self._operations: set[str] = {
-            operation
-            for message in self._messages
-            if isinstance(operation := (message.metadata or {}).get("operation_id"), str)
-        }
-
-    def get_ordering(self) -> CapabilityOrdering:
-        return CapabilityOrdering(position="outermost", wraps=(HandoffCapability, CompactionCapability))
-
-    async def wrap_run(self, ctx: RunContext[AgentContext], *, handler: Callable[[], Awaitable[Any]]) -> Any:
-        if self._active_run_id is not None:
-            return await handler()
-        self._active_run_id = ctx.run_id
-        self._unmapped_run_id = ctx.run_id
-        try:
-            return await handler()
-        finally:
-            self._active_run_id = None
-
-    def _initialize_positions(self, history: Sequence[ModelMessage]) -> None:
-        if self._unmapped_run_id is None:
-            return
-        # Native preparation may merge inherited adjacent requests, including
-        # before a failed Run's first model hook. Rebase on the captured history,
-        # not wrap_run's initial context, which may still hold the old list.
-        inherited = next(
-            (index for index, message in enumerate(history) if message.run_id == self._unmapped_run_id),
-            len(history),
-        )
-        suspended_position = None
-        if (
-            inherited == len(history)
-            and self._positions
-            and (position := self._positions[-1]) is not None
-            and isinstance(self._messages[position], ModelResponse)
-            and self._messages[position].state == "suspended"
+        self.saved = saved if saved is not None else import_display_history(model_history)
+        self._pending_response = self.saved.pending_response
+        self._resume_group_assigned = False
+        if self._pending_response is not None and not (
+            model_history and isinstance(model_history[-1], ModelResponse) and model_history[-1].state == "suspended"
         ):
-            suspended_position = position
-        self._positions = [None] * inherited
-        if suspended_position is not None:
-            if history and isinstance(history[-1], ModelResponse) and history[-1].state == "suspended":
-                self._positions[-1] = suspended_position
-            else:
-                # Native continuation removes the suspended tail before before-hooks.
-                # Rebase merged requests without losing the response's display slot.
-                self._pending_response_position = suspended_position
-        if inherited < len(history):
-            self._pending_response_position = None
-        self._boundary = deepcopy(_context_boundary(history))
-        self._unmapped_run_id = None
+            # A provider-boundary checkpoint has removed the suspended native
+            # tail. Retry replaces that slot rather than stranding old partial text.
+            items = []
+            for item in self.saved.items:
+                if item.id == self._pending_response or item.content.get("responseGroup") == self._pending_response:
+                    content = dict(item.content)
+                    if "text" in content:
+                        content["text"] = ""
+                    entry = content.get("entry")
+                    if isinstance(entry, dict):
+                        content["entry"] = {**entry, "parts": []}
+                    item = item.model_copy(update={"content": content})
+                items.append(item)
+            self.saved = self.saved.model_copy(update={"items": tuple(items)})
+        self.fold: DisplayFold | None = None
+        self._observations: list[Observed] = []
+        self._observation_bytes = 0
+        self._reset = False
+        self._live_keys: set[str] = set()
 
-    async def before_model_request(
-        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
-    ) -> ModelRequestContext:
-        if ctx.run_id == self._active_run_id:
-            self._collect(ctx.messages)
-        return request_context
+    def observe(self, source: HarnessStreamEvent[Any]) -> None:
+        if self.fold is None:
+            self.fold = DisplayFold(
+                source.run_id,
+                self.saved.items,
+                attempt=self.saved.position.attempt + 1,
+                full_content=True,
+            )
+            self.fold.changed.clear()
+        self._enqueue(self.fold.fold(self.fold.events(source), source))
+        if (
+            self._pending_response is not None
+            and not self._resume_group_assigned
+            and "root" in self.fold.response_groups
+        ):
+            self.fold.response_groups["root"] = self._pending_response
+            self._resume_group_assigned = True
 
-    async def on_event(self, ctx: RunContext[AgentContext], *, event: AgentStreamEvent) -> None:
-        if ctx.run_id != self._active_run_id or not isinstance(event, (HandoffSummaryEvent, CompactionSummaryEvent)):
-            return
-        self._collect(ctx.messages)
-        if event.operation_id in self._operations:
-            return
-        self._operations.add(event.operation_id)
-        kind = "handoff" if isinstance(event, HandoffSummaryEvent) else "compaction"
-        metadata = {"a13n.context": kind, "operation_id": event.operation_id}
-        self._messages.append(
-            ModelRequest(parts=[UserPromptPart([TextContent(event.summary, metadata=metadata)])], metadata=metadata)
-            if kind == "handoff"
-            else ModelResponse(parts=[TextPart(event.summary)], metadata={**metadata, "keep": "compact"})
+    def supplement(self, events: Sequence[Any]) -> None:
+        if self.fold is not None:
+            self._enqueue(self.fold.fold([event.model_dump(mode="json", by_alias=True) for event in events]))
+
+    def _enqueue(self, observations: Sequence[Observed]) -> None:
+        for observation in observations:
+            if self._reset:
+                return
+            size = len(json.dumps(observation.event, ensure_ascii=False).encode())
+            # Smaller than the default live subscriber buffer. Loss replaces the
+            # entire suffix with an explicit reset, never a partial raw journal.
+            if len(self._observations) >= 32 or self._observation_bytes + size > 256 * 1024:
+                self.publication_failed()
+                return
+            self._observations.append(observation)
+            self._observation_bytes += size
+
+    def drain(self) -> DisplayPublication | None:
+        fold = self.fold
+        if fold is None or (not self._observations and not self._reset):
+            return None
+        self._live_keys.update(fold.changed)
+        keys = self._live_keys if self._reset else fold.changed
+        publication = DisplayPublication(
+            observations=tuple(self._observations),
+            items=tuple(fold.items[key] for key in sorted(keys, key=lambda key: fold.items[key].ordinal)),
+            continuation=fold.export_continuation(),
+            reset=self._reset,
         )
+        fold.changed.clear()
+        self._observations.clear()
+        self._observation_bytes = 0
+        self._reset = False
+        return publication
 
-    def capture(self, history: Sequence[ModelMessage], *, completed: bool = False) -> DisplayHistory:
-        self._collect(history, completed=completed)
+    def publication_failed(self) -> None:
+        self._observations.clear()
+        self._observation_bytes = 0
+        self._reset = True
+
+    def capture(self, history: Sequence[ModelMessage] = (), *, completed: bool = False) -> DisplayHistory:
+        if self.fold is None:
+            return self.saved.model_copy(deep=True)
+        frozen = self.fold.export()
+        items = tuple(frozen.items)
+        marks = set(self.saved.completed)
+        last_input = next((item.ordinal for item in reversed(items) if ordinary_input(item)), 0)
+        # Resuming a turn makes its former answer provisional again.
+        marks.difference_update(item.id for item in items if item.ordinal >= last_input)
+        group = self.fold.response_groups.get("root")
+        if completed and group is not None:
+            marks.update(
+                item.id for item in items if assistant_text(item) and item.content.get("responseGroup") == group
+            )
         return DisplayHistory(
-            messages=tuple(self._messages),
-            model_positions=tuple(self._positions),
-            pending_response_position=self._pending_response_position,
-            model_history_digest=_message_digest(encode_messages(history)),
+            run_id=self.fold.run_id,
+            items=items,
+            position=self.fold.position,
+            continuation=frozen.continuation,
+            completed=tuple(sorted(marks)),
+            pending_response=group
+            if history and isinstance(history[-1], ModelResponse) and history[-1].state == "suspended"
+            else self._pending_response
+            if not any(item.content.get("responseGroup") == self._pending_response for item in items)
+            else None,
         )
 
-    def _collect(self, history: Sequence[ModelMessage], *, completed: bool = False) -> None:
-        """Advance inspection copies without serializing an unused checkpoint."""
-        self._initialize_positions(history)
-        boundary = _context_boundary(history)
-        if boundary != self._boundary:
-            # Before-hooks have already captured the original messages. The new
-            # prefix contains only synthetic context and retained input replays.
-            # Neither replaces nor repeats the original display rows.
-            self._positions = []
-            self._pending_response_position = None
-            self._boundary = deepcopy(boundary)
-            for message in history:
-                metadata = message.metadata or {}
-                if (
-                    metadata.get("a13n.context") in ("handoff", "compaction")
-                    or metadata.get("keep") == "compact"
-                    or "a13n.steering-run" in metadata
-                ):
-                    self._positions.append(None)
-                else:
-                    self._positions.append(len(self._messages))
-                    self._messages.append(deepcopy(message))
-        else:
-            if len(history) < len(self._positions):
-                # Native suspended-response preparation temporarily removes the
-                # tail before requesting its completion. Keep its display slot,
-                # including across a checkpoint/reload, for the merged response.
-                position = self._positions[-1]
-                if (
-                    len(history) != len(self._positions) - 1
-                    or position is None
-                    or not isinstance(response := self._messages[position], ModelResponse)
-                    or response.state != "suspended"
-                ):
-                    raise ValueError("Model history changed without an owned context replacement")
-                self._pending_response_position = position
-                self._positions.pop()
-            for index, message in enumerate(history):
-                if index >= len(self._positions):
-                    if self._pending_response_position is not None and isinstance(message, ModelResponse):
-                        position = self._pending_response_position
-                        self._positions.append(position)
-                        self._messages[position] = deepcopy(message)
-                        self._pending_response_position = None
-                    else:
-                        self._positions.append(len(self._messages))
-                        self._messages.append(deepcopy(message))
-                elif (position := self._positions[index]) is not None:
-                    self._messages[position] = deepcopy(message)
-        if (
-            completed
-            and history
-            and isinstance(history[-1], ModelResponse)
-            and history[-1].state == "complete"
-            and (history[-1].metadata or {}).get("keep") != "compact"
-        ):
-            position = self._positions[-1]
-            if position is not None and any(isinstance(part, TextPart) for part in history[-1].parts):
-                self._completed_responses.add(position)
-        # Mark only inspection copies. Native model context and the version-1
-        # display envelope stay unchanged, including for older App readers.
-        for position in self._completed_responses:
-            message = self._messages[position]
-            message.metadata = {**(message.metadata or {}), _COMPLETED_KEY: True}
+
+def ordinary_input(item: Item) -> bool:
+    if isinstance(item.content.get("turn"), dict):
+        return True
+    metadata = item.content.get("metadata")
+    return (
+        item.kind == "text_message"
+        and item.content.get("role") == "user"
+        and item.content.get("input_source", "user") == "user"
+        and not item.content.get("subagentRunId")
+        and not (isinstance(metadata, dict) and metadata.get("display") is False)
+    )
+
+
+def assistant_text(item: Item) -> bool:
+    return (
+        item.kind == "text_message"
+        and item.content.get("role", "assistant") == "assistant"
+        and not item.content.get("subagentRunId")
+        and isinstance(item.content.get("text"), str)
+    )
