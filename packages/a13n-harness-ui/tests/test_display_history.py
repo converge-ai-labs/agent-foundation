@@ -565,3 +565,24 @@ def test_tool_result_does_not_renumber_later_comment_parts() -> None:
     before = address()
     fold.fold([{"type": "TOOL_CALL_RESULT", "toolCallId": "call", "content": "done"}])
     assert address() == before
+
+
+@pytest.mark.parametrize("closing", ["complete", "suspended", "empty", "compaction", "after-final"])
+def test_imported_turns_preserve_native_output_and_completion_semantics(closing: str) -> None:
+    from a13n_harness_ui.display_history import import_display_history
+    from a13n_harness_ui.display_projection import display_turns
+    from a13n_harness_ui.thread_projection import _transcript_turns
+
+    history = [ModelRequest(parts=[UserPromptPart("Question")]), ModelResponse(parts=[TextPart("Answer")])]
+    completed = ()
+    if closing == "suspended":
+        history[-1].state = "suspended"
+    elif closing == "empty":
+        history[-1].parts = [TextPart("   ")]
+    elif closing == "compaction":
+        history[-1].metadata = {"keep": "compact"}
+    elif closing == "after-final":
+        history[-1].metadata = {"a13n.harness-ui.completed": True}
+        completed = (1,)
+        history.append(ModelRequest(parts=[UserPromptPart("Steer")], metadata={"a13n.steering-run": "run-one"}))
+    assert display_turns(import_display_history(history)) == _transcript_turns(tuple(history), completed)

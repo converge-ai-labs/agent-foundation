@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, cast
 
 from a13n_stream_protocol.display import Item
@@ -115,6 +116,12 @@ def _rows(display: DisplayHistory) -> list[_Row]:
     return list(rows.values())
 
 
+def _timestamp(row: _Row) -> datetime | None:
+    imported = row.items[0].content.get("entry")
+    # A legacy message without a timestamp must not acquire its read time.
+    return None if isinstance(imported, dict) and imported.get("timestamp") is None else row.items[0].started_at
+
+
 def original_text(display: DisplayHistory, message: int, part: int) -> str | None:
     rows = _rows(display)
     if message >= len(rows) or part >= len(rows[message].parts):
@@ -155,7 +162,7 @@ def display_entries(display: DisplayHistory, thread: Thread | None = None) -> tu
             TranscriptEntry(
                 position=position,
                 message_kind=row.kind,
-                timestamp=row.items[0].started_at,
+                timestamp=_timestamp(row),
                 parts=tuple(parts),
             )
         )
@@ -169,23 +176,25 @@ def display_turns(display: DisplayHistory) -> tuple[TranscriptTurn, ...]:
     for index, (start, first) in enumerate(inputs):
         end = inputs[index + 1][0] if index + 1 < len(inputs) else len(rows)
         section = rows[start:end]
-        final = next(
-            (
-                start + offset
-                for offset, row in reversed(list(enumerate(section)))
-                if any(item.id in display.completed for item in row.items)
-            ),
-            None,
-        )
         closing = section[-1]
+        # A completion belongs to the closing row, not an earlier answer that
+        # was subsequently resumed or followed by steering.
+        final = end - 1 if any(item.id in display.completed for item in closing.items) else None
         output = (
             end - 1
             if (
                 any(
-                    part["kind"] == "assistant" and not (part.get("metadata") or {}).get("a13n.context")
+                    part["kind"] == "assistant"
+                    and str(part.get("text") or "").strip()
+                    and not (part.get("metadata") or {}).get("a13n.context")
+                    and (part.get("metadata") or {}).get("display") is not False
                     for part in closing.parts
                 )
                 and not any(part["kind"] == "tool_call" for part in closing.parts)
+                and not any(
+                    item.id == display.pending_response or item.content.get("response_state", "complete") != "complete"
+                    for item in closing.items
+                )
             )
             else None
         )
@@ -215,8 +224,8 @@ def display_turns(display: DisplayHistory) -> tuple[TranscriptTurn, ...]:
                 )
                 if output is not None
                 else None,
-                preview=excerpt_text(preview, 512),
-                timestamp=first.items[0].started_at,
+                preview=str(imported["preview"]) if isinstance(imported, dict) else excerpt_text(preview, 512),
+                timestamp=_timestamp(first),
                 tool_count=sum(part["kind"] == "tool_call" for row in section for part in row.parts),
                 steering_count=sum(
                     cast(int, item.content.get("steering_count", 0)) for row in section for item in row.items

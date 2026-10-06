@@ -60,6 +60,8 @@ def import_display_history(messages: Sequence[ModelMessage]) -> DisplayHistory:
                     entry["parts"][index]["text"] = part.content
                     entry["parts"][index]["text_truncated"] = False
         content = {"entry": entry, "steering_count": _additional_input_count((message,))}
+        if isinstance(message, ModelResponse):
+            content["response_state"] = message.state
         if position in turns:
             content["turn"] = turns[position].model_dump(mode="json")
         items.append(

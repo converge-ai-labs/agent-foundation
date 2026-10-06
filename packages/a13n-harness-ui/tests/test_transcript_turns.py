@@ -142,7 +142,10 @@ def test_multiple_parts_and_attachment_only_input_are_single_turns():
             )
         ]
     )
+    from a13n_harness_ui.display_projection import display_turns
+
     turns = _transcript_turns((message, attachment))
+    assert display_turns(import_display_history((message, attachment))) == turns
     assert [(turn.turn_id, turn.preview) for turn in turns] == [
         ("multipart", "First Second"),
         ("attachment", "image.png"),
