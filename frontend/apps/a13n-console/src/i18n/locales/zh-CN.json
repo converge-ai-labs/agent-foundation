@@ -297,7 +297,7 @@
   "Add environment": "添加环境",
   "Additional environments": "附加环境",
   "Device ID": "设备 ID",
-  "Enter an absolute path on the external target. This is a working directory, not a filesystem sandbox.": "输入外部目标上的绝对路径。这是工作目录，不是文件系统沙箱。",
+  "Use an existing absolute path inside this environment; leave empty for its default. For Local, /projects/app is inside the instance's root, not a path on your computer. Directories organize files; processes, ports and software remain shared.": "填写环境内已存在的绝对路径，留空使用默认目录。Local 的 /projects/app 位于实例根目录内，不是你电脑上的路径。目录仅用于组织文件，进程、端口和软件仍然共享。",
   "Mount name": "挂载名称",
   "No additional environments.": "暂无附加环境。",
   "Working directory": "工作目录",
@@ -1837,5 +1837,13 @@
   "origin.new": "主线",
   "origin.fork": "分支",
   "origin.child": "子任务",
-  "Choose which conversation history to open.": "请选择要打开的对话历史。"
+  "Choose which conversation history to open.": "请选择要打开的对话历史。",
+  "Approved": "已批准",
+  "Denied": "已拒绝",
+  "Response saved. Waiting for the remaining responses.": "答复已保存，等待其余答复。",
+  "Save each response separately. The agent continues after all responses are saved.": "逐项保存答复。所有答复收齐后，agent 才会继续执行。",
+  "Save response": "保存答复",
+  "This request is no longer waiting for responses.": "此请求已不再接受答复。",
+  "Choose a response before saving.": "请先选择或填写答复，再保存。",
+  "Response saved.": "答复已保存。"
 }

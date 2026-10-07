@@ -104,7 +104,8 @@ it("mounts an external target's working directory on the Thread it was read with
   cache.clear();
 });
 
-it("asks for a working directory only on an external target", async () => {
+it("mounts a managed instance at a directory and clears stale paths on selection changes", async () => {
+  mocks.POST.mockResolvedValueOnce({ data: { name: "project" } });
   const cache = show();
   const user = userEvent.setup();
   await user.click(
@@ -114,9 +115,46 @@ it("asks for a working directory only on an external target", async () => {
   await user.click(
     await screen.findByRole("option", { name: "Sandbox (env_sandbox)" }),
   );
+  await user.type(
+    screen.getByRole("textbox", { name: "Working directory" }),
+    "/projects/a",
+  );
+  await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Laptop (env_device)" }),
+  );
   expect(
-    screen.queryByRole("textbox", { name: "Working directory" }),
-  ).toBeNull();
+    (
+      screen.getByRole("textbox", {
+        name: "Working directory",
+      }) as HTMLInputElement
+    ).value,
+  ).toBe("");
+  await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Sandbox (env_sandbox)" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Working directory" }),
+    "/projects/b",
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Mount name" }),
+    "project",
+  );
+  await user.click(screen.getByRole("button", { name: "Add environment" }));
+  await waitFor(() =>
+    expect(mocks.POST).toHaveBeenCalledWith(
+      "/api/v1/threads/{thread_id}/environments",
+      expect.objectContaining({
+        body: {
+          name: "project",
+          environment_id: "env_sandbox",
+          working_directory: "/projects/b",
+        },
+      }),
+    ),
+  );
   cache.clear();
 });
 

@@ -8282,6 +8282,81 @@
         "title": "Pending",
         "type": "object"
       },
+      "PendingAnswer": {
+        "additionalProperties": false,
+        "description": "One immutable answer to an exact waiting run; no accompanying input.",
+        "properties": {
+          "approvals": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ApprovalDecision"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ToolCallId"
+            },
+            "title": "Approvals",
+            "type": "object"
+          },
+          "calls": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CallResult"
+            },
+            "propertyNames": {
+              "$ref": "#/components/schemas/ToolCallId"
+            },
+            "title": "Calls",
+            "type": "object"
+          }
+        },
+        "required": [
+          "approvals",
+          "calls"
+        ],
+        "title": "PendingAnswer",
+        "type": "object"
+      },
+      "PendingAnswers": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/SavedAnswer"
+            },
+            "title": "Answers",
+            "type": "array"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "waiting",
+              "resumed",
+              "closed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "successor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "run_id",
+          "status",
+          "answers",
+          "successor"
+        ],
+        "title": "PendingAnswers",
+        "type": "object"
+      },
       "PendingCall": {
         "additionalProperties": false,
         "properties": {
@@ -10130,6 +10205,30 @@
           "updated_at"
         ],
         "title": "RunView",
+        "type": "object"
+      },
+      "SavedAnswer": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/PendingAnswer"
+          },
+          "answered_by_id": {
+            "title": "Answered By Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "answer",
+          "answered_by_id",
+          "created_at"
+        ],
+        "title": "SavedAnswer",
         "type": "object"
       },
       "ServiceAccount": {
@@ -23419,6 +23518,171 @@
           }
         ],
         "summary": "Update Run",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/answers": {
+      "get": {
+        "description": "Read saved answers and whether this exact wait is still open or has resumed.",
+        "operationId": "pending_answers_api_v1_runs__run_id__answers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingAnswers"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Pending Answers",
+        "tags": [
+          "runs"
+        ]
+      },
+      "post": {
+        "description": "Save one answer. The last answer atomically starts the existing resume flow.",
+        "operationId": "answer_pending_api_v1_runs__run_id__answers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "pattern": "^[!-~]+$",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PendingAnswer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingAnswers"
+                }
+              }
+            },
+            "description": "The answer was already saved"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingAnswers"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Answer Pending",
         "tags": [
           "runs"
         ]

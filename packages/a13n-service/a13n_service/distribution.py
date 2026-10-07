@@ -79,6 +79,7 @@ from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import (
     AttemptRow,
     InboxEntryRow,
+    PendingAnswerRow,
     RunItemPageRow,
     RunRow,
     SessionRow,
@@ -305,6 +306,7 @@ OSS = Distribution(
         ThreadMemoryRow,
         InboxEntryRow,
         RunRow,
+        PendingAnswerRow,
         RunItemPageRow,
         AttemptRow,
         UsageRecordRow,

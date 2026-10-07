@@ -105,7 +105,7 @@ Every change is audited as `memory.{create | update | delete}`.
 
 Lowering a limit keeps existing content readable; the next change of a file enforces it.
 
-**Change feed.** Because changes are numbered under the lock, the revisions form a gap-free feed. `changes(since)` answers the store's current `seq` as its cursor and the distinct paths with a revision after `since`. It answers `FullResync` when `since` is absent, not a number, beyond the current `seq`, or older than `pruned_through_seq`, since pruned revisions can no longer list their paths. Purging a file's history therefore makes every older cursor resync.
+**Change feed.** Because changes are numbered under the lock, the revisions form a gap-free feed. `changes(since)` reads the store's current `seq`, `pruned_through_seq`, and retained revisions from one database snapshot, without locking out writers. It answers `seq` as its cursor and the distinct paths with a revision after `since` and at or before that cursor. It answers `FullResync` when `since` is absent, not a number, beyond the current `seq`, or older than `pruned_through_seq`, since pruned revisions can no longer list their paths. A cursor equal to `pruned_through_seq` still supports incremental synchronization. Purging a file's history therefore makes every older cursor resync.
 
 **Search.** `search` matches lines in SQL, in path and line order, returning up to `limit` lines and whether more matched. A literal pattern is a substring, lower-cased on both sides unless case-sensitive; a regular expression uses PostgreSQL's syntax (`~`, or `~*` without case sensitivity). An invalid expression, or a search cut off by `database.statement_timeout`, is `invalid_pattern`.
 

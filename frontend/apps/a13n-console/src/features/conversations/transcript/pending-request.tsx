@@ -1,6 +1,6 @@
 import { Button, ChoiceField, DisclosureSection, Label, Switch } from "a13n-ui";
-import { useMutation } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CheckIcon,
   HandPalmIcon,
@@ -72,7 +72,7 @@ export function PendingRequests({ pending }: { pending: Schema["Pending"] }) {
 }
 
 /**
- * Every pending action is answered together; the agent resumes with the set.
+ * Each answer is persisted independently; execution resumes only with the complete set.
  * Questions, approvals and tool results all name their exact pending call.
  * Ordinary inbox messages never resolve this wait.
  */
@@ -85,25 +85,51 @@ export function RunFeedback({
   run: Schema["RunView"];
   pending: Schema["Pending"];
   accepted: (next: Schema["RunView"] | null) => void;
-  /** The "continue without feedback" escape, shown beside Submit. */
+  /** The "continue without feedback" escape. */
   continuation?: ReactNode;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
     { workspace, can } = useWorkspace();
   const actions = pendingActions(pending);
+  const cache = useQueryClient();
+  const queryKey = ["pending-answers", workspace.id, run.id];
+  const saved = useQuery({
+    queryKey,
+    queryFn: async () =>
+      data(
+        await client
+          .workspace(workspace.id)
+          .GET("/api/v1/runs/{run_id}/answers", {
+            params: { path: { run_id: run.id } },
+          }),
+      ),
+    refetchInterval: 5000,
+  });
+  const successor = saved.data?.successor;
+  const notified = useRef<string | null>(null);
+  useEffect(() => {
+    if (successor && notified.current !== successor.id) {
+      notified.current = successor.id;
+      accepted(successor);
+    }
+  }, [successor, accepted]);
   const [answers, setAnswers] = useState<Record<string, Answer>>({}),
-    [key, setKey] = useState(crypto.randomUUID());
+    [keys, setKeys] = useState<Record<string, string>>({});
   const mutation = useMutation({
-    mutationFn: async () => {
-      const resume: Schema["Resume"] = {
+    mutationFn: async (id: string) => {
+      const key = keys[id];
+      if (!key) throw new Error(t("Choose a response before saving."));
+      const resume: Schema["PendingAnswer"] = {
         approvals: Object.create(null),
         calls: Object.create(null),
       };
-      for (const pending of actions) {
+      for (const pending of actions.filter(
+        (action) => action.tool_call_id === id,
+      )) {
         const answer = answers[pending.tool_call_id];
         if (!answer?.action)
-          throw new Error(t("Choose a response for every pending action."));
+          throw new Error(t("Choose a response before saving."));
         if (pending.category === "approval") {
           resume.approvals[pending.tool_call_id] =
             answer.action === "approve"
@@ -128,7 +154,7 @@ export function RunFeedback({
         let value: Schema["JsonValue"];
         if (answer.action === "respond" && !answer.structured) {
           if (!answer.value.trim())
-            throw new Error(t("Choose a response for every pending action."));
+            throw new Error(t("Choose a response before saving."));
           value = { response: answer.value.trim() };
         } else {
           try {
@@ -145,7 +171,7 @@ export function RunFeedback({
       return data(
         await client
           .workspace(workspace_id)
-          .POST("/api/v1/runs/{run_id}/resume", {
+          .POST("/api/v1/runs/{run_id}/answers", {
             params: {
               path: { run_id: run.id },
               header: commandHeaders(key),
@@ -154,38 +180,84 @@ export function RunFeedback({
           }),
       );
     },
-    onSuccess: (next) => accepted(next),
+    onSuccess: (next) => cache.setQueryData(queryKey, next),
+    onError: () => {
+      void cache.invalidateQueries({ queryKey });
+    },
   });
   function change(id: string, answer: Answer) {
     setAnswers((previous) => ({ ...previous, [id]: answer }));
-    setKey(crypto.randomUUID());
+    setKeys((previous) => ({ ...previous, [id]: crypto.randomUUID() }));
   }
   return (
-    <form
-      className={styles.cards}
-      aria-label={t("Waiting for your response")}
-      onSubmit={(event) => {
-        event.preventDefault();
-        mutation.mutate();
-      }}
-    >
+    <div className={styles.cards} aria-label={t("Waiting for your response")}>
       <p className={styles.cardsNote}>
         <span className={styles.cardsNoteTitle}>
           {t("Waiting for your response")}
         </span>
         {t(
-          "Review every action before continuing. The agent resumes with this complete set of responses.",
+          "Save each response separately. The agent continues after all responses are saved.",
         )}
       </p>
       <fieldset
-        disabled={mutation.isPending || !can("run")}
+        disabled={
+          mutation.isPending ||
+          !can("run") ||
+          !saved.data ||
+          saved.data.status !== "waiting"
+        }
         className={styles.cards}
       >
         {actions.map((action) => {
+          const stored = saved.data?.answers.find(
+            (item) =>
+              action.tool_call_id in item.answer.approvals ||
+              action.tool_call_id in item.answer.calls,
+          );
+          if (stored) {
+            const decision = stored.answer.approvals[action.tool_call_id];
+            const result = stored.answer.calls[action.tool_call_id];
+            return (
+              <ActionCard key={action.tool_call_id} action={action}>
+                <p role="status">
+                  {t(
+                    saved.data?.status === "waiting"
+                      ? "Response saved. Waiting for the remaining responses."
+                      : "Response saved.",
+                  )}
+                </p>
+                {decision ? (
+                  <p>
+                    {t(decision.action === "approve" ? "Approved" : "Denied")}
+                    {decision.action === "deny" && decision.reason
+                      ? `: ${decision.reason}`
+                      : ""}
+                  </p>
+                ) : result?.status === "failed" ? (
+                  <p>{result.message}</p>
+                ) : result?.status === "returned" ? (
+                  <JsonView value={result.value} />
+                ) : null}
+              </ActionCard>
+            );
+          }
           const answer = answers[action.tool_call_id] ?? {
             action: "",
             value: "",
           };
+          const save = (
+            <Button
+              type="button"
+              size="sm"
+              disabled={!answer.action}
+              loading={
+                mutation.isPending && mutation.variables === action.tool_call_id
+              }
+              onClick={() => mutation.mutate(action.tool_call_id)}
+            >
+              {t("Save response")}
+            </Button>
+          );
           const questions =
             action.category === "call" &&
             action.tool_name === "ask_user_question"
@@ -198,6 +270,7 @@ export function RunFeedback({
                   questions={questions}
                   onChange={(value) => change(action.tool_call_id, value)}
                 />
+                {save}
               </ActionCard>
             );
           const details =
@@ -375,25 +448,23 @@ export function RunFeedback({
                   />
                 </>
               )}
+              {save}
             </ActionCard>
           );
         })}
         <div className={styles.cardsFooter}>
-          {continuation}
-          <Button
-            type="submit"
-            variant="default"
-            disabled={
-              !actions.every((action) => !!answers[action.tool_call_id]?.action)
-            }
-            loading={mutation.isPending}
-          >
-            {t("Submit responses")}
-          </Button>
+          {saved.data?.status === "waiting" &&
+            saved.data.answers.length === 0 &&
+            continuation}
         </div>
       </fieldset>
-      <ErrorNotice error={mutation.error} />
-    </form>
+      {saved.data?.status === "closed" && (
+        <p role="status">
+          {t("This request is no longer waiting for responses.")}
+        </p>
+      )}
+      <ErrorNotice error={saved.error ?? mutation.error} />
+    </div>
   );
 }
 

@@ -297,7 +297,7 @@
   "Add environment": "Add environment",
   "Additional environments": "Additional environments",
   "Device ID": "Device ID",
-  "Enter an absolute path on the external target. This is a working directory, not a filesystem sandbox.": "Enter an absolute path on the external target. This is a working directory, not a filesystem sandbox.",
+  "Use an existing absolute path inside this environment; leave empty for its default. For Local, /projects/app is inside the instance's root, not a path on your computer. Directories organize files; processes, ports and software remain shared.": "Use an existing absolute path inside this environment; leave empty for its default. For Local, /projects/app is inside the instance's root, not a path on your computer. Directories organize files; processes, ports and software remain shared.",
   "Mount name": "Mount name",
   "No additional environments.": "No additional environments.",
   "Working directory": "Working directory",
@@ -1837,5 +1837,13 @@
   "origin.new": "Main",
   "origin.fork": "Branch",
   "origin.child": "Subtask",
-  "Choose which conversation history to open.": "Choose which conversation history to open."
+  "Choose which conversation history to open.": "Choose which conversation history to open.",
+  "Approved": "Approved",
+  "Denied": "Denied",
+  "Response saved. Waiting for the remaining responses.": "Response saved. Waiting for the remaining responses.",
+  "Save each response separately. The agent continues after all responses are saved.": "Save each response separately. The agent continues after all responses are saved.",
+  "Save response": "Save response",
+  "This request is no longer waiting for responses.": "This request is no longer waiting for responses.",
+  "Choose a response before saving.": "Choose a response before saving.",
+  "Response saved.": "Response saved."
 }
