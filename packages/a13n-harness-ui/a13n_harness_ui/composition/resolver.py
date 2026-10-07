@@ -16,6 +16,7 @@ from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
     HarnessPluginFactoryRegistration,
 )
+from a13n_harness.tools import ToolIdentity, ToolPermissionsCapability
 from a13n_harness.tools.permissions import match_selector
 from a13n_logging import get_logger
 from pydantic import JsonValue
@@ -41,6 +42,7 @@ from a13n_harness_ui.environment_profiles import (
 )
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
+from a13n_harness_ui.guardian_credits import supports_guardian_credits
 from a13n_harness_ui.memory import ORGANIZATION_PROMPT
 from a13n_harness_ui.model_adapters import PydanticAiModelAdapter, service_tier_setting
 from a13n_harness_ui.model_controls import apply_model_controls
@@ -493,6 +495,15 @@ class AgentCompositionResolver:
                 details={"subagent_id": child.id, "model_id": child.model},
             )
         model = parent.model if child.model is None else self.model_recipe(source.models[child.model])
+        capabilities = parent.capabilities
+        if not supports_guardian_credits(model.route) and any(item.guardian_credits for item in capabilities):
+            _LOGGER.warning(
+                "guardian_credits_unavailable",
+                extra={
+                    "warning": f"Subagent {child.id}: main Model is not Responses-compatible; retaining ordinary review."
+                },
+            )
+            capabilities = tuple(item.model_copy(update={"guardian_credits": False}) for item in capabilities)
         return ResolvedAgentNode(
             source_kind="markdown",
             source_id=child.id,
@@ -501,7 +512,7 @@ class AgentCompositionResolver:
             instructions=(child.body,) if child.body.strip() else (),
             global_guidance=source.global_guidance,
             model=model,
-            capabilities=parent.capabilities,
+            capabilities=capabilities,
             harness_plugins=self._plugins(
                 source,
                 plugin_ids,
@@ -620,7 +631,7 @@ class AgentCompositionResolver:
                         settings={**model.settings, **overrides},
                         model_cfg=model.model_configuration,
                     )
-                self.catalog.capabilities(((item.capability, configuration),))
+                validated = self.catalog.capabilities(((item.capability, configuration),))
             except CompositionError as exc:
                 # Never drop authorization rules because optional review is misconfigured.
                 if exc.code not in _SKIPPABLE_CAPABILITY_ERRORS or item.capability == "ToolPermissionsCapability":
@@ -631,11 +642,35 @@ class AgentCompositionResolver:
                 else:
                     _LOGGER.warning("capability_skipped", extra={"warning": warning})
                 continue
+            guardian_credits = False
+            capability = validated[0].capability
+            if (
+                source.document.security.shell_review.guardian_credits
+                and isinstance(capability, ToolPermissionsCapability)
+                and capability.config is not None
+                and capability.permissions.resolve(ToolIdentity("environment.shell_exec")) == "review"
+            ):
+                guardian_credits = (
+                    active_model is not None
+                    and supports_guardian_credits(active_model.route)
+                    and model is not None
+                    and supports_guardian_credits(model.route)
+                )
+                if not guardian_credits:
+                    warning = (
+                        f"Agent {agent.id}: Guardian credits require Responses-compatible main and review Models; "
+                        "ordinary shell review remains enabled."
+                    )
+                    if warnings is not None:
+                        warnings.append(warning)
+                    else:
+                        _LOGGER.warning("guardian_credits_unavailable", extra={"warning": warning})
             recipes.append(
                 ResolvedCapabilityRecipe(
                     capability=item.capability,
                     configuration=configuration,
                     model=model,
+                    guardian_credits=guardian_credits,
                 )
             )
         for default in ("file_context", "working_state", "user_interaction", "codeact"):

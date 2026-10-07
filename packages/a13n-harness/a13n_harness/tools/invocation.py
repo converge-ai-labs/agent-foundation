@@ -37,6 +37,7 @@ from a13n_harness.tools._output import (
     _apply_result_policy,
     _render_tool_return,
 )
+from a13n_harness.tools._source import tool_call_source_scope
 from a13n_harness.tools.approval import (
     APPROVAL_PRESENTATION_KEY,
     approval_presentation,
@@ -367,7 +368,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         tool = identify_tool(tool)
         check = await check_permission(ctx, tool.tool_def, tool_args)
         ctx = replace(ctx, tool_call_approved=check.approval.approved)
-        with tool_approval_scope(ctx.deps, check.approval):
+        with tool_approval_scope(ctx.deps, check.approval), tool_call_source_scope(ctx):
             try:
                 return await self._call_tool(name, tool_args, ctx, tool)
             except ApprovalRequired as exc:

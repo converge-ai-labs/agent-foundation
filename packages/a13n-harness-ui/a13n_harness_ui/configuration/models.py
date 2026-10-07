@@ -180,6 +180,7 @@ class ShellReviewConfiguration(ConfigurationModel):
     """Optional Host shortcut; disabled leaves Agent capability policy untouched."""
 
     enable: bool = False
+    guardian_credits: bool = False
     risk_threshold: Literal["low", "medium", "high", "extra_high"] | None = None
     model: ResourceId | None = None
     on_flagged: Literal["deny", "approval_required"] | None = None

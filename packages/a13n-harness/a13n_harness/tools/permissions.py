@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -69,12 +69,14 @@ class ToolPermissionsCapability(AbstractCapability[AgentContext]):
         reviewer: ToolReviewer | None = None,
         reviewers: Mapping[str, ToolReviewer] | None = None,
         policy: ToolReviewPolicy | None = None,
+        review_capabilities: Sequence[AbstractCapability[ToolReviewRequest]] = (),
     ) -> None:
         self.permissions = (permissions or ToolPermissions()).model_copy(deep=True)
         self.config = review.model_copy(deep=True) if review is not None else None
         if review is not None and policy is not None:
             raise ValueError("Configure review policy through review or policy, not both")
         self.policy = (policy or review or ToolReviewPolicy()).model_copy(deep=True)
+        self.review_capabilities = tuple(review_capabilities)
         self._reviewer = reviewer
         self._reviewers = dict(reviewers or {})
         for selector, implementation in self._reviewers.items():
@@ -120,6 +122,7 @@ class ToolPermissionsCapability(AbstractCapability[AgentContext]):
             self.permissions,
             review=self.config,
             reviewer=self._reviewer,
+            review_capabilities=self.review_capabilities,
             reviewers=self._reviewers,
             policy=self.policy if self.config is None else None,
         )
@@ -130,7 +133,7 @@ class ToolPermissionsCapability(AbstractCapability[AgentContext]):
             model = await ctx.deps._model_inference(
                 ModelResolutionContext(agent=ctx.agent, deps=ctx.deps), self.config.model
             )
-            replacement._reviewer = AgentToolReviewer(model, self.config)
+            replacement._reviewer = AgentToolReviewer(model, self.config, capabilities=self.review_capabilities)
         ctx.deps._record_run_capability(TOOL_PERMISSIONS_CAPABILITY_ID, replacement)
         return replacement
 

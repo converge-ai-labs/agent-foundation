@@ -385,7 +385,14 @@ async def test_approval_denial_is_observed_without_reviewer_replay_or_execution(
 
 @pytest.mark.parametrize("codeact", [False, True])
 async def test_nested_proxy_and_codeact_targets_share_review_and_compact_trajectory(codeact):
+    from dataclasses import replace
+
     from a13n_harness.capabilities import CodeActCapability
+    from pydantic_ai.capabilities import AbstractCapability
+
+    class ResponseIdentity(AbstractCapability):
+        async def after_model_request(self, ctx, *, request_context, response):
+            return replace(response, provider_response_id="resp_nested_parent")
 
     from .test_tool_proxy import _group, _run
 
@@ -394,6 +401,7 @@ async def test_nested_proxy_and_codeact_targets_share_review_and_compact_traject
 
     reviewer = Reviewer()
     capabilities = [
+        ResponseIdentity(),
         _group(double),
         ToolPermissionsCapability(ToolPermissions(default="review"), reviewer=reviewer),
     ]
@@ -405,6 +413,8 @@ async def test_nested_proxy_and_codeact_targets_share_review_and_compact_traject
     result, _ = await _run(tuple(capabilities), [call])
     assert result.status == "completed"
     assert len(reviewer.requests) == 2
+    assert all(request.source.provider_response_id == "resp_nested_parent" for request in reviewer.requests)
+    assert all("resp_nested_parent" not in request.to_prompt() for request in reviewer.requests)
     assert reviewer.requests[-1].tool_id == "tool/native/double"
     assert any(record.outcome == "unknown" for record in reviewer.requests[-1].recent_actions)
     actions = [record for record in _history(result.state).records if record.kind == "action"]

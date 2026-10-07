@@ -97,6 +97,7 @@ if TYPE_CHECKING:
     from .tool_proxy import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup, ToolProxyPlan, ToolProxySelection
     from .tool_review import (
         AgentToolReviewer,
+        ToolCallSource,
         ToolReviewAssessment,
         ToolReviewConfig,
         ToolReviewer,
@@ -260,6 +261,7 @@ _EXPORTS = {
     ),
     "a13n_harness.capabilities.tool_review": (
         "AgentToolReviewer",
+        "ToolCallSource",
         "ToolReviewAssessment",
         "ToolReviewConfig",
         "ToolReviewError",

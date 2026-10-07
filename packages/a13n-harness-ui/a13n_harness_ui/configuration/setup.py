@@ -309,6 +309,14 @@ async def preview_setup(
                     resource["model"] = connection_model
                     files[name] = yaml.safe_dump(resource, sort_keys=False, allow_unicode=True)
     if seed_review:
+        authentication = (
+            selected_model[1].get("authentication")
+            if selected_model is not None
+            else selection.model.authentication.model_dump()
+            if selection.model is not None
+            else None
+        )
+        guardian_credits = isinstance(authentication, dict) and authentication.get("kind") == "codex_subscription"
         reviewer_model = next(
             (
                 yaml.safe_load(text)["id"]
@@ -321,6 +329,7 @@ async def preview_setup(
             **security,
             "shell_review": {
                 "enable": selection.shell_review and reviewer_model is not None,
+                "guardian_credits": guardian_credits,
                 "risk_threshold": "extra_high",
                 "on_flagged": "approval_required",
                 "on_error": "allow",

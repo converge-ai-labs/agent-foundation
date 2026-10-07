@@ -31,6 +31,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.observation import observe_operation, observe_output
+from a13n_harness.tools._source import tool_call_source, tool_call_source_scope
 from a13n_harness.tools.approval import (
     APPROVAL_PRESENTATION_KEY,
     ToolApprovalContext,
@@ -321,6 +322,7 @@ async def _review_request(
     if len(history.records) > len(previous_reviews) + len(recent_actions):
         omitted.append("history.older_entries")
     return ToolReviewRequest(
+        source=tool_call_source(ctx),
         previous_reviews=previous_reviews,
         recent_actions=recent_actions,
         approved=approval.approved,
@@ -344,7 +346,7 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
     async def validate(ctx: RunContext[AgentContext], **args: Any) -> None:
         check = await check_permission(ctx, tool.tool_def, args)
         ctx = replace(ctx, tool_call_approved=check.approval.approved)
-        with tool_approval_scope(ctx.deps, check.approval):
+        with tool_approval_scope(ctx.deps, check.approval), tool_call_source_scope(ctx):
             if original_validator is not None:
                 try:
                     result = original_validator(ctx, **args)

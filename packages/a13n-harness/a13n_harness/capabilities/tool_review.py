@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterable
+from collections.abc import AsyncIterable, Sequence
 from dataclasses import replace
 from enum import IntEnum, StrEnum
 from functools import cache
@@ -13,6 +13,7 @@ from typing import Literal, Protocol, cast, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 from pydantic_ai import Agent, RunContext, ToolOutput, UseEnumMemberDocstrings
+from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import AgentStreamEvent
 from pydantic_ai.models import Model
@@ -29,6 +30,16 @@ from a13n_harness.models.structured_output import StructuredOutputAutoToolChoice
 from a13n_harness.observation import _auxiliary_agent_capabilities
 from a13n_harness.tools.policy import InvocationDecisionKind
 from a13n_harness.usage import ProviderUsage, UsageReportError
+
+
+class ToolCallSource(BaseModel):
+    """Native response identity, not prompt content or an execution authorization."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    model_name: str | None = Field(default=None, max_length=1024)
+    provider_name: str | None = Field(default=None, max_length=256)
+    provider_response_id: str | None = Field(default=None, max_length=4096)
 
 
 class ToolReviewRequest(BaseModel):
@@ -49,6 +60,7 @@ class ToolReviewRequest(BaseModel):
     approved: bool = False
     previous_reviews: tuple[ReviewEvidence, ...] = ()
     recent_actions: tuple[ReviewEvidence, ...] = ()
+    source: ToolCallSource | None = None
 
     def to_prompt(self) -> str:
         return render_review_input(
@@ -263,16 +275,22 @@ class _ReviewExecution:
 class AgentToolReviewer:
     """One bounded model request, no business tools and no inherited Agent prompt."""
 
-    def __init__(self, model: Model, config: ToolReviewConfig) -> None:
+    def __init__(
+        self,
+        model: Model,
+        config: ToolReviewConfig,
+        *,
+        capabilities: Sequence[AbstractCapability[ToolReviewRequest]] = (),
+    ) -> None:
         self._model = model
         self._config = config.model_copy(deep=True)
         self._scored = not model.profile.get("supports_text_output", True)
         output_type = _ScoredToolReview if self._scored else ToolReviewAssessment
         # `model` is what `config.model` selects, so each review call carries that ID.
-        selection, capabilities = selected_model(StructuredOutputAutoToolChoiceModel(model), config.model)
+        selection, selection_capabilities = selected_model(StructuredOutputAutoToolChoiceModel(model), config.model)
         self._agent: Agent[ToolReviewRequest, ToolReviewAssessment | _ScoredToolReview] = Agent(
             selection,
-            capabilities=capabilities,
+            capabilities=(*selection_capabilities, *capabilities),
             deps_type=ToolReviewRequest,
             output_type=ToolOutput(
                 output_type,
