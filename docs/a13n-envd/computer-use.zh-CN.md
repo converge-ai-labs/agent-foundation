@@ -37,7 +37,7 @@ a13n-envd connect https://your-harness-ui.example.com --computer-use true
 
 在**系统设置 → 隐私与安全性**中，为 macOS 指定的进程或启动者授予屏幕录制和辅助功能权限。Envd 等待最多 120 秒，两项就绪后连接。超时或 Ctrl+C 以非零状态退出。macOS 要求时，重启启动者和 Envd。
 
-需要更长等待时，设置 `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS=300000`。stdio 父进程须消费 stderr，并将 `initialization_timeout` 设为长于权限等待加启动时间，例如 135 秒。Python 客户端默认为十秒。
+需要更长等待时，设置 `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS=300000`。stdio 父进程须消费 stderr，并将 `initialization_timeout` 设为长于权限等待加启动时间：例如，默认等待 120 秒时设为 135 秒，上述等待 300 秒的配置则设为 315 秒。Python 客户端默认为十秒。
 
 ### Linux X11 就绪检查
 

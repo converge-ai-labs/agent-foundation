@@ -374,7 +374,7 @@ builder = HarnessBuilder(configured_plugins_enabled=True)
 
 A Host may install a complete plugin distribution into a fresh directory that is not yet searchable, publish that directory on Python's package search path while the Host remains alive, invalidate Python's import caches, and construct a new builder. The new builder sees the current entry-point metadata. Existing builders retain their selected factories and create fresh plugin instances from them on later builds; existing executables retain their already constructed plugin graphs. This supports adding plugins without rebuilding the Host image or restarting its Python process, but it does not define in-place reload or replacement of an already imported module.
 
-Use `PYTHONPATH` or `sys.path` for Python packages; the shell executable `PATH` is unrelated. Never install incrementally into a directory already exposed to the running process. The completed distribution must include `.dist-info` entry-point metadata rather than only the import module. See the [Harness plugin guide](../../docs/a13n-harness/plugins.md#use-a-host-managed-plugin-directory) for the complete Host sequence and rollout boundaries.
+Use `PYTHONPATH` or `sys.path` for Python packages; the shell executable `PATH` is unrelated. Never install incrementally into a directory already exposed to the running process. The completed distribution must include `.dist-info` entry-point metadata rather than only the import module. See the [Harness plugin guide](../../docs/a13n-harness/plugins.md#runtime-plugin-directories) for the complete Host sequence and rollout boundaries.
 
 ### Explicit code mode
 

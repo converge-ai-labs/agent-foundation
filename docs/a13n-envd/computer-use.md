@@ -37,7 +37,7 @@ Computer use is off by default and independent of command `full_control`. For JS
 
 In **System Settings → Privacy & Security**, grant Screen Recording and Accessibility to the process or launcher named by macOS. Envd waits up to 120 seconds and connects once both are ready. Timeout or Ctrl+C exits with a nonzero status. Restart the launcher and Envd if macOS requests it.
 
-For a longer wait, set `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS=300000`. A stdio parent must drain stderr and set `initialization_timeout` above the permission wait plus startup time, for example 135 seconds. The Python client defaults to ten seconds.
+For a longer wait, set `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS=300000`. A stdio parent must drain stderr and set `initialization_timeout` above the permission wait plus startup time: for example, 135 seconds for the default 120-second wait, or 315 seconds for the 300-second setting above. The Python client defaults to ten seconds.
 
 ### Linux X11 readiness
 

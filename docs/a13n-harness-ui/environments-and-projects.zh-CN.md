@@ -37,7 +37,7 @@ Model、Agent、Device、扩展、MCP 和 Project 资源存放在同级 YAML 目
 
 配置发布失败应按[设置恢复](setup.md#cancel-or-recover-setup)处理，不属于 Project 选择。重试设置前检查已完成的路径。
 
-如果 Harness UI 进程停止，活动操作、未保存的输入和不完整的输出会丢失。恢复继续使用最后保存的检查点（可能包含安全保留的部分进度），不会重放中断副作用。尽力交付的实时输出可能不完整；事件丢失时，TUI 标明恢复并打印权威最终回答。
+如果 Harness UI 进程停止，活动操作、未保存的输入和不完整的输出会丢失。恢复继续使用最后保存的检查点，其中可能包含安全保留的部分进度。已记录结果的工具调用不会重放；尚无结果的调用遵循 Harness 的[声明可重试恢复策略](../a13n-harness/state-and-resume.md#resume-unanswered-tool-calls)，并重新检查权限和审批要求。尽力交付的实时输出可能不完整；事件丢失时，TUI 标明恢复并打印权威最终回答。
 
 ## 选择 Environment
 

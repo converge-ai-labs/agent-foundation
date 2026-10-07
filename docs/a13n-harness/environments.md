@@ -164,7 +164,7 @@ read_only_docs = EnvironmentMount(
 )
 ```
 
-`permission_ceiling` is an exact `EnvironmentPermissionSet`. It defaults to every `EnvironmentAction`, so a mount exposes every Agent-facing Environment operation the Provider offers, including command and process operations when supported. `FILE_READ_ACTIONS` and `FILE_ACTIONS` are the shared constants for file observation and for the complete `environment.file.*` family. The Provider's supported operations always narrow the ceiling. The default ceiling does not grant Host administration, bypass a sandbox, or override operating-system security.
+`permission_ceiling` is an exact `EnvironmentPermissionSet`. It defaults to `FILE_EXECUTION_ACTIONS`: file and execution operations, excluding desktop `COMPUTER_ACTIONS`. A Host must explicitly include desktop actions to expose them. `FILE_READ_ACTIONS` and `FILE_ACTIONS` are the shared constants for file observation and for the complete `environment.file.*` family. The Provider's supported operations always narrow the ceiling. The default ceiling does not grant Host administration, bypass a sandbox, or override operating-system security.
 
 `working_directory` must be `None` or a canonical absolute provider path without `.` or `..` segments.
 

@@ -40,7 +40,7 @@ curl -X POST "$A13N_URL/api/v1/memories" \
 
 - `type` is `postgres`, the Service's own store and the default. The response's `id` (`mem_…`) identifies the memory; memories have no key.
 - `guide` tells agents what belongs in this memory and how to organize it, up to `memory.guide_bytes`. Leave it out or set it to `null` to use the deployment's guide for the memory's kind (`memory.default_guide.file` or `memory.default_guide.record`, else the built-in one); `""` gives the memory no guide. The memory's `inherited_guide` shows the guide `null` resolves to.
-- `always_load` names up to 64 paths whose full content leads the memory's full context, which a thread receives the first time it sees the memory. A path need not exist yet. Only principals with `write` on the memory set them, so a run cannot pin its own writes into every later thread.
+- `always_load` names up to 64 paths whose content is included first, within the context budget, when a thread first sees the memory. A path need not exist yet. Only principals with `write` on the memory set them, so a run cannot pin its own writes into every later thread.
 - `PATCH …/memories/{memory_id}` with the memory's `If-Match` changes `name`, `description`, `labels`, `guide` and `always_load`. Attempts that start afterwards use the change, including a later attempt of a run that is already running.
 - `DELETE …/memories/{memory_id}` with `If-Match` deletes the memory with its files, history and thread mounts. A running run that uses it gets `memory_deleted` from its next memory tool call.
 
@@ -135,7 +135,7 @@ The `memory` [toolset](tools.md#built-in-toolsets) is enabled by default. Its to
 
 Disabling a tool removes it from every mount; disabling the toolset leaves the run its memories' context and recall without tools.
 
-At the start of a run, each file memory adds one context block: its always-loaded files and an index of its files the first time a thread sees it, and afterwards only the files changed since, including changes by other threads and people. A thread whose history was compacted gets full context again. A run's memory context shares `memory.context_bytes` (32 KiB by default), of which each memory's always-loaded files take at most `memory.always_load_bytes`.
+At the start of a run, each file memory adds one context block: its always-loaded files and an index of its files the first time a thread sees it, and afterwards only the files changed since, including changes by other threads and people. A thread whose history was compacted gets full context again. A run's memory context shares `memory.context_bytes` (32 KiB by default), of which each memory's always-loaded files take at most `memory.always_load_bytes`. Files can be truncated or omitted; use `memory_file_view` to read them in full. If minimal blocks cannot fit, a short view-and-cleanup reminder replaces them without interrupting the run. These bounded results still advance the context cursor, so unchanged files are not automatically sent again.
 
 Each memory call checks the run's access to the workspace: `read` to view, list and search, `run` to change a file or record. A refused call fails with `forbidden`, and a call to a record memory whose provider was disabled fails with `unavailable`. A failed file call changes nothing; the model reads the file and decides again.
 

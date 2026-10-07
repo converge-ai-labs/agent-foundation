@@ -40,7 +40,7 @@ curl -X POST "$A13N_URL/api/v1/memories" \
 
 - `type` 为 `postgres`，即 Service 自身存储，也是默认值。响应的 `id`（`mem_…`）标识记忆；记忆没有 key。
 - `guide` 告诉 agent 应保存什么、如何组织，最多 `memory.guide_bytes`。省略或设为 `null` 时，使用部署按记忆类别设置的指南（`memory.default_guide.file` 或 `memory.default_guide.record`，未设置则使用内置指南）；`""` 表示没有指南。`inherited_guide` 显示 `null` 最终对应的指南。
-- `always_load` 最多指定 64 个路径；这些路径的完整内容位于记忆完整上下文的开头，线程首次看到该记忆时获得完整上下文。路径可以尚不存在。只有对记忆拥有 `write` 的主体能设置它们，因此运行不能将自己的写入固定到所有后续线程。
+- `always_load` 最多指定 64 个路径；线程首次看到该记忆时，这些文件优先放入上下文，内容受上下文预算限制。路径可以尚不存在。只有对记忆拥有 `write` 的主体能设置它们，因此运行不能将自己的写入固定到所有后续线程。
 - `PATCH …/memories/{memory_id}` 使用记忆的 `If-Match` 修改 `name`、`description`、`labels`、`guide` 和 `always_load`。之后启动的尝试使用修改后的配置，包括已在执行的运行的后续尝试。
 - `DELETE …/memories/{memory_id}` 使用 `If-Match` 删除记忆及其文件、历史和线程挂载。正在使用它的运行在下一次记忆工具调用时收到 `memory_deleted`。
 
@@ -135,7 +135,7 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/memories" \
 
 禁用工具会从所有挂载中移除它；禁用工具集仍保留记忆上下文和召回内容，但没有工具。
 
-运行开始时，每份文件型记忆添加一个上下文块：线程首次看到记忆时包含始终加载的文件和文件索引，之后只包含发生变化的文件，包括其他线程和用户的修改。历史被压缩的线程会重新获得完整上下文。运行中的记忆上下文共享 `memory.context_bytes`（默认 32 KiB），各记忆始终加载的文件最多占用 `memory.always_load_bytes`。
+运行开始时，每份文件型记忆添加一个上下文块：线程首次看到记忆时包含始终加载的文件和文件索引，之后只包含发生变化的文件，包括其他线程和用户的修改。历史被压缩的线程会重新获得完整上下文。运行中的记忆上下文共享 `memory.context_bytes`（默认 32 KiB），各记忆始终加载的文件最多占用 `memory.always_load_bytes`。文件可能被截断或省略，可通过 `memory_file_view` 读取全文。连最小上下文块也放不下时，会用一条简短的读取与清理提示代替，不会中断运行。这些受限结果仍会推进上下文游标，因此未变化的文件不会自动补发。
 
 每次记忆调用检查运行对工作空间的访问：查看、列出和搜索需要 `read`，修改文件或记录需要 `run`。拒绝调用返回 `forbidden`；记录型记忆的 provider 被禁用时返回 `unavailable`。失败的文件调用不做修改；模型重新读取文件再决定。
 

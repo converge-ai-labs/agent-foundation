@@ -164,7 +164,7 @@ read_only_docs = EnvironmentMount(
 )
 ```
 
-`permission_ceiling` 是精确的 `EnvironmentPermissionSet`，默认包含全部 `EnvironmentAction`，因此挂载开放 provider 提供的所有面向 Agent 的环境操作，包括支持时的命令和进程操作。`FILE_READ_ACTIONS` 和 `FILE_ACTIONS` 是文件观测和完整 `environment.file.*` 类别的共享常量。provider 支持的操作始终进一步收窄上限。默认上限不授予 Host 管理权限，不绕过沙箱，也不覆盖操作系统安全。
+`permission_ceiling` 是精确的 `EnvironmentPermissionSet`，默认使用 `FILE_EXECUTION_ACTIONS`：包含文件和执行操作，但不包含桌面 `COMPUTER_ACTIONS`。Host 必须显式加入桌面操作才会开放这些能力。`FILE_READ_ACTIONS` 和 `FILE_ACTIONS` 是文件观测和完整 `environment.file.*` 类别的共享常量。provider 支持的操作始终进一步收窄上限。默认上限不授予 Host 管理权限，不绕过沙箱，也不覆盖操作系统安全。
 
 `working_directory` 必须为 `None`，或不含 `.`、`..` 段的规范 provider 绝对路径。
 
