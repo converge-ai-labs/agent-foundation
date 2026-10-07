@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
-from a13n_service.runs import archive, entries, resume, runs, sessions, stream, submit, threads
+from a13n_service.runs import answers, archive, entries, resume, runs, sessions, stream, submit, threads
 from a13n_service.runs.display import StreamPosition
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
@@ -20,6 +20,8 @@ from a13n_service.runs.schemas import (
     InboxOrder,
     Message,
     NewThread,
+    PendingAnswer,
+    PendingAnswers,
     Resume,
     RunItems,
     RunLabels,
@@ -373,6 +375,38 @@ async def resume_run(
     successor, created = await resume.resume(runtime, actor, workspace_id, run_id, body, request_key=key)
     response.status_code = 201 if created else 200
     return tagged(response, successor)
+
+
+@router.get("/runs/{run_id}/answers", response_model=PendingAnswers)
+async def pending_answers(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    run_id: str,
+    actor: Actor,
+) -> PendingAnswers:
+    """Read saved answers and whether this exact wait is still open or has resumed."""
+    return await answers.get(runtime, actor, workspace_id, run_id)
+
+
+@router.post(
+    "/runs/{run_id}/answers",
+    response_model=PendingAnswers,
+    status_code=201,
+    responses={200: {"model": PendingAnswers, "description": "The answer was already saved"}},
+)
+async def answer_pending(
+    runtime: CurrentRuntime,
+    response: Response,
+    workspace_id: WorkspaceId,
+    run_id: str,
+    body: PendingAnswer,
+    actor: Actor,
+    key: IdempotencyKey,
+) -> PendingAnswers:
+    """Save one answer. The last answer atomically starts the existing resume flow."""
+    result, created = await answers.submit(runtime, actor, workspace_id, run_id, body, request_key=key)
+    response.status_code = 201 if created else 200
+    return result
 
 
 @router.get("/runs/{run_id}/items", response_model=RunItems)

@@ -1,19 +1,20 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../../shared/api";
 import { fixtureRun } from "./fixture";
 import { RunFeedback } from "./pending-request";
 
-const { post, accepted } = vi.hoisted(() => ({
+const { post, get, accepted } = vi.hoisted(() => ({
   post: vi.fn(),
+  get: vi.fn(),
   accepted: vi.fn(),
 }));
 vi.mock("../../../auth/context", () => ({
   useClient: () => ({
     http: { POST: post },
-    workspace: () => ({ POST: post }),
+    workspace: () => ({ POST: post, GET: get }),
   }),
 }));
 vi.mock("../../../layout/workspace", () => ({
@@ -26,6 +27,12 @@ vi.mock("../../../layout/workspace", () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+beforeEach(() => {
+  get.mockResolvedValue({
+    data: { run_id: run.id, status: "waiting", answers: [], successor: null },
+    response: new Response(),
+  });
+});
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -35,7 +42,10 @@ const run = fixtureRun({ status: "waiting" });
 const successor = fixtureRun({ id: "run_3", status: "accepted" });
 /** The resumed Run the Service answers a resume with. */
 function resumes() {
-  post.mockResolvedValue({ data: successor, response: new Response() });
+  post.mockResolvedValue({
+    data: { run_id: run.id, status: "resumed", answers: [], successor },
+    response: new Response(),
+  });
 }
 function approval(
   tool_call_id: string,
@@ -49,41 +59,69 @@ function approval(
   };
 }
 
-it("requires an explicit decision for every approval before sending the complete response set", async () => {
+it("saves a single answer without resuming, restores it after refresh, then submits only the remaining answer", async () => {
   const user = userEvent.setup();
-  resumes();
-  render(
+  const pending = {
+    approvals: [approval("first"), approval("second")],
+    calls: [],
+  };
+  const saved = {
+    run_id: run.id,
+    status: "waiting",
+    answers: [
+      {
+        answer: { approvals: { first: { action: "approve" } }, calls: {} },
+        answered_by_id: "user",
+        created_at: "2026-10-07T00:00:00Z",
+      },
+    ],
+    successor: null,
+  };
+  post.mockResolvedValue({ data: saved, response: new Response() });
+  const view = () => (
     <QueryClientProvider client={new QueryClient()}>
-      <RunFeedback
-        accepted={accepted}
-        run={run}
-        pending={{
-          approvals: [approval("first"), approval("second")],
-          calls: [],
-        }}
-      />
-    </QueryClientProvider>,
+      <RunFeedback accepted={accepted} run={run} pending={pending} />
+    </QueryClientProvider>
   );
-  const submit = screen.getByRole("button", {
-    name: "Submit responses",
-  }) as HTMLButtonElement;
-  expect(submit.disabled).toBe(true);
+  const first = render(view());
+  await waitFor(() =>
+    expect(
+      screen.getAllByRole("button", { name: "Approve once" })[0],
+    ).toHaveProperty("disabled", false),
+  );
   await user.click(screen.getAllByRole("button", { name: "Approve once" })[0]!);
-  expect(submit.disabled).toBe(true);
-  expect(post).not.toHaveBeenCalled();
-  await user.click(screen.getAllByRole("button", { name: /^Deny$/ })[1]!);
-  expect(submit.disabled).toBe(false);
-  await user.click(submit);
-  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-  await waitFor(() => expect(accepted).toHaveBeenCalledWith(successor));
-  expect(post.mock.calls[0]![0]).toBe("/api/v1/runs/{run_id}/resume");
+  await user.click(
+    screen.getAllByRole("button", { name: "Save response" })[0]!,
+  );
+  await screen.findByText(
+    "Response saved. Waiting for the remaining responses.",
+  );
+  expect(accepted).not.toHaveBeenCalled();
   expect(post.mock.calls[0]![1].body).toEqual({
-    approvals: { first: { action: "approve" }, second: { action: "deny" } },
+    approvals: { first: { action: "approve" } },
+    calls: {},
+  });
+  first.unmount();
+  get.mockResolvedValue({ data: saved, response: new Response() });
+  render(view());
+  await screen.findByText(
+    "Response saved. Waiting for the remaining responses.",
+  );
+  expect(screen.getAllByRole("button", { name: "Approve once" })).toHaveLength(
+    1,
+  );
+  resumes();
+  await user.click(screen.getByRole("button", { name: /^Deny$/ }));
+  await user.click(screen.getByRole("button", { name: "Save response" }));
+  await waitFor(() => expect(accepted).toHaveBeenCalledWith(successor));
+  expect(post.mock.calls[1]![0]).toBe("/api/v1/runs/{run_id}/answers");
+  expect(post.mock.calls[1]![1].body).toEqual({
+    approvals: { second: { action: "deny" } },
     calls: {},
   });
 });
 
-it("submits a bounded denial reason with the rest of the answers", async () => {
+it("saves a bounded denial reason", async () => {
   const user = userEvent.setup();
   resumes();
   render(
@@ -110,7 +148,7 @@ it("submits a bounded denial reason with the rest of the answers", async () => {
     name: "Denial reason (optional)",
   });
   await user.type(reason, "Sensitive destination");
-  await user.click(screen.getByRole("button", { name: "Submit responses" }));
+  await user.click(screen.getByRole("button", { name: "Save response" }));
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   expect(post.mock.calls[0]![1].body.approvals).toEqual({
     first: { action: "deny", reason: "Sensitive destination" },
@@ -164,7 +202,7 @@ function renderQuestions(questions = questionPresentation) {
   return userEvent.setup();
 }
 function answered() {
-  expect(post.mock.calls[0]![0]).toBe("/api/v1/runs/{run_id}/resume");
+  expect(post.mock.calls[0]![0]).toBe("/api/v1/runs/{run_id}/answers");
   expect(post.mock.calls[0]![1].params.path).toEqual({ run_id: run.id });
   return post.mock.calls[0]![1].body.calls;
 }
@@ -195,7 +233,7 @@ it("answers questions with single and multiple selections in the exact answer en
   expect(screen.getByText("Which business?")).toBeTruthy();
   expect(screen.getByText("Orders and returns")).toBeTruthy();
   const submit = screen.getByRole("button", {
-    name: "Submit responses",
+    name: "Save response",
   }) as HTMLButtonElement;
   expect(submit.disabled).toBe(true);
   await user.click(screen.getByRole("radio", { name: /Retail/ }));
@@ -226,7 +264,7 @@ it("allows free text instead of an option and does not submit an empty answer", 
     screen.getByRole("radio", { name: "Write your own answer" }),
   );
   const submit = screen.getByRole("button", {
-    name: "Submit responses",
+    name: "Save response",
   }) as HTMLButtonElement;
   expect(submit.disabled).toBe(true);
   await user.type(
@@ -243,9 +281,12 @@ it("allows free text instead of an option and does not submit an empty answer", 
   });
 });
 
-it("answers questions and approvals together in a mixed wait", async () => {
+it("saves a question independently of an unanswered approval", async () => {
   const user = userEvent.setup();
-  resumes();
+  post.mockResolvedValue({
+    data: { run_id: run.id, status: "waiting", answers: [], successor: null },
+    response: new Response(),
+  });
   render(
     <QueryClientProvider client={new QueryClient()}>
       <RunFeedback
@@ -255,27 +296,18 @@ it("answers questions and approvals together in a mixed wait", async () => {
           calls: [
             question({ questions: [questionPresentation.questions[0]!] }),
           ],
-          approvals: [
-            approval("approval", {
-              risk: "low",
-              reason: "Tool policy requires approval.",
-            }),
-          ],
+          approvals: [approval("approval")],
         }}
       />
     </QueryClientProvider>,
   );
-  const submit = screen.getByRole("button", {
-    name: "Submit responses",
-  }) as HTMLButtonElement;
   await user.click(screen.getByRole("radio", { name: /Retail/ }));
-  expect(submit.disabled).toBe(true);
-  await user.click(screen.getByRole("button", { name: "Approve once" }));
-  expect(submit.disabled).toBe(false);
-  await user.click(submit);
+  const buttons = screen.getAllByRole("button", { name: "Save response" });
+  expect(buttons[0]).toHaveProperty("disabled", true);
+  await user.click(buttons[1]!);
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   expect(post.mock.calls[0]![1].body).toEqual({
-    approvals: { approval: { action: "approve" } },
+    approvals: {},
     calls: {
       question: {
         status: "returned",
@@ -283,6 +315,7 @@ it("answers questions and approvals together in a mixed wait", async () => {
       },
     },
   });
+  expect(accepted).not.toHaveBeenCalled();
 });
 
 it("only skips a question after an explicit choice and submission", async () => {
@@ -291,7 +324,7 @@ it("only skips a question after an explicit choice and submission", async () => 
     screen.getByRole("button", { name: "Continue without a response" }),
   );
   expect(post).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Submit responses" }));
+  await user.click(screen.getByRole("button", { name: "Save response" }));
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   expect(answered()).toEqual({
     question: { status: "failed", message: "No response was given" },
@@ -307,14 +340,14 @@ it("preserves the question response and exact request after a stale-wait conflic
     response: new Response(null, { status: 409 }),
   });
   await user.click(screen.getByRole("radio", { name: /Retail/ }));
-  await user.click(screen.getByRole("button", { name: "Submit responses" }));
+  await user.click(screen.getByRole("button", { name: "Save response" }));
   await screen.findByRole("alert");
   expect(screen.getByRole("radio", { name: /Retail/ })).toHaveProperty(
     "checked",
     true,
   );
   expect(accepted).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Submit responses" }));
+  await user.click(screen.getByRole("button", { name: "Save response" }));
   await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
   expect(post.mock.calls[1]).toEqual(post.mock.calls[0]);
   expect(Object.keys(answered())).toEqual(["question"]);
@@ -353,9 +386,7 @@ it.each([false, true])(
       }),
     );
     if (failed) {
-      await user.click(
-        screen.getByRole("button", { name: "Submit responses" }),
-      );
+      await user.click(screen.getByRole("button", { name: "Save response" }));
       expect((await screen.findByRole("alert")).textContent).toContain(
         "Enter a failure reason.",
       );
@@ -365,9 +396,7 @@ it.each([false, true])(
         "Reviewer unavailable",
       );
     } else {
-      await user.click(
-        screen.getByRole("button", { name: "Submit responses" }),
-      );
+      await user.click(screen.getByRole("button", { name: "Save response" }));
       await screen.findByRole("alert");
       expect(post).not.toHaveBeenCalled();
       await user.click(
@@ -375,7 +404,7 @@ it.each([false, true])(
       );
       await user.paste('{"approved":false}');
     }
-    await user.click(screen.getByRole("button", { name: "Submit responses" }));
+    await user.click(screen.getByRole("button", { name: "Save response" }));
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     expect(post.mock.calls[0]![1].body).toEqual({
       approvals: {},
@@ -387,3 +416,74 @@ it.each([false, true])(
     });
   },
 );
+
+it("disables unsaved responses when the server reports the wait has closed", async () => {
+  get.mockResolvedValue({
+    data: { run_id: run.id, status: "closed", answers: [], successor: null },
+    response: new Response(),
+  });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <RunFeedback
+        run={run}
+        pending={{ approvals: [approval("first")], calls: [] }}
+        accepted={accepted}
+      />
+    </QueryClientProvider>,
+  );
+  await screen.findByText("This request is no longer waiting for responses.");
+  expect(
+    screen.getByRole("button", { name: "Approve once" }).closest("fieldset"),
+  ).toHaveProperty("disabled", true);
+  expect(post).not.toHaveBeenCalled();
+});
+
+it("keeps independent retry keys when multiple answers are drafted before saving", async () => {
+  const user = userEvent.setup();
+  const waiting = {
+    run_id: run.id,
+    status: "waiting",
+    answers: [],
+    successor: null,
+  };
+  post.mockResolvedValue({ data: waiting, response: new Response() });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <RunFeedback
+        accepted={accepted}
+        run={run}
+        pending={{
+          approvals: [approval("first"), approval("second")],
+          calls: [],
+        }}
+      />
+    </QueryClientProvider>,
+  );
+  await waitFor(() =>
+    expect(
+      screen
+        .getAllByRole("button", { name: "Approve once" })[0]!
+        .closest("fieldset"),
+    ).toHaveProperty("disabled", false),
+  );
+  await user.click(screen.getAllByRole("button", { name: "Approve once" })[0]!);
+  await user.click(screen.getAllByRole("button", { name: "Deny" })[1]!);
+  await user.click(
+    screen.getAllByRole("button", { name: "Save response" })[0]!,
+  );
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(
+      screen
+        .getAllByRole("button", { name: "Save response" })[1]!
+        .closest("fieldset"),
+    ).toHaveProperty("disabled", false),
+  );
+  await user.click(
+    screen.getAllByRole("button", { name: "Save response" })[1]!,
+  );
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+  expect(post.mock.calls[0]![1].params.header).not.toEqual(
+    post.mock.calls[1]![1].params.header,
+  );
+});

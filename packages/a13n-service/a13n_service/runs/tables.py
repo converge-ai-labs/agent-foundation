@@ -469,6 +469,25 @@ class RunRow(Stamped, Base):
     sealed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class PendingAnswerRow(Base):
+    """An immutable answer; the thread lock serializes collection with resume and closure."""
+
+    __tablename__ = "pending_answers"
+    __table_args__ = (
+        ForeignKeyConstraint(["workspace_id", "run_id"], ["runs.workspace_id", "runs.id"]),
+        UniqueConstraint("workspace_id", "answered_by_id", "request_key", name="uq_pending_answers_request"),
+        rules(immutable("pending_answers")),
+    )
+    run_id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    tool_call_id: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"))
+    answer: Mapped[dict] = mapped_column(JSONB)
+    answered_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+    request_key: Mapped[str] = mapped_column(String(512))
+    request_digest: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.clock_timestamp())
+
+
 class RunItemPageRow(Base):
     """A history page of a run's display: its consecutive final items, written once and kept with the run."""
 
