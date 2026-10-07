@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -24,6 +25,7 @@ from e2b.envd.process import process_pb
 from e2b.sandbox.commands.main import ProcessInfo
 from e2b.sandbox_async.commands.command_handle import AsyncCommandHandle
 from protobuf import Oneof
+from pydantic import SecretStr
 
 pytestmark = pytest.mark.anyio
 
@@ -619,3 +621,58 @@ async def test_stdout_wakeups_do_not_trigger_unbounded_status_queries():
     assert info.status.exit_code == 9
     assert len(native.calls) == before
     await process.close()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="The E2B guest filesystem uses POSIX paths")
+async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path, monkeypatch):
+    """Real guest helper/path mapping; the cloud API and native command event source are simulated."""
+    from a13n_harness import EnvironmentMount, RunBindings
+    from a13n_harness.environment.advanced import create_environment_runtime
+    from a13n_harness.providers.environment.e2b.provider import E2BEnvironment, E2BProviderRuntime
+
+    class Commands(NativeCommands):
+        async def run(self, script, **kwargs):
+            if kwargs.get("background"):
+                return await super().run(script, **kwargs)
+            process = await asyncio.create_subprocess_shell(script, stdout=asyncio.subprocess.PIPE)
+            stdout, _ = await process.communicate()
+            assert process.returncode == 0
+            return SimpleNamespace(stdout=stdout.decode())
+
+    native = Commands()
+    sandbox = SimpleNamespace(sandbox_id="sandbox-shared", commands=native, is_running=AsyncMock(return_value=True))
+    for directory in ("a", "b"):
+        (tmp_path / directory).mkdir()
+        (tmp_path / directory / "README").write_text(directory)
+    for directory in ("a", "b", "a"):
+        adapter = E2BEnvironment(
+            E2BEnvironmentConfiguration(root=str(tmp_path), python=sys.executable),
+            environment_id="shared",
+            state=None,
+            runtime=E2BProviderRuntime(api_key=SecretStr("test-key")),
+            allow_create=False,
+        )
+
+        async def prepare(*, mount_id, adapter=adapter):
+            await adapter._open_operations(sandbox, mount_id)
+
+        monkeypatch.setattr(adapter, "_prepare", prepare)
+        # Service prepares an explicitly selected directory before transferring the still-unentered adapter.
+        await adapter.prepare()
+        await adapter.operations.files.list(f"/{directory}", max_results=1)
+        runtime = create_environment_runtime(
+            mounts={
+                "workspace": EnvironmentMount(adapter, working_directory=f"/{directory}", provider_root=f"/{directory}")
+            },
+            default_mount="workspace",
+        )
+        async with runtime.bind(
+            thread_id=f"thread-{directory}", run_id="run", instance=RunBindings.embedded().instance, host_refs={}
+        ) as bound:
+            assert (await bound.files.read_text("README")).text == directory
+            assert (await bound.files.read_text("/workspace/README")).text == directory
+            started = await bound.processes.start(request())
+            call = native.calls[-1]
+            assert call[0] == "run" and call[2]["cwd"] == str(tmp_path / directory)
+            native.emit(native.next_pid - 1, exit_code=0)
+            await bound.processes.wait(started.process.handle, condition="initial_terminal", timeout_seconds=1)

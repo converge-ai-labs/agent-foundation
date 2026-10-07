@@ -102,6 +102,14 @@ async def test_acceptance_freezes_mounts_and_edits_follow_the_thread_version(env
     # The accepted run keeps the set frozen at its acceptance.
     frozen = await client.get(f"{env.api}/runs/{run['id']}")
     assert frozen.json()["environment_mounts"] == run["environment_mounts"]
+    changed = {**body, "working_directory": "/work/next"}
+    added_again = await client.post(mounts, json=changed, headers={"if-match": removed.headers["etag"]})
+    assert added_again.status_code == 201, added_again.text
+    await interrupt(env, run["id"])
+    next_run = await follow_up(env, thread_id, "use next directory")
+    assert next_run.status_code == 201, next_run.text
+    assert changed in next_run.json()["run"]["environment_mounts"]
+    assert (await client.get(f"{env.api}/runs/{run['id']}")).json()["environment_mounts"] == run["environment_mounts"]
 
 
 async def test_a_reserved_sandbox_is_created_by_maintenance_and_mounted_by_a_new_thread(env) -> None:  # type: ignore[no-untyped-def]
@@ -617,3 +625,142 @@ async def test_the_local_provider_keeps_one_directory_per_environment(env, tmp_p
     assert (code, body["status"]) == (202, "deleting")
     await advance(env.runtime, used, owner="test")
     assert (await environment(env, used))["status"] == "deleted" and not (tmp_path / used).exists()
+
+
+@pytest.fixture
+async def local_instance(env: SimpleNamespace, tmp_path: Path) -> tuple[str, Path]:
+    provider = await env.client.post(f"{env.api}/environment-providers", json={"type": "local", "name": "Local"})
+    assert provider.status_code == 201, provider.text
+    template = await env.client.post(
+        f"{env.api}/environment-templates",
+        json={
+            "name": "Projects",
+            "provider_id": provider.json()["id"],
+            "config": {
+                "recipe": {
+                    "root": {"path": str(tmp_path)},
+                    "shell_profiles": [{"profile_id": "sh", "executable": "/bin/sh"}],
+                }
+            },
+        },
+    )
+    assert template.status_code == 201, template.text
+    identity = (await reserve(env, template.json()["id"]))["id"]
+    await advance(env.runtime, identity, owner="test")
+    root = tmp_path / identity
+    for project in ("a", "b"):
+        (root / project).mkdir()
+    return identity, root
+
+
+async def test_shared_local_mounts_route_files_and_commands_per_thread(env, local_instance) -> None:  # type: ignore[no-untyped-def]
+    from a13n_harness import RunBindings
+    from a13n_harness.environment.advanced import create_environment_runtime
+    from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
+    from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
+
+    identity, root = local_instance
+    other = await env.client.post(f"{env.api}/agents", json={"name": "Collaborator", "config": {"model": "unused"}})
+    assert other.status_code == 201, other.text
+    paths = ("/a", "/b", "/a", None)
+    submissions = [
+        await start(
+            env,
+            agent_id=(env.agent if index == 0 else other.json())["id"],
+            environments=[{"name": "workspace", "environment_id": identity, "working_directory": path}],
+        )
+        for index, path in enumerate(paths)
+    ]
+    leases = {
+        lease.run_id: lease
+        for lease in await claim_run(env.runtime, worker_id="worker-test", worker_build="test", limit=4)
+    }
+    for index, (submission, path) in enumerate(zip(submissions, paths, strict=True)):
+        prepared = await _prepare(env, leases[submission["run"]["id"]])
+        async with open_mounts(env.runtime, prepared) as mounts:
+            runtime = create_environment_runtime(mounts=mounts, default_mount="workspace")
+            async with runtime.bind(
+                thread_id=submission["thread"]["id"],
+                run_id=submission["run"]["id"],
+                instance=RunBindings.embedded().instance,
+                host_refs={},
+            ) as bound:
+                if index == 2:
+                    assert (await bound.files.read_text("shared.txt")).text == "from /a"
+                await bound.files.write_text(
+                    "shared.txt", f"from {path or 'default'}", mode="replace" if index == 2 else "create"
+                )
+                assert (await bound.files.read_text("/workspace/shared.txt")).text == f"from {path or 'default'}"
+                result = await bound.shell.exec(
+                    CommandRequest(
+                        command=ShellCommand(profile_id="sh", script="pwd; printf command > command.txt"),
+                        output_policy=EnvironmentOutputPolicy(
+                            max_inline_bytes=4096, max_output_bytes=4096, overflow="fail"
+                        ),
+                    )
+                )
+                assert result.status.exit_code == 0
+                expected = root / path.lstrip("/") if path else root
+                assert Path(result.output.stdout.inline.decode().strip()) == expected.resolve()
+                assert (await bound.files.read_text("command.txt")).text == "command"
+        # Another adapter on the same instance, never another allocation.
+        assert (await environment(env, identity))["status"] == "ready"
+    assert (root / "b/shared.txt").read_text() == "from /b"
+    assert (root / "a/shared.txt").read_text() == "from /a"
+    assert (root / "shared.txt").read_text() == "from default"
+    assert len((await env.client.get(f"{env.api}/environments")).json()["items"]) == 1
+
+
+@pytest.mark.parametrize("path", ["/missing", "/file", "/denied", "/escape"])
+async def test_invalid_directory_fails_only_its_mount(env, local_instance, monkeypatch, path: str) -> None:  # type: ignore[no-untyped-def]
+    from a13n_service.infra.errors import ServiceError
+
+    identity, root = local_instance
+    (root / "file").write_text("not a directory")
+    (root / "denied").mkdir()
+    (root / "escape").symlink_to(root.parent)
+    original = Path.iterdir
+
+    def iterdir(directory: Path):
+        if directory == (root / "denied").resolve():
+            raise PermissionError("Directory is not accessible")
+        return original(directory)
+
+    monkeypatch.setattr(Path, "iterdir", iterdir)
+    submitted = await start(
+        env, environments=[{"name": "workspace", "environment_id": identity, "working_directory": path}]
+    )
+    [lease] = await claim_run(env.runtime, worker_id="worker-test", worker_build="test", limit=1)
+    prepared = await _prepare(env, lease)
+    with pytest.raises(ServiceError, match="existing accessible directory") as error:
+        async with open_mounts(env.runtime, prepared):
+            pytest.fail("Invalid mount was opened")
+    assert error.value.details["working_directory"] == path
+    assert error.value.details["mount"] == "workspace"
+    current = await environment(env, identity)
+    assert current["status"] == "ready" and current["failure"] is None
+    assert not (root / "missing").exists()
+    # Another Thread's valid selection still works, with the very same shared instance.
+    valid = replace(prepared[0], working_directory="/a")
+    async with open_mounts(env.runtime, [valid]) as mounts:
+        assert mounts["workspace"].provider_root == "/a"
+    assert submitted["run"]["environment_mounts"][0]["working_directory"] == path
+
+
+async def test_directory_check_preserves_transient_provider_errors(env, local_instance, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+    from a13n_harness.providers.environment.models import EnvironmentError
+
+    async def unavailable(*args, **kwargs):
+        raise EnvironmentError("Connection interrupted", code="environment_unavailable")
+
+    identity, _ = local_instance
+    await start(env, environments=[{"name": "workspace", "environment_id": identity, "working_directory": "/a"}])
+    [lease] = await claim_run(env.runtime, worker_id="worker-test", worker_build="test", limit=1)
+    prepared = await _prepare(env, lease)
+    monkeypatch.setattr(LocalFileOperator, "list", unavailable)
+    with pytest.raises(EnvironmentError) as error:
+        async with open_mounts(env.runtime, prepared):
+            pytest.fail("Disconnected mount was opened")
+    assert error.value.code == "environment_unavailable"
+    assert (await environment(env, identity))["failure"] is None

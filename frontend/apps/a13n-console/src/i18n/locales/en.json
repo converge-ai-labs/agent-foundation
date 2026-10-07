@@ -297,7 +297,7 @@
   "Add environment": "Add environment",
   "Additional environments": "Additional environments",
   "Device ID": "Device ID",
-  "Enter an absolute path on the external target. This is a working directory, not a filesystem sandbox.": "Enter an absolute path on the external target. This is a working directory, not a filesystem sandbox.",
+  "Use an existing absolute path inside this environment; leave empty for its default. For Local, /projects/app is inside the instance's root, not a path on your computer. Directories organize files; processes, ports and software remain shared.": "Use an existing absolute path inside this environment; leave empty for its default. For Local, /projects/app is inside the instance's root, not a path on your computer. Directories organize files; processes, ports and software remain shared.",
   "Mount name": "Mount name",
   "No additional environments.": "No additional environments.",
   "Working directory": "Working directory",

@@ -126,57 +126,61 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   );
 });
 
-it("mounts an external target at a working directory and clears it when switching targets", async () => {
-  http.GET.mockImplementation(async (path: string) => ({
-    response: new Response(null),
-    data: {
-      items: path.endsWith("/environments")
-        ? [
-            {
-              id: "env_device",
-              name: "Device",
-              status: "ready",
-              device_id: "native-device",
-            },
-          ]
-        : [],
-      next_cursor: null,
-    },
-  }));
-  const submit = vi.fn();
-  mount(submit);
-  const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Options" }));
-  await user.click(screen.getByRole("combobox", { name: "Environment" }));
-  await user.click(
-    await screen.findByRole("option", {
-      name: "Reuse existing: Device (env_device)",
-    }),
-  );
-  await user.type(
-    await screen.findByRole("textbox", { name: "Working directory" }),
-    "/work/repo",
-  );
-  await user.click(screen.getByRole("button", { name: "Apply" }));
-  await user.click(screen.getByRole("button", { name: "Submit" }));
-  expect(submit).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      environment: {
-        environment_id: "env_device",
-        working_directory: "/work/repo",
+it.each([null, "envt_managed"])(
+  "mounts an existing target (%s) at a directory and clears it when switching targets",
+  async (templateId) => {
+    http.GET.mockImplementation(async (path: string) => ({
+      response: new Response(null),
+      data: {
+        items: path.endsWith("/environments")
+          ? [
+              {
+                id: "env_device",
+                name: "Device",
+                status: "ready",
+                template_id: templateId,
+                device_id: templateId ? null : "native-device",
+              },
+            ]
+          : [],
+        next_cursor: null,
       },
-    }),
-  );
-  await user.click(screen.getByRole("button", { name: "Options" }));
-  await user.click(screen.getByRole("combobox", { name: "Environment" }));
-  await user.click(await screen.findByRole("option", { name: "Inherit" }));
-  expect(
-    screen.queryByRole("textbox", { name: "Working directory" }),
-  ).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Apply" }));
-  await user.click(screen.getByRole("button", { name: "Submit" }));
-  expect(submit.mock.lastCall?.[0].environment).toBeUndefined();
-});
+    }));
+    const submit = vi.fn();
+    mount(submit);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Options" }));
+    await user.click(screen.getByRole("combobox", { name: "Environment" }));
+    await user.click(
+      await screen.findByRole("option", {
+        name: "Reuse existing: Device (env_device)",
+      }),
+    );
+    await user.type(
+      await screen.findByRole("textbox", { name: "Working directory" }),
+      "/work/repo",
+    );
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+    expect(submit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        environment: {
+          environment_id: "env_device",
+          working_directory: "/work/repo",
+        },
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Options" }));
+    await user.click(screen.getByRole("combobox", { name: "Environment" }));
+    await user.click(await screen.findByRole("option", { name: "Inherit" }));
+    expect(
+      screen.queryByRole("textbox", { name: "Working directory" }),
+    ).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.click(screen.getByRole("button", { name: "Submit" }));
+    expect(submit.mock.lastCall?.[0].environment).toBeUndefined();
+  },
+);
 
 it("overrides media understanding per kind and names the choice on its chip", async () => {
   http.GET.mockImplementation(async (path: string) => ({

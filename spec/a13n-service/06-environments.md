@@ -152,7 +152,11 @@ Before the Harness run, an attempt prepares every frozen mount, waiting at most 
 
 A mount that can no longer be used fails the run with `environment_unavailable`. A wait that runs out is `unavailable` (reason `environment_not_ready`): the attempt fails and the run recovers within `max_attempts` ([05](05-runs.md#failure-semantics)). Cancelling the attempt stops the wait at once. A drain ends it too: the attempt yields as a handoff and is not charged ([05](05-runs.md#execute)).
 
-The attempt then builds a fresh adapter per mount that connects to the ready instance and never creates, starts or replaces one. `workspace` appears at `/workspace` and is the default environment; other mounts appear at `/mnt/{name}`; `working_directory` is the mount's default directory and route root. The Harness enters and closes the adapters it binds; when the run ends, the rest are closed and the instances are marked used. Closing an adapter releases client resources only; the instance keeps running.
+The attempt then builds a fresh adapter per mount that connects to the ready instance and never creates, starts or replaces one. `workspace` appears at `/workspace` and is the default environment; other mounts appear at `/mnt/{name}`; `working_directory` is the mount's default directory and route root. An omitted directory preserves the provider default. An explicit directory is checked through the adapter's file operations during attempt preparation, outside a database transaction: it must exist, be a directory and be listable. It is never created or replaced with a default. A refusal fails that mount's preparation with its environment, mount name, path and underlying error reason; it does not record an instance lifecycle failure or prevent other Threads from using valid directories. Later filesystem changes can still make an operation fail. Providers without file operations reject explicit directory selection.
+
+For managed Local, `/projects/app` means `{recipe.root.path}/{environment_id}/projects/app`, not an arbitrary host path. Relative file paths, `/workspace/...` (or the named mount route) and a command's omitted cwd resolve to the selected directory. Different directories organize files but do not isolate processes, ports, software or OS permissions. Removing a mount does not remove its directory.
+
+The Harness enters and closes the adapters it binds; when the run ends, the rest are closed and the instances are marked used. Closing an adapter releases client resources only; the instance keeps running.
 
 ## External targets
 
