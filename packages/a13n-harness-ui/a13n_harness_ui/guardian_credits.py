@@ -9,7 +9,6 @@ from a13n_logging import get_logger
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import ModelRequestContext
-from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.settings import ModelSettings
 
@@ -23,6 +22,8 @@ def supports_guardian_credits(route: str) -> bool:
 
 
 def _settings(request: ModelRequestContext) -> dict[str, Any] | None:
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+
     model = request.model
     while isinstance(model, WrapperModel):
         model = model.wrapped
@@ -66,16 +67,6 @@ class GuardianReviewCapability(AbstractCapability[ToolReviewRequest]):
                 settings["extra_body"]["client_metadata"].update(
                     {"x-openai-subagent": "guardian", "parent_response_id": source.provider_response_id}
                 )
-                # Guardian reviews do not inherit the main Model's priority routing.
-                # Null also masks native Model defaults when the adapter merges settings again.
-                settings["openai_service_tier"] = None
-                settings["service_tier"] = None
-                settings["extra_body"].pop("service_tier", None)
-                settings["extra_headers"] = {
-                    key: value
-                    for key, value in settings["extra_headers"].items()
-                    if key.lower() != "x-codex-routing-hint"
-                }
             else:
                 _LOGGER.warning("guardian_credits_unavailable", extra={"reason": "source_response_id_missing"})
         return replace(request_context, model_settings=cast(ModelSettings, settings))

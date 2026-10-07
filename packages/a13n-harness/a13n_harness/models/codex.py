@@ -77,14 +77,6 @@ class _CodexRequestHeaders:
         headers = {
             name: value for name, value in (raw_headers or {}).items() if name.lower() not in _CODEX_DYNAMIC_HEADERS
         }
-        reviewer = any(name.lower() == "x-codex-guardian" and value == "reviewer" for name, value in headers.items())
-        if reviewer:
-            settings["openai_service_tier"] = None
-            settings["service_tier"] = None
-            if isinstance(settings.get("extra_body"), dict):
-                settings["extra_body"] = {
-                    key: value for key, value in settings["extra_body"].items() if key != "service_tier"
-                }
         service_tier = settings.get("openai_service_tier") or settings.get("service_tier")
         routing_hint = f"model={self._model_name}"
         if isinstance(service_tier, str) and service_tier:
@@ -92,7 +84,7 @@ class _CodexRequestHeaders:
         active_request = self._active_request.get()
         if active_request is None:
             raise RuntimeError("Codex request headers must be prepared inside a request scope")
-        active_request.routing_hint = None if reviewer else routing_hint
+        active_request.routing_hint = routing_hint
         headers.update(self.current())
         settings["extra_headers"] = headers
         return cast(ModelSettings, settings)

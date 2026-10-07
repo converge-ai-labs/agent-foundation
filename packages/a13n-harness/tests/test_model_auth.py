@@ -1325,7 +1325,7 @@ async def test_codex_login_retains_id_token_using_upstream_pkce(monkeypatch: pyt
 
 
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_codex_guardian_review_omits_priority_routing_without_mutating_settings(streaming) -> None:
+async def test_codex_host_review_headers_do_not_change_priority_routing(streaming) -> None:
     source = _CodexSource(_codex_credentials(marker="guardian", expires_at=datetime.now(UTC) + timedelta(hours=1)))
     seen = []
 
@@ -1334,8 +1334,8 @@ async def test_codex_guardian_review_omits_priority_routing_without_mutating_set
         seen.append(body)
         assert request.headers["x-openai-subagent"] == "guardian"
         assert request.headers["x-codex-guardian"] == "reviewer"
-        assert "x-codex-routing-hint" not in request.headers
-        assert "service_tier" not in body
+        assert request.headers["x-codex-routing-hint"] == "model=gpt-5.6-luna;tier=priority"
+        assert body["service_tier"] == "priority"
         assert body["client_metadata"] == {"parent_response_id": "resp_parent", "x-openai-subagent": "guardian"}
         return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=_responses_sse())
 

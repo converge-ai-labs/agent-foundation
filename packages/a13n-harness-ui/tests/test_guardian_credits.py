@@ -177,8 +177,9 @@ async def test_parent_and_default_reviewer_are_linked_on_wire_and_metered(codex,
     assert request.headers["x-codex-guardian"] == "reviewer"
     assert request.headers["x-openai-subagent"] == "guardian"
     assert request.headers["x-custom"] == "kept"
-    assert "x-codex-routing-hint" not in request.headers
-    assert "service_tier" not in body
+    if codex:
+        assert request.headers["x-codex-routing-hint"] == "model=gpt-5.6-luna;tier=priority"
+    assert body["service_tier"] == "priority"
     assert "resp_parent" not in json.dumps(body["input"])
     assert settings == original
     if not review_error:
@@ -191,9 +192,12 @@ async def test_parent_and_default_reviewer_are_linked_on_wire_and_metered(codex,
 async def test_review_metadata_is_request_local_and_only_links_shell_with_a_source(profile, response_id):
     model = OpenAIResponsesModel("gpt-5", provider=OpenAIProvider(api_key="test"))
     settings = {
-        "extra_headers": {"X-Codex-Guardian": "old", "custom": "kept"},
+        "extra_headers": {"X-Codex-Guardian": "old", "custom": "kept", "x-codex-routing-hint": "custom-route"},
+        "openai_service_tier": "priority",
+        "service_tier": "flex",
         "extra_body": {
-            "client_metadata": {"guardian_credits_requested": "true", "parent_response_id": "stale", "custom": "kept"}
+            "client_metadata": {"guardian_credits_requested": "true", "parent_response_id": "stale", "custom": "kept"},
+            "service_tier": "default",
         },
     }
     original = copy.deepcopy(settings)
@@ -211,6 +215,10 @@ async def test_review_metadata_is_request_local_and_only_links_shell_with_a_sour
         model=model, messages=[], model_settings=settings, model_request_parameters=ModelRequestParameters()
     )
     updated = await GuardianReviewCapability().before_model_request(ctx, model_request)
+    assert updated.model_settings["extra_headers"]["x-codex-routing-hint"] == "custom-route"
+    assert updated.model_settings["openai_service_tier"] == "priority"
+    assert updated.model_settings["service_tier"] == "flex"
+    assert updated.model_settings["extra_body"]["service_tier"] == "default"
     linked = profile == "shell" and response_id is not None
     metadata = updated.model_settings["extra_body"]["client_metadata"]
     assert metadata == (
