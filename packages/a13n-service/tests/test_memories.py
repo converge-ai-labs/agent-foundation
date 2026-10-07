@@ -17,7 +17,7 @@ from a13n_service.resources.memories.store import PostgresFileStore
 from a13n_service.resources.memories.tables import MemoryFileRevisionRow, MemoryFileRow, MemoryFileStoreRow
 from a13n_service.settings import MemorySettings
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 pytestmark = pytest.mark.anyio
 
@@ -324,6 +324,52 @@ async def test_the_store_checks_each_write_against_the_version_read(service) -> 
     assert (await counters(service, memory)).seq == 25
     kept = [row.seq for row in await revisions(service, memory) if row.path == "user/prefs.md"]
     assert kept == list(range(16, 26))
+
+
+@pytest.mark.parametrize("write_before_read", [True, False])
+async def test_change_feed_uses_one_snapshot_during_quota_pruning(service, runs_kit, write_before_read) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    memory = await create_memory(service)
+    files_store = store(service, memory, max_total_bytes=65536)
+    await files_store.write("a.md", "x" * 32768, expected=None, origin=RUN)
+    await files_store.write("a.md", "y" * 32768, expected="1", origin=RUN)
+    statements: list[str] = []
+    writing = False
+
+    async def prune_with_write() -> None:
+        nonlocal writing
+        writing = True
+        try:
+            # The current files fit, but their history no longer does: revisions 1 and 2 are pruned.
+            await files_store.write("b.md", "z" * 32768, expected=None, origin=RUN)
+        finally:
+            writing = False
+
+    def interleave(conn, cursor, statement, parameters, context, executemany) -> None:  # type: ignore[no-untyped-def]
+        if writing:
+            return
+        statements.append(statement)
+        if len(statements) == 1:
+            # The writer commits on a separate connection immediately before or after the reader's SQL.
+            # After the SQL, its snapshot is fixed, even though the caller has not consumed the result yet.
+            conn.connection.dbapi_connection.run_async(lambda connection: prune_with_write())
+
+    engine = service.runtime.storage.engine.sync_engine
+    hook = "before_cursor_execute" if write_before_read else "after_cursor_execute"
+    event.listen(engine, hook, interleave)
+    try:
+        async with asyncio.timeout(5):
+            result = await files_store.changes("1")
+    finally:
+        event.remove(engine, hook, interleave)
+
+    expected = FullResync(cursor="3") if write_before_read else Changes(cursor="2", paths=("a.md",))
+    assert result == expected
+    assert len(statements) == 1
+    assert (await counters(service, memory)).pruned_through_seq == 2
+    assert await files_store.changes("1") == FullResync(cursor="3")
+    assert await files_store.changes("2") == Changes(cursor="3", paths=("b.md",))
+    assert await files_store.changes("3") == Changes(cursor="3", paths=())
 
 
 async def test_the_change_feed_and_search(service) -> None:  # type: ignore[no-untyped-def]
