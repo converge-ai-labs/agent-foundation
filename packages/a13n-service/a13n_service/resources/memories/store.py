@@ -23,6 +23,7 @@ from a13n_harness.providers.memory import (
     validate_path,
 )
 from sqlalchemy import ColumnElement, delete, func, select, true
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -275,18 +276,31 @@ async def list_entries(session: AsyncSession, memory_id: str) -> list[FileEntry]
 async def changes_since(session: AsyncSession, memory_id: str, since: str | None) -> Changes | FullResync:
     """The paths changed after `since`, as of the store's last change; a full resync when history no longer
     covers `since`."""
-    store = await store_row(session, memory_id)
-    head = str(store.seq)
     position = int(since) if since is not None and since.isdecimal() else None
-    if position is None or position < store.pruned_through_seq or position > store.seq:
-        return FullResync(cursor=head)
-    paths = await session.scalars(
-        select(MemoryFileRevisionRow.path)
-        .where(MemoryFileRevisionRow.memory_id == memory_id, MemoryFileRevisionRow.seq > position)
-        .distinct()
-        .order_by(MemoryFileRevisionRow.path)
+    stores, revisions = MemoryFileStoreRow, MemoryFileRevisionRow
+    lower = -1 if position is None else position
+    paths = (
+        select(func.array_agg(aggregate_order_by(revisions.path.distinct(), revisions.path)))
+        .where(
+            revisions.memory_id == stores.memory_id,
+            revisions.seq > lower,
+            revisions.seq <= stores.seq,
+            stores.pruned_through_seq <= lower,
+        )
+        .correlate(stores)
+        .scalar_subquery()
     )
-    return Changes(cursor=head, paths=tuple(paths))
+    # One statement keeps the watermarks and retained paths in the same snapshot, even at READ COMMITTED.
+    row = (
+        await session.execute(select(stores.seq, stores.pruned_through_seq, paths).where(stores.memory_id == memory_id))
+    ).one_or_none()
+    if row is None:
+        raise memory_deleted()
+    seq, pruned_through, changed = row
+    head = str(seq)
+    if position is None or position < pruned_through or position > seq:
+        return FullResync(cursor=head)
+    return Changes(cursor=head, paths=tuple(changed or ()))
 
 
 async def search_lines(
