@@ -190,6 +190,10 @@ webui:
 
 开启时，`risk_threshold` 接受 `low`、`medium`、`high` 或 `extra_high`，`model` 指向已配置 Model 资源。`on_flagged` 接受 `deny` 或 `approval_required`；`on_error` 接受 `deny`、`approval_required` 或 `allow`。省略/null 字段继承 Agent 审查策略；缺失时回退到 `extra_high`、实际 Agent Model、标记调用的 `approval_required` 和非超时错误的 `allow`。组合时显式快捷字段优先，保留 Agent 无关规则。此配置只为根级和子级 Agent 的 `environment.shell_exec` 启用审查。默认值、合并和故障行为见 [shell 审查用法](configuration-recipes.md#configure-shell-review)。设置影响后续 Run 捕获，不影响活动 Run。
 
+设置 `security.shell_review.guardian_credits: true`，可为实际启用的 shell 审查请求 Guardian 额度关联。默认值为 `false`。首次设置时，Codex 订阅连接写入 `true`，API 密钥和其他连接写入 `false`；选择已有 Model 时也遵循此规则。设置向导和 Add Agent 保留现有 shell 审查配置，Add Model 不修改它。
+
+主 Model 和审查 Model 都必须使用 `openai-codex:` 或 `openai-responses:` 路由。API 密钥的 Responses 连接也可主动开启，但这不保证获得资格或免费使用。其他协议保留普通审查，并提供诊断。关联审查使用发起命令的那次调用所对应的提供方响应 ID，包括经由 CodeAct 或 ToolProxy 发起的命令。缺少 ID 时保留普通审查。此选项不改变审查 Model、凭据、端点、风险策略或用量记录。提供方拒绝请求时遵循 `on_error`，不会自动移除标记重试；超时仍拒绝执行。额度资格和实际费用由提供方决定，而不是由这些请求字段决定。
+
 ### 进程设置
 
 这些设置在应用启动时生效；修改后需重启。

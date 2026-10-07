@@ -215,6 +215,13 @@ class ToolReviewRequest:
     approved: bool
     previous_reviews: tuple[ReviewEvidence, ...]
     recent_actions: tuple[ReviewEvidence, ...]
+    source: ToolCallSource | None
+
+
+class ToolCallSource:
+    model_name: str | None
+    provider_name: str | None
+    provider_response_id: str | None
 
 
 class ToolReviewAssessment:
@@ -244,6 +251,8 @@ The reviewer returns risk and an optional reason, never an authorization decisio
 
 `ToolReviewer.review(request, *, context: AgentContext)` returns `ToolReviewResult`. Requests project converted arguments and the original parameter schema, not canonical resources or live clients. Environment variable values are omitted. Input includes the latest task/correction text (at most two requests with displayable input text, 2048 characters each), a bounded description, and a passive snapshot of at most 16 Environment mounts with provider types, roots, working directories, and operation ceilings. Task text joins multipart input through canonical content annotations and excludes hidden generated context. Constructing context performs no Environment I/O. Business system prompts, AGENTS guidance, model thinking, and raw conversation history are not inherited by the model reviewer.
 
+`source` is a bounded immutable projection of the native response that issued this exact tool call, not the latest response in the Run. It is excluded from the review prompt. Nested local CodeAct and ToolProxy calls inherit the enclosing model-generated call's source within the same Agent context; concurrent tasks and child Agents do not share a mutable last-response pointer. Recovery derives the source from retained native message history. Missing or oversized identities remain unavailable rather than being invented or truncated. The reference grants no authority and does not certify provider billing eligibility.
+
 The XML renderer escapes untrusted values and measures UTF-8 size after escaping. It targets 16 KiB and never exceeds 64 KiB. Current arguments and their parameter schema remain intact after redaction; optional history, description, task, and Environment blocks can be omitted as whole blocks with explicit omission markers. If required current-call input alone exceeds the hard bound, review fails with `tool_review_input_too_large` rather than silently truncating the operation. The same rendered-input bound is checked for custom reviewers. A shell launch (`environment.shell_exec`) renders command and execution context separately; other tools use structured argument fields.
 
 Review history is compact advisory evidence in existing portable `HarnessState`, retained when the Host saves and restores that state across approval resumes and later Runs. At most 48 flat records survive; there is no recursive review context, full argument/result archive, or independent approval store. A request selects at most five relevant previous reviews and eight recent actions. Records carry tool/call correlation, a bounded redacted target and optional reason, risk where available, the effective policy decision, native approval or denial observations, and an execution observation. The current native call-local approval decision is separate from historical evidence.
@@ -255,6 +264,8 @@ History does not grant permission, lower a risk threshold, automatically reuse a
 ### Model-backed Review and Shell Specialization
 
 Model-backed review uses the selected logical Model through the Host's normal resolver and authentication path, including native TypeSafe Jev Models. It has no business tools and permits only one bounded model request. Dependencies contain only the projected `ToolReviewRequest`. Shared criteria define general and shell risk levels and historical-evidence boundaries. Configured `instruction` remains a separate escaped `<custom-instruction>` block; `shell_instruction` overrides it for the shell profile.
+
+Code-first `AgentToolReviewer(capabilities=...)` and `ToolPermissionsCapability(review_capabilities=...)` accept native Pydantic AI Capabilities for the default review Agent, whose dependencies are the current `ToolReviewRequest`. These extensions do not replace model-call checks, metering, the one-request limit, or timeout/error policy. Declarative review configuration does not accept executable capabilities. Host-specific request protocols belong to these extensions, not the generic permission gate.
 
 Text-capable Models return structured risk and an optional reason. Models declaring no text output instead receive a described four-level severity rubric: 0 maps to `low`, 1 to `medium`, 2 to `high`, and 3 to `extra_high`. The native adapter's rubric level determines risk; confidence and unrounded provider scores do not change policy. The resulting assessment has a null reason. Questions and assessment criteria are supplied as instructions and schema descriptions, separately from the rendered request material. The output schema contains no free-text field for non-text Models, and provider compatibility wrappers do not enable text output on them. Plain text, including JSON text, is never an assessment. No additional explanatory Model call, implicit fallback, or confidence threshold is added.
 

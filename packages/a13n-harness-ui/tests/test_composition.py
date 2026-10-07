@@ -1786,3 +1786,72 @@ def test_legacy_model_recipe_retains_canonical_bytes_and_identity():
     )
     assert explicit.model_dump(mode="json")["model_characteristics"]["image_input"] is None
     assert model_recipe_id(explicit) != model_recipe_id(recipe)
+
+
+@pytest.mark.parametrize(
+    "guardian,enabled,route",
+    [
+        (True, True, "openai-responses:gpt-5"),
+        (False, True, "openai-responses:gpt-5"),
+        (True, False, "openai-responses:gpt-5"),
+        (True, True, "openai-chat:gpt-5"),
+    ],
+)
+async def test_guardian_credit_policy_is_captured_and_reconstructed_without_live_config(
+    tmp_path, guardian, enabled, route
+):
+    import yaml
+    from a13n_harness.tools import ToolPermissionsCapability
+    from a13n_harness_ui.composition.models import ResolvedRunComposition
+    from a13n_harness_ui.guardian_credits import GuardianParentCapability, GuardianReviewCapability
+
+    path = _write_source(tmp_path)
+    path.write_text(
+        path.read_text()
+        + yaml.safe_dump({"security": {"shell_review": {"enable": enabled, "guardian_credits": guardian}}})
+    )
+    model_path = tmp_path / "models" / "primary.yaml"
+    model = yaml.safe_load(model_path.read_text())
+    model["route"] = route
+    model_path.write_text(yaml.safe_dump(model))
+    source = await load_harness_ui_configuration(path)
+    captured = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    restored = ResolvedRunComposition.model_validate_json(captured.model_dump_json())
+    expected = guardian and enabled and route.startswith("openai-responses:")
+    assert any(item.guardian_credits for item in restored.root.capabilities) is expected
+    # Changing today's configuration cannot affect reconstruction of the captured option.
+    path.write_text('schema_version: "1"\nsecurity:\n  shell_review: {enable: false}\n')
+    reconstructed = AgentReconstructor(_catalog()).reconstruct(restored, subagent_operator=_UnusedOperator())
+    caps = reconstructed.executable.definition.capabilities
+    assert any(isinstance(c, GuardianParentCapability) for c in caps) is expected
+    for cap in caps:
+        if isinstance(cap, ToolPermissionsCapability):
+            assert any(isinstance(c, GuardianReviewCapability) for c in cap.review_capabilities) is expected
+            assert cap.config.on_error == "allow"
+    for child in restored.root.children:
+        assert any(item.guardian_credits for item in child.definition.capabilities) is expected
+    legacy = captured.model_dump(mode="json")
+    for cap in legacy["root"]["capabilities"]:
+        cap.pop("guardian_credits", None)
+    assert not any(item.guardian_credits for item in ResolvedRunComposition.model_validate(legacy).root.capabilities)
+
+
+async def test_retained_markdown_model_override_disables_incompatible_guardian_linking(tmp_path):
+    from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
+
+    path = _write_source(tmp_path)
+    payload = (await load_harness_ui_configuration(path)).model_dump(mode="json")
+    payload["document"]["security"]["shell_review"] = {"enable": True, "guardian_credits": True}
+    primary = payload["models"]["model-primary"]
+    payload["models"]["model-legacy"] = {**primary, "id": "model-legacy", "route": "openai-chat:gpt-5"}
+    primary["route"] = "openai-responses:gpt-5"
+    payload["subagents"]["subagent-explorer"]["model"] = "model-legacy"
+    source = LoadedHarnessUiConfiguration.model_validate(payload)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    [parent_review] = [c for c in composition.root.capabilities if c.capability == "ToolPermissionsCapability"]
+    child = next(c.definition for c in composition.root.children if c.definition.source_kind == "markdown")
+    [child_review] = [c for c in child.capabilities if c.capability == "ToolPermissionsCapability"]
+    assert parent_review.guardian_credits is True
+    assert child_review.guardian_credits is False
+    assert child_review.model == parent_review.model
+    assert child_review.configuration == parent_review.configuration

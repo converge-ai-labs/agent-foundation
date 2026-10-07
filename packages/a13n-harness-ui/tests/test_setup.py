@@ -972,6 +972,7 @@ async def test_api_key_setup_publishes_root_shell_review_not_agent_capabilities(
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     shortcut = yaml.safe_load(preview.files[path.name])["security"]["shell_review"]
     assert shortcut["enable"] is enabled
+    assert shortcut["guardian_credits"] is False
     assert shortcut["risk_threshold"] == "extra_high"
     if enabled:
         assert shortcut["model"] == "model-api-key"
@@ -983,7 +984,8 @@ async def test_api_key_setup_publishes_root_shell_review_not_agent_capabilities(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "shortcut", [{"enable": False}, {"enable": True, "risk_threshold": "high", "model": "model-codex"}]
+    "shortcut",
+    [{"enable": False}, {"enable": True, "guardian_credits": False, "risk_threshold": "high", "model": "model-codex"}],
 )
 async def test_setup_and_add_agent_preserve_authored_root_shortcut(tmp_path: Path, shortcut: dict[str, object]) -> None:
     path = tmp_path / "config.yaml"
@@ -1018,6 +1020,7 @@ async def test_add_agent_initializes_absent_root_shortcut_without_mutating_exist
     )
     preview = await preview_setup(path, addition, validate_candidate=_validate())
     assert yaml.safe_load(preview.files[path.name])["security"]["shell_review"]["model"] == "model-codex-review"
+    assert yaml.safe_load(preview.files[path.name])["security"]["shell_review"]["guardian_credits"] is True
     assert (await publish_setup(path, addition, validate_candidate=_validate())).completed
     assert agent.read_bytes() == baseline
 

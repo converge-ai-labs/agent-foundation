@@ -1322,3 +1322,39 @@ async def test_codex_login_retains_id_token_using_upstream_pkce(monkeypatch: pyt
     assert login.id_token == identity
     assert identity not in repr(login)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_codex_guardian_review_omits_priority_routing_without_mutating_settings(streaming) -> None:
+    source = _CodexSource(_codex_credentials(marker="guardian", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    seen = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        assert request.headers["x-openai-subagent"] == "guardian"
+        assert request.headers["x-codex-guardian"] == "reviewer"
+        assert "x-codex-routing-hint" not in request.headers
+        assert "service_tier" not in body
+        assert body["client_metadata"] == {"parent_response_id": "resp_parent", "x-openai-subagent": "guardian"}
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=_responses_sse())
+
+    settings = OpenAIResponsesModelSettings(
+        openai_service_tier="priority",
+        extra_headers={"x-openai-subagent": "guardian", "x-codex-guardian": "reviewer"},
+        extra_body={
+            "service_tier": "priority",
+            "client_metadata": {"parent_response_id": "resp_parent", "x-openai-subagent": "guardian"},
+        },
+    )
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
+        model = CodexRequestModel("gpt-5.6-luna", credential_source=source, http_client=client)
+        if streaming:
+            async with model.request_stream([], settings, ModelRequestParameters()) as stream:
+                async for _ in stream:
+                    pass
+        else:
+            await model.request([], settings, ModelRequestParameters())
+    assert len(seen) == 1
+    assert settings["openai_service_tier"] == "priority"
+    assert settings["extra_body"]["service_tier"] == "priority"

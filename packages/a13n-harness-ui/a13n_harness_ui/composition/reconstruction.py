@@ -33,7 +33,7 @@ from a13n_harness.model_context import (
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPluginFactoryContext
 from a13n_harness.pricing import PricingCatalog
 from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
-from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY
+from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, ToolPermissionsCapability
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic_ai import RunContext
@@ -46,6 +46,7 @@ from a13n_harness_ui.environment_paths import EnvironmentPathLayout
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
+from a13n_harness_ui.guardian_credits import GuardianParentCapability, GuardianReviewCapability
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
 from a13n_harness_ui.mcp_apps.connections import Connections
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
@@ -356,7 +357,17 @@ class AgentReconstructor:
 
         selections = [(item.capability, capability_configuration(item, model_recipes)) for item in node.capabilities]
         selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
-        capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]
+        capabilities: list[AbstractCapability[Any]] = []
+        for recipe, item in zip(node.capabilities, selected, strict=True):
+            capability = item.capability
+            if recipe.guardian_credits and isinstance(capability, ToolPermissionsCapability):
+                capability = ToolPermissionsCapability(
+                    capability.permissions,
+                    review=capability.config,
+                    review_capabilities=(GuardianReviewCapability(),),
+                )
+                capabilities.append(GuardianParentCapability())
+            capabilities.append(capability)
         if node.global_guidance is not None:
             capabilities.append(_GlobalGuidanceCapability(node.global_guidance))
         mcp_sources = {
