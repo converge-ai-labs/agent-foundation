@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -622,10 +623,9 @@ async def test_stdout_wakeups_do_not_trigger_unbounded_status_queries():
     await process.close()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="The E2B guest filesystem uses POSIX paths")
 async def test_project_mount_routes_guest_files_and_default_command_cwd(tmp_path, monkeypatch):
     """Real guest helper/path mapping; the cloud API and native command event source are simulated."""
-    import sys
-
     from a13n_harness import EnvironmentMount, RunBindings
     from a13n_harness.environment.advanced import create_environment_runtime
     from a13n_harness.providers.environment.e2b.provider import E2BEnvironment, E2BProviderRuntime
