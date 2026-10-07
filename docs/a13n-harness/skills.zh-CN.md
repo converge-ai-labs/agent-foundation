@@ -4,7 +4,7 @@ sidebarTitle: Skill
 description: 从文件或 Environment 中发现并准备 Skill，供 Run 使用。
 ---
 
-`a13n-harness` 的 Skill 发现可以在 Agent 执行之外复用。Host 明确选择以下两种模式之一：
+通过 FileOperator 或已进入的 Environment 扫描 Skills：
 
 | Host 场景                                   | API                                              | 结果                           | 谁负责一致性                                                        |
 | ------------------------------------------- | ------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------- |
@@ -61,9 +61,9 @@ flowchart TB
 
 ## 读取并发与限制
 
-内置文件发现和最终文档验证，每次操作最多使用八个读取 worker。Materializer、来源和根目录仍顺序处理；并发读取不改变来源优先级、跳过条目的诊断顺序，或按名称排序的模型目录。来源配置和内容不变时，读取完成顺序不会改变 Skill 指令前缀。取消时，会等待 worker 结束后再释放文件作用域。
+内置扫描最多使用八个读取 worker，保留来源优先级与按名称排序的结果。
 
-大小限制独立于并发：`FileSkillSource.max_entries_per_root` 默认最多列出 256 个目录条目，`SkillsPolicy.max_skills` 默认将每个来源和最终解析目录都限制为 512 条。超限会明确失败，不会静默选择前几个条目。并发是内部实现，不需要 Host 配置或跨 Run 缓存。
+`max_entries_per_root` 默认 256，`SkillsPolicy.max_skills` 默认每个来源和最终目录最多 512。超限时失败，不截断。
 
 ## Skill 包结构
 
@@ -96,7 +96,7 @@ Follow the repository review workflow.
 
 ## 直接扫描 FileOperator
 
-Host 已持有非虚拟 FileOperator，并管理其生命周期和目标变化时，可使用直接扫描。根目录必须是 operator 命名空间内的规范绝对路径：不允许重复分隔符、路径穿越片段，以及 `/` 之外的尾随斜线。例如，一个限制在 Project 根目录内的本地 operator，如果 `/` 对应该 Project，就使用 `/.agents/skills`，而非 `/workspace/.agents/skills`：
+直接扫描使用 FileOperator 命名空间中的规范绝对根路径。以项目目录为根的本地 operator 使用 `/.agents/skills`，而非 `/workspace/.agents/skills`：
 
 ```python
 from a13n_harness.capabilities import (
@@ -122,9 +122,9 @@ async def scan_cli_skills(
     return await manager.scan(files=files)
 ```
 
-此模式直接操作传入 FileOperator 的命名空间，没有 Environment 挂载路由语义。在返回目录派生出的所有路径都使用完之前，必须保持底层命名空间稳定。如果其他进程可同时替换底层目录，应提供满足 Host 所需快照或锁定行为的 operator，或改用已进入的 Environment。
+使用返回路径期间，保持 operator 命名空间稳定。挂载可能变化时使用 Environment 扫描。
 
-`SkillManager.default()` 面向由 Environment 支持的 Run，包含规范的 `/workspace/.agents/skills` 来源。只有默认挂载没有显式 `mount_path` 时，该路径才能解析；使用显式聚合根目录的 Host 应提供显式 manager。直接使用 FileOperator 的 Host 通常应显式构建 manager，使用自身命名空间中的根目录。
+`SkillManager.default()` 在 Environment Run 中使用 `/workspace/.agents/skills`。显式挂载根或直接 FileOperator 需要按自身命名空间提供 manager。
 
 ## 扫描已进入的 Environment
 
@@ -149,25 +149,19 @@ async def scan_environment_skills(
     return catalog
 ```
 
-`scan_environment()` 会：
-
-1. 在等待 provider I/O 之前，通过 `BoundEnvironment.select_files()` 捕获每个配置的根目录；
-2. 为这些根目录打开固定到挂载实例的文件作用域；
-3. 在固定作用域内准备内容、列出条目、读取 frontmatter，并最终验证 `SKILL.md`；
-4. 将每个最终条目解析为准确的目录和文档 `EnvironmentPath`；
-5. 返回前，验证所有配置的扫描路由仍有效，包括空根目录和因冲突被覆盖的根目录。
+`scan_environment()` 读取时固定配置路由，返回准确路径；返回前检查路由仍为最新。
 
 `BoundSkillCatalogItem` 包含：
 
 - `name`、`description`、`path` 和 `source_id`；
 - `directory`：准确解析后的 Skill 目录；
 - `document`：准确解析后的 `SKILL.md` 路径；
-- `mount_id`：扫描期间持有的、不透明的 Harness 挂载实例标识；
+- `directory.mount_id` 和 `document.mount_id`：扫描期间使用的不透明挂载实例标识；
 - `observed_generation`：扫描期间持有的 provider generation。
 
-`BoundSkillCatalog.require_current(environment)` 只重新选择目录条目所代表的路径。添加或替换不相关的 Environment 挂载不会使目录失效。相关挂载选择、不透明 mount ID、provider generation、默认路由或解析后的 provider 路径变化，会抛出错误码为 `skill_catalog_stale` 的 `DefinitionError`。
+复用目录路径前调用 `catalog.require_current(environment)`。相关挂载、generation 或路由变化时，以 `skill_catalog_stale` 失败；无关挂载不影响目录。
 
-不要将 `EnvironmentPath` 持久化为长期权限依据。它描述的是某次已进入的 Environment，仅在该 Environment 仍活跃时有效。导入 Skill 包的 Host 应复制并验证包内容，存入自己管理的不可变修订格式。
+`EnvironmentPath` 仅在已进入的 Environment 中有效。持久使用需将包导入 Host 管理的不可变存储。
 
 ## 添加明确的来源
 
@@ -190,7 +184,7 @@ manager = SkillManager.default(
 )
 ```
 
-Host 如果要完全替换默认组合，应传入显式 `SkillManager(...)`。来源顺序是确定的。如果最终名称重复必须失败，而不是按优先级选择，配置 `SkillsPolicy(conflict="error")`。
+显式 manager 替换默认来源。设置 `SkillsPolicy(conflict="error")` 可拒绝重复名称，而非按来源优先级选择。
 
 `required=False` 会分别跳过每个缺失、无法路由或不支持的根目录。权限拒绝、路径或 frontmatter 格式错误、provider 失败和目录溢出，仍然报错。
 
@@ -212,11 +206,11 @@ class ManagedSkillMaterializer:
         ...
 ```
 
-`target_root` 必须等于某个配置的来源根目录。这是组合与来源约定，不是沙箱包装。Materializer 是可信 Host 代码，必须限定在该根目录下；实际权限边界仍由传入的 FileOperator 或 Environment 提供。
+将 `target_root` 设为一个已配置的来源根目录，在其下物化。访问权限由 FileOperator 或 Environment 提供。
 
 ## 在 Harness Run 中使用 Skill
 
-将 manager 传给定义中选择的 `SkillsCapability`。Capability 使用 Environment 感知扫描，发布准确的 `SkillPath`、注入有界路由指令、观测普通的 `SKILL.md` 读取，并在模型和工具边界检查选定目录仍有效。
+将 manager 传给 `SkillsCapability`，向 Agent 提供目录及路径：
 
 ```python
 from a13n_harness import RunBindings
@@ -243,21 +237,10 @@ bindings = RunBindings.embedded(
 
 ## Host 的职责
 
-Harness 扫描器明确不负责：
+Host 管理来源授权、包验证和持久存储。
 
-- 来源的增删改查或启用；
-- 原生路径授权；
-- 软件包 manifest、摘要、签名或不可变修订；
-- 导入包副本的符号链接和路径穿越策略；
-- 持久化或刷新历史；
-- 持久执行或重试；
-- 凭据、插件、Capabilities 或工具。
+导入包时：
 
-导入包的 Host 应：
-
-1. 通过 `scan_environment()` 扫描。
-2. 选择一个准确条目。
-3. 验证目录仍为最新。
-4. 在同一个已进入的 Environment 中枚举并验证包内容。
-5. 将包复制到 Host 管理的不可变存储。
-6. 发布前再次验证副本。
+1. 通过 `scan_environment()` 扫描并选择条目。
+2. 检查目录仍为最新，通过同一 Environment 验证内容。
+3. 复制到 Host 管理的不可变存储，发布前验证副本。

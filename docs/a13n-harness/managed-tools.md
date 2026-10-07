@@ -4,7 +4,7 @@ sidebarTitle: Managed tools and policy
 description: Set permissions and review for every local tool, and give Host-managed tools one boundary for authorization, credentials, approvals, and bounded output.
 ---
 
-Ordinary Pydantic AI tools remain ordinary Python: they can use the process's ambient authority. Use Harness-managed tools when a Host needs a common boundary for current authorization, resolved resource identity, short-lived credentials, output bounds, and dispatch certainty.
+Use managed tools when your Host needs shared authorization, credentials, approvals, and output limits. Ordinary Python tools retain the process's authority.
 
 This is not an operating-system sandbox. Provider isolation and Host access policy remain separate. Client-executed declarations belong in [Client-side tools](client-tools.md).
 
@@ -28,7 +28,7 @@ permissions = ToolPermissionsCapability(
 )
 ```
 
-Use the actual prepared stable IDs, not display names. Managed tools retain their declared IDs; ordinary tools use `tool/<toolset-id>/<original-name>`, and local MCP tools use `mcp/<source-id>/<original-name>`. Source/name segments are percent-encoded. MCP needs a stable source ID. Prefixing, renaming, ToolProxy, and CodeAct do not change a target's permission identity. Hosts using custom naming wrappers can attach `ToolIdentityToolset` before them.
+Match stable IDs: managed tools use their declared IDs, ordinary tools use `tool/<toolset-id>/<original-name>`, and local MCP uses `mcp/<source-id>/<original-name>`. Segments are percent-encoded; renaming, ToolProxy, and CodeAct preserve these IDs. Custom naming wrappers can use `ToolIdentityToolset`.
 
 Exact rules win over the longest `.*` or `/*` prefix, then `*`, then `default`. `inherit` uses the tool default, which is `allow` without review unless trusted code explicitly declares otherwise. External/provider-native tools retain their separate boundaries. A reviewer and its risk rules do not enable review by themselves; select permission `review` for the tools you want assessed. `allow` continues, `deny` fails before custom validation, `ask` requests human approval, and `review` consults a matching reviewer. If no reviewer is configured or matches, review adds no restriction. None of these modes supplies credentials or bypasses Host/Environment policy.
 
@@ -65,7 +65,7 @@ permissions = ToolPermissionsCapability(
 # Your Host's Run Model resolver resolves the logical "review-model" selection.
 ```
 
-The packaged system prompt stays separate from custom `instruction`. A shell-specific instruction replaces the general custom instruction for shell calls. Custom text is escaped inside `<custom-instruction>`; the tool schema, arguments, and task are request data, not reviewer instructions. Requests redact sensitive fields, omit environment variable values, and include bounded task and passive Environment context. Reviews run after structural validation but before custom validation, resource lookup, or dispatch. Timeout always denies, even after earlier approval; other failures follow `on_error`.
+The reviewer receives redacted tool arguments and task context. `instruction` adds general guidance; shell-specific guidance overrides it for shell calls.
 
 Reviewers return only `risk` and `reason`. Risk order is `low < medium < high < extra_high`; the runtime applies the configured action at or above the threshold. Defaults are global `extra_high` and `deny`. One best rule wins: exact ID, longest prefix, then `*`; missing fields inherit global values, not broader rules. `ToolReviewConfig` contains this policy; code-first reviewers may instead use `ToolReviewPolicy`.
 
@@ -188,7 +188,7 @@ async def main():
 asyncio.run(main())
 ```
 
-The definition owns the tool's stable semantics. The fresh Run binding owns the policy collaborator. Saved state restores neither policy authority nor credentials.
+Keep stable tool metadata on the definition and current policy in the Run binding.
 
 ## Describe the real effect
 
@@ -203,11 +203,10 @@ The definition owns the tool's stable semantics. The fresh Run binding owns the 
 | `output_policy`          | Finite inline/total output bounds and overflow/redaction behavior              |
 | `resource_resolver`      | Optional async resolution of validated arguments to canonical resources        |
 | `superseded_by_tool_ids` | Explicit replacement identities used in surface resolution                     |
-| `shell_review`           | Whether the tool participates in the shell-review mechanism; default false     |
 
-Do not claim `read_only` for an operation that writes or sends externally just to obtain retries. Metadata is trusted Host code, not model-authored JSON. Supplying the reserved metadata key twice or incomplete metadata fails validation.
+Set idempotency to match the real effect; a write or external send is not `read_only`.
 
-`ToolResourceResolver(arguments, *, context)` returns `CanonicalResource` values with `namespace`, `kind`, and `identifier`. Resolve identifiers under current Provider/Host authority; a path string or URL supplied by the model is not automatically the resource's canonical identity.
+`ToolResourceResolver(arguments, *, context)` resolves validated arguments to `CanonicalResource(namespace, kind, identifier)` under current Host authority.
 
 ## Evaluate current authority
 
@@ -227,22 +226,22 @@ After authorization, a `CredentialBroker.acquire(audience, invocation, *, contex
 
 An `InvocationGrantBroker.issue(...)` can supply an `InvocationGrantRef`: an opaque grant ID, audience, claims digest, and timezone-aware expiry. The Host/provider owns issuance and verification. A serialized reference is not sufficient authority by itself.
 
-Credential leases close at the invocation boundary. Closing is idempotent. The Host still owns separately created clients, secret storage, refresh policy, and transport cleanup.
+Credential leases close after each invocation; the Host closes separately owned clients.
 
 ## Approvals and uncertain outcomes
 
-Approval metadata is display context, not proof of a historical grant. Current resource resolution and policy still run before dispatch. Enforce exact-target restrictions on the actual execution path when your application requires them; approval does not reserve an Environment target.
+Recheck current resource and policy before dispatch, even after approval. An approval does not reserve an Environment target.
 
-A Run with Host deferred support can suspend for approval and later resume through [deferred feedback](state-and-resume.md). This includes Host-managed children; [built-in inline execution](delegation-and-codeact.md#host-managed-feedback) explicitly disables deferred tools. Never treat an old approval or a tool-call ID as authorization without the current prepared invocation.
+With Host deferred support, approval suspends the Run and resumes through [deferred feedback](state-and-resume.md). [Built-in inline children](delegation-and-codeact.md#host-managed-feedback) disable deferred tools.
 
-Dispatch retries are bounded and require the supported certainty/idempotency conditions. `max_dispatch_retries` is not permission to replay an unknown external write. Transport timeout, cancellation, or cleanup failure can leave side effects uncertain; use the provider's receipt/reconciliation contract.
+Retry only when the outcome and idempotency contract permit it. After a timeout or cancellation leaves a write uncertain, reconcile the provider result first.
 
 ## Bound tool output
 
 `ToolOutputPolicy` requires `max_inline_bytes` (512–262,144) and `max_output_bytes` (positive, at most 512 MiB and not below the inline bound). `overflow` is `spill` by default, or `truncate` / `fail`; `redact` defaults to true.
 
-A spill needs the supported Environment output path and current access. It does not grant additional file authority. Truncation or references are not complete inline results. Redaction at this managed output boundary is not a universal promise that arbitrary logs, custom callbacks, or unmanaged tools are secret-free.
+Spilling needs current Environment output access. Redaction applies to managed results, not arbitrary logs or callbacks.
 
-By default, temporary tool results are written below the default Environment mount's `.a13n/tmp/tool-results/`. A Host can set `RunBindings.tool_result_directory` (also accepted by `RunBindings.embedded()`) to a canonical absolute Environment directory, such as `/environment/scratch/tmp/tool-results`. This applies to both proactive Toolset disclosure and managed-tool overflow without changing the default mount. An unavailable explicit directory does not fall back to the default mount; the result remains a bounded preview with no file path. Harness creates unique Run-private subdirectories and attempts to remove them on Run cleanup, leaving other files alone. These files are not durable outputs or continuation storage.
+Temporary results use the default mount's `.a13n/tmp/tool-results/`. Override with an absolute `RunBindings.tool_result_directory`. If that directory is unavailable, the result has a bounded preview but no file path. Harness attempts to remove its Run-private subdirectories on cleanup; copy durable outputs elsewhere.
 
 See [Environment tools](environments.md) for canonical resource and model-visible operation integration, and [Host embedding](hosting.md) for durable command ownership outside the process-local boundary.

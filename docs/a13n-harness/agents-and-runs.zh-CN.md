@@ -46,7 +46,7 @@ agent_definition = AgentDefinition(
 executable = HarnessBuilder().build(agent_definition)
 ```
 
-两个重载走相同的验证和构建路径。构建同步执行，不对模型、环境或外部 provider 进行 I/O。已知的一次性 provider 历史修复默认启用。设置 `HarnessBuilder(self_healing_enabled=False)` 可关闭自动安装。显式选择的 `SelfHealingModelCapability` 会保留其配置规则，即使关闭此 flag 仍然生效；它会替代默认能力，而不是重复安装。
+两种形式都构建同一个可复用 executable，不访问外部 provider。自修复默认开启，控制方式见[恢复层次](#recovery-layers)。
 
 ### 构建时确定的值
 
@@ -332,7 +332,14 @@ async with executable.stream("Do the work", bindings=bindings) as stream:
 | 同一活跃逻辑执行内的模型尝试中断 | `ModelRecoveryPolicy` 和 `HarnessRunStream`                   |
 | worker/进程丢失、持久重放或交付  | 嵌入 Host                                                     |
 
-自修复默认启用，只围绕最终生效模型执行支持的一次性历史修复，包括具体模型、执行时解析模型或原生推断模型。`HarnessBuilder(self_healing_enabled=False)` 为根 Agent 和内联子 Agent 关闭自动自修复，通过同一 Agent 执行的压缩也遵循该设置；只有显式选择的 `SelfHealingModelCapability` 实例保持生效。重新构建的已保存定义或 Host capture 会获得这些修复，无需改变其已保存的 schema。独立的原生工具审核和媒体理解 Agent 不继承主 Agent 的请求 Capability。自修复不重试任意模型或工具异常。语义模型恢复默认禁用；应用允许继续已中断模型尝试时，在定义上选择有界 `ModelRecoveryPolicy`。
+自修复对已识别的 provider 历史错误进行一次修复，再重试请求。默认规则处理过期 provider item ID、无效思考历史和过大的内联媒体。修复作用于最终有效 Model，包括 Run 时解析的 Model、内联子 Agent，以及同一 Agent 的压缩请求。
+
+```python
+# Turn off automatic repair; explicit SelfHealingModelCapability selections still apply.
+builder = HarnessBuilder(self_healing_enabled=False)
+```
+
+需要定制时，从 `a13n_harness.models` 选择 `SelfHealingModelCapability(rules=...)`，替换默认规则。自修复不重试无关错误。模型尝试中断的续接需另外选择 `ModelRecoveryPolicy`；该恢复默认关闭。
 
 中断尝试保留已发出文本，即使后续工具调用中流才停止。下一次尝试将该部分响应作为中断历史接收，不视为已完成输出。未完成思考和工具参数会排除；无效 provider 原生调用/返回组会移除，不抹掉周围可恢复文本。失败或取消的执行导出相同过滤历史，供 Host 后续选择续接。
 

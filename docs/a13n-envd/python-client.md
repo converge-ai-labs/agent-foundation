@@ -64,12 +64,12 @@ All transports default to 1 MiB each for `max_request_bytes`, `max_response_byte
 
 ### HTTP options
 
-| Option                              | Default              | Meaning                                                                                  |
-| ----------------------------------- | -------------------- | ---------------------------------------------------------------------------------------- |
-| `verify`                            | `True`               | TLS verification; an SSL context or CA path is supported, `False` is rejected            |
-| `request_timeout`                   | `30.0` seconds       | Connection/request timeouts; control-read budgets account for operation timeouts         |
-| `allow_plaintext_private_link`      | `False`              | Explicit permission for the supported private-link HTTP case; not unrestricted plaintext |
-| Request, response, and frame limits | `1048576` bytes each | Carrier-side bounds                                                                      |
+| Option                              | Default              | Meaning                                                                                                  |
+| ----------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------- |
+| `verify`                            | `True`               | TLS verification; supports SSL context or CA path; explicit `False` disables certificate/hostname checks |
+| `request_timeout`                   | `30.0` seconds       | Connection/request timeouts; control-read budgets account for operation timeouts                         |
+| `allow_plaintext_private_link`      | `False`              | Explicit permission for the supported private-link HTTP case; not unrestricted plaintext                 |
+| Request, response, and frame limits | `1048576` bytes each | Carrier-side bounds                                                                                      |
 
 The transport does not follow redirects. HTTPS attachments honor `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and their lowercase forms through `httpx2`; the deployment operator's proxy is trusted to route the connection. Plaintext loopback and provider-private-link attachments stay direct so their credential does not leave the intended link. TLS verification still uses `verify`, not `SSL_CERT_FILE` or `SSL_CERT_DIR`. `normalize_http_endpoint()` applies the same endpoint policy without opening a connection. See [Remote Envd](../environments/remote-envd.md) for allowed URL forms, TLS, and credential ownership.
 

@@ -18,7 +18,7 @@ webui:
 
 Apps are off by default. WebUI adds the selected servers to root and child Agents without editing their YAML; existing tool filters and permissions still apply. The TUI and `run` continue to use only ordinary `mcp_servers` selections. Restart WebUI after enabling Apps or changing its sandbox listener. Text tool results remain usable if an App presentation fails.
 
-The server must provide the MCP Apps `ui.resourceUri` metadata and a `text/html;profile=mcp-app` resource. Legacy MCP-UI HTML conventions are not an alternative supported protocol. MCP Core `2026-07-28`, the Python/TypeScript SDK major versions, and the Apps UI wire version are independent. Upgrading to ext-apps 2.x does not change the UI wire version to the Core date. The Host supports inline display, same-server tools/resources, text or structured context, messages, external links and theme changes. It does not currently support image context, App-provided model tools, fullscreen mode or stable-origin browser storage.
+The server must provide `ui.resourceUri` metadata and a `text/html;profile=mcp-app` resource. Apps use their own UI protocol, independently of [MCP Core negotiation](mcp.md#connection-lifetime-and-protocol); legacy MCP-UI HTML is not supported. The Host supports inline display, same-server tools/resources, text or structured context, messages, external links, and theme changes. Image context, App-provided model tools, fullscreen, and stable-origin browser storage are not supported.
 
 For a complete local example without a model account, run `make mcp-apps-demo` from a source checkout. See `examples/mcp-apps/README.md` in the repository for the real stdio counter, public App SDK bundle and standalone server instructions. The demo uses a scripted HTTP model but the normal Host, history and permission paths.
 
@@ -26,7 +26,7 @@ For a complete local example without a model account, run `make mcp-apps-demo` f
 
 A live App appears beside its tool result. Saved history shows **Open App** instead of running HTML automatically. Opening displays the retained original presentation; it does not repeat the tool call or connect to its server.
 
-Choose **Activate interactions** to allow the App to request same-server operations. Activation and subsequent requests check current Agent selection, tool visibility and permission rules, rather than granting the old Run's permissions indefinitely. A child App retains its source identity and current delegation route; it cannot use a removed child route as authority.
+Choose **Activate interactions** to enable same-server operations. Activation and every operation use the current Agent, tool visibility, and permissions. A child App also requires its delegation route to remain selected.
 
 App tool operations do not use model review or custom Agent reviewers. A `review` permission permits App dispatch without a model request; explicit `deny` still blocks it and `ask` still requires your approval. Agent-originated calls retain their normal review policy, including calls made after you confirm an App message.
 

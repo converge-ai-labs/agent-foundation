@@ -17,8 +17,8 @@ Service manages workspaces, access, agents and their revisions, and conversation
 ## Concepts
 
 - **Organization and workspace:** an organization manages members; each workspace contains its own agents, resources and conversations.
-- **Agent and revision:** each save of an agent creates an immutable revision; a run uses the agent's default revision unless the message pins another.
-- **Session, thread and run:** a session (a conversation in Console) groups threads; a thread holds one history and its inbox; each run advances that thread.
+- **Agent and revision:** configuration changes create immutable revisions; a run uses the agent's default revision unless the message pins another.
+- **Session, thread and run:** a session groups related threads; a thread holds one history and its inbox; each run advances that thread.
 - **Provider and environment:** providers are configured accounts for models, environments, connectors, web tools and memory; a thread can mount an environment for file and terminal work.
 
 [Core concepts](../overview/core-concepts.md) follows one conversation through these pieces.

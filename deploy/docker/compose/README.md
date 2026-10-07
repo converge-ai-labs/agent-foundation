@@ -39,12 +39,13 @@ CLI bootstrap is completed by the next Service startup; if you run it inside an 
 
 The Service's `environment` in the Compose file sets its settings as `A13N_<SECTION>__<FIELD>` variables over the image's defaults: the public URL, PostgreSQL, Redis and the encryption key file. Add other settings the same way, with list values as JSON; see the [configuration reference](../../../docs/a13n-service/configuration-reference.md) for every setting. The included database password protects only this unpublished local database. The Service reads its configuration at startup: after an edit, run `up -d --wait` again, which recreates the Service.
 
-Outbound provider requests reject private addresses and plain HTTP by default. To use, for example, a model server on the Docker host, allow it explicitly in the Service's `environment`:
+Outbound provider requests require HTTPS by default. For a plain-HTTP model server on the Docker host, allow its exact origin in the Service's `environment`:
 
 ```yaml
-A13N_PROVIDERS__PRIVATE_DOMAINS: '["host.docker.internal"]'
 A13N_PROVIDERS__HTTP_ORIGINS: '["http://host.docker.internal:11434"]'
 ```
+
+This allowance changes the HTTPS requirement, not network access. Service does not classify private addresses or pin DNS results; enforce destination restrictions at the deployment or environment boundary.
 
 ## Docker environments
 
@@ -106,4 +107,4 @@ The initializer migrates the schema and creates the first organization, workspac
 - **Use another port:** prefix the start command with `A13N_PORT=8081` and open <http://127.0.0.1:8081>.
 - **Delete all trial data:** `docker compose -f a13n-service-quickstart.yaml down --volumes`. The next start creates the public trial account again.
 
-The quickstart has its own Compose project and volumes, separate from the deployment below. Keep using the same file/project to resume your data. Plain chat needs no execution environment. Hosted sandbox providers and external Envd targets can be configured separately; local Docker environments require the explicit host authority described below.
+The quickstart has its own Compose project and volumes, separate from the [single-host deployment](#single-host-deployment-with-native-docker). Keep using the same file/project to resume your data. Plain chat needs no execution environment. Hosted sandbox providers and external Envd targets can be configured separately; local Docker environments require the explicit [host Docker authority](#single-host-deployment-with-native-docker).

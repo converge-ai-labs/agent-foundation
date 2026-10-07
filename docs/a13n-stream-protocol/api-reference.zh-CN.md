@@ -4,7 +4,7 @@ sidebarTitle: API 与载荷参考
 description: 包的公开名称、自定义事件、输入元数据和终结事件。
 ---
 
-Stream Protocol 提供 AG-UI 1.0 观测与内容投影 API。它将 Harness 公开观测转换为结构化 AG-UI 事件；传输、持久化、交付确认、UI 渲染和 agent 续接均不由本包负责。
+Stream Protocol 将 Harness 输出转成 AG-UI 1.0 事件，再合并为展示条目。Host 负责传输和保存检查点；Harness 负责继续执行 agent。
 
 ## 公开名称
 
@@ -21,7 +21,24 @@ Stream Protocol 提供 AG-UI 1.0 观测与内容投影 API。它将 Harness 公�
 | `CustomEventAssembler`        | 在一个有界订阅内重组有序帧                                          |
 | `__version__`                 | 已安装分发包版本                                                    |
 
-`HarnessAguiObserver(processor=None)` 提供 `observe(item)`、`snapshot(*, start=0, stop=None)`、`event_count`、异步 `resume(history)` 和只读 `thread_id` / `run_id`。观测成功前不绑定 ID。[事件与处理器](events.md)介绍实时流程；[重放与恢复](replay.md)介绍原子重建、验证和失败行为。
+两个 observer 类均接受 `processor=None` 和 `retain_events=True`。提供 `observe(item)`、`snapshot(*, start=0, stop=None)`、`event_count`、异步 `resume(history)`、`export()`、类方法 `restore(continuation, processor=...)` 及只读 `thread_id` / `run_id`。Restore 创建不保留日志的 observer。观测或重建成功前不绑定 ID。
+
+### 展示 API
+
+从 `a13n_stream_protocol.display` 导入展示类型，而不是从包根导入：
+
+| API                                                                | 用途                                                        |
+| ------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `DisplayFold(run_id, *, attempt=0, full_content=False)`            | 转换原生观测，将事件合并为展示条目                          |
+| `fold.events(source)`                                              | 使用 fold 内不保留日志的 stream observer 转换一个原生源条目 |
+| `fold.fold(events, source=None)`                                   | 累积事件，返回序号和条目引用                                |
+| `fold.export()` / `DisplayFold.restore(snapshot)`                  | 导出独立的 `DisplaySnapshot` 并恢复，包含条目和续接状态     |
+| `fold.export_continuation()`                                       | 单独导出解析状态，不复制展示条目                            |
+| `DisplaySnapshot`, `DisplayContinuation`, `Item`, `StreamPosition` | 验证并序列化检查点内容和续接状态                            |
+
+默认展示预览将每个文本、参数或结果字段限制为 262,144 个字符，并标记截断。大型观测载荷只保留名称，不无限复制载荷。`full_content=True` 保留完整展示内容。两种模式都不是恒定内存：保留的条目仍随对话增长。
+
+实时转换见[事件与处理器](events.md)；可运行的检查点恢复示例和源重建见[重放与恢复](replay.md)。
 
 ## 对完整自定义事件分片
 

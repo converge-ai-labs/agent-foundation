@@ -1,7 +1,7 @@
 ---
 title: Stream Protocol 快速入门
 sidebarTitle: 快速入门
-description: 将离线 Harness 执行转换为 AG-UI 事件。示例使用真实 Harness 流和 observer，无需 provider 凭据、浏览器、服务器或网络传输。
+description: 使用真实流和 observer，将离线 Harness 执行转换为 AG-UI 事件。
 ---
 
 ## 准备源码检出
@@ -80,7 +80,7 @@ Stream Protocol 不提供 HTTP 路由、重放游标、持久事件 ID、保留�
 - 如何无重叠地从重放切换到实时交付；
 - 在内存中保留多少 observer 状态。
 
-observer 累积经过处理器的事件，不设保留上限。在 Host 中将其生命周期限定为一次执行，并考虑长流的资源开销。只需新事件时，不要反复发布 `snapshot()`。
+只做实时转换时，设置 `retain_events=False` 并持久化 `observe()` 返回的批次。需要可恢复展示时，使用 `DisplayFold` 并保存[紧凑的展示检查点](replay.md#restore-a-compact-display-checkpoint)。发布增量事件，不要每次都发布完整快照。
 
 ## 下一步
 

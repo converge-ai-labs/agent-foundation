@@ -23,7 +23,7 @@ TUI 中没有 `/setup` 命令。显式运行设置会在保存后返回 shell；
 | GitHub Copilot 订阅 | 设备登录或已有 Copilot CLI 登录 | Harness UI 数据根（`oauth/copilot.json`）或 Copilot CLI 存储 |
 | API 密钥            | 提供方/协议、模型 ID 和密钥引用 | 环境变量或 Harness UI 本地密钥存储                           |
 
-向导会检测现有的兼容订阅登录，并允许复用。如果缺少登录，向导会提供以下选项：直接登录（按提供方支持情况使用设备码、本地浏览器或回调 URL）、在外部运行 `a13n-harness-ui login <provider>` 后重新检查，或不登录直接配置。TUI 中没有 `/login` 命令。如果账户存储格式有误或当前版本不支持，向导会给出修复提示，不会自动替换。
+复用已检测到的登录，使用向导提供的方法登录，或先配置连接，稍后运行 `a13n-harness-ui login <provider>` 登录。如果账户存储需要修复，按显示的提示操作。登录在 TUI 之外进行。
 
 使用 API 密钥时，向导提供不回显的密钥输入框，也可填写 `env:OPENAI_API_KEY` 或 `key:key-primary`。不要将密钥粘贴到 TUI 输入框。新输入的密钥会立即保存到独立的本地密钥存储，不会写入 Model YAML。
 
@@ -31,11 +31,11 @@ TUI 中没有 `/setup` 命令。显式运行设置会在保存后返回 shell；
 
 ## 2. 选择模型和设置
 
-从已安装的入门目录中选择，或输入区分大小写的 API 模型 ID。该目录是随安装包提供的参考，**不是** 实时的权限或可用性检查。现有 Model 资源会保留原设置，不会静默迁移到新的默认值。
+选择推荐模型，或输入区分大小写的 API 模型 ID。推荐来自已安装的目录；向 provider 确认可用性。复用 Model 时保留原设置。
 
 创建 Codex 连接时，向导还会提供 Fast 或 Standard 服务选项。Fast 请求优先处理，可能消耗更多配额，也不保证更快。用 `/fast` 临时切换，或修改 Model 以永久设置。
 
-已知模型路由会保存原生图像、音频和视频声明。这些声明告诉 Harness 应发送哪些输入，不能让端点获得其本身不支持的模态。为自定义端点填写这些声明前，请先验证其实际能力。
+设置向导为所选路由保存已知的媒体输入能力。使用自定义端点时，先验证图像、音频和视频输入支持，再修改这些声明。
 
 见[模型设置](models-and-authentication.md#native-request-settings-and-connection-wiring)、[上下文预算](models-and-authentication.md#context-and-modality-policy)和 [Fast 模式](models-and-authentication.md#fast-mode-and-service-tiers)。
 
@@ -56,7 +56,7 @@ a13n-harness-ui setup --advanced
 
 高级设置提供可选的上下文、推理、shell 审查、subagent 和指令选项。常规设置会填入默认配置，之后仍可编辑 YAML；这些设置并非隐藏的应用状态。
 
-常规设置包含三种内置子角色；如果尚未配置，还会以 `extra_high` 阈值开启 `security.shell_review`。它用配置的 Model 审查 shell 启动，并在标记风险时请求审批。现有审查设置会保留。这种审查不是隔离，也不会检查每条命令；完整策略见 [shell 审查配置](configuration-recipes.md#configure-shell-review)。
+常规设置包含三种内置 Subagent 角色，并初始化尚未配置的 `security.shell_review`：用 Model 审查 shell 启动，在风险达到 `extra_high` 时请求审批。Codex 设置选择独立的审查 Model，并开启 Guardian 额度关联。现有审查设置保持不变。审查与隔离是两回事；见 [shell 审查配置](configuration-recipes.md#configure-shell-review)。
 
 内置 subagent 继承父级 Model。高级设置提供全部启用或全部关闭选项；要选择单独角色，请编辑 `subagents.include`。导入外部 Codex/Claude Code subagent 是独立的 `/import` 工作流，不属于设置流程。
 
@@ -75,7 +75,7 @@ a13n-harness-ui add agent
 
 使用上/下方向键和 Enter，或输入选项编号。Esc 返回上一步；Ctrl+C 或 Ctrl+D 取消。取消首次设置会返回 shell，不会打开 TUI 输入框。
 
-即使取消设置，已完成的登录或已保存的密钥仍会保留。如果发布多个文件时失败，重试前先检查错误中列出的已完成路径。设置向导不会创建恢复文件。旧版本留下的 `.a13n-harness-ui-setup-recovery-*` 目录保持不变；删除前先检查其内容。
+取消设置会保留已完成的登录和已保存的密钥。保存多个文件失败时，先检查错误列出的路径再重试。旧版 `.a13n-harness-ui-setup-recovery-*` 目录保持不变。
 
 ## 查看保存的内容
 
@@ -86,7 +86,7 @@ webui:
   sidekick: {}
 ```
 
-这不会自动开始工作。设置 `sidekick: null`，或选择 **Settings → General → Sidekick → Disabled** 可以关闭此偏好。再次运行设置会保留明确的关闭选择或自定义 Agent/Model 选择。
+要关闭 Sidekick，设置 `sidekick: null`，或选择 **Settings → General → Sidekick → Disabled**。设置向导保留已有 Sidekick 选择；该偏好本身不会开始工作。
 
 ```console
 a13n-harness-ui config path

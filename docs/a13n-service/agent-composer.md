@@ -7,7 +7,11 @@ Agent Composer works in an ordinary conversation. It reads the workspace's model
 
 ## Start Agent Composer
 
-In Console, open **Agents** and choose **Create with AI**. To change an existing agent, open its detail page and choose **Edit with AI**. Console prepares Agent Composer and opens a new conversation with it.
+1. Open **Agents → Create with AI**, or open an agent and choose **Edit with AI**.
+2. Review the new conversation. **Edit with AI** fills in a request naming the agent and selected version; add the changes you want.
+3. Select **Send** to start the conversation. Review each proposed write before submitting your approval.
+
+Console prepares Agent Composer for callers with `write`. Callers with only `run` use the existing built-in agent once a builder has prepared it.
 
 Through the API, prepare it, then [start a session](agents-and-runs.md#start-a-conversation) with the returned agent:
 

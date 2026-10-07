@@ -4,7 +4,7 @@ sidebarTitle: Overview
 description: A terminal and browser workbench for working on real projects with Agents.
 ---
 
-Harness UI is the [Harness](../a13n-harness/index.md) playground for individuals and trusted small teams. Use it to work on real projects while experimenting with models, instructions, tools, Skills, and execution environments. Ask an Agent to explain a codebase, edit files, run checks, or delegate a focused investigation.
+Harness UI is the [Harness](../a13n-harness/index.md) playground for individuals and trusted small teams. Ask an Agent to explain a codebase, edit files, run checks, or delegate an investigation. Choose the Models, tools, Skills, and execution Environment for each workflow.
 
 The TUI, the interactive interface in your terminal, offers a personal Agent workflow for coding. WebUI, the interface in your browser, adds shared conversations and drafts, files, Git changes, terminals, and configuration editing. Both use the same Harness UI application and Harness; neither requires SDK code or a Service deployment.
 
@@ -43,12 +43,12 @@ Open the login link printed by the server in your browser. WebUI includes guided
 
 The TUI supports macOS, Linux, and Windows. The installed application does not require Node.js or a repository checkout. If the command is missing from PATH, run `uv tool update-shell` and open a new terminal.
 
-On first launch, setup guides you through:
+On first launch:
 
-1. **Connect a Model:** use a supported subscription login or an API key. Existing compatible account stores can be reused.
-2. **Select model settings:** choose the offered model and, where applicable, service tier. You can tune reasoning and context later.
-3. **Choose execution permissions:** Full Control uses your host account; Sandbox requires working local isolation and does not silently fall back.
-4. **Open the composer:** setup saves editable files, then opens the TUI composer. No model request is made until you send a prompt.
+1. Connect a Model through a supported subscription or API key.
+2. Choose the model and settings offered by setup.
+3. Choose Full Control or Sandbox execution.
+4. Send a prompt after setup saves your configuration and opens the composer.
 
 Try a bounded first prompt:
 
@@ -57,7 +57,7 @@ Explain this repository's main entry point and tests. Do not modify any files.
 ```
 
 > [!WARNING]
-> Full Control runs commands with your host account's filesystem and network access; it is not a sandbox. Sandbox requires supported Linux/macOS isolation; built-in Windows execution is Full Control only. See [execution permissions](environments-and-projects.md#execution-permissions).
+> Full Control uses your host account. Sandbox requires supported Linux/macOS isolation; Windows built-in execution is Full Control only. See [execution permissions](environments-and-projects.md#execution-permissions).
 
 [Installation and upgrades](installation.md) covers source development and dependency updates. [Setup](setup.md) covers login, cancellation, and advanced choices.
 
@@ -112,4 +112,4 @@ See [Use the TUI](everyday-use.md) for attachments, approvals, questions, histor
 
 Share a WebUI instance only with trusted collaborators: they share credentials, configuration and accessible files, not separate participant permissions. Native Host Files and terminals are on by default; `--no-share-computer` turns them off independently of the Agent's execution mode.
 
-Closing a browser does not stop an active Run; stopping the application does. Saved conversations can resume from the last checkpoint, but input or output since then may be lost. Use [Service](../a13n-service/index.md) for managed identities and recoverable Runs.
+Keep the application running for active work. Closing a browser leaves Runs active. After an application restart, resume from the last saved checkpoint. Use [Service](../a13n-service/index.md) for managed identities and recoverable Runs.

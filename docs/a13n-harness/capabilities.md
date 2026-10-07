@@ -3,7 +3,7 @@ title: Capabilities
 description: First-party Harness Capabilities for context, tools, permissions, web, working state, and lifecycle hooks.
 ---
 
-Pydantic AI Capabilities are the primary feature-composition mechanism inside the Agent loop. Harness provides first-party Capabilities that compose model context, Toolsets, portable state, run collaborators, and lifecycle hooks without introducing another registry or tool dispatcher.
+Add a Capability to give an Agent tools, context, memory, or lifecycle behavior. This page lists first-party choices and shows where to configure them.
 
 ## Composition Sources
 
@@ -14,7 +14,7 @@ Capabilities can enter from four trusted sources:
 3. a Harness plugin's Agent-bound contribution;
 4. fresh `RunBindings.capabilities`.
 
-Use definition composition for stable Agent behavior. Use run Capability composition for current invocation policy or MCP. Supply provider clients and feature overrides through typed `RunBindings` fields, not a second feature Capability.
+Put stable behavior on the definition. Put current invocation policy and MCP on `RunBindings.capabilities`; supply provider clients through the corresponding typed binding fields.
 
 ```mermaid
 flowchart LR

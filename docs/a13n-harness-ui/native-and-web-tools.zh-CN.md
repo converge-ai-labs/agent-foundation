@@ -188,7 +188,7 @@ capabilities:
 
 ## 原生搜索与图像生成
 
-Agent Capability 独立组合。为兼容 Model 的 `capabilities` 列表添加：
+使用兼容 Model 时，将以下条目添加到 Agent 的 `capabilities` 列表：
 
 ```yaml
 capabilities:
@@ -218,11 +218,11 @@ capabilities:
 
 新 Agent 默认包含 `web`。每次 Run 获得下列 Host 提供方的新实例；原生搜索/获取选择控制暴露哪些 Host 功能。
 
-| 组件       | UI 实现                                 | 凭据 / 配置                                                                                                                                  |
-| ---------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 搜索       | `DuckDuckGoSearchProvider`              | 无密钥 DuckDuckGo HTML 搜索；选择 `search.mode: host`。后端 ID 为 `default`。受公共端点可用性和速率限制影响。                                |
-| 获取与下载 | `HttpxWebClient` 配合 `PublicWebPolicy` | 公共 HTTP/S 请求，无浏览器登录或独立 API 密钥。限制来自 `WebConfiguration`。拒绝私有网络目标。                                               |
-| 抓取       | `HtmlScrapeProvider`                    | 使用同一客户端获取公共 HTML/文本并转为 Markdown。选择 `scrape.mode: host`；后端 ID 为 `default`。不渲染 JavaScript、不绕过登录、不递归爬取。 |
+| 组件       | UI 实现                               | 凭据 / 配置                                                                                                                              |
+| ---------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 搜索       | `DuckDuckGoSearchProvider`            | 无密钥 DuckDuckGo HTML 搜索；选择 `search.mode: host`。后端 ID 为 `default`。受公共端点可用性和速率限制影响。                            |
+| 获取与下载 | `HttpxWebClient` 配合 `HttpWebPolicy` | 有界 HTTP(S) 请求，使用 Run 的允许主机策略。未设置策略时允许私有目标。不使用浏览器登录或独立 API 密钥。                                  |
+| 抓取       | `HtmlScrapeProvider`                  | 使用同一客户端获取 HTML/文本并转为 Markdown。选择 `scrape.mode: host`；后端 ID 为 `default`。不渲染 JavaScript、不绕过登录、不递归爬取。 |
 
 完整显式 Host 配置：
 

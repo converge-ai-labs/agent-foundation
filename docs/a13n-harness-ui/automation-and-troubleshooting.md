@@ -17,7 +17,7 @@ a13n-harness-ui login --help
 
 One-shot mode prints the final text or a structured operation object, then exits. It uses the same Project selection (from the current directory), Model resolution, continuation, and permission rules as interactive mode. It does not use the Model remembered by `/model`. Failed or suspended operations exit nonzero. It does not open an interactive approval prompt. Use interactive resume to answer pending decisions.
 
-Help and version do not start the App. Startup initializes local configuration and storage before the TUI opens; Models, Environments and MCP connections are prepared when needed. Startup timings go to `<data-root>/logs/terminal.log`.
+Help and version do not start the App. The landing TUI opens first, then initializes local configuration and storage. Models, Environments and MCP connect on demand. Startup timings go to `<data-root>/logs/terminal.log`.
 
 If startup or `--resume` fails, read the displayed error chain and diagnostic-report path. Review the private report for sensitive content before sharing it; nothing is uploaded automatically.
 

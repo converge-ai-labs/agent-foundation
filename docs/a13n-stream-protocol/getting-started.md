@@ -1,7 +1,7 @@
 ---
 title: Stream Protocol quickstart
 sidebarTitle: Quickstart
-description: Convert an offline Harness Run into AG-UI events. This example uses the real Harness stream and observer but no provider credentials, browser, server, or network transport.
+description: Convert an offline Harness Run into AG-UI events with the real stream and observer.
 ---
 
 ## Prepare the source checkout
@@ -80,7 +80,7 @@ Stream Protocol supplies no HTTP routes, replay cursor, durable event ID, retent
 - how to cut over from replay to live delivery without overlap;
 - how much observer state to retain in memory.
 
-The observer accumulates post-processor events without a retention cap. Keep its lifetime scoped to one Run and account for long streams in your Host. Do not repeatedly publish `snapshot()` when you want only newly produced events.
+For live-only conversion, set `retain_events=False` and persist the batches returned by `observe()`. For a resumable display, use `DisplayFold` and save [compact checkpoints](replay.md#restore-a-compact-display-checkpoint). Publish incremental events, not the full snapshot on each item.
 
 ## Next steps
 

@@ -19,6 +19,14 @@ A definition owns exactly one model of each kind. There is no configuration sche
 
 The [generated field reference](configuration-reference.md) lists built-in recipes, account settings, credentials, roots, mounts, and shell profiles.
 
+## Host outbound connections
+
+Set `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, or their lowercase forms in the Host process environment. These trusted settings route Host-owned HTTP connections, not traffic from Device commands.
+
+TLS verification defaults to enabled. Set `A13N_OUTBOUND_TLS_VERIFY=false` before constructing an owned HTTP client to disable certificate and hostname checks. Prefer a trusted CA for private HTTPS endpoints. Existing clients, supplied clients, and vendor SDK/WebSocket transports keep their own TLS settings.
+
+See [Remote Envd](remote-envd.md#connect-to-an-existing-http-daemon) for endpoint and CA options, and [Session egress](../a13n-envd/egress.md) for Device command destinations.
+
 ## Direct Local
 
 `DirectLocalEnvironmentConfiguration` requires an absolute `root.path`. The root is always writable; a reference-only mount withholds write actions through the Harness permission ceiling instead. The basic configuration is file-only: shell profiles, allowed executables, and allowed ports are empty by default.

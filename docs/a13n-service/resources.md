@@ -15,7 +15,7 @@ Resources follow one of two lifecycles.
 
 **Live** resources (providers, models, connections, environment templates, subscriptions, memories) change in place. Each change increments the row's `version`, and runs use the current state when they need the resource: a disabled provider or connection stops new use at once.
 
-**Revisioned** resources (agents and skills) have a head and immutable, numbered revisions. Each configuration change adds a revision, and a change to name, description or labels changes only the head. The head's `default_revision_id` selects the revision that new runs without a pin use, and runs pin the exact revision they started with. Heads are archived rather than deleted. Publishing content identical to the head's current default revision creates nothing: the request returns that revision again with `201`, and the head's version, ETag and audit trail are unchanged, whether or not the request set `make_default: false`.
+**Revisioned** resources (agents and skills) have a head and immutable, numbered revisions. Each configuration change adds a revision, and a change to name, description or labels changes only the head. The head's `default_revision_id` selects the revision that new runs without a pin use, and runs pin the exact revision they started with. Heads are archived rather than deleted. Publishing content identical to the current default returns that revision (`201`) without changing the head, even with `make_default: false`.
 
 Nothing a run depends on is hard-deleted underneath it:
 
@@ -59,7 +59,7 @@ curl -X POST "$A13N_URL/api/v1/model-providers" \
 
 - **Credentials are write-only.** They are encrypted with the deployment's key ring and never returned; views show only `credential_configured`. In a `PATCH`, a `credential` value replaces it, `null` removes it, and leaving it out keeps it.
 - **A credential is bound to its configuration.** A `PATCH` that changes `config` while a credential is stored must also replace or remove the credential (and every stored extra header of a model provider), or it is refused as `invalid_argument`. This keeps a credential from being sent to an endpoint it was not entered for.
-- **Endpoints obey the deployment's outbound policy.** Base URLs and other endpoints must pass the [endpoint policy](configuration.md#outbound-requests); private and plain-HTTP endpoints need the operator's explicit allowance.
+- **Endpoints obey the deployment's outbound policy.** Base URLs and other endpoints must pass the [endpoint policy](configuration.md#outbound-requests); plain-HTTP endpoints need the operator's explicit origin allowance. Private IP addresses are not blocked by this policy; apply network restrictions at the deployment boundary.
 - **Disable** with `PATCH {"enabled": false}`. A disabled provider refuses new use with `disabled`; existing environments of a disabled environment provider are still maintained.
 - **Test** with `POST …/{provider_id}/test` (needs `run`). It sends one inexpensive probe with the stored configuration and returns `succeeded`, `failed` (with a message) or `unsupported`. Web providers, the `openai_chatgpt`, `google_vertex`, `aws_bedrock`, `vercel` and `typesafe` model types, and every environment type except `docker` have no test and return `unsupported`. The `docker` test only pings the Docker Engine and creates nothing. A memory provider test lists one page of a namespace no memory uses.
 

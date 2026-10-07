@@ -67,7 +67,7 @@ result = await executable.run("Inspect the workspace", environment=environment)
 
 `allow_create=False` is required: both remote Providers declare `supports_managed=False` and refuse a managed creation before any external call.
 
-Without Harness, use `enter()`, `ensure_ready()` and `EnvironmentOperations` as shown in `remote.py`. Construction and `enter()` are inert; preparation connects. Always close the adapter in `finally`. If you pass one `HttpEnvdProviderRuntime` to several adapters through `runtime=`, close it during Host shutdown. One runtime can serve many independent adapters.
+Outside Harness, follow `remote.py`: enter the adapter, ensure readiness, use its operations, and close it in `finally`. A shared `HttpEnvdProviderRuntime` stays open until Host shutdown.
 
 The example CLI can connect to an existing daemon too:
 
@@ -80,7 +80,9 @@ uv run environment-provider-example http_envd \
 
 This writes `provider-example.txt` under the selected Device cwd and reads it through a fresh Session. Your daemon must permit `file.write_text` and `file.read_text`. Never supply a credential in a URL or command-line argument.
 
-Public network endpoints require verified HTTPS. HTTP is accepted on loopback; a trusted provider-private link needs an explicit `allow_plaintext_private_link=True`. The runtime also accepts an SSL context, a CA file, or `False` through `verify`; the default verifies certificates unless the operator sets `A13N_OUTBOUND_TLS_VERIFY=false`.
+Use HTTPS for public endpoints. HTTP is allowed on loopback or, with `allow_plaintext_private_link=True`, a trusted provider-private link. HTTPS uses environment proxies; plaintext stays direct.
+
+For a private CA, pass an SSL context or CA file as `HttpEnvdProviderRuntime.verify`. Verification is enabled by default; explicit `verify=False` disables certificate and hostname checks. Set TLS policy before constructing the runtime. Process defaults are described in [Host outbound connections](configuration.md#host-outbound-connections).
 
 ## Session egress and credential references
 
@@ -106,9 +108,9 @@ recipe = {
 }
 ```
 
-The runtime resolves `HOST_GITHUB_TOKEN` freshly before Session opening. A missing or empty source fails preparation. Saved recipes contain only references; descriptors contain nonsecret boundary and policy metadata. Local launch excludes the referenced source variables from the daemon's inherited child environment. An embedding Host can provide an `EnvdCredentialResolver` runtime collaborator instead of using process environment sources.
+Set `HOST_GITHUB_TOKEN` in the Host environment. The runtime resolves it before opening each Session; a missing or empty value fails preparation. Saved recipes retain references, and commands receive sentinels rather than real credentials.
 
-`expected_boundary` checks the selected remote Device, not permission to reconfigure it. For restricted Devices, specify the exact canonical grants. Session destination changes and secret rotation do not change the fixed launch boundary or local daemon cache identity. Commands receive sentinel values, not real credentials; see [controlled egress](../a13n-envd/egress.md) for request-header injection and live policy updates.
+`expected_boundary` checks the Device's launch settings. For restricted Devices, list the exact grants. See [controlled egress](../a13n-envd/egress.md) for credential injection and policy updates.
 
 ## Integrate your own WebSocket Host
 

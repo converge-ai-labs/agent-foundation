@@ -20,7 +20,7 @@ description: 发行包名、导入路径、源码位置、可运行示例和发�
 
 ## 原生守护进程
 
-`crates/a13n-envd` 构建 **Envd** 守护进程。它通过 EIP 提供 Envd 会话、文件、命令、进程和保留输出。请参阅[安装](../a13n-envd/installation.md)、[配置](../a13n-envd/configuration.md)和 [Python 客户端](../a13n-envd/python-client.md)。
+`crates/a13n-envd` 构建 **Envd** 守护进程。它通过 EIP 提供 Envd 会话、文件、命令、进程、保留输出和计算机操作。请参阅[安装](../a13n-envd/installation.md)、[配置](../a13n-envd/configuration.md)和 [Python 客户端](../a13n-envd/python-client.md)。
 
 Harness 的 Local Envd provider 将守护进程连接到环境。选择此 provider 时，Harness UI 可以自动获取匹配的可执行文件。
 
@@ -37,6 +37,8 @@ Service 客户端分别位于独立的 Python、TypeScript、Go 和 Rust 仓库�
 | `frontend/apps/a13n-console`    | Service 的浏览器界面，用于资源和对话管理 |
 | `frontend/apps/a13n-harness-ui` | Harness UI 的 WebUI                      |
 | `frontend/packages/a13n-ui`     | 共享 React 组件、设计 token 和品牌素材   |
+| `frontend/apps/a13n-docs`       | 从 `docs/` 构建的文档站                  |
+| `frontend/apps/a13n-site`       | 项目官网首页                             |
 
 Console 随 Service 发布，WebUI 随 `a13n-harness-ui` 发行包发布。两者都打包在各自的 wheel 和 sdist 中，安装使用时无需 Node.js。前端开发请遵循[前端 README](https://github.com/converge-ai-labs/agent-foundation/blob/main/frontend/README.md)。
 
@@ -47,7 +49,7 @@ Console 随 Service 发布，WebUI 随 `a13n-harness-ui` 发行包发布。两�
 | 示例                                                                                                                        | 演示内容                                           |
 | --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
 | [Agent 应用](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/agent-app/README.md)                   | 离线流式轮次、状态保存和重启恢复                   |
-| [环境 provider](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/README.md)     | 直接使用 Local、Local Envd 和 Docker 的生命周期    |
+| [环境 provider](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/README.md)     | Direct Local、Local Envd 和 Docker 的生命周期      |
 | [能力与插件](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/plugins/README.md)                     | 自定义能力、Harness 插件、环境 provider 和运行扩展 |
 | [已安装的 provider 插件](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/provider-plugin/README.md) | 打包环境 provider 并加载已安装的入口               |
 | [MCP App](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/mcp-apps/README.md)                       | 带交互式浏览器计数器的 stdio MCP 服务器            |

@@ -25,7 +25,7 @@ a13n-harness-ui
 
 ### 依赖兼容性
 
-uv 按照已发布的依赖要求解析应用和依赖。Harness UI 独立发布，依赖兼容版本的 `a13n-harness`、`a13n-stream-protocol`、`a13n-envd-client` 和 `a13n-logging`。如果旧包的依赖要求阻止了更新，应升级 Harness UI 本身，并检查你提供的版本约束，而不要强行安装不兼容版本。
+整体升级 Harness UI；uv 会解析兼容的 Harness、Stream Protocol、Envd Client 和日志依赖。解析失败时，检查自行设置的版本约束。
 
 ### 沙箱运行时
 
@@ -41,7 +41,7 @@ cd agent-foundation
 make a13n-harness-ui
 ```
 
-开发前置条件见仓库的[贡献指南](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md)。Make 目标会同步依赖并关闭已发布包的启动更新检查。切换分支后，重新运行该目标或运行 `make sync`。修改 UI 文档或导航后，运行 `make a13n-harness-ui-skills` 更新[内置配置 Skill](skills-and-content-plugins.md#built-in-configuration-skill)；启动目标已经包含此依赖。
+Make 目标会同步依赖、更新[内置配置 Skill](skills-and-content-plugins.md#built-in-configuration-skill)，并关闭启动更新检查。切换分支后重新运行。修改文档后只需更新 Skill 时，运行 `make a13n-harness-ui-skills`。开发前置条件见 [CONTRIBUTING.md](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md)。
 
 源码文档跟随 `main`。使用已发布的 wheel 时，如果 API 或设置不同，应查阅对应发行版的文档和元数据。
 
@@ -53,7 +53,7 @@ make a13n-harness-ui
 a13n-harness-ui webui
 ```
 
-在浏览器中打开打印的登录链接，即可配置 Model、开始对话并与可信协作者一起工作。前台服务器负责正在进行的执行，使用 WebUI 时需保持服务器运行。宿主机原生文件和终端共享默认开启；使用 `--no-share-computer` 可以关闭。访问控制、协作边界、容器和监听配置见 [WebUI](webui.md)。
+打开打印的登录链接，并保持前台服务器运行。配置 Model、开始对话，与可信协作者一起工作。宿主机原生文件和终端共享默认开启；使用 `--no-share-computer` 可以关闭。访问和部署见 [WebUI](webui.md)。
 
 ## 下一步
 

@@ -52,12 +52,12 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-模型通过挂载名 `user` 访问记忆，不会看到实际目录路径。
+模型通过挂载名 `user` 访问这份记忆。Memory 挂载与 Environment 挂载相互独立。需要隔离执行时，将后端存储置于 Agent 可访问的文件系统之外。
 
 ### 模型获得的内容
 
 - **指令。** 每个挂载点都列出名称、访问权限和指引。`guide=None` 使用 `DEFAULT_FILE_GUIDE`，简要说明应保存什么、如何组织；也可传入自定义文字，或用 `""` 不提供指引。
-- **工具。** 只有 `memory_file_*` 工具能够读取和修改记忆。Shell 和 Environment 文件工具无法访问。
+- **工具。** 使用 `memory_file_*` 按配置的权限与版本检查读取和修改记忆。
 - **上下文。** 每次 Run 开始时，每份记忆对应一个 `<memory-context>` 块，展示 `always_load` 文件和索引，索引中每个文件占一行 `path: description`。使用游标时，后续 Run 只收到变化的路径和有变化的 `always_load` 文件的新内容；没有变化时不添加块。
 
 | 工具                 | 功能                                             | 失败条件                           |

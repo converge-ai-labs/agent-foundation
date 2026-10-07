@@ -12,7 +12,7 @@ curl -X POST "$A13N_URL/api/v1/uploads" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Idempotency-Key: report-2026-09" -F file=@report.pdf
 ```
 
-响应返回 `upload_id`、文件名、内容类型、大小和 SHA-256 `digest`。上传 ID 从工作空间、调用者和幂等 key 派生，因此响应丢失后使用相同 key 和文件重试会返回同一上传；相同 key 对应不同内容则返回 `409 conflict`（原因为 `idempotency_key_reused`）。上传需要 `write`，大小受 `objects.upload_bytes` 限制（默认 1 MiB），并计入按主体计算的限流额度（每 `objects.upload_window_seconds` 允许 `objects.upload_limit` 次）。
+响应返回 `upload_id`、文件名、内容类型、大小和 SHA-256 `digest`。相同调用者在同一工作空间中，使用相同 key、字节、文件名和内容类型重试，会返回同一上传。该 key 下的文件内容或元数据变化会返回 `409 conflict`（原因为 `idempotency_key_reused`）。上传需要 `write`，大小受 `objects.upload_bytes` 限制（默认 1 MiB），并计入按主体计算的限流额度（每 `objects.upload_window_seconds` 允许 `objects.upload_limit` 次）。
 
 ## 资产
 
@@ -70,15 +70,25 @@ Run 事件包含 `attempt: null`；执行尝试事件添加 attempt 的 `id`、`
 | `X-A13n-Webhook-Timestamp` | 请求签名时的 Unix 秒数。                                                                    |
 | `X-A13n-Webhook-Signature` | `v1=` 加上以签名密钥计算 `{timestamp}.{delivery_id}.{body}` 所得 HMAC-SHA256 的十六进制值。 |
 
-使用原始请求体验证签名，并拒绝过旧时间戳：
+使用原始请求体验证签名，并拒绝过期时间戳。此示例允许五分钟的时钟差；请为接收端选择合适窗口，并保持时钟同步：
 
 ```python
-import hashlib, hmac
+import hashlib
+import hmac
+import time
 
-def verify(secret: str, headers, body: bytes) -> bool:
-    signed = f"{headers['X-A13n-Webhook-Timestamp']}.{headers['X-A13n-Delivery-Id']}.".encode() + body
+def verify(secret: str, headers, body: bytes, *, max_age_seconds: int = 300) -> bool:
+    try:
+        timestamp = headers["X-A13n-Webhook-Timestamp"]
+        delivery_id = headers["X-A13n-Delivery-Id"]
+        received = headers["X-A13n-Webhook-Signature"]
+        if abs(time.time() - int(timestamp)) > max_age_seconds:
+            return False
+    except (KeyError, ValueError):
+        return False
+    signed = f"{timestamp}.{delivery_id}.".encode() + body
     expected = "v1=" + hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, headers["X-A13n-Webhook-Signature"])
+    return hmac.compare_digest(expected, received)
 ```
 
 ### 投递与重试

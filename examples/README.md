@@ -14,7 +14,7 @@ These five independent projects show public Harness integration points. Each has
 
 From the repository root, `make examples-check-all` runs the complete examples gate. To work on one example, follow its README instead. All five have offline test paths; live model credentials are not needed. Building the MCP App first requires Node.js/npm. Remote Envd and Docker demos require their respective runtimes.
 
-For the quickest interactive application:
+For a minimal server/client integration, run the [offline MCP tool example](../docs/a13n-harness/mcp.md#run-an-mcp-tool-offline). For a persisted interactive application:
 
 ```bash
 cd examples/agent-app

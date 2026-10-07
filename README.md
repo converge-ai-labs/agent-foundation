@@ -16,11 +16,11 @@ Agent Foundation is an open-source library and platform for building and running
 - **Extend with Harness.** Embed the runtime directly and shape its behavior through plugins, custom tools, and providers.
 - **Explore with Harness UI.** Try models, tools, and agent configurations in a terminal and web playground—without building an application first.
 
-> Agent Foundation is in active `0.x` development. APIs and configuration may change between minor releases. This README and the documentation site track `main`; check release notes and package metadata when using a published version.
+> These guides track `main`. For an installed release, use its release notes and package metadata.
 
 ## Run Service with Docker Compose
 
-You need **Docker with Docker Compose** and either a model provider API key or an eligible ChatGPT plan. The stack includes Service, Console, PostgreSQL, Redis, and access to your host Docker Engine for agent execution. No repository clone, Make, Python, Node.js, or source build is needed.
+You need **Docker with Docker Compose** and either a model provider API key or an eligible ChatGPT plan. The stack starts Service, Console, PostgreSQL, and Redis. Agents use your host Docker Engine for execution environments.
 
 ![Console: build agents, try runs, inspect execution traces, and monitor usage](.github/assets/console-workflow.webp)
 
@@ -37,15 +37,15 @@ docker compose -f a13n-service.yaml up -d --wait --pull always
 
 Then open **<http://127.0.0.1:8080>**:
 
-1. **First launch: register the administrator account.** Enter your email and choose a password of at least **8 characters**. This creates the first administrator, organization, and workspace, and signs you in automatically.
+1. **Register the administrator account.** Enter your email and a password of at least **8 characters**. Service creates your organization and workspace and signs you in.
 2. **Connect a model.** Under **Models**, add a provider using an API key or **Sign in with ChatGPT**, then select a model.
 3. **Try an agent.** Create an agent, choose the model, and send your first message with **Try agent**.
 
-The first account created on an uninitialized Service is its administrator. On later visits, sign in with the email and password you registered; restarting preserves your account and data. Additional users join through invitations from an administrator.
+Sign in with the same account on later visits. Administrators invite additional users.
 
 **Already in a repository checkout?** Run `make compose-up` from the repository root to pull images, start the same stack, and print its Console URL.
 
-The stack binds to loopback and mounts the host Docker socket for Docker execution environments. The source Compose file uses the published `latest` image; release assets pin a release version. See the [deployment guide](deploy/docker/compose/README.md) before exposing Service to other machines.
+The stack binds to loopback and mounts the host Docker socket. For a shared deployment, follow the [deployment guide](deploy/docker/compose/README.md) to configure HTTPS, bootstrap the administrator, and select a release version.
 
 Continue with the [Service quickstart](docs/a13n-service/get-started.md) for model setup, API usage, stop/resume, and troubleshooting.
 
@@ -57,8 +57,8 @@ Build your agent stack in Console: choose model providers, web data services, ex
 
 | Capability       | Explore                                                                                                                                  |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| **Models**       | [14 provider types](docs/a13n-service/models.md#model-providers), including cloud APIs, gateways, and local Ollama endpoints.            |
-| **Web Data**     | [10 search and scrape providers](docs/a13n-service/tools.md#web-search-and-scrape), including Brave, Exa, Tavily, and TinyFish.          |
+| **Models**       | [Model providers](docs/a13n-service/models.md#model-providers), including cloud APIs, gateways, and local Ollama endpoints.              |
+| **Web Data**     | [Search and scrape providers](docs/a13n-service/tools.md#web-search-and-scrape), including Brave, Exa, Tavily, and TinyFish.             |
 | **Environments** | [Docker and hosted sandboxes](docs/a13n-service/environments.md#providers), including E2B, Daytona, Modal, Runloop, Sprites, and Vercel. |
 | **Connections**  | [Browse remote MCP servers](docs/a13n-service/tools.md#remote-mcp-servers) or connect your own compatible endpoint.                      |
 

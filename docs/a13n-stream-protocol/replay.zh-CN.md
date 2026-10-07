@@ -1,119 +1,96 @@
 ---
 title: 重放与恢复
-description: 重建同一次执行的 UI 投影，并判断何时应创建新的 Harness 执行。
+description: 恢复紧凑的展示检查点，或从精确源历史重建 observer。
 ---
 
-重启有两种不同问题：为**同一次** 执行重建 UI 投影，以及从保存的 `HarnessState` 启动**新的** Harness 执行。`HarnessAguiObserver.resume()` 只解决前者。
+按 Host 保留的数据选择恢复 API。
 
 ## 选择恢复路径
 
-| 发生了什么变化？                               | 处理方式                                                       |
-| ---------------------------------------------- | -------------------------------------------------------------- |
-| 观测消费端重启；同一次源执行仍可用             | 将精确、有限的源前缀重放到新 observer，再消费后续实时流        |
-| Host 从 `HarnessState` 启动了新的 Harness 执行 | 为新的执行 ID 创建新 observer                                  |
-| 只保留了渲染消息或 AG-UI 记录                  | 不要将它们传给 `resume()`；它们无法重建 Harness 多 part 源状态 |
-| 源历史存在缺口                                 | 在 Host 中报告并核对，不能悄悄跳过                             |
+| 保留的数据                  | API                                                              | 恢复内容                  |
+| --------------------------- | ---------------------------------------------------------------- | ------------------------- |
+| 展示条目与解析续接状态      | `DisplayFold.restore(snapshot)`                                  | 展示内容和 AG-UI 解析状态 |
+| Observer 转换续接状态       | `HarnessAguiStreamObserver.restore(continuation, processor=...)` | 同一根流的转换            |
+| 精确、有限的 Harness 源前缀 | `await observer.resume(history)`                                 | 转换；可选历史事件快照    |
+| `HarnessState`              | 启动新的 Harness 执行                                            | 新的执行中的 agent 运行   |
+
+将检查点条目和续接状态一起保存。从下一事件继续，避免缺口和重叠。
+
+## 恢复紧凑的展示检查点
+
+此示例保存尚未结束的消息，恢复后追加剩余事件：
+
+```python
+from a13n_stream_protocol.display import DisplayFold, DisplaySnapshot
+
+prefix = [
+    {"type": "TEXT_MESSAGE_START", "messageId": "message-1", "role": "assistant", "timestamp": 1000},
+    {"type": "TEXT_MESSAGE_CONTENT", "messageId": "message-1", "delta": "Hello", "timestamp": 1001},
+]
+suffix = [
+    {"type": "TEXT_MESSAGE_CONTENT", "messageId": "message-1", "delta": " world", "timestamp": 1002},
+    {"type": "TEXT_MESSAGE_END", "messageId": "message-1", "timestamp": 1003},
+]
+fold = DisplayFold("run-example")
+fold.fold(prefix)
+checkpoint_json = fold.export().model_dump_json()
+
+restored = DisplayFold.restore(DisplaySnapshot.model_validate_json(checkpoint_json))
+restored.fold(suffix)
+
+uninterrupted = DisplayFold("run-example")
+uninterrupted.fold(prefix + suffix)
+assert restored.export() == uninterrupted.export()
+item = next(iter(restored.items.values()))
+assert item.content["text"] == "Hello world"
+assert item.state == "completed"
+```
+
+恢复后的消息与不中断的输出相同。导出返回独立检查点，活跃消息和工具调用保持打开。
+
+转换原生 Harness 观测并累积展示：
+
+```python
+fold = DisplayFold(run_id)
+async for source in run_stream:
+    observed = fold.fold(fold.events(source), source)
+    await host.persist_and_publish(observed)
+```
+
+传入 `source` 还会记录失败工具结果。此检查点保存原生转换状态；恢复后以相同循环处理下一源条目。`host.persist_and_publish` 代表应用自有存储和交付。
+
+分页时只淘汰不可变条目，并保留下一顺序号。仓库私有 `a13n-ui/display` 浏览器模块把检查点和后续 AG-UI 事件合并为展示条目。展示类型和限制见 [API 参考](api-reference.md#display-apis)。
 
 ## 从源历史恢复
 
-新进程需要为已有 Harness 执行重建 observer 时，使用 `resume()`。下面的 `source_journal` 方法演示 Host 管理的历史和实时尾流接口，不由此包提供：
+保留了精确 Harness 源历史时，对初始状态的 observer 使用 `resume()`。下面的 journal 和 Host 方法属于应用：
 
 ```python
-observer = HarnessAguiObserver(processor=process_event)
+from a13n_stream_protocol import HarnessAguiStreamObserver
 
-await observer.resume(
-    source_journal.read_prefix(
-        run_id=run_id,
-        through=handoff_cursor,
-    )
-)
+observer = HarnessAguiStreamObserver(retain_events=False)
+await observer.resume(source_journal.read_prefix(run_id=run_id, through=cursor))
 
-async for item in source_journal.tail(
-    run_id=run_id,
-    after=handoff_cursor,
-):
-    new_events = observer.observe(item)
-    await host.persist_and_publish(new_events)
+async for item in source_journal.tail(run_id=run_id, after=cursor):
+    await host.persist_and_publish(observer.observe(item))
 ```
 
-参数是有限的 `AsyncIterable[HarnessStreamEvent[Any]]`。它必须按原顺序产出一次执行（`HarnessAguiObserver`）或一个根流及其内联子执行（`HarnessAguiStreamObserver`）的精确公开源前缀，并在 Host 选择的交接点结束。`resume()` 返回后，将后续实时条目传给 `observe()`。
-
-`resume()`:
-
-1. 创建独立暂存状态；
-2. 按与 `observe()` 相同的转换和处理器路径处理每个历史条目；
-3. 仅在迭代成功结束后，以原子方式接纳重建状态；
-4. 返回 `None`，避免意外再次发布历史事件。
-
-恢复成功后：
-
-```python
-historical_projection = observer.snapshot()
-next_events = observer.observe(next_live_item)
-```
-
-快照包含重建的历史 AG-UI 投影，`next_events` 只包含新产生的实时输出。
+传入一个根流及其内联子执行的精确、有限、有序前缀。从同一游标之后继续，排除重复并检测缺口。`resume()` 返回 `None`，不再次发布历史。默认 `retain_events=True` 时，`snapshot()` 还包含历史事件。
 
 ### Host 必须保证什么
 
-Host 负责 `resume()` 周围的源历史契约：
+保持 Harness/Protocol 版本和处理器策略不变。AG-UI 记录送入展示 fold，Harness 源记录送入 `observer.resume()`。
 
-- 保留或重建结构化公开 `HarnessStreamEvent` 值；
-- 为精确的一个 `run_id`（`HarnessAguiObserver`）或一个根流及其内联子执行（`HarnessAguiStreamObserver`）选择有限前缀；
-- 保留源顺序并排除重复交付；
-- 检测保留缺口，不悄悄省略源条目；
-- 从重放切换到实时流时，既没有缺口也没有重叠；
-- 为所选 Harness/Protocol 版本解码或迁移保留的源值；
-- 独立于 Harness 源序号保留持久 AG-UI 事件 ID。
-
-AG-UI 交付记录、压缩后的显示消息和渲染器快照不能替代 Harness 源历史。它们是有损投影，不包含重建多 part 转换状态所需的全部信息。
+不做重放时，保存 `observer.export()`，再调用 `HarnessAguiStreamObserver.restore(saved, processor=process_event)` 恢复转换。需再次传入处理器。恢复后的 observer 不保留事件日志。
 
 ### 失败与重试
 
-历史迭代、转换、关联验证或处理失败，或任务取消时，原 observer 仍保持初始状态。Host 可以打开另一个完整历史迭代器并重试：
-
-```python
-observer = HarnessAguiObserver(processor=process_event)
-
-try:
-    await observer.resume(primary_history)
-except Exception:
-    await observer.resume(reopened_complete_history)
-```
-
-成功观测或成功恢复后，不要再次调用 `resume()`。恢复期间，`observe()` 和另一个 `resume()` 会抛出 `AguiObservationError`。重建提交前，属性和 `snapshot()` 继续公开恢复前的初始状态。
+`resume()` 失败或取消时，observer 保持初始状态，可用完整历史重试。成功观测或恢复后，使用 `observe()`，不要再次 `resume()`。串行调用，重建完成后再观测实时条目。
 
 ## Observer 恢复与 agent 恢复的区别
 
-observer 重建与 Harness 恢复是两个独立操作。
-
-只重启观测消费端，且同一次执行源历史仍可用时，从该执行前缀重建一个 observer，再继续处理其实时尾流。
-
-worker 接管从 `HarnessState` 启动新 Harness 执行时，新执行具有新的 `run_id` 和序号域。创建新 observer：
-
-```python
-previous_observer = HarnessAguiObserver(processor=process_event)
-await previous_observer.resume(previous_run_history)
-
-# Worker recovery starts another Harness Run.
-current_observer = HarnessAguiObserver(processor=process_event)
-async for item in current_run_stream:
-    new_events = current_observer.observe(item)
-    await host.persist_and_publish(new_events)
-```
-
-Host 可以在同一会话、Service Run 或 Execution 时间线中保留两次 Harness 执行的投影，但不能把较早执行送入新 observer。`resume()` 绝不会重建模型执行、工具、凭据、环境权限、租约或 `HarnessState`。
+继续模型或工具执行时，使用 [Harness 状态与恢复](../a13n-harness/state-and-resume.md)。新的 Harness 执行需要新 observer；单独保留旧执行投影。
 
 ## 错误与原子性
 
-`AguiObservationError` 报告以下语义转换错误：
-
-- 同一 observer 内的线程或执行关联发生变化；
-- 多 part 中某个 part 的 kind 或身份改变；
-- 处理器修改结构字段或事件类型；
-- 对非初始状态的 observer 调用 `resume()`；
-- 恢复期间进行观测或启动另一恢复。
-
-无效 Python 输入类型抛出 `TypeError`。`observe()` 失败时，该源条目不会累积。`resume()` 失败或取消时，原 observer 整体保持初始状态。
-
-将改变状态的 `observe()` 和 `resume()` 调用串行执行。恢复期间可以读取属性和 `snapshot()`，它们公开恢复前的初始状态。显式恢复门控防止异步历史重建等待下一个历史条目时被实时观测覆盖。
+无效关联或处理器替换抛出 `AguiObservationError`，无效 Python 输入类型抛出 `TypeError`。`observe()` 失败不提交该源条目。通过 Host 自有事务和交付契约持久化成功批次。

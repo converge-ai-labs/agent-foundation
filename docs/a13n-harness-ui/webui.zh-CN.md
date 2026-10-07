@@ -9,7 +9,7 @@ WebUI 是 Harness UI 的浏览器工作台，是面向个人和可信小团队�
 
 ## 启动服务器
 
-WebUI 提供向导式设置、共享对话与草稿、已保存的历史、实时输出、待处理决策、配置，以及 Host 原生 Files、Changes 和 Terminal 面板。Chat 是主视图，Files 和 Changes 在侧边抽屉中打开，Terminal 位于下方。查看 Git 需要安装 Git 可执行程序；原生 PTY 需要 POSIX Host。目前评论控件已停用，但后端保存的评论仍可通过 API 读取。
+Chat 是主视图，**Files** 和 **Changes** 在侧边打开，**Terminal** 位于下方。查看 Git 需要安装 Git；原生终端需要 POSIX Host。评论控件已停用，保存的评论仍可通过 API 读取。
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
@@ -30,7 +30,7 @@ flowchart TB
     class App,Agent a13n
 ```
 
-Markdown 文件默认以 **Preview** 打开，可通过 **Preview** 和 **Text** 按钮切换。预览使用当前本地缓冲区，因此保存前就能检查未保存的编辑。文件操作采用紧凑按钮，**Add to chat** 是唯一的文件上下文添加入口：文本编辑器有选区时添加选中的源码行，否则添加已审阅的完整文件。它不会发送输入框内容。Agent 回答中指向同一实例 Host 文件的链接，会在当前页面打开 Files 抽屉。WebUI 根 Agent 在每次输入的界面指引中会获得支持的相对链接格式：`/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}`。单独的 Host 路径和直接的 Files API URL 不是 WebUI 文件链接；外部 Markdown 链接仍会单独打开。
+Markdown 默认以 **Preview** 打开，**Text** 切换到编辑器。预览包含未保存编辑。**Add to chat** 附加选中的源码行，未选中时附加完整文件，不会发送。Agent 的 `/threads/{root_thread_id}?native=files&native_path={URL-encoded absolute Host path}` 链接打开 Files 抽屉；单独的路径和 Files API URL 不会，外部链接仍单独打开。
 
 ## 查看 Memory
 
@@ -48,11 +48,11 @@ Memory 控制仍位于 **Settings → General**。关闭自动整理会保留 Me
 
 也可以打开已有对话的操作菜单或 **Conversation details**，选择 **Make Coordinator** 并确认。该对话必须空闲、未归档、已绑定 Project，且没有待处理决策。转换保留 URL、历史、标题和设置，角色不可撤销。worker 不能转换，已有对话（包括以前通过 [Sidekick](#agent-collaboration-and-sidekick) 创建的对话）也不会被自动收编。
 
-在普通输入框中说明目标。Coordinator 可以创建自己的 worker、回答它们的问题，并整合已验证的结果。连接节点图标用于标识此角色。点击标题打开 Coordinator，点击展开箭头查看其 worker。每个 worker 都是普通根对话，有自己的历史、控件和人工交互，并不是 subagent。worker 只显示在所属 Coordinator 下，不会重复出现在 Running 或 Recent 中。搜索仍能找到它们，并标记为 **Coordinator worker**。即使所属 Coordinator 已归档或不在当前分页中，显示出来的 worker 仍提供访问其 Coordinator 的入口。
+Coordinator 创建 worker、回答问题并整合已验证结果。展开其侧栏行可查看 worker。每个 worker 都是有独立历史和人工控件的根对话，不是 Subagent。worker 显示在所属 Coordinator 下，不会重复出现在 Running 或 Recent；搜索以 **Coordinator worker** 标记，并保留访问 owner 的入口。
 
 如果要自行分配工作，在 Coordinator 的操作菜单中选择 **New worker**，直接在新对话中编写并发送工作内容，Coordinator 不会代为转发。**Managed by · name** 会替代 Coordinator 开关，并固定 Project。创建前，可用标签上的移除按钮将草稿改为独立对话，消息、附件和选项都不会丢失。创建后标签固定，即使发送失败也一样。创建结果不确定时，归属关系保持锁定，直到查看保留的对话。已有 worker 的输入框中也会显示相同的所属标签。
 
-每个 Coordinator 都可通过 **Pause automatic follow-up** / **Enable automatic follow-up** 控制自动生命周期通知。设置保存在后端，并在浏览器之间共享。暂停不会隐藏 Coordinator 或 worker、移除角色，也不会阻止手动消息和执行。新 Coordinator 默认开启自动跟进；迁移的 Coordinator 保留此前的启用设置。Sidekick 偏好为 Agent 创建的 worker 提供默认值，直接创建的 worker 则使用输入框显示的选择。关闭 Sidekick 不会关闭 Coordinator 或自动跟进。
+在 Coordinator 菜单选择 **Pause automatic follow-up** 或 **Enable automatic follow-up**。共享设置控制生命周期通知，不阻止手动工作或 worker 执行。新 Coordinator 默认启用，迁移时保留原设置。Agent 创建的 worker 使用 Sidekick 默认值，手动创建的使用输入框选择。关闭 Sidekick 不关闭 Coordinator 或自动跟进。
 
 当你首次直接向 worker 提交任务，或所属 worker 完成、失败、取消、等待输入时，自动跟进会尝试通知 Coordinator。Coordinator 会先检查保存的结果，再判断工作是否完成。通知采用尽力交付，没有重试或重启后重放。关闭浏览器不影响它继续运行；停止 Coordinator 不会停止 worker，也不会暂停之后的通知。问题和审批的截止时间仍有效。
 
@@ -60,7 +60,7 @@ Memory 控制仍位于 **Settings → General**。关闭自动整理会保留 Me
 
 将鼠标移到对话行上或让其获得焦点，打开 **…** 菜单并选择 **Star conversation**。触屏上不需要悬停就能看到 **…** 按钮。加星标后，菜单旁始终显示实心星；选择 **Unstar conversation** 可取消。星标与实例中的所有参与者共享，不是个人书签，切换浏览器或重启服务器后仍保留。
 
-在每个 Project 中，星标对话位于 **Recent** 顶部，不占用五个普通最近对话的位置，也不会藏在 **Show more** 后面。Running 和未读的 **New results** 仍优先显示，且不会产生重复行。添加或取消星标不会打开对话，也不会改变最后访问时间。归档会隐藏星标对话，但保留星标以便恢复。普通对话和 Coordinator 支持星标；worker 仍嵌套在所属 Coordinator 下，不会新增顶层快捷入口。
+星标对话置于五个普通 **Recent** 行上方。Running 和未读 **New results** 优先显示，不重复。星标不改变访问时间。归档隐藏对话但保留星标；worker 仍嵌套在所属 Coordinator 下。
 
 ## 找回尚未发送的输入
 
@@ -78,19 +78,19 @@ Memory 控制仍位于 **Settings → General**。关闭自动整理会保留 Me
 
 ## Fast 模式
 
-打开 **Agent & Model settings**，直接切换 **Fast** 。旁边的标签区分显式 **On** 、**Off** 和 **Default** 。**Default** 遵循模型配置的 Fast 设置；模型未配置层级时，标签显示 **Provider default**，由 provider 决定，这不等同于 Off。On 和 Off 分别为此标签页后续发送显式请求 Fast 或标准处理。选择 **Use default** 清除覆盖。切换 Agent 或模型也会清除临时选择，转为遵循新模型。Fast 不改变 thinking，不保存模型配置，也不随引导发送。
+打开 **Agent & Model settings**，选择 **Fast**，或在支持的 Codex 连接上选择 **Ultrafast**。按钮互斥，再次点击选中按钮请求 Off。**Use default** 继承 Model 设置；**Provider default** 不等于 Off。
 
-Context / Cost / Cache / Time 一行显示的 **Fast On**、**Off** 或 **Default** 来自当前或已保存 Run 捕获的设置，并非下次发送的选择。Default 表示由模型或 provider 决定；没有捕获到设置时显示横线。这是请求设置，不代表服务已确认提速。Fast 可能增加 API 费用或订阅额度消耗。
+选择影响当前标签页后续 Send，不影响引导、thinking 或保存的 Model 配置。更换 Agent 或 Model 会清除选择。Context / Cost / Cache / Time 一行显示活动或已保存 Run 捕获的 **On**、**Off**、**Ultrafast** 或 **Default**，不是下次 Send 的选择。短横线表示不可用。
 
-控件遵循连接的原生语义：OpenAI API 和 Codex 订阅的优先处理、已确认支持的直连 Anthropic Fast 速度，或已确认支持的 Gemini API 优先处理。不支持或尚未确认的连接会禁用显式选择并说明原因，同时保留 Default 以清除旧覆盖。不会假定 Claude 订阅、Grok 订阅、Vertex 预留吞吐量或任意兼容网关具有同样的 Fast 支持。自定义 endpoint 是否支持、账户是否有权限，由 provider 负责；不会自动发起付费探测，也不会自动回退。
+OpenAI/Codex、支持的直连 Anthropic 和 Gemini 连接使用原生速度控件。`openai-codex:gpt-6-astra` 支持 Ultrafast。不支持的选择会禁用并说明原因。请求速度不代表保证提速；资格和费用由提供方决定，用量费率可能更高。
 
 ## 浏览对话输入
 
-Chat 左侧的细导航条为每次普通输入提供一个标记。悬停或聚焦可预览输入和保存的输出片段，点击即可跳转。引导消息仍属于原来的轮次，不新增标记。窄屏下，使用 **Input history** 打开同一目录。目录也包含当前尚未加载的历史输入，选择后会加载对应历史窗口。**Load later messages** 和 **Back to latest** 用于返回较新的内容，不会重新提交任何输入。
+使用左侧输入导航条，或窄屏上的 **Input history**，预览和重看普通输入。引导仍属于原轮次。选择较旧输入会加载对应保存历史；**Load later messages** 和 **Back to latest** 返回较新工作，不重新提交输入。
 
-输入、已应用的引导和所有 Agent 文字——包括进度消息及最终回答的每一部分——都按时间顺序显示。这些消息之间连续的推理、工具和其他执行活动会各自归入 **Execution details**，即使仍在执行也默认折叠。展开后只查看该段活动；移动端以全屏阅读器打开。每个标题统计的是该段已经加载的工具调用，而非整个轮次。
+输入、已应用引导和 Agent 文字按时间顺序显示。**Execution details** 将文字之间的活动分组，默认折叠。展开可检查该段活动，移动端以全屏阅读器打开。计数只包括该段已加载的工具调用。
 
-如果已保存轮次的部分内容尚未加载，对话会自动加载，并在原位置显示 **Loading turn…**。无需展开详情即可加载缺失的消息和执行活动；失败时提供 **Retry loading turn**。待处理问题和审批也可在折叠区外操作。导航和展开只是个人显示选择，不代表执行成功，不改变 Agent 上下文，也不影响其他参与者的视图。
+轮次缺失内容自动加载，失败时提供 **Retry loading turn**。待处理决策仍可在折叠区外操作。导航和展开只影响你的视图，不影响执行或 Agent 上下文。
 
 ## 待处理问题、审批和外部结果
 
@@ -124,7 +124,7 @@ Chat 左侧的细导航条为每次普通输入提供一个标记。悬停或聚
 
 通过 **SIGTERM**（或 Ctrl+C）正常停止 WebUI，**等待进程退出** ，再使用**同一数据目录** 启动。无需预先发请求或操作设置。更新时，应在旧进程退出后、启动新进程前安装新版本。
 
-优雅关闭期间，App 停止接受新输入，给正在运行的模型和工具批次留出时间，到达可安全继续的边界。它先保存根及子 agent 检查点，完成对应 Environment 的收尾，然后才提交重启交接。下次启动时，交接只消费一次：将兼容的中断 Run 重建为新的 Run 并继续，不会重新发送提示词或重放保存的工具批次。浏览器重连只获取当前状态。
+优雅关闭先保存根及子 agent 检查点、完成 Environment 收尾，再记录重启交接。下次启动只消费一次交接，在新 Run 中继续兼容的中断工作，不重发提示词或重放保存的工具批次。
 
 `shutdown_timeout_seconds`（默认 60 秒）限制的是等待安全边界的时间，**不是整个进程的退出时间**。如果模型或工具批次不能在此时间内完成，或者检查点、Environment 收尾失败，该批次就不会被登记为可自动恢复。取消和清理仍需完成。请给进程管理器预留这些步骤的时间，不要在旧进程仍执行时启动替代进程。
 
@@ -132,13 +132,13 @@ Chat 左侧的细导航条为每次普通输入提供一个标记。悬停或聚
 
 ## 服务器日志与关闭
 
-前台服务器按照 `log_level` 和 `log_format`（`pretty` 或 `json`）报告启动、就绪、API 响应状态和清理进度。默认 `INFO` 显示普通 API 活动；静态资源和成功的健康探测使用 `DEBUG`。API 记录包含路由模板、状态和响应头返回耗时，不含请求体、实例密钥、查询值或原生文件路径。警告还包含应用错误码、已知时的安全固定原因，以及可获得的 Thread、receipt 和 Run 标识。例如，`thread_history_continuation_changed`（transcript 400）和 `thread_continuation_conflict`（tasks 409）都表示读取前选定的保存续接已变化，应刷新对话。其他失败保留各自错误码。动态错误文字留在 API 响应中，不复制到日志。
+服务器按 `process.log_level` 和 `process.log_format` 报告启动、API 响应和清理。`INFO` 显示普通 API 活动；`DEBUG` 增加静态资源、健康探测和清理阶段。API 日志记录路由模板、状态、耗时、错误码和生成标识，不记录请求体、密钥、查询值或本机路径。
 
-遇到 `object_payload_incompatible` 时，检查对应的存储警告：其中包含对象类型和摘要、schema/codec 版本、预期 payload 模型，以及最多八个带字段位置和错误类型的校验错误。任意映射键会被遮蔽，字段值和动态错误消息被省略。应据此诊断兼容性问题，不要清空数据目录。旧模型的 `context_window` 输入仍可按 `context_window_tokens` 读取，无需改写已有文件或快照。
+遇到 `thread_history_continuation_changed` 或 `thread_continuation_conflict` 时，刷新对话。遇到 `object_payload_incompatible` 时，检查存储警告中的对象、版本和验证详情。不要清空数据目录来修复兼容性。旧 `context_window` 输入仍可按 `context_window_tokens` 读取。
 
 登录 URL 在启动前输出；**WebUI ready** 才表示监听器成功启动。
 
-按一次 **Ctrl+C** 或发送 **SIGTERM** 停止。服务器报告 **Stopping WebUI** ，先结束浏览器事件流，再等待 HTTP 连接结束，关闭 WebSocket，并让 App 清理终端会话、活跃 Run 和存储。**WebUI stopped** 表示正常清理完成。浏览器断开本身不会停止 Run 或终端会话。连接排空超时是后备机制，不是可信 Python 清理的硬性截止时间。关闭较慢时仍会报告已等待时间；`DEBUG` 还显示 App 清理阶段，包括已接受操作、终端会话、根及子 Run 和订阅。将日志等级调为 `WARNING` 会隐藏普通进度。
+按一次 **Ctrl+C** 或发送 **SIGTERM**。**Stopping WebUI** 表示正在清理，**WebUI stopped** 确认完成。浏览器断开不会停止 Run 或终端。清理较慢时报告等待时间，`DEBUG` 显示各阶段。连接排空超时不是 App 清理的硬截止时间，`WARNING` 会隐藏普通进度。
 
 WebUI 与服务器失联时，会用一条紧凑的 **Connection interrupted** 提示替代各面板重复的连接错误。它自动重连，**Retry now** 可以跳过当前等待间隔。服务器已停止时，应先重新启动。其他可操作错误仍保留。这不是离线模式：重连只刷新观测，不重放失败的保存或提示词提交。
 
@@ -146,7 +146,7 @@ WebUI 与服务器失联时，会用一条紧凑的 **Connection interrupted** �
 
 全新安装时，WebUI 会自动打开两步设置向导：
 
-1. **Model**：为 ChatGPT、Codex、Grok 或 GitHub Copilot 订阅选择 **Connect account**，复用可用账户，或保存 provider API key。设备登录显示验证链接和可复制的验证码；浏览器回调登录是高级选项，需要能访问服务器的回环监听器。凭据由此服务器共享，与浏览器的实例密钥分开。新 API key 会立即保存，即使之后退出向导也一样。然后从当前安装版本提供的建议中选择模型，或输入 API provider 模型 ID 和 endpoint。已确认的默认值覆盖推理、上下文和原生工具，也保留高级控件。这些只是建议，并不验证账户是否有模型使用权限。
+1. **Model**：连接支持的订阅账户或保存 provider API key，再选择建议 Model，或输入 API 模型 ID 和端点。设备登录提供链接和验证码；高级回调登录需要访问服务器回环监听器。凭据由服务器共享，与浏览器实例密钥分开。API key 立即保存。建议设置不验证模型使用资格。
 2. **Workspace**：Full Control 以 Host 账户运行，不隔离；Sandbox 必须通过显式就绪检查。可以填写已有的服务器 Project 目录，也可以留空创建无 Project 的对话。审阅配置后，选择 **Save and start chatting** 。
 
 设置会打开一个空的首次对话，并聚焦输入框，不会发送提示词或发起模型请求测试。**Set up later** 保留不含秘密的草稿，不会在每次导航时重新打开向导。刷新和在另一标签页认证后仍保留选择，但秘密输入不会持久保存在浏览器中。如果保存响应丢失，先用 **Check saved setup and open conversation** 检查，再重试。部分保存或文件变更会明确提示，不会被当作完整保存。
@@ -155,9 +155,9 @@ WebUI 与服务器失联时，会用一条紧凑的 **Connection interrupted** �
 
 **Capabilities** 在 **Save changes** 后为选定 Agent 启用已安装的 Capability，不是全局开关。可复用的 agent 插件配置仍单独管理。**Environments** 展示远程 Device、已配置 profile、内置只读 Environment 和已安装 provider。**Configure** 为可用 provider 打开 profile 草稿；provider 专属的适配器和设置仍放在配置文件中。软件包安装在服务器上完成，不通过这些控件执行。
 
-**Advanced** 支持创建、检查、保存和删除配置。具体任务的 Add 操作会直接打开草稿，未保存草稿保留在对应列表中。**Save changes** 已包含配置校验，因此 **Check configuration** 可选。普通字段和高级 YAML 编辑器共用一个本地草稿。当前标签页中导航或替换实例密钥不会丢失编辑，重新加载则会。配置发布以完整文件为单位，后写覆盖前写；发现外部变化时，不会静默覆盖未保存的草稿。校验不会发布，活跃 Run 继续使用捕获的配置。Advanced 编辑器无法读取 MCP 源文件，因此保存该文件会替换其中的所有资源和所有不可见字段。
+用 **Advanced** 创建、查看、保存或删除配置。表单和 YAML 共用一份草稿；**Save changes** 同时验证。未保存编辑在标签页内导航时保留，重新加载会丢失。保存替换整个文件，后写覆盖前写；检测到外部变化时保留本地未保存草稿。活动 Run 保留捕获配置。MCP 源文本隐藏，因此替换 MCP 文件也会替换不可见字段和文件中的全部资源。
 
-**Projects** 直接编辑服务器目录和默认值，另有已保存默认值预览及逐项来源说明。每个文件夹各占一行，配有添加和移除控件。**Browse** 可逐层浏览服务器目录、进入父目录或输入路径，并选择 **Use this directory** ；保存前，选择只在草稿中生效。使用 `--no-share-computer` 时需手动输入路径。保存的 Project 默认值和文件夹用于初始化新对话。已有对话保留保存的根目录，除非明确修改下次 Run 的 Environment 选择。Default、None 和 Custom 列表选择具有不同含义。预览不包含未保存的源文件修改，也不执行模型。
+在 **Projects** 编辑服务器目录和创建默认值。**Browse → Use this directory** 修改草稿，保存后生效。使用 `--no-share-computer` 时手动输入路径。新对话使用保存的默认值，已有对话保留根目录，除非明确修改。Default、None 和 Custom 含义不同。预览显示已保存值及来源，不包含未保存修改，也不测试模型。
 
 首次进入时，右上角会自动显示生成的协作名称；点击修改，**Save name** 会在当前浏览器记住它，并更新实时在线状态和输入框标签。在线指示打开按标签页区分的参与者目录。此显示名称不是 provider 登录，也不是经过认证的身份。
 
@@ -189,11 +189,11 @@ Files、Changes 和 Terminal 面板仍操作监听器的 Host。选择 Device �
 
 ## 当前浏览器中的新结果
 
-在当前浏览器中打开或启动的对话会自动被关注。当 Run 成功保存了尚未阅读的结果，侧栏对应行会显示 **New result** 圆点。每个 Project 分组展示 **Running** 、**New results** 和 **Recent** ；未读结果即使不在五个最近对话中也能找到。折叠的 Project 显示有新结果的对话数。多次完成只按每个对话计一次，之后运行或失败的工作不会清除未读的成功结果。
+在当前浏览器打开或启动对话会自动关注它。未读的已保存成功结果以 **New result** 圆点标记。Project 分组保留最近五行以外的未读结果入口。之后的运行或失败不会清除未读成功结果。
 
 当保存的对话在获得焦点的浏览器标签页中可见，并且你滚动到历史底部时，圆点才会清除。仅选择对话或收到实时文字还不够。阅读较旧快照不能清除更新的结果。归档对话的圆点显示在 **Archived** 中，不计入普通 Project 数量。
 
-这些提醒只属于当前浏览器和站点地址，通过 IndexedDB 在它的标签页之间共享。重新加载或打开 WebUI 时，会独立于侧栏分页刷新已关注的对话，包括浏览器关闭或服务器重启期间保存的结果。首次访问将已有结果视为历史；其他参与者未被你打开的对话不会全部标成未读。清除站点数据会移除关注和阅读状态。浏览器存储或刷新失败时，会明确说明限制并提供重试，已有提醒仍可见。
+提醒只属于当前浏览器和站点地址，在标签页间同步。重新打开会刷新已关注对话，包括关闭期间保存的结果。首次访问将已有结果视为历史。清除站点数据会移除关注和阅读状态；存储或刷新失败时显示警告和重试。
 
 这不需要桌面通知权限，也不增加关闭页面后的推送。下面的 **Task notifications** 是独立机制；重新打开恢复的是圆点，不会重放旧通知横幅。
 
@@ -228,19 +228,19 @@ Files、Changes 和 Terminal 面板仍操作监听器的 Host。选择 Device �
 
 **Projects** 标题旁的 **Add project** 用于保存名称和服务器目录，可另加根目录。它只创建 Project，不会创建空对话。展开 Project 可见最近更新的五个根对话；**Show more** 只加载该 Project 的下一页，折叠后仍保留已加载分页。**Without a project** 和 **Unavailable projects** 保留未分配对话，以及引用了已移除 Project 的对话入口。
 
-拖动 Project 标题旁的手柄可移动整组。键盘操作时，聚焦手柄，按 Space，使用上下箭头，再按 Enter 保存或 Escape 取消。Project 菜单也提供 **Rename project**、**Move project up**、**Move project down** 和 **Reset project order in this browser**。重命名只改显示名称，不改变 Project ID、目录或对话；先保存或放弃已有设置编辑。默认优先显示首个目录与服务器当前工作目录相同的 Project。手动排序优先，重置恢复默认顺序。设置时新生成的 Project 使用文件夹名，不使用泛化标签，已保存名称保持不变。排序和展开状态只记在当前浏览器，不修改服务器配置或影响协作者。活跃对话位于最近对话上方。操作结束时更新导航活动时间，方便找到刚完成的工作；进度和检查点不会持续重排列表。对话不能手动排序或拖到其他 Project。搜索查询所有已保存根对话，包括未加载分页，并临时替代分组。归档对话不会出现在这两种视图中；在侧栏打开 **Archived** 可查找并恢复它们。
+拖动 Project 手柄排序，或使用菜单中的 Move 和 Reset 操作。键盘操作：聚焦手柄，Space，上下箭头，Enter 保存或 Escape 取消。排序和展开状态只保存在当前浏览器。**Rename project** 只改显示名称。活跃工作优先显示，完成时更新导航时间。搜索覆盖所有保存根对话，包括未加载分页。打开 **Archived** 可恢复归档对话；对话不能拖到其他 Project。
 
-**Home** 和各 Project 旁的 **+** 共用一个 New conversation 草稿。点击 **+** 只改变 Project，不清除提示词或显式选择的 Agent、模型和 Environment。文字和选择保存在当前浏览器，导航、重新加载或重新打开后恢复；要重新开始，请删除输入。这是浏览器本地的单一草稿位，不是已保存对话列表，也不支持实时跨标签页编辑。本地文件字节只在导航期间保留：重新加载后，需要移除不可用的附件标记并重新附加。浏览器存储不可用时，警告会要求保持标签页打开。只有点击 **Send** 才创建服务器 Thread。收到肯定的提交回执后才清除持久化的新对话草稿；结果不确定时保留输入并要求检查，绝不自动重发。创建结果未确定前，Project 选择保持锁定。直接 Thread 链接打开已保存对话。如果选定对话比已加载分页更旧，会用带标记的选中行保持可见，无需加载中间所有页面。每个对话的 **…** 菜单包括 **Star conversation**、**Rename conversation**、**Share conversation**、**Conversation details**，以及 **Archive conversation** 或 **Restore conversation**。Project 标题菜单中的 **Project settings** 修改 Project 本身，不修改对话。归档对话保留历史，可以恢复。
+**Home** 和各 Project 的 **+** 共用一个浏览器本地 New conversation 草稿。切换 Project 保留输入和显式选择。文字和设置在重载后保留，本地文件字节不会，需重新附加不可用文件。**Send** 创建 Thread。提交获接受后清除保存草稿；结果不确定时保留并锁定 Project 选择，先检查，不自动重发。Thread 链接打开保存对话。用其 **…** 菜单加星标、改名、共享、查看或归档；**Project settings** 修改 Project。
 
-共享 CodeMirror 编辑器显示协作者光标和同步状态。Enter 发送，Shift+Enter 换行，Ctrl+Enter 和 Cmd+Enter 也可发送；输入法组合输入不会发送。紧凑编辑器保持固定高度，长提示词在内部滚动。已接受的引导以可关闭状态在消息流中显示五秒，不显示在编辑器内。手机上编辑器从一行高度开始，保持在可见视口内，仍使用同一个共享编辑器。只有本浏览器的待处理编辑同步完成后，**Send** 才启用。**Attach files** 、剪贴板图片和拖放文件，会在光标或放置位置插入不可拆分的文件名控件，与文字共同排列。图片使用经过认证的 Thread 字节生成缩略图。Backspace/Delete、选区、同一草稿内剪切粘贴，以及撤销重做，都保留附件身份；把可见标签作为普通文字输入或粘贴，不会附加文件。上传位置立即预留，待上传或失败会阻止发送；点击失败项可在原标签页重试，也可移除。上传和不可变的捕获上下文都限定于 Thread，协作者可读取元数据和下载原始字节。点击编辑器附件可查看保留的文本或放大图片。提交的输入在实时和保存消息中保持原有文字、附件顺序；展开紧凑附件控件可看元数据和原始字节。不会自动加载远程媒体 URL。肯定回执只清除已提交的快照，快照之外的编辑仍保留。确认不确定时保留输入，明确发起新的提交前必须检查，没有任何自动执行重试。
+Enter 发送，Shift+Enter 换行，Ctrl/Cmd+Enter 也发送；输入法组合输入不会发送。**Send** 等待你的编辑同步。可在指定文字位置附加、粘贴或拖放文件。点击附件检查；待上传或失败会阻止发送，应在原标签页重试或移除。编辑和撤销保留附件身份，普通文件名文字不会附加文件。提交保留文字和附件顺序。提交确认成功后，只清除已提交内容，同时新增的编辑仍会保留。无法确认提交结果时，保留输入并先检查结果，不自动重试。远程媒体 URL 不自动加载。
 
 Run 活跃时，**Next message** 仍可编辑，但不会成为队列。**Steer**（Run 活跃时的 Send 按钮）发往当前操作，不创建新轮次。引导与普通 Send 一样保留有序文字和附件。**Stop** 针对当前显示的准确回执。关闭页面只停止观测，不停止执行。问题、审批（包括允许的参数覆盖）和外部结果请求都有完整响应集控件；过时或竞争的决策会刷新，不会显示成第二次成功。问题回答后，简短标题和记录的答案仍可见，包括多选和自定义文字。展开 **Questions & details** 可重看完整问题和选项。
 
-替换历史加载或失败期间，已保存的 transcript 页面仍可见。在替换后的保存历史到达之前，实时输出只是临时展示；流结束本身不能证明续接已保存。推理、工具活动、媒体、上下文操作和诊断分别显示。Agent 文字、推理和摘要支持 Markdown 表格、语法高亮代码和 Mermaid 图。Summary 和 Compact Summary 默认折叠。工具生成的媒体不被当作用户编写的轮次，真实上传媒体仍可见。失败操作在输出区显示简短原因，较长详情折叠。**Retry** 将 `Continue completing the previous task.` 作为普通新轮次发送，不改动当前草稿和附件。它不恢复失败的 Run，也不重放历史；提交待处理或确认不确定时保持禁用。除非用户要求减少动态效果，运行中的对话图标会显示动画。
+替换历史加载时，已保存历史仍可见。实时输出在保存历史到达前只是临时显示，流结束不证明续接已保存。失败工作显示短原因，可展开详情。**Retry** 将 `Continue completing the previous task.` 作为新轮次发送，保留草稿，不恢复失败 Run 或重放历史；提交待处理或结果不确定时不可用。
 
-相邻工具活动默认折叠：**Explored** 归组文件读取和查找，命令与进程观测归入 Shell，网页搜索与页面读取归入浏览组，**File changes** 汇总修改文件。Agent 文字和不同活动类型仍是分组边界。展开后可检查每次操作的详情、输出、格式化或原始参数和结果，以及复制控件。已应用的编辑在实时输出和保留历史中显示观测到的前后 diff，保留完整前后内容，没有单次编辑或 Run 级预览省略限制。展开详情在限制高度的块内滚动。旧版本省略的内容明确标为不可获得，旧的替换参数标为 **Requested replacement** ，不会冒充已应用 diff。失败、拒绝、中断和缺失结果在折叠摘要中仍可见；**Awaiting result** 只表示参数完整。**Open on host** 会明确查找 WebUI 服务器或容器上的绝对路径，同时保留私人编辑缓冲区。它不解析相对路径，也不将 Agent Environment 映射到 Host；记录内容可能与打开的文件不同。
+展开 **Explored**、Shell、浏览或 **File changes** 可检查分组活动、参数、结果和观测到的编辑 diff。折叠时仍显示失败和缺失结果；**Awaiting result** 不代表成功。旧版省略内容仍不可获得，**Requested replacement** 不代表已应用 diff。**Open on host** 打开服务器或容器绝对路径，不是 Agent Environment 路径，保留未保存缓冲区；当前文件可能不同于记录内容。
 
-**Details** 分开显示根操作、子执行、任务/笔记/用量、捕获配置和下次 Run 选择。模型执行、续接发布和 Environment 清理具有各自结果。子执行的审查和控制使用准确的父执行。每个子执行检查面板显示易读活动和最新完整保存结果，长结果按准确来源分页。活动预览始终有界，并非完整历史事件日志。旧版本截断的结果无法重建。应用 Project 默认值必须先预览前后差异，并使用已审阅的 Thread 版本和摘要。配置竞争时保留本地选择编辑并要求再次审阅，不会静默替换编辑基准。
+打开 **Details** 查看根操作、子执行、任务、笔记、用量和配置。执行、续接保存和 Environment 清理分别报告结果。子控件针对准确父执行；保存结果分页，活动预览有界。应用 Project 默认值需审阅前后差异。配置竞争时保留编辑并要求重新审阅。
 
 草稿协作只存在于当前 App 实例。应用内导航保留浏览器编辑器状态，重新连接同一实例会再次同步。服务器重启后，需要明确加入替代草稿，并决定是否恢复本浏览器的文字。本浏览器尚未同步的编辑会在重新加载或浏览器崩溃时丢失；已同步的文字在服务器运行期间保留在共享草稿中。显示名称不是认证身份，撤销仅属于本地编辑器，已接受的 Send 建立新的撤销边界。
 
@@ -252,13 +252,21 @@ Run 活跃时，**Next message** 仍可编辑，但不会成为队列。**Steer*
 
 ## Agent 协作与 Sidekick
 
-WebUI 根 Agent 的指令直接包含当前 Thread ID 和捕获的 Project ID、根目录，无需发现调用。它们也可发现已配置的 Project、Agent 和模型，通过 `get_thread()` 检查对话，并启动独立工作或向其发送引导。协作工具行使用易读的操作说明；创建、继续、引导和发消息涉及的对话都有内联链接，点击导航不会启动新 Run。这些是调用同一 App 的 Harness UI 工具，不是 shell 命令、API key 设置或 Skill。资源发现报告已接受配置，不代表模型连通；模型凭据和原始配置会省略。
+WebUI Agent 的指令包含 Thread ID 和已捕获的 Project、根目录。协作工具通过同一个 App 查看和启动其他根对话。点击工具行中的对话链接查看工作。
 
-`create_thread` 接受已配置的 `agent_id` 和 `project_id`：省略 Project 或使用 `"current"` 保留来源 Project，使用 null 不绑定 Project，或选择其他已配置 Project ID。Sidekick 关闭且未显式选择 Agent/Project 时，会保留来源对话设置，包括默认模型；否则按选定 Project/Agent 解析普通默认值。新对话收到初始提示词、请求方 Thread 和捕获的 Project，以及明确要求通过 `send_thread_message` 汇报澄清问题、阻碍和最终发现、改动、验证的指令。请求方 Agent 使用同一工具回答，带来源的消息说明应该回复哪里。新对话不会收到来源完整历史的副本，因此要提供必要上下文。可选 `model_id` 只覆盖首个 Run 的模型，不编辑选定 Agent；`run_thread` 也接受此参数，用于后续明确发起的轮次。创建工作不会形成子 subagent 关系。
+| 根角色      | Agent 的协作范围                                              |
+| ----------- | ------------------------------------------------------------- |
+| 普通根对话  | 其他根对话，不包括托管 Worker                                 |
+| Coordinator | 自己的 Worker；创建时保持在 Coordinator 的 Project 内         |
+| Worker      | 查看自己和 owner，向 owner 发消息；使用 Subagent 做任务内委派 |
 
-问题和报告都遵循同一套 `send_thread_message` 交付规则：活跃目标收到针对准确操作的引导尝试，空闲目标则启动新轮次。准备中或已经结束的操作可能拒绝引导，空闲目标的准入也可能与其他发送者冲突。拒绝引导后绝不会自动启动替代操作。归档对话和子 Thread 不能接收这些消息；空闲目标有待决策请求时，必须先解决才能启动。结果只代表接受，不代表已处理完成或已保存交付。没有离线队列或自动重试；重复不确定的操作前，先检查目标。
+Worker 是独立根对话，不是 Subagent。Worker 不能创建根对话、控制 owner 或访问兄弟 Worker。这些模型工具限制不限制人类通过 WebUI 操作。
 
-Sidekick 是一项 WebUI 偏好，为 Agent 通过 `create_thread` 创建的对话设置默认 Agent、模型和指令；它默认启用。**Settings → General → Sidekick** 通过[根配置](configuration.md#webui-sidekick)选择偏好的 Agent 和/或默认模型。省略配置表示启用，显式 `sidekick: null` 保持关闭，升级后也一样。Agent 选择 **Inherit current agent** 可只使用 Sidekick 模型；Model 选择 **Use agent model** 则保留选定 Agent 的模型。`create_thread` 创建独立工作时，即使工具参数没有明确指定 Agent/Model，Harness UI 也会应用这些默认值。配置模型保存在新对话上，后续消息、Send/Retry 和恢复都使用它。指令涵盖独立工作、上下文、汇报和结果验证。它不会自动启动 Agent，也不引入独立执行生命周期。选择 **Disabled** 移除偏好，通用协作工具仍保留。保存影响未来 WebUI Run 的捕获及由其创建的新对话；当前 Run、已有对话默认值和委派子 agent 不变。
+普通根对话的 `create_thread` 可保留当前 Project、选择其他 Project ID，或用 null 不绑定 Project。用 `agent_id` 选择已配置的 Agent。未使用 Sidekick，也未显式更改 Agent/Project 时，新对话继承来源选择。提供任务所需上下文：新根对话不会继承完整历史。它会收到请求方 Thread ID，并通过 `send_thread_message` 提问和汇报。可选 `model_id` 覆盖首个 Run；`run_thread` 可为后续轮次传入相同覆盖。
+
+`send_thread_message` 向活动目标发送引导，或在空闲目标上开始一轮。结果表示接受，不代表已处理或已保存交付。发送失败或结果不确定时，先检查目标再重试。已归档 Thread、Subagent Thread，以及尚有待决策请求的 Thread，不能开始新轮次。
+
+Sidekick 为 `create_thread` 创建的根对话提供默认 Agent、Model 和汇报指令，默认启用。在 **Settings → General → Sidekick** 中选择 Agent、Model 或 **Disabled**。**Inherit current agent** 保留来源 Agent；**Use agent model** 跟随所选 Agent 的 Model。所选 Model 成为新 Thread 后续轮次的默认值。保存影响未来 Run 捕获和新创建的根对话，不影响当前 Run 或已有 Thread。该偏好本身不会开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
 
 对话配置中的 **Default model** 可独立于输入框 Run 选择器设置持久模型；选择 **Follow Agent model** 清除它。遵循保存的默认值时，选择器显示 **Thread default** ；改选模型只影响该 Run 草稿。配置检查会区分下一次的模型与当前或保存 Run 实际捕获的模型。
 
@@ -268,9 +276,9 @@ WebUI 评论创建、选区操作、高亮、菜单和讨论面板目前停用�
 
 ## 读取、编辑与捕获 Host 文件和 Git 变更
 
-右上角 **Files** 或 **Changes** 图标打开右侧抽屉。宽屏上 Chat 仍在旁边可见。选择文件后编辑器在抽屉内打开；**Back to files** 返回所在目录，**Back to changes** 返回变更列表。文件标签页留在抽屉中，显示未保存状态，切换文件时记住选区和滚动。拖动分隔条或使用箭头键调整宽度，当前浏览器会记住。**Expand drawer** 提供更宽代码视图。查看后返回，已加载路径筛选和列表滚动保持不变。标签页内小型缓存记住最近 Project 目录、标签页和选定终端。关闭抽屉让焦点回到 Chat，不丢弃缓冲区。小屏每次只展示一个工作区，但同一对话和草稿始终保持挂载。Files 和 Changes 自动使用当前对话的 Project，从首个根目录开始；额外配置的根目录显示为紧凑文件夹导航。**Up** 返回父文件夹，到 Project 根目录时禁用。可见路径标记当前文件夹，点击任意上级（包括 Project 名称）可直接返回。文件夹导航位于列表和文件编辑器上方，没有单独的目录输入表单。无 Project 对话会提示打开一个 Project 对话，不会静默选择其他 Project。这些路径属于服务器或容器 OS 账户，不属于浏览器或 Agent 的远程 Environment。
+用右上角 **Files** 或 **Changes** 打开抽屉。它们使用对话 Project 在服务器或容器上的根目录，不使用浏览器或 Agent 的远程 Environment。选择根目录、浏览文件夹并打开文件；**Back to files** 或 **Back to changes** 返回列表。关闭抽屉或切换文件保留标签页和未保存缓冲区。可调整宽度或使用 **Expand drawer**。无 Project 时提示打开 Project，不静默选择。
 
-Files 支持目录分页、文本编辑、上传下载、创建、重命名移动、显式替换上传和确认删除。常见源码语言支持高亮，**Open on host** 打开的内容也一样。可以使用 **Wrap**，用 Ctrl/Cmd+G 跳行、Ctrl/Cmd+S 保存。筛选只覆盖当前目录已加载路径，不递归搜索 Project。文本编辑器要求完整、无 NUL 的 UTF-8，最大 512 KiB；二进制或更大的文件明确显示为不可编辑。上传和整文件捕获最大 10 MiB。原文件下载和音视频播放支持流式读取更大的文件，无需先将整个文件加载为 Blob。常见图片预览仍以 10 MiB 为限。音视频使用浏览器播放控件，不自动播放；编码支持取决于浏览器，解码失败时仍可下载原文件。文件访问链接在 30 分钟后过期，刷新可重新获取。磁盘修订变化后必须刷新，不会静默切换预览内容。本地未保存缓冲区在标签页内导航或替换实例密钥时保留，但重新加载或关闭浏览器会丢失。刷新不会替换未保存文字。其他参与者修改磁盘版本时，应查看最新版本，选择 **Use disk version** 或 **Keep local text** 后再明确保存。写入确认丢失不会自动重试。常见 CRLF/LF 换行保留，混合换行编辑会统一为首次出现的风格，并明确提示。
+Files 支持编辑、上传下载、创建、重命名移动和确认删除。Ctrl/Cmd+G 跳行，Ctrl/Cmd+S 保存。筛选只覆盖已加载路径，不递归搜索。编辑要求完整、无 NUL 的 UTF-8，最大 512 KiB；上传、整文件捕获和图片预览最大 10 MiB。更大下载和音视频流式读取，不自动播放。访问链接 30 分钟后过期，刷新可续期。未保存缓冲区在标签页导航时保留，重载或关闭会丢失。磁盘冲突时查看最新版本，选择 **Use disk version** 或 **Keep local text** 后保存。刷新保留未保存文字，不自动重试不确定写入。CRLF/LF 保留，混合换行统一为首次风格并提示。
 
 Changes 分开比较暂存区的 HEAD/index、未暂存的 index/worktree，以及未跟踪的新文件。可以筛选已加载路径、折叠分组，并在已加载比较或 hunk 间移动。选择未暂存或未跟踪 diff 的新文件行，可跳到当前工作文件对应行；不会假定暂存或已删除侧的行与当前文件对应。Unified diff 为旧、新文件分别提供行号栏，采用等宽代码，以及适应浅色和深色主题的添加、删除与 hunk 颜色。标题和缺少结尾换行的提示仍属于审阅的 patch。文字选区记录原始 patch 行号以供捕获，显示的文件行号不会替换这些坐标。仓库、HEAD、index 和 diff 标识仍可检查，包括重命名、冲突、二进制和尚无首个 commit 的状态。Git 错误不会显示成无变更结果，Files 在仓库外也可用。完成原生操作后刷新，或返回面板查看新观测；没有递归 watcher，也不会声称变更属于某次 Run。没有 stage、commit、discard 或 worktree 按钮。
 
@@ -280,9 +288,9 @@ Changes 分开比较暂存区的 HEAD/index、未暂存的 index/worktree，以�
 
 打开 **Terminal**，再选择 **New terminal** ，从当前浏览目录启动。Files 中的 **Open terminal here** 也可从文件夹创建新终端会话，不会向已有终端会话注入 `cd`。面板只显示当前 Project 的终端会话。切换 Project 会隐藏并断开旧视图，但不结束终端会话或改变工作目录。只打开面板不会启动 shell；创建需要 Project 已配置根目录。未绑定 Project 的已有终端会话仍可通过原生 API 使用。显示的初始目录不随后续 shell `cd` 更新，终端执行独立于 Agent 的 Environment。
 
-创建方浏览器在首个认证帧后，会自动请求一次控制权，前提是尚未被其他人占用。服务器确认所有权前，输入和调整尺寸保持禁用，确认后输入获得焦点。其他参与者看到 **Viewing only**，可选择 **Take control** 或 **Take over input** ，这些操作比较当前观测的控制 epoch。**Release control** 保留终端会话运行，供其他人查看。控制方尺寸跟随真实面板，查看方保持共享尺寸，并可在窄视口中滚动。Shell 控制键留在终端中。输入为有界 UTF-8，浏览器每次粘贴限制 16 KiB；当前文本输入协议不支持旧式二进制鼠标报告。
+创建方请求一次终端控制权，服务器确认前不能输入。其他查看者用 **Take control** 或 **Take over input**。**Release control** 保留会话运行。只有控制方调整共享终端尺寸。输入为 UTF-8，浏览器粘贴限制 16 KiB，不支持旧式二进制鼠标报告。
 
-**Disconnect**、打开 Settings 或折叠面板，都只释放当前连接，不关闭进程。重新打开会自动以只读查看者重连；如果明确选择过 **Disconnect** ，则需点击 **Reconnect** 。同一 Project 内切换时最多保留三个最近屏幕。重连不会重复按键或自动取得控制权。服务器最多保留 1 MiB 原始字节，终端模拟器保留 2,000 行本地滚动历史，不是持久日志。输出有缺口时会重置解码，并说明屏幕由保留的原始输出构建，并非完整屏幕快照。渲染过慢时暂停连接，不积累无界输出队列；排空后可重连，缺失字节可能已经不可获得。
+**Disconnect**、打开 Settings 或折叠面板只断开连接，不结束进程。重新打开以只读方式连接；明确 Disconnect 后需选择 **Reconnect**。重连不重复按键或取得控制权。保留输出有界（服务器 1 MiB 字节、本地 2,000 行），不是持久日志，缺口会提示。渲染较慢时暂停连接，不积累无界队列。
 
 **End session** 需要确认，因为它会为所有人关闭共享终端会话及其作业。已经退出的终端会话在关闭前仍可检查。创建或关闭结果不确定时不会自动重放，先刷新终端会话列表再决定后续操作。App 重启不恢复或重建终端会话。POSIX Host 支持原生 PTY；Windows 明确报告不可用，Files 和 Git 则仍可独立使用。
 

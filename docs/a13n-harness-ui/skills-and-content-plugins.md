@@ -24,14 +24,15 @@ Type `$` in the TUI or WebUI composer to discover Skill names. For example, ask 
 
 If two sources use the same Skill name, the first available source in this precedence list wins:
 
-1. Explicit `roots`, with a later entry winning over an earlier one.
-2. The first local root's `.agents/skills` directory.
-3. Later local roots' `.agents/skills` directories in selection order.
-4. Installed Content Plugin Skill roots; a lexicographically later plugin ID wins.
-5. User Skills from `~/.agents/skills`.
-6. Release-owned Skills from the built-in mount.
+1. Explicit `roots`, with later entries winning.
+2. Selected Device working directories' `.agents/skills`; later bindings win.
+3. The first local root's `.agents/skills`.
+4. Later local roots' `.agents/skills` in selection order.
+5. Installed Content Plugin Skill roots; lexicographically later plugin IDs win.
+6. User Skills from `~/.agents/skills`.
+7. Release-owned Skills from the built-in mount.
 
-Without local roots, only the two local-root tiers disappear. Built-in, user, plugin, and explicit sources still work. The configuration directory does not implicitly become a Project Skill source.
+Without local roots, only their tiers disappear; selected Device sources still work through `/environment/<alias><device-cwd>/.agents/skills`. The configuration directory is not an automatic Project Skill source.
 
 The catalog is selected at Run preparation. New Run captures can see source changes; the active Run does not rescan mounts. Missing optional directories are simply absent, while unavailable explicit roots fail preparation. Skill file contents are read when used, not copied into the Run.
 

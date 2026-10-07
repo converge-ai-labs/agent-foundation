@@ -43,7 +43,7 @@ A grant gives a role at one scope:
 - An organization grant applies to the organization and to every workspace in it.
 - A workspace grant applies to that workspace. In the organization itself it allows only `read`, so members of a workspace can see their organization.
 
-A principal's permissions are the union of its grants in the organization. Resource views carry a `permissions` list with the verbs you currently hold there.
+In a workspace, a principal's permissions combine its organization grant and its grant for that workspace. Resource views carry a `permissions` list with the verbs you currently hold there.
 
 ## Members and grants
 

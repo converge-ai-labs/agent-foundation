@@ -4,7 +4,7 @@ sidebarTitle: 受管理工具与策略
 description: 为每个本地工具设置权限与审查，并为 Host 管理的工具统一授权、凭据、审批和输出限制边界。
 ---
 
-普通 Pydantic AI 工具仍是普通 Python，可使用进程现有权限。Host 需要统一处理当前授权、已解析资源身份、短期凭据、输出限制和派发确定性时，使用 Harness 受管理工具。
+Host 需要统一授权、凭据、审批和输出限制时，使用托管工具。普通 Python 工具保留进程权限。
 
 这不是操作系统沙箱。Provider 隔离和 Host 访问策略仍独立。客户端执行声明见[客户端工具](client-tools.md)。
 
@@ -28,7 +28,7 @@ permissions = ToolPermissionsCapability(
 )
 ```
 
-使用实际准备后的稳定 ID，不用显示名称。受管理工具保留声明 ID；普通工具使用 `tool/<toolset-id>/<original-name>`，本地 MCP 工具使用 `mcp/<source-id>/<original-name>`。来源/名称段按百分号编码。MCP 需要稳定来源 ID。前缀、重命名、ToolProxy 和 CodeAct 不改变目标权限身份。Host 使用自定义命名包装器时，可先附加 `ToolIdentityToolset`。
+按稳定 ID 匹配：托管工具使用声明的 ID，普通工具使用 `tool/<toolset-id>/<original-name>`，本地 MCP 使用 `mcp/<source-id>/<original-name>`。段使用百分号编码；重命名、ToolProxy 和 CodeAct 保留 ID。自定义命名包装可使用 `ToolIdentityToolset`。
 
 规则优先级依次为确切匹配、最长 `.*` 或 `/*` 前缀、`*`、`default`。`inherit` 使用工具默认值；可信代码未显式声明时为不审查的 `allow`。外部/提供方原生工具保留独立边界。仅有审查器和风险规则不会开启审查；需为待评估工具选择 `review`。`allow` 继续，`deny` 在自定义验证前失败，`ask` 请求人工审批，`review` 咨询匹配审查器。未配置或没有匹配审查器时，review 不增加限制。所有模式都不提供凭据，也不绕过 Host/Environment 策略。
 
@@ -65,7 +65,7 @@ permissions = ToolPermissionsCapability(
 # Your Host's Run Model resolver resolves the logical "review-model" selection.
 ```
 
-包内系统提示与自定义 `instruction` 分开。shell 专用指令对 shell 调用替换通用自定义指令。自定义文本转义后放入 `<custom-instruction>`；工具 schema、参数和任务是请求数据，不是审查器指令。请求遮蔽敏感字段、省略环境变量值，包含有上限的任务和被动 Environment 上下文。审查在结构验证后、自定义验证/资源查询/派发前运行。即使之前批准，超时仍拒绝；其他失败遵循 `on_error`。
+审核器接收脱敏后的工具参数与任务上下文。`instruction` 添加通用指引，shell 专用指引在 shell 调用时覆盖通用指引。
 
 审查器只返回 `risk` 和 `reason`。风险顺序 `low < medium < high < extra_high`；达到或超过阈值时，运行时执行配置动作。全局默认 `extra_high` 和 `deny`。只选最佳规则：确切 ID、最长前缀、`*`；缺失字段继承全局值，不继承更宽规则。`ToolReviewConfig` 包含该策略；代码实现的审查器也可用 `ToolReviewPolicy`。
 
@@ -188,7 +188,7 @@ async def main():
 asyncio.run(main())
 ```
 
-定义负责工具稳定语义；新的 Run 绑定提供策略执行组件。保存状态不恢复策略权限或凭据。
+稳定工具元数据放在定义中，当前策略放在 Run binding 中。
 
 ## 描述真实副作用
 
@@ -203,11 +203,10 @@ asyncio.run(main())
 | `output_policy`          | 有限的内联/总输出上限及溢出/遮蔽行为                                          |
 | `resource_resolver`      | 可选异步解析，将已验证参数转为规范资源                                        |
 | `superseded_by_tool_ids` | 工具集合解析使用的显式替代身份                                                |
-| `shell_review`           | 是否参与 shell 审查机制，默认 false                                           |
 
-不要仅为获得重试，就将会写入或向外发送的操作声明为 `read_only`。元数据是可信 Host 代码，不是模型生成的 JSON。重复提供保留元数据键或元数据不完整都会验证失败。
+按真实效果设置幂等性；写入或外部发送不是 `read_only`。
 
-`ToolResourceResolver(arguments, *, context)` 返回包含 `namespace`、`kind` 和 `identifier` 的 `CanonicalResource`。按当前 Provider/Host 权限解析标识；模型提供的路径或 URL 不自动成为规范资源身份。
+`ToolResourceResolver(arguments, *, context)` 在当前 Host 权限下，将已验证参数解析为 `CanonicalResource(namespace, kind, identifier)`。
 
 ## 评估当前权限
 
@@ -227,22 +226,22 @@ asyncio.run(main())
 
 `InvocationGrantBroker.issue(...)` 可提供 `InvocationGrantRef`，包含不透明授权 ID、audience、声明摘要和带时区到期时间。Host/provider 负责签发和验证。仅有序列化引用不足以提供权限。
 
-凭据租约在调用边界关闭，且关闭幂等。Host 仍负责独立创建的客户端、密钥存储、刷新策略和传输清理。
+每次调用后关闭凭据 lease，独立客户端由 Host 关闭。
 
 ## 审批与不确定结果
 
-审批元数据是显示上下文，不是历史授权证明。派发前仍重新解析当前资源并评估策略。应用需要确切目标限制时，需在实际执行路径强制执行；审批不预留 Environment 目标。
+即使已审批，派发前仍重新检查当前资源与策略。审批不预留 Environment 目标。
 
-Run 支持 Host 延迟交互时，可为审批挂起，再通过[延迟反馈](state-and-resume.md)恢复。Host 管理的子级也支持；[内置内联执行](delegation-and-codeact.md#host-managed-feedback)则显式关闭延迟工具。没有当前准备调用时，绝不把旧审批或工具调用 ID 当作授权。
+Host 支持 deferred 时，审批暂停 Run，再通过[延迟反馈](state-and-resume.md)续接。[内置内联子 Agent](delegation-and-codeact.md#host-managed-feedback)不支持 deferred 工具。
 
-派发重试有次数上限，并要求支持的确定性/幂等条件。`max_dispatch_retries` 不授权重放未知外部写入。传输超时、取消或清理失败可能使副作用不确定；应使用提供方回执/核对契约。
+仅在结果确定性与幂等约定允许时重试。超时或取消使写入结果不确定时，先核对 provider 结果。
 
 ## 限制工具输出
 
 `ToolOutputPolicy` 要求 `max_inline_bytes`（512–262,144）和 `max_output_bytes`（正数，最多 512 MiB，且不得低于内联上限）。`overflow` 默认 `spill`，也可为 `truncate` / `fail`；`redact` 默认 true。
 
-spill 要求受支持的 Environment 输出路径和当前访问权限，不额外授予文件权限。截断内容或引用不是完整内联结果。此受管理输出边界的遮蔽不保证任意日志、自定义回调或非受管理工具都无密钥。
+写出溢出结果需要当前 Environment 输出权限。脱敏作用于托管结果，不覆盖任意日志或回调。
 
-默认临时工具结果写入默认 Environment 挂载的 `.a13n/tmp/tool-results/`。Host 可将 `RunBindings.tool_result_directory`（`RunBindings.embedded()` 也接受）设为规范绝对 Environment 目录，如 `/environment/scratch/tmp/tool-results`。它适用于主动 Toolset 公开和受管理工具溢出，不改变默认挂载。显式目录不可用时不回退到默认挂载；结果仍为有上限预览，没有文件路径。Harness 创建唯一 Run 私有子目录，并在清理时尝试移除，不操作其他文件。这些文件不是持久输出或续接存储。
+临时结果使用默认挂载的 `.a13n/tmp/tool-results/`。可用绝对路径 `RunBindings.tool_result_directory` 覆盖；目录不可用时仅返回有限预览，不返回文件路径。Harness 在清理时尝试移除自身 Run 私有子目录，持久输出应另存。
 
 规范资源和面向模型的操作集成见 [Environment 工具](environments.md)；进程本地边界外的持久命令归属见 [Host 嵌入](hosting.md)。

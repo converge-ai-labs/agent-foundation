@@ -52,12 +52,12 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-The model addresses the memory by its mount name, `user`. It never sees the directory path.
+The model addresses this memory by its mount name, `user`. Memory mounts are separate from Environment mounts. For isolated execution, keep the backing store outside the Agent's accessible filesystem.
 
 ### What the model gets
 
 - **Instructions.** Each mount is listed with its name, access, and guide. `guide=None` uses `DEFAULT_FILE_GUIDE`, a short rule for what to keep and how to organize it; pass your own text, or `""` for no guide.
-- **Tools.** The `memory_file_*` tools are the only way to read and change a memory. Shell and Environment file tools cannot reach it.
+- **Tools.** `memory_file_*` tools read and change memory through the mount's access rules and version checks.
 - **Context.** At the start of each Run, one `<memory-context>` block per memory shows its `always_load` files and an index with one `path: description` line per file. With cursors, a later Run instead gets only the changed paths and the new content of changed `always_load` files, or no block when nothing changed.
 
 | Tool                 | Does                                                     | Fails when                                            |

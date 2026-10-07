@@ -11,6 +11,7 @@ Use this package when implementing an Environment Provider or a trusted EIP inte
 - `EIPSession`: fixed-cwd execution scope, readiness, keepalive, monotonic descriptor refresh, clean close, abort, and transfer helpers.
 - `StdioTransport`, `HttpTransport`, and `AcceptedWebSocketTransport` over trusted Host-provided pipes, an authenticated HTTP(S) endpoint, or an already-authenticated reverse-WebSocket connection.
 - `EIPFileReader` and `EIPFileWriter`: bounded binary transfer, integrity evidence, explicit commit, and staged-writer abort.
+- `EIPComputerObservationReader`, through `EIPSession.observe_computer()`: verified screenshot transfer for an opted-in desktop.
 - `EIPOutputReader` and `EIPOutputPage`: contiguous retained-output paging and producer/completeness evidence.
 - `RequestCoordinator`: bounded concurrent request correlation, data-frame routing, cancellation, and typed errors.
 - `EIPTransport`, frame types, and `WebSocketConnection` for custom carrier adapters.
@@ -46,6 +47,8 @@ if __name__ == "__main__":
 ```
 
 This example requires an existing configured daemon and its credential. The endpoint is its base URL. Initialization creates no Session. `open_session()` establishes readiness; closing a Session preserves its siblings. The Device owner separately closes the carrier, without destroying the external workspace or daemon.
+
+HTTPS attachments use the operator's environment proxy settings; permitted plaintext loopback/private links stay direct. `verify=True` is the independent default. A caller can supply an SSL context or CA path, or explicitly disable certificate/hostname checks with `False`. The low-level package does not read Harness's `A13N_OUTBOUND_TLS_VERIFY` setting.
 
 The [Python EIP client guide](../../docs/a13n-envd/python-client.md) covers every transport/session option, all error classes, explicit writer commit, output paging, timeout semantics, and the complete generated method reference. The [Envd operator guide](../../docs/a13n-envd/configuration.md) owns standalone bootstrap, including `A13N_ENVD_RUNTIME_DIR`.
 

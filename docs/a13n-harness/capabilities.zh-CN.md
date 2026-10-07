@@ -3,7 +3,7 @@ title: 能力（Capabilities）
 description: 用于上下文、工具、权限、Web、工作状态和生命周期 hook 的第一方 Harness Capabilities。
 ---
 
-Pydantic AI Capabilities 是 Agent 循环内组合功能的主要机制。Harness 提供第一方 Capabilities，用于组合模型上下文、Toolset、可移植状态、执行协作对象和生命周期 hook，不另建注册表或工具分派器。
+添加 Capability 可为 Agent 提供工具、上下文、记忆或生命周期行为。本页列出第一方选项及其配置位置。
 
 ## 组合来源
 
@@ -14,7 +14,7 @@ Capabilities 可来自四种可信来源：
 3. Harness 插件绑定 Agent 的贡献；
 4. 每次 Run 新提供的 `RunBindings.capabilities`。
 
-稳定 Agent 行为通过定义组合。当前调用策略或 MCP 通过 Run 的 Capability 组合。provider 客户端和功能覆盖通过带类型的 `RunBindings` 字段提供，不添加第二个功能 Capability。
+稳定行为放在定义中。当前调用策略和 MCP 放在 `RunBindings.capabilities`；provider 客户端通过对应的带类型绑定字段提供。
 
 ```mermaid
 flowchart LR

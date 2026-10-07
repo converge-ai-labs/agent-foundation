@@ -14,14 +14,14 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 六个云 provider 使用相同的目标配置、后端和私有凭据边界。下方平行列出各自 schema；能力差异见[云 provider 指南](providers.md#cloud-providers)。
 
-| Provider       | 目标配置                                                            | 后端                                                              | 凭据                          |
-| -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------- |
-| E2B            | [E2BEnvironmentConfiguration](#e2benvironmentconfiguration)         | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2B凭据](#e2bcredential)     |
-| Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [Token凭据](#tokencredential) |
-| Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [Modal凭据](#modalcredential) |
-| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [Token凭据](#tokencredential) |
-| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [Token凭据](#tokencredential) |
-| Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [Token凭据](#tokencredential) |
+| Provider       | 目标配置                                                            | 后端                                                              | 凭据                                |
+| -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
+| E2B            | [E2BEnvironmentConfiguration](#e2benvironmentconfiguration)         | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
+| Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [ModalCredential](#modalcredential) |
+| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
+| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
 
 ## `DirectLocalEnvironmentConfiguration`
 
@@ -108,13 +108,13 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `EnvdSecretReference`
 
-| 字段           | 必填 | 类型 / 可选值         | 约束与默认值                                        |
-| -------------- | ---- | --------------------- | --------------------------------------------------- |
-| `env`          | true | string                | maxLength=128; `pattern="^[A-Za-z_][A-Za-z0-9_]*$"` |
-| `source`       | true | Environment凭据Source | —                                                   |
-| `inject_hosts` | true | string 数组           | minItems=1; maxItems=256                            |
+| 字段           | 必填 | 类型 / 可选值               | 约束与默认值                                        |
+| -------------- | ---- | --------------------------- | --------------------------------------------------- |
+| `env`          | true | string                      | maxLength=128; `pattern="^[A-Za-z_][A-Za-z0-9_]*$"` |
+| `source`       | true | EnvironmentCredentialSource | —                                                   |
+| `inject_hosts` | true | string 数组                 | minItems=1; maxItems=256                            |
 
-## `Environment凭据Source`
+## `EnvironmentCredentialSource`
 
 | 字段   | 必填 | 类型 / 可选值 | 约束与默认值                         |
 | ------ | ---- | ------------- | ------------------------------------ |
@@ -349,7 +349,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `domain`  | false | string         | `pattern="^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$"`; default="e2b.dev" |
 | `api_url` | false | string 或 null | default=null                                                               |
 
-## `E2B凭据`
+## `E2BCredential`
 
 | 字段      | 必填 | 类型 / 可选值 | 约束与默认值                   |
 | --------- | ---- | ------------- | ------------------------------ |
@@ -370,7 +370,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `app_name`         | true  | string        | minLength=1; maxLength=128                 |
 | `environment_name` | false | string        | minLength=1; maxLength=128; default="main" |
 
-## `Modal凭据`
+## `ModalCredential`
 
 | 字段           | 必填 | 类型 / 可选值 | 约束与默认值                   |
 | -------------- | ---- | ------------- | ------------------------------ |
@@ -396,7 +396,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | -------------- | ---- | ------------- | -------------------------- |
 | `organization` | true | string        | minLength=1; maxLength=128 |
 
-## `Token凭据`
+## `TokenCredential`
 
 | 字段      | 必填 | 类型 / 可选值 | 约束与默认值                   |
 | --------- | ---- | ------------- | ------------------------------ |
@@ -412,7 +412,7 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 | `endpoint`                     | true  | string        | minLength=1; maxLength=2048                  |
 | `allow_plaintext_private_link` | false | boolean       | default=false                                |
 
-## `HttpEnvd凭据`
+## `HttpEnvdCredential`
 
 | 字段    | 必填 | 类型 / 可选值 | 约束与默认值                                   |
 | ------- | ---- | ------------- | ---------------------------------------------- |

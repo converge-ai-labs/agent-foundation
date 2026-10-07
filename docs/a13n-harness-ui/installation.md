@@ -25,7 +25,7 @@ Startup can check for updates, but never installs one without confirmation. Disa
 
 ### Dependency compatibility
 
-uv resolves the application and dependencies against its published requirements. Harness UI releases independently against compatible versions of `a13n-harness`, `a13n-stream-protocol`, `a13n-envd-client` and `a13n-logging`. Upgrade Harness UI itself if an old package's requirements block a dependency update; check any constraints you supplied rather than forcing an incompatible version.
+Upgrade Harness UI as a package; uv resolves compatible Harness, Stream Protocol, Envd Client, and logging dependencies. If resolution fails, review your version constraints.
 
 ### Sandbox runtime
 
@@ -41,7 +41,7 @@ cd agent-foundation
 make a13n-harness-ui
 ```
 
-Follow the repository [contribution guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md) for development prerequisites. The Make target synchronizes dependencies and disables the published-package startup check. After switching branches, run it again or use `make sync`. After editing UI documentation or navigation, run `make a13n-harness-ui-skills` to refresh the [bundled configuration Skill](skills-and-content-plugins.md#built-in-configuration-skill); the launch target already includes that dependency.
+The Make target synchronizes dependencies, refreshes the [bundled configuration Skill](skills-and-content-plugins.md#built-in-configuration-skill), and disables startup update checks. Run it again after switching branches. To refresh only the Skill after documentation edits, use `make a13n-harness-ui-skills`. Development prerequisites are in [CONTRIBUTING.md](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md).
 
 Source documentation tracks `main`. When using a published wheel, consult the documentation and metadata for that release if an API or setting differs.
 
@@ -53,7 +53,7 @@ The installed package includes both the TUI and WebUI. Start WebUI with:
 a13n-harness-ui webui
 ```
 
-Open the printed login link in your browser to configure Models, start conversations, and work with trusted collaborators. The foreground server owns active execution; keep it running while you use WebUI. Native host file and terminal sharing are enabled by default; use `--no-share-computer` to disable them. See [WebUI](webui.md) for access controls, collaboration boundaries, containers, and listener configuration.
+Open the printed login link and keep the foreground server running. Configure Models, start conversations, and work with trusted collaborators. Native host file and terminal sharing are enabled by default; use `--no-share-computer` to disable them. See [WebUI](webui.md) for access and deployment.
 
 ## Next step
 

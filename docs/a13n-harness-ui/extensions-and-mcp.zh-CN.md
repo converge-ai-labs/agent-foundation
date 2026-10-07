@@ -46,7 +46,7 @@ capabilities:
       shell_enabled: true
 ```
 
-这会开启原生 Environment 工具，不会创建第二个本地 runner。在 Agent 上使用 `tools` 进一步精确过滤可见工具，使用 Environment 配置提供执行隔离。
+这会开启 Environment 文件和 shell 工具。用 Agent 的 `tools` 列表过滤可见工具。在 [Environment 设置](environments-and-projects.md)中选择工具运行的位置。
 
 ### Shell 审查
 
@@ -60,7 +60,7 @@ security:
     risk_threshold: high
 ```
 
-`model` 是已配置的 **Model 资源 ID**，不是 subagent 引用或隐式提供方路由。此快捷配置将 shell 启动的权限和可选审查合并到一个 `ToolPermissionsCapability` 中；显式根字段优先，Agent 中无关的规则保留。`enable: false` 不会修改显式 Agent 策略。默认值、继承、错误和用量见[完整 shell 审查用法](configuration-recipes.md#configure-shell-review)。审查不提供文件系统或网络隔离，与 `code-reviewer` 子角色相互独立。
+将 `model` 设置为已配置的 **Model 资源 ID**。显式根审查字段优先；Agent 中无关的权限规则保留。`enable: false` 保持显式 Agent 策略不变。审查不提供隔离。默认值、Guardian 关联和失败处理见 [shell 审查用法](configuration-recipes.md#configure-shell-review)。
 
 ### 上下文管理
 
@@ -103,7 +103,7 @@ plugin_key: vendor.memory
 configuration: {}
 ```
 
-保存到 `extensions/` 下，再在 Agent 或根默认值中选择 `harness_plugins: [plugin-memory]`。未知/未安装的键会导致验证失败；写入文件不等于安装。
+保存到 `extensions/` 下，再在 Agent 或根默认值中选择 `harness_plugins: [plugin-memory]`。验证会拒绝未知或未安装的工厂键。
 
 | 资源类型                                       | 共享 `schema_version`、`kind`、`id`、`name` 之外的完整字段                                          |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- |

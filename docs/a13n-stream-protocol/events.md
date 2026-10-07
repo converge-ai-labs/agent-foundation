@@ -95,7 +95,9 @@ events = observer.snapshot()
 
 Mutating an event returned by `observe()` or `snapshot()` does not mutate the observer. The snapshot is process-local convenience state, not a durable event log or Harness continuation value.
 
-The observer does not compact streaming chunks or enforce a retention limit. A long-running Host should persist incremental results and apply its own bounded retention or projection policy.
+With the default `retain_events=True`, the journal has no retention cap. Read a fixed prefix in batches with `snapshot(start=..., stop=...)`, capturing `event_count` once as the upper bound. These positions are observer-local, not transport cursors.
+
+Set `retain_events=False` to convert and process without a journal. `observe()` produces the same events, `event_count` stays zero, and `snapshot()` raises `AguiObservationError`. For accumulated display content instead of raw token history, use [compact display checkpoints](replay.md#restore-a-compact-display-checkpoint).
 
 ## Apply a Host Processor
 

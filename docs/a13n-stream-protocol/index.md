@@ -4,7 +4,7 @@ sidebarTitle: Overview
 description: Convert public Harness observations into typed AG-UI events for terminals, browsers, and transports.
 ---
 
-Stream Protocol (`a13n-stream-protocol`) only converts events: it does not run an Agent or provide an SSE server.
+Stream Protocol (`a13n-stream-protocol`) converts public Harness observations to AG-UI events and normalizes those events into compact display items. Use it to feed a terminal or browser and restore an unfinished display from a checkpoint.
 
 ## Start here
 
@@ -20,10 +20,14 @@ Stream Protocol (`a13n-stream-protocol`) only converts events: it does not run a
 flowchart TB
     Run["Root stream with inline children"] --> Observer["HarnessAguiStreamObserver"]
     Observer --> Events["Typed AG-UI events"]
-    Events --> Host["Host persistence and transport"]
-    Host --> UI["Renderer"]
+    Events --> Fold["DisplayFold"]
+    Fold --> Checkpoint["Items and continuation"]
+    Events --> Host["Host transport"]
+    Checkpoint --> UI["Renderer"]
+    Host --> UI
 
-    class Run,Observer a13n
+    class Run,Observer,Fold a13n
+    class Checkpoint store
     class Host,UI app
 ```
 
@@ -31,7 +35,7 @@ flowchart TB
 
 `HarnessAguiObserver` binds to one Run. `HarnessAguiStreamObserver` instead binds to a root stream and tracks its inline children independently, attributing their output with `subagentRunId`. Host-managed asynchronous child Runs still use independent observers.
 
-`observe()` returns only events produced by the current item. `snapshot()` returns detached accumulated events; it is an in-memory convenience, not a durable log. `resume()` reconstructs observer state from exact Harness source history without publishing history again.
+`observe()` returns the current item's events. By default the observer also retains an event journal for `snapshot()`. Set `retain_events=False` when the Host stores incremental events or uses `DisplayFold`. The fold retains accumulated display content and parsing continuation instead of every token event. See [Replay and recovery](replay.md) for checkpoint restore, observer continuation, and source replay.
 
 ## Install
 
@@ -51,7 +55,9 @@ Published Stream Protocol pins the matching Harness release. The source [quickst
 | Source-history retention, cursor, gap detection, and live cutover | Host            |
 | Durable AG-UI IDs, persistence, replay, and fan-out               | Host            |
 | SSE, WebSocket, Redis, or in-process delivery                     | Host transport  |
-| Rendered view state                                               | Renderer        |
+| Display items and parsing continuation                            | Stream Protocol |
+| Checkpoint storage, paging, acknowledgement, and suffix selection | Host            |
+| Visual presentation                                               | Renderer        |
 
 ## Upgrade to AG-UI 1.0
 

@@ -29,9 +29,9 @@ Pass a native model directly through `HarnessBuilder.build(model=...)`, or selec
 
 ## Execution boundary and filters
 
-Each built Agent includes the tool execution boundary, message integrity filter, and request-only image preparation. Image preparation splits tall static images, compresses images to encoded-byte and dimension limits, and retains the newest images without changing saved history or original files. Configure the selected model's `HarnessModelCharacteristics.image_input` with `ImageInputPolicy`, or set `image_input=None` to disable automatic preparation. See [Context](../../docs/a13n-harness/context.md#filters).
+Harness prepares images for the selected Model without changing saved history or original files. Configure `HarnessModelCharacteristics.image_input` with `ImageInputPolicy`, or set `image_input=None` to disable preparation. See [Context](../../docs/a13n-harness/context.md#filters).
 
-Add Capabilities for policy, context, memory, delegation, or model recovery. Toolsets are available from `a13n_harness.toolsets`, and managed tool contracts from `a13n_harness.tools`.
+Recognized provider-history repairs are on by default; configure them through `SelfHealingModelCapability` or disable automatic installation with `HarnessBuilder(self_healing_enabled=False)`. For long Threads, opt into [history compaction](../../docs/a13n-harness/context.md#compact-a-long-thread). Add other Capabilities for policy, memory, or delegation.
 
 A completed Run returns a `HarnessState` with a stable `thread_id`. Pass it as `previous_state` to continue the Thread; each new Run receives a fresh `run_id`. The Host persists accepted state and reconstructs credentials and other current authority on resume. [State and resume](../../docs/a13n-harness/state-and-resume.md) covers serialization and interrupted calls.
 
@@ -40,6 +40,7 @@ A completed Run returns a `HarnessState` with a stable `thread_id`. Pass it as `
 - [Agent application](../../examples/agent-app/README.md): offline streaming turns, checkpointing, and restart recovery.
 - [Environment Providers](../../examples/environment-provider/README.md): construction, re-entry, and lifecycle.
 - [Plugins and extensions](../../examples/plugins/README.md): packaged middleware, Capabilities, and Environment integrations.
+- [MCP tools](../../docs/a13n-harness/mcp.md#run-an-mcp-tool-offline): an in-process server and an offline Model, followed by Host-owned clients and per-Run headers.
 - [Harness guide](../../docs/a13n-harness/index.md): the public API by task.
 
 ## Versioning

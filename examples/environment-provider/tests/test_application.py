@@ -74,3 +74,30 @@ def test_local_envd_example_closes_host_runtime_and_preserves_workspace(tmp_path
     assert result.state is None and result.workspace_preserved
     assert result.text == "hello from local_envd\n"
     assert (workspace / "provider-example.txt").read_text() == result.text
+
+
+@pytest.mark.parametrize("close_fails", [False, True])
+def test_docker_example_closes_borrowed_runtime_when_creation_fails(monkeypatch, close_fails: bool) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    engine = AsyncMock()
+    if close_fails:
+        engine.close.side_effect = OSError("engine close failed")
+    provider = AsyncMock()
+    provider.validate_environment = lambda recipe: recipe
+    provider.create.side_effect = RuntimeError("creation failed")
+    monkeypatch.setattr(application_module, "select_builtin_environment_providers", lambda keys: ())
+    monkeypatch.setattr(
+        application_module, "ProviderCatalog", lambda definitions: SimpleNamespace(require=lambda key: provider)
+    )
+    monkeypatch.setattr(application_module.DockerSDKEngine, "connect", lambda endpoint: engine)
+
+    if close_fails:
+        with pytest.raises(BaseExceptionGroup) as captured:
+            asyncio.run(application_module.run_docker())
+        assert [type(error) for error in captured.value.exceptions] == [RuntimeError, OSError]
+    else:
+        with pytest.raises(RuntimeError, match="creation failed"):
+            asyncio.run(application_module.run_docker())
+    engine.close.assert_awaited_once()

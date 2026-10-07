@@ -12,13 +12,13 @@ description: 工作空间记忆，让 agent 跨对话保留版本化文件或可
 
 ```mermaid
 flowchart TB
-    Thread["线程：按名称挂载记忆，只读或可写"] --> Run["运行"]
+    Thread["线程挂载"] --> Run["运行"]
     subgraph Workspace["工作空间"]
-        File["文件型记忆：带版本的文本文件"]
-        Record["记录型记忆：mem0 中的记录"]
+        File["版本化文件"]
+        Record["mem0 记录"]
     end
-    Run <-->|"启动时读取上下文，文件工具"| File
-    Run <-->|"启动时召回，记录工具"| Record
+    Run <-->|"上下文与文件工具"| File
+    Run <-->|"召回与记录工具"| Record
 
     class Thread,Run a13n
     class File,Record store
@@ -69,7 +69,7 @@ curl -X POST "$A13N_URL/api/v1/memory-providers" \
        "config": {"base_url": "https://mem0.internal.example.com"}, "credential": {"api_key": "..."}}'
 ```
 
-自托管凭据可选，通过 `X-API-Key` 发送；清除已删除记忆的记录需要服务器管理员密钥。私有网络或明文 HTTP 服务器必须由部署的[出站策略](configuration.md#outbound-requests)允许。自托管服务器最多列出一份记忆的 1000 条记录。
+自托管凭据可选，通过 `X-API-Key` 发送；清除已删除记忆的记录需要服务器管理员密钥。明文 HTTP 服务器需要在部署的[出站策略](configuration.md#outbound-requests)中显式允许其 origin。自托管服务器最多列出一份记忆的 1000 条记录。
 
 `POST …/memory-providers/{provider_id}/test` 列出未被任何记忆使用的命名空间中的一页数据，检查地址和密钥，不做修改。
 
@@ -85,7 +85,7 @@ curl -X POST "$A13N_URL/api/v1/memories" \
 - `type` 为 provider 类型，provider 必须是工作空间中已启用的记忆 provider。`always_load` 不适用。
 - 每份记录型记忆拥有后端中的一个**命名空间**，即 mem0 的 `user_id`。默认值为 `a13n-` 加上从记忆 ID 派生的 32 位十六进制字符。设置 `namespace` 可接管已有 `user_id` 下的记录，例如应用已写入的记录；长度为 1–256 个可打印字符，不含空白或 `*`。一个命名空间只属于一份记忆；其他记忆重复使用时返回 `409 already_exists`。
 - `type`、`provider_id` 和 `namespace` 永不改变。
-- 删除记录型记忆也会在后台删除命名空间中的记录。完成前，新记忆不能使用该命名空间（`409 conflict`，原因为 `namespace_purging`）。后端持续拒绝时，清理在 `memory_purge` outbox 策略的 `max_attempts` 次尝试后停止（取 `outbox.by_kind.memory_purge`，否则取 `outbox.defaults`），记录保留在后端。mem0 Platform 接收清理后自行完成，因此记录可能短暂保留。
+- 删除后在后台清理命名空间。完成前，新记忆不能使用该命名空间（`namespace_purging`）。后端持续拒绝时，重试额度耗尽后记录可能仍会保留；参阅 [outbox 策略](operations.md#outbox-retention-and-capacity)。
 
 ### 读取与编辑记录
 

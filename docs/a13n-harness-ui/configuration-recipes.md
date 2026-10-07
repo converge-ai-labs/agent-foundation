@@ -11,7 +11,7 @@ a13n-harness-ui config path
 a13n-harness-ui config validate
 ```
 
-Paths below are relative to that directory (normally `~/.a13n-harness-ui/`). Merge each snippet into its indicated file. If you use a custom tree, put `--config /path/to/a13n-harness-ui.yaml` before each subcommand. Validation catches incorrect fields and references, but does not connect to providers or MCP servers. Unknown additive fields in supported versions are preserved with a warning, not used; check warnings for typos. A Project directory may be unavailable during validation but must be available when selected for a Run.
+Merge each snippet into the named file under that directory (normally `~/.a13n-harness-ui/`). For a custom tree, put `--config /path/to/a13n-harness-ui.yaml` before the subcommand. Validation checks fields and references without connecting to providers or MCP servers. Inspect warnings: unknown additive fields are preserved but not used. Project directories must be available before a Run, not during validation.
 
 ## Change the default Agent
 
@@ -121,15 +121,25 @@ security:
     on_error: allow
 ```
 
-Create `model-review` as a **Model resource** first, or use an existing Model ID. It is not the `code-reviewer` subagent and cannot execute tools. Codex and Grok subscription setup creates a separate shell review Model; ChatGPT, GitHub Copilot, and API-key setup reuse the connected Model. Each review makes a Model request, with the selected connection's usage and cost.
+1. Create `model-review` as a Model resource, or choose an existing Model ID. The reviewer is not the `code-reviewer` subagent and cannot execute tools.
+2. Add the mapping above to root YAML and run `a13n-harness-ui config validate`.
+3. Start a new Run. The shortcut reviews `environment.shell_exec` for the Agent and its children; it does not enable review for other tools.
 
-This shortcut applies to shell launches (`environment.shell_exec`) across Agents and their children, not every tool. Risk levels are `low`, `medium`, `high`, and `extra_high`; the default threshold is `extra_high`. Calls at or above the threshold ask for approval by default. Other tools are not opted into review by this shortcut.
+Codex and Grok setup create a separate reviewer Model. ChatGPT, GitHub Copilot, and API-key setup reuse the connected Model. Each review makes a Model request with that connection's usage and cost. For optional Codex Guardian linking, see [the root reference](configuration.md#shell-review-shortcut).
 
-Set `enable: false` to stop using the shortcut. **This does not remove or disable an explicitly configured Agent policy.** When enabled, the shortcut merges permissions and optional review into one `ToolPermissionsCapability` in the captured Run. Its shell permission wins even over an Agent's explicit `allow`, `deny`, or `ask`; its supplied threshold, flagged action, error action, and Model win over the corresponding Agent fields. Unrelated rules, reviewer instructions, and other settings are preserved. Omitted/null fields inherit the Agent reviewer configuration, falling back to `extra_high`, the effective Agent Model, `on_flagged: approval_required`, and `on_error: allow` when absent.
+| Setting                | Behavior                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| `risk_threshold`       | `low`, `medium`, `high`, or `extra_high`; calls at or above the threshold are flagged |
+| `on_flagged`           | `deny` or `approval_required`                                                         |
+| `on_error`             | `deny`, `approval_required`, or `allow` for non-timeout errors                        |
+| Reviewer timeout       | Always denies execution                                                               |
+| Human approval timeout | Separate `tools.interaction_timeout_seconds`, default 120 seconds                     |
 
-Ordinary UI authoring uses this root mapping. Advanced Agent configuration can use one `ToolPermissionsCapability` with nested `review` configuration. With the shortcut off, the reviewer runs only for tools whose Agent permission is `review`; a reviewer or risk rule alone does not activate review. There is no separate review Capability or compatibility alias.
+The shortcut merges into the Agent's `ToolPermissionsCapability`. Its shell `review` rule replaces even explicit `allow`, `deny`, or `ask`; supplied review fields replace corresponding Agent fields. Unrelated rules and reviewer instructions remain. Omitted/null fields inherit the Agent policy, then fall back to `extra_high`, the effective Agent Model, `approval_required` for flagged calls, and `allow` for non-timeout errors. `allow` still runs the remaining permission checks.
 
-`on_flagged` accepts `deny` or `approval_required`; `on_error` additionally accepts `allow`. Non-timeout reviewer errors follow the effective `on_error` policy; the default `allow` continues through all remaining checks. Reviewer timeout always denies execution. Human decisions use the separate Host `tools.interaction_timeout_seconds` (default 120). Risk/reason rendering is best effort; `/review request-id` opens details. Review history is advisory evidence for the reviewer, not a permission grant, and review is not filesystem or network isolation. Validate with `a13n-harness-ui config validate`; an enabled shortcut with a missing Model or invalid merged policy is an error. Accepted edits affect later Runs, never already captured execution.
+Set `enable: false` to stop injecting the shortcut; explicit Agent policies remain. Advanced policies use one `ToolPermissionsCapability` with nested `review`, which runs only for tools assigned permission `review`. A reviewer or risk rule alone does not activate review.
+
+Use `/review request-id` to inspect available risk and reason details. Review history is evidence, not a permission grant. Review does not isolate files or networks. Missing Models and invalid merged policies fail validation. Accepted edits apply to later Runs.
 
 ### Use TypeSafe Jev for review
 
@@ -155,9 +165,7 @@ model_configuration:
   base_url: https://jev-gateway.example
 ```
 
-Jev grades a described severity rubric: 0 = `low`, 1 = `medium`, 2 = `high`, 3 = `extra_high`. Harness maps the native grade to the existing risk policy. Confidence is not severity and does not change the decision. Jev does not generate text, so its assessment has no reason; the UI shows risk without an explanation. Text-capable reviewers still provide a reason when available. There is no automatic second-Model fallback or explanatory request.
-
-Existing risk thresholds, permission checks, timeouts, and error policy still apply. Evaluate representative commands, including adversarial input, before switching an existing reviewer; native adapter compatibility is not evidence of classification accuracy.
+Jev grades severity as 0 = `low`, 1 = `medium`, 2 = `high`, 3 = `extra_high`; confidence does not change the decision. Jev returns no text explanation, and Harness UI does not request one from a second Model. Normal thresholds, permissions, timeouts, and error policy apply. Evaluate representative and adversarial commands before replacing an existing reviewer.
 
 ## Enable an MCP server
 

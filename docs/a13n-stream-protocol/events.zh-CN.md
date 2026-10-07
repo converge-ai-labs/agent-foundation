@@ -95,7 +95,9 @@ events = observer.snapshot()
 
 修改 `observe()` 或 `snapshot()` 返回的事件不会改变 observer。快照是便于读取的进程内状态，不是持久事件日志或 Harness 续接值。
 
-observer 不压缩流式块，也不实施保留上限。长期运行的 Host 应持久化增量结果，并应用自己的有界保留或投影策略。
+默认 `retain_events=True` 时，事件日志没有保留上限。先读取一次 `event_count` 作为上界，再用 `snapshot(start=..., stop=...)` 分批读取固定前缀。位置仅在 observer 内有效，不是传输游标。
+
+设置 `retain_events=False` 可在不保留日志的情况下转换和处理。`observe()` 产生相同事件，`event_count` 始终为零，`snapshot()` 抛出 `AguiObservationError`。只需累积展示内容而不是原始 token 历史时，使用[紧凑的展示检查点](replay.md#restore-a-compact-display-checkpoint)。
 
 ## 应用 Host 处理器
 

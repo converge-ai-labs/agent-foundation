@@ -63,14 +63,14 @@ Graceful client/Session close and Provider process cleanup follow their respecti
 
 ## Diagnose failures at the right layer
 
-| Symptom                                  | Check                                                                                           |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Initialization/Session admission busy    | Device Session capacity, aggregate quotas, pending cleanup, and idle expiry                     |
-| Required method absent                   | Required-method selection, daemon account permissions, and executable policy                    |
-| Busy / quota error before command launch | Per-stream pair reservation and retained spool charges                                          |
-| Partial preview                          | Returned reference/range and producer/completion evidence                                       |
-| Filesystem or command access denied      | Daemon account permissions and the Host's outer boundary ([execution boundaries](isolation.md)) |
-| Unknown command/write outcome            | Original operation receipt and replay/reconciliation class; do not retry as new intent          |
-| Remote target unavailable                | Provider/backend access and exact saved target identity, not another mount's fallback           |
+| Symptom                                  | Check                                                                                       |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Initialization/Session admission busy    | Device Session capacity, aggregate quotas, pending cleanup, and idle expiry                 |
+| Required method absent                   | Required-method selection, effective execution identity, and executable policy              |
+| Busy / quota error before command launch | Per-stream pair reservation and retained spool charges                                      |
+| Partial preview                          | Returned reference/range and producer/completion evidence                                   |
+| Filesystem or command access denied      | Effective execution identity, Sandbox grants, and the [Host's outer boundary](isolation.md) |
+| Unknown command/write outcome            | Original operation receipt and replay/reconciliation class; do not retry as new intent      |
+| Remote target unavailable                | Provider/backend access and exact saved target identity, not another mount's fallback       |
 
 The daemon has no general health, browser, or arbitrary HTTP endpoint. HTTP EIP exposes its authenticated control/transfer routes; readiness is an EIP operation. Keep diagnostics off stdio protocol stdout. [Configuration](configuration.md) owns carrier/bootstrap fields and [execution boundaries](isolation.md) explains Host-owned isolation.

@@ -3,7 +3,7 @@ title: 配置参考
 description: 根配置文件、加载优先级，以及修改何时生效。
 ---
 
-Harness UI 使用 YAML 和 Markdown 文件。**根文件保存应用级设置和默认值，包括工具开关、shell 审查和内置 subagent；Model 和 Agent 文件定义每个 Agent 的 Model、指令和工具。** 先运行 `a13n-harness-ui setup`，再按需编辑这些文件。
+先运行 `a13n-harness-ui setup`，再编辑生成的 YAML 和 Markdown 文件。根 YAML 保存应用设置和默认值。Model 文件保存连接和请求设置。Agent 文件保存指令、工具和 Model 选择。
 
 具体示例见[常见配置用法](configuration-recipes.md)。本页提供根文件和加载规则参考；本页中的对话指 TUI 和 WebUI 中显示的根 Thread。[内置配置 Skill](skills-and-content-plugins.md#built-in-configuration-skill) 为 Agent 提供与安装版本匹配的离线指引。
 
@@ -49,13 +49,15 @@ a13n-harness-ui config subagents --format json
 | `extensions/*.yaml`        | Harness Plugin、Environment 配置、Run Extension | [扩展](extensions-and-mcp.md)                                          |
 | `mcp/*.yaml`、`mcp/*.json` | MCP 服务器定义                                  | [MCP](mcp.md)                                                          |
 
-Harness UI 只扫描各资源目录中直接包含的文件：`subagents/` 中的 `.md` 文件（`README.md` 除外）、其他目录中的 `.yaml` 文件，以及 `mcp/` 中另外支持的 `.json` 文件。文件扩展名区分大小写。文件名供人阅读；资源引用使用 `id`。一个文件定义一个资源，MCP 多服务器 `mcpServers` 格式除外。MCP environment/header 值支持字面值和环境引用，见 [MCP 配置](mcp.md)。支持版本中的未知新增字段会保留并发出警告，**不会应用**；不支持的 schema 版本、重复 ID/键、YAML alias/anchor 和无效引用仍会拒绝候选配置。不会递归扫描或合并祖先目录配置。
+各目录只扫描一层，不递归或合并祖先目录。扩展名区分大小写：`subagents/` 接受 `.md`，但排除 `README.md`；其他目录接受 `.yaml`；`mcp/` 还接受 `.json`。每个文件定义一个资源，MCP 多服务器 `mcpServers` 格式除外。环境和 header 引用见 [MCP 配置](mcp.md)。
+
+支持 schema 版本中的未知新增字段会保留并警告，不会应用。不支持的版本、重复 ID 或键、YAML alias 或 anchor，以及无效引用会拒绝候选配置。
 
 ### 被跳过的 Capability
 
-Agent 中的 Capability 缺失、含糊、无法加载或无效时，会产生警告，而不会阻止对话。Harness UI 只跳过该条目，保留有效条目（包括其他 `NativeTool` 条目），不修改 YAML。警告指出 Agent ID、Capability 键和原因。TUI 显示这些警告；`config validate` 和 HTTP API 的 App 状态通过 `capability_warnings` 公开。如果仅有这些问题，验证仍成功。
+Harness UI 跳过缺失或无效的 Agent Capability，保留有效条目，不修改 YAML。警告指出 Agent、Capability 和原因。TUI 显示警告，`config validate` 和 App 状态公开 `capability_warnings`。仅有这些警告不会使验证失败。
 
-修正 Capability 名称或参数，必要时安装可信实现，或移除条目。显式配置的默认 Capability 无效时，保持跳过，不会换成权限更广的默认值。权限策略绝不会静默跳过：无效 `ToolPermissionsCapability`（包括缺少审查 Model）会拒绝验证和 Run 组合，不论根快捷配置是否开启。修复 Agent 策略、`security.shell_review` 或引用的 Model。Environment 权限、强制调用策略和工具开关仍然适用。
+修正名称或参数、安装可信实现，或移除条目。无效显式默认值保持跳过，不换成权限更广的选择。权限策略不同：无效 `ToolPermissionsCapability` 或缺少审查 Model 会拒绝验证和组合，即使根快捷配置已关闭。修复 Agent 策略、`security.shell_review` 或其 Model。Environment 权限和工具开关仍适用。
 
 新 Run 只捕获有效选择。已捕获 Run 不会改变；运行时/模型提供方故障也不会转为配置警告。无效 YAML 结构、Model 资源、Environment 或 Plugin 配置仍需修复。
 
@@ -120,7 +122,7 @@ webui:
 
 ### 文件记忆
 
-CLI 和 WebUI 默认开启文件记忆。跨对话偏好和稳定事实存于选中根 YAML 旁的 `memory/global/`，Project 专用文件存于 `memory/projects/<project-id>/`。没有 Project 的对话只使用全局记忆。`MEMORY.md` 是始终加载的简明索引；详细主题可使用独立文件。记忆文件不是配置资源或对话历史。更广的 Full Control 和人工文件系统访问权限不变。
+文件记忆默认开启。全局事实存于选中 YAML 旁的 `memory/global/`，Project 事实存于 `memory/projects/<project-id>/`。无 Project 对话只使用全局记忆。`MEMORY.md` 保持为始终加载的短索引，详细主题放在独立文件。记忆不是对话历史，不限制 Full Control 或人工访问。
 
 在 **Settings → General → Memory** 中配置，或编辑：
 
@@ -135,13 +137,20 @@ memory:
 
 用 `instructions` 设置摘要语言、主题分组等偏好。整理器会报告修改，保留不确定信息和用户更正。Agent 将记忆视为历史上下文。
 
-**Organization model** 在 `model` 省略或为 null 时跟随 `defaults.agent` 的 Model。可选择 Model ID 覆盖。整理要求其中一个 Model 已配置；只使用限定范围的记忆工具，不使用 Agent 的其他工具或指令。设置向导会开启记忆和整理，同时保留现有选择。
+**Organization model** 省略或为 null 时跟随 `defaults.agent`，Model ID 可覆盖。必须配置 Model。整理器只使用范围内记忆工具，不使用 Agent 指令或其他工具。设置向导开启记忆和整理，保留现有选择。
 
-自动整理**仅适用于 WebUI**。每条新的 WebUI 对话输入都可以为该对话所属范围中已修改的记忆文件启动后台整理；整理与 Run 并行进行。它不会读取旧对话或扫描其他 Project。每个范围保留一个只读 Memory Thread，与普通对话分开。其工具仅限范围内的记忆工具，不继承 Agent 的其他工具和指令。可能产生额外模型请求、消耗配额或产生费用。General 设置显示当前进程的可用性、活动、结果和记录用量。
+在 WebUI 中，新输入可触发已修改记忆范围的整理。每个范围有只读 Memory Thread。整理不读取旧对话或其他 Project，可能消耗 Model 配额或产生费用。General 设置显示活动、结果和用量。
 
-记忆未变化、为空、忙碌或处于冷却期时，不发出后台模型请求。成功尝试冷却一小时；失败、取消或崩溃后需等待十五分钟才能重试。重试需要另一条输入触发。每次尝试最多十二个请求、五分钟。新输入不会中断活动整理器。关闭任一开关或停止服务器会取消维护，保留部分文件修改供后续重新尝试。已受理的前台 Run 保留捕获的记忆设置。
+| 整理器状态                         | 下次尝试                               |
+| ---------------------------------- | -------------------------------------- |
+| 记忆未变化、为空、忙碌或处于冷却期 | 不发出 Model 请求                      |
+| 尝试成功                           | 一小时后，由另一条输入触发             |
+| 尝试失败、取消或中断               | 十五分钟后，由另一条输入触发           |
+| 正在尝试                           | 最多十二个请求、五分钟；新输入不中断它 |
 
-要保留记忆而不发出自动请求，设置 `auto_organize.enabled: false`。设置 `memory.enabled: false` 会停止为后续 Run 绑定记忆；两者都不删除文件。选中配置根目录的 `memory/` 需与应用数据根分开备份。`.a13n-memory/` 包含内部锁和整理状态，不是用户记忆。可选 Git 仅提供基于一次快照的有界 diff 提示；它不是必需的，不操作你的仓库，也不存储版本历史。
+设置 `auto_organize.enabled: false`，保留记忆而不发出自动请求。设置 `memory.enabled: false`，停止为后续 Run 绑定记忆。关闭任一开关或停止服务器会取消维护，保留部分修改；两个开关都不删除文件。已受理的前台 Run 保留捕获的设置。
+
+将选中 YAML 旁的 `memory/` 与应用数据分开备份。`.a13n-memory/` 保存内部锁和整理状态。可选 Git 提供有界 diff 提示，不存储版本历史，也不操作你的仓库。
 
 ### 媒体理解
 
@@ -157,7 +166,7 @@ webui:
     - "https://anui.wh1isper.top:8090/"
 ```
 
-要显式关闭地址限制，使用 `allowed_origins: ["*"]`。这不会关闭 API 密钥身份验证或浏览器同源检查，也不是 CORS 白名单。即使配置两个 origin，也不能让它们彼此发起跨源 API 请求。已知公共地址时应优先列出确切值；`"*"` 会移除 Host 限制，包括 DNS 重绑定保护。已有绑定地址和回环访问独立于这些条目，仍然允许。
+`allowed_origins: ["*"]` 移除 Host 限制，包括 DNS 重绑定保护，应优先使用确切 origin。这不是 CORS：认证和同源检查仍有效，已配置 origin 也不能相互调用 API。已有绑定地址和回环访问仍允许。
 
 监听器在启动时捕获设置。编辑后重启 WebUI；接受配置重载不会改变活动监听器的访问边界。HTTPS 转发和代理信任见[反向代理](webui.md#reverse-proxies-and-public-addresses)。
 
@@ -171,7 +180,7 @@ webui:
 
 ### WebUI Sidekick
 
-Sidekick 是 WebUI 偏好设置：它为根 Agent 添加独立工作的指令，并为这些 Agent 通过 `create_thread` 创建的 Thread 选择 Agent 和 Model。Sidekick 默认开启。设置向导在新配置文件中显式写入 `webui.sidekick: {}`。已有文件省略 `webui` 或 `sidekick` 时，也会开启但不改写文件。已有 `sidekick: null` 仍保持关闭；设置向导保留显式 null 和自定义 Agent/Model 选择。
+Sidekick 为 WebUI 根 Agent 添加独立工作指令和 `create_thread` 默认值。省略设置或使用 `sidekick: {}` 表示开启，`sidekick: null` 关闭。向导为新文件写入 `{}`，保留已有关闭或自定义选择。
 
 在 **Settings → General → Sidekick** 中选择 **Enabled** ，可选 Agent 和默认 Model，再点击 **Save changes** 。这设置独立工作的偏好，不改变默认对话 Agent：
 
@@ -179,20 +188,24 @@ Sidekick 是 WebUI 偏好设置：它为根 Agent 添加独立工作的指令，
 webui:
   sidekick:
     agent: null              # Inherit the calling Agent
-    model: model-worker      # Override its Model for the requested Run
+    model: model-worker      # Default Model for newly created Sidekick Threads
 ```
 
-使用已有资源 ID。设置 `agent: agent-worker` 可选择其他 Agent；两种选择均可指定默认 Model。省略/null `model` 则跟随所选 Agent 当前的 Model。空 `sidekick: {}` 开启继承 Agent 选择。Agent 创建 Sidekick Thread 时，Host 将配置的 Model 保存为 `default_model_id`，使后续消息和恢复轮次继续使用它。显式 `create_thread(model_id=...)` 或 Run 选择器只覆盖该 Run，不改变已保存默认值。Sidekick 设置改变或关闭时，不改写已有 Thread。选择 **Disabled** 或设置 `sidekick: null` 可关闭额外指令。保存不会启动任务。新 WebUI Run 获取此偏好；活动 Run 保留捕获的指令。TUI Run 和委派子级不受影响。无论 Sidekick 是否开启，WebUI 始终提供通用 Thread、Project、Agent 和 Model 发现工具。行为和交付限制见 [Thread 协作](webui.md#agent-collaboration-and-sidekick)。
+使用已有 ID。设置 `agent: agent-worker` 选择其他 Agent。省略/null `model` 跟随该 Agent 当前的 Model；`sidekick: {}` 继承调用方 Agent。配置的 Model 会保存为新 Thread 的 `default_model_id`，供后续消息和恢复轮次使用。显式 `create_thread(model_id=...)` 或 Run 选择器只覆盖该 Run。
+
+选择 **Disabled** 或设置 `sidekick: null` 移除额外指令。保存不启动任务，也不改写已有 Thread。偏好影响新 WebUI Run，不影响活动 Run、TUI Run 或委派子级。发现工具独立于 Sidekick，仍遵循各角色范围。Coordinator 和 Worker 限制及交付行为见 [Thread 协作](webui.md#agent-collaboration-and-sidekick)。
 
 ### Shell 审查快捷配置
 
 `security.shell_review.enable` 默认 `false`，不自动注入权限/审查器。设置向导通常初始化为 `true`。关闭表示不使用快捷配置，不表示移除显式 Agent 策略。
 
-开启时，`risk_threshold` 接受 `low`、`medium`、`high` 或 `extra_high`，`model` 指向已配置 Model 资源。`on_flagged` 接受 `deny` 或 `approval_required`；`on_error` 接受 `deny`、`approval_required` 或 `allow`。省略/null 字段继承 Agent 审查策略；缺失时回退到 `extra_high`、实际 Agent Model、标记调用的 `approval_required` 和非超时错误的 `allow`。组合时显式快捷字段优先，保留 Agent 无关规则。此配置只为根级和子级 Agent 的 `environment.shell_exec` 启用审查。默认值、合并和故障行为见 [shell 审查用法](configuration-recipes.md#configure-shell-review)。设置影响后续 Run 捕获，不影响活动 Run。
+开启后仅审查根及子级的 `environment.shell_exec`。显式快捷字段覆盖 Agent 的 shell 规则，其他规则保留。省略/null 字段先继承 Agent 审查设置，再用内置默认值。字段值、合并和故障处理见 [shell 审查用法](configuration-recipes.md#configure-shell-review)。修改影响后续 Run 捕获。
 
 设置 `security.shell_review.guardian_credits: true`，可为实际启用的 shell 审查请求 Guardian 额度关联。默认值为 `false`。首次设置时，Codex 订阅连接写入 `true`，API 密钥和其他连接写入 `false`；选择已有 Model 时也遵循此规则。设置向导和 Add Agent 保留现有 shell 审查配置，Add Model 不修改它。
 
-主 Model 和审查 Model 都必须使用 `openai-codex:` 或 `openai-responses:` 路由。API 密钥的 Responses 连接也可主动开启，但这不保证获得资格或免费使用。其他协议保留普通审查，并提供诊断。关联审查使用发起命令的那次调用所对应的提供方响应 ID，包括经由 CodeAct 或 ToolProxy 发起的命令。缺少 ID 时保留普通审查。此选项不改变审查 Model、凭据、端点、风险策略或用量记录。请按提供方要求配置审查参数：Guardian 关联不会移除 service tier 或路由设置，传输适配器仍按正常规则处理。提供方拒绝请求时遵循 `on_error`，不会自动移除标记重试；超时仍拒绝执行。额度资格和实际费用由提供方决定，而不是由这些请求字段决定。
+两个 Model 都必须使用 `openai-codex:` 或 `openai-responses:`。关联使用请求执行命令的调用所对应的提供方响应 ID，包括经由 CodeAct 或 ToolProxy 发起的命令。不支持的协议或缺少 ID 时，保留普通审查和诊断。
+
+Guardian 关联不改变审查器、凭据、端点、service tier、风险策略或用量记录。提供方拒绝请求时遵循 `on_error`，不移除关联后重试；超时拒绝执行。API 密钥的 Responses 连接也可主动开启，但资格和实际费用由提供方决定。
 
 ### 进程设置
 
@@ -205,7 +218,7 @@ webui:
 | `process.log_level`             | `INFO`   | `CRITICAL`、`ERROR`、`WARNING`、`INFO` 或 `DEBUG`，规范化为大写 |
 | `process.log_format`            | `pretty` | 非交互日志：`pretty` 或 `json`；交互诊断写入文件                |
 
-`process.max_object_bytes` 默认 `268435456`（256 MiB），允许 1 KiB 至 1 GiB。它限制每个完整的**未压缩** 不可变存储对象，包括续接检查点；不是 Thread 磁盘配额或模型上下文限制。长期编程 Thread 在模型上下文压缩后仍保留显示历史和文件编辑证据。如果检查点超限，提高限制（例如 `536870912`，即 512 MiB）并重启应用后再继续。更大限制会增加序列化和验证的峰值内存。不会截断历史以适应限制；保存失败保留之前选中的检查点。降低限制可能使之前保存的大对象无法读取。
+`process.max_object_bytes` 限制每个未压缩存储对象，包括检查点：默认 256 MiB（`268435456`），范围 1 KiB–1 GiB，不是 Thread 配额或上下文限制。检查点超限时提高限制并重启后继续；更大限制增加峰值内存。不会截断历史，保存失败保留上一检查点。降低限制可能无法读取较大的已存对象。
 
 单次覆盖使用 `--no-update-check`。见[更新与日志](automation-and-troubleshooting.md#logs-updates-and-exit)。
 
@@ -251,7 +264,7 @@ defaults:
 
 应用创建的无 Project 对话使用自己的 `thread-files/tmp/` 工作目录。它仍有附件、开启时的全局 Skill 和全局指引。TUI 在首次提示或显式恢复时从启动目录选择 Project。从其他目录恢复已有对话，会将其分配给启动目录的 Project，不改变历史或其他设置。
 
-Agent 可通过仅支持文件的 `configuration` 挂载读写选中的配置目录。默认是 `~/.a13n-harness-ui`；使用 `--config` 时是所选 YAML 的父目录。这不是 Project 根目录，该挂载不授予 shell 执行权限。已有工作挂载暴露完全相同的目录时，复用其路由。资源修改在接受前验证，影响后续 Run；无效修改保留上一版已接受配置。进程设置需重启。挂载暴露整个所选目录，因此不要将敏感文件内容放入消息和日志。
+仅支持文件的 `configuration` 挂载暴露所选 YAML 的目录，不是 Project 根目录或 shell 位置。已有相同目录的挂载时复用。有效修改影响后续 Run，无效修改保留已接受配置。进程设置需重启。整个目录均可访问，不要分享敏感内容。
 
 ### 显示设置
 
@@ -294,7 +307,7 @@ Agent 可通过仅支持文件的 `configuration` 挂载读写选中的配置目
 4. 根 YAML 默认值。
 5. 内置 Environment 回退。
 
-集合替换整个列表；空列表不选任何项。已有 Thread 保留确切选择，直到显式 patch；修改 Project 默认值不会重新应用。见 [Project 默认值](environments-and-projects.md#defaults-for-new-conversations)。显式临时选择只覆盖其所属的操作、TUI 进程或 WebUI 标签页。Agent 和 Model 选择不同：`/agent` 改变 Thread 的 Agent，不写 YAML；`/model` 改变实际 Model，并在本地状态中按 Project 记住，不改 YAML。`/model default` 清除偏好。显式启动 `--agent` 和非交互调用方不继承记住的 Model。
+列表替换而不合并，`[]` 不选任何项。已有 Thread 保留选择，直到明确修改；修改 Project 默认值不重新应用。见 [Project 默认值](environments-and-projects.md#defaults-for-new-conversations)。临时覆盖属于对应操作、TUI 进程或标签页。`/agent` 修改 Thread Agent，`/model` 按 Project 记住选择，`/model default` 清除，两者都不写 YAML。显式启动 `--agent` 和非交互调用忽略记住的 Model。
 
 | 修改内容                                                          | 生效时间                                                     | 保持不变的内容                                          |
 | ----------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
@@ -351,7 +364,7 @@ export no_proxy=localhost,127.0.0.1,::1
 
 支持大写形式和 `ALL_PROXY`。选择和绕过匹配遵循 `httpx2`。Host 所有的 Web 搜索/抓取/获取/下载请求、远程 HTTPS MCP 连接和更新检查，以及 [Model HTTP 客户端](../a13n-harness/models.md#outbound-http-proxies)均遵循这些变量。改变环境后重启进程。容器运行时，代理地址必须能从容器访问。
 
-配置的代理是可信出站基础设施，负责目标 DNS 解析和网络限制。Host Web 工具使用原生 HTTP 连接，不预解析目标域名或固定 IP，直连和 `NO_PROXY` 路径也一样。只通过代理访问外网的机器不再需要本地目标 DNS。HTTP(S) URL 校验、重定向检查、超时和响应限制仍启用。TLS 验证默认启用；只有运维人员可通过[出站 TLS 开关](../a13n-harness/models.md#outbound-tls-verification)对自有客户端显式关闭验证。代理请求失败不会回退为直连。
+代理负责目标 DNS 和网络限制。Host Web 不预解析或固定目标 IP，直连和 `NO_PROXY` 请求也一样。URL/重定向检查、超时和响应限制仍有效。TLS 默认验证，见[运维控制的 TLS 开关](../a13n-harness/models.md#outbound-tls-verification)。代理失败不回退直连。
 
 明文回环 MCP 和明文本地/provider 私有 Envd 附加仍直连。HTTPS Envd 附加遵循代理变量。第三方 SDK 所有的传输保留 SDK 代理行为；守护进程发起的 Envd 配对和反向 WebSocket 连接，与 Python HTTP 附加客户端相互独立。
 
@@ -368,4 +381,4 @@ run_configuration:
     example.reader: {images: true}
 ```
 
-省略 `allowed_hosts` 或设为 null 表示不限制目标；`[]` 拒绝全部目标。普通条目精确匹配规范化的域名或 IP 字面值；以 `regex:` 开头的条目使用 Python 正则匹配完整的规范化主机名。示例放行 `docs.example.com` 及其子域，但不放行 `docs.example.com.evil.test`。字面量的点写成 `\.`，YAML 使用单引号保留反斜杠。无效或空表达式会使配置验证失败。正则看到的是小写 ASCII IDNA 域名或规范化 IP，不是 URL、路径或端口；请保持简单，并由可信调用方编写。更多示例、匹配边界和 Python/JSON 转义见[主机规则与正则表达式](../a13n-harness/context.md#host-rules-and-regular-expressions)。不支持 glob 和 CIDR。请包含所需 Model、Web 和 MCP 的全部域名。检查针对直连和代理请求 URL 声明的主机名，包括宿主拥有的重定向跳转；不解析 DNS，也不固定 IP。根与子 Run 的组合保留该快照，修改仅影响后续根 Run，不改变活跃或重建的 Run。API-key Model 客户端及 Host Web/MCP 支持此配置；无法检查内部传输的订阅 Model 会拒绝限制性配置。Extensions 是供显式接入的消费者使用的带命名空间 JSON 值，不会自动变成 Capability 构造参数。任意 shell 和可信插件的网络流量仍需部署或 Environment 网络隔离。
+`allowed_hosts` 省略/null 允许全部目标，`[]` 拒绝全部。条目精确匹配规范化域名或 IP，或用 `regex:` 做完整主机名 Python 匹配。示例允许 `docs.example.com` 及其子域，不允许 `docs.example.com.evil.test`。YAML 单引号保留反斜杠，无效或空表达式使验证失败。匹配对象是规范化主机，不是 URL、路径或端口；不支持 glob 和 CIDR。见[主机规则](../a13n-harness/context.md#host-rules-and-regular-expressions)。应包含所需 Model、Web 和 MCP 主机。宿主拥有的请求检查声明主机及重定向，不解析 DNS 或固定 IP。API-key Model 和 Host Web/MCP 支持限制，内部传输不可检查的订阅连接会拒绝。根及子级捕获保持固定。带命名空间的 `extensions` 需消费者主动接入，不是 Capability 参数。Shell 和可信插件网络仍需 Environment 或部署隔离。

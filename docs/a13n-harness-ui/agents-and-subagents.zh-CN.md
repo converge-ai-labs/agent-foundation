@@ -8,9 +8,9 @@ description: 用 YAML 定义可复用 Agent，用轻量 Markdown subagent 定义
 根据子级需要改变的内容选择形式：
 
 ```mermaid
-flowchart LR
-    Parent[父 Agent] -->|markdown: child-role| Markdown[仅改变指令；继承父级 Model]
-    Parent -->|agent: agent-reviewer| Resource[独立 Agent 资源；自己的 Model 和工具]
+flowchart TB
+    Parent[父 Agent] -->|markdown: child-role| Markdown[继承 Model 和工具]
+    Parent -->|agent: agent-reviewer| Resource[自己的 Model 和工具]
 
     class Parent a13n
 ```
@@ -162,7 +162,7 @@ subagents:
   - agent: agent-reviewer
 ```
 
-完整引用就是这一项：**使用已有 Agent 的 `id`，不要使用文件名或显示名称**。它不复制 `reviewer.yaml`、不转成 Markdown，也不会用父级 Model 覆盖 `model-review`。
+使用 Agent 的 `id`，不用文件名或显示名称。子级保留 `model-review`。
 
 ```console
 a13n-harness-ui config validate
@@ -244,7 +244,7 @@ a13n-harness-ui config subagents --format json
 | `executor`      | 自主执行范围明确的任务；报告完成、部分完成或阻塞             | 范围、约束、预期结果，以及已分配时的现有任务 ID          |
 | `explorer`      | 探索仓库并收集证据                                           | 要定位的符号、流程或概念；起始路径和调查原因             |
 
-这些角色是包内置的定义，采用 Harness UI 的 Markdown subagent 格式。它们继承父级完整 Model 配置，包括设置和上下文特征，以及 Capability 和可见工具。它们提供角色指令，没有独立凭据或特殊权限。explorer 预期的只读行为是指令指导，不是强制的独立工具沙箱。
+内置角色是包维护的 Markdown 角色，继承父级 Model 设置、上下文特征、Capability 和可见工具。角色指令不限制工具权限；需要强制只读访问时，使用显式工具过滤。
 
 在**根** `a13n-harness-ui.yaml` 中配置名称：
 
@@ -312,8 +312,7 @@ subagents:
 
 正文是子级额外指令。没有 `tools` 字段时继承父级可见工具过滤。Markdown 始终继承父级 Model，没有嵌套角色清单。
 
-> [!IMPORTANT]
-> **不要添加 `model: inherit` 或任何其他 `model` 字段。** 继承是隐式行为。从旧本地 Markdown 定义移除该字段。独立 Model 设置使用 [Agent 引用用法](#reference-an-existing-agent-as-a-subagent)，不要扩展 Markdown 格式。之前捕获的 Run 模型配置不会改写。
+Markdown frontmatter 没有 `model` 字段，也不支持 `model: inherit`。从旧本地定义移除该字段。独立 Model 使用 [Agent 引用](#reference-an-existing-agent-as-a-subagent)。已保存 Run 组合保留捕获的 Model 配置。
 
 ## Agent 文件参考
 

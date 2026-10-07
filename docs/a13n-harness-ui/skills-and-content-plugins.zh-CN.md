@@ -24,14 +24,15 @@ capabilities:
 
 两个来源使用相同 Skill 名称时，以下优先级列表中首个可用来源生效：
 
-1. 显式 `roots`，后面的条目优先于前面的条目。
-2. 第一个本地根目录的 `.agents/skills`。
-3. 后续本地根目录的 `.agents/skills`，按选择顺序。
-4. 已安装 Content Plugin 的 Skill 根目录；字典序更靠后的插件 ID 优先。
-5. `~/.agents/skills` 中的用户 Skill。
-6. 内置挂载中由发行版提供的 Skill。
+1. 显式 `roots`，后面的条目优先。
+2. 所选 Device 工作目录的 `.agents/skills`，后面的绑定优先。
+3. 第一个本地根目录的 `.agents/skills`。
+4. 后续本地根目录的 `.agents/skills`，按选择顺序。
+5. 已安装 Content Plugin 的 Skill 根目录，字典序更靠后的插件 ID 优先。
+6. `~/.agents/skills` 中的用户 Skill。
+7. 内置挂载中由发行版提供的 Skill。
 
-没有本地根目录时，仅两个本地根目录层级消失。内置、用户、插件和显式来源仍可用。配置目录不会隐式成为 Project Skill 来源。
+没有本地根目录时，仅对应层级消失；所选 Device 来源仍可通过 `/environment/<alias><device-cwd>/.agents/skills` 使用。配置目录不是自动 Project Skill 来源。
 
 目录在 Run 准备时选定。新 Run 捕获可以看到来源变化；活动 Run 不会重新扫描挂载。缺失的可选目录直接视为不存在，显式根目录不可用则导致准备失败。Skill 文件在使用时读取，不会复制到 Run 中。
 

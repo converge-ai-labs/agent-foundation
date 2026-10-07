@@ -46,7 +46,7 @@ agent_definition = AgentDefinition(
 executable = HarnessBuilder().build(agent_definition)
 ```
 
-Both overloads follow the same validation and construction path. Build is synchronous and inert with respect to model, Environment, and external provider I/O. Known one-shot provider-history repairs are enabled by default. Set `HarnessBuilder(self_healing_enabled=False)` to disable automatic installation. Explicitly selected `SelfHealingModelCapability` instances keep their configured rules and remain active even with this flag disabled; they replace rather than duplicate the default.
+Both forms build the same reusable executable without provider I/O. Self-healing is on by default; see [Recovery Layers](#recovery-layers) for controls.
 
 ### Build-time values
 
@@ -332,7 +332,14 @@ Recovery has narrow owners:
 | Interrupted model attempt inside one live logical Run | `ModelRecoveryPolicy` and `HarnessRunStream`                     |
 | Worker/process loss, durable replay, or delivery      | Embedding Host                                                   |
 
-Self-healing is enabled by default and performs only supported one-shot history repairs around the final effective Model, including a concrete, Run-resolved, or natively inferred Model. `HarnessBuilder(self_healing_enabled=False)` disables automatic self-healing for the root and inline children, including compaction through the same Agent; only explicitly selected `SelfHealingModelCapability` instances stay active. A rebuilt saved definition or Host capture gets these repairs without a change to its saved schema. Independent native tool-review and media-understanding Agents do not inherit the primary Agent's request Capabilities. Self-healing is not a retry for arbitrary model or tool exceptions. Semantic model recovery is disabled by default; opt in with a bounded `ModelRecoveryPolicy` on the definition when continuing an interrupted model attempt is valid for the application.
+Self-healing repairs recognized provider-history errors once before retrying the request. Default rules handle stale provider item IDs, invalid thinking history, and oversized inline media. The repair applies to the final effective Model, including Run-resolved Models, inline children, and same-Agent compaction.
+
+```python
+# Turn off automatic repair; explicit SelfHealingModelCapability selections still apply.
+builder = HarnessBuilder(self_healing_enabled=False)
+```
+
+To customize repairs, select `SelfHealingModelCapability(rules=...)` from `a13n_harness.models`; it replaces the default. Self-healing does not retry unrelated errors. For an interrupted model attempt, opt into `ModelRecoveryPolicy` separately; that recovery is disabled by default.
 
 An interrupted attempt retains text already emitted, even when the stream stops during a subsequent tool call. The next attempt receives that partial response as interrupted history, not as completed output. Unfinished thinking and tool arguments are excluded; invalid provider-native call/return groups are removed without erasing surrounding recoverable text. Failed or cancelled Runs export the same filtered history for a later Host-selected continuation.
 

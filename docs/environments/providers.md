@@ -249,9 +249,11 @@ environment = await DAYTONA.create(
 )
 try:
     await environment.prepare()
-    saved_state = environment.dump_state()
 finally:
-    await environment.close()
+    try:
+        saved_state = environment.dump_state()
+    finally:
+        await environment.close()
 ```
 
 `create()` validates the recipe, then the account configuration and credential rule before calling the Provider's runtime factory. Everything before that factory is pure. A runtime you pass in stays yours to close; one `create()` acquires closes with the adapter.

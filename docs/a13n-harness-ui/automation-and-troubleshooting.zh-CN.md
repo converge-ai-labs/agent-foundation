@@ -17,7 +17,7 @@ a13n-harness-ui login --help
 
 单次运行模式输出最终文本或结构化操作对象后退出。它与交互模式使用相同的 Project 选择（来自当前目录）、Model 解析、续接和权限规则。它不使用 `/model` 记住的 Model。失败或挂起的操作以非零状态退出，不会打开交互式审批提示。要回答待处理决策，请以交互方式恢复。
 
-帮助和版本命令不会启动 App。启动会在 TUI 打开前初始化本地配置和存储；Model、Environment 和 MCP 连接按需准备。启动耗时记录在 `<data-root>/logs/terminal.log`。
+帮助和版本命令不会启动 App。先打开 landing TUI，再初始化本地配置和存储。Model、Environment 和 MCP 按需连接。启动耗时记录在 `<data-root>/logs/terminal.log`。
 
 如果启动或 `--resume` 失败，阅读显示的错误链和诊断报告路径。分享前检查私有报告中是否有敏感内容；系统不会自动上传。
 

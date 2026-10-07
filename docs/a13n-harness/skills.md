@@ -4,7 +4,7 @@ sidebarTitle: Skills
 description: Discover and materialize Skills from files or Environments, and make them available to a Run.
 ---
 
-`a13n-harness` keeps Skill discovery reusable outside Agent execution. A Host chooses one of two explicit modes:
+Scan Skills directly through a FileOperator or through an entered Environment:
 
 | Host situation                                                 | API                                              | Result                         | Consistency owner                                                                                                          |
 | -------------------------------------------------------------- | ------------------------------------------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
@@ -61,9 +61,9 @@ The two APIs have exact, non-overlapping behavior:
 
 ## Read Concurrency and Limits
 
-Built-in file discovery and final document validation use at most eight read workers per operation. Materializers, sources, and roots remain sequential; parallel reads do not change source precedence, skipped-entry diagnostic order, or the name-sorted model catalog. With unchanged source configuration and content, read completion order does not change the Skill instruction prefix. Cancellation joins the workers before releasing their file scopes.
+Built-in scans use up to eight read workers while preserving source precedence and name-sorted results.
 
-Size limits are independent of concurrency: `FileSkillSource.max_entries_per_root` defaults to 256 listed directory entries, and `SkillsPolicy.max_skills` defaults to 512 entries per source and in the final resolved catalog. Oversized catalogs fail explicitly rather than silently selecting the first entries. Concurrency is internal; it needs no Host configuration or cross-Run cache.
+`max_entries_per_root` defaults to 256; `SkillsPolicy.max_skills` defaults to 512 per source and final catalog. Oversized catalogs fail instead of truncating.
 
 ## Skill Package Layout
 
@@ -96,7 +96,7 @@ Follow the repository review workflow.
 
 ## Scan a Direct FileOperator
 
-Use direct scanning when the Host already owns a non-virtual FileOperator and controls its lifetime and retargeting. Roots are canonical absolute paths in that operator's namespace: repeated separators, traversal segments, and a trailing slash other than `/` are rejected. For example, a root-confined local operator whose `/` is the project directory uses `/.agents/skills`, not `/workspace/.agents/skills`:
+For direct scanning, use canonical absolute roots in the FileOperator's namespace. A local operator rooted at the project uses `/.agents/skills`, not `/workspace/.agents/skills`:
 
 ```python
 from a13n_harness.capabilities import (
@@ -122,9 +122,9 @@ async def scan_cli_skills(
     return await manager.scan(files=files)
 ```
 
-This mode operates directly in the supplied FileOperator namespace and has no Environment mount-routing semantics. Keep that backing namespace stable until every path derived from the returned catalog has been consumed. If another process can replace the backing directory concurrently, provide an operator with the snapshot or locking behavior your Host requires, or use an entered Environment instead.
+Keep the operator's namespace stable until you finish using the returned paths. Use Environment-aware scanning when mounts can change.
 
-`SkillManager.default()` is designed for Environment-backed Runs and contains the canonical `/workspace/.agents/skills` source. That path resolves only when the default mount has no explicit `mount_path`; a Host with explicit aggregate roots supplies an explicit manager. A direct FileOperator Host normally constructs an explicit manager with roots in its own namespace.
+`SkillManager.default()` uses `/workspace/.agents/skills` in Environment-backed Runs. For explicit mount roots or direct FileOperators, provide a manager with roots in that namespace.
 
 ## Scan an Entered Environment
 
@@ -149,25 +149,19 @@ async def scan_environment_skills(
     return catalog
 ```
 
-`scan_environment()`:
-
-1. captures every configured root with `BoundEnvironment.select_files()` before awaiting provider I/O;
-2. opens mount-incarnation-pinned file scopes for those roots;
-3. runs materialization, listing, frontmatter reads, and final `SKILL.md` validation through the pinned scopes;
-4. resolves every final item to exact directory and document `EnvironmentPath` values;
-5. verifies that every configured scan route, including empty and conflict-overridden roots, is still current before returning.
+`scan_environment()` pins configured routes while reading and returns exact paths. It checks that those routes remain current before returning.
 
 A `BoundSkillCatalogItem` contains:
 
 - `name`, `description`, `path`, and `source_id`;
 - `directory`, the exact resolved Skill directory;
 - `document`, the exact resolved `SKILL.md` path;
-- `mount_id`, the opaque Harness mount incarnation held during scanning;
+- `directory.mount_id` and `document.mount_id`, the opaque mount incarnation used during scanning;
 - `observed_generation`, the provider generation held during scanning.
 
-`BoundSkillCatalog.require_current(environment)` reselects only paths represented by catalog items. Adding or replacing an unrelated Environment mount does not invalidate the catalog. Changing a relevant mount selection, opaque mount ID, provider generation, default route, or resolved provider path raises `DefinitionError` with code `skill_catalog_stale`.
+Call `catalog.require_current(environment)` before reusing catalog paths. A changed relevant mount, generation, or route fails with `skill_catalog_stale`; unrelated mounts do not invalidate it.
 
-Do not persist `EnvironmentPath` values as durable authority. They describe one entered Environment and are useful only while that Environment remains active. A Host that imports Skill packages should copy and validate package content into its own immutable revision format.
+`EnvironmentPath` is valid only in the entered Environment. Import packages into Host-owned immutable storage for durable use.
 
 ## Add Explicit Sources
 
@@ -190,7 +184,7 @@ manager = SkillManager.default(
 )
 ```
 
-Pass an explicit `SkillManager(...)` when the Host wants to replace the default composition completely. Source order is deterministic. Configure `SkillsPolicy(conflict="error")` when duplicate final names must fail rather than use precedence.
+An explicit manager replaces the defaults. Set `SkillsPolicy(conflict="error")` to reject duplicate names instead of applying source precedence.
 
 With `required=False`, each missing, unroutable, or unsupported root is skipped independently. Permission denial, malformed paths or frontmatter, provider failures, and catalog overflow remain errors.
 
@@ -212,11 +206,11 @@ class ManagedSkillMaterializer:
         ...
 ```
 
-`target_root` must equal one configured source root. It is a composition and provenance contract, not a sandbox wrapper. The materializer is trusted Host code and must stay beneath that root; the supplied FileOperator or Environment remains the actual authority boundary.
+Set `target_root` to one configured source root and materialize beneath it. The FileOperator or Environment supplies access permissions.
 
 ## Use Skills in a Harness Run
 
-Pass the manager to the definition-selected `SkillsCapability`. The Capability uses Environment-aware scanning, publishes exact `SkillPath` values, injects bounded routing instructions, observes ordinary `SKILL.md` reads, and fences the selected catalog at model and tool boundaries.
+Pass the manager to `SkillsCapability` to expose the catalog and its paths to the Agent:
 
 ```python
 from a13n_harness import RunBindings
@@ -243,21 +237,10 @@ Selection is not portable `HarnessState` and grants no source or file authority.
 
 ## Host Responsibilities
 
-The Harness scanner deliberately does not own:
+The Host manages source authorization, package validation, and durable storage.
 
-- source CRUD or enablement;
-- native path authorization;
-- package manifests, digests, signatures, or immutable revisions;
-- symlink and traversal policy for imported package copies;
-- persistence or refresh history;
-- durable execution or retry;
-- credentials, plugins, Capabilities, or tools.
+To import a package:
 
-An importing Host should:
-
-1. Scan through `scan_environment()`.
-2. Select one exact item.
-3. Verify that the catalog remains current.
-4. Enumerate and validate the package through the same entered Environment.
-5. Copy the package into Host-owned immutable storage.
-6. Validate the copied package again before publication.
+1. Scan through `scan_environment()` and select an item.
+2. Check the catalog remains current; validate content through the same Environment.
+3. Copy to Host-owned immutable storage and validate the copy before publication.

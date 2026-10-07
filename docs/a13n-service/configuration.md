@@ -13,7 +13,7 @@ Unknown settings stop startup rather than falling back to defaults. Validation e
 
 The shared process variable `A13N_OUTBOUND_TLS_VERIFY` is also recognized outside the `A13N_<SECTION>__<FIELD>` scheme. Unset or `true` verifies destination certificates; `false` explicitly disables verification for owned HTTP clients. Other values stop startup. It has no TOML field. Set it on every Service process, whatever its role, and restart after changes; see [outbound TLS verification](../a13n-harness/models.md#outbound-tls-verification) for exact coverage, exclusions and interception risks.
 
-Every field that takes a list, a map or a nested section, such as `server.trusted_proxies`, the `providers` lists (`http_origins`, `return_urls`, `mcp_servers`), `encryption.keys`, `plugins.keys` or the nested `auth.mail` section, takes JSON as an environment variable, for example `A13N_PLUGINS__KEYS='["notes"]'` or `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`.
+Use JSON for list, map and nested-section environment values, for example `A13N_PLUGINS__KEYS='["notes"]'`.
 
 ```toml
 [server]
@@ -129,7 +129,15 @@ A message submitted to a thread accepts `options.configuration`, separately from
 }
 ```
 
-List in `allowed_hosts` the hostname of every model provider, web provider, connection and remote environment endpoint the run calls. A null `allowed_hosts` is unrestricted; an empty array denies all; ordinary entries match exact normalized hostnames/IPs, while `regex:<pattern>` entries use Python full-string matching against the normalized hostname. The JSON example uses doubled backslashes for literal dots and allows only `api.example.com` or `docs.example.com`, not arbitrary subdomains or suffixes. Invalid/empty patterns are rejected at acceptance. See [host rules and regular expressions](../a13n-harness/context.md#host-rules-and-regular-expressions) for normalization, subdomain patterns and escaping. Globs, ports and CIDRs are not host rules. Acceptance freezes this snapshot for input URL reads, execution, recovery, resume and children. Steering can omit configuration or name the identical value; changing it on an active run fails with `run_configuration_immutable`. Submit `delivery: "next_run"` to select a new snapshot. Namespaced JSON extensions are read only by consumers that explicitly support them. Console has no controls for this configuration; set it through the API.
+Set `allowed_hosts` to every provider, connection and remote environment hostname the run needs:
+
+- `null` leaves hosts unrestricted; `[]` denies all.
+- Ordinary entries match exact normalized hostnames or IPs. `regex:<pattern>` uses Python full-string matching; the example allows only `api.example.com` or `docs.example.com`.
+- Invalid or empty patterns fail acceptance. Globs, ports and CIDRs are not host rules. See [host rules and regular expressions](../a13n-harness/context.md#host-rules-and-regular-expressions) for normalization and escaping.
+
+Acceptance freezes the configuration for input URL reads, execution, recovery, resume and children. Steering can omit it or repeat the same value. To change it, submit `delivery: "next_run"`; an active run rejects a different value with `run_configuration_immutable`.
+
+Set this configuration through the API; Console has no controls for it. Namespaced `extensions` are read only by consumers that explicitly support them.
 
 The `allowed_hosts` check compares declared URL hostnames only: it does no DNS precheck, address classification or IP pinning. Management operations outside a run retain process URL/HTTPS policy, not a run's configuration. Enforce network restrictions for arbitrary shell, third-party plugin and opaque SDK traffic at the deployment or environment boundary.
 
@@ -145,11 +153,11 @@ export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
 
 Uppercase forms and `ALL_PROXY` are supported; selection and bypass matching follow `httpx2`. An HTTP proxy URL can carry HTTPS traffic through CONNECT. Models, Remote MCP/OAuth, connectors, record memory, web requests, model catalogs, webhooks and other callers of the host HTTP client use these routes.
 
-**The deployment operator's proxy is trusted outbound infrastructure.** The `allowed_hosts` check and TLS verification apply independently of routing. The proxy owns final DNS and destination network restrictions; direct and `NO_PROXY` routes also use native transport DNS without application-level IP pinning. A failed proxy request never silently falls back to direct.
+Host rules and TLS verification still apply through the operator's proxy. The proxy or deployment network controls destination access. A failed proxy request does not fall back to direct.
 
-Connections to `a13n-envd` over HTTPS also use these proxy variables; plain-HTTP connections to a local or provider-private `a13n-envd` stay direct. Other SDK-owned environment and storage transports retain their own proxy behavior. This does not change the Envd controlled-egress broker or its execution isolation policy.
+HTTPS connections to `a13n-envd` use these proxy variables; plain-HTTP local or provider-private Envd connections stay direct. Other environment and storage SDKs keep their own proxy behavior.
 
-API-serving processes also read the public model catalog from `https://models.dev/catalog.json` for the Console's model picker. A read refreshes a catalog that is one hour old, and a failed refresh is retried no sooner than 60 seconds later; no setting changes this. Without access to it, the catalog is unavailable and models are added by ID.
+Console's model picker uses `https://models.dev/catalog.json`. If it is unreachable, Service uses its last catalog or lets you add models by upstream ID.
 
 For example, to allow plain HTTP to a model server on the Docker host with `providers.http_origins`:
 
