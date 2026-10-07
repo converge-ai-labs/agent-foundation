@@ -1837,13 +1837,5 @@
   "origin.new": "主线",
   "origin.fork": "分支",
   "origin.child": "子任务",
-  "Choose which conversation history to open.": "请选择要打开的对话历史。",
-  "Approved": "已批准",
-  "Denied": "已拒绝",
-  "Response saved. Waiting for the remaining responses.": "答复已保存，等待其余答复。",
-  "Save each response separately. The agent continues after all responses are saved.": "逐项保存答复。所有答复收齐后，agent 才会继续执行。",
-  "Save response": "保存答复",
-  "This request is no longer waiting for responses.": "此请求已不再接受答复。",
-  "Choose a response before saving.": "请先选择或填写答复，再保存。",
-  "Response saved.": "答复已保存。"
+  "Choose which conversation history to open.": "请选择要打开的对话历史。"
 }

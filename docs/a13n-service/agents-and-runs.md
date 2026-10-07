@@ -320,6 +320,8 @@ sequenceDiagram
 
 ### Resume a waiting run
 
+Your application owns collecting and saving answers, allowing edits, coordinating reviewers, and deciding when to resume. Service accepts only the complete batch; it does not persist partial answers or decide when your approval workflow is finished.
+
 Submit one complete batch naming the exact waiting run and every pending call ID:
 
 ```bash
@@ -348,19 +350,9 @@ For a user question, a returned value contains structured answers or a free-text
 
 A structured value could be `{"answers": {"Which color?": "blue"}}`; multi-select answers use arrays. The Service checks it against that call's exact questions using the Harness validator. To intentionally skip the question, send `{"status": "failed", "message": "User chose not to answer"}` for that call.
 
-Both result maps are required, and each must cover its pending group exactly. Missing results, unknown IDs and wrong categories reject the entire request without changing the wait. The resume endpoint has no default answers or partial submissions. In Console, save each response separately. Saved responses survive refresh and changing devices; the agent continues only after all required responses are saved. Before saving any response, **Continue without feedback** can explicitly submit denials and failed results after confirmation.
+Both result maps are required, and each must cover its pending group exactly. Missing results, unknown IDs and wrong categories reject the entire request without changing the wait. There are no default answers or partial submissions. In Console, review each item and submit the complete set; **Continue without feedback** explicitly submits denials and failed results after confirmation.
 
 The response is the successor run (`201`, or `200` for an idempotent replay). Results are stored in its existing `resume` field, without another inbox message. Only the thread's last run can be resumed, while it waits and nothing else runs; stale requests receive `409 conflict` with reason `not_idle_waiting_head`. A successor that fails becomes the thread's history like any other run, so the wait is over: your next message continues from it, and calls it left without a result read as interrupted.
-
-To collect answers one at a time, send `POST …/runs/{run_id}/answers` with an `Idempotency-Key` and the same `approvals` and `calls` maps, containing exactly one result in total. Both maps are required; one is empty. The endpoint accepts no accompanying `input`. For example:
-
-```json
-{"approvals": {"call_approval": {"action": "approve"}}, "calls": {}}
-```
-
-The response contains `run_id`, `status` (`waiting`, `resumed` or `closed`), saved `answers` and `successor` (a run or null). Each saved answer records its content, `answered_by_id` and `created_at`. Use `GET …/runs/{run_id}/answers` to reload that progress; it requires `read`, while saving requires the existing `run` permission. Saving one item does not start its tool. The last answer and successor are accepted together; a failure leaves the last answer unsaved so the same request can be retried.
-
-Answers cannot be changed after saving. Retry with the same key and body after an uncertain response; a conflicting answer receives `409 answer_already_saved`. A matching complete resume can finish the rest of the batch, but cannot overwrite saved answers. Collected results share the 256 KiB resume limit. A closed wait rejects new answers; reading or replaying an earlier saved answer never starts another execution. Per-item assignment and separate approver permissions are not provided.
 
 To accompany those results with a clarification or attachment, include optional `input` in the same resume request:
 

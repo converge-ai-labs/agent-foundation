@@ -92,7 +92,6 @@ These operations require an `Idempotency-Key` header of 1–512 visible ASCII ch
 
 - `POST …/threads` (start a thread with its first message) and `POST …/threads/{thread_id}/inbox` (submit a message)
 - `POST …/runs/{run_id}/fork` and `POST …/runs/{run_id}/resume`
-- `POST …/runs/{run_id}/answers`
 - `POST …/uploads`
 
 Generate a unique key per logical request and reuse it when retrying after a lost response. Repeating a request with the same key and the same body returns the original result with `200` instead of `201`; the same key with a different body or target is `409 conflict` with reason `idempotency_key_reused`. Keys are scoped to the caller and workspace and do not expire.

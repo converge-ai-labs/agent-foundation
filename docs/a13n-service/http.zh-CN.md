@@ -92,7 +92,6 @@ curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
 
 - `POST …/threads`（携首条消息创建线程）和 `POST …/threads/{thread_id}/inbox`（提交消息）
 - `POST …/runs/{run_id}/fork` 和 `POST …/runs/{run_id}/resume`
-- `POST …/runs/{run_id}/answers`
 - `POST …/uploads`
 
 每个逻辑请求生成唯一 key，响应丢失后重试时复用。相同 key 和请求体重复请求返回原始结果，状态为 `200` 而非 `201`；相同 key 搭配不同请求体或目标返回 `409 conflict`，原因为 `idempotency_key_reused`。Key 的范围为调用者和工作空间，不会过期。

@@ -381,11 +381,5 @@
   "Create Service Account Key": "创建服务账号密钥",
   "Health": "健康检查",
   "Ready while started and the database holds a usable schema. Redis only speeds work up, so losing it\nis reported as degraded rather than taking the replica out of service.": "进程已启动且数据库 schema 可用时就绪。Redis 仅用于加速，因此丢失时报告降级，不会将副本移出服务。",
-  "Ready": "就绪检查",
-  "One immutable answer to an exact waiting run; no accompanying input.": "针对指定等待运行的一项不可变回答，不包含附加输入。",
-  "Read saved answers and whether this exact wait is still open or has resumed.": "读取已保存的回答，并查询此次等待是否仍可接受回答或已恢复执行。",
-  "Pending Answers": "待处理请求的回答",
-  "Save one answer. The last answer atomically starts the existing resume flow.": "保存一项回答；最后一项回答与现有恢复流程的启动在同一事务中完成。",
-  "The answer was already saved": "该回答已保存",
-  "Answer Pending": "回答待处理请求"
+  "Ready": "就绪检查"
 }
