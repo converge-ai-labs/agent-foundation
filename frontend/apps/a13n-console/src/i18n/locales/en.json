@@ -1837,13 +1837,5 @@
   "origin.new": "Main",
   "origin.fork": "Branch",
   "origin.child": "Subtask",
-  "Choose which conversation history to open.": "Choose which conversation history to open.",
-  "Approved": "Approved",
-  "Denied": "Denied",
-  "Response saved. Waiting for the remaining responses.": "Response saved. Waiting for the remaining responses.",
-  "Save each response separately. The agent continues after all responses are saved.": "Save each response separately. The agent continues after all responses are saved.",
-  "Save response": "Save response",
-  "This request is no longer waiting for responses.": "This request is no longer waiting for responses.",
-  "Choose a response before saving.": "Choose a response before saving.",
-  "Response saved.": "Response saved."
+  "Choose which conversation history to open.": "Choose which conversation history to open."
 }
