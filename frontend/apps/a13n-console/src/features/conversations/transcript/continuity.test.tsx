@@ -208,12 +208,12 @@ it("keeps the accepted optimistic message and composer visible until navigation 
   await screen.findByText("First request", { selector: "div" });
   const composer = screen.getByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Next request" } });
-  fireEvent.click(screen.getByRole("button", { name: "Run next step" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await screen.findByText("Next request", { selector: "div" });
   await act(async () => view.accept());
   expect(screen.getByText("Next request", { selector: "div" })).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
-  expect(screen.queryByText("You are viewing a historical run.")).toBeNull();
+  expect(screen.queryByText("You are viewing earlier work.")).toBeNull();
   await act(async () => view.finishNavigation());
   await waitFor(() =>
     expect(screen.getByTestId("location").textContent).toBe(
@@ -242,7 +242,7 @@ it.each(["chat", "debug"] as const)(
     });
     observer.observe(view.container, { childList: true, subtree: true });
     fireEvent.change(composer, { target: { value: "Next request" } });
-    fireEvent.click(screen.getByRole("button", { name: "Run next step" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     expect(
       await screen.findByText("Next request", { selector: "div" }),
     ).toBeTruthy();
@@ -279,7 +279,7 @@ it("keeps the draft and existing transcript when sending fails", async () => {
   const first = await screen.findByText("First reply");
   const composer = screen.getByRole("textbox", { name: "Message" });
   fireEvent.change(composer, { target: { value: "Next request" } });
-  fireEvent.click(screen.getByRole("button", { name: "Run next step" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await screen.findByText("Next request", { selector: "div" });
   await act(async () =>
     view.submitted.resolve(

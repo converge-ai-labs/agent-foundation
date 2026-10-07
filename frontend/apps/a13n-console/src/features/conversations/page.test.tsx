@@ -95,7 +95,7 @@ it("renders a full Session page from collection previews without per-row Thread 
   expect(screen.getByText("Agent 18 · {{count}} runs")).toBeTruthy();
   expect(
     screen.getAllByRole("columnheader").map((column) => column.textContent),
-  ).toEqual(["Session", "Status", "Trigger", "Updated"]);
+  ).toEqual(["Session", "Status", "Trigger", "Updated", "Actions"]);
   expect(screen.getByText("No request text")).toBeTruthy();
   expect(screen.getAllByText("—")).toHaveLength(2);
   expect(screen.getByRole("searchbox")).toBeTruthy();

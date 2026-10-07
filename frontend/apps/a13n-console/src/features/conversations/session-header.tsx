@@ -84,22 +84,24 @@ export function SessionHeader({
           <span className={styles.agentLink}>{t("Session")}</span>
         )}
         <span className={styles.subNote}>
-          {debugSession
-            ? [
-                t("Debug session"),
-                runs.length
-                  ? t("{{count}} runs", { count: runs.length })
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(" · ")
-            : run.data
-              ? t("Started by {{trigger}}", {
-                  trigger: t(`trigger.${run.data.trigger}`, {
-                    defaultValue: run.data.trigger,
-                  }),
-                })
-              : ""}
+          {level === "chat"
+            ? t("Conversation")
+            : debugSession
+              ? [
+                  t("Debug session"),
+                  runs.length
+                    ? t("{{count}} runs", { count: runs.length })
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : run.data
+                ? t("Started by {{trigger}}", {
+                    trigger: t(`trigger.${run.data.trigger}`, {
+                      defaultValue: run.data.trigger,
+                    }),
+                  })
+                : ""}
         </span>
       </div>
       <div className={styles.sessionControls}>

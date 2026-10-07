@@ -179,10 +179,13 @@ export function AgentEditor({
           title={creating ? t("New agent") : t("Unsaved changes")}
           consequence={
             creating
-              ? t("Saving creates the agent and publishes v1.")
-              : t("Saving publishes v{{version}} and makes it the default.", {
-                  version: nextVersion,
-                })
+              ? t("Saving creates the agent, ready for a conversation.")
+              : t(
+                  "New work uses v{{version}} by default. Active work and approval continuations keep their original version.",
+                  {
+                    version: nextVersion,
+                  },
+                )
           }
           note={creating ? undefined : note}
           onNoteChange={creating ? undefined : setNote}
@@ -190,9 +193,7 @@ export function AgentEditor({
           notePlaceholder={t("Version note (optional)")}
           onDiscard={discard}
           discardLabel={creating ? t("Cancel") : undefined}
-          saveLabel={
-            saveLabel ?? t("Save as v{{version}}", { version: nextVersion })
-          }
+          saveLabel={saveLabel ?? t("Save changes")}
           pending={pending}
           disabled={saveDisabled || !draft.model}
         />

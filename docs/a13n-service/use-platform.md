@@ -20,7 +20,7 @@ In the selected workspace, **runner** allows agent execution and **builder** als
 3. Watch the response stream. The conversation can also show reasoning and tool calls.
 4. Send a follow-up, such as “Make the first step more specific.” The same thread retains the discussion history.
 
-Return to the saved conversation later to continue. If a run fails, inspect its details or share its ID with your administrator; see [troubleshooting](monitoring.md#troubleshoot-a-request-or-run).
+To return later, open **Sessions** and select **Continue conversation** for that session. This opens Chat on its main thread; if there is no unique main thread, choose the history to open. A thread ID search keeps that exact target. Select **Inspect execution** or click the row to open Debug. You can switch between Chat and Debug in the conversation. If a run fails, inspect its details or share its ID with your administrator; see [troubleshooting](monitoring.md#troubleshoot-a-request-or-run).
 
 ## Create your own agent
 
@@ -31,7 +31,7 @@ With the builder or admin role in this workspace:
 3. Select **Create agent**.
 4. Choose **Try agent** and send the request from step 2 of [Try an agent](#try-an-agent).
 
-Each save creates a revision, listed under **Versions**. Add [tools and connections](tools.md), [skills](skills.md), or [subagents](agents-and-runs.md#subagents) as needed. See [Agents](agents-and-runs.md#agents) for revision selection.
+Use **Save changes** after editing the configuration. New work uses the saved version by default; active work and approval continuations keep their original version. Messages pinned to a specific version keep that selection. Each save creates a revision, listed under **Versions**. Add [tools and connections](tools.md), [skills](skills.md), or [subagents](agents-and-runs.md#subagents) as needed. See [Agents](agents-and-runs.md#agents) for revision selection.
 
 ## Guide the work
 

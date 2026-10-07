@@ -126,13 +126,15 @@ it("identifies the session and switches the level in the URL", async () => {
   expect(screen.getByRole("link", { name: /Release Bot/ })).toBeTruthy();
   // The identifier stays one action away instead of leading the header.
   expect(screen.queryByText("ses_1")).toBeNull();
-  expect(await screen.findByText("Debug session · 2 runs")).toBeTruthy();
+  expect(await screen.findByText("Conversation")).toBeTruthy();
+  expect(screen.queryByText("Debug session · 2 runs")).toBeNull();
   // The header reports the followed run's state; stopping belongs to the dock.
   expect(await screen.findByText("state.running")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   expect(screen.getByText("level:")).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Debug" }));
   expect(await screen.findByText("level:?view=debug")).toBeTruthy();
+  expect(await screen.findByText("Debug session · 2 runs")).toBeTruthy();
   // Chat is written out too: the level a reader chose outlives a reload.
   await user.click(screen.getByRole("button", { name: "Chat" }));
   expect(await screen.findByText("level:?view=chat")).toBeTruthy();

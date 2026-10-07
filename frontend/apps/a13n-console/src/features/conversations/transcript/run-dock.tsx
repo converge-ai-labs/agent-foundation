@@ -6,7 +6,7 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
@@ -60,6 +60,7 @@ export function RunDock({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
+    { search } = useLocation(),
     { workspace, can, basePath } = useWorkspace();
   // The Thread's latest Run: the active one, else the one sealed last.
   const latest = thread.current_run_id ?? thread.last_run_id;
@@ -137,17 +138,17 @@ export function RunDock({
         {!current ? (
           <p className={styles.dockNotice}>
             <GitBranchIcon size={13} aria-hidden="true" />
-            {t("You are viewing a historical run.")}
+            {t("You are viewing earlier work.")}
             {latest && (
               <Link
                 className={styles.dockLink}
-                to={runPath(basePath, {
+                to={`${runPath(basePath, {
                   session_id: thread.session_id,
                   thread_id: thread.id,
                   run_id: latest,
-                })}
+                })}${search}`}
               >
-                {t("Open current run")}
+                {t("Return to latest messages")}
               </Link>
             )}
           </p>
@@ -158,10 +159,10 @@ export function RunDock({
                 key={resubmit ? "resubmit" : "message"}
                 initial={resubmit?.payload}
                 agentName={agentName}
-                label={t(active ? "Send guidance" : "Run next step")}
+                label={t(active ? "Add guidance" : "Send message")}
                 placeholder={
                   active
-                    ? t("Send guidance while it works")
+                    ? t("Add guidance while it works")
                     : agentName
                       ? t("Message {{agent}}…", { agent: agentName })
                       : t("Message your agent…")
@@ -235,11 +236,11 @@ export function RunDock({
           <p className={styles.dockReceipt} role="status">
             {t(
               entry.status === "consumed" && entry.assigned_run_id === run.id
-                ? "Guidance applied to the run."
+                ? "Guidance applied."
                 : entry.status === "failed" ||
                     (!!entry.assigned_run_id &&
                       entry.assigned_run_id !== run.id)
-                  ? "The run ended before guidance was applied."
+                  ? "The work ended before guidance was applied."
                   : "Guidance accepted. Waiting for the agent to apply it.",
             )}
           </p>
