@@ -5,12 +5,13 @@ from sqlalchemy import ForeignKeyConstraint, String
 
 # Join tables are keyed by what they join, usage facts by the Harness's own record IDs, and a memory's store and
 # revisions by the memory, provider authorization by its provider, provisioning facts by workspace/component, and a
-# run's display pages by the run and their first ordinal; every other row has a Service object ID.
+# run's display pages by ordinal and pending answers by tool call; every other row has a Service object ID.
 NOT_OBJECT_KEYED = {
     "memory_file_revisions",
     "memory_file_stores",
     "model_provider_oauth",
     "passwords",
+    "pending_answers",
     "run_item_pages",
     "thread_environments",
     "thread_memories",
@@ -29,6 +30,10 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
         and table.c.id.type.length == 72
     }
     assert set(metadata.tables) - keyed == NOT_OBJECT_KEYED
+    assert [column.name for column in metadata.tables["pending_answers"].primary_key.columns] == [
+        "run_id",
+        "tool_call_id",
+    ]
 
 
 def test_workspace_owned_rows_reference_their_workspace_by_tenant_pair() -> None:

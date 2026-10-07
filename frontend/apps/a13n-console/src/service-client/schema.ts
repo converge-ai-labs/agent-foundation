@@ -1560,6 +1560,30 @@ export interface paths {
     patch: operations["update_run_api_v1_runs__run_id__patch"];
     trace?: never;
   };
+  "/api/v1/runs/{run_id}/answers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Pending Answers
+     * @description Read saved answers and whether this exact wait is still open or has resumed.
+     */
+    get: operations["pending_answers_api_v1_runs__run_id__answers_get"];
+    put?: never;
+    /**
+     * Answer Pending
+     * @description Save one answer. The last answer atomically starts the existing resume flow.
+     */
+    post: operations["answer_pending_api_v1_runs__run_id__answers_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}/attempts": {
     parameters: {
       query?: never;
@@ -5743,6 +5767,33 @@ export interface components {
       /** Calls */
       calls: components["schemas"]["PendingCall"][];
     };
+    /**
+     * PendingAnswer
+     * @description One immutable answer to an exact waiting run; no accompanying input.
+     */
+    PendingAnswer: {
+      /** Approvals */
+      approvals: {
+        [key: string]: components["schemas"]["ApprovalDecision"];
+      };
+      /** Calls */
+      calls: {
+        [key: string]: components["schemas"]["CallResult"];
+      };
+    };
+    /** PendingAnswers */
+    PendingAnswers: {
+      /** Answers */
+      answers: components["schemas"]["SavedAnswer"][];
+      /** Run Id */
+      run_id: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "waiting" | "resumed" | "closed";
+      successor: components["schemas"]["RunView"] | null;
+    };
     /** PendingCall */
     PendingCall: {
       /** Arguments */
@@ -6340,6 +6391,17 @@ export interface components {
       wait_reason: components["schemas"]["WaitReason"] | null;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** SavedAnswer */
+    SavedAnswer: {
+      answer: components["schemas"]["PendingAnswer"];
+      /** Answered By Id */
+      answered_by_id: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
     };
     /** ServiceAccount */
     ServiceAccount: {
@@ -11233,6 +11295,74 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RunView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  pending_answers_api_v1_runs__run_id__answers_get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PendingAnswers"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  answer_pending_api_v1_runs__run_id__answers_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PendingAnswer"];
+      };
+    };
+    responses: {
+      /** @description The answer was already saved */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PendingAnswers"];
+        };
+      };
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PendingAnswers"];
         };
       };
       400: components["responses"]["Error"];

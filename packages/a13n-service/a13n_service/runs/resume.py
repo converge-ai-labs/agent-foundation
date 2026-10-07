@@ -2,7 +2,7 @@
 
 The waiting run, not a tool call ID, identifies the suspension: an answer for a superseded wait conflicts
 instead of landing on a newer one. Answers are normalized against the complete sealed pending set, so the
-successor always carries one decision per pending call and no partial progress is ever stored.
+successor always carries one decision per pending call. Single-answer collection is owned by answers.py.
 """
 
 import hashlib
@@ -21,7 +21,7 @@ from a13n_service.runs.attachments import asset_fields
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Pending, Resume, Returned, RunView, canonical_json
-from a13n_service.runs.tables import RunRow
+from a13n_service.runs.tables import PendingAnswerRow, RunRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread, require_open
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
@@ -98,19 +98,9 @@ async def resume(
                     return await run_view(session, found), False
                 raise conflict("run", waiting.id, "not_idle_waiting_head")
             answers = normalize(Pending.model_validate(waiting.pending), request)
-            if answers.input is not None:
-                await require_usable(session, scope.workspace_id, asset_fields(answers.input))
-            source = await Source.inherited(
-                session,
-                runtime,
-                waiting,
-                "resume",
-                resume=answers,
-                resumed_by_id=actor.id,
-                request_key=request_key,
-                request_digest=digest,
+            successor = await complete(
+                session, runtime, actor, waiting, thread, answers, request_key=request_key, digest=digest
             )
-            successor = await start_run(session, runtime, thread, source)
             return await run_view(session, successor), True
     except IntegrityError as error:
         if violated_constraint(error) != "uq_runs_resume_request":
@@ -120,3 +110,36 @@ async def resume(
         found = await _replay(session, scope.workspace_id, actor, request_key, digest)
         assert found is not None
         return await run_view(session, found), False
+
+
+async def complete(
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    waiting: RunRow,
+    thread: ThreadRow,
+    answers: Resume,
+    *,
+    request_key: str | None = None,
+    digest: str | None = None,
+) -> RunRow:
+    """Create the existing resume successor inside the caller's thread-locked transaction."""
+    saved = (await session.scalars(select(PendingAnswerRow).where(PendingAnswerRow.run_id == waiting.id))).all()
+    for row in saved:
+        for category in ("approvals", "calls"):
+            for call_id, value in row.answer[category].items():
+                if canonical_json(getattr(answers, category)[call_id].model_dump(mode="json")) != canonical_json(value):
+                    raise conflict("run", waiting.id, "answer_already_saved")
+    if answers.input is not None:
+        await require_usable(session, waiting.workspace_id, asset_fields(answers.input))
+    source = await Source.inherited(
+        session,
+        runtime,
+        waiting,
+        "resume",
+        resume=answers,
+        resumed_by_id=actor.id,
+        request_key=request_key,
+        request_digest=digest,
+    )
+    return await start_run(session, runtime, thread, source)
