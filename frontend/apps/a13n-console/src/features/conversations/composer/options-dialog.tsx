@@ -305,7 +305,7 @@ export function RunOptionsDialog({
           )}
           options={environmentOptions}
         />
-        {selectedEnvironment?.device_id && open && (
+        {selectedEnvironment && open && (
           <WorkingDirectory
             key={selectedEnvironment.id}
             value={options.workingDirectory}

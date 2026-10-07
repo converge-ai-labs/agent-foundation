@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import anyio
 from a13n_harness import EnvironmentMount as HarnessMount
 from a13n_harness import RunConfiguration
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, update
 
@@ -133,6 +134,40 @@ async def open_mounts(
                 runtime, item.target, operation_id=None, allow_create=False, configuration=configuration
             )
             stack.push_async_callback(close, adapter)
+            if item.working_directory is not None:
+                # Prepare without entering: Harness still owns the single-use operation scope.
+                # This checks this mount's selection, never the shared instance's lifecycle state.
+                with anyio.fail_after(runtime.settings.environments.wait_seconds):
+                    await adapter.prepare()
+                    files = adapter.operations.files
+                    if files is None:
+                        raise conflict(
+                            "environment",
+                            item.target.environment_id,
+                            "working_directory_unsupported",
+                            mount=item.name,
+                            working_directory=item.working_directory,
+                        )
+                    try:
+                        await files.list(item.working_directory, max_results=1)
+                    except EnvironmentError as error:
+                        if error.code not in {
+                            "environment_not_found",
+                            "environment_denied",
+                            "environment_request_invalid",
+                        }:
+                            raise
+                        raise ServiceError(
+                            "invalid_argument",
+                            f"Working directory {item.working_directory!r} for mount {item.name!r} "
+                            "cannot be opened. Select an existing accessible directory in this environment.",
+                            {
+                                "environment_id": item.target.environment_id,
+                                "mount": item.name,
+                                "working_directory": item.working_directory,
+                                "reason": error.code,
+                            },
+                        ) from error
             mounts[item.name] = HarnessMount(
                 adapter,
                 working_directory=item.working_directory,

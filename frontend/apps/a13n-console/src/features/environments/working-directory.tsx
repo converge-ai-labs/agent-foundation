@@ -1,7 +1,7 @@
 import { FormField, Input } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 
-/** The working directory a mount uses on an external target. */
+/** A conversation mount's directory in the selected environment's namespace. */
 export function WorkingDirectory({
   value,
   onChange,
@@ -14,7 +14,7 @@ export function WorkingDirectory({
     <FormField
       label={t("Working directory")}
       description={t(
-        "Enter an absolute path on the external target. This is a working directory, not a filesystem sandbox.",
+        "Use an existing absolute path inside this environment; leave empty for its default. For Local, /projects/app is inside the instance's root, not a path on your computer. Directories organize files; processes, ports and software remain shared.",
       )}
     >
       <Input value={value} onChange={(event) => onChange(event.target.value)} />

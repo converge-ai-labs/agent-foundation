@@ -56,6 +56,8 @@ Connections present their configured source and their authorization state separa
 
 Environment pages distinguish Providers, Templates and actual instances. Forms use supported Provider schemas with ordinary controls, advanced disclosure and a complete JSON editor; switching types preserves local input. Only demonstrated supported managed backends are offered. Existing instance choices show name and ID. Details distinguish desired Thread mounts from frozen Run mounts, active use, retained policy, lifecycle operation, failure and external ownership. Pending stop/destroy stays pending until confirmed; uncertainty is not shown as success. Deleted instances remain tombstones; loss or replacement never implies file recovery or automatic recreation under the same identity.
 
+When reusing an existing managed instance or external target, new-conversation options and the add-mount form offer an optional working directory. Empty means the provider default; switching the selected instance clears the previous path. The field explains existing environment-local paths, Local's instance-root mapping and shared machine resources. Thread mount details display the selected instance and explicit directory. Selecting a template does not offer an existing-directory choice.
+
 HTTP envd registration is connect-only: endpoint, credential and working-directory binding, with bounded discovery where supported. Registered environments have no managed create/start/stop/destroy controls. The [Environment contract](../a13n-service/06-environments.md) owns safe lifecycle actions and authority; Console renders only actions that the selected backend/resource actually supports.
 
 ## Sessions and Runs

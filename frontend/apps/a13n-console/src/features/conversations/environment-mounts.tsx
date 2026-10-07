@@ -191,7 +191,7 @@ function AddMountForm({
           maxLength={63}
         />
       </FormField>
-      {selected && !selected.template_id && (
+      {selected && (
         <WorkingDirectory
           key={selected.id}
           value={directory}

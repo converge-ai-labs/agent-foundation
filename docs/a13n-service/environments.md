@@ -157,3 +157,11 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 Before each attempt executes, it waits up to `environments.wait_seconds` for the run's environments to be ready, starting stopped ones. If they do not become ready in time, the attempt fails and the run is retried within its attempt budget; an environment that can no longer be used, such as a deleted one, fails the run with `environment_unavailable`.
 
 Async [subagents](agents-and-runs.md#subagents) get environments from their edge's policy: the parent run's mounts (`shared`), a new environment from a template (`dedicated`), or none.
+
+### Reuse an instance with a project directory
+
+In a new conversation's **Options**, select **Reuse existing** and optionally enter a **Working directory**. The **Add environment** form on an existing conversation offers the same field. Leave it empty to keep the provider default. Switching instances clears the previous choice; the conversation's environment details show its saved directory.
+
+The directory must already exist inside the selected environment. For Local, `/projects/app` maps to `{template root}/{environment ID}/projects/app`, not a path on the browser's computer. For other providers, use their environment-local file namespace. The Service checks explicit directories before execution and reports missing or inaccessible paths without creating them or marking the shared instance broken.
+
+Two conversations can use different project directories on one instance, or deliberately use the same directory to share files. Relative file paths, the `/workspace` route and the default command cwd use the chosen directory. Processes, ports, installed software and native permissions remain shared: this is file organization, not security isolation. Removing a mount does not delete the directory; accepted runs keep their captured selection.
