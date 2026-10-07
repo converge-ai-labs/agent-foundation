@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { createClient, type Client } from "../../service-client";
 import { SessionList } from "./list";
 
@@ -137,3 +137,70 @@ it("pages sessions and starts a changed search from its first page", async () =>
     expect(screen.queryByRole("button", { name: "Previous" })).toBeNull(),
   );
 });
+
+function SelectedLocation() {
+  const { pathname, search } = useLocation();
+  return <output>{pathname + search}</output>;
+}
+
+it.each([
+  [
+    "",
+    true,
+    "Continue conversation",
+    "/workspace/test/sessions/sess_first?view=chat",
+  ],
+  [
+    "?q=thr_branch",
+    true,
+    "Continue conversation",
+    "/workspace/test/sessions/sess_first/threads/thr_branch?view=chat",
+  ],
+  [
+    "?q=thr_branch",
+    false,
+    "Inspect execution",
+    "/workspace/test/sessions/sess_first/threads/thr_branch?view=debug",
+  ],
+  [
+    "?q=sess_first",
+    true,
+    "Inspect execution",
+    "/workspace/test/sessions/sess_first?view=debug",
+  ],
+])(
+  "opens the requested view from %s (%s, %s)",
+  async (search, permission, action, expected) => {
+    canRun = permission;
+    client = createClient({
+      baseUrl: "https://service.example",
+      auth: { type: "session" },
+      fetch: async () =>
+        Response.json({ items: [session("First")], next_cursor: null }),
+    });
+    const cache = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={cache}>
+        <MemoryRouter initialEntries={[`/workspace/test/sessions${search}`]}>
+          <Routes>
+            <Route path="/workspace/test/sessions" element={<SessionList />} />
+            <Route
+              path="/workspace/test/sessions/:sessionId/*"
+              element={<SelectedLocation />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const link = await screen.findByRole("link", { name: action });
+    if (!permission)
+      expect(
+        screen.queryByRole("link", { name: "Continue conversation" }),
+      ).toBeNull();
+    await userEvent.setup().click(link);
+    expect(await screen.findByText(expected)).toBeTruthy();
+    cache.clear();
+  },
+);

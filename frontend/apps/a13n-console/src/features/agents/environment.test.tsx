@@ -86,7 +86,7 @@ it("saves the environment choice together with other configuration edits", async
   );
   await user.click(await screen.findByRole("option", { name: "Sandbox" }));
   expect(submit).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: /Save as v/ }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(submit).toHaveBeenCalledWith(
     expect.objectContaining({
       instructions: "Check the evidence. Keep the draft.",

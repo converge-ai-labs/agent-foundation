@@ -61,7 +61,7 @@ function SessionResults({
   create: ReactNode;
 }) {
   const { t } = useTranslation(),
-    { workspace, basePath } = useWorkspace(),
+    { workspace, basePath, can } = useWorkspace(),
     navigate = useNavigate(),
     client = useClient(),
     page = useCursor(filters);
@@ -79,6 +79,8 @@ function SessionResults({
       />
     );
   const items = sessions.data.items;
+  const sessionPath = (id: string) =>
+    `${basePath}/sessions/${id}${filters.q && filters.q !== id ? `/threads/${encodeURIComponent(filters.q)}` : ""}`;
   const filtered = Object.values(filters).some((value) =>
     Array.isArray(value) ? value.length > 0 : !!value,
   );
@@ -91,9 +93,7 @@ function SessionResults({
           caption={t("Sessions")}
           // The collection opens a session to inspect it: that is the Debug level.
           onRowActivate={(session) =>
-            navigate(
-              `${basePath}/sessions/${session.id}${filters.q && filters.q !== session.id ? `/threads/${encodeURIComponent(filters.q)}` : ""}?view=debug`,
-            )
+            navigate(`${sessionPath(session.id)}?view=debug`)
           }
           columns={[
             {
@@ -147,6 +147,34 @@ function SessionResults({
               align: "right",
               render: (session) => (
                 <Timestamp value={session.updated_at} relative />
+              ),
+            },
+            {
+              label: t("Actions"),
+              align: "right",
+              render: (session) => (
+                <div className="flex items-center gap-2">
+                  {can("run") && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      render={
+                        <Link to={`${sessionPath(session.id)}?view=chat`} />
+                      }
+                    >
+                      {t("Continue conversation")}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    render={
+                      <Link to={`${sessionPath(session.id)}?view=debug`} />
+                    }
+                  >
+                    {t("Inspect execution")}
+                  </Button>
+                </div>
               ),
             },
           ]}

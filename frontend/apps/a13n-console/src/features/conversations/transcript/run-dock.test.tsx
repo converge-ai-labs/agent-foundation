@@ -74,6 +74,7 @@ function mount({
   reject = false,
   resubmit,
   question = false,
+  search = "",
 }: {
   status?: Schema["RunStatus"];
   historical?: boolean;
@@ -81,6 +82,7 @@ function mount({
   reject?: boolean;
   resubmit?: Resubmission;
   question?: boolean;
+  search?: string;
 } = {}) {
   const posts: { path: string; body: unknown; key: string | null }[] = [];
   const reads: string[] = [];
@@ -194,7 +196,7 @@ function mount({
   });
   render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[`/${search}`]}>
         <RunDock run={current} thread={thread} resubmit={resubmit} />
         <Location />
       </MemoryRouter>
@@ -213,7 +215,7 @@ it("continues the completed head with a next-run message and navigates to its Ru
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
     target: { value: "Next test" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Run next step" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() =>
     expect(screen.getByTestId("location").textContent).toContain("/runs/next"),
   );
@@ -231,8 +233,8 @@ it("steers the active Run and reports when it applied the guidance", async () =>
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
     target: { value: "Use the smaller scope" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Send guidance" }));
-  await screen.findByText("Guidance applied to the run.");
+  fireEvent.click(screen.getByRole("button", { name: "Add guidance" }));
+  await screen.findByText("Guidance applied.");
   expect(posts.map((p) => p.path)).toEqual(["/api/v1/threads/thread/inbox"]);
   // The dock reads its own entry, never the whole inbox history.
   expect(posts.reads).toContain("/api/v1/threads/thread/inbox/inb_new");
@@ -246,18 +248,18 @@ it("retains rejected guidance and never falls through to a new Run", async () =>
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
     target: { value: "Keep this input" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Send guidance" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add guidance" }));
   await screen.findByRole("alert");
   expect(
     screen
       .getByRole("textbox", { name: "Message" })
       .getAttribute("placeholder"),
-  ).toBe("Send guidance while it works");
+  ).toBe("Add guidance while it works");
   expect(screen.getByRole("textbox", { name: "Message" })).toHaveProperty(
     "value",
     "Keep this input",
   );
-  fireEvent.click(screen.getByRole("button", { name: "Send guidance" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add guidance" }));
   await waitFor(() => expect(posts).toHaveLength(2));
   expect(posts[1]).toEqual(posts[0]);
 });
@@ -297,7 +299,9 @@ it("shows feedback instead of a general composer while waiting", async () => {
 });
 it("does not offer input or retry on historical Runs", () => {
   mount({ status: "failed", historical: true });
-  expect(screen.getByRole("link", { name: "Open current run" })).toBeTruthy();
+  expect(
+    screen.getByRole("link", { name: "Return to latest messages" }),
+  ).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Retry run" })).toBeNull();
 });
@@ -313,7 +317,7 @@ it("keeps guidance and stopping from a reader without run permission", () => {
 
 it("offers Stop in place of Send while a run is active and the draft is empty", async () => {
   const posts = mount({ status: "running" });
-  expect(screen.queryByRole("button", { name: "Send guidance" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add guidance" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await waitFor(() => expect(posts).toHaveLength(1));
   expect(posts[0]).toMatchObject({
@@ -323,14 +327,14 @@ it("offers Stop in place of Send while a run is active and the draft is empty", 
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
     target: { value: "Keep going, but smaller" },
   });
-  expect(screen.getByRole("button", { name: "Send guidance" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Add guidance" })).toBeTruthy();
 });
 
 it("leaves retrying a stopped run to the run itself", async () => {
   cleanup();
   mount({ status: "failed" });
   expect(
-    await screen.findByRole("button", { name: "Run next step" }),
+    await screen.findByRole("button", { name: "Send message" }),
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry run" })).toBeNull();
 });
@@ -355,7 +359,7 @@ it("prefills a stopped Run's message and resubmits it with the options it ran wi
   await waitFor(() =>
     expect(message.closest("fieldset")?.disabled).toBe(false),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Run next step" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() =>
     expect(screen.getByTestId("location").textContent).toContain("/runs/next"),
   );
@@ -421,5 +425,19 @@ it.each([false, true])(
       ],
     ]);
     expect(posts[0]?.key).toBe(`${posts[1]?.key}:resume`);
+  },
+);
+
+it.each(["chat", "debug"])(
+  "keeps %s selected when returning to the latest messages",
+  async (view) => {
+    mount({ historical: true, search: `?view=${view}` });
+    expect(
+      screen
+        .getByRole("link", { name: "Return to latest messages" })
+        .getAttribute("href"),
+    ).toBe(
+      `/workspace/design/sessions/session/threads/thread/runs/later?view=${view}`,
+    );
   },
 );

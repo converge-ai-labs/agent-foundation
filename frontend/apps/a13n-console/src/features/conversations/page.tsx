@@ -1,7 +1,8 @@
-import { SearchPicker } from "a13n-ui";
+import { Button, SearchPicker } from "a13n-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import {
+  Link,
   Navigate,
   Outlet,
   useLocation,
@@ -196,9 +197,16 @@ export function SessionLayout() {
     client = useClient(),
     queries = conversationQueries(client, workspace.id);
   const threads = useQuery(queries.threads(sessionId));
-  const first = threads.data?.[0];
-  // The disclosure level lives in the search string; redirects keep it.
+  // Chat returns to the main conversation, never the most recently listed child.
+  // An explicit Thread URL remains authoritative, including forks and children.
   const { search } = useLocation();
+  const chat = new URLSearchParams(search).get("view") === "chat";
+  const roots = threads.data?.filter((thread) => thread.origin === "new") ?? [];
+  const first = chat
+    ? roots.length === 1
+      ? roots[0]
+      : undefined
+    : threads.data?.[0];
   return (
     // The header and the run sections share one owner for what is collapsed.
     <RunCollapseProvider>
@@ -218,7 +226,24 @@ export function SessionLayout() {
             <Navigate to={`threads/${first.id}${search}`} replace />
           ) : threads.isPending ? (
             <Loading variant="list" rows={3} />
-          ) : (
+          ) : threads.data?.length ? (
+            <div className="grid gap-3 p-6">
+              <h2>{t("Choose a conversation")}</h2>
+              <p>{t("Choose which conversation history to open.")}</p>
+              <ul className="grid gap-2">
+                {threads.data.map((thread) => (
+                  <li key={thread.id}>
+                    <Button
+                      variant="outline"
+                      render={<Link to={`threads/${thread.id}${search}`} />}
+                    >
+                      {thread.id} · {t(`origin.${thread.origin}`)}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : !threads.error ? (
             <Empty
               icon={<ChatsIcon aria-hidden="true" />}
               title={t("No threads yet")}
@@ -226,7 +251,7 @@ export function SessionLayout() {
                 "Threads created by the host application appear here.",
               )}
             />
-          )}
+          ) : null}
         </div>
       </div>
     </RunCollapseProvider>

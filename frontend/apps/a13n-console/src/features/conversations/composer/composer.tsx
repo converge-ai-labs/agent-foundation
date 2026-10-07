@@ -40,7 +40,7 @@ export function Composer({
   /** A message to start from, such as one being submitted again. */
   initial?: Schema["MessagePayload"];
   submit: (payload: Schema["MessagePayload"], key: string) => Promise<unknown>;
-  /** Names the action: Send, Send guidance, Run next step. */
+  /** Names the action: Send, Add guidance, Send message. */
   label?: string;
   placeholder?: string;
   disabled?: boolean;

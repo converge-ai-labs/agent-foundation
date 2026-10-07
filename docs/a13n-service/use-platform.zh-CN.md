@@ -20,7 +20,7 @@ description: 登录 Console，试用团队的 agent，并创建自己的 agent�
 3. 查看流式回复。对话中也可以显示推理和工具调用。
 4. 继续追问，例如“把第一步写得更具体些”。同一线程保留讨论历史。
 
-稍后可以回到保存的对话继续。如果运行失败，请查看详情或将运行 ID 提供给管理员；参阅[故障排查](monitoring.md#troubleshoot-a-request-or-run)。
+稍后打开**会话**列表，选择对应会话的**继续对话**，即可在 Chat 视图打开主线程；如果没有唯一主线程，则选择要打开的历史。按线程 ID 搜索时，会保留该精确目标。选择**检查执行**或点击整行可以打开 Debug。在对话中可以切换 Chat 和 Debug。如果运行失败，请查看详情或将运行 ID 提供给管理员；参阅[故障排查](monitoring.md#troubleshoot-a-request-or-run)。
 
 ## 创建自己的 agent
 
@@ -31,7 +31,7 @@ description: 登录 Console，试用团队的 agent，并创建自己的 agent�
 3. 选择 **创建 Agent**。
 4. 选择 **试用 Agent**，并发送[试用 agent](#try-an-agent) 第 2 步中的请求。
 
-每次保存都会创建一个修订版本，在 **版本** 中列出。按需添加[工具与连接](tools.md)、[skill](skills.md)或[子 agent](agents-and-runs.md#subagents)。修订版本选择请参阅 [Agent](agents-and-runs.md#agents)。
+修改配置后选择**保存更改**。新工作默认使用保存的版本；正在执行的工作和审批后继续的工作保留原版本。已固定版本的消息保留该选择。每次保存都会创建一个修订版本，在 **版本** 中列出。按需添加[工具与连接](tools.md)、[skill](skills.md)或[子 agent](agents-and-runs.md#subagents)。修订版本选择请参阅 [Agent](agents-and-runs.md#agents)。
 
 ## 指导工作
 
