@@ -22,7 +22,7 @@ from a13n_service.runs.claim import claim
 from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Outcome
-from a13n_service.runs.seal import expire_leases, seal_attempt
+from a13n_service.runs.seal import LeaseExpirer, seal_attempt
 from a13n_service.runs.tables import AttemptRow, RunRow, UsageRecordRow
 from a13n_service.runs.usage import UsageBuffer, UsageReport, ingest_late
 from a13n_service.runs.worker import Worker
@@ -360,7 +360,7 @@ async def test_a_stale_attempt_changes_nothing_after_a_takeover(service, scripte
         await session.execute(
             update(AttemptRow).where(AttemptRow.run_id == run_id).values(lease_expires_at=AttemptRow.created_at)
         )
-    await expire_leases(runtime, batch=10)
+    await LeaseExpirer(runtime, batch=10)()
     async with transaction(runtime.storage) as session:
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
     (current,) = await claim(runtime, worker_id="worker-current", worker_build="test", limit=1)
@@ -537,7 +537,7 @@ async def test_the_lease_expiry_sweep_passes_a_run_it_cannot_recover(
 
     monkeypatch.setattr(seal_module, "recover", recover_all_but_one)
     # The sweep visits the longest-expired lease first.
-    await expire_leases(service.runtime, batch=10)
+    await LeaseExpirer(service.runtime, batch=10)()
     assert (await runs_kit.get_run(service, failing))["status"] == "running"
     assert (await runs_kit.get_run(service, recovered))["status"] == "accepted"
     [failure] = [record for record in caplog.records if record.getMessage() == "Lease expiry failed"]
@@ -773,7 +773,7 @@ async def test_takeover_keeps_external_answer_without_replaying_local_approval(
         await session.execute(
             update(AttemptRow).where(AttemptRow.run_id == run_id).values(lease_expires_at=AttemptRow.created_at)
         )
-    await expire_leases(service.runtime, batch=10)
+    await LeaseExpirer(service.runtime, batch=10)()
     async with transaction(service.runtime.storage) as session:
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
     scripted_model.say("Recovered the known fact")

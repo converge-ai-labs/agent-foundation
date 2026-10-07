@@ -10,7 +10,7 @@ import pytest
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.runs.admission import CallContext
-from a13n_service.runs.seal import expire_leases
+from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow, UsageRecordRow
 from a13n_service.tenancy.tables import GrantRow
 from a13n_stream_protocol.display import DisplayFold
@@ -167,7 +167,7 @@ async def test_a_crashed_attempt_recovers_from_its_checkpoint(service, scripted_
         await session.execute(
             update(AttemptRow).where(AttemptRow.run_id == run_id).values(lease_expires_at=AttemptRow.created_at)
         )
-    await expire_leases(service.runtime, batch=10)
+    await LeaseExpirer(service.runtime, batch=10)()
     async with transaction(service.runtime.storage) as session:
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
 

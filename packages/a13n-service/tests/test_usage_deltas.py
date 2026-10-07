@@ -273,7 +273,7 @@ async def test_takeover_keeps_late_old_scope_and_deduplicates_provider_receipts(
     service, scripted_model, runs_kit
 ) -> None:  # type: ignore[no-untyped-def]
     from a13n_harness.usage import ProviderUsage, ProviderUsageRecord
-    from a13n_service.runs.seal import expire_leases
+    from a13n_service.runs.seal import LeaseExpirer
     from a13n_service.runs.tables import AttemptRow
     from sqlalchemy import update
 
@@ -285,7 +285,7 @@ async def test_takeover_keeps_late_old_scope_and_deduplicates_provider_receipts(
         await session.execute(
             update(AttemptRow).where(AttemptRow.id == old.attempt_id).values(lease_expires_at=AttemptRow.created_at)
         )
-    await expire_leases(service.runtime, batch=10)
+    await LeaseExpirer(service.runtime, batch=10)()
     async with transaction(service.runtime.storage) as session:
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
     [new] = await claim(service.runtime, worker_id="new", worker_build="test", limit=1)

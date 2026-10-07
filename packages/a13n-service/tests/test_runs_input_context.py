@@ -8,7 +8,7 @@ from a13n_service.infra.db import transaction
 from a13n_service.runs import checkpoints
 from a13n_service.runs import execute as execution
 from a13n_service.runs.history import HISTORY, initial
-from a13n_service.runs.seal import expire_leases
+from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
 from pydantic import ValidationError
 from pydantic_ai.messages import ModelMessagesTypeAdapter, ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart
@@ -246,7 +246,7 @@ async def test_resume_input_survives_model_checkpoint_crash_once(service, script
         await session.execute(
             update(AttemptRow).where(AttemptRow.run_id == run_id).values(lease_expires_at=AttemptRow.created_at)
         )
-    await expire_leases(service.runtime, batch=10)
+    await LeaseExpirer(service.runtime, batch=10)()
     async with transaction(service.runtime.storage) as session:
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
     scripted_model.say("Recovered")
@@ -295,7 +295,7 @@ async def test_resume_input_survives_pre_effect_checkpoint_without_replaying_app
     state = await checkpoints.load_state(service.runtime.objects, pointer)
     assert state is not None and not state.resume_input_consumed
     assert "After approved tool" not in str(state.harness.message_history)
-    await expire_leases(service.runtime, batch=10)
+    await LeaseExpirer(service.runtime, batch=10)()
     async with transaction(service.runtime.storage) as session:
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
     scripted_model.say("Recovered without repeating permission")
