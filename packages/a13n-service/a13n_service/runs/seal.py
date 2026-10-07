@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Literal
 
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import after_commit, lock, now, transaction
@@ -232,43 +232,61 @@ async def release_attempt(
         )
 
 
-async def expire_leases(runtime: Runtime, *, batch: int) -> None:
-    """The expire_leases sweep: close current attempts whose lease ran out, rechecked under locks."""
-    async with transaction(runtime.storage) as session:
-        expired = (
-            await session.execute(
-                select(RunRow.thread_id, RunRow.id, AttemptRow.id)
+class LeaseExpirer:
+    """Recover a bounded page of expired attempts per pass, rotating past contention and failures.
+
+    The cursor is only scan progress: each item rechecks durable authority under locks. Advancing before
+    processing an item also lets a cancelled pass continue past it; a later rotation retries it.
+    """
+
+    def __init__(self, runtime: Runtime, *, batch: int):
+        self.runtime, self.batch = runtime, batch
+        self.after: tuple[datetime, str] | None = None
+
+    async def __call__(self) -> None:
+        runtime = self.runtime
+        async with transaction(runtime.storage) as session:
+            query = (
+                select(RunRow.thread_id, RunRow.id, AttemptRow.id, AttemptRow.lease_expires_at)
                 .join(RunRow, RunRow.current_attempt_id == AttemptRow.id)
                 .where(AttemptRow.status.in_(("leased", "running")), AttemptRow.lease_expires_at < await now(session))
-                .order_by(AttemptRow.lease_expires_at)
-                .limit(batch)
+                .order_by(AttemptRow.lease_expires_at, AttemptRow.id)
+                .limit(self.batch)
             )
-        ).all()
-    for thread_id, run_id, attempt_id in expired:
-        try:
-            await _expire(runtime, thread_id, run_id, attempt_id)
-        except Exception as error:
-            # One run that cannot be recovered now must not hold up the others; the next sweep retries it.
-            logger.warning(
-                "Lease expiry failed",
-                extra={
-                    "run_id": run_id,
-                    "error_type": type(error).__name__,
-                    "exception_details": exception_details(error),
-                },
-            )
+            if self.after is not None:
+                query = query.where(tuple_(AttemptRow.lease_expires_at, AttemptRow.id) > self.after)
+            expired = (await session.execute(query)).all()
+        for thread_id, run_id, attempt_id, expires_at in expired:
+            self.after = expires_at, attempt_id
+            try:
+                await _expire(runtime, thread_id, run_id, attempt_id)
+            except Exception as error:
+                logger.warning(
+                    "Lease expiry failed",
+                    extra={
+                        "run_id": run_id,
+                        "error_type": type(error).__name__,
+                        "exception_details": exception_details(error),
+                    },
+                )
+        if len(expired) < self.batch:
+            self.after = None
 
 
 async def _expire(runtime: Runtime, thread_id: str, run_id: str, attempt_id: str) -> None:
     async with transaction(runtime.storage) as session:
-        thread = await lock(session, ThreadRow, thread_id)
-        run = await lock(session, RunRow, run_id)
-        attempt = await lock(session, AttemptRow, attempt_id)
+        thread = await lock(session, ThreadRow, thread_id, skip_locked=True)
+        if thread is None:
+            return
+        run = await lock(session, RunRow, run_id, skip_locked=True)
+        if run is None:
+            return
+        attempt = await lock(session, AttemptRow, attempt_id, skip_locked=True)
+        if attempt is None:
+            return
         current = await now(session)
         if (
-            thread is None
-            or run is None
-            or attempt is None
+            run.status != "running"
             or run.current_attempt_id != attempt.id
             or attempt.status not in {"leased", "running"}
             or attempt.lease_expires_at >= current

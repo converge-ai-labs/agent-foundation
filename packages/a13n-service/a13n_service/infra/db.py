@@ -172,9 +172,11 @@ def after_commit(session: AsyncSession, callback: Callable[[], Awaitable[object]
     session.info.setdefault(_AFTER_COMMIT, []).append(callback)
 
 
-async def lock[R: Base](session: AsyncSession, row_type: type[R], row_id: str) -> R | None:
-    """Row lock that also refreshes any stale copy already loaded in this session."""
-    return await session.get(row_type, row_id, with_for_update=True, populate_existing=True)
+async def lock[R: Base](
+    session: AsyncSession, row_type: type[R], row_id: str, *, skip_locked: bool = False
+) -> R | None:
+    """Refresh and lock a row; optionally return None when another transaction holds it."""
+    return await session.get(row_type, row_id, with_for_update={"skip_locked": skip_locked}, populate_existing=True)
 
 
 def assign(row: object, changes: Mapping[str, object]) -> list[str]:

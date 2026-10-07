@@ -75,7 +75,7 @@ from a13n_service.runs.memories.routes import router as thread_memories_router
 from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.routes import router as runs_router
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.seal import expire_leases
+from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import (
     AttemptRow,
     InboxEntryRow,
@@ -192,7 +192,7 @@ def _expire_leases(runtime: Runtime) -> Sweep:
     return Sweep(
         name="expire_leases",
         every=worker.authority_seconds,
-        run=partial(expire_leases, runtime, batch=runtime.settings.control.sweep_batch),
+        run=LeaseExpirer(runtime, batch=runtime.settings.control.sweep_batch),
         timeout=max(30, worker.lease_seconds),
     )
 

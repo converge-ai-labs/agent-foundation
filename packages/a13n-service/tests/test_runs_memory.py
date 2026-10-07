@@ -15,7 +15,7 @@ from a13n_service.resources.memories.tables import MemoryFileRevisionRow
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.boundaries import Boundaries
 from a13n_service.runs.memories.execution import PlannedMemory, file_memory
-from a13n_service.runs.seal import expire_leases
+from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import AttemptRow, RunRow
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, ExecutionAuthority, Grant, Principal
 from sqlalchemy import select, update
@@ -228,7 +228,7 @@ async def lose_a_memory_read(service, scripted_model, runs_kit, monkeypatch) -> 
         await session.execute(
             update(AttemptRow).where(AttemptRow.run_id == run_id).values(lease_expires_at=AttemptRow.created_at)
         )
-    await expire_leases(service.runtime, batch=10)
+    await LeaseExpirer(service.runtime, batch=10)()
     async with transaction(service.runtime.storage) as session:
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
     return memory, run_id
