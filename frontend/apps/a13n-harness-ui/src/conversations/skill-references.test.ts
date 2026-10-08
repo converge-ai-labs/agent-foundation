@@ -4,6 +4,8 @@ import { EditorState } from "@codemirror/state";
 import {
   skillCompletion,
   skillReferences,
+  skillSpans,
+  retainedSkillSpans,
   type SkillCatalog,
 } from "./skill-references";
 
@@ -35,8 +37,22 @@ it("matches TUI dollar names exactly, deduplicates, and leaves unknown text alon
   ]);
   expect(
     skillReferences(["$rev", { attachment_id: "a" }, "iew"], catalog),
-  ).toHaveLength(1);
+  ).toHaveLength(0);
   expect(skillReferences(["$unknown x$review $review,"], catalog)).toEqual([]);
+});
+it("retains Unicode code-point occurrences and ignores missing or mismatched historical metadata", () => {
+  const text = "中文😀 $review $review";
+  const spans = skillSpans(text, catalog);
+  expect(spans).toEqual([
+    { name: "review", source_id: "project", start: 4, end: 11 },
+    { name: "review", source_id: "project", start: 12, end: 19 },
+  ]);
+  expect(retainedSkillSpans(text, { skills: spans })).toEqual(spans);
+  expect(retainedSkillSpans(text, {})).toEqual([]);
+  expect(retainedSkillSpans("changed", { skills: spans })).toEqual([]);
+  expect(retainedSkillSpans(text, { skills: spans, long_text: true })).toEqual(
+    [],
+  );
 });
 it("offers prefix completion with descriptions only at dollar token boundaries", async () => {
   const source = skillCompletion(async () => catalog);

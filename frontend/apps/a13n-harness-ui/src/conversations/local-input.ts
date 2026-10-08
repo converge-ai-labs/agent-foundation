@@ -1,6 +1,7 @@
 import type { Schema } from "../transport/client";
 import type { InputPart } from "./input-content";
 import type { OrderedInputPart } from "./inline-attachments";
+import { skillSpans, type SkillCatalog } from "./skill-references";
 
 export type LocalInput = {
   id: string;
@@ -19,6 +20,7 @@ export function previewInput(
   id: string,
   parts: OrderedInputPart[],
   attachments: Map<string, Schema<"ThreadAttachment">> = new Map(),
+  catalog?: SkillCatalog,
 ): InputPart[] {
   return parts.map((part, index) => ({
     kind: "user",
@@ -32,6 +34,9 @@ export function previewInput(
       source_id: id,
       harness_ui: {
         composer: { index },
+        ...(typeof part === "string" && catalog
+          ? { skills: skillSpans(part, catalog) }
+          : {}),
         ...(typeof part !== "string" && attachments.has(part.attachment_id)
           ? { attachment: attachments.get(part.attachment_id) }
           : {}),

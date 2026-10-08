@@ -217,8 +217,10 @@ async def test_skill_references_refresh_on_submission_and_keep_active_catalog(
         assert await app.validate_skill_references((reference,)) == ("review",)
 
         started, finish = Event(), Event()
+        seen: list[ModelMessage] = []
 
         async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+            seen[:] = messages
             started.set()
             await finish.wait()
             yield "review complete"
@@ -258,6 +260,23 @@ async def test_skill_references_refresh_on_submission_and_keep_active_catalog(
             )
         assert unavailable.value.code == "skill_reference_unavailable"
         assert await app.active_root_operation(thread.thread_id) is None
+        assert '<skill-selection source="harness-ui">' in str(seen)
+        saved = await app.get_thread_transcript(thread_id=thread.thread_id)
+        parts = [part for entry in saved.entries for part in entry.parts]
+        hints = [part for part in parts if part.metadata.source_id == "a13n-harness-ui.skills"]
+        assert len(hints) == 2  # Submission and steering, once each.
+        assert all(not part.metadata.display for part in hints)
+        authored = [part for part in parts if part.text in ("$review check this", "$review focus")]
+        assert len(authored) == 2
+        assert all(
+            part.metadata.model_extra["harness_ui"]["skills"]
+            == [{"name": "review", "source_id": latest_item.source_id, "start": 0, "end": 7}]
+            for part in authored
+        )
+
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=configuration) as restored:
+        history = await restored.get_thread_transcript(thread_id=thread.thread_id)
+        assert history.entries == saved.entries
 
 
 @pytest.mark.parametrize("with_skill", [False, True])

@@ -46,15 +46,15 @@ def test_dollar_completer_filters_describes_and_replaces_only_the_current_token(
     completer = SlashCompleter(registry)
     matches = list(completer.get_completions(Document("Please use $rev"), CompleteEvent()))
     assert len(matches) == 1
-    assert matches[0].text == "$review"
+    assert matches[0].text == "$review "
     assert matches[0].start_position == -4
     assert "Brief description" in matches[0].display_meta_text
     assert len(matches[0].display_meta_text) <= 160
     assert list(completer.get_completions(Document("Please use $unknown"), CompleteEvent())) == []
     assert [item.text for item in completer.get_completions(Document("$"), CompleteEvent())] == [
-        "$research",
-        "$review",
-        "$status",
+        "$research ",
+        "$review ",
+        "$status ",
     ]
     assert registry.parse("/status").command.name == "status"
     with pytest.raises(ValueError, match="Unknown command"):

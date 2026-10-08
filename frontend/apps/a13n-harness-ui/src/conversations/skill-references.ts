@@ -32,12 +32,12 @@ export function skillReferences(
   parts: OrderedInputPart[],
   catalog?: SkillCatalog,
 ) {
-  // Match ComposerInput.text and the TUI's exact whitespace-delimited syntax.
-  const text = parts
-    .filter((part): part is string => typeof part === "string")
-    .join("");
   const names = new Set(
-    [...text.matchAll(/(?:^|\s)\$([^\s]+)/g)].map((match) => match[1]),
+    parts.flatMap((part) =>
+      typeof part === "string"
+        ? skillSpans(part, catalog).map((span) => span.name)
+        : [],
+    ),
   );
   const items = new Map(catalog?.items.map((item) => [item.name, item]));
   return [...names].flatMap((name) => {
@@ -47,6 +47,62 @@ export function skillReferences(
       : [];
   });
 }
+// Persisted offsets count Unicode code points, not JavaScript UTF-16 units.
+export type SkillSpan = {
+  name: string;
+  source_id: string;
+  start: number;
+  end: number;
+};
+export function skillSpans(text: string, catalog?: SkillCatalog): SkillSpan[] {
+  const items = new Map(catalog?.items.map((item) => [item.name, item]));
+  return [...text.matchAll(/(?:^|\s)\$(\S+)/gu)].flatMap((match) => {
+    const item = items.get(match[1]);
+    if (!item) return [];
+    const from = match.index + match[0].indexOf("$");
+    const start = [...text.slice(0, from)].length;
+    return [
+      {
+        name: item.name,
+        source_id: item.source_id,
+        start,
+        end: start + [...`$${item.name}`].length,
+      },
+    ];
+  });
+}
+export function retainedSkillSpans(
+  text: string,
+  namespace: unknown,
+): SkillSpan[] {
+  if (
+    !namespace ||
+    typeof namespace !== "object" ||
+    !("skills" in namespace) ||
+    ("long_text" in namespace && namespace.long_text) ||
+    !Array.isArray(namespace.skills)
+  )
+    return [];
+  const points = [...text];
+  let end = 0;
+  return namespace.skills.filter((span): span is SkillSpan => {
+    if (
+      !span ||
+      typeof span.name !== "string" ||
+      typeof span.source_id !== "string" ||
+      !Number.isInteger(span.start) ||
+      !Number.isInteger(span.end) ||
+      span.start < end ||
+      span.end <= span.start ||
+      span.end > points.length ||
+      points.slice(span.start, span.end).join("") !== `$${span.name}`
+    )
+      return false;
+    end = span.end;
+    return true;
+  });
+}
+
 export function skillCompletion(load: LoadSkills) {
   return async (
     context: CompletionContext,

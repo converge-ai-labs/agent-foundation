@@ -84,6 +84,7 @@ class Block:
     markdown: bool
     kind: str = "text"
     revision: int = 0
+    skills: tuple[tuple[int, int], ...] = ()
     cache_key: tuple[int, int, ResolvedTheme, bool] | None = None
     rows: Sequence[StyleAndTextTuples] = field(default_factory=list)
     pending: list[str] = field(default_factory=list)
@@ -228,16 +229,21 @@ class Transcript:
         collapsed_chars: int | None = None,
         streaming: bool = False,
         kind: str = "text",
+        skills: tuple[tuple[int, int], ...] = (),
     ) -> int:
         block_id = self.next_id
         self.next_id += 1
         self.evicted |= len(source.encode("utf-8")) > self.block_bytes
-        source = bounded_text(source, self.block_bytes)
+        bounded = bounded_text(source, self.block_bytes)
+        if bounded != source:
+            skills = ()
+        source = bounded
         self.blocks[block_id] = Block(
             block_id,
             source,
             markdown,
             kind=kind,
+            skills=skills,
             size=len(source.encode("utf-8")),
             collapsed_lines=collapsed_lines,
             collapsed_chars=collapsed_chars,
@@ -258,7 +264,9 @@ class Transcript:
             block.revision += 1
             self.dirty = True
 
-    def replace(self, block_id: int, source: str, *, kind: str | None = None) -> bool:
+    def replace(
+        self, block_id: int, source: str, *, kind: str | None = None, skills: tuple[tuple[int, int], ...] = ()
+    ) -> bool:
         block = self.blocks.get(block_id)
         if block is None:
             return False
@@ -267,6 +275,7 @@ class Transcript:
             block.kind = kind
         self.source_bytes -= block.size
         block._source = bounded_text(source, self.block_bytes)
+        block.skills = skills if block._source == source else ()
         block.pending.clear()
         block.size = len(block._source.encode("utf-8"))
         self.source_bytes += block.size
@@ -276,11 +285,14 @@ class Transcript:
         self.dirty = True
         return True
 
-    def extend(self, block_id: int, delta: str) -> bool:
+    def extend(self, block_id: int, delta: str, *, skills: tuple[tuple[int, int], ...] = ()) -> bool:
         block = self.blocks.get(block_id)
         if block is None:
             return False
         size = len(delta.encode("utf-8"))
+        if skills:
+            offset = len(block.source)
+            block.skills += tuple((start + offset, end + offset) for start, end in skills)
         block.pending.append(delta)
         block.size += size
         self.source_bytes += size
@@ -288,6 +300,7 @@ class Transcript:
             source = bounded_text(block.source, self.block_bytes)
             self.source_bytes -= block.size - len(source.encode("utf-8"))
             block._source = source
+            block.skills = ()
             block.size = len(source.encode("utf-8"))
             self.evicted = True
         block.revision += 1
@@ -328,13 +341,21 @@ class Transcript:
         width = console.width
 
         def rows(
-            source: str, markdown: bool, kind: str = "text", *, folded: bool = False
+            source: str,
+            markdown: bool,
+            kind: str = "text",
+            *,
+            folded: bool = False,
+            skills: tuple[tuple[int, int], ...] = (),
         ) -> Iterator[StyleAndTextTuples]:
             value = (
                 TerminalMarkdown(source, code_theme=self.theme.syntax_theme, hyperlinks=False)
                 if markdown
                 else Text(source.rstrip("\n"))
             )
+            if kind == "user" and isinstance(value, Text):
+                for start, end in skills:
+                    value.stylize("bold underline", start, end)
             if kind == "notice":
                 colors = activity_colors(self.theme)
                 attention = not markdown and source.startswith(("Error [", "Error:", "Warning:"))
@@ -494,7 +515,16 @@ class Transcript:
                                 (
                                     text,
                                     RowStore(
-                                        rows(text, False, block.kind),
+                                        rows(
+                                            text,
+                                            False,
+                                            block.kind,
+                                            skills=tuple(
+                                                (a - start, b - start)
+                                                for a, b in block.skills
+                                                if start <= a < b <= start + len(text)
+                                            ),
+                                        ),
                                         directory=self._cache_directory.name,
                                         page_size=min(64, max(1, self.max_rows // 2)),
                                     ),
@@ -512,7 +542,7 @@ class Transcript:
                 else:
                     block.close()
                     block.rows = RowStore(
-                        rows(source, block.markdown, block.kind),
+                        rows(source, block.markdown, block.kind, skills=block.skills),
                         directory=self._cache_directory.name,
                         page_size=min(64, max(1, self.max_rows // 2)),
                     )

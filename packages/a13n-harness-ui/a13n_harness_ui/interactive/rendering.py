@@ -10,6 +10,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from a13n_harness_ui.skill_input import retained_skill_spans
+
 from .context_activity import ContextActivity
 from .input_display import composer_piece
 from .panels import capability_panel, shell_outcome, shell_result_preview, tool_arguments, tool_preview, tool_result
@@ -38,6 +40,14 @@ if TYPE_CHECKING:
 def terminal_text(value: str) -> str:
     """Render untrusted content as text, never as terminal control sequences."""
     return "".join(char for char in value if char in "\n\t" or (ord(char) >= 32 and not 127 <= ord(char) <= 159))
+
+
+def skill_ranges(text: str, metadata: Any, prefix: int = 0) -> tuple[tuple[int, int], ...]:
+    namespace = (metadata.model_extra or {}).get("harness_ui", {})
+    return tuple(
+        (prefix + len(terminal_text(text[: span["start"]])), prefix + len(terminal_text(text[: span["end"]])))
+        for span in retained_skill_spans(text, namespace)
+    )
 
 
 def _elapsed_text(elapsed: float) -> str:
@@ -568,9 +578,10 @@ class StreamRenderer:
             self.transcript.preview(block, terminal_text(brief[:960]))
         self.append(source, display=False)
 
-    def local_input(self, source_id: str, text: str) -> None:
+    def local_input(self, source_id: str, text: str, skills: tuple[tuple[int, int], ...] = ()) -> None:
         self.finish()
-        self._local_inputs[source_id] = self.transcript.append("> " + terminal_text(text), kind="user")
+        ranges = tuple((2 + len(terminal_text(text[:a])), 2 + len(terminal_text(text[:b]))) for a, b in skills)
+        self._local_inputs[source_id] = self.transcript.append("> " + terminal_text(text), kind="user", skills=ranges)
         while len(self._local_inputs) > 128:
             self._local_inputs.pop(next(iter(self._local_inputs)))
 
@@ -587,11 +598,17 @@ class StreamRenderer:
         collapsed_lines: int | None = None,
         collapsed_chars: int | None = None,
         kind: str = "text",
+        skills: tuple[tuple[int, int], ...] = (),
     ) -> None:
         safe = terminal_text(text)
         if display and safe:
             self.transcript.append(
-                safe, markdown=markdown, collapsed_lines=collapsed_lines, collapsed_chars=collapsed_chars, kind=kind
+                safe,
+                markdown=markdown,
+                collapsed_lines=collapsed_lines,
+                collapsed_chars=collapsed_chars,
+                kind=kind,
+                skills=skills,
             )
         self._pending.append(safe)
         self._size += len(safe)
@@ -755,10 +772,15 @@ class StreamRenderer:
                 )
                 prefix = f"Subagent {identity} · " if child else "> " if kind == "user" else ""
                 rendered = terminal_text(prefix + text)
+                ranges = skill_ranges(text, meta, len(terminal_text(prefix))) if kind == "user" else ()
                 block = self._display_blocks.get(key)
-                if block is None or not self.transcript.replace(block, rendered):
+                if block is None or not self.transcript.replace(block, rendered, skills=ranges):
                     self._display_blocks[key] = self.transcript.append(
-                        rendered, kind=kind, markdown=kind != "user", streaming=item.state == "in_progress"
+                        rendered,
+                        kind=kind,
+                        markdown=kind != "user",
+                        streaming=item.state == "in_progress",
+                        skills=ranges,
                     )
                 if item.state != "in_progress":
                     self.transcript.complete(self._display_blocks[key])
@@ -865,9 +887,17 @@ class StreamRenderer:
                 if not text:
                     return
                 self.finish()
-                if state is None or not self.transcript.extend(state[0], terminal_text(text)):
+                ranges = () if label else skill_ranges(text, metadata)
+                if state is None or not self.transcript.extend(state[0], terminal_text(text), skills=ranges):
                     prefix = f"> Subagent {terminal_text(execution_id or run_id)} · " if child else "> "
-                    state = (self.transcript.append(prefix + terminal_text(text), kind="user"), set())
+                    state = (
+                        self.transcript.append(
+                            prefix + terminal_text(text),
+                            kind="user",
+                            skills=tuple((a + len(prefix), b + len(prefix)) for a, b in ranges),
+                        ),
+                        set(),
+                    )
                     self._composer_inputs[key] = state
                     while len(self._composer_inputs) > 128:
                         self._composer_inputs.pop(next(iter(self._composer_inputs)))
@@ -936,7 +966,8 @@ class StreamRenderer:
                 self.finish()
             elif text:
                 block_id = self._messages.get(key)
-                if block_id is None or not self.transcript.extend(block_id, terminal_text(text)):
+                ranges = skill_ranges(text, metadata) if user else ()
+                if block_id is None or not self.transcript.extend(block_id, terminal_text(text), skills=ranges):
                     label = (
                         "Activity · "
                         if notification
@@ -947,6 +978,7 @@ class StreamRenderer:
                         markdown=not user,
                         streaming=True,
                         kind="tool" if notification else "thinking" if thinking else "user" if user else "text",
+                        skills=tuple((a + len(label), b + len(label)) for a, b in ranges),
                     )
                     if len(self._messages) > 128:
                         self._messages.pop(next(iter(self._messages)))

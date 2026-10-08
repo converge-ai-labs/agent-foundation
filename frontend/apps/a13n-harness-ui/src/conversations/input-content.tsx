@@ -3,6 +3,8 @@ import { Button } from "a13n-ui";
 import { Link } from "react-router";
 import { ArrowUpRight, CaretDown, Chats } from "@phosphor-icons/react";
 import { CopyMessage } from "./copy-message";
+import { retainedSkillSpans } from "./skill-references";
+import skillStyles from "./skill-chip.module.css";
 import type { Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
@@ -309,10 +311,30 @@ export function InputContent({
             />
           );
         }
-        if (composerIdentity(part) && part.kind !== "media")
+        const text = part.text || "";
+        const spans = retainedSkillSpans(text, part.metadata?.harness_ui);
+        const points = [...text];
+        let end = 0;
+        const marked: ReactNode[] = [];
+        for (const span of spans) {
+          marked.push(points.slice(end, span.start).join(""));
+          marked.push(
+            <span
+              key={span.start}
+              className={skillStyles.chip}
+              title={`Skill: ${span.name}`}
+              data-skill={span.name}
+            >
+              {points.slice(span.start, span.end).join("")}
+            </span>,
+          );
+          end = span.end;
+        }
+        marked.push(points.slice(end).join(""));
+        if ((composerIdentity(part) || spans.length) && part.kind !== "media")
           return (
             <span key={index} className={styles.inputText}>
-              {part.text || ""}
+              {marked}
             </span>
           );
         return part.kind === "media" ? (

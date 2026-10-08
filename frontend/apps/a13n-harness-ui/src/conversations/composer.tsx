@@ -58,6 +58,7 @@ function beginInput(
   action: "send" | "steer",
   attachments: Map<string, Schema<"ThreadAttachment">>,
   preset?: string,
+  catalog?: Schema<"SkillCatalogView">,
 ): LocalInput {
   const text = preset ?? draft.doc.getText("text").toString();
   const parts: OrderedInputPart[] = [];
@@ -79,7 +80,7 @@ function beginInput(
   const input: LocalInput = {
     id,
     action,
-    parts: previewInput(id, parts, attachments),
+    parts: previewInput(id, parts, attachments, catalog),
     state: "preparing",
   };
   draft.localInputs = [
@@ -175,6 +176,7 @@ export async function submitDraft(
   let captured: DraftCapture | undefined;
   let parts: OrderedInputPart[];
   let references: Schema<"SkillReference">[] = [];
+  let skillCatalog: Schema<"SkillCatalogView"> | undefined;
   let appContext: Schema<"AppContextReference">[] = [];
   try {
     if (action === "send") appContext = captureAppContext?.() ?? [];
@@ -185,8 +187,15 @@ export async function submitDraft(
       preset === undefined
         ? captured.parts
         : [captured.parts.length ? `${preset}\n\n` : preset, ...captured.parts];
-    if (loadSkills && /(?:^|\s)\$\S+/.test(captured.input.prompt))
-      references = skillReferences(parts, await loadSkills());
+    if (
+      loadSkills &&
+      parts.some(
+        (part) => typeof part === "string" && /(?:^|\s)\$\S+/.test(part),
+      )
+    ) {
+      skillCatalog = await loadSkills();
+      references = skillReferences(parts, skillCatalog);
+    }
     signal?.throwIfAborted();
   } catch (error) {
     input.state = "rejected";
@@ -198,7 +207,7 @@ export async function submitDraft(
     draft.notify();
     return;
   }
-  input.parts = previewInput(input.id, parts, attachments);
+  input.parts = previewInput(input.id, parts, attachments, skillCatalog);
   input.state = "pending";
   draft.submission = { kind: "pending", action };
   draft.notify();
@@ -623,7 +632,18 @@ export function Composer({
       !coordinatorActive &&
       !prepareThread;
     const metadata = attachmentMetadata();
-    const localInput = beginInput(draft, action, metadata);
+    const localInput = beginInput(
+      draft,
+      action,
+      metadata,
+      undefined,
+      queries.getQueryData<Schema<"SkillCatalogView">>([
+        "thread",
+        threadId,
+        "skills",
+        skillContext,
+      ]),
+    );
     try {
       setPreparing(true);
       setContextCleared(false);

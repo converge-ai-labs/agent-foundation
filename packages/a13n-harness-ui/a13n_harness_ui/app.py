@@ -225,6 +225,7 @@ from a13n_harness_ui.setup import (
     preflight_environment,
 )
 from a13n_harness_ui.shared_drafts import DraftCommand, DraftSummary, SharedDraft
+from a13n_harness_ui.skill_input import prepare_skill_input
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     LocalStore,
@@ -2075,12 +2076,10 @@ class HarnessUiApp:
                     else None
                 ),
             )
-            self._terminal_projections.validate_references_against(
-                catalog,
-                skill_references,
-            )
+            selected_skills = self._terminal_projections.validate_references_against(catalog, skill_references)
             await self._threads.get(thread_id)
             prompt = await self._prepare_input(thread_id, prompt, attachment_ids)
+            prompt = prepare_skill_input(prompt, catalog, selected_skills)
             if selected_context:
                 prompt = tuple([prompt] if isinstance(prompt, str) else prompt) + tuple(
                     TextContent(text, metadata={"harness_ui": {"mcp_app_context": True}}) for text in selected_context
@@ -2224,15 +2223,23 @@ class HarnessUiApp:
         async with self._operation():
             operation = await self._root_runs.get(receipt_id)
             await self._threads.require_interactive(operation.receipt.thread_id)
-            await self._terminal_projections.validate_skill_references(
-                skill_references,
-                thread_id=operation.receipt.thread_id,
+            catalog = (
+                await self._terminal_projections.skill_catalog(thread_id=operation.receipt.thread_id)
+                if skill_references
+                else None
+            )
+            selected_skills = (
+                self._terminal_projections.validate_references_against(catalog, skill_references)
+                if catalog is not None
+                else ()
             )
             prepared = (
                 await self._prepare_input(operation.receipt.thread_id, message, attachment_ids)
                 if attachment_ids or isinstance(message, ComposerInput)
                 else message
             )
+            if catalog is not None:
+                prepared = prepare_skill_input(prepared, catalog, selected_skills)
             return await self._root_runs.steer(receipt_id=receipt_id, message=prepared, touch=True)
 
     async def cancel_root_operation(self, receipt_id: str) -> RootControlResult:
