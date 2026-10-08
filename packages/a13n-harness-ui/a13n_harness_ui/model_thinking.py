@@ -43,6 +43,7 @@ class ThinkingControl(BaseModel):
 
     status: Literal["supported", "unsupported", "unknown"]
     default_summary: str
+    default_value: ThinkingSelection | None = None
     options: tuple[ThinkingOption, ...]
     reason: str | None = None
 
@@ -232,6 +233,21 @@ def describe_thinking(route: str, settings: Mapping[str, JsonValue]) -> Thinking
     return ThinkingControl(
         status=status,
         default_summary=summary,
+        # Match only known control meanings, never provider defaults or custom
+        # settings. Unified effort is not equivalent to a UI budget preset.
+        default_value=next(
+            (
+                c.value
+                for c in choices
+                if reason is None
+                and (
+                    summary == summarize_thinking(route, c.patch)
+                    or (c.budget is None and summary == _label(c.value))
+                    or (isinstance(c.value, bool) and summary == f"{_label(c.value)} (requested)")
+                )
+            ),
+            None,
+        ),
         reason=reason,
         options=(
             ThinkingOption(value=None, label="Model default", description=summary),

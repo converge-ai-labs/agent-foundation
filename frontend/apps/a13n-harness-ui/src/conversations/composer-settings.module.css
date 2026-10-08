@@ -174,11 +174,24 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.speedControl {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.speedControl .hint {
+  margin: 0;
+  line-height: 1.6;
+}
 .speedToggles {
   display: flex;
-  flex: 1;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
+}
+.speedToggles .controlState {
+  min-width: 100px;
+  text-align: right;
 }
 .fastToggle {
   flex-shrink: 0;

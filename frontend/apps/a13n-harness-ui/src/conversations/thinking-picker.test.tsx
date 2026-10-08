@@ -135,3 +135,39 @@ it("renders boolean controls without inventing effort levels", async () => {
   expect(onChange).toHaveBeenLastCalledWith(true);
   expect(screen.queryByRole("button", { name: "High" })).toBeNull();
 });
+
+it("tracks typed inherited levels on catalog refresh without materializing overrides", () => {
+  const change = vi.fn();
+  const withDefault = (
+    default_value: false | "low" | null,
+  ): Schema<"ModelSummary"> => ({
+    ...model,
+    thinking: { ...model.thinking!, default_value },
+  });
+  const view = render(
+    <ThinkingPicker model={withDefault("low")} onChange={change} />,
+  );
+  const pressed = (name: string) =>
+    screen.getByRole("button", { name }).getAttribute("aria-pressed");
+  expect(pressed("Quick")).toBe("true");
+  expect(pressed("Use default thinking")).toBe("true");
+  view.rerender(
+    <ThinkingPicker model={withDefault(false)} onChange={change} />,
+  );
+  expect(pressed("No thinking")).toBe("true");
+  expect(pressed("Quick")).toBe("false");
+  view.rerender(<ThinkingPicker model={withDefault(null)} onChange={change} />);
+  expect(pressed("No thinking")).toBe("false");
+  expect(pressed("Quick")).toBe("false");
+  view.rerender(
+    <ThinkingPicker
+      model={withDefault("low")}
+      value={false}
+      onChange={change}
+    />,
+  );
+  expect(pressed("No thinking")).toBe("true");
+  expect(pressed("Quick")).toBe("false");
+  expect(pressed("Use default thinking")).toBe("false");
+  expect(change).not.toHaveBeenCalled();
+});

@@ -70,7 +70,8 @@ export function ModelControlPanel({
           label="Reasoning mode"
           value={
             controls.reasoning_mode == null
-              ? `Default · ${reasoningModeLabel(reasoning?.state)}`
+              ? reasoningModeLabel(reasoning?.state) +
+                (reasoning?.state === "default" ? "" : " · Model default")
               : reasoning?.supported
                 ? reasoningModeLabel(controls.reasoning_mode)
                 : "Unavailable selection"

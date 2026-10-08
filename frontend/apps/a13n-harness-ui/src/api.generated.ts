@@ -5199,6 +5199,7 @@ export interface components {
             status: "supported" | "unsupported" | "unknown";
             /** Default Summary */
             default_summary: string;
+            default_value?: components["schemas"]["ThinkingSelection"] | null;
             /** Options */
             options: components["schemas"]["ThinkingOption"][];
             /** Reason */

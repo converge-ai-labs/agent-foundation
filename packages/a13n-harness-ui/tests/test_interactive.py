@@ -1253,9 +1253,69 @@ async def test_ultrafast_session_switches_and_reset_reach_runtime_without_persis
             with pytest.raises(ValueError, match="Ultrafast requires"):
                 await backend.fast("ultrafast")
             assert backend.overrides == before
+            assert backend.status.fast == "unavailable"
+            assert backend.status.fast_description == "Unavailable selection — /fast reset"
             await backend.fast("reset")
             model_path.write_bytes(original)
         finally:
             renderer.transcript.close()
     assert observed == ["priority", "ultrafast", "default", "ultrafast"]
     assert model_path.read_bytes() == original
+
+
+@pytest.mark.anyio
+async def test_model_control_status_distinguishes_inheritance_overrides_and_provider_defaults(tmp_path, monkeypatch):
+    import yaml
+
+    path = await _seed(tmp_path, monkeypatch)
+    model_path = path.parent / "models/codex.yaml"
+    document = yaml.safe_load(model_path.read_text())
+    document["settings"] = {"thinking": "high", "service_tier": "priority", "openai_reasoning_mode": "pro"}
+    model_path.write_text(yaml.safe_dump(document))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        assert backend.status.thinking == "High (default)"
+        assert backend.status.fast_description == "On (Model default)"
+        assert backend.status.reasoning_mode_description == "Pro (Model default)"
+        high = next(choice for choice in backend.thinking_choices() if choice.value == "high")
+        assert high.description == "Current · Reasoning effort · Model default"
+        assert backend.overrides.controls().model_dump(exclude_none=True) == {}
+        backend.overrides = backend.overrides.model_copy(update={"service_tier": "default"})
+        await backend.refresh()
+        assert backend.status.fast == "off"
+        assert backend.status.fast_description == "Off (session override)"
+        await backend.fast("reset")
+        await backend.thinking("low")
+        assert next(choice for choice in backend.thinking_choices() if choice.value == "low").description.startswith(
+            "Current · "
+        )
+        assert not next(
+            choice for choice in backend.thinking_choices() if choice.value == "high"
+        ).description.startswith("Current")
+        await backend.fast("off")
+        await backend.pro("off")
+        assert backend.status.fast_description == "Off (session override)"
+        assert "Fast Off" in backend.status.line()
+        assert "Mode Standard" in backend.status.line()
+        await backend.thinking("default")
+        await backend.fast("reset")
+        await backend.pro("reset")
+        assert backend.status.fast_description == "On (Model default)"
+        assert backend.overrides.controls().model_dump(exclude_none=True) == {}
+
+        # A refreshed Model updates inherited displays, without inventing a
+        # provider's effective request behavior or materializing an override.
+        document["settings"] = {}
+        model_path.write_text(yaml.safe_dump(document))
+        await app.reload_configuration()
+        await backend.refresh()
+        assert backend.status.thinking == "Provider default"
+        assert backend.status.fast_description == "Provider default"
+        assert backend.status.reasoning_mode_description == "Provider default"
+        assert "Fast Provider default" in backend.status.line()
+        assert "Mode Provider default" in backend.status.line()
+        assert not any(choice.description.startswith("Current") for choice in backend.thinking_choices())
+        assert backend.overrides.controls().model_dump(exclude_none=True) == {}

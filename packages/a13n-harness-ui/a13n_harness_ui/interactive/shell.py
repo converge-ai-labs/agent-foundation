@@ -1875,7 +1875,7 @@ class CliShell:
                 + self.status.state.capitalize()
                 + "\n"
                 + f"Agent        {self.status.agent}\nModel        {self.status.model}\n"
-                + f"Reasoning    {self.status.thinking}\nFast         {self.status.fast} (requested)\n"
+                + f"Reasoning    {self.status.thinking}\nFast         {self.status.fast_description} (requested)\n"
                 + f"Mode         {self.status.reasoning_mode_description} (requested)\n"
                 + f"Service tier {self.status.service_tier_text} (requested)\n"
                 + f"Context      {tokens} / {window} tokens\n"

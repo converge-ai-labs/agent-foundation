@@ -23,6 +23,7 @@ export function ThinkingPicker({
   const explicit = options.filter((item) => item.value !== null);
   const inherited = options.find((item) => item.value === null);
   const selected = options.find((item) => item.value === (value ?? null));
+  const effective = value ?? control?.default_value;
   const unavailable =
     value != null && (!selected || !!selected.disabled_reason);
   return (
@@ -46,11 +47,15 @@ export function ThinkingPicker({
           aria-label="Thinking level"
           aria-describedby={descriptionId}
           className={styles.levels}
-          value={value == null ? [] : [JSON.stringify(value)]}
+          value={effective == null ? [] : [JSON.stringify(effective)]}
           disabled={disabled}
           onValueChange={(keys) => {
+            // Clicking the inherited active level makes it an explicit choice.
+            const key =
+              keys[0] ??
+              (effective == null ? undefined : JSON.stringify(effective));
             const option = explicit.find(
-              (item) => JSON.stringify(item.value) === keys[0],
+              (item) => JSON.stringify(item.value) === key,
             );
             if (option && !option.disabled_reason) onChange(option.value);
           }}
