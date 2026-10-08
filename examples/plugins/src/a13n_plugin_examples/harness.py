@@ -8,7 +8,6 @@ from typing import Any
 from a13n_harness import (
     AbstractHarnessPlugin,
     AgentContext,
-    HarnessEvent,
     HarnessRunResult,
     PluginOrdering,
 )
@@ -19,7 +18,6 @@ from a13n_harness.plugin_factories import (
 from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
-    PluginRunResponse,
 )
 from pydantic import BaseModel, ConfigDict, JsonValue, ValidationError
 
@@ -34,7 +32,7 @@ class RunRecorderConfiguration(BaseModel):
 
     model_config = ConfigDict(frozen=True, strict=True, extra="forbid")
 
-    count_events: bool = True
+    record_usage: bool = True
 
 
 class RunRecorderPlugin(AbstractHarnessPlugin):
@@ -46,12 +44,12 @@ class RunRecorderPlugin(AbstractHarnessPlugin):
         plugin_id: str,
         observation_sink: MutableSequence[RunObservation] | None = None,
         run_id: str | None = None,
-        count_events: bool = True,
+        record_usage: bool = True,
     ) -> None:
         self._plugin_id = plugin_id
         self._observations = observation_sink if observation_sink is not None else []
         self._run_id = run_id
-        self._count_events = count_events
+        self._record_usage = record_usage
 
     @property
     def plugin_id(self) -> str:
@@ -67,39 +65,35 @@ class RunRecorderPlugin(AbstractHarnessPlugin):
         return PluginOrdering(position="outermost")
 
     async def for_run(self, context: AgentContext) -> RunRecorderPlugin:
-        # A new exact-type instance owns mutable counters for each logical run.
+        # A new exact-type instance owns run identity for each logical run.
         return RunRecorderPlugin(
             plugin_id=self._plugin_id,
             observation_sink=self._observations,
             run_id=context.run_id,
-            count_events=self._count_events,
+            record_usage=self._record_usage,
         )
 
-    def wrap_run(
+    async def wrap_run(
         self,
         exchange: PluginRunExchange,
         call_next: PluginRunNext[Any],
-    ) -> PluginRunResponse[Any]:
-        async def iterate():
-            event_count = 0
-            status: ObservedRunStatus = "interrupted"
-            try:
-                async for item in call_next(exchange):
-                    if self._count_events and isinstance(item, HarnessEvent):
-                        event_count += 1
-                    elif isinstance(item, HarnessRunResult):
-                        status = item.status
-                    yield item
-            finally:
-                self._observations.append(
-                    RunObservation(
-                        run_id=self._run_id or exchange.context.run_id,
-                        status=status,
-                        event_count=event_count,
-                    )
+    ) -> HarnessRunResult[Any]:
+        status: ObservedRunStatus = "interrupted"
+        requests = 0
+        try:
+            result = await call_next(exchange)
+            status = result.status
+            if self._record_usage:
+                requests = result.usage.requests
+            return result
+        finally:
+            self._observations.append(
+                RunObservation(
+                    run_id=self._run_id or exchange.context.run_id,
+                    status=status,
+                    model_requests=requests,
                 )
-
-        return PluginRunResponse(iterate())
+            )
 
 
 class RunRecorderPluginFactory(HarnessPluginFactory):
@@ -123,5 +117,5 @@ class RunRecorderPluginFactory(HarnessPluginFactory):
         parsed = RunRecorderConfiguration.model_validate(dict(context.configuration))
         return RunRecorderPlugin(
             plugin_id=context.plugin_id,
-            count_events=parsed.count_events,
+            record_usage=parsed.record_usage,
         )

@@ -586,6 +586,12 @@ class _RunEventEmitter:
             validated = HarnessExtensionEvent.model_validate(event.model_dump(), strict=True)
         except ValueError as exc:
             raise RunError("Harness extension event is invalid.", code="event_invalid") from exc
+        if (
+            validated.kind == "lifecycle"
+            and isinstance(validated.payload, dict)
+            and validated.payload.get("type") == "run_started"
+        ):
+            raise RunError("Run start is owned by Harness.", code="event_invalid")
         self.observe(validated)
         await self._put(validated)
 

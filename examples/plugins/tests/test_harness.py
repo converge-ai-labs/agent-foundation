@@ -43,7 +43,7 @@ def test_harness_entrypoint_metadata_is_lazy_and_selection_is_explicit() -> None
         HarnessPluginFactoryContext(
             plugin_key=PLUGIN_KEY,
             plugin_id="recorder-selected",
-            configuration={"count_events": True},
+            configuration={"record_usage": True},
             extensions={"example": {"test": True}},
         )
     )
@@ -68,8 +68,8 @@ def test_harness_explicit_concrete_plugin_needs_no_metadata_scan(
     assert executable.definition.plugins[0].plugin_id == "recorder-code"
 
 
-@pytest.mark.parametrize("count_events", [1, "true"])
-def test_harness_plugin_factory_rejects_invalid_configuration(count_events: str | int) -> None:
+@pytest.mark.parametrize("record_usage", [1, "true"])
+def test_harness_plugin_factory_rejects_invalid_configuration(record_usage: str | int) -> None:
     catalog = build_harness_plugin_factory_catalog(plugin_keys=(PLUGIN_KEY,))
 
     with pytest.raises(PluginError) as exc_info:
@@ -77,7 +77,7 @@ def test_harness_plugin_factory_rejects_invalid_configuration(count_events: str 
             HarnessPluginFactoryContext(
                 plugin_key=PLUGIN_KEY,
                 plugin_id="recorder-invalid",
-                configuration={"count_events": count_events},
+                configuration={"record_usage": record_usage},
                 extensions={},
             )
         )
@@ -101,7 +101,7 @@ def test_harness_entrypoint_demo_runs_factory_plugin() -> None:
     assert result.output == "offline model response"
     assert result.observation.status == "completed"
     assert result.observation.run_id == result.run_id
-    assert result.observation.event_count > 0
+    assert result.observation.model_requests > 0
 
 
 def test_harness_code_demo_runs_concrete_plugin() -> None:
@@ -112,7 +112,7 @@ def test_harness_code_demo_runs_concrete_plugin() -> None:
     assert result.output == "offline model response"
     assert result.observation.status == "completed"
     assert result.observation.run_id == result.run_id
-    assert result.observation.event_count > 0
+    assert result.observation.model_requests > 0
 
 
 def test_harness_plugin_creates_isolated_state_for_concurrent_runs() -> None:

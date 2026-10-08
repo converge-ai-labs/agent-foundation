@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Mapping, Sequence
+from contextlib import aclosing
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -98,9 +99,7 @@ from a13n_harness.plugins import (
     AbstractHarnessPlugin,
     BoundPluginContext,
     PluginRunExchange,
-    PluginRunItem,
     PluginRunNext,
-    PluginRunResponse,
     bind_run_plugins,
 )
 from a13n_harness.pricing import AbstractModelCostCapability
@@ -159,17 +158,10 @@ def _report_model_failure(
     return details
 
 
-@dataclass(frozen=True, slots=True)
-class _ResponsePumpTerminal:
-    error: BaseException | None = None
-
-
 @dataclass(slots=True)
 class _EnvironmentChangeDrain:
     requested: asyncio.Event = field(default_factory=asyncio.Event)
     drained: asyncio.Event = field(default_factory=asyncio.Event)
-    progress: asyncio.Event = field(default_factory=asyncio.Event)
-    cursor: int | None = None
     terminal_sequence: int | None = None
 
 
@@ -204,12 +196,10 @@ async def _emit_environment_change_events(
     """Adapt the run-local Environment journal through the logical terminal fence."""
     environment = context.environment
     cursor = 0
-    drain.cursor = cursor
     while True:
         terminal_sequence = drain.terminal_sequence
         if terminal_sequence is not None and cursor >= terminal_sequence:
             drain.drained.set()
-            drain.progress.set()
             return
 
         read_task = asyncio.create_task(environment._read_changes(after_sequence=cursor, wait=True))
@@ -228,7 +218,6 @@ async def _emit_environment_change_events(
                 terminal_sequence = drain.terminal_sequence
                 if terminal_sequence is not None and cursor >= terminal_sequence:
                     drain.drained.set()
-                    drain.progress.set()
                 return
             raise
         finally:
@@ -245,10 +234,6 @@ async def _emit_environment_change_events(
                     return
                 raise
             cursor = change.sequence
-            progress = drain.progress
-            drain.cursor = cursor
-            drain.progress = asyncio.Event()
-            progress.set()
 
 
 def _environment_change_event(change: EnvironmentChange) -> HarnessExtensionEvent:
@@ -617,9 +602,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._environment_lifecycle_task: asyncio.Task[None] | None = None
         self._environment_ready_delivered = False
         self._context: AgentContext | None = None
-        self._response: PluginRunResponse[OutputT] | None = None
-        self._responses: dict[int, tuple[int, PluginRunResponse[OutputT]]] = {}
-        self._closed_response_ids: set[int] = set()
+        self._run_plugins: tuple[AbstractHarnessPlugin, ...] = ()
+        self._exchange: PluginRunExchange | None = None
         self._run_attachments_closed = False
 
         # Native attempts update the complete live history while sharing usage and cancellation.
@@ -631,9 +615,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._emitter = _RunEventEmitter(self.thread_id, self.run_id, observer=self._bindings.producer_observer)
         self._environment_change_drain = _EnvironmentChangeDrain()
         self._environment_event_task: asyncio.Task[None] | None = None
-        self._response_pump_task: asyncio.Task[None] | None = None
-        self._response_queue: asyncio.Queue[PluginRunItem[OutputT] | _ResponsePumpTerminal] = asyncio.Queue(maxsize=1)
-        self._response_next_task: asyncio.Task[PluginRunItem[OutputT] | _ResponsePumpTerminal] | None = None
+        self._execution_task: asyncio.Task[HarnessRunResult[OutputT]] | None = None
+        self._event_next_task: asyncio.Task[HarnessExtensionEvent | HarnessEvent] | None = None
         self._logical_events_started = False
         self._source_sequence = 0
         self._public_sequence = 0
@@ -777,7 +760,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     context=context,
                     _state_exporter=self.export_state,
                 )
-                self._response = self._build_plugin_response(run_plugins, 0, exchange)
+                self._run_plugins = run_plugins
+                self._exchange = exchange
                 record_span_metadata(
                     phase,
                     {
@@ -996,7 +980,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             self._reading_next = False
 
     async def _next_item(self) -> HarnessStreamEvent[OutputT]:
-        assert self._response is not None
+        assert self._exchange is not None
         try:
             if not self._logical_events_started:
                 self._start_logical_event_mux()
@@ -1010,42 +994,50 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     event=started,
                 )
             if self._pending_result is None:
-                if self._response_next_task is None:
-                    self._response_next_task = asyncio.create_task(self._response_queue.get())
-                task = self._response_next_task
-                wait_for: set[asyncio.Task[Any]] = {task}
-                lifecycle_task = self._environment_lifecycle_task
-                if lifecycle_task is not None:
-                    wait_for.add(lifecycle_task)
-                done, _ = await asyncio.wait(wait_for, return_when=asyncio.FIRST_COMPLETED)
-                if lifecycle_task is not None and lifecycle_task in done:
-                    self._environment_lifecycle_task = None
-                    if lifecycle_task.cancelled():
+                while True:
+                    execution = self._execution_task
+                    assert execution is not None
+                    if self._event_next_task is not None and self._event_next_task.done():
+                        item = self._event_next_task.result()
+                        self._event_next_task = None
+                        return self._normalize_public_event(item)
+                    if execution.done():
+                        # No producers remain after successful execution's terminal fence.
+                        # Retire the outstanding get before testing the queue for emptiness.
+                        await self._cancel_event_next_task()
+                        if not self._emitter.empty():
+                            return self._normalize_public_event(self._emitter.get_nowait())
+                        self._execution_task = None
+                        result = execution.result()
+                        self._emitter.close()
+                        self._pending_result = result
+                        self._terminal_close_task = asyncio.create_task(self._close_resources(outcome=result))
+                        break
+                    if self._event_next_task is None:
+                        self._event_next_task = asyncio.create_task(self._emitter.next())
+                    wait_for: set[asyncio.Task[Any]] = {self._event_next_task, execution}
+                    lifecycle = self._environment_lifecycle_task
+                    adapter = self._environment_event_task
+                    if lifecycle is not None:
+                        wait_for.add(lifecycle)
+                    if adapter is not None and self._environment_change_drain.terminal_sequence is None:
+                        wait_for.add(adapter)
+                    done, _ = await asyncio.wait(wait_for, return_when=asyncio.FIRST_COMPLETED)
+                    if lifecycle is not None and lifecycle in done:
+                        self._environment_lifecycle_task = None
+                        if not lifecycle.cancelled():
+                            lifecycle.result()
                         raise RunError(
                             "Environment lifecycle stopped before logical run cleanup.",
                             code="environment_lifecycle_stopped",
                         )
-                    error = lifecycle_task.exception()
-                    if error is not None:
-                        raise error
-                    raise RunError(
-                        "Environment lifecycle stopped before logical run cleanup.",
-                        code="environment_lifecycle_stopped",
-                    )
-                item = task.result()
-                self._response_next_task = None
-                if isinstance(item, _ResponsePumpTerminal):
-                    if item.error is not None:
-                        raise item.error
-                    raise StopAsyncIteration
-                if not isinstance(item, HarnessRunResult):
-                    return self._normalize_public_event(item)
-
-                result = self._validate_result_candidate(item)
-                self._validated_outcome = result
-                await self._stop_response_pump(cancel=False)
-                self._pending_result = result
-                self._terminal_close_task = asyncio.create_task(self._close_resources(outcome=result))
+                    if adapter is not None and adapter in done:
+                        adapter.result()
+                        if self._environment_change_drain.terminal_sequence is None:
+                            raise RunError(
+                                "Environment change event adapter stopped before the terminal fence.",
+                                code="event_adapter_stopped",
+                            )
 
             close_task = self._terminal_close_task
             assert close_task is not None
@@ -1090,11 +1082,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             return
         self._logical_events_started = True
         self._emitter.start_consuming()
-        self._environment_change_drain.cursor = 0
         self._environment_event_task = asyncio.create_task(
             _emit_environment_change_events(self.context, self._environment_change_drain)
         )
-        self._response_pump_task = asyncio.create_task(self._pump_response())
+        self._execution_task = asyncio.create_task(self._execute())
 
     def _install_terminal_fence(self) -> None:
         drain = self._environment_change_drain
@@ -1104,93 +1095,30 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         drain.terminal_sequence = self.context.environment._change_sequence
         drain.requested.set()
 
-    async def _pump_response(self) -> None:
-        assert self._response is not None
-        response = self._response
-        iteration_error: BaseException | None = None
-        cancellation: asyncio.CancelledError | None = None
-        terminal_result: HarnessRunResult[OutputT] | None = None
-        try:
-            async for item in response:
-                if isinstance(item, HarnessRunResult):
-                    if terminal_result is not None:
-                        raise PluginError(
-                            "Plugin middleware emitted more than one result candidate.",
-                            code="plugin_result_multiple",
-                        )
-                    terminal_result = item
-                    self._install_terminal_fence()
-                    continue
-                await self._response_queue.put(item)
-        except asyncio.CancelledError as exc:
-            cancellation = exc
-            current_task = asyncio.current_task()
-            if current_task is not None:
-                while current_task.cancelling():
-                    current_task.uncancel()
-        except BaseException as exc:
-            if terminal_result is not None:
-                self._source_cleanup_failures.append(exc)
-            else:
-                iteration_error = exc
-        try:
-            await self._close_registered_responses()
-        except asyncio.CancelledError as exc:
-            cancellation = cancellation or exc
-        except BaseException as exc:
-            self._source_cleanup_failures.append(exc)
-        if cancellation is not None:
-            raise cancellation
-        if terminal_result is not None:
-            await self._response_queue.put(terminal_result)
-            return
-        await self._response_queue.put(_ResponsePumpTerminal(error=iteration_error))
-
-    async def _close_registered_responses(self) -> None:
-        failures: list[BaseException] = []
-        pending_cancellation: asyncio.CancelledError | None = None
-        current_task = asyncio.current_task()
-
-        def capture_cancellation(exc: asyncio.CancelledError | None = None) -> bool:
-            nonlocal pending_cancellation
-            if current_task is None or not current_task.cancelling():
-                return False
-            pending_cancellation = pending_cancellation or exc or asyncio.CancelledError()
-            while current_task.cancelling():
-                current_task.uncancel()
-            return True
-
-        responses = sorted(self._responses.values(), key=lambda item: item[0], reverse=True)
-        for _, response in responses:
-            response_id = id(response)
-            if response_id in self._closed_response_ids:
-                continue
-            self._closed_response_ids.add(response_id)
+    async def _execute(self) -> HarnessRunResult[OutputT]:
+        """Own plugin and native scopes independently of bounded public consumption."""
+        assert self._exchange is not None
+        result = await self._call_plugin(0, self._exchange)
+        self._install_terminal_fence()
+        if result.status in {"failed", "cancelled"}:
+            await self.context.usage_attribution._flush_cleanup()
+        else:
+            await self.context.usage_attribution._flush(reason="terminal")
+        result = self._record_inner_candidate(result)
+        adapter = self._environment_event_task
+        if adapter is not None:
             try:
-                await response.aclose()
-            except asyncio.CancelledError as exc:
-                if not capture_cancellation(exc):
-                    failures.append(exc)
-            except BaseException as exc:
-                failures.append(exc)
-            finally:
-                capture_cancellation()
-        if pending_cancellation is not None:
-            self._source_cleanup_failures.extend(failures)
-            for failure in failures:
-                pending_cancellation.add_note(f"Harness plugin response cleanup also failed: {failure!r}")
-            raise pending_cancellation
-        if len(failures) == 1:
-            failure = failures[0]
-            if isinstance(failure, asyncio.CancelledError):
-                raise BaseExceptionGroup("Harness plugin response cleanup failed", failures)
-            raise failure
-        if failures:
-            raise BaseExceptionGroup("Harness plugin response cleanup failed", failures)
+                await asyncio.wait_for(asyncio.shield(adapter), timeout=5.0)
+            except TimeoutError as exc:
+                raise RunError(
+                    "Environment change event adapter did not drain before cleanup deadline.",
+                    code="event_adapter_cleanup_timeout",
+                ) from exc
+        return result
 
-    async def _stop_response_pump(self, *, cancel: bool = True) -> None:
-        task = self._response_pump_task
-        self._response_pump_task = None
+    async def _stop_execution(self, *, cancel: bool = True) -> None:
+        task = self._execution_task
+        self._execution_task = None
         if task is None:
             return
         if cancel and not task.done():
@@ -1217,9 +1145,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if pending_cancellation is not None:
             raise pending_cancellation
 
-    async def _cancel_response_next_task(self) -> None:
-        task = self._response_next_task
-        self._response_next_task = None
+    async def _cancel_event_next_task(self) -> None:
+        task = self._event_next_task
+        self._event_next_task = None
         if task is not None:
             if not task.done():
                 task.cancel()
@@ -1352,260 +1280,38 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._refresh_live_messages()
         return await self._context.export_state(self._latest_messages)
 
-    def _build_plugin_response(
+    async def _call_plugin(
         self,
-        plugins: tuple[AbstractHarnessPlugin, ...],
         index: int,
         exchange: PluginRunExchange,
-    ) -> PluginRunResponse[OutputT]:
-        if index == len(plugins):
-            response = PluginRunResponse(self._stream_run(exchange))
+    ) -> HarnessRunResult[OutputT]:
+        if index == len(self._run_plugins):
+            result = await self._run_native(exchange)
         else:
-            plugin = plugins[index]
-            call_next = PluginRunNext[OutputT](
-                lambda next_exchange: self._build_plugin_response(plugins, index + 1, next_exchange)
+            plugin = self._run_plugins[index]
+            call_next = PluginRunNext[OutputT](lambda value: self._call_plugin(index + 1, value))
+            result = await plugin.wrap_run(exchange, call_next)
+        if not isinstance(result, HarnessRunResult):
+            raise PluginError(
+                "Plugin wrap_run must return HarnessRunResult.",
+                code="plugin_result_invalid",
             )
-            response = plugin.wrap_run(exchange, call_next)
-            if not isinstance(response, PluginRunResponse):
-                raise PluginError(
-                    "Plugin wrap_run must return PluginRunResponse.",
-                    code="plugin_response_invalid",
-                    details={"plugin_id": plugin.plugin_id},
-                )
-        typed_response = cast(PluginRunResponse[OutputT], response)
-        typed_response._bind_item_validator(self._validate_plugin_response_item)
-        registered = self._register_response(typed_response, depth=index * 2 + 1)
-        boundary = PluginRunResponse(self._response_boundary_items(registered, terminal=index == 0))
-        boundary._bind_item_validator(self._validate_plugin_response_item)
-        return self._register_response(boundary, depth=index * 2)
+        validated = self._validate_result_candidate(result)
+        self._validated_outcome = validated
+        return validated
 
-    def _validate_plugin_response_item(
-        self,
-        item: HarnessEvent | HarnessRunResult[OutputT],
-    ) -> HarnessEvent | HarnessRunResult[OutputT]:
-        if isinstance(item, HarnessRunResult):
-            validated = self._validate_result_candidate(item)
-            self._validated_outcome = validated
-            return validated
-        return item
-
-    def _register_response(
-        self,
-        response: PluginRunResponse[OutputT],
-        *,
-        depth: int,
-    ) -> PluginRunResponse[OutputT]:
-        self._responses.setdefault(id(response), (depth, response))
-        return response
-
-    async def _response_boundary_items(
-        self,
-        response: PluginRunResponse[OutputT],
-        *,
-        terminal: bool,
-    ) -> AsyncGenerator[HarnessEvent | HarnessRunResult[OutputT]]:
-        async for item in response:
-            if not isinstance(item, HarnessRunResult):
-                yield item
-                continue
-            if terminal:
-                self._install_terminal_fence()
-                if item.status in {"failed", "cancelled"}:
-                    await self.context.usage_attribution._flush_cleanup()
-                else:
-                    await self.context.usage_attribution._flush(reason="terminal")
-                item = self._validate_result_candidate(
-                    item.replace(
-                        usage_records=self.context.usage_records,
-                        usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
-                    )
-                )
-            target_sequence = self.context.environment._change_sequence
-            async for event in self._drain_emitter_through(target_sequence, terminal=terminal):
-                yield event
-            if terminal:
-                self._emitter.close()
-            yield item
-            return
-
-    async def _drain_emitter_through(
-        self,
-        target_sequence: int,
-        *,
-        terminal: bool,
-    ) -> AsyncGenerator[HarnessEvent]:
-        emitter_task: asyncio.Task[HarnessExtensionEvent | HarnessEvent] | None = None
-        progress_task: asyncio.Task[bool] | None = None
-        deadline_task = asyncio.create_task(asyncio.sleep(5.0)) if terminal else None
-        try:
-            while True:
-                if emitter_task is not None and emitter_task.done():
-                    event = emitter_task.result()
-                    emitter_task = None
-                    yield self._adapt_extension_event(event) if isinstance(event, HarnessExtensionEvent) else event
-                    continue
-
-                adapter_task = self._environment_event_task
-                if adapter_task is not None and adapter_task.done():
-                    self._environment_event_task = None
-                    adapter_task.result()
-                    adapter_task = None
-                    if not terminal or not self._environment_change_drain.drained.is_set():
-                        raise RunError(
-                            "Environment change event adapter stopped before the terminal journal fence.",
-                            code="event_adapter_stopped",
-                        )
-
-                progress = self._environment_change_drain.progress
-                cursor = self._environment_change_drain.cursor
-                adapter_complete = adapter_task is None or adapter_task.done()
-                terminal_complete = not terminal or (
-                    self._environment_change_drain.drained.is_set() and adapter_complete
-                )
-                if cursor is not None and cursor >= target_sequence and self._emitter.empty() and terminal_complete:
-                    if emitter_task is not None and not emitter_task.done():
-                        emitter_task.cancel()
-                        await asyncio.gather(emitter_task, return_exceptions=True)
-                    return
-
-                if emitter_task is None:
-                    emitter_task = asyncio.create_task(self._emitter.next())
-                if progress_task is None:
-                    progress_task = asyncio.create_task(progress.wait())
-                wait_for: set[asyncio.Task[Any]] = {emitter_task, progress_task}
-                if adapter_task is not None:
-                    wait_for.add(adapter_task)
-                if deadline_task is not None:
-                    wait_for.add(deadline_task)
-                done, _ = await asyncio.wait(wait_for, return_when=asyncio.FIRST_COMPLETED)
-                if deadline_task is not None and deadline_task in done:
-                    raise RunError(
-                        "Environment change event adapter did not drain before cleanup deadline.",
-                        code="event_adapter_cleanup_timeout",
-                    )
-                if progress_task in done:
-                    progress_task.result()
-                    progress_task = None
-        finally:
-            tasks: list[asyncio.Task[Any]] = [
-                task for task in (emitter_task, progress_task, deadline_task) if task is not None
-            ]
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-
-    async def _pump_attempts(
-        self,
-        source: AsyncGenerator[HarnessEvent | HarnessRunResult[OutputT]],
-        queue: asyncio.Queue[PluginRunItem[OutputT] | _ResponsePumpTerminal],
-    ) -> None:
-        """Keep native event scopes and their cleanup in the same producer task."""
-        error: BaseException | None = None
-        cancellation: asyncio.CancelledError | None = None
-        try:
+    async def _run_native(self, exchange: PluginRunExchange) -> HarnessRunResult[OutputT]:
+        result: HarnessRunResult[OutputT] | None = None
+        async with aclosing(self._run_attempts(exchange)) as source:
             async for item in source:
-                await queue.put(item)
-        except asyncio.CancelledError as exc:
-            cancellation = exc
-        except BaseException as exc:
-            error = exc
-        try:
-            await source.aclose()
-        except BaseException as exc:
-            error = exc if error is None else BaseExceptionGroup("Harness model source cleanup failed", [error, exc])
-        if cancellation is not None:
-            if error is not None:
-                cancellation.add_note(f"Harness model source cleanup also failed: {error!r}")
-            raise cancellation
-        await queue.put(_ResponsePumpTerminal(error=error))
-
-    async def _stream_run(
-        self,
-        exchange: PluginRunExchange,
-    ) -> AsyncGenerator[HarnessEvent | HarnessRunResult[OutputT]]:
-        """Merge native attempts and Run events into the innermost plugin response."""
-        source_queue: asyncio.Queue[PluginRunItem[OutputT] | _ResponsePumpTerminal] = asyncio.Queue(maxsize=1)
-        source_pump = asyncio.create_task(self._pump_attempts(self._run_attempts(exchange), source_queue))
-        source_task: asyncio.Task[PluginRunItem[OutputT] | _ResponsePumpTerminal] | None = None
-        emitter_task: asyncio.Task[HarnessExtensionEvent | HarnessEvent] | None = None
-        pending_result: HarnessRunResult[OutputT] | None = None
-        try:
-            while True:
-                if emitter_task is not None and emitter_task.done():
-                    event = emitter_task.result()
-                    emitter_task = None
-                    yield self._adapt_extension_event(event) if isinstance(event, HarnessExtensionEvent) else event
-                    continue
-                if source_task is None:
-                    source_task = asyncio.create_task(source_queue.get())
-                if emitter_task is None:
-                    emitter_task = asyncio.create_task(self._emitter.next())
-
-                wait_for: set[asyncio.Task[Any]] = {source_task, emitter_task}
-                adapter_task = self._environment_event_task
-                if adapter_task is not None and not adapter_task.done():
-                    wait_for.add(adapter_task)
-                done, _ = await asyncio.wait(wait_for, return_when=asyncio.FIRST_COMPLETED)
-
-                if adapter_task is not None and adapter_task in done:
-                    self._environment_event_task = None
-                    adapter_task.result()
-                    raise RunError(
-                        "Environment change event adapter stopped before the logical terminal fence.",
-                        code="event_adapter_stopped",
-                    )
-                if emitter_task in done:
-                    event = emitter_task.result()
-                    emitter_task = None
-                    yield self._adapt_extension_event(event) if isinstance(event, HarnessExtensionEvent) else event
-                    continue
-                assert source_task in done
-                item = source_task.result()
-                source_task = None
-                if not isinstance(item, _ResponsePumpTerminal):
-                    if pending_result is not None:
-                        raise RunError(
-                            "Harness model source emitted an item after its result candidate.",
-                            code="agent_result_not_terminal",
-                        )
-                    if isinstance(item, HarnessRunResult):
-                        pending_result = item
-                    else:
-                        yield item
-                    continue
-
-                await source_pump
-                if item.error is not None:
-                    raise item.error
-                if pending_result is None:
-                    return
-                if emitter_task is not None:
-                    if emitter_task.done():
-                        event = emitter_task.result()
-                        emitter_task = None
-                        yield (
-                            self._adapt_extension_event(event) if isinstance(event, HarnessExtensionEvent) else event
-                        )
-                    else:
-                        emitter_task.cancel()
-                        await asyncio.gather(emitter_task, return_exceptions=True)
-                        emitter_task = None
-                target_sequence = self.context.environment._change_sequence
-                async for event in self._drain_emitter_through(target_sequence, terminal=False):
-                    yield event
-                yield pending_result
-                return
-        finally:
-            tasks: list[asyncio.Task[Any]] = [
-                task for task in (source_task, emitter_task, source_pump) if task is not None
-            ]
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
+                if isinstance(item, HarnessRunResult):
+                    result = item
+                else:
+                    # Native producer capture already observed this event before history advanced.
+                    await self._emitter._put(item)
+        if result is None:
+            raise RunError("The native run ended without a result.", code="run_result_missing")
+        return result
 
     async def _normalize_interrupted_history(
         self, messages: Sequence[ModelMessage], *, response_tracker: InterruptedResponseTracker
@@ -2117,9 +1823,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 
             # Repeated cancellation while draining the reader must not skip its producer.
             phase.set_attribute("a13n.phase.step", "responses")
-            await finish_cleanup(self._cancel_response_next_task())
-            await finish_cleanup(self._stop_response_pump())
-            await finish_cleanup(self._close_registered_responses())
+            self._emitter.stop_consuming()
+            await finish_cleanup(self._cancel_event_next_task())
+            await finish_cleanup(self._stop_execution())
             phase.set_attribute("a13n.phase.step", "state_export")
             outcome = outcome or self._validated_outcome
             with CancelScope(shield=True):
@@ -2170,7 +1876,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 phase.set_status(StatusCode.ERROR)
 
         self._finish_observation(
-            outcome=outcome, cancellation=cancellation, failure=failure, cleanup_failed=bool(causes)
+            outcome=outcome,
+            cancellation=cancellation,
+            failure=failure,
+            cleanup_failed=bool(causes) or (outcome is not None and failure is not None and cancellation is None),
         )
 
         if cancellation is not None:

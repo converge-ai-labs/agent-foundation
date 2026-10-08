@@ -19,7 +19,7 @@ from a13n_harness import (
     RunCleanupError,
     SemanticRunInput,
 )
-from a13n_harness.plugins import PluginRunExchange, PluginRunNext, PluginRunResponse
+from a13n_harness.plugins import PluginRunExchange, PluginRunNext
 from a13n_harness.usage import UsageSnapshot
 from pydantic import BaseModel
 from pydantic_ai.agent.spec import AgentSpec
@@ -31,8 +31,7 @@ from pydantic_ai.tools import RunContext
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("eager_next", [False, True])
-async def test_plugin_points_span_recovery_without_rebinding(eager_next: bool) -> None:
+async def test_plugin_points_span_recovery_without_rebinding() -> None:
     log: list[str] = []
     contexts: list[AgentContext] = []
     model_inputs: list[list[ModelMessage]] = []
@@ -68,25 +67,16 @@ async def test_plugin_points_span_recovery_without_rebinding(eager_next: bool) -
             assert pending.value.code == "plugins_not_bound"
             return replace(self, bound=True)
 
-        def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> PluginRunResponse[Any]:
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
             assert exchange.context.plugins.require(self.plugin_id, Plugin) is self
             log.append(f"wrap:{self.plugin_id}")
             transformed = exchange.with_input(SemanticRunInput(f"{exchange.input.value}|{self.plugin_id}"))
-            response = call_next(transformed) if eager_next else None
-
-            async def iterate():
-                log.append(f"iterate:{self.plugin_id}")
-                try:
-                    inner = response if response is not None else call_next(transformed)
-                    async for item in inner:
-                        if isinstance(item, HarnessRunResult):
-                            log.append(f"result:{self.plugin_id}")
-                            item = item.replace(output=f"{item.output}|{self.plugin_id}")
-                        yield item
-                finally:
-                    log.append(f"close:{self.plugin_id}")
-
-            return PluginRunResponse(iterate())
+            try:
+                result = await call_next(transformed)
+                log.append(f"result:{self.plugin_id}")
+                return result.replace(output=f"{result.output}|{self.plugin_id}")
+            finally:
+                log.append(f"close:{self.plugin_id}")
 
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del info
@@ -109,28 +99,24 @@ async def test_plugin_points_span_recovery_without_rebinding(eager_next: bool) -
     build_log = ["agent:outer", "capabilities:outer", "agent:inner", "capabilities:inner"]
     assert log == build_log
     async with executable.stream("start") as stream:
-        entry_log = [*build_log, "bind:outer", "bind:inner", "wrap:outer"]
-        if eager_next:
-            entry_log.append("wrap:inner")
+        entry_log = [*build_log, "bind:outer", "bind:inner"]
         assert log == entry_log
         assert contexts == [stream.context, stream.context]
         assert stream.result is None
         assert model_inputs == []
         items = [item async for item in stream]
 
-    iteration_log = (
-        ["iterate:outer", "iterate:inner"] if eager_next else ["iterate:outer", "wrap:inner", "iterate:inner"]
-    )
     assert log == [
         *entry_log,
-        *iteration_log,
+        "wrap:outer",
+        "wrap:inner",
         "attempt",
         "model",
         "attempt",
         "model",
         "result:inner",
-        "result:outer",
         "close:inner",
+        "result:outer",
         "close:outer",
     ]
     assert any(
@@ -156,29 +142,22 @@ async def test_live_checkpoints_remain_detached_from_plugin_result_and_cleanup(c
     class CheckpointPlugin(AbstractHarnessPlugin):
         plugin_id = "checkpoint"
 
-        def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> PluginRunResponse[Any]:
-            async def iterate():
-                nonlocal transferred
-                await exchange.context.state.write("test.value", Value(value=1), version="1")
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            nonlocal transferred
+            await exchange.context.state.write("test.value", Value(value=1), version="1")
+            snapshots.append(await exchange.export_current_state())
+            try:
+                result = await call_next(exchange)
+                await exchange.context.state.write("test.value", Value(value=2), version="1")
                 snapshots.append(await exchange.export_current_state())
-                try:
-                    async for item in call_next(exchange):
-                        if isinstance(item, HarnessRunResult):
-                            await exchange.context.state.write("test.value", Value(value=2), version="1")
-                            snapshots.append(await exchange.export_current_state())
-                            # Trusted middleware may transfer state independently of result history.
-                            transferred = HarnessState.new(
-                                thread_id=exchange.context.thread_id,
-                                agent_context_state=snapshots[0].agent_context_state,
-                            )
-                            item = item.replace(state=transferred)
-                        yield item
-                finally:
-                    await exchange.context.state.write("test.value", Value(value=3), version="1")
-                    if cleanup_fails:
-                        raise RuntimeError("checkpoint cleanup failed")
-
-            return PluginRunResponse(iterate())
+                transferred = HarnessState.new(
+                    thread_id=exchange.context.thread_id, agent_context_state=snapshots[0].agent_context_state
+                )
+                return result.replace(state=transferred)
+            finally:
+                await exchange.context.state.write("test.value", Value(value=3), version="1")
+                if cleanup_fails:
+                    raise RuntimeError("checkpoint cleanup failed")
 
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
@@ -209,12 +188,17 @@ async def test_live_checkpoints_remain_detached_from_plugin_result_and_cleanup(c
     assert snapshots[1].message_history
     assert initial.agent_context_state.entries == {}
     assert transferred is not None
-    assert await stream.export_state() == transferred
-    assert stream.outcome is not None and stream.outcome.state == transferred
+    assert stream.outcome is not None
+    assert await stream.export_state() == stream.outcome.state
     assert stream.outcome.all_messages() != transferred.message_history
     if cleanup_fails:
+        # The replacement never returned: the nearest validated inner result remains authoritative.
+        assert stream.outcome.state != transferred
+        assert stream.outcome.state is not None
+        assert stream.outcome.state.agent_context_state.entries["test.value"].data == {"value": 1}
         assert stream.result is None
         assert not any(isinstance(item, HarnessRunResultEvent) for item in items)
     else:
+        assert stream.outcome.state == transferred
         assert isinstance(items[-1], HarnessRunResultEvent)
         assert stream.result == items[-1].result

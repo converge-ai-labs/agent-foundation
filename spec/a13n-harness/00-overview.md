@@ -11,7 +11,7 @@ Embedded applications and hosted workers use the same code-first API. A Host may
 Pydantic AI owns the Agent loop, Models, profiles, Toolsets, Capabilities, messages, deferred values, outputs, and usage. The Harness adds:
 
 - immutable process-local `AgentDefinition` composition;
-- trusted ordered plugins around semantic input, events, errors, and the complete result, with optional Harness-owned preferred YAML or supported JSON configuration that selects package factories and produces the same concrete plugin objects;
+- trusted ordered plugins around semantic input, execution, errors, and the complete result, with optional Harness-owned preferred YAML or supported JSON configuration that selects package factories and produces the same concrete plugin objects;
 - one typed `AgentContext` per logical run;
 - fresh `RunBindings` for Identity, model resolution, and Run Capabilities;
 - explicit fresh Environment Run inputs and Harness-internal multi-mount routing across the complete logical Run;

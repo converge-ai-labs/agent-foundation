@@ -22,7 +22,6 @@ from a13n_harness import (
     HarnessRunResult,
     HarnessRunResultEvent,
     HarnessState,
-    PluginError,
     RunBindings,
     SubagentDefinition,
 )
@@ -46,7 +45,6 @@ from a13n_harness.errors import StateError
 from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
-    PluginRunResponse,
 )
 from a13n_harness.pricing import (
     AbstractModelCostCapability,
@@ -645,77 +643,6 @@ async def test_inline_delegation_intersects_child_agent_spec_usage_limits(
     assert observed_limits[0].total_tokens_limit == 80_000
 
 
-class ChildEventMutationPlugin(AbstractHarnessPlugin):
-    def __init__(self, mutation: str) -> None:
-        self.mutation = mutation
-
-    @property
-    def plugin_id(self) -> str:
-        return f"child-event-{self.mutation}"
-
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                if isinstance(item, HarnessEvent) and item.run_id != exchange.context.run_id:
-                    if self.mutation == "thread":
-                        item = replace(item, thread_id=exchange.context.thread_id)
-                    else:
-                        item = replace(item, sequence=item.sequence + 1)
-                yield item
-
-        return PluginRunResponse(iterate())
-
-
-@pytest.mark.parametrize(
-    ("mutation", "error_code"),
-    [
-        ("thread", "plugin_event_run_mismatch"),
-        ("sequence", "plugin_event_sequence_invalid"),
-    ],
-)
-async def test_plugin_cannot_change_forwarded_child_event_provenance(
-    mutation: str,
-    error_code: str,
-) -> None:
-    async def parent_stream(
-        messages: list[ModelMessage],
-        info: AgentInfo,
-    ) -> AsyncIterator[str | DeltaToolCalls]:
-        del info
-        if not _returns_after_latest_user(messages):
-            yield {
-                0: DeltaToolCall(
-                    name="delegate",
-                    json_args=json.dumps(
-                        {
-                            "subagent": "reviewer",
-                            "prompt": "inspect",
-                        }
-                    ),
-                    tool_call_id="delegate-1",
-                )
-            }
-            return
-        yield "parent-done"
-
-    executable = HarnessBuilder().build(
-        _parent_definition(
-            _child_definition(),
-            FunctionModel(stream_function=parent_stream),
-            plugins=(ChildEventMutationPlugin(mutation),),
-        )
-    )
-
-    with pytest.raises(PluginError) as exc_info:
-        await executable.run("start", bindings=_bindings_factory())
-
-    assert exc_info.value.code == error_code
-
-
 async def test_nested_inline_delegation_forwards_descendant_events() -> None:
     async def grandchild_stream(
         messages: list[ModelMessage],
@@ -985,20 +912,21 @@ async def test_inline_cleanup_failure_retains_child_state_without_reporting_succ
         def plugin_id(self) -> str:
             return "child-cleanup"
 
-        def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> PluginRunResponse[Any]:
-            async def iterate():
-                try:
-                    async for item in call_next(exchange):
-                        if isinstance(item, HarnessRunResult):
-                            if fail_cleanup and not retain_state:
-                                item = item.replace(status="cancelled", output=None, state=None)
-                            retained.append(item)
-                        yield item
-                finally:
-                    if fail_cleanup:
-                        raise RuntimeError("private cleanup detail")
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            result = await call_next(exchange)
+            if fail_cleanup:
+                raise RuntimeError("private cleanup detail")
+            return result
 
-            return PluginRunResponse(iterate())
+    class RetainResultPlugin(AbstractHarnessPlugin):
+        plugin_id = "retain-result"
+
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            result = await call_next(exchange)
+            if fail_cleanup and not retain_state:
+                result = result.replace(status="cancelled", output=None, state=None)
+            retained.append(result)
+            return result
 
     async def parent_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         del info
@@ -1018,7 +946,7 @@ async def test_inline_cleanup_failure_retains_child_state_without_reporting_succ
             return
         yield "parent-done"
 
-    child = replace(_child_definition(), plugins=(CleanupFailurePlugin(),))
+    child = replace(_child_definition(), plugins=(CleanupFailurePlugin(), RetainResultPlugin()))
     executable = HarnessBuilder().build(_parent_definition(child, FunctionModel(stream_function=parent_stream)))
     previous_state = None
     if continuation:

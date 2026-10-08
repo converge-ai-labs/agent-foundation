@@ -26,7 +26,7 @@ from pydantic_ai.messages import (
 
 from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiStreamObserver, tool_result_content
 from a13n_stream_protocol.fragments import CustomEventAssembler, FragmentState
-from a13n_stream_protocol.observer import ObserverContinuation
+from a13n_stream_protocol.observer import AguiEventProcessor, ObserverContinuation
 
 type ItemKind = Literal["text_message", "reasoning_message", "tool_call", "observation"]
 type ItemState = Literal["in_progress", "completed", "interrupted", "failed"]
@@ -272,6 +272,7 @@ class DisplayFold:
         attempt: int = 0,
         first: int = 1,
         full_content: bool = False,
+        processor: AguiEventProcessor | None = None,
         continuation: DisplayContinuation | None = None,
     ):
         self.run_id, self.attempt = run_id, attempt
@@ -281,10 +282,12 @@ class DisplayFold:
         self.sequence = 0
         self.full_content = full_content
         self.response_groups: dict[str, str] = {}
-        self.observer = HarnessAguiStreamObserver(
-            processor=None if full_content else _bound_payloads,
-            retain_events=False,
-        )
+
+        def process(source: HarnessStreamEvent[Any], event: Event) -> Event | None:
+            selected = processor(source, event) if processor is not None else event
+            return selected if selected is None or full_content else _bound_payloads(source, selected)
+
+        self.observer = HarnessAguiStreamObserver(processor=process, retain_events=False)
         self.assembler = CustomEventAssembler()
         self.arguments: _Arguments | None = None
         if continuation is not None:
@@ -294,9 +297,7 @@ class DisplayFold:
             self.next, self.sequence = state.next_ordinal, state.position.sequence
             self.response_groups, self.arguments = state.response_groups, state.arguments
             self.assembler = CustomEventAssembler.restore(state.fragments)
-            self.observer = HarnessAguiStreamObserver.restore(
-                state.observer, processor=None if full_content else _bound_payloads
-            )
+            self.observer = HarnessAguiStreamObserver.restore(state.observer, processor=process)
 
     def export(self) -> DisplaySnapshot:
         """Detach a pure cut. Export never ends, interrupts or pages active content."""
@@ -319,13 +320,14 @@ class DisplayFold:
         ).model_copy(deep=True)
 
     @staticmethod
-    def restore(snapshot: DisplaySnapshot) -> DisplayFold:
+    def restore(snapshot: DisplaySnapshot, *, processor: AguiEventProcessor | None = None) -> DisplayFold:
         state = snapshot.continuation
         return DisplayFold(
             state.run_id,
             snapshot.items,
             attempt=state.position.attempt,
             full_content=state.full_content,
+            processor=processor,
             continuation=state,
         )
 

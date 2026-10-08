@@ -7,7 +7,7 @@ description: 选择范围最小的扩展点：Harness 中间件、Pydantic AI Ca
 
 | 扩展点                       | 用途                                |
 | ---------------------------- | ----------------------------------- |
-| Harness 中间件插件           | 包装输入、事件、错误或最终 Run 结果 |
+| Harness 中间件插件           | 包装输入、执行、错误或最终 Run 结果 |
 | Capability                   | 添加工具、指令或 Agent 循环行为     |
 | `EnvironmentProviderBinding` | 暴露一个 Host 资源的操作            |
 | `EnvironmentRunExtension`    | 为已进入的多个挂载执行初始化和清理  |
@@ -34,6 +34,43 @@ description: 选择范围最小的扩展点：Harness 中间件、Pydantic AI Ca
 包装整个 Run 时使用中间件；Agent 循环内的行为使用[Capability](capabilities.md)。
 
 可以直接传入 `AbstractHarnessPlugin` 实例，也可以通过选定的 `HarnessPluginFactory` 入口点创建插件。
+
+### 包装执行并发出观察事件
+
+实现异步 `wrap_run()` 并返回 `HarnessRunResult`。最多等待一次 `call_next(exchange)`，也可以直接返回完整结果以短路执行。通过 `exchange.with_input(...)` 替换语义输入。
+
+```python
+from typing import Any
+
+from a13n_harness import AbstractHarnessPlugin, HarnessRunResult
+from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.plugins import PluginRunExchange, PluginRunNext
+
+
+class AuditPlugin(AbstractHarnessPlugin):
+    def __init__(self, plugin_id: str) -> None:
+        self._plugin_id = plugin_id
+
+    @property
+    def plugin_id(self) -> str:
+        return self._plugin_id
+
+    async def wrap_run(
+        self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]
+    ) -> HarnessRunResult[Any]:
+        await exchange.context.events.emit(
+            HarnessExtensionEvent(kind="diagnostic", payload={"phase": "before"})
+        )
+        result = await call_next(exchange)
+        await exchange.context.events.emit(
+            HarnessExtensionEvent(kind="diagnostic", payload={"phase": "after"})
+        )
+        return result
+```
+
+中间件执行期间，Run 通过有界通道投递扩展事件。调用 continuation 之前、之后以及短路执行期间都可以发出事件。消费者较慢时会施加背压；中间件不拥有或迭代事件流。
+
+**破坏性变更迁移：** 将 `PluginRunResponse` 和异步事件生成器改为 `async def wrap_run(...)`、`await call_next(...)` 及返回结果。通过 `context.events.emit()` 发出扩展观察事件。原生事件和 Run 生命周期事件仍由 Harness 管理。需要调整展示时，在 Host 共用的实时与持久化 fold 之前配置 Stream Protocol `DisplayFold` processor，恢复 fold 时使用相同的 processor。不要在中间件中改写原生事件。
 
 ### 直接组合
 
@@ -228,7 +265,7 @@ Host 管理包安装、兼容性与回滚。
 2. **绑定 Agent**：每个构建的根可执行对象或子可执行对象各执行一次；
 3. **绑定 Run 并执行中间件**：每个逻辑 Run 都重新执行。
 
-从单消费者流中返回一个有效结果。在 `finally` 清理插件资源，继续传播取消和清理失败。
+从 `wrap_run()` 返回一个有效结果。在 `finally` 清理插件资源，继续传播取消和清理失败。Harness 验证每个成功返回的结果。如果 `finally` 抛出异常，导致替换结果未能返回，则保留最近一次通过验证的内层结果。
 
 在 `for_agent()` 返回的 Agent 绑定实例中，通过 `get_capabilities()` 贡献 Capabilities。
 

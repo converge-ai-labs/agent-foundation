@@ -47,7 +47,7 @@ The trusted caller may supply fresh bindings for a logical run; an embedded call
 6. normalizes semantic input;
 7. creates one `AgentContext` with the stable Thread ID, imported `AgentContextState`, entered Environment facade, optional model resolver and model-context middleware, immutable metadata, and executable-owned child collection;
 8. binds fresh run plugin replacements and freezes `BoundPluginContext`;
-9. creates the outer plugin response.
+9. prepares the outer plugin invocation.
 
 The same context and entered Environment facade are reused by every internal `ModelAttempt`. Current Identity and its immutable string claims, Environment lifetime, plugins, Capability-state coordinator, model resolver, model-context binding, and metadata therefore remain stable across recovery. Pydantic performs fresh Capability run binding for each internal attempt. `ContextualMCP` resolves its factory once and retains one active upstream MCP replacement on that logical-run `AgentContext`; later attempts reuse it, while another logical Harness run receives a fresh replacement. This creates fresh local transport and provider-native values before their first extraction without mutating the shared definition object or rerunning a potentially effectful factory during semantic recovery. A trusted Run integration can apply Run-local mount mutations during input preparation, an active attempt, tool work, or recovery backoff; each committed mutation publishes an immutable snapshot without replacing the facade or context and never changes Host durable association. `RunBindings.capabilities` are passed to every `ModelAttempt` and follow upstream per-run Capability binding semantics.
 
@@ -127,7 +127,7 @@ sequenceDiagram
     Harness-->>Caller: terminal result event after cleanup
 ```
 
-The stream is lazy: entering it performs preparation but no model or tool work. First iteration drives the plugin response and, if middleware reaches the inner path, starts the first `ModelAttempt`. A plugin short-circuit starts no `ModelAttempt`.
+The stream is lazy: entering it performs preparation but no model or tool work. First iteration starts the async plugin invocation and, if middleware reaches the inner path, starts the first `ModelAttempt`. A plugin short-circuit starts no `ModelAttempt`.
 
 ## Model Attempt Recovery
 
@@ -217,17 +217,17 @@ The detailed state schema and interrupted-history rules are owned by [Harness St
 
 ## Result and Cleanup
 
-The inner path produces one `HarnessRunResult` candidate. Plugin middleware can replace it under the trusted-plugin contract. The Harness validates candidates at every response boundary so the nearest valid inner outcome remains available if an outer layer later fails.
+The inner path produces one `HarnessRunResult` candidate. Plugin middleware can replace it under the trusted-plugin contract. The Harness validates candidates at every returned result boundary so the nearest valid inner outcome remains available if an outer layer later fails.
 
-The Harness establishes the logical run's terminal fence before cleanup. A mount mutation that linearizes after that fence is rejected even though provider scopes have not all closed yet. Cleanup then follows reverse acquisition order and stays in the task that entered the async scopes:
+On normal completion, plugin wrappers unwind before the logical terminal fence. On early close or failure, the Harness installs that fence before cancelling execution and unwinding wrappers. A mount mutation that linearizes after that fence is rejected even though provider scopes have not all closed yet. Cleanup then follows reverse acquisition order and stays in the task that entered the async scopes:
 
-1. close registered plugin responses from inner to outer;
+1. finish or cancel execution, preserving task-affine native scopes and inner-to-outer wrapper cleanup;
 2. cancel or drain supervised Environment preparation and maintenance work;
 3. drain operation leases, retire current mounts, close their Environment adapters, and permanently close mount mutation;
 4. close remaining outer resources and preserve any pending external task cancellation;
 5. publish the terminal result event only when cleanup succeeds.
 
-Every registered response is closed at most once. Cleanup continues after an individual close failure and collects secondary causes. A plugin or cleanup failure after a valid candidate raises `RunCleanupError` with that candidate and no terminal event. External cancellation takes precedence and receives cleanup failures as notes.
+Each wrapper owns its ordinary async `finally` cleanup. Resource cleanup continues after an individual close failure and collects secondary causes. A plugin or cleanup failure after a valid candidate raises `RunCleanupError` with that candidate and no terminal event. External cancellation takes precedence and receives cleanup failures as notes.
 
 ## Invariants
 

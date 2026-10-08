@@ -5,13 +5,13 @@ description: 'Choose the narrowest extension point: Harness middleware, Pydantic
 
 Choose an extension by the behavior you want to add:
 
-| Extension point              | Use it for                                          |
-| ---------------------------- | --------------------------------------------------- |
-| Harness middleware plugin    | Wrap input, events, errors, or the final Run result |
-| Capability                   | Add tools, instructions, or Agent-loop behavior     |
-| `EnvironmentProviderBinding` | Expose operations from one Host resource            |
-| `EnvironmentRunExtension`    | Set up and clean up resources across entered mounts |
-| Provider plugin              | Make an Environment Provider available to a Host    |
+| Extension point              | Use it for                                             |
+| ---------------------------- | ------------------------------------------------------ |
+| Harness middleware plugin    | Wrap input, execution, errors, or the final Run result |
+| Capability                   | Add tools, instructions, or Agent-loop behavior        |
+| `EnvironmentProviderBinding` | Expose operations from one Host resource               |
+| `EnvironmentRunExtension`    | Set up and clean up resources across entered mounts    |
+| Provider plugin              | Make an Environment Provider available to a Host       |
 
 Install the package, then explicitly select its extension. Installation alone activates nothing.
 
@@ -34,6 +34,43 @@ Select each extension through its owning API:
 Use middleware to wrap a whole Run; use a [Capability](capabilities.md) for behavior inside the Agent loop.
 
 A plugin can be supplied directly as an `AbstractHarnessPlugin` or created from a selected `HarnessPluginFactory` entry point.
+
+### Wrap Execution and Emit Observations
+
+Implement an async `wrap_run()` that returns a `HarnessRunResult`. Await `call_next(exchange)` at most once, or return a complete result to short-circuit execution. Use `exchange.with_input(...)` to replace semantic input.
+
+```python
+from typing import Any
+
+from a13n_harness import AbstractHarnessPlugin, HarnessRunResult
+from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.plugins import PluginRunExchange, PluginRunNext
+
+
+class AuditPlugin(AbstractHarnessPlugin):
+    def __init__(self, plugin_id: str) -> None:
+        self._plugin_id = plugin_id
+
+    @property
+    def plugin_id(self) -> str:
+        return self._plugin_id
+
+    async def wrap_run(
+        self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]
+    ) -> HarnessRunResult[Any]:
+        await exchange.context.events.emit(
+            HarnessExtensionEvent(kind="diagnostic", payload={"phase": "before"})
+        )
+        result = await call_next(exchange)
+        await exchange.context.events.emit(
+            HarnessExtensionEvent(kind="diagnostic", payload={"phase": "after"})
+        )
+        return result
+```
+
+The Run delivers extension events through a bounded channel while middleware executes. Emission works before the continuation, after it, and during short-circuit execution. A slow consumer applies backpressure; middleware does not own or iterate the event stream.
+
+**Breaking migration:** replace `PluginRunResponse` and async event generators with `async def wrap_run(...)`, `await call_next(...)`, and a returned result. Emit extension observations through `context.events.emit()`. Native events and Run lifecycle events remain Harness-owned. For presentation changes, configure the Host's Stream Protocol `DisplayFold` processor before its shared live-and-persisted fold; use the same processor when restoring the fold. Do not rewrite native events in middleware.
 
 ### Direct Composition
 
@@ -228,7 +265,7 @@ A plugin has three distinct phases:
 2. **Agent binding** once for each built root or child executable;
 3. **Run binding and middleware** freshly for every logical Run.
 
-Yield one valid result from a single-consumer stream. Clean plugin resources in `finally` and propagate cancellation and cleanup failures.
+Return one valid result from `wrap_run()`. Clean plugin resources in `finally` and propagate cancellation and cleanup failures. The Harness validates each successfully returned result. A replacement that never returns because `finally` raises does not replace the last validated inner result.
 
 Contribute Capabilities through `get_capabilities()` on the Agent-bound instance returned by `for_agent()`.
 

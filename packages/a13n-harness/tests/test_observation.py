@@ -27,7 +27,6 @@ from a13n_harness.observation import redact_json
 from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
-    PluginRunResponse,
 )
 from a13n_harness.pricing import (
     AbstractModelCostCapability,
@@ -811,24 +810,20 @@ class _ShortCircuitPlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "observation-short-circuit"
 
-    def wrap_run(
+    async def wrap_run(
         self,
         exchange: PluginRunExchange,
         call_next: PluginRunNext,
-    ) -> PluginRunResponse:
+    ) -> HarnessRunResult:
         del call_next
-
-        async def iterate():
-            yield HarnessRunResult(
-                thread_id=exchange.context.thread_id,
-                run_id=exchange.context.run_id,
-                status="completed",
-                output="cached",
-                state=await exchange.export_current_state(),
-                usage=RunUsageSummary(),
-            )
-
-        return PluginRunResponse(iterate())
+        return HarnessRunResult(
+            thread_id=exchange.context.thread_id,
+            run_id=exchange.context.run_id,
+            status="completed",
+            output="cached",
+            state=await exchange.export_current_state(),
+            usage=RunUsageSummary(),
+        )
 
 
 async def test_plugin_short_circuit_records_zero_model_attempts() -> None:
@@ -851,19 +846,15 @@ class _CleanupFailurePlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "observation-cleanup-failure"
 
-    def wrap_run(
+    async def wrap_run(
         self,
         exchange: PluginRunExchange,
         call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            try:
-                async for item in call_next(exchange):
-                    yield item
-            finally:
-                raise RuntimeError("cleanup failed")
-
-        return PluginRunResponse(iterate())
+    ) -> HarnessRunResult:
+        try:
+            return await call_next(exchange)
+        finally:
+            raise RuntimeError("cleanup failed")
 
 
 async def test_cleanup_failure_marks_the_logical_run_failed_without_raw_exception_fields() -> None:

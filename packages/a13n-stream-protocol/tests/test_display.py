@@ -186,3 +186,36 @@ def test_cross_language_normalization_fixture() -> None:
                 assert fold.items[observed.item.id].model_dump(mode="json") == step["item"]
             assert fold.export().continuation.model_dump(mode="json") == step["continuation"]
             fold = DisplayFold.restore(DisplaySnapshot.model_validate_json(fold.export().model_dump_json()))
+
+
+def test_host_processor_is_shared_by_live_display_and_restored_continuation() -> None:
+    from ag_ui.core import CustomEvent, TextMessageContentEvent
+
+    def process(source, event):
+        if isinstance(event, TextMessageContentEvent):
+            return event.model_copy(update={"delta": event.delta.upper()})
+        if isinstance(event, CustomEvent):
+            return None
+        return event
+
+    fold = DisplayFold("run", processor=process)
+    sources = [
+        PartStartEvent(index=0, part=TextPart("hello")),
+        PartDeltaEvent(index=0, delta=TextPartDelta(" world")),
+        PartEndEvent(index=0, part=TextPart("hello world")),
+    ]
+    live: list[dict] = []
+    for sequence, event in enumerate(sources):
+        source = HarnessEvent(
+            thread_id="thread", run_id="run", sequence=sequence, occurred_at=datetime.now(UTC), event=event
+        )
+        restored = DisplayFold.restore(fold.export(), processor=process)
+        converted = fold.events(source)
+        assert restored.events(source) == converted
+        live.extend(converted)
+        fold.fold(converted, source)
+        restored.fold(converted, source)
+        assert restored.export() == fold.export()
+    assert "".join(event["delta"] for event in live if event["type"] == "TEXT_MESSAGE_CONTENT") == "HELLO WORLD"
+    assert next(item for item in fold.items.values() if item.kind == "text_message").content["text"] == "HELLO WORLD"
+    assert not any(event["type"] == "CUSTOM" for event in live)

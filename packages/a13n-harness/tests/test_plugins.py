@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Any, cast
 
 import pytest
@@ -35,7 +35,6 @@ from a13n_harness.environment.providers import (
 from a13n_harness.plugins import (
     PluginRunExchange,
     PluginRunNext,
-    PluginRunResponse,
 )
 from a13n_harness.usage import RunUsageSummary
 from pydantic import ValidationError
@@ -102,22 +101,15 @@ class RecordingPlugin(AbstractHarnessPlugin):
             return (RecordingCapability(self.log),)
         return ()
 
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            self.log.append(f"enter:{self.plugin_id}")
-            try:
-                async for item in call_next(exchange):
-                    if isinstance(item, HarnessRunResult) and item.status == "completed":
-                        item = item.replace(output=f"{item.output}|{self.plugin_id}")
-                    yield item
-            finally:
-                self.log.append(f"exit:{self.plugin_id}")
-
-        return PluginRunResponse(iterate())
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+        self.log.append(f"enter:{self.plugin_id}")
+        try:
+            result = await call_next(exchange)
+            return (
+                result.replace(output=f"{result.output}|{self.plugin_id}") if result.status == "completed" else result
+            )
+        finally:
+            self.log.append(f"exit:{self.plugin_id}")
 
 
 def _model(log: list[str]) -> FunctionModel:
@@ -165,25 +157,17 @@ class ShortCircuitPlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "short-circuit"
 
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
         del call_next
-
-        async def iterate():
-            self.calls.append("short-circuit")
-            yield HarnessRunResult(
-                thread_id=exchange.context.thread_id,
-                run_id=exchange.context.run_id,
-                status="completed",
-                output="cached",
-                state=await exchange.export_current_state(),
-                usage=RunUsageSummary(),
-            )
-
-        return PluginRunResponse(iterate())
+        self.calls.append("short-circuit")
+        return HarnessRunResult(
+            thread_id=exchange.context.thread_id,
+            run_id=exchange.context.run_id,
+            status="completed",
+            output="cached",
+            state=await exchange.export_current_state(),
+            usage=RunUsageSummary(),
+        )
 
 
 async def test_plugin_can_short_circuit_without_starting_pydantic() -> None:
@@ -214,19 +198,11 @@ class CleanupFailurePlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "cleanup-failure"
 
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            try:
-                async for item in call_next(exchange):
-                    yield item
-            finally:
-                raise RuntimeError("cleanup failed")
-
-        return PluginRunResponse(iterate())
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+        try:
+            return await call_next(exchange)
+        finally:
+            raise RuntimeError("cleanup failed")
 
 
 async def test_cleanup_failure_withholds_terminal_delivery_and_retains_outcome() -> None:
@@ -255,16 +231,10 @@ async def test_prestart_cancellation_respects_middleware_state_omission() -> Non
         def plugin_id(self) -> str:
             return "omit-state"
 
-        def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> PluginRunResponse[Any]:
-            async def iterate():
-                async for item in call_next(exchange):
-                    if isinstance(item, HarnessRunResult):
-                        candidates.append(item)
-                        yield item.replace(state=None)
-                    else:
-                        yield item
-
-            return PluginRunResponse(iterate())
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            result = await call_next(exchange)
+            candidates.append(result)
+            return result.replace(state=None)
 
     executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=_model([]), plugins=(OmitStatePlugin(),))
     async with executable.stream("cancel before model work") as stream:
@@ -283,19 +253,9 @@ class InvalidOutputPlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "invalid-output"
 
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                if isinstance(item, HarnessRunResult):
-                    yield item.replace(output=123)
-                else:
-                    yield item
-
-        return PluginRunResponse(iterate())
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+        result = await call_next(exchange)
+        return result.replace(output=123)
 
 
 class RaiseAfterResultPlugin(AbstractHarnessPlugin):
@@ -303,18 +263,9 @@ class RaiseAfterResultPlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "raise-after-result"
 
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                if isinstance(item, HarnessRunResult):
-                    raise RuntimeError("outer plugin failed")
-                yield item
-
-        return PluginRunResponse(iterate())
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+        await call_next(exchange)
+        raise RuntimeError("outer plugin failed")
 
 
 @pytest.mark.parametrize("plugin", [InvalidOutputPlugin(), RaiseAfterResultPlugin()])
@@ -342,18 +293,9 @@ class ReplaceResultPlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "replace-result"
 
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                if isinstance(item, HarnessRunResult):
-                    item = item.replace(output=f"{item.output}|inner")
-                yield item
-
-        return PluginRunResponse(iterate())
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+        result = await call_next(exchange)
+        return result.replace(output=f"{result.output}|inner")
 
 
 async def test_outer_failure_retains_the_valid_replacement_from_the_inner_plugin_boundary() -> None:
@@ -369,181 +311,6 @@ async def test_outer_failure_retains_the_valid_replacement_from_the_inner_plugin
 
     assert exc_info.value.outcome is not None
     assert exc_info.value.outcome.output == "output|inner"
-
-
-@dataclass(frozen=True, slots=True)
-class ExternalPluginEvent:
-    event_kind: str = "external_plugin"
-    value: str = "open"
-
-
-class EventTransformPlugin(AbstractHarnessPlugin):
-    def __init__(
-        self, *, invalid: bool = False, external: bool = False, foreign_run: bool = False, forge_start: bool = False
-    ) -> None:
-        self.forge_start = forge_start
-        self.invalid = invalid
-        self.external = external
-        self.foreign_run = foreign_run
-
-    @property
-    def plugin_id(self) -> str:
-        return "event-transform"
-
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                if isinstance(item, HarnessEvent):
-                    event = item.event
-                    if self.invalid:
-                        event = cast(Any, object())
-                    elif self.external:
-                        event = ExternalPluginEvent()
-                    elif self.forge_start:
-                        event = HarnessExtensionEvent(kind="lifecycle", payload={"type": "run_started"})
-                    yield replace(
-                        item,
-                        run_id="forged-child" if self.foreign_run else item.run_id,
-                        sequence=10_000 - item.sequence,
-                        event=event,
-                    )
-                else:
-                    yield item
-
-        return PluginRunResponse(iterate())
-
-
-async def test_plugin_event_sequences_are_reallocated_at_the_public_boundary() -> None:
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_model([]),
-        plugins=(EventTransformPlugin(),),
-    )
-
-    async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
-        items = [item async for item in stream]
-
-    assert len(items) > 1
-    assert [item.sequence for item in items] == list(range(len(items)))
-
-
-async def test_plugin_can_emit_an_extended_agent_stream_event() -> None:
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_model([]),
-        plugins=(EventTransformPlugin(external=True),),
-    )
-
-    async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
-        items = [item async for item in stream]
-
-    assert isinstance(items[0], HarnessEvent)
-    assert isinstance(items[0].event, HarnessExtensionEvent)
-    assert items[0].event.kind == "lifecycle"
-    assert items[0].event.payload == {"type": "run_started"}
-    events = [item.event for item in items[1:] if isinstance(item, HarnessEvent)]
-    assert events
-    assert all(isinstance(event, ExternalPluginEvent) for event in events)
-
-
-class ExtensionTransformPlugin(AbstractHarnessPlugin):
-    def __init__(self, *, invalid: bool = False) -> None:
-        self.invalid = invalid
-
-    @property
-    def plugin_id(self) -> str:
-        return "extension-transform"
-
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent):
-                    payload = {"value": float("inf")} if self.invalid else {"token": "plain-secret"}
-                    item = replace(item, event=item.event.model_copy(update={"payload": payload}))
-                yield item
-
-        return PluginRunResponse(iterate())
-
-
-async def test_plugin_extension_event_is_revalidated_and_redacted() -> None:
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_model([]),
-        plugins=(ExtensionTransformPlugin(),),
-    )
-
-    async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
-        items = [item async for item in stream]
-
-    extensions = [
-        item.event
-        for item in items[1:]
-        if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent)
-    ]
-    assert extensions
-    assert all(event.payload == {"token": "[REDACTED]"} for event in extensions)
-
-
-async def test_plugin_cannot_bypass_extension_event_schema() -> None:
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_model([]),
-        plugins=(ExtensionTransformPlugin(invalid=True),),
-    )
-
-    with pytest.raises(PluginError) as exc_info:
-        await executable.run("hello", bindings=RunBindings.embedded())
-
-    assert exc_info.value.code == "plugin_event_invalid"
-
-
-async def test_plugin_cannot_emit_an_event_without_event_kind() -> None:
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_model([]),
-        plugins=(EventTransformPlugin(invalid=True),),
-    )
-
-    with pytest.raises(PluginError) as exc_info:
-        await executable.run("hello", bindings=RunBindings.embedded())
-
-    assert exc_info.value.code == "plugin_event_invalid"
-
-
-async def test_plugin_cannot_forge_the_reserved_run_start() -> None:
-    executable = HarnessBuilder().build(
-        AgentSpec(), output_type=str, model=_model([]), plugins=(EventTransformPlugin(forge_start=True),)
-    )
-    with pytest.raises(PluginError) as exc_info:
-        await executable.run("hello", bindings=RunBindings.embedded())
-    assert exc_info.value.code == "plugin_event_invalid"
-
-
-async def test_plugin_cannot_forge_an_unregistered_child_event() -> None:
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_model([]),
-        plugins=(EventTransformPlugin(foreign_run=True),),
-    )
-
-    with pytest.raises(PluginError) as exc_info:
-        await executable.run("hello", bindings=RunBindings.embedded())
-
-    assert exc_info.value.code == "plugin_event_run_mismatch"
 
 
 class EmitDuringBindingPlugin(AbstractHarnessPlugin):
@@ -603,19 +370,12 @@ class ExchangeReplacementPlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return f"replace-{self.replacement}"
 
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
         if self.replacement == "context":
             exchange = replace(exchange, context=cast(AgentContext, object()))
         else:
-            exchange = replace(
-                exchange,
-                input=SemanticRunInput(value=cast(Any, b"invalid")),
-            )
-        return call_next(exchange)
+            exchange = replace(exchange, input=SemanticRunInput(value=cast(Any, b"invalid")))
+        return await call_next(exchange)
 
 
 @pytest.mark.parametrize("replacement", ["context", "input"])
@@ -658,23 +418,15 @@ class CleanupTrackingPlugin(AbstractHarnessPlugin):
     def get_ordering(self) -> PluginOrdering:
         return self.ordering
 
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            try:
-                async for item in call_next(exchange):
-                    yield item
-            finally:
-                self.log.append(f"start:{self.plugin_id}")
-                if self.started is not None and self.release is not None:
-                    self.started.set()
-                    await self.release.wait()
-                self.log.append(f"done:{self.plugin_id}")
-
-        return PluginRunResponse(iterate())
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+        try:
+            return await call_next(exchange)
+        finally:
+            self.log.append(f"start:{self.plugin_id}")
+            if self.started is not None and self.release is not None:
+                self.started.set()
+                await self.release.wait()
+            self.log.append(f"done:{self.plugin_id}")
 
 
 class TaskAffineCleanupPlugin(AbstractHarnessPlugin):
@@ -682,20 +434,12 @@ class TaskAffineCleanupPlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "task-affine-cleanup"
 
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            owner_task = asyncio.current_task()
-            try:
-                async for item in call_next(exchange):
-                    yield item
-            finally:
-                assert asyncio.current_task() is owner_task
-
-        return PluginRunResponse(iterate())
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+        owner_task = asyncio.current_task()
+        try:
+            return await call_next(exchange)
+        finally:
+            assert asyncio.current_task() is owner_task
 
 
 async def test_normal_cleanup_stays_in_the_task_that_entered_the_plugin_iterator() -> None:
@@ -707,13 +451,10 @@ async def test_normal_cleanup_stays_in_the_task_that_entered_the_plugin_iterator
     )
 
     async with executable.stream("hello", bindings=RunBindings.embedded()) as stream:
-        response = cast(Any, stream)._response
         first = await stream.__anext__()
         assert isinstance(first, HarnessEvent)
         # The reserved start precedes middleware entry; consume a body event.
         await stream.__anext__()
-
-    assert response._item_validator is None
 
 
 class TaskAffineEnvironment(EnvironmentRuntime):
@@ -861,52 +602,6 @@ async def test_model_stream_stays_in_one_owner_task() -> None:
     assert result.output_or_raise() == "output"
 
 
-class CountingCloseResponse(PluginRunResponse):
-    def __init__(self, iterator: AsyncIterator) -> None:
-        super().__init__(iterator)
-        self.close_calls = 0
-
-    async def aclose(self) -> None:
-        self.close_calls += 1
-        await super().aclose()
-
-
-class CountingClosePlugin(AbstractHarnessPlugin):
-    def __init__(self) -> None:
-        self.response: CountingCloseResponse | None = None
-
-    @property
-    def plugin_id(self) -> str:
-        return "counting-close"
-
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                yield item
-
-        self.response = CountingCloseResponse(iterate())
-        return self.response
-
-
-async def test_harness_closes_each_registered_plugin_response_once() -> None:
-    plugin = CountingClosePlugin()
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_model([]),
-        plugins=(plugin,),
-    )
-
-    await executable.run("hello", bindings=RunBindings.embedded())
-
-    assert plugin.response is not None
-    assert plugin.response.close_calls == 1
-
-
 class SuppressingCancellationPlugin(AbstractHarnessPlugin):
     def __init__(self, cleanup_started: asyncio.Event) -> None:
         self.cleanup_started = cleanup_started
@@ -915,23 +610,15 @@ class SuppressingCancellationPlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "suppressing-cancellation"
 
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+        try:
+            return await call_next(exchange)
+        finally:
+            self.cleanup_started.set()
             try:
-                async for item in call_next(exchange):
-                    yield item
-            finally:
-                self.cleanup_started.set()
-                try:
-                    await asyncio.Event().wait()
-                except asyncio.CancelledError:
-                    pass
-
-        return PluginRunResponse(iterate())
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                pass
 
 
 async def test_cleanup_cannot_suppress_external_cancellation() -> None:
@@ -1011,11 +698,11 @@ async def test_repeated_cancellation_while_draining_queue_reader_still_stops_res
     await asyncio.wait_for(model_started.wait(), timeout=2)
     async with asyncio.timeout(2):
         while True:
-            reader = stream._response_next_task
-            if reader is not None and not reader.done() and stream._response_queue.empty():
+            reader = stream._event_next_task
+            if reader is not None and not reader.done() and stream._emitter.empty():
                 break
             await asyncio.sleep(0)
-    pump = stream._response_pump_task
+    pump = stream._execution_task
     assert reader is not None
     assert pump is not None
     # Inject another cancellation exactly while cleanup is draining its queue reader.
@@ -1026,7 +713,7 @@ async def test_repeated_cancellation_while_draining_queue_reader_still_stops_res
             await asyncio.wait_for(consumer, timeout=2)
         assert pump.done()
         assert model_closed.is_set()
-        assert stream._response_pump_task is None
+        assert stream._execution_task is None
     finally:
         if not pump.done():
             pump.cancel()
@@ -1063,62 +750,6 @@ async def test_early_close_installs_mount_mutation_fence_before_plugin_cleanup()
     assert exc_info.value.code == "run_not_active"
     release_cleanup.set()
     await close_task
-
-
-class BlockingCloseResponse(PluginRunResponse):
-    def __init__(self, iterator: AsyncIterator, close_started: asyncio.Event) -> None:
-        super().__init__(iterator)
-        self.close_started = close_started
-
-    async def aclose(self) -> None:
-        self.close_started.set()
-        try:
-            await asyncio.Event().wait()
-        finally:
-            await super().aclose()
-
-
-class EndAfterTwoEventsPlugin(AbstractHarnessPlugin):
-    def __init__(self, close_started: asyncio.Event) -> None:
-        self.close_started = close_started
-
-    @property
-    def plugin_id(self) -> str:
-        return "end-after-two-events"
-
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            event_count = 0
-            async for item in call_next(exchange):
-                if isinstance(item, HarnessEvent):
-                    yield item
-                    event_count += 1
-                    if event_count == 2:
-                        return
-
-        return BlockingCloseResponse(iterate(), self.close_started)
-
-
-async def test_internal_pump_cancellation_cannot_publish_into_an_unconsumed_full_queue() -> None:
-    close_started = asyncio.Event()
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=_model([]),
-        plugins=(EndAfterTwoEventsPlugin(close_started),),
-    )
-    stream = executable.stream("hello", bindings=RunBindings.embedded())
-    await stream.__aenter__()
-    first = await stream.__anext__()
-    assert isinstance(first, HarnessEvent)
-    await stream.__anext__()
-    await asyncio.wait_for(close_started.wait(), timeout=2)
-
-    await asyncio.wait_for(stream.__aexit__(None, None, None), timeout=2)
 
 
 class FailingTrackingEnvironment(TaskAffineEnvironment):
@@ -1221,3 +852,155 @@ def test_plugin_ordering_rejects_unknown_references_and_cycles() -> None:
                 RecordingPlugin("two", [], ordering=PluginOrdering(wraps=("one",))),
             ),
         )
+
+
+@pytest.mark.parametrize("phase", ["before", "after", "short_circuit"])
+async def test_plugin_burst_events_are_observed_and_delivered_once(phase: str) -> None:
+    observed: list[HarnessEvent] = []
+
+    class BurstPlugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self) -> str:
+            return "burst"
+
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            result = await call_next(exchange) if phase == "after" else None
+            for index in range(130):
+                await exchange.context.events.emit(HarnessExtensionEvent(kind="diagnostic", payload={"index": index}))
+            if phase == "before":
+                return await call_next(exchange)
+            if result is not None:
+                return result
+            return HarnessRunResult(
+                thread_id=exchange.context.thread_id,
+                run_id=exchange.context.run_id,
+                status="completed",
+                output="cached",
+                state=await exchange.export_current_state(),
+                usage=RunUsageSummary(),
+            )
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=_model([]), plugins=(BurstPlugin(),))
+    async with asyncio.timeout(3):
+        async with executable.stream(
+            "hello", bindings=RunBindings.embedded(producer_observer=observed.append)
+        ) as stream:
+            items = [item async for item in stream]
+
+    def indices(events):
+        return [
+            item.event.payload["index"]
+            for item in events
+            if isinstance(item, HarnessEvent)
+            and isinstance(item.event, HarnessExtensionEvent)
+            and item.event.kind == "diagnostic"
+        ]
+
+    assert indices(observed) == indices(items) == list(range(130))
+    assert [item.sequence for item in items] == list(range(len(items)))
+    assert isinstance(items[-1], HarnessRunResultEvent)
+
+
+async def test_plugin_emission_keeps_backpressure_and_early_close_wakes_producer() -> None:
+    blocked = asyncio.Event()
+    closed = asyncio.Event()
+    accepted: list[int] = []
+
+    class BurstPlugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self) -> str:
+            return "burst"
+
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            try:
+                for index in range(130):
+                    if index == 64:
+                        blocked.set()
+                    await exchange.context.events.emit(
+                        HarnessExtensionEvent(kind="diagnostic", payload={"index": index})
+                    )
+                    accepted.append(index)
+                return await call_next(exchange)
+            finally:
+                closed.set()
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=_model([]), plugins=(BurstPlugin(),))
+    async with asyncio.timeout(3):
+        async with executable.stream("hello") as stream:
+            await stream.__anext__()  # Start execution, but do not consume its events.
+            await blocked.wait()
+            assert accepted == list(range(64))
+    assert closed.is_set()
+
+
+async def test_plugin_continuation_is_one_shot() -> None:
+    class TwicePlugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self) -> str:
+            return "twice"
+
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            result = await call_next(exchange)
+            with pytest.raises(PluginError) as error:
+                await call_next(exchange)
+            assert error.value.code == "plugin_next_reused"
+            return result
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=_model([]), plugins=(TwicePlugin(),))
+    assert (await executable.run("hello")).output == "output"
+
+
+@pytest.mark.parametrize("invalid", [False, True])
+async def test_plugin_emissions_are_revalidated_before_producer_observation(invalid: bool) -> None:
+    observed: list[HarnessEvent] = []
+
+    class EmitPlugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self) -> str:
+            return "emit"
+
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            event = HarnessExtensionEvent(kind="diagnostic", payload={})
+            payload = {"value": float("inf")} if invalid else {"token": "plain-secret"}
+            await exchange.context.events.emit(event.model_copy(update={"payload": payload}))
+            return await call_next(exchange)
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=_model([]), plugins=(EmitPlugin(),))
+    if invalid:
+        with pytest.raises(RunError) as error:
+            await executable.run("hello", bindings=RunBindings.embedded(producer_observer=observed.append))
+        assert error.value.code == "event_invalid"
+    else:
+        await executable.run("hello", bindings=RunBindings.embedded(producer_observer=observed.append))
+    diagnostics = [
+        item.event
+        for item in observed
+        if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "diagnostic"
+    ]
+    assert [event.payload for event in diagnostics] == ([] if invalid else [{"token": "[REDACTED]"}])
+
+
+async def test_plugin_cannot_emit_reserved_run_start() -> None:
+    observed: list[HarnessEvent] = []
+
+    class EmitPlugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self) -> str:
+            return "emit"
+
+        async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]) -> HarnessRunResult[Any]:
+            await exchange.context.events.emit(HarnessExtensionEvent(kind="lifecycle", payload={"type": "run_started"}))
+            return await call_next(exchange)
+
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=_model([]), plugins=(EmitPlugin(),))
+    with pytest.raises(RunError) as error:
+        await executable.run("hello", bindings=RunBindings.embedded(producer_observer=observed.append))
+    assert error.value.code == "event_invalid"
+    starts = [
+        item
+        for item in observed
+        if isinstance(item.event, HarnessExtensionEvent)
+        and item.event.kind == "lifecycle"
+        and item.event.payload.get("type") == "run_started"
+    ]
+    assert len(starts) == 1
