@@ -1,6 +1,7 @@
 """Imported context is not execution evidence; continuation input belongs to one atomic resume."""
 
 import asyncio
+import json
 from copy import deepcopy
 
 import pytest
@@ -25,7 +26,12 @@ HISTORY_INPUT = [
         "kind": "response",
         "parts": [
             {"part_kind": "text", "content": "Imported reasoning"},
-            {"part_kind": "tool-call", "tool_name": "external_lookup", "tool_call_id": "imported", "args": {"key": 7}},
+            {
+                "part_kind": "tool-call",
+                "tool_name": "external_lookup",
+                "tool_call_id": "imported",
+                "args": {"zz": {"yy": 7, "b": 2}, "a": 3},
+            },
         ],
     },
     {
@@ -35,7 +41,7 @@ HISTORY_INPUT = [
                 "part_kind": "tool-return",
                 "tool_name": "external_lookup",
                 "tool_call_id": "imported",
-                "content": {"answer": 42},
+                "content": {"zz": {"yy": 42, "b": 2}, "a": 3},
                 "outcome": "success",
             },
         ],
@@ -50,8 +56,8 @@ def test_history_uses_native_messages_without_execution_state():
     assert isinstance(history[1], ModelResponse)
     call = history[1].parts[1]
     result = history[2].parts[0]
-    assert isinstance(call, ToolCallPart) and call.args == {"key": 7}
-    assert isinstance(result, ToolReturnPart) and result.content == {"answer": 42}
+    assert isinstance(call, ToolCallPart) and call.args_as_json_str() == '{"zz":{"yy":7,"b":2},"a":3}'
+    assert isinstance(result, ToolReturnPart) and result.model_response_str() == '{"zz":{"yy":42,"b":2},"a":3}'
     assert history[1].usage.total_tokens == 0
     assert history[1].provider_response_id is None
 
@@ -121,6 +127,14 @@ def test_native_serialized_messages_keep_provider_content_but_not_application_au
     assert seeded[1].parts[1].args == '{"key": 7}'
 
 
+def assert_imported_wire_order(request):  # type: ignore[no-untyped-def]
+    calls = [call for message in request["messages"] for call in message.get("tool_calls", [])]
+    call = next(call for call in calls if call["id"] == "imported")
+    result = next(message for message in request["messages"] if message.get("tool_call_id") == "imported")
+    assert call["function"]["arguments"] == '{"zz":{"yy":7,"b":2},"a":3}'
+    assert result["content"] == '{"zz":{"yy":42,"b":2},"a":3}'
+
+
 async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
@@ -132,6 +146,8 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
     assert first["thread"]["message_history"] == HISTORY_INPUT
     imported = ModelMessagesTypeAdapter.validate_python(first["thread"]["message_history"])
     assert imported[0].parts[0].content == "Imported question"
+    readback = await runs_kit.get_thread(service, first["thread"]["id"])
+    assert json.dumps(readback["message_history"]) == json.dumps(HISTORY_INPUT)
     replay = await service.client.post(f"{service.api}/threads", json=body, headers=headers)
     assert replay.status_code == 200 and replay.json() == first
     changed = {**body, "message_history": []}
@@ -139,6 +155,7 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
     scripted_model.say("Current answer")
     await (await runs_kit.attempt(service))
     initial = await scripted_model.request()
+    assert_imported_wire_order(initial)
     assert [m["role"] for m in initial["messages"] if m["role"] != "system"][:5] == [
         "user",
         "assistant",
@@ -159,6 +176,7 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
     scripted_model.say("Follow-up answer")
     await (await runs_kit.attempt(service))
     followup = await scripted_model.request()
+    assert_imported_wire_order(followup)
     assert str(followup["messages"]).count("Imported question") == 1
     assert "Current answer" in str(followup["messages"])
     fork = await service.client.post(
@@ -171,8 +189,17 @@ async def test_import_is_initial_only_and_fork_inherits_checkpoint(service, scri
     scripted_model.say("Branch answer")
     await (await runs_kit.attempt(service))
     branched = await scripted_model.request()
+    assert_imported_wire_order(branched)
     assert str(branched["messages"]).count("Imported question") == 1
     assert "Follow-up answer" not in str(branched["messages"])
+    # Changing only nested object order is a model-visible mutation too.
+    reordered = json.loads(json.dumps(HISTORY_INPUT, sort_keys=True))
+    assert reordered == HISTORY_INPUT
+    with pytest.raises(DBAPIError, match="initial history is immutable"):
+        async with transaction(service.runtime.storage) as session:
+            await session.execute(
+                update(ThreadRow).where(ThreadRow.id == first_run["thread_id"]).values(message_history=reordered)
+            )
     with pytest.raises(DBAPIError, match="initial history is immutable"):
         async with transaction(service.runtime.storage) as session:
             await session.execute(
@@ -321,6 +348,7 @@ async def test_initial_history_survives_a_root_without_a_checkpoint(service, scr
     await (await runs_kit.attempt(service))
     request = await scripted_model.request()
     assert str(request["messages"]).count("Imported question") == 1
+    assert_imported_wire_order(request)
     assert "Cancelled request" not in str(request["messages"])
     assert "Try again" in str(request["messages"])
 

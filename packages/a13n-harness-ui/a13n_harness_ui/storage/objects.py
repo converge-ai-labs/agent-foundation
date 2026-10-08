@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 _SCHEMA_VERSION = Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")]
 _DIGEST = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 _SUPPORTED_OBJECT_SCHEMA_VERSION = "1"
-_SUPPORTED_PAYLOAD_CODEC_VERSION = "1"
+_SUPPORTED_PAYLOAD_CODEC_VERSIONS = frozenset({"1", "2"})
 _ObjectModelT = TypeVar("_ObjectModelT", bound=BaseModel)
 _PAYLOAD_ADAPTER = TypeAdapter(JsonValue)
 _LOGGER = get_logger(__name__)
@@ -119,7 +119,7 @@ class ObjectEnvelope(BaseModel):
     @field_validator("payload_codec_version")
     @classmethod
     def _require_supported_payload_codec(cls, value: str) -> str:
-        if value != _SUPPORTED_PAYLOAD_CODEC_VERSION:
+        if value not in _SUPPORTED_PAYLOAD_CODEC_VERSIONS:
             raise ValueError("payload_codec_version is not supported")
         return value
 
@@ -153,7 +153,7 @@ class ImmutableObjectStore:
         object_kind: ObjectKind,
         object_schema_version: str,
         payload: JsonValue,
-        payload_codec_version: str = "1",
+        payload_codec_version: str | None = None,
         created_at: datetime | None = None,
     ) -> ObjectEnvelope:
         """Publish one verified object and return its detached envelope."""
@@ -164,7 +164,18 @@ class ImmutableObjectStore:
                 object_kind=object_kind,
                 object_schema_version=object_schema_version,
                 payload=payload,
-                payload_codec_version=payload_codec_version,
+                payload_codec_version=(
+                    payload_codec_version
+                    if payload_codec_version is not None
+                    else "2"
+                    if object_kind
+                    in {
+                        ObjectKind.thread_initial_state,
+                        ObjectKind.continuation,
+                        ObjectKind.child_checkpoint,
+                    }
+                    else "1"
+                ),
                 created_at=created_at,
             )
         )
@@ -180,7 +191,7 @@ class ImmutableObjectStore:
         object_kind: ObjectKind,
         value: BaseModel,
         object_schema_version: str = "1",
-        payload_codec_version: str = "1",
+        payload_codec_version: str | None = None,
     ) -> ObjectEnvelope:
         """Validate and publish one typed immutable payload."""
 
@@ -435,11 +446,16 @@ class ImmutableObjectStore:
 
 def _encoded_fields(envelope: ObjectEnvelope) -> dict[str, bytes]:
     """Encode each value once for both the full envelope and its logical identity."""
-    return {key: _canonical_json(value) for key, value in envelope.model_dump(mode="json").items()}
+    return {
+        key: _canonical_json(value, sort_keys=key != "payload" or envelope.payload_codec_version == "1")
+        for key, value in envelope.model_dump(mode="json").items()
+    }
 
 
 def _canonical_fields(fields: dict[str, bytes], *, identity: bool = False) -> bytes:
-    # Joining independently canonical JSON values preserves the exact encoding.
+    # Codec 2 retains payload mapping order: providers render structured tool
+    # results as text, so sorting a checkpoint would change the resumed prompt.
+    # Envelope keys remain sorted under both codecs.
     # Only top-level publication metadata is excluded from logical identity.
     parts = [b"{"]
     for key in sorted(fields):
@@ -452,13 +468,13 @@ def _canonical_fields(fields: dict[str, bytes], *, identity: bool = False) -> by
     return b"".join(parts)
 
 
-def _canonical_json(value: object) -> bytes:
+def _canonical_json(value: object, *, sort_keys: bool = True) -> bytes:
     try:
         return json.dumps(
             value,
             ensure_ascii=False,
             allow_nan=False,
-            sort_keys=True,
+            sort_keys=sort_keys,
             separators=(",", ":"),
         ).encode("utf-8")
     except (TypeError, ValueError) as exc:

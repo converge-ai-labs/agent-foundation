@@ -1,11 +1,17 @@
 """The generated revisions build exactly the schema the tests use: tables, rules and all."""
 
+import json
+
 import pytest
 from a13n_service.distribution import OSS
+from a13n_service.infra.db import transaction
 from a13n_service.migrations.runner import check, migration_connection, upgrade
+from a13n_service.runs.tables import SessionRow
+from a13n_service.runs.threads import new_thread
 from a13n_service.settings import Database
 from alembic import command
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import DBAPIError
 
 RULES = """
 SELECT 'function', p.proname, regexp_replace(pg_get_functiondef(p.oid), '\\s+', ' ', 'g')
@@ -87,3 +93,48 @@ def test_usage_cursor_migration_retries_after_concurrent_index_build(
         empty_database,
         "SELECT indisvalid::text FROM pg_index WHERE indexrelid = 'ix_usage_records_scope_owner'::regclass",
     ) == [("true",)]
+
+
+@pytest.mark.anyio
+async def test_history_migration_preserves_existing_rows_and_guards_order(database, runtime, tenant):  # type: ignore[no-untyped-def]
+    from .test_runs_input_context import HISTORY_INPUT
+
+    async with transaction(runtime.storage) as session:
+        parent = SessionRow(
+            id="session_migration",
+            organization_id=tenant.organization_id,
+            workspace_id=tenant.workspace_id,
+            created_by_id=tenant.principal_id,
+            labels={},
+        )
+        session.add(parent)
+        await session.flush()
+        thread = new_thread(parent, mcp_headers={}, message_history=HISTORY_INPUT)
+        session.add(thread)
+        await session.flush()
+        thread_id = thread.id
+
+    query = f"SELECT message_history::text FROM threads WHERE id = '{thread_id}'"
+    ordered = rows(database, query)
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "ce6627932e2f")
+    normalized = rows(database, query)
+    assert normalized != ordered
+    assert json.loads(normalized[0][0]) == HISTORY_INPUT
+    upgrade(database, OSS)
+    assert rows(database, query) == normalized
+    check(database, OSS)
+
+    engine = create_engine(database.url.get_secret_value())
+    try:
+        # A non-history update still works after the JSON transition.
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE threads SET labels = '{}'::jsonb WHERE id = :id"), {"id": thread_id})
+        with pytest.raises(DBAPIError, match="initial history is immutable"):
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE threads SET message_history = CAST(:history AS json) WHERE id = :id"),
+                    {"id": thread_id, "history": json.dumps(HISTORY_INPUT)},
+                )
+    finally:
+        engine.dispose()
