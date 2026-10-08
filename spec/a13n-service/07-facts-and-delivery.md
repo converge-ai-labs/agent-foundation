@@ -230,7 +230,7 @@ A [subscription](04-resources.md#subscriptions) selects lifecycle kinds and opti
 | Seal of an accepted run (interrupt, archive or a parent's cancel) | `run.cancelled`                                                                            |
 | Recovery or handoff                                               | `run.accepted`, `run_attempt.{failed \| yielded}`                                          |
 
-Staging matches the workspace's enabled subscriptions in ID order, up to `control.subscriptions` of them (more are logged and skipped), and inserts one outbox row per matching subscription and kind. The subscription read at that point is the selection point: a later edit or deletion affects later transitions, never staged deliveries. The row ID is the delivery ID. The row copies the URL and the signing secret, re-encrypted for that row; a secret that cannot be decrypted stages the delivery dead with `signing_secret_unavailable`, so it never fails the transition.
+Staging matches the workspace's enabled subscriptions in ID order, up to `control.subscriptions` of them (more are logged and skipped), and inserts one outbox row per matching subscription and kind. A claim batch selects subscriptions in one read, with kind and identity filters and the cap applied separately to each Run. The subscription read at that point is the selection point for all transitions in the batch: a later edit or deletion affects later transitions, never staged deliveries. The row ID is the delivery ID. The row copies the URL and the signing secret, re-encrypted for that row; a secret that cannot be decrypted stages the delivery dead with `signing_secret_unavailable`, so it never fails the transition.
 
 The payload describes the transition, never secrets:
 

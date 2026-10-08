@@ -10,9 +10,10 @@ counted and logged once its transaction commits.
 """
 
 import asyncio
+import json
 import random
 import secrets
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
@@ -129,6 +130,38 @@ def secret_location(organization_id: str | None, row_id: str, column: Literal["t
     return SecretLocation(organization_id, "outbox", column, row_id)
 
 
+def prepare(
+    *,
+    organization_id: str | None,
+    workspace_id: str | None,
+    kind: OutboxKind,
+    target: Mapping[str, JsonValue],
+    payload: Mapping[str, JsonValue],
+    dedupe_key: str | None = None,
+    subscription_id: str | None = None,
+    row_id: str | None = None,
+    dead: str | None = None,
+) -> OutboxRow:
+    """Build a delivery for enqueue or batch insertion; without a dedupe key the row ID is its own identity.
+
+    `dead` stages a delivery that can never be sent as already dead, with that reason as its error.
+    """
+    identity = row_id or new_object_id("obx")
+    return OutboxRow(
+        id=identity,
+        organization_id=organization_id,
+        workspace_id=workspace_id,
+        kind=kind,
+        dedupe_key=dedupe_key or identity,
+        target=dict(target),
+        payload=dict(payload),
+        subscription_id=subscription_id,
+        status="pending" if dead is None else "dead",
+        last_error=dead,
+        settled_at=func.now() if dead is not None else None,
+    )
+
+
 def enqueue(
     session: AsyncSession,
     *,
@@ -146,23 +179,56 @@ def enqueue(
 
     `dead` stages a delivery that can never be sent as already dead, with that reason as its error.
     """
-    identity = row_id or new_object_id("obx")
-    session.add(
-        OutboxRow(
-            id=identity,
-            organization_id=organization_id,
-            workspace_id=workspace_id,
-            kind=kind,
-            dedupe_key=dedupe_key or identity,
-            target=dict(target),
-            payload=dict(payload),
-            subscription_id=subscription_id,
-            status="pending" if dead is None else "dead",
-            last_error=dead,
-            settled_at=func.now() if dead is not None else None,
-        )
+    row = prepare(
+        organization_id=organization_id,
+        workspace_id=workspace_id,
+        kind=kind,
+        target=target,
+        payload=payload,
+        dedupe_key=dedupe_key,
+        subscription_id=subscription_id,
+        row_id=row_id,
+        dead=dead,
     )
-    return identity
+    session.add(row)
+    return row.id
+
+
+# Bound SQL parameters and JSON bytes without rejecting an otherwise valid oversized delivery.
+_BATCH_ROWS = 256
+_BATCH_BYTES = 1024 * 1024
+
+
+async def enqueue_batch(session: AsyncSession, rows: Iterable[OutboxRow]) -> None:
+    """Insert prepared deliveries in bounded statements within the caller's transaction."""
+    chunk: list[dict] = []
+    size = 0
+    for row in rows:
+        row_size = len(json.dumps([row.target, row.payload], ensure_ascii=False).encode())
+        if chunk and (len(chunk) >= _BATCH_ROWS or size + row_size > _BATCH_BYTES):
+            await session.execute(insert(OutboxRow).values(chunk))
+            chunk, size = [], 0
+        chunk.append(
+            {
+                name: getattr(row, name)
+                for name in (
+                    "id",
+                    "organization_id",
+                    "workspace_id",
+                    "kind",
+                    "dedupe_key",
+                    "target",
+                    "payload",
+                    "subscription_id",
+                    "status",
+                    "last_error",
+                    "settled_at",
+                )
+            }
+        )
+        size += row_size
+    if chunk:
+        await session.execute(insert(OutboxRow).values(chunk))
 
 
 async def enqueue_once(

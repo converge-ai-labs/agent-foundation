@@ -31,7 +31,7 @@ from sqlalchemy.orm import aliased
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import conflict
 from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, new_key, read
-from a13n_service.infra.outbox import Claim, OutboxKind, OutboxRow, enqueue, settle
+from a13n_service.infra.outbox import Claim, OutboxKind, OutboxRow, enqueue, prepare, settle
 from a13n_service.infra.telemetry import meter
 from a13n_service.runs import inbox
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost
@@ -376,18 +376,34 @@ async def reclaim(session: AsyncSession, run: RunRow, *, before_attempt: int | N
     A takeover passes the new attempt's number and deletes only earlier attempts' objects: the new attempt may
     already have published objects that nothing names yet.
     """
-    keep: list[JsonValue] = [pointer["key"] for pointer in (run.checkpoint, run.tail) if pointer]
-    if run.checkpoint is not None:
-        keep += [ref.key for ref in StatePointer.model_validate(run.checkpoint).refs]
-    keep += (await session.scalars(select(RunItemPageRow.key).where(RunItemPageRow.run_id == run.id))).all()
-    enqueue(
-        session,
-        organization_id=run.organization_id,
-        workspace_id=run.workspace_id,
-        kind=CLEANUP,
-        target={"run_id": run.id},
-        payload={"keep": keep, "before_attempt": before_attempt, "after": None},
-    )
+    session.add_all(await prepare_reclaims(session, [(run, before_attempt)]))
+
+
+async def prepare_reclaims(session: AsyncSession, takeovers: Sequence[tuple[RunRow, int | None]]) -> list[OutboxRow]:
+    """Capture all takeover keep sets with one page-catalog read."""
+    if not takeovers:
+        return []
+    pages: dict[str, list[str]] = {run.id: [] for run, _ in takeovers}
+    for run_id, key in await session.execute(
+        select(RunItemPageRow.run_id, RunItemPageRow.key).where(RunItemPageRow.run_id.in_(pages))
+    ):
+        pages[run_id].append(key)
+    rows: list[OutboxRow] = []
+    for run, before_attempt in takeovers:
+        keep: list[JsonValue] = [pointer["key"] for pointer in (run.checkpoint, run.tail) if pointer]
+        if run.checkpoint is not None:
+            keep += [ref.key for ref in StatePointer.model_validate(run.checkpoint).refs]
+        keep += pages[run.id]
+        rows.append(
+            prepare(
+                organization_id=run.organization_id,
+                workspace_id=run.workspace_id,
+                kind=CLEANUP,
+                target={"run_id": run.id},
+                payload={"keep": keep, "before_attempt": before_attempt, "after": None},
+            )
+        )
+    return rows
 
 
 async def clean(runtime: Runtime, claimed: Claim) -> None:
