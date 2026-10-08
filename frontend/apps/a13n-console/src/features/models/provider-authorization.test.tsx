@@ -76,7 +76,7 @@ it("starts workspace authorization, posts the full callback, clears secret input
   mount();
   const user = userEvent.setup();
   await user.click(
-    await screen.findByRole("button", { name: "Sign in with ChatGPT" }),
+    await screen.findByRole("button", { name: "Continue with ChatGPT" }),
   );
   const input = await screen.findByLabelText("Complete callback URL");
   expect(input.getAttribute("type")).toBe("password");
@@ -119,7 +119,7 @@ it("submits callback Enter without saving provider edits and can cancel pending 
   mount(onSave);
   const user = userEvent.setup();
   await user.click(
-    await screen.findByRole("button", { name: "Sign in with ChatGPT" }),
+    await screen.findByRole("button", { name: "Continue with ChatGPT" }),
   );
   const input = await screen.findByLabelText("Complete callback URL");
   await user.click(input);
@@ -134,7 +134,7 @@ it("submits callback Enter without saving provider edits and can cancel pending 
     "code=synthetic",
   );
   await user.click(
-    await screen.findByRole("button", { name: "Sign in with ChatGPT" }),
+    await screen.findByRole("button", { name: "Continue with ChatGPT" }),
   );
   state.DELETE.mockResolvedValue({ data: { local_tokens_cleared: true } });
   await user.click(
@@ -151,7 +151,7 @@ it("leaves authorization metadata readable but refuses viewer actions", async ()
   state.writable = false;
   mount();
   const button = await screen.findByRole("button", {
-    name: "Sign in with ChatGPT",
+    name: "Continue with ChatGPT",
   });
   expect((button as HTMLButtonElement).disabled).toBe(true);
   expect(state.POST).not.toHaveBeenCalled();
@@ -165,7 +165,7 @@ it("polls hosted authorization without posting a callback and waits for the new 
     data: { state: "connected", pending: true, email: "old@example.test" },
   });
   await user.click(
-    screen.getByRole("button", { name: "Sign in with ChatGPT" }),
+    screen.getByRole("button", { name: "Continue with ChatGPT" }),
   );
   await screen.findByText(
     "Sign-in completes automatically. Return here after authorizing in the browser.",

@@ -7,6 +7,9 @@ import {
   representation,
   type Schema,
 } from "../../shared/api";
+export const discoveryKey = (workspaceId: string, providerId: string) =>
+  ["model-provider-models", workspaceId, providerId] as const;
+
 /** The Workspace media understanding defaults, read by their settings section and by the Models list. */
 export function mediaDefaultsQuery(client: Client, workspaceId: string) {
   return {
@@ -89,6 +92,13 @@ export function modelApi(client: Client, workspaceId: string) {
       http
         .POST("/api/v1/model-providers/{provider_id}/test", {
           params: { path: { provider_id } },
+        })
+        .then(data),
+    discoverModels: (provider_id: string, signal: AbortSignal) =>
+      http
+        .GET("/api/v1/model-providers/{provider_id}/models", {
+          params: { path: { provider_id } },
+          signal,
         })
         .then(data),
     authorization: (provider_id: string, signal: AbortSignal) =>

@@ -7,7 +7,7 @@ import { useWorkspace } from "../../layout/workspace";
 import { type Schema } from "../../shared/api";
 import { AuthorizationLink } from "../../shared/authorization-link";
 import { ErrorNotice } from "../../shared/feedback";
-import { modelApi } from "./api";
+import { discoveryKey, modelApi } from "./api";
 
 /** Provider-wide authorization; callback material lives only in this mounted editor. */
 export function ProviderAuthorization({
@@ -49,17 +49,45 @@ export function ProviderAuthorization({
     ) {
       setAttempt(undefined);
       setCallback("");
+      void cache.invalidateQueries({
+        queryKey: discoveryKey(provider.workspace_id, provider.id),
+      });
     }
-  }, [attempt, attemptStartedAt, status.data, status.dataUpdatedAt]);
+  }, [
+    attempt,
+    attemptStartedAt,
+    status.data,
+    status.dataUpdatedAt,
+    cache,
+    provider.workspace_id,
+    provider.id,
+  ]);
   const refresh = () => cache.invalidateQueries({ queryKey });
+  const clearModels = async () => {
+    const key = discoveryKey(provider.workspace_id, provider.id);
+    await cache.cancelQueries({ queryKey: key });
+    cache.setQueryData(key, []);
+    await cache.invalidateQueries({ queryKey: key, refetchType: "none" });
+  };
+  const pauseDiscovery = async () => {
+    await cache.cancelQueries({ queryKey });
+    cache.setQueryData<Schema["AuthorizationStatus"]>(queryKey, (current) =>
+      current ? { ...current, pending: true } : current,
+    );
+    await clearModels();
+  };
   const start = useMutation({
     gcTime: 0,
     mutationFn: (newRegistration: boolean) =>
       api.authorize(provider.id, newRegistration),
-    onMutate: () => {
+    onMutate: async () => {
       setCallback("");
       setAttempt(undefined);
       setRevocationUnconfirmed(false);
+      await pauseDiscovery();
+    },
+    onError: () => {
+      void refresh();
     },
     onSuccess: (value) => {
       setAttemptStartedAt(Date.now());
@@ -79,10 +107,15 @@ export function ProviderAuthorization({
         callback_url,
       });
     },
-    onSuccess: () => {
+    onSuccess: async (value) => {
+      await clearModels();
       setAttempt(undefined);
       start.reset();
+      cache.setQueryData(queryKey, value);
       void refresh();
+      void cache.invalidateQueries({
+        queryKey: discoveryKey(provider.workspace_id, provider.id),
+      });
     },
     onError: () => {
       void refresh();
@@ -91,13 +124,22 @@ export function ProviderAuthorization({
   const disconnect = useMutation({
     gcTime: 0,
     mutationFn: () => api.disconnect(provider.id),
-    onMutate: () => {
+    onMutate: async () => {
       setCallback("");
       setAttempt(undefined);
       start.reset();
       complete.reset();
+      await pauseDiscovery();
+    },
+    onError: () => {
+      void refresh();
     },
     onSuccess: (value) => {
+      cache.setQueryData<Schema["AuthorizationStatus"]>(queryKey, (current) =>
+        current
+          ? { ...current, state: "disconnected", pending: false }
+          : current,
+      );
       setRevocationUnconfirmed(value.revocation_confirmed === false);
       void refresh();
     },
@@ -196,7 +238,7 @@ export function ProviderAuthorization({
           {t(
             connected || attempt
               ? "Restart authorization"
-              : "Sign in with ChatGPT",
+              : "Continue with ChatGPT",
           )}
         </Button>
         {status.data?.client_id && (

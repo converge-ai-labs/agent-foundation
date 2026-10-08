@@ -155,7 +155,7 @@ it.each([false, true])(
     await user.click(screen.getByRole("button", { name: "Add provider" }));
     await screen.findByRole("table", { hidden: true });
     await user.click(
-      await screen.findByRole("button", { name: "Sign in with ChatGPT" }),
+      await screen.findByRole("button", { name: "Continue with ChatGPT" }),
     );
     await screen.findByLabelText("Complete callback URL");
     const body = state.POST.mock.calls[0][1].body;

@@ -179,11 +179,16 @@ class ChatGPTModel:
 
 
 async def discover_chatgpt_models(
-    *, credential_source: OpenAIChatGPTCredentialSource, http_client: httpx2.AsyncClient | None = None
+    *,
+    credential_source: OpenAIChatGPTCredentialSource,
+    http_client: httpx2.AsyncClient | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> tuple[ChatGPTModel, ...]:
     """Account-scoped catalog, preserving the server's visible order and slugs."""
     before = await credential_source.load()
-    provider = OpenAIChatGPTProvider(credential_source=credential_source, http_client=http_client)
+    provider = OpenAIChatGPTProvider(
+        credential_source=credential_source, http_client=http_client, extra_headers=extra_headers
+    )
     async with provider:
         payload = await provider.client.get("/models", cast_to=dict)
     require_same_account(before, await credential_source.load())

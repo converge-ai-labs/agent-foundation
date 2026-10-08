@@ -2,16 +2,13 @@
 
 from urllib.parse import parse_qs, urlsplit
 
-from a13n_harness.providers.model.chatgpt import ChatGPTModel, discover_chatgpt_models
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse
 
-from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import invalid
 from a13n_service.infra.http import IfMatch, PageLimit, answer_headers, tagged
-from a13n_service.infra.outbound import open_http
 from a13n_service.providers.registry import ProviderKind
-from a13n_service.resources.providers import callback, oauth, service
+from a13n_service.resources.providers import callback, discovery, oauth, service
 from a13n_service.resources.providers.oauth import (
     AuthorizationCallback,
     AuthorizationDisconnect,
@@ -22,6 +19,7 @@ from a13n_service.resources.providers.oauth import (
 from a13n_service.resources.providers.schemas import (
     Provider,
     ProviderCreate,
+    ProviderModel,
     ProviderPage,
     ProviderTest,
     ProviderTypePage,
@@ -224,17 +222,17 @@ async def disconnect_model_authorization(
     )
 
 
-@router.get("/model-providers/{provider_id}/models", response_model=list[ChatGPTModel])
+@router.get("/model-providers/{provider_id}/models", response_model=list[ProviderModel])
 async def discover_model_provider_models(
     workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
-) -> tuple[ChatGPTModel, ...]:
-    async with short_session(runtime.storage) as session:
-        provider = await oauth.authorized_provider(session, actor, workspace_id, provider_id, "run")
-        organization_id = provider.organization_id
-    source = oauth.ChatGPTCredentialSource(runtime.storage, runtime.keys, provider_id, organization_id)
-    async with open_http(
-        runtime.endpoint_policy,
-        timeout=runtime.settings.providers.model_timeout,
-        max_bytes=runtime.settings.providers.response_bytes,
-    ) as client:
-        return await discover_chatgpt_models(credential_source=source, http_client=client)
+) -> list[ProviderModel]:
+    return await discovery.discover_models(
+        runtime.storage,
+        actor,
+        workspace_id,
+        provider_id,
+        registry=runtime.registry,
+        keys=runtime.keys,
+        policy=runtime.endpoint_policy,
+        settings=runtime.settings.providers,
+    )

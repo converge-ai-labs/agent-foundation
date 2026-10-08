@@ -21,7 +21,8 @@ import { IconTile } from "../../shared/identity";
 import sharedStyles from "../../shared/shared.module.css";
 import { ManageProvidersLink } from "../providers";
 import { modelApi } from "./api";
-import { CatalogPicker, catalogRefKey } from "./catalog-picker";
+import { catalogRefKey } from "./catalog-picker";
+import { ModelPicker } from "./model-picker";
 import { ModelIcon } from "./model-icon";
 import { ImageInputFields } from "./image-input-fields";
 import {
@@ -169,6 +170,19 @@ export function useModelDraft({
       pricing: priceTable(pricing),
     }));
   }
+  function chooseDiscovered(item: Schema["ProviderModel"] | null) {
+    setPricingBase(null);
+    setImageInput(imageInputDraft());
+    setDraft((current) => ({
+      ...current,
+      catalog_ref: null,
+      model_name: item?.slug ?? "",
+      model_api: callingApi,
+      name: current.name || item?.display_name || "",
+      characteristics: {},
+      pricing: null,
+    }));
+  }
   function chooseProvider(id: string, preferredApi = "") {
     setProvider(id);
     setSettingsJson("{}");
@@ -264,6 +278,7 @@ export function useModelDraft({
     draft,
     change,
     chooseCatalog,
+    chooseDiscovered,
     chooseProvider,
     acceptProvider,
     settingsJson,
@@ -525,18 +540,7 @@ export function EditModelForm({
         backLabel={t("Back to details")}
         onBack={() => setChanging(false)}
       >
-        <CatalogNotice model={model} />
-        <CatalogPicker
-          entries={model.catalog.data?.items ?? []}
-          channels={model.channels}
-          allowCompatible={model.selectedProvider?.type === "openai"}
-          providerName={model.definition?.display_name}
-          value={model.draft.catalog_ref}
-          onSelect={(entry) => {
-            model.chooseCatalog(entry);
-            setChanging(false);
-          }}
-        />
+        <ModelPicker model={model} onSelected={() => setChanging(false)} />
       </CatalogStep>
     );
   return (
