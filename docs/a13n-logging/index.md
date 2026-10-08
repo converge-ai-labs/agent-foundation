@@ -23,7 +23,7 @@ The JSON record on stdout contains `timestamp` (UTC), `level`, `logger`, `messag
 
 ## Configure at the executable boundary
 
-Call `configure_logging()` once in the executable, naming the Python logger namespaces you want to configure. Libraries only call `get_logger(__name__)` (or `logging.getLogger(__name__)`). Logger creation itself does not install handlers. The default `logger_names=()` configures **no** namespaces or root logger; `a13n-harness` is a distribution name, not necessarily a logger namespace.
+Call `configure_logging()` once in the executable and name the Python logger namespaces to configure. Libraries create namespaced loggers with `get_logger(__name__)`; they do not install handlers. The default `logger_names=()` configures no namespaces. Use Python module names such as `a13n_harness`, not distribution names such as `a13n-harness`.
 
 | Keyword argument              | Default            | Effect                                                                         |
 | ----------------------------- | ------------------ | ------------------------------------------------------------------------------ |
@@ -33,7 +33,7 @@ Call `configure_logging()` once in the executable, naming the Python logger name
 | `stdout: bool`                | `True`             | Enable stdout output.                                                          |
 | `file: LogFile \| None`       | `None`             | Add a rotating JSON file, even with pretty stdout.                             |
 
-At least one output is required. Configuration applies `logging.config.dictConfig()` immediately, with `disable_existing_loggers=False`; unrelated loggers are not disabled. Both stdout formats write to standard output. In a process whose standard output carries a protocol, such as a stdio MCP server, set `stdout=False` and use `file` or your own handler. Supply your own handler when another destination is required.
+Configuration applies immediately through `logging.config.dictConfig()`. Unrelated loggers are not disabled. Both terminal formats use stdout. If stdout carries a protocol, such as a stdio MCP server, configure file-only output:
 
 ```python
 from pathlib import Path
@@ -41,13 +41,13 @@ from a13n_logging import LogFile, LogFormat, configure_logging
 
 Path("logs").mkdir(exist_ok=True)
 configure_logging(
-    log_format=LogFormat.pretty,
+    stdout=False,
     logger_names=("my_application",),
     file=LogFile(path=Path("logs/app.jsonl"), max_bytes=10_000_000, backups=5),
 )
 ```
 
-Rotation shifts the active file to `.1` when the next record would exceed `max_bytes`; `backups` excludes the active file. Both numbers must be positive. Assign each file path to one process; independent processes cannot safely rotate the same file.
+Rotation shifts the active file to `.1` when the next record would exceed `max_bytes`; `backups` excludes the active file. Both numbers must be positive. Assign each path to one process. `configure_logging()` requires stdout, a file, or both. For another destination, configure your own standard-library handler instead.
 
 ## Bound fields and exceptions
 
@@ -55,7 +55,22 @@ Rotation shifts the active file to `.1` when the next record would exceed `max_b
 
 `JsonFormatter` emits a compact object with timestamp, level, logger, message, non-reserved extra fields, and `exception` when `exc_info` is present. `PrettyFormatter` emits the logger name and message plus sorted `key=value` fields through Rich. Unsupported JSON values use `str(value)`.
 
-`logger.exception(...)` includes exception text and traceback; neither this package nor its formatters removes secrets. For bounded diagnostics without exception messages, use `exception_details(error)`: it returns up to 32 entries with exception type, parent index, and the last 64 stack frames, plus integer status code or errno when available. It follows causes, contexts, and exception-group children. File paths and function names remain visible; messages, locals, source lines, and response bodies are omitted. Redact sensitive application data before logging it.
+### Choose exception detail
+
+`logger.exception(...)` includes exception messages and traceback. For routine diagnostics that need stack locations but not execution payloads, use `exception_details(error)`:
+
+```python
+from a13n_logging import LogFormat, configure_logging, exception_details, get_logger
+
+configure_logging(log_format=LogFormat.json, logger_names=("my_application",))
+logger = get_logger("my_application.jobs")
+try:
+    raise ValueError("private execution payload")
+except ValueError as error:
+    logger.warning("job_failed", extra={"exceptions": exception_details(error)})
+```
+
+The helper retains exception types, parent indexes, stack locations, and available integer status codes or errno. It follows causes, contexts, and exception groups, with at most 32 exceptions and 64 frames per exception. Messages, locals, source lines, and response bodies are omitted. File paths and function names remain visible. Other log fields are not redacted; choose application fields accordingly.
 
 The public exports are `LogFormat`, `LogFile`, `get_logger`, `configure_logging`, `log_context`, `JsonFormatter`, `PrettyFormatter`, and `exception_details`. For Harness traces and semantic events, see [Observation](../a13n-harness/observation.md).
 

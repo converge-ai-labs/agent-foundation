@@ -2,24 +2,11 @@
 
 This project is one small, complete application: an offline streaming chat that keeps one conversation across multiple turns, persists `HarnessState`, and resumes the same Thread after the process is restarted.
 
-It intentionally uses only:
-
-- one offline Pydantic AI `FunctionModel`;
-- one local demo Environment;
-- one state file;
-- one `ConversationApplication` execution path.
-
-Environment permutations and advanced ownership combinations belong in the Harness Environment tests and documentation, not in this application example.
+The demo uses an offline Model, a fresh local Environment per Run, and one state file.
 
 ## Run It
 
 From the repository root:
-
-```bash
-make examples-check-all
-```
-
-Or run the application directly:
 
 ```bash
 cd examples/agent-app

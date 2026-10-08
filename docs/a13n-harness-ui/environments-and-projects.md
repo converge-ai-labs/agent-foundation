@@ -37,7 +37,7 @@ The first prompt creates a single-root Project only when no Project's first dire
 
 Configuration publication failures belong to [setup recovery](setup.md#cancel-or-recover-setup), not Project selection. Review the completed paths before retrying setup.
 
-If the Harness UI process stops, active operations, unsaved input, and incomplete output are lost. Resume continues the last saved checkpoint (which can contain safely retained partial progress); it does not replay interrupted side effects. Best-effort live output can be incomplete; if events are lost, the TUI labels recovery and prints the authoritative final answer.
+If the Harness UI process stops, active operations, unsaved input, and incomplete output are lost. Resume continues the last saved checkpoint, which can contain safely retained partial progress. Recorded tool results are not replayed; unanswered calls follow Harness's [declared-retryable recovery policy](../a13n-harness/state-and-resume.md#resume-unanswered-tool-calls) under fresh permissions and approval checks. Best-effort live output can be incomplete; if events are lost, the TUI labels recovery and prints the authoritative final answer.
 
 ## Select an Environment
 

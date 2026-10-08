@@ -63,11 +63,11 @@ export A13N_PROVIDERS__CHATGPT_CLIENT_ID="approved-public-client"
 export A13N_PROVIDERS__CHATGPT_REDIRECT_URI="https://agent.example.com/api/v1/model-providers/oauth/callback"
 ```
 
-These variables override `[providers] chatgpt_client_id` and `chatgpt_redirect_uri` in Service TOML. HTTPS callbacks must share the Service's configured public origin, so the initiating browser's cookie can return. Console reports automatic completion and refreshes status while the attempt is active; signing in must start from a user login session, not an API key. Manual callback paste remains available. To customize the public path, register that exact URI and set it on the provider or in `A13N_PROVIDERS__CHATGPT_REDIRECT_URI`. Then map that path in your reverse proxy to the Service's `GET /api/v1/model-providers/oauth/callback`, and keep the query and cookies. The callback never trusts Host/forwarded headers to choose its exchange URI. Exclude callback query strings from proxy/access logs.
+HTTPS callbacks must share `server.public_url`'s origin and start from a user login session, not an API key. Console completes the flow automatically; manual paste remains available. For a custom callback path, register the exact URI, configure it on the provider or deployment, and proxy it to `GET /api/v1/model-providers/oauth/callback` with query and cookies intact. Exclude callback queries from access logs.
 
 Changing the client ID starts a new login without reusing another client's account binding; configuration or secret changes cancel pending/in-flight sign-ins; existing grants still refresh with their saved client authentication. **Use another ChatGPT account** keeps the configured client. Without a custom client, `A13N_PROVIDERS__CHATGPT_REDIRECT_URI` can override only the loopback port, not its scheme, host or `/auth/callback` path.
 
-An OAuth client approved only for website sign-in has no permission to spend ChatGPT subscription quota. This integration still requires renewable tokens with the scopes that allow model calls on the ChatGPT plan; hosted/commercial use needs separate OpenAI approval. Confidential clients send their secret only in the server-side HTTP Basic header, retaining PKCE; code exchange, refresh, and revocation use the authentication frozen with that grant. Issuer, protocol endpoints, resource, and required scopes are fixed by this integration, not user-configurable OAuth parameters.
+A website sign-in client alone cannot spend ChatGPT subscription quota. This integration requires renewable tokens with model-call scopes; hosted/commercial use needs separate OpenAI approval. See [model authentication](../a13n-harness/model-authentication.md) for the integration's OAuth constraints.
 
 ## Add a model
 
@@ -90,7 +90,7 @@ Create the model in `/api/v1/models` with its `config`:
   "config": {
     "model_name": "llama3.3",
     "model_api": "ollama.chat_completions",
-    "characteristics": {"capabilities": ["image_understanding"], "context_window_tokens": 131072},
+    "characteristics": {"context_window_tokens": 131072},
     "settings": {"max_tokens": 4096}
   }
 }
@@ -123,16 +123,16 @@ A model's **Advanced** section offers Thinking effort and Max output tokens, plu
 
 For `openai.responses`, **Store response defaults to off**, even on existing models that never set `openai_store`. Set `openai_store: true` to opt in, or `null` to delegate to the provider. This controls upstream response storage, not the Service's own run history or the provider's other retention policies. Agent and run settings can override the default. Other calling APIs retain their existing storage behavior.
 
-The API equivalent of a model's Settings JSON is `config.settings`. On an agent, use **Provider-specific settings** for `model_settings`. Both accept `extra_headers`; `openai.responses` and `openai.chat_completions` also accept `extra_body` for inference options the installed SDK does not yet know:
+The API equivalent of a model's Settings JSON is `config.settings`. On an agent, use **Provider-specific settings** for `model_settings`. Prefer typed settings, for example with OpenAI Responses:
 
 ```json
 {
-  "extra_body": {"reasoning": {"effort": "future-effort"}},
+  "openai_reasoning_effort": "medium",
   "extra_headers": {"x-experiment": "candidate"}
 }
 ```
 
-This Responses example illustrates passthrough, not an upstream-supported effort value. Chat Completions uses its own wire fields, such as `reasoning_effort`. Ordinary typed settings remain preferable when available. Raw values win over ordinary inference settings at the SDK's final shallow merge; a raw nested object replaces its generated counterpart rather than merging into it. Model selection, messages, tools, structured output and provider session state cannot be changed this way. Use native `openai_text_verbosity` instead of raw Responses `text`, whose container also carries structured output.
+Choose values supported by your upstream model. For inference options the installed SDK does not yet know, `openai.responses` and `openai.chat_completions` accept `extra_body`. Its raw values override generated inference fields in a shallow merge; nested objects replace rather than merge. It cannot change the model, messages, tools, structured output or provider session state. Use `openai_text_verbosity`, not raw Responses `text`.
 
 Omit either object to inherit its model default; set it to `{}` to clear that default for the agent or run. A run's settings replace the agent's entire settings object, so `model_settings: {}` still inherits model defaults. To clear both defaults, send `model_settings: {"extra_body": {}, "extra_headers": {}}`. `null` is not accepted for these objects. Model and provider changes apply to later attempts, including resumed work; settings are checked again before requests.
 
@@ -150,12 +150,12 @@ A model's `config.model_api` must be one the deployment offers; checking its set
 
 An agent whose model cannot read images, video or audio can delegate that to another model. Each workspace can set a default per media kind, and each agent can choose its own.
 
-In Console use **Workspace settings → Media understanding**. Through the API, workspace administrators replace all three defaults at once, by model key, with the `ETag` that `GET /api/v1/media-understanding-defaults` returns:
+In Console use **Workspace settings → Media understanding**. Through the API, workspace administrators replace all three defaults at once. Set `IMAGE_MODEL_KEY` to a configured model with image understanding and `MEDIA_ETAG` to the ETag from `GET /api/v1/media-understanding-defaults`:
 
 ```sh
 curl -X PUT "$A13N_URL/api/v1/media-understanding-defaults" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" -H "If-Match: $MEDIA_ETAG" \
-  -d '{"image": "gpt-5.5", "audio": null}'
+  -d "{\"image\": \"$IMAGE_MODEL_KEY\", \"video\": null, \"audio\": null}"
 ```
 
 An omitted or `null` kind has no default. Each model must be usable in the workspace and declare the matching model input capability (`image_understanding`, `video_understanding` or `audio_understanding`).

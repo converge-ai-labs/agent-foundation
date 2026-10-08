@@ -20,7 +20,7 @@ Find the library, application, or example for your integration. Python distribut
 
 ## Native daemon
 
-`crates/a13n-envd` builds the **Envd** daemon. It provides Envd Sessions, files, commands, processes, and retained output through EIP. See [installation](../a13n-envd/installation.md), [configuration](../a13n-envd/configuration.md), and the [Python client](../a13n-envd/python-client.md).
+`crates/a13n-envd` builds the **Envd** daemon. It provides Envd Sessions, files, commands, processes, retained output, and computer operations through EIP. See [installation](../a13n-envd/installation.md), [configuration](../a13n-envd/configuration.md), and the [Python client](../a13n-envd/python-client.md).
 
 Harness's Local Envd provider connects the daemon to an environment. Harness UI can acquire a matching executable automatically when that provider is selected.
 
@@ -37,6 +37,8 @@ Service clients live in independent Python, TypeScript, Go, and Rust repositorie
 | `frontend/apps/a13n-console`    | Service's browser interface for resources and conversations |
 | `frontend/apps/a13n-harness-ui` | Harness UI's WebUI                                          |
 | `frontend/packages/a13n-ui`     | Shared React components, design tokens, and brand assets    |
+| `frontend/apps/a13n-docs`       | Documentation site built from `docs/`                       |
+| `frontend/apps/a13n-site`       | Public landing page                                         |
 
 Console ships with Service; WebUI ships in the `a13n-harness-ui` distribution. Both are bundled in their wheel and sdist, so installed users need no Node.js. For frontend development, follow the [frontend README](https://github.com/converge-ai-labs/agent-foundation/blob/main/frontend/README.md).
 

@@ -26,15 +26,15 @@ stateDiagram-v2
 
 ## Agent
 
-在 Console 中打开 **Agents → 手动创建**。每次保存创建一个不可变的修订版本；**版本** 列出这些修订版本，**设为默认版本** 选择之后未固定修订版本的运行所使用的修订版本，新对话和已有对话都适用。**导入 YAML**（位于 **手动创建** 菜单中）和 **导出 Agent** 用于在工作空间之间复制 agent，将每个引用资源匹配到目标工作空间中的资源。
+在 Console 中打开 **Agents → 手动创建**。配置变更创建不可变的修订版本；**版本** 列出这些修订版本，**设为默认版本** 选择之后未固定修订版本的运行所使用的修订版本，新对话和已有对话都适用。**导入 YAML**（位于 **手动创建** 菜单中）和 **导出 Agent** 用于在工作空间之间复制 agent，将每个引用资源匹配到目标工作空间中的资源。
 
-通过 API 使用：
+通过 API 使用时，将 `your-model-key` 替换为 `GET /api/v1/models` 返回的模型 key：
 
 ```sh
 curl -X POST "$A13N_URL/api/v1/agents" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "Support", "description": "Answers product questions",
-       "config": {"model": "gpt-5.5", "instructions": "Be precise and cite sources.", "user_questions": true}}'
+       "config": {"model": "your-model-key", "instructions": "Be precise and cite sources.", "user_questions": true}}'
 ```
 
 响应的 `id`（`ap_…`）用于路径和引用；agent 没有 key。
@@ -350,7 +350,7 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 
 结构化值可以是 `{"answers": {"Which color?": "blue"}}`；多选回答使用数组。Service 使用 Harness 验证器按该调用的精确问题校验。要主动跳过问题，对该调用发送 `{"status": "failed", "message": "User chose not to answer"}`。
 
-两份结果映射都必需，且必须精确覆盖各自 pending 组。结果缺失、未知 ID 或类别错误会拒绝整个请求，等待状态不变。没有默认回答，也不接受部分提交。在 Console 中逐项检查并提交完整结果；**跳过反馈继续** 在确认后显式提交拒绝和失败结果。
+两个结果映射都是必填项，且必须完整覆盖对应的待答集合。缺少结果、未知 ID 或类别错误都会拒绝整个请求，等待状态不变。没有默认回答，也不接受部分提交。在 Console 中检查所有待处理项，然后提交完整结果；**跳过反馈继续** 在确认后显式提交拒绝和失败结果。
 
 响应为后继运行（首次 `201`，幂等重放 `200`）。结果保存在其已有 `resume` 字段，不创建额外收件箱消息。只能恢复线程的最后一个运行，且它处于等待、没有其他运行活跃；过期请求返回 `409 conflict`，原因为 `not_idle_waiting_head`。后继运行失败后，它与其他运行一样成为线程历史，等待随之结束：下一条消息从它继续，它未得到结果的调用显示为已中断。
 
@@ -364,7 +364,7 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 }
 ```
 
-`input` 接受与 `payload` 相同的内容部分。整个恢复请求一并接受或拒绝，保存在后继运行中，不创建额外收件箱条目。模型先收到工具结果，再收到附带用户内容。恢复过程保留内容且不重复，即使 worker 在已批准工具执行副作用前的检查点停止。资产必须在工作空间中可用，且可由继承配置读取。无法落地的 URL 或文件会使后继运行失败，不会悄悄丢弃补充说明。完整恢复请求体最多 256 KiB。
+`input` 接受与 `payload` 相同的内容部分。整个恢复请求一并接受或拒绝，保存在后继运行中，不创建额外收件箱条目。模型先收到工具结果，再收到附带用户内容。恢复过程保留内容且不重复。资产必须在工作空间中可用，且可由继承配置读取。无法落地的 URL 或文件会使后继运行失败，不会悄悄丢弃补充说明。完整恢复请求体最多 256 KiB。
 
 附带输入不能替代任何必需结果。普通收件箱消息仍然独立，不能结束等待。排队消息保留顺序；恢复后，兼容的 steer 可以加入后继运行，`next_run` 消息等待后续运行。
 
@@ -378,7 +378,7 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 
 ## 结果
 
-`GET …/runs/{run_id}` 返回运行：`status`、`trigger`、`lineage`（`root`、`continue` 或 `fork`）、`parent_run_id`、启动运行的 `input` 或 `resume`、`options`、`environment_mounts`、`memory_mounts`、`pending`、`output`、`failure {code, message}`、`usage_at_seal`、`labels` 和时间戳。`output` 为 agent 最终文本，或符合 `output_spec` 的 JSON。
+读取 `GET …/runs/{run_id}` 并根据 `status` 处理。完成运行包含 `output`（文本或符合 `output_spec` 的 JSON）；等待运行包含 `pending`；失败运行包含 `failure {code, message}`。运行配置、血缘、挂载和时间戳请参阅 [API 参考](api-reference/index.md)。
 
 - `GET …/threads/{thread_id}/runs` 按从新到旧列出线程运行。`last_run_id` 是最后结束的运行，下一个运行从它的历史继续；`current_run_id` 是活跃运行。
 - `GET …/runs/{run_id}/items` 按顺序返回运行显示项（文本、推理消息、工具调用和观测），每项带 `ordinal`，并包含 `position`、可选 `resume_after` 和 `complete`。默认返回最新的 `limit` 项（默认 200，最多 500）；以首项的 ordinal 作为 `before` 可读取更早的项，以 `after` 可从某个 ordinal 往后读取。运行结束时尚在进行的项显示为 `interrupted`。
@@ -412,7 +412,7 @@ curl -N "$A13N_URL/api/v1/threads/$THREAD/stream" -H "Authorization: Bearer $A13
 5. 收到 `reset` 时，丢弃被替代的临时输出并重读显示项。收到 `gap` 时，重读显示项，将位置与 gap 的可选 `position` 比较：只有缺失范围被覆盖后才清除 gap，否则等待新检查点或终态。收到 `changed` 时重读线程。
 6. 连接时及运行仍活跃期间定期检查运行：订阅前已经结束的运行可能不会再发送通知。封存后读取最终显示项。
 
-快照的 `resume_after` 可能滞后，因为检查点不等待 Redis 写入。提供运行和 position 时，服务器过滤已覆盖增量，并利用保留提示直接定位。提示缺失、过期或不兼容时，回退到过滤后的保留事件回放；这些情况本身不表示输出丢失。客户端仍需对重叠投递去重。网络重连时保留显示数据，发送持续应用的位置及匹配提示；页面刷新后先加载快照。不能跨过 gap 推进位置。`worker.stream_coalesce_seconds` 内到达的同一消息或工具调用的连续文本、推理或参数增量，会合并为一个 `delta`，其事件携带合并文本。每个检查点之后，Service 在显示项已覆盖的事件达到 `worker.stream_trim_seconds` 后删除它们；事件流还限制为约 `worker.stream_length` 条，并在最后输出后 `worker.stream_ttl` 秒删除。
+重连时保留显示数据，发送最后连续应用的位置及匹配的恢复提示，并对重叠投递去重。提示缺失或过期时会回退到保留事件回放；这本身不表示输出丢失。页面刷新后先加载显示项。不能跨过 gap 推进位置。实时输出的保留量有限；合并和保留限制参阅 [worker 设置](configuration-reference.md#worker)。
 
 `delta` 和 `boundary` 帧携带 SSE `id`。未提供运行和 position 的读取方可将最后 ID 放入 `Last-Event-ID` 重连，游标缺失时报告 `gap`。提供运行和 position 的读取方只在必需序列缺失或传输失败时收到 gap。请重新加载显示项，在后续 boundary 或运行封存时重新评估覆盖。Service 每 15 秒发送 keep-alive 注释，工作空间访问权限结束时关闭事件流。帧 JSON Schema 位于 `proto/a13n-service/thread-stream.schema.json`。
 

@@ -3,7 +3,7 @@ title: MCP 工具
 description: 连接 MCP server 提供的工具，并发送根据当前身份或 Run 生成的请求头。
 ---
 
-通过 MCP 接入其他进程或服务提供的工具。Harness 组合 Pydantic AI 的 MCP Capability，不额外实现传输客户端。
+使用 MCP 连接其他进程或服务的工具。`MCP` 管理连接配置；`ContextualMCP` 用于随 Run 变化的请求头。
 
 | 需求                                                        | 选择                                             |
 | ----------------------------------------------------------- | ------------------------------------------------ |
@@ -11,11 +11,60 @@ description: 连接 MCP server 提供的工具，并发送根据当前身份或 
 | 根据当前 Harness 身份或 Run 生成 URL server 的请求头        | `ContextualMCP`                                  |
 | Harness UI 中的命令或 JSON server 配置                      | [Harness UI MCP 配置](../a13n-harness-ui/mcp.md) |
 
-Harness SDK 的 `AgentSpec` **不接受** Harness UI 顶层的 `mcp_servers` 资源字段。SDK 使用 Capabilities，资源 ID 和配置文件由应用管理。
+SDK 代码通过 MCP Capability 接入；Harness UI 使用 MCP 资源配置。
+
+## 离线运行 MCP 工具
+
+在[源码环境](getting-started.md#requirements)中，将以下代码保存为 `mcp_demo.py`，执行 `uv run python mcp_demo.py`。示例启动进程内 server，两次调用 `add` 工具，无需 provider 凭据。
+
+```python title="mcp_demo.py"
+import asyncio
+from collections.abc import AsyncIterator
+
+from fastmcp import Client, FastMCP
+from pydantic_ai.capabilities import MCP
+from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
+from pydantic_ai.mcp import MCPToolset
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+
+from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+
+server = FastMCP("counter")
+
+
+@server.tool
+def add(a: int, b: int) -> int:
+    return a + b
+
+
+async def respond(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+    if isinstance(messages[-1], ModelRequest):
+        for part in messages[-1].parts:
+            if isinstance(part, ToolReturnPart):
+                yield f"Result: {part.content}"
+                return
+    yield {0: DeltaToolCall(name=info.function_tools[0].name, json_args='{"a": 3, "b": 5}')}
+
+
+async def main() -> None:
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=respond))
+    async with Client(server, mode="auto") as client:
+        for prompt in ("Add 3 and 5", "Add them again"):
+            projection = MCPToolset(client, id="calculator", cache_tools=False)
+            bindings = RunBindings.embedded(capabilities=(MCP(id="calculator", local=projection),))
+            result = await executable.run(prompt, bindings=bindings)
+            print(result.output_or_raise())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+两次 Run 都输出 `Result: 8`。Host 保持已进入的客户端，每次 Run 使用新的 `MCPToolset` 投影。
 
 ## 原生 MCP
 
-MCP 使用 Pydantic AI 原生的 `MCP` Capability，放在 `AgentSpec.capabilities` 中。Harness 不定义另一套 MCP 客户端、协议、server schema，或与之并列的 `mcp_servers` 字段。
+将原生 `MCP` 加入 `AgentSpec.capabilities` 或 builder 的 `capabilities=` 参数。
 
 可以直接从 AgentSpec 文档重建本地执行（`local: True`）的 URL server：
 
@@ -39,7 +88,7 @@ agent_spec = AgentSpec.from_dict(
 )
 ```
 
-默认安装的 `a13n-harness` 已包含 Pydantic AI 的 MCP 客户端运行时，通过 URL 和 stdio 传输进行本地执行无需额外的 Harness extra。如果需要进程内 server、传输对象、脚本路径或预构建的 `MCPToolset` 等进程内输入，在可信代码中构建 `pydantic_ai.capabilities.MCP`，并传给 `HarnessBuilder().build(..., capabilities=...)`。Host 可以将新的上游 `MCP` 投影附加到 `RunBindings.capabilities`，同时单独管理已进入的客户端生命周期。不要复用可变的 Run 投影，也不要在不同权限或请求头绑定之间共享认证客户端。`defer_loading=True` 使用上游 `load_capability`，仍遵循相同的 Harness 工具边界。需要选定模型 provider 原生执行 URL MCP server 时，使用 `native=True, local=False`。
+基础安装已包含本地 URL 和 stdio MCP 运行时。进程内 server、传输对象、脚本路径或预构建的 `MCPToolset` 需要在 Python 中构造 `MCP`。设置 `defer_loading=True`，可通过 `load_capability` 发现该 Capability；设置 `native=True, local=False`，由选定的模型 provider 执行 URL server。
 
 ## Host 持有的客户端
 
@@ -65,11 +114,11 @@ async def use_host_client(executable):
         return results
 ```
 
-进入 Host 客户端前配置认证和输入处理器。Host 负责关闭、当前授权、回调路由和精确绑定隔离；Harness 不维护连接池，也不将客户端持久化到续接状态。`auto` 将现代发现和旧版协商交给 FastMCP 客户端。代码构造的客户端也支持显式 `legacy` 和 `2026-07-28` 模式。多轮输入及请求状态由 FastMCP 客户端管理，不需要另一个 Harness Agent 循环。客户端断开不代表可以重放结果未知的业务调用。
+进入客户端前配置认证和输入处理器。`mode="auto"` 选择现代发现或旧版协商，也可显式选择 `legacy` 和 `2026-07-28` 模式。FastMCP 管理多轮输入和请求状态。客户端仅在相同身份与请求头下共享，每次 Run 创建新投影。业务调用丢失响应时，先检查 server 上的结果再重复调用。
 
 ## 用 `ContextualMCP` 生成当前 Run 的请求头
 
-URL MCP server 的请求头需要根据当前逻辑 Harness Run 生成时，使用 `ContextualMCP`。`ContextualMCP` 定义只保存不执行任何操作的 URL 配置。Pydantic AI 为 Run 绑定 Capabilities 时，`ContextualMCP` 会解析请求头并构建新的上游 `MCP`，之后才提取原生工具或本地 MCP Toolset。
+URL server 的请求头需要包含当前用户、Thread 或 Run 时，使用 `ContextualMCP`。Harness 在连接工具前，每次 Run 解析一次请求头。
 
 常见的身份、关联关系、Run 和元数据值，可使用声明式解析器：
 
@@ -131,7 +180,7 @@ bindings = RunBindings.embedded(
 result = await executable.run("Find the account record", bindings=bindings)
 ```
 
-`RunBindings.metadata` 用于附加每次 Run 的 JSON 值。先放入准确的顶层键，再通过 `context.metadata.<key>` 选择。不要临时给 `AgentContext` 添加属性，也不要编码嵌套反射路径。
+将附加 JSON 值放入 `RunBindings.metadata`；`context.metadata.<key>` 选择一个准确的顶层键。
 
 声明式解析器只支持以下准确的来源：
 
@@ -188,7 +237,7 @@ async def resolve_mcp_headers(context: AgentContext) -> Mapping[str, str]:
     return {"X-Route": route}
 ```
 
-Factory 每个逻辑 Harness Run 只运行一次。内部模型恢复尝试复用同一个活跃的上游 MCP 和请求头快照；另一个逻辑 Run 则重新解析。Factory 是可信 Host 代码，可以主动读取当前 Run 服务，但模型内容无法选择来源，也无法直接调用 factory。
+Factory 每次 Run 运行一次，内部模型恢复复用该请求头快照。新 Run 会重新解析请求头。
 
 ## 本地与 Provider 原生执行
 
@@ -203,7 +252,7 @@ Factory 每个逻辑 Harness Run 只运行一次。内部模型恢复尝试复�
 
 预构建客户端、传输对象、进程内 server、脚本和预构建 Toolset 已自行管理连接设置。这些值直接使用原生 `MCP`，不要与 `ContextualMCP` 组合。
 
-URL 是明确的可信配置。Harness 要求 `ContextualMCP` 使用 HTTP(S) URL。上游 MCP 集成负责验证 URL、传输、授权和 provider。Harness 不会猜测 URL 的各部分是否包含凭据。
+`ContextualMCP` 要求应用配置 HTTP(S) URL。
 
 ## Host 提供的配置
 

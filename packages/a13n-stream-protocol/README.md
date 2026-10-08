@@ -1,6 +1,6 @@
 # Agent Stream Protocol
 
-`a13n-stream-protocol` observes public `a13n-harness` streams as typed AG-UI 1.0 events. It maps text, reasoning, tool, and terminal observations to standard AG-UI events, exposes every other public observation through a namespaced `CUSTOM` fallback, applies an optional Host processor, and accumulates the resulting events for process-local use.
+Stream Protocol (`a13n-stream-protocol`) converts public Harness streams to typed AG-UI 1.0 events and normalizes them into compact display items. It maps text, reasoning, tools, and terminal observations to standard events and preserves other public observations as `CUSTOM` events.
 
 The repository directory is `packages/a13n-stream-protocol`, the Python distribution is `a13n-stream-protocol`, and the import package is `a13n_stream_protocol`.
 
@@ -9,8 +9,8 @@ The repository directory is `packages/a13n-stream-protocol`, the Python distribu
 ```python
 from a13n_stream_protocol import HarnessAguiStreamObserver
 
-observer = HarnessAguiStreamObserver()
-async with executable.stream(input, bindings=bindings) as stream:
+observer = HarnessAguiStreamObserver(retain_events=False)
+async with executable.stream(input_value, bindings=bindings) as stream:
     async for item in stream:
         new_events = observer.observe(item)
         await host.persist_and_publish(new_events)
@@ -64,9 +64,29 @@ The package owns only:
 - multipart text, reasoning, and tool-call observation state;
 - optional replay-stable Host processing;
 - atomic process-local reconstruction from supplied source history;
-- detached incremental results and accumulated snapshots.
+- detached incremental results and optional accumulated event snapshots;
+- shared display normalization, stable item identities, and compact checkpoint continuation.
 
-The Host owns source-history retention and selection, cursors, gaps, replay-to-live cutover, persistence, event identities, fan-out, backpressure, cancellation, transport, and rendering policy. The Harness owns source lifecycle facts and continuation state.
+The Host owns persistence, paging, suffix selection, delivery, and rendering policy. Harness owns execution lifecycle and continuation state.
+
+## Compact display checkpoints
+
+Use `DisplayFold` from `a13n_stream_protocol.display` to retain accumulated display content rather than every token event:
+
+```python
+from a13n_stream_protocol.display import DisplayFold, DisplaySnapshot
+
+fold = DisplayFold(run_id)
+async for source in run_stream:
+    await host.persist_and_publish(fold.fold(fold.events(source), source))
+
+checkpoint_json = fold.export().model_dump_json()
+restored = DisplayFold.restore(DisplaySnapshot.model_validate_json(checkpoint_json))
+```
+
+A checkpoint retains stable items, active content, semantic position, fragment assemblies, and native conversion cursors. Export does not complete open blocks. Restoring the checkpoint and consuming an intact suffix produces the same display as uninterrupted folding. It does not restart model generation or tool execution. The [replay guide](../../docs/a13n-stream-protocol/replay.md) includes a complete offline round trip.
+
+Observers default to `retain_events=True` for inspection. Set it to `False` for live-only conversion; `snapshot()` then raises rather than returning an incomplete history. `DisplayFold` uses this non-retaining mode. Explicit observer `export()` / `restore()` resumes conversion without an old delivery journal and requires the same processor policy.
 
 ## Dependencies
 

@@ -26,15 +26,15 @@ All paths below are under `/api/v1` and act in the request's [workspace](http.md
 
 ## Agents
 
-In Console, open **Agents → Create manually**. Each save creates an immutable revision; **Versions** lists them and **Set as default** chooses the one that later runs without a pinned revision use, in new and existing conversations. **Import YAML** (in the **Create manually** menu) and **Export agent** copy an agent between workspaces, matching each referenced resource to one in the target workspace.
+In Console, open **Agents → Create manually**. Configuration changes create immutable revisions; **Versions** lists them and **Set as default** chooses the one that later runs without a pinned revision use, in new and existing conversations. **Import YAML** (in the **Create manually** menu) and **Export agent** copy an agent between workspaces, matching each referenced resource to one in the target workspace.
 
-Through the API:
+Through the API, replace `your-model-key` with a key from `GET /api/v1/models`:
 
 ```sh
 curl -X POST "$A13N_URL/api/v1/agents" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "Support", "description": "Answers product questions",
-       "config": {"model": "gpt-5.5", "instructions": "Be precise and cite sources.", "user_questions": true}}'
+       "config": {"model": "your-model-key", "instructions": "Be precise and cite sources.", "user_questions": true}}'
 ```
 
 The response's `id` (`ap_…`) identifies the agent in paths and references; agents have no key.
@@ -364,7 +364,7 @@ To accompany those results with a clarification or attachment, include optional 
 }
 ```
 
-`input` accepts the same parts as `payload`. The whole resume is accepted or rejected together and stored on the successor; no extra inbox entry is created. The model receives tool results before the accompanying user content. Recovery preserves that content without duplicating it, even if the worker stopped at an approved tool's pre-effect checkpoint. An asset must be usable in the workspace and readable by the inherited configuration. A URL or file that cannot be materialized fails the successor rather than silently dropping the clarification. The complete resume body is limited to 256 KiB.
+`input` accepts the same parts as `payload`. The whole resume is accepted or rejected together and stored on the successor; no extra inbox entry is created. The model receives tool results before the accompanying user content. Recovery preserves that content without duplicating it. An asset must be usable in the workspace and readable by the inherited configuration. A URL or file that cannot be materialized fails the successor rather than silently dropping the clarification. The complete resume body is limited to 256 KiB.
 
 The accompanying input does not replace any required result. Ordinary inbox messages remain separate and cannot close a wait. Queued messages retain their order; after resume, compatible steers can join the successor while `next_run` messages wait for a later run.
 
@@ -378,7 +378,7 @@ Every ended run is the history its thread continues, whatever its outcome. After
 
 ## Results
 
-`GET …/runs/{run_id}` returns the run: `status`, `trigger`, `lineage` (`root`, `continue` or `fork`), `parent_run_id`, the `input` or `resume` that started it, `options`, `environment_mounts`, `memory_mounts`, `pending`, `output`, `failure {code, message}`, `usage_at_seal`, `labels` and timestamps. `output` is the agent's final text, or JSON matching its `output_spec`.
+Read `GET …/runs/{run_id}` and branch on `status`. A completed run has `output` (text or JSON matching `output_spec`); a waiting run has `pending`; a failed run has `failure {code, message}`. The [API reference](api-reference/index.md) lists the run's configuration, lineage, mounts and timestamps.
 
 - `GET …/threads/{thread_id}/runs` lists a thread's runs, newest first. A thread's `last_run_id` is the run that ended last, whose history the next run continues, and `current_run_id` its active run.
 - `GET …/runs/{run_id}/items` returns the run's display items (text and reasoning messages, tool calls and observations) in order, each with its `ordinal`, plus `position`, optional `resume_after`, and `complete`. By default it returns the newest `limit` items (200 by default, at most 500); pass the first item's ordinal as `before` to read the items before it, or `after` to read on from an ordinal. Items of a run that ended while they were in progress read `interrupted`.
@@ -412,7 +412,7 @@ The stream is provisional; the run's items are the durable record. To render a t
 5. On `reset`, discard superseded provisional output and read items again. On `gap`, read items and compare their position with the gap's optional `position`: clear the gap only when the missing range is covered, otherwise await a newer checkpoint or terminal state. On `changed`, read the thread.
 6. Recheck the run on connection and periodically while it remains active: a run that ended before subscription may not produce another stream notification. Read its final items once sealed.
 
-The snapshot's `resume_after` can lag because checkpoints do not wait for Redis writes. With the run and position supplied, the server filters covered deltas and uses retained hints to seek directly. Missing, expired or incompatible hints fall back to filtered retained replay; they do not by themselves indicate lost output. Keep client deduplication for overlapping delivery. On a network reconnect, retain the display and send its continuously applied position with a matching hint; after a page refresh, load a snapshot first. Never advance that position across a gap. Consecutive text, reasoning or tool-argument deltas of one message or tool call that arrive within `worker.stream_coalesce_seconds` come as one `delta` whose event carries their text together. After each checkpoint the Service removes the entries its items now cover, once they are `worker.stream_trim_seconds` old; it also caps a stream at about `worker.stream_length` entries and drops it `worker.stream_ttl` seconds after the last output.
+On reconnect, keep the display and send its last continuously applied position and matching resume hint. Deduplicate overlapping delivery. Missing or expired hints fall back to retained replay; they do not alone mean output was lost. After a page refresh, load items first. Never advance the position across a gap. Live output has bounded retention; see [worker settings](configuration-reference.md#worker) for coalescing and retention limits.
 
 `delta` and `boundary` frames carry an SSE `id`. Readers without a run and position can reconnect with the last one in `Last-Event-ID`; a missing cursor then reports `gap`. Readers supplying a run and position instead receive a gap only for a missing required sequence or a transport failure. Reload items and reassess coverage at later boundaries or when the run seals. The Service sends a keep-alive comment every 15 seconds and ends the stream when your access to the workspace ends. The frames' JSON Schema is `proto/a13n-service/thread-stream.schema.json`.
 

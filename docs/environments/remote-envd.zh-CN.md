@@ -67,7 +67,7 @@ result = await executable.run("Inspect the workspace", environment=environment)
 
 必须设置 `allow_create=False`：两个远程 provider 都声明 `supports_managed=False`，并在任何外部调用前拒绝托管创建。
 
-不用 Harness 时，按 `remote.py` 使用 `enter()`、`ensure_ready()` 和 `EnvironmentOperations`。构建和 `enter()` 不操作目标；准备阶段才连接。始终在 `finally` 关闭适配器。如果通过 `runtime=` 把同一个 `HttpEnvdProviderRuntime` 传给多个适配器，在 Host 关闭时关闭它。一个运行时可以服务多个独立适配器。
+不用 Harness 时，按 `remote.py` 进入适配器、确保就绪、使用操作接口，再在 `finally` 关闭适配器。共享 `HttpEnvdProviderRuntime` 保持打开，直到 Host 关闭。
 
 示例 CLI 也能连接已有守护进程：
 
@@ -80,7 +80,9 @@ uv run environment-provider-example http_envd \
 
 这会在所选设备 cwd 下写入 `provider-example.txt`，再通过新会话读取。守护进程必须允许 `file.write_text` 和 `file.read_text`。绝不能通过 URL 或命令行参数提供凭据。
 
-公共网络端点要求通过验证的 HTTPS。回环地址接受 HTTP；可信 provider 私有链路需要显式 `allow_plaintext_private_link=True`。运行时也接受通过 `verify` 提供的 SSL context、CA 文件或 `False`；除非运维人员设置 `A13N_OUTBOUND_TLS_VERIFY=false`，默认会验证证书。
+公共端点使用 HTTPS。回环地址允许 HTTP；可信 provider 私有链路需设置 `allow_plaintext_private_link=True`。HTTPS 使用环境代理，明文保持直连。
+
+私有 CA 通过 `HttpEnvdProviderRuntime.verify` 传入 SSL context 或 CA 文件。默认启用验证，显式 `verify=False` 关闭证书和主机名检查。构建运行时前选定 TLS 策略。进程默认值见 [Host 出站连接](configuration.md#host-outbound-connections)。
 
 ## 会话出站网络与凭据引用
 
@@ -106,9 +108,9 @@ recipe = {
 }
 ```
 
-运行时在打开会话前重新解析 `HOST_GITHUB_TOKEN`。来源缺失或为空会导致准备失败。保存的配置只含引用；描述符只含不含秘密的边界和策略元数据。本地启动会从守护进程继承的子环境排除被引用的来源变量。嵌入 Host 可以提供 `EnvdCredentialResolver` 运行时协作对象，替代进程环境来源。
+在 Host 环境中设置 `HOST_GITHUB_TOKEN`。运行时在打开每个 Session 前解析它，值缺失或为空会导致准备失败。保存的配置保留引用，命令接收占位标记而非真实凭据。
 
-`expected_boundary` 检查所选远程设备，不授予重新配置设备的权限。受限设备应指定精确规范授权目录。会话目标变化和秘密轮换不改变固定启动边界或本地守护进程缓存身份。命令接收占位标记，不接收真实凭据；请求头注入和实时策略更新见[受控出站网络](../a13n-envd/egress.md)。
+`expected_boundary` 检查设备启动设置。受限设备须列出精确授权。凭据注入和策略更新见[受控出站网络](../a13n-envd/egress.md)。
 
 ## 集成自己的 WebSocket Host
 

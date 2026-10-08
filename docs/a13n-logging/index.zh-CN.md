@@ -23,7 +23,7 @@ stdout 上的 JSON 记录包含 `timestamp`（UTC）、`level`、`logger`、`mes
 
 ## 在可执行程序入口配置
 
-在可执行程序中调用一次 `configure_logging()`，指定要配置的 Python logger 命名空间。库只调用 `get_logger(__name__)`（或 `logging.getLogger(__name__)`）。创建 logger 本身不会安装 handler。默认 `logger_names=()` **不配置任何** 命名空间或根 logger；`a13n-harness` 是分发包名称，不一定是 logger 命名空间。
+在可执行程序中调用一次 `configure_logging()`，指定要配置的 Python logger 命名空间。库通过 `get_logger(__name__)` 创建带命名空间的 logger，不安装 handler。默认 `logger_names=()` 不配置任何命名空间。使用 `a13n_harness` 等 Python 模块名称，而不是 `a13n-harness` 等分发包名称。
 
 | 关键字参数                    | 默认值             | 效果                                                    |
 | ----------------------------- | ------------------ | ------------------------------------------------------- |
@@ -33,7 +33,7 @@ stdout 上的 JSON 记录包含 `timestamp`（UTC）、`level`、`logger`、`mes
 | `stdout: bool`                | `True`             | 启用 stdout 输出。                                      |
 | `file: LogFile \| None`       | `None`             | 添加轮转 JSON 文件，即使 stdout 使用 pretty。           |
 
-至少需要一个输出。配置立即调用 `logging.config.dictConfig()`，设置 `disable_existing_loggers=False`；不会禁用无关 logger。两种 stdout 格式都写入标准输出。如果进程的标准输出承载协议（例如 stdio MCP 服务器），请设置 `stdout=False`，并使用 `file` 或自己的 handler。需要其他目标时，提供自己的 handler。
+配置通过 `logging.config.dictConfig()` 立即生效，不禁用无关 logger。两种终端格式均使用 stdout。如果 stdout 承载协议（例如 stdio MCP 服务器），配置仅文件输出：
 
 ```python
 from pathlib import Path
@@ -41,13 +41,13 @@ from a13n_logging import LogFile, LogFormat, configure_logging
 
 Path("logs").mkdir(exist_ok=True)
 configure_logging(
-    log_format=LogFormat.pretty,
+    stdout=False,
     logger_names=("my_application",),
     file=LogFile(path=Path("logs/app.jsonl"), max_bytes=10_000_000, backups=5),
 )
 ```
 
-下一条记录将超过 `max_bytes` 时，轮转把活跃文件移到 `.1`；`backups` 不含活跃文件。两个数字都必须为正数。每个文件路径只交给一个进程；独立进程不能安全地轮转同一文件。
+下一条记录将超过 `max_bytes` 时，轮转把活跃文件移到 `.1`；`backups` 不含活跃文件。两个数字都必须为正数。每个路径只交给一个进程。`configure_logging()` 要求 stdout、文件或两者同时启用。需要其他输出目标时，改用自有标准库 handler 配置。
 
 ## 绑定字段与异常
 
@@ -55,7 +55,22 @@ configure_logging(
 
 `JsonFormatter` 生成紧凑对象，包含时间戳、级别、logger、消息、非保留额外字段，以及存在 `exc_info` 时的 `exception`。`PrettyFormatter` 通过 Rich 输出 logger 名称和消息，加上排序的 `key=value` 字段。不支持的 JSON 值使用 `str(value)`。
 
-`logger.exception(...)` 包含异常文本和 traceback；本包及其 formatter 都不会移除秘密。需要不含异常消息的有界诊断时，使用 `exception_details(error)`：它最多返回 32 个条目，包含异常类型、父索引和最后 64 个栈帧，以及可用的整数状态码或 errno。它遍历 cause、context 和异常组子项。文件路径和函数名仍可见；消息、局部变量、源码行和响应体会被省略。记录前请对敏感应用数据脱敏。
+### 选择异常详情
+
+`logger.exception(...)` 包含异常消息和 traceback。常规诊断只需栈位置、不需执行载荷时，使用 `exception_details(error)`：
+
+```python
+from a13n_logging import LogFormat, configure_logging, exception_details, get_logger
+
+configure_logging(log_format=LogFormat.json, logger_names=("my_application",))
+logger = get_logger("my_application.jobs")
+try:
+    raise ValueError("private execution payload")
+except ValueError as error:
+    logger.warning("job_failed", extra={"exceptions": exception_details(error)})
+```
+
+该函数保留异常类型、父索引、栈位置和可用的整数状态码或 errno。它遍历 cause、context 和异常组，最多保留 32 个异常，每个异常 64 个栈帧。消息、局部变量、源码行和响应体会被省略，文件路径和函数名仍可见。其他日志字段不会脱敏，请据此选择应用字段。
 
 公开导出为 `LogFormat`、`LogFile`、`get_logger`、`configure_logging`、`log_context`、`JsonFormatter`、`PrettyFormatter` 和 `exception_details`。Harness trace 和语义事件见[观测](../a13n-harness/observation.md)。
 

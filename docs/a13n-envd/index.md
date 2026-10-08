@@ -1,7 +1,7 @@
 ---
 title: Envd
 sidebarTitle: Overview
-description: The native daemon that exposes files, commands, processes, and ports over the Environment Interaction Protocol.
+description: The native daemon for files, commands, processes, ports, and opt-in desktop actions over EIP.
 ---
 
 Envd (`a13n-envd`) serves the **Environment Interaction Protocol (EIP)** over stdio, HTTP(S), or an outbound reverse WebSocket connection.
@@ -10,17 +10,19 @@ Connect Agents through [Harness Environment Providers](../environments/index.md)
 
 ## Choose your path
 
-| Situation                                                 | Start here                                                                          |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Using Harness UI                                          | [Harness UI execution permissions](../a13n-harness-ui/environments-and-projects.md) |
-| Trying a local EIP Environment without a model            | [Local Envd example](#try-local-envd)                                               |
-| Installing a matching native executable                   | [Installation](installation.md)                                                     |
-| Running an agent development container                    | [Sandbox image](sandbox.md)                                                         |
-| Operating your own daemon or EIP transport                | [Configuration and transports](configuration.md)                                    |
-| Diagnosing access or missing methods                      | [Execution boundaries and troubleshooting](isolation.md)                            |
-| Connecting through an Environment Provider                | [Remote Envd](../environments/remote-envd.md)                                       |
-| Implementing an EIP client or Provider                    | [Python EIP client](python-client.md)                                               |
-| Managing Sessions, retained output, and uncertain results | [Sessions and output](operations.md)                                                |
+| Situation                                                  | Start here                                                                          |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Using Harness UI                                           | [Harness UI execution permissions](../a13n-harness-ui/environments-and-projects.md) |
+| Trying a local EIP Environment without a model             | [Local Envd example](#try-local-envd)                                               |
+| Installing a matching native executable                    | [Installation](installation.md)                                                     |
+| Running an agent development container                     | [Sandbox image](sandbox.md)                                                         |
+| Operating your own daemon or EIP transport                 | [Configuration and transports](configuration.md)                                    |
+| Viewing and controlling a shared desktop                   | [Desktop computer use](computer-use.md)                                             |
+| Restricting command destinations and injecting credentials | [Session egress](egress.md)                                                         |
+| Diagnosing access or missing methods                       | [Execution boundaries and troubleshooting](isolation.md)                            |
+| Connecting through an Environment Provider                 | [Remote Envd](../environments/remote-envd.md)                                       |
+| Implementing an EIP client or Provider                     | [Python EIP client](python-client.md)                                               |
+| Managing Sessions, retained output, and uncertain results  | [Sessions and output](operations.md)                                                |
 
 ## What it provides
 

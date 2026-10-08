@@ -13,7 +13,7 @@ Service 在启动时从可选 TOML 文件和环境变量读取一次设置。修
 
 共享进程变量 `A13N_OUTBOUND_TLS_VERIFY` 也受支持，不属于 `A13N_<SECTION>__<FIELD>` 机制。未设置或设为 `true` 会验证目标证书；`false` 会显式关闭自有 HTTP 客户端的验证。其他值会阻止启动。它没有 TOML 字段。请在每个 Service 进程中设置，无论其角色，修改后重启；具体范围、例外及被拦截风险见[出站 TLS 验证](../a13n-harness/models.md#outbound-tls-verification)。
 
-接受列表、映射或嵌套节的字段，在环境变量中使用 JSON，例如 `server.trusted_proxies`、`providers` 列表（`http_origins`、`return_urls`、`mcp_servers`）、`encryption.keys`、`plugins.keys` 或嵌套 `auth.mail` 节。例如 `A13N_PLUGINS__KEYS='["notes"]'` 或 `A13N_AUTH__MAIL='{"smtp_host": "smtp.example.com", ...}'`。
+列表、映射和嵌套节的环境变量值使用 JSON，例如 `A13N_PLUGINS__KEYS='["notes"]'`。
 
 ```toml
 [server]
@@ -129,7 +129,15 @@ Service 对 provider、远程 MCP 服务器、OAuth 服务器和 webhook 端点�
 }
 ```
 
-请在 `allowed_hosts` 中列出运行调用的每个模型 provider、web provider、连接和远程环境端点的域名。`allowed_hosts` 为 null 表示不限制，空数组拒绝全部目标；普通条目精确匹配规范化后的主机名/IP，`regex:<pattern>` 条目则使用 Python 正则匹配完整的规范化主机名。JSON 示例使用双反斜杠表示字面量的点，仅放行 `api.example.com` 或 `docs.example.com`，不放行任意子域或后缀。无效或空表达式会在接受时被拒绝。规范化、子域表达式和转义详见[主机规则与正则表达式](../a13n-harness/context.md#host-rules-and-regular-expressions)。glob、端口和 CIDR 不是主机规则。接受时冻结快照，供输入 URL 读取、执行、故障恢复、resume 和子运行使用。引导可省略配置或指定完全相同的值；活跃运行的不同配置会以 `run_configuration_immutable` 拒绝。使用 `delivery: "next_run"` 选择新的快照。带命名空间的 JSON extensions 仅由显式支持它们的消费者读取。Console 没有此配置的控件；请通过 API 设置。
+在 `allowed_hosts` 中列出运行需要的所有 provider、连接和远程环境主机名：
+
+- `null` 表示不限制主机；`[]` 拒绝全部目标。
+- 普通条目精确匹配规范化后的主机名或 IP。`regex:<pattern>` 使用 Python 正则匹配完整字符串；示例仅放行 `api.example.com` 或 `docs.example.com`。
+- 无效或空表达式会使接收失败。glob、端口和 CIDR 不是主机规则。规范化与转义请参阅[主机规则与正则表达式](../a13n-harness/context.md#host-rules-and-regular-expressions)。
+
+接收时冻结配置，供输入 URL 读取、执行、故障恢复、resume 和子运行使用。引导可以省略配置或重复相同值。要修改配置，提交 `delivery: "next_run"`；活跃运行会以 `run_configuration_immutable` 拒绝不同值。
+
+请通过 API 设置此配置；Console 没有对应控件。带命名空间的 `extensions` 仅由显式支持它们的消费者读取。
 
 `allowed_hosts` 检查只比较 URL 声明的域名：不预解析 DNS、不分类地址，也不固定 IP。运行之外的管理操作保留进程的 URL/HTTPS 策略，不借用运行的配置。任意 shell、第三方插件和不透明 SDK 流量的网络限制应在部署或环境边界实施。
 
@@ -145,11 +153,11 @@ export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
 
 支持大写形式和 `ALL_PROXY`；选择及绕过匹配遵循 `httpx2`。HTTP 代理 URL 可以通过 CONNECT 转发 HTTPS 流量。模型、Remote MCP/OAuth、connector、记录型记忆、web 请求、模型目录、webhook 和宿主 HTTP 客户端的其他调用方都使用这些路由。
 
-**部署运维人员的代理属于可信出站基础设施。** `allowed_hosts` 检查和 TLS 验证独立于路由保持有效。代理负责最终 DNS 和目标网络限制；直连及 `NO_PROXY` 路由同样使用原生传输的 DNS，不在应用层固定 IP。代理请求失败不会自动回退为直连。
+通过运维人员的代理时，主机规则和 TLS 验证仍然生效。目标访问由代理或部署网络控制。代理请求失败不会回退为直连。
 
-通过 HTTPS 连接 `a13n-envd` 也使用这些代理变量；以明文 HTTP 连接本地或 provider 私有的 `a13n-envd` 保持直连。其他 SDK 管理的环境和存储传输保持各自代理行为。这不会改变 Envd 受控出站 broker 或其执行隔离策略。
+通过 HTTPS 连接 `a13n-envd` 时使用这些代理变量；明文 HTTP 的本地或 provider 私有 Envd 连接保持直连。其他环境和存储 SDK 保持各自的代理行为。
 
-提供 API 的进程还会从 `https://models.dev/catalog.json` 读取公共模型目录，用于 Console 模型选择器。目录满一小时后，读取会触发刷新；刷新失败后至少 60 秒才重试；没有设置可以改变这一行为。无法访问时目录不可用，需要按 ID 添加模型。
+Console 模型选择器使用 `https://models.dev/catalog.json`。无法访问时，Service 使用上次的目录，或让你按上游 ID 添加模型。
 
 例如，用 `providers.http_origins` 允许以明文 HTTP 访问 Docker 宿主机上的模型服务器：
 

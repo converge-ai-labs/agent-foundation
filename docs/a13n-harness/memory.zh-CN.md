@@ -52,12 +52,12 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-模型通过挂载名 `user` 访问记忆，不会看到实际目录路径。
+模型通过挂载名 `user` 访问这份记忆。Memory 挂载与 Environment 挂载相互独立。需要隔离执行时，将后端存储置于 Agent 可访问的文件系统之外。
 
 ### 模型获得的内容
 
 - **指令。** 每个挂载点都列出名称、访问权限和指引。`guide=None` 使用 `DEFAULT_FILE_GUIDE`，简要说明应保存什么、如何组织；也可传入自定义文字，或用 `""` 不提供指引。
-- **工具。** 只有 `memory_file_*` 工具能够读取和修改记忆。Shell 和 Environment 文件工具无法访问。
+- **工具。** 使用 `memory_file_*` 按配置的权限与版本检查读取和修改记忆。
 - **上下文。** 每次 Run 开始时，每份记忆对应一个 `<memory-context>` 块，展示 `always_load` 文件和索引，索引中每个文件占一行 `path: description`。使用游标时，后续 Run 只收到变化的路径和有变化的 `always_load` 文件的新内容；没有变化时不添加块。
 
 | 工具                 | 功能                                             | 失败条件                           |
@@ -86,7 +86,7 @@ description: Language and tone preferences
 - Keep answers short.
 ```
 
-路径是相对路径，例如 `prefs/language.md`，目录隐式存在。`always_load` 指定的文件，其完整内容位于该记忆完整上下文的开头；使用游标时，后续 Run 只在这些文件变化后再次收到它们。只有构建挂载的代码能选择这些文件，因此 Thread 不能将自己写入的内容固定到所有后续 Thread 中。
+路径是相对路径，例如 `prefs/language.md`，目录隐式存在。`always_load` 指定优先放入上下文的文件，内容受上下文预算限制；使用游标时，后续 Run 只在这些文件变化后再次收到它们。只有构建挂载的代码能选择这些文件，因此 Thread 不能将自己写入的内容固定到所有后续 Thread 中。
 
 ### 在多次 Run 之间控制上下文大小
 
@@ -103,7 +103,7 @@ limits = FileMemoryLimits(context_bytes=16_384, always_load_bytes=4_096, write_r
 memory = FileMemoryCapability([FileMount("user", store, "write")], limits=limits, cursors=cursors)
 ```
 
-先放入 `always_load` 文件，再由索引共用剩余额度。较大的索引会将目录合并成 `archive/ (37 files)` 这样的行；仍放不下时会截断，并提示通过 `memory_file_view` 查看。
+预算包含上下文包装和读取提示。`always_load` 文件可能被截断或省略，可通过 `memory_file_view` 读取全文。索引共用剩余额度，先将目录合并成 `archive/ (37 files)` 这样的行，仍放不下时再截断。连最小上下文块也放不下时，会用一条简短的读取与清理提示代替，不会中断 Agent。截断或省略的上下文仍会推进游标，因此未变化的文件不会在下次 Run 自动补发。
 
 ### 在多个进程之间共享记忆
 

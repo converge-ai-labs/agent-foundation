@@ -84,7 +84,7 @@ curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
 
 缺少 `If-Match` 时返回 `428 precondition_required`；值已过期时返回 `412 precondition_failed` 和当前 ETag。请重新读取资源、重新应用修改并重试。比较是精确匹配，弱验证器和 `*` 永不匹配。OpenAPI 将 `If-Match` 声明为可选请求头，但每个声明它的操作实际上都要求提供。
 
-收件箱操作（编辑、撤回、重排排队消息）、环境和记忆挂载修改以及线程更新使用**线程** 的 ETag。其他创建资源的操作，以及 interrupt 等针对运行的命令，不需要 ETag。
+收件箱操作（编辑、撤回、重排排队消息）、环境和记忆挂载修改以及线程更新使用**线程** 的 ETag。创建 agent 或 skill 修订版本使用其主记录的 ETag。其他创建操作和 interrupt 等运行命令不需要 ETag。
 
 ## 幂等请求
 
@@ -94,11 +94,11 @@ curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
 - `POST …/runs/{run_id}/fork` 和 `POST …/runs/{run_id}/resume`
 - `POST …/uploads`
 
-每个逻辑请求生成唯一 key，响应丢失后重试时复用。相同 key 和请求体重复请求返回原始结果，状态为 `200` 而非 `201`；相同 key 搭配不同请求体或目标返回 `409 conflict`，原因为 `idempotency_key_reused`。Key 的范围为调用者和工作空间，不会过期。
+每个逻辑请求生成唯一 key，响应丢失后重试时复用。首次提交返回 `201`；上传返回 `200`。使用相同 key 和请求重试时，返回 `200` 和同一组已创建对象的当前状态，而非首次响应的副本。相同 key 搭配不同请求体或目标返回 `409 conflict`，原因为 `idempotency_key_reused`。Key 的范围为调用者和工作空间，不会过期。
 
 ## 分页
 
-集合返回 `{"items": [...], "next_cursor": "..."}`。提供 `limit`（1–100，默认 50），下一页提供 `cursor=<next_cursor>`；最后一页的 `next_cursor` 为 `null`。游标是不透明值，绑定集合、范围和产生它的查询全部筛选条件；改用不同筛选条件时返回 `invalid_cursor`。
+集合返回 `{"items": [...], "next_cursor": "..."}`。提供 `limit`（1–100，默认 50），下一页提供 `cursor=<next_cursor>`；最后一页的 `next_cursor` 为 `null`。游标是不透明值，绑定集合、范围和产生它的查询全部筛选条件；改用不同筛选条件时返回 `invalid_cursor`。有界目录、工具集、挂载和执行尝试可以一次返回所有项而不分页；请检查具体操作的 schema。
 
 ## 限制
 

@@ -188,7 +188,7 @@ Use an Anthropic advisor model ID, or an OpenRouter model slug such as `anthropi
 
 ## Native search and image generation
 
-Agent Capabilities compose independently. For a compatible Model, add the following entries to its `capabilities` list:
+For a compatible Model, add these entries to the Agent's `capabilities` list:
 
 ```yaml
 capabilities:
@@ -218,11 +218,11 @@ Setup writes reviewed starter choices into **new Agent resources**: Codex uses l
 
 New Agents include `web` by default. Each Run gets fresh instances of the following Host providers; native search/fetch selections control which Host functions are exposed.
 
-| Component          | UI implementation                       | Credentials / configuration                                                                                                                                                                      |
-| ------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Search             | `DuckDuckGoSearchProvider`              | Keyless DuckDuckGo HTML search; select `search.mode: host`. Backend ID is `default`. Subject to public endpoint availability and rate limits.                                                    |
-| Fetch and download | `HttpxWebClient` with `PublicWebPolicy` | Public HTTP/S requests, no browser login or separate API key. Bounds come from `WebConfiguration`. Private network targets are rejected.                                                         |
-| Scrape             | `HtmlScrapeProvider`                    | Fetches public HTML/text through the same client and converts to Markdown. Select `scrape.mode: host`; backend ID is `default`. Does not render JavaScript, bypass logins, or recursively crawl. |
+| Component          | UI implementation                     | Credentials / configuration                                                                                                                                                               |
+| ------------------ | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Search             | `DuckDuckGoSearchProvider`            | Keyless DuckDuckGo HTML search; select `search.mode: host`. Backend ID is `default`. Subject to public endpoint availability and rate limits.                                             |
+| Fetch and download | `HttpxWebClient` with `HttpWebPolicy` | Bounded HTTP(S) requests with the Run's allowed-host policy. An unset policy permits private destinations. No browser login or separate API key.                                          |
+| Scrape             | `HtmlScrapeProvider`                  | Fetches HTML/text through the same client and converts to Markdown. Select `scrape.mode: host`; backend ID is `default`. Does not render JavaScript, bypass logins, or recursively crawl. |
 
 A complete explicit Host configuration:
 

@@ -19,6 +19,14 @@ description: 分别配置 provider 的目标、后端连接和凭据。
 
 [生成的字段参考](configuration-reference.md)列出内置目标配置、账号设置、凭据、根目录、挂载和 shell 配置。
 
+## Host 出站连接
+
+在 Host 进程环境中设置 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 或小写形式。这些可信设置路由 Host 自有 HTTP 连接，不控制设备命令流量。
+
+TLS 默认启用验证。在构建自有 HTTP 客户端前设置 `A13N_OUTBOUND_TLS_VERIFY=false`，可关闭证书和主机名检查。私有 HTTPS 端点优先使用可信 CA。已有客户端、调用方提供的客户端及 vendor SDK/WebSocket 传输保留自有 TLS 设置。
+
+端点和 CA 选项见 [Remote Envd](remote-envd.md#connect-to-an-existing-http-daemon)，设备命令访问目标见 [Session 出站网络](../a13n-envd/egress.md)。
+
 ## Direct Local
 
 `DirectLocalEnvironmentConfiguration` 要求绝对路径 `root.path`。根目录始终可写；仅供参考的挂载通过 Harness 权限上限禁止写操作。基础配置仅支持文件：shell 配置、允许的可执行文件和端口默认均为空。

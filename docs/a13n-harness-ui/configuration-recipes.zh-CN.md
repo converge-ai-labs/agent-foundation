@@ -11,7 +11,7 @@ a13n-harness-ui config path
 a13n-harness-ui config validate
 ```
 
-以下路径均相对于该目录（通常为 `~/.a13n-harness-ui/`）。将各代码片段合并到指定文件。使用自定义配置树时，在每个子命令前加上 `--config /path/to/a13n-harness-ui.yaml`。验证能发现错误字段和引用，但不会连接提供方或 MCP 服务器。支持版本中的未知新增字段会保留并提示，不会使用；应检查警告中是否有拼写错误。验证时 Project 目录可以不可用，但选中用于 Run 时必须可用。
+将各代码片段合并到该目录（通常为 `~/.a13n-harness-ui/`）下的指定文件。使用自定义配置树时，在子命令前加上 `--config /path/to/a13n-harness-ui.yaml`。验证检查字段和引用，不连接提供方或 MCP 服务器。检查警告：未知新增字段会保留，但不会使用。Project 目录在 Run 开始前必须可用，验证时不要求可用。
 
 ## 修改默认 Agent
 
@@ -121,15 +121,25 @@ security:
     on_error: allow
 ```
 
-先将 `model-review` 创建为 **Model 资源**，或使用已有 Model ID。它不是 `code-reviewer` subagent，也不能执行工具。Codex 和 Grok 订阅设置会创建独立的 shell 审查 Model；ChatGPT、GitHub Copilot 和 API 密钥设置复用所连接的 Model。每次审查都会发出模型请求，按所选连接计算用量和费用。
+1. 将 `model-review` 创建为 Model 资源，或选择已有 Model ID。审查器不是 `code-reviewer` subagent，不能执行工具。
+2. 将上面的映射加入根 YAML，运行 `a13n-harness-ui config validate`。
+3. 开始新 Run。快捷配置审查 Agent 及其子级的 `environment.shell_exec`，不为其他工具启用审查。
 
-此快捷配置为各 Agent 及其子级的 shell 启动（`environment.shell_exec`）启用审查，不适用于每个工具。风险级别为 `low`、`medium`、`high` 和 `extra_high`；默认阈值为 `extra_high`。默认情况下，达到或超过阈值的调用会请求审批。此配置不会为其他工具启用审查。
+Codex 和 Grok 设置会创建独立审查 Model。ChatGPT、GitHub Copilot 和 API 密钥设置复用所连接的 Model。每次审查都发出模型请求，按该连接计算用量和费用。可选的 Codex Guardian 关联见[根配置参考](configuration.md#shell-review-shortcut)。
 
-设置 `enable: false` 停止使用快捷配置。**这不会移除或关闭显式 Agent 策略。** 开启时，快捷配置在捕获的 Run 中将权限和可选审查合并到一个 `ToolPermissionsCapability`。其 shell 权限优先于 Agent 显式 `allow`、`deny` 或 `ask`；提供的阈值、标记动作、错误动作和 Model 优先于对应 Agent 字段。无关规则、审查指令和其他设置保留。省略/null 字段继承 Agent 审查配置；缺失时回退到 `extra_high`、实际 Agent Model、`on_flagged: approval_required` 和 `on_error: allow`。
+| 设置             | 行为                                                                |
+| ---------------- | ------------------------------------------------------------------- |
+| `risk_threshold` | `low`、`medium`、`high` 或 `extra_high`；达到或超过阈值的调用被标记 |
+| `on_flagged`     | `deny` 或 `approval_required`                                       |
+| `on_error`       | 非超时错误使用 `deny`、`approval_required` 或 `allow`               |
+| 审查器超时       | 始终拒绝执行                                                        |
+| 人工审批超时     | 独立的 `tools.interaction_timeout_seconds`，默认 120 秒             |
 
-普通 UI 配置使用此根映射。高级 Agent 配置可使用带嵌套 `review` 配置的单个 `ToolPermissionsCapability`。快捷配置关闭时，审查器只对 Agent 权限为 `review` 的工具运行；仅有审查器或风险规则不会开启审查。没有独立的审查 Capability 或兼容别名。
+快捷配置合并到 Agent 的 `ToolPermissionsCapability`。其 shell `review` 规则会替换显式 `allow`、`deny` 或 `ask`；提供的审查字段替换对应 Agent 字段。无关规则和审查指令保留。省略/null 字段继承 Agent 策略，再回退到 `extra_high`、实际 Agent Model、标记调用的 `approval_required` 和非超时错误的 `allow`。`allow` 仍执行剩余权限检查。
 
-`on_flagged` 接受 `deny` 或 `approval_required`；`on_error` 还接受 `allow`。非超时审查错误遵循实际 `on_error` 策略；默认 `allow` 继续执行所有剩余检查。审查超时始终拒绝执行。人工决策使用独立的 Host `tools.interaction_timeout_seconds`（默认 120）。风险/原因展示尽力提供；`/review request-id` 可打开详情。审查历史只是供审查器参考的证据，不授予权限；审查也不提供文件系统或网络隔离。运行 `a13n-harness-ui config validate` 验证；开启的快捷配置缺少 Model 或合并策略无效时会报错。已接受修改影响后续 Run，绝不改变已捕获执行。
+设置 `enable: false` 停止注入快捷配置；显式 Agent 策略保留。高级策略使用带嵌套 `review` 的单个 `ToolPermissionsCapability`，只审查权限为 `review` 的工具。仅有审查器或风险规则不会开启审查。
+
+用 `/review request-id` 查看可用的风险和原因详情。审查历史是证据，不授予权限。审查不隔离文件或网络。缺少 Model 或合并策略无效时，验证失败。已接受修改影响后续 Run。
 
 ### 使用 TypeSafe Jev 审查
 
@@ -155,9 +165,7 @@ model_configuration:
   base_url: https://jev-gateway.example
 ```
 
-Jev 按描述的严重程度规则评分：0 = `low`，1 = `medium`，2 = `high`，3 = `extra_high`。Harness 将原生评分映射到现有风险策略。置信度不是严重程度，不会改变决策。Jev 不生成文本，因此评估没有原因；UI 只显示风险，不显示解释。支持文本的审查模型仍会在可用时提供原因。不会自动回退到第二个模型或请求解释。
-
-现有风险阈值、权限检查、超时和错误策略仍适用。替换现有审查模型前，应评估具有代表性的命令，包括对抗性输入；原生适配器兼容不能证明分类正确。
+Jev 的严重程度评分为 0 = `low`、1 = `medium`、2 = `high`、3 = `extra_high`；置信度不改变决策。Jev 不返回文本解释，Harness UI 也不向第二个 Model 请求解释。常规阈值、权限、超时和错误策略仍适用。替换现有审查器前，评估具有代表性及对抗性的命令。
 
 ## 开启 MCP 服务器
 

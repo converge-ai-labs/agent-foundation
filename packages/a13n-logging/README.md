@@ -5,16 +5,20 @@
 ## Use it
 
 ```python
-from a13n_logging import LogFormat, configure_logging, get_logger
+from a13n_logging import LogFormat, configure_logging, get_logger, log_context
 
 configure_logging(
     log_format=LogFormat.json,
     logger_names=("my_application",),
 )
-get_logger("my_application.tasks").info("ready", extra={"task_id": "task-example"})
+logger = get_logger("my_application.tasks")
+with log_context(task_id="task-example"):
+    logger.info("ready", extra={"attempt": 1})
 ```
 
-Configure once at the executable boundary. Libraries only create namespaced loggers. JSON goes to stdout; `LogFormat.pretty` selects Rich terminal rendering, and a `LogFile` adds a size-rotated JSON file. `log_context(**fields)` binds fields to every record logged in a block. No logger namespace or root logger is configured by default, and this package does not redact secret values.
+Configure once at the executable boundary. Libraries only create namespaced loggers. JSON goes to stdout; `LogFormat.pretty` selects Rich terminal rendering. A `LogFile` adds a size-rotated JSON file; use `stdout=False` with a file when stdout carries a protocol. `log_context(**fields)` binds fields within a unit of work. No namespace is configured by default.
+
+Use `exception_details(error)` for bounded exception types and stack locations without exception messages or execution payloads. Ordinary fields and `logger.exception(...)` are not redacted.
 
 The [Logging guide](../../docs/a13n-logging/index.md) documents the public exports, configuration defaults, bound fields and their precedence, file rotation, exception behavior, output ownership, and customization.
 

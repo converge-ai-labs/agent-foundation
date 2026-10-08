@@ -6,7 +6,7 @@ It covers the common Provider lifecycle:
 
 1. create a credential-free `EnvironmentProviderSpec`;
 2. build an explicit allowlisted Provider catalog;
-3. validate the exact configuration version;
+3. validate the recipe against the Provider's declared model;
 4. supply fresh process-local runtime collaborators when required;
 5. construct one fresh, inert `Environment` adapter;
 6. enter it, require file readiness, and use provider-neutral operations;

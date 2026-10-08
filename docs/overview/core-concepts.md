@@ -3,7 +3,7 @@ title: Core concepts
 description: Choose an agent, exchange messages, handle requests, and continue a conversation.
 ---
 
-Follow one conversation with an agent that reports project status. This example uses **Service**, the managed-agent runtime, through **Console** or a Service SDK. For embedded or interactive execution, see [Choose your path](choose-your-path.md).
+Use **Console** or a Service SDK to ask an agent for a project update. This walkthrough introduces **Service** through that conversation. For Harness and Harness UI, see [Choose your path](choose-your-path.md).
 
 ## Choose an agent
 
@@ -25,13 +25,13 @@ Start with a model and instructions. Before you ask the agent to look up real pr
 
 Ask: “Summarize the project status and list the next two tasks.”
 
-In Console, choose an agent and send your message. In an application, use the SDK's high-level start operation. Service creates the conversation resources for you.
+In Console, choose an agent and send your message. In an application, [start a conversation through an SDK](../a13n-service/connect-application.md).
 
-You see replies and tool activity as they arrive. While the agent works, you can add guidance or stop it. Guidance may be applied at the next model request or remain queued; check its receipt rather than assuming it has already been applied.
+You see replies and tool activity as they arrive. While the agent works, you can add guidance or stop it. Compatible guidance joins the active run at its next model request; other messages stay queued.
 
 ## Answer a question or approve a tool call
 
-If the agent asks which project you mean, answer its question card. If a tool call needs approval, approve or deny it. Complete every pending request before submitting the answers. The conversation continues after the complete batch is accepted. Applications handle these through [Waits, approvals and questions](../a13n-service/agents-and-runs.md#waits-approvals-and-questions).
+Answer questions and approve or deny tool calls in their conversation cards, then choose **Submit responses** after completing every pending item. Applications collect answers and [submit a complete resume batch](../a13n-service/agents-and-runs.md#waits-approvals-and-questions) when ready.
 
 ## Continue later
 
@@ -43,14 +43,25 @@ Open **Sessions** and choose **Continue conversation**, then ask “Which task s
 | Memory            | Save and retrieve information across conversations |
 | Environment files | Store documents and other working files for tools  |
 
-Mount a [memory](../a13n-service/memory.md) on the thread, or set it as an agent default, to share saved decisions across conversations. It can supply file context or recall relevant records automatically; enabled memory tools let the agent search and update it. The idle policy of the [environment](../a13n-service/environments.md) template determines how long an environment's files remain available.
+To share decisions across conversations, add [memory](../a13n-service/memory.md) to the thread or agent defaults. [Environment storage and lifecycle](../a13n-service/environments.md) determine how long working files remain available.
 
 ## Understand execution when you need it
 
-A **session** groups related **threads**. Each thread has its own history and inbox; a branch or delegated task can have a separate thread. A **run** advances a thread using the agent's model and tools. A **run attempt** records a worker's execution of that run, including recovery. Console's Debug view exposes these details; ordinary conversation controls handle their identifiers for you.
+A **session** groups related **threads**, each with its own history and inbox. A **run** processes input using the agent's model and tools. An **attempt** is one execution of that run; recovery starts another attempt.
 
-These are not one-to-one with messages: guidance can join an active run, and answering a waiting request creates a successor run. See [Agents, threads and runs](../a13n-service/agents-and-runs.md) for the exact lifecycle.
+```mermaid
+flowchart TB
+    Session["Session"] --> Main["Conversation thread"]
+    Session --> Child["Delegated task thread"]
+    Main --> Runs["Runs: process input"]
+    Runs --> Attempts["Attempts: execute or recover a run"]
 
-Each agent configuration save creates an immutable **revision**. New runs select the current default unless a message pins another revision. Active work keeps its accepted configuration, and approval continuations inherit the waiting run's revision. **Versions** lets you inspect saved configurations.
+    class Session,Main,Child store
+    class Runs,Attempts a13n
+```
+
+Console's Debug view shows these execution details. Guidance can join an active run; answering a waiting request creates a successor run.
+
+Configuration changes create immutable **revisions**, listed under **Versions**. New messages use the default revision unless they select another. Active runs and approval continuations keep their original revision.
 
 Next, [try an agent in Console](../a13n-service/use-platform.md) or [connect your application](../a13n-service/connect-application.md). See [Agents, threads and runs](../a13n-service/agents-and-runs.md) for revision selection and execution details.

@@ -4,7 +4,7 @@ sidebarTitle: 概览
 description: 将 Harness 公开观测转换为结构化 AG-UI 事件，供终端、浏览器和传输层使用。
 ---
 
-Stream Protocol（`a13n-stream-protocol`）只负责转换事件，不运行 agent，也不提供 SSE 服务器。
+Stream Protocol（`a13n-stream-protocol`）将 Harness 输出转成 AG-UI 事件，再合并为终端或浏览器中的展示条目。保存检查点后，可以恢复尚未完成的展示。
 
 ## 从这里开始
 
@@ -20,10 +20,14 @@ Stream Protocol（`a13n-stream-protocol`）只负责转换事件，不运行 age
 flowchart TB
     Run["包含内联子执行的根流"] --> Observer["HarnessAguiStreamObserver"]
     Observer --> Events["结构化 AG-UI 事件"]
-    Events --> Host["Host 持久化与传输"]
-    Host --> UI["渲染器"]
+    Events --> Fold["DisplayFold"]
+    Fold --> Checkpoint["条目与续接状态"]
+    Events --> Host["Host 传输"]
+    Checkpoint --> UI["渲染器"]
+    Host --> UI
 
-    class Run,Observer a13n
+    class Run,Observer,Fold a13n
+    class Checkpoint store
     class Host,UI app
 ```
 
@@ -31,7 +35,7 @@ flowchart TB
 
 `HarnessAguiObserver` 绑定单次执行。`HarnessAguiStreamObserver` 则绑定根流，独立跟踪其中的内联子执行，并用 `subagentRunId` 标识其输出归属。Host 管理的异步子执行仍使用独立 observer。
 
-`observe()` 只返回当前条目产生的事件。`snapshot()` 返回累积事件的独立副本，是便于读取的内存状态，不是持久日志。`resume()` 从精确的 Harness 源历史重建 observer 状态，不会再次发布历史。
+`observe()` 返回当前条目的事件。默认还保留供 `snapshot()` 使用的事件日志。Host 自行存储增量事件或使用 `DisplayFold` 时，设置 `retain_events=False`。fold 保留累积展示内容和解析续接状态，而不是每个 token 事件。[重放与恢复](replay.md)介绍检查点恢复、observer 续接和源重放。
 
 ## 安装
 
@@ -51,7 +55,9 @@ uv add a13n-stream-protocol
 | 源历史保留、游标、缺口检测和切换到实时流        | Host            |
 | 持久 AG-UI ID、持久化、重放和扇出               | Host            |
 | SSE、WebSocket、Redis 或进程内交付              | Host 传输层     |
-| 渲染后的视图状态                                | 渲染器          |
+| 展示条目和解析续接状态                          | Stream Protocol |
+| 检查点存储、分页、确认和后续事件选择            | Host            |
+| 视觉呈现                                        | 渲染器          |
 
 ## 升级到 AG-UI 1.0
 

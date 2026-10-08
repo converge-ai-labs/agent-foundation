@@ -20,7 +20,7 @@ Console 的 **Environments → Templates** 管理模板，**Environments → Ins
 
 不挂载 socket 的快速入门配置不会启用 Docker 自动配置。源码开发时，`make dev` 显式启用 **Local**，并创建根目录为该检出目录 `var/dev/environments` 的 **Local Workspace** 模板。后续每个环境获得独立子目录。Local 直接以 Service 进程的操作系统用户身份运行命令，不提供隔离。
 
-通用 Service 配置中，Local 和 Docker 自动配置默认都关闭，可在 [Service 设置](configuration.md#workspace-provisioning)中启用。创建工作空间时，以及 `all` 角色每次启动时，会补建缺失的 Local 和 Docker provider 及模板；配置失败会记录日志并重试两次。重试后需要重启 Service 才会重新发现 Engine。成功初始化只执行一次：你的修改、禁用和删除结果会保留，重启也不改变。自动配置不会创建环境：请从该模板预留环境，或将该模板设为 agent 的 `default_environment_template_id`。
+Local 和 Docker 自动配置默认关闭；可在 [Service 设置](configuration.md#workspace-provisioning)中启用。`all` 角色在创建工作空间和启动时补建缺失的默认资源。设置失败时，修复 Engine 访问并重启。成功设置会保留后续修改、禁用和删除结果。它只创建 provider 和模板：请预留环境，或设置 agent 的 `default_environment_template_id`。
 
 ## Provider
 
@@ -49,17 +49,17 @@ Docker provider 默认使用运维人员设置的 `environments.docker_host`；p
 
 ## 模板
 
-模板描述如何构建托管环境，以及何时停止和删除空闲环境。模板属于工作空间，创建和修改需要 `write`。
+模板描述如何构建托管环境，以及何时停止和删除空闲环境。模板属于工作空间，创建和修改需要 `write`。此示例使用 Docker provider；将 `eprov_...` 替换为其 ID。
 
 ```sh
 curl -X POST "$A13N_URL/api/v1/environment-templates" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "Python sandbox", "provider_id": "eprov_...",
-       "config": {"recipe": {"cpus": 2, "memory_gb": 4, "init_script": "pip install pandas"},
+       "config": {"recipe": {"cpus": 2, "memory_gb": 4},
                   "stop_after_seconds": 1800, "delete_after_seconds": 604800}}'
 ```
 
-- `provider_id` 指定工作空间中的环境 provider，`config.recipe` 按该类型的 recipe schema 校验。Docker 中可设置 `image`、宿主机目录 `mounts`（源目录必须位于 `environments.docker_mount_roots` 下）、`environment` 变量、`init_script`、`disable_network`、`user` 和资源限制；参阅 [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerenvironmentconfiguration)。Recipe 被拒绝时，会指出每个无效字段的位置和 schema 原始消息，例如 `mounts: Host mount sources must lie below a directory the operator allows`，不会返回提交的值。
+- `provider_id` 指定工作空间中的环境 provider，`config.recipe` 按该类型的 recipe schema 校验。Docker 中可设置 `image`、宿主机目录 `mounts`（源目录必须位于 `environments.docker_mount_roots` 下）、`environment` 变量、`init_script`、`disable_network`、`user` 和资源限制；参阅 [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerenvironmentconfiguration)。Recipe 被拒绝时，会指出无效字段，不会返回提交的值。
 - `stop_after_seconds`（默认 1800，范围 60–2,592,000）停止在指定时间内未被运行使用的环境。`delete_after_seconds`（60–31,536,000）删除在指定时间内未被运行使用且没有线程挂载的环境。设为 `null` 可关闭对应策略。两者均从最后使用时间计起。
 - `PATCH` 使用模板的 `If-Match` 修改名称、描述、provider、config 和标签。新 provider 或 recipe 仅影响之后创建的环境：环境使用创建任务派发时的模板构建，并保留该 recipe。空闲策略始终使用当前设置。
 - `PATCH {"enabled": false}` 阻止从该模板创建新环境；`{"enabled": true}` 重新允许。已有环境仍可使用。

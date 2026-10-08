@@ -31,11 +31,11 @@ With the builder or admin role in this workspace:
 3. Select **Create agent**.
 4. Choose **Try agent** and send the request from step 2 of [Try an agent](#try-an-agent).
 
-Use **Save changes** after editing the configuration. New work uses the saved version by default; active work and approval continuations keep their original version. Messages pinned to a specific version keep that selection. Each save creates a revision, listed under **Versions**. Add [tools and connections](tools.md), [skills](skills.md), or [subagents](agents-and-runs.md#subagents) as needed. See [Agents](agents-and-runs.md#agents) for revision selection.
+Use **Save changes** after editing the configuration. New work uses the saved version by default; active work and approval continuations keep their original version. Messages pinned to a specific version keep that selection. Configuration changes create revisions, listed under **Versions**. Add [tools and connections](tools.md), [skills](skills.md), or [subagents](agents-and-runs.md#subagents) as needed. See [Agents](agents-and-runs.md#agents) for revision selection.
 
 ## Guide the work
 
-- **Questions and approvals:** answer in the conversation; approve or deny requested tool calls.
+- **Questions and approvals:** answer questions and choose **Approve once** or **Deny** for approvals, then select **Submit responses** after completing every pending item. The agent continues after the complete batch is accepted. An ordinary message does not resolve the wait.
 - **Steer or stop:** send another message while a run is active, or stop the active run.
 - **Files and commands:** select an environment under **Run options**, or configure an [environment template](environments.md#templates) as the agent's default.
 - **Shared knowledge:** mount [memory](memory.md) on the thread or set it as an agent default. Memory can supply context automatically; enabled memory tools let the agent search and update it.

@@ -3,7 +3,7 @@ title: Configuration reference
 description: The root configuration file, loading precedence, and when edits take effect.
 ---
 
-Harness UI uses YAML and Markdown files. **The root file holds application-wide settings and defaults, including tool switches, shell review, and built-in subagents; Model and Agent files define each Agent's Model, instructions, and tools.** Start with `a13n-harness-ui setup`, then edit those files as needed.
+Start with `a13n-harness-ui setup`, then edit the generated YAML and Markdown files. Root YAML holds application settings and defaults. Model files hold connections and request settings. Agent files hold instructions, tools, and Model selections.
 
 For worked examples, start with [common configuration recipes](configuration-recipes.md). This page is the root-file and loading reference; here a conversation means a root Thread as the TUI and WebUI show it. The [built-in configuration Skill](skills-and-content-plugins.md#built-in-configuration-skill) gives the Agent offline guidance matching its installed release.
 
@@ -49,13 +49,15 @@ The root file's directory also contains:
 | `extensions/*.yaml`        | Harness Plugins, Environment profiles, Run Extensions | [Extensions](extensions-and-mcp.md)                                     |
 | `mcp/*.yaml`, `mcp/*.json` | MCP server definitions                                | [MCP](mcp.md)                                                           |
 
-Harness UI scans only files directly inside each resource directory: `.md` files in `subagents/` (except `README.md`), `.yaml` files in the other directories, and also `.json` files in `mcp/`. File extensions are case-sensitive. Filenames are for people; resource references use `id`. One file defines one resource, except MCP's multi-server `mcpServers` format. MCP environment/header values accept literals and environment references; see [MCP configuration](mcp.md). Supported-version unknown additive fields are preserved with warnings, **not applied**; unsupported schema versions, duplicate IDs/keys, YAML aliases/anchors and invalid references still reject the candidate. There is no recursive scan or ancestor configuration merge.
+Each directory is scanned once, without recursion or ancestor merging. Extensions are case-sensitive: `subagents/` accepts `.md` except `README.md`; other directories accept `.yaml`; `mcp/` also accepts `.json`. Each file defines one resource, except MCP's multi-server `mcpServers` format. See [MCP configuration](mcp.md) for environment and header references.
+
+Unknown additive fields in supported schema versions are preserved with warnings, not applied. Unsupported versions, duplicate IDs or keys, YAML aliases or anchors, and invalid references reject the candidate.
 
 ### Skipped Capabilities
 
-A missing, ambiguous, unloadable, or invalid Capability in an Agent produces a warning instead of blocking conversations. Harness UI skips only that entry, keeps valid entries (including other `NativeTool` entries), and leaves your YAML unchanged. The warning names the Agent ID, Capability key, and reason. The TUI displays these warnings; `config validate` and the HTTP API's App status expose them as `capability_warnings`. Validation still succeeds when these are the only problems.
+Harness UI skips missing or invalid Agent Capabilities, keeps valid entries, and leaves YAML unchanged. Warnings identify the Agent, Capability and reason. The TUI shows them; `config validate` and App status expose `capability_warnings`. These warnings alone do not fail validation.
 
-Correct the Capability name or arguments, install its trusted implementation if needed, or remove the entry. If an explicitly configured default Capability is invalid, it stays skipped rather than being replaced with broader defaults. Permission policy is never silently skipped: an invalid `ToolPermissionsCapability`, including a missing reviewer Model, rejects validation and Run composition whether or not the root shortcut is enabled. Repair the Agent policy, `security.shell_review`, or its referenced Model. Environment permissions, mandatory invocation policy, and tool switches still apply.
+Fix the name or arguments, install the trusted implementation, or remove the entry. Invalid explicit defaults stay skipped, without broader replacements. Permission policies are different: invalid `ToolPermissionsCapability` or missing reviewer Models reject validation and composition even when the root shortcut is disabled. Repair the Agent policy, `security.shell_review` or its Model. Environment permissions and tool switches still apply.
 
 Only valid selections are captured for a new Run. Already captured Runs do not change, and runtime/model-provider failures are not converted into configuration warnings. Invalid YAML structure, Model resources, and Environment or Plugin configuration still require repair.
 
@@ -120,7 +122,7 @@ webui:
 
 ### File memory
 
-File memory is enabled by default in CLI and WebUI. It stores cross-conversation preferences and stable facts under `memory/global/` beside the selected root YAML, plus Project-specific files under `memory/projects/<project-id>/`. A conversation without a Project uses only global memory. `MEMORY.md` is a concise always-loaded index; detailed topics can use separate files. Memory files are not configuration resources or conversation history. Broader Full Control and human filesystem access remain unchanged.
+File memory is on by default. Global facts live in `memory/global/` beside the selected YAML; Project facts in `memory/projects/<project-id>/`. Projectless conversations use only global memory. Keep `MEMORY.md` as a short always-loaded index, with detailed topics in separate files. Memory is not conversation history and does not restrict Full Control or human access.
 
 Configure **Settings → General → Memory**, or edit:
 
@@ -135,13 +137,20 @@ memory:
 
 Use `instructions` for preferences such as summary language and topic grouping. The organizer reports its changes and preserves uncertainty and user corrections. Agents treat memory as historical context.
 
-**Organization model** follows the Model on `defaults.agent` when `model` is omitted or null. Select a Model ID to override it. Organization needs one of these Models configured; it uses only scoped memory tools, not the Agent's other tools or instructions. Setup enables memory and organization while preserving existing choices.
+**Organization model** follows `defaults.agent` when omitted/null; a Model ID overrides it. A Model must be configured. The organizer uses only scoped memory tools, not Agent instructions or other tools. Setup enables memory and organization while preserving existing choices.
 
-Automatic organization is **WebUI-only**. Each new input to a WebUI conversation can start background organization of changed memory files in that conversation's scopes; organization runs in parallel with the Run. It does not read old conversations or sweep other Projects. Each scope keeps one read-only Memory Thread, separate from your ordinary conversations. Its only tools are scoped memory tools; your Agent's other tools and instructions are not inherited. It may make additional model requests and consume quota or incur cost. General settings shows current-process availability, activity, outcomes and reported usage.
+In WebUI, new input can trigger organization of changed memory scopes. Each scope has a read-only Memory Thread. Organization does not read old conversations or other Projects; it can use Model quota or incur cost. General settings shows activity, outcomes and usage.
 
-Unchanged, empty, busy, or cooling-down memory makes no background model request. A successful attempt has a one-hour cooldown; failure, cancellation, or a crash leaves a fifteen-minute retry delay. Retries require another input. Each attempt is bounded to twelve requests and five minutes. New inputs do not interrupt an active organizer. Disabling either switch or stopping the server cancels maintenance, retaining partial file edits for a later fresh attempt. Foreground Runs already admitted keep their captured memory setting.
+| Organizer state                                | Next attempt                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------------------- |
+| Unchanged, empty, busy, or cooling-down memory | No Model request                                                          |
+| Successful attempt                             | After one hour and another input                                          |
+| Failed, cancelled, or interrupted attempt      | After fifteen minutes and another input                                   |
+| Active attempt                                 | At most twelve requests and five minutes; new input does not interrupt it |
 
-To keep memory without automatic requests, set `auto_organize.enabled: false`. Set `memory.enabled: false` to stop binding memory on later Runs; neither option deletes files. Back up the selected configuration root's `memory/` directory separately from the application data root. `.a13n-memory/` contains internal locking and organization state, not user memory. Optional Git supplies only a bounded diff hint over one snapshot; it is not required, does not touch your repository, and stores no revision history.
+Set `auto_organize.enabled: false` to retain memory without automatic requests. Set `memory.enabled: false` to stop binding memory on later Runs. Either switch, or server shutdown, cancels maintenance and retains partial edits; neither switch deletes files. Admitted foreground Runs keep their captured setting.
+
+Back up `memory/` beside the selected YAML separately from application data. `.a13n-memory/` holds internal locks and organization state. Optional Git provides a bounded diff hint, not revision history, and does not touch your repository.
 
 ### Media understanding
 
@@ -157,7 +166,7 @@ webui:
     - "https://anui.wh1isper.top:8090/"
 ```
 
-To explicitly disable address restrictions, use `allowed_origins: ["*"]`. This does not disable API-key authentication or the browser's same-origin check, and it is not a CORS allowlist. Even two configured origins cannot make cross-origin API requests to each other. Prefer exact entries when public addresses are known; `"*"` removes the Host restriction, including its protection against DNS rebinding. Existing bind-address and loopback access remains allowed independently of these entries.
+`allowed_origins: ["*"]` removes the Host restriction, including DNS-rebinding protection. Prefer exact origins. This is not CORS: authentication and same-origin checks remain, and configured origins cannot call each other’s APIs. Existing bind-address and loopback access stays allowed.
 
 The listener captures this setting at startup. Restart WebUI after editing it; accepting a configuration reload does not change an active listener's access boundary. See [reverse proxies](webui.md#reverse-proxies-and-public-addresses) for HTTPS forwarding and proxy trust.
 
@@ -171,7 +180,7 @@ Interactive MCP results are opt-in. Set `webui.mcp_apps.enabled: true` and selec
 
 ### WebUI Sidekick
 
-Sidekick is a WebUI preference that adds instructions for independent work to root Agents and selects the Agent and Model for Threads they create with `create_thread`. It is enabled by default. Setup writes `webui.sidekick: {}` explicitly in new configuration files. Existing files that omit `webui` or `sidekick` also enable it without being rewritten. An existing `sidekick: null` remains disabled; setup preserves explicit null and custom Agent/Model selections.
+Sidekick adds independent-work instructions to WebUI root Agents and defaults for `create_thread`. Omitted settings or `sidekick: {}` enable it; `sidekick: null` disables it. Setup writes `{}` for new files and preserves existing disabled or custom choices.
 
 In **Settings → General → Sidekick**, select **Enabled**, optionally choose an Agent and a default Model, then **Save changes**. This sets preferences for independent work without changing your default conversation Agent:
 
@@ -179,20 +188,24 @@ In **Settings → General → Sidekick**, select **Enabled**, optionally choose 
 webui:
   sidekick:
     agent: null              # Inherit the calling Agent
-    model: model-worker      # Override its Model for the requested Run
+    model: model-worker      # Default Model for newly created Sidekick Threads
 ```
 
-Use existing resource IDs. Set `agent: agent-worker` to select a different Agent; either choice can use a default Model. Omit/null `model` to follow the selected Agent's current Model. An empty `sidekick: {}` enables inherited Agent selection. The Host saves the configured Model as `default_model_id` when the Agent creates a Sidekick Thread, so follow-up messages and resumed turns keep using it. An explicit `create_thread(model_id=...)` or Run picker selection overrides only that Run; it does not change the saved default. Existing Threads are not rewritten when Sidekick settings change or are disabled. Choose **Disabled** or set `sidekick: null` to turn off the extra instructions. Saving does not start any work. New WebUI Runs receive the preference; active Runs keep their captured instructions. TUI Runs and delegated children are unaffected. Generic Thread, Project, Agent and Model discovery tools remain available in WebUI whether Sidekick is enabled or not. See [Thread collaboration](webui.md#agent-collaboration-and-sidekick) for behavior and delivery limits.
+Use existing IDs. Set `agent: agent-worker` to choose another Agent. Omit/null `model` to follow that Agent's current Model; `sidekick: {}` inherits the calling Agent. A configured Model is saved as the new Thread's `default_model_id` for follow-up and resumed turns. An explicit `create_thread(model_id=...)` or Run picker choice overrides only that Run.
+
+Choose **Disabled** or set `sidekick: null` to remove the extra instructions. Saving starts no work and does not rewrite existing Threads. Preferences apply to new WebUI Runs, not active Runs, TUI Runs, or delegated children. Discovery tools remain available independently of Sidekick and follow each role's scope. See [Thread collaboration](webui.md#agent-collaboration-and-sidekick) for Coordinator and Worker limits and delivery behavior.
 
 ### Shell review shortcut
 
 `security.shell_review.enable` defaults to `false`: no automatic permission/reviewer injection. Setup normally initializes it to `true`. Disabled means the shortcut is unused, not that explicit Agent policies are removed.
 
-When enabled, `risk_threshold` accepts `low`, `medium`, `high`, or `extra_high`, and `model` names a configured Model resource. `on_flagged` accepts `deny` or `approval_required`; `on_error` accepts `deny`, `approval_required`, or `allow`. Omitted/null fields inherit the Agent review policy, falling back to `extra_high`, the effective Agent Model, `approval_required` for flagged calls, and `allow` for non-timeout errors. Explicit shortcut fields take precedence during composition and preserve unrelated Agent rules. The shortcut opts in only `environment.shell_exec`, across root and child Agents. See the [shell-review recipe](configuration-recipes.md#configure-shell-review) for defaults, merging, and failure behavior. These settings affect later Run captures, not active Runs.
+Enabled review applies only to `environment.shell_exec` in roots and children. Explicit shortcut fields override the Agent’s shell rule; other rules remain. Omitted/null fields inherit Agent review settings, then built-in defaults. See the [shell-review recipe](configuration-recipes.md#configure-shell-review) for field values, merging and failures. Changes affect later Run captures.
 
 Set `security.shell_review.guardian_credits: true` to request Guardian credit linking for effective shell review. The default is `false`. New setup writes `true` for Codex subscription connections and `false` for API-key and other connections, including when selecting an existing Model. Setup and Add Agent preserve existing shell-review settings; Add Model does not change them.
 
-Both the main and reviewer Models must use `openai-codex:` or `openai-responses:` routes. API-key Responses connections may opt in, but this does not guarantee eligibility or free usage. Other protocols retain ordinary review and report a diagnostic. Linked reviews use the provider response ID of the call that requested the command, including commands reached through CodeAct or ToolProxy. Missing IDs retain ordinary review. This option does not change your reviewer Model, credentials, endpoint, risk policy, or usage accounting. Configure reviewer settings for your provider: Guardian linking does not remove service tier or routing settings, and normal transport behavior still applies. Provider rejection follows `on_error`; there is no automatic retry without the markers. Timeouts still deny execution. Credit eligibility and actual charges are determined by the provider, not by these request fields.
+Both Models must use `openai-codex:` or `openai-responses:`. Linking uses the provider response ID of the call requesting the command, including through CodeAct or ToolProxy. Unsupported protocols or missing IDs retain ordinary review and diagnostics.
+
+Guardian linking leaves the reviewer, credentials, endpoint, service tier, risk policy, and usage accounting unchanged. Provider rejection follows `on_error`, without retrying unlinked; timeouts deny execution. API-key Responses connections may opt in, but the provider determines eligibility and actual charges.
 
 ### Process settings
 
@@ -205,7 +218,7 @@ These settings take effect when the application starts; restart after changing t
 | `process.log_level`             | `INFO`   | `CRITICAL`, `ERROR`, `WARNING`, `INFO`, or `DEBUG`; normalized uppercase            |
 | `process.log_format`            | `pretty` | Noninteractive logging: `pretty` or `json`; interactive diagnostics use files       |
 
-`process.max_object_bytes` defaults to `268435456` (256 MiB), with an allowed range of 1 KiB through 1 GiB. It limits each complete **uncompressed** immutable storage object, including continuation checkpoints; it is not a Thread disk quota or a model context limit. Long coding Threads retain display history and file-edit evidence even after model-context compaction. If a checkpoint exceeds this limit, raise it (for example to `536870912` for 512 MiB) and restart the application before continuing. Larger limits increase peak memory use during serialization and validation. No history is truncated to fit, and a failed save leaves the previous selected checkpoint unchanged. Lowering the limit can prevent reading previously saved larger objects.
+`process.max_object_bytes` limits each uncompressed storage object, including checkpoints: default 256 MiB (`268435456`), range 1 KiB–1 GiB. It is not a Thread quota or context limit. On an oversized checkpoint, raise the limit and restart before continuing; larger limits increase peak memory. History is not truncated, and failed saves retain the previous checkpoint. Lowering the limit can prevent reading larger saved objects.
 
 Use `--no-update-check` for a one-invocation override. See [updates and logs](automation-and-troubleshooting.md#logs-updates-and-exit).
 
@@ -251,7 +264,7 @@ defaults:
 
 An application-created conversation without a Project uses its own `thread-files/tmp/` working directory. It still has attachments, global Skills when enabled, and global guidance. The TUI selects a Project from its launch directory on the first prompt or explicit resume. Resuming an existing conversation from another directory assigns it to the launch directory's Project without changing its history or other settings.
 
-The Agent can read and write the selected configuration directory through the file-only `configuration` mount. This defaults to `~/.a13n-harness-ui`; with `--config`, it is the chosen YAML file's parent directory. It is not a Project root and does not grant shell execution through that mount. If an existing working mount already exposes the exact directory, its route is reused. Resource edits are validated before acceptance and affect later Runs; invalid edits leave the last accepted configuration active. Process settings require restart. The mount exposes the whole selected directory, so keep sensitive file contents out of messages and logs.
+The file-only `configuration` mount exposes the selected YAML’s directory, not a Project root or shell location. An existing mount of that exact directory is reused. Valid edits affect later Runs; invalid edits keep the accepted configuration. Process settings require restart. The whole directory is exposed, so avoid sharing sensitive contents.
 
 ### Display settings
 
@@ -294,7 +307,7 @@ For a new Thread, the first match wins:
 4. Root YAML defaults.
 5. The built-in Environment fallback.
 
-Collections replace whole lists; an empty list selects none. Existing Threads retain exact selections until explicitly patched; editing Project defaults does not reapply them. See [Project defaults](environments-and-projects.md#defaults-for-new-conversations). Explicit temporary choices remain overrides only for the operation, TUI process, or WebUI tab that owns them. Agent and Model choices are different: `/agent` changes the Thread's Agent without writing YAML; `/model` changes the effective Model and remembers it per Project in local state, without rewriting YAML. `/model default` clears that preference. Explicit launch `--agent` and noninteractive callers do not inherit the remembered Model.
+Lists replace, not merge; `[]` selects none. Existing Threads keep selections until explicitly changed; Project default edits do not reapply. See [Project defaults](environments-and-projects.md#defaults-for-new-conversations). Temporary overrides stay with their operation, TUI process or browser tab. `/agent` changes the Thread Agent; `/model` remembers a per-Project choice, and `/model default` clears it. Neither writes YAML. Explicit launch `--agent` and noninteractive calls ignore the remembered Model.
 
 | What changed                                                                  | When it takes effect                                                                             | What stays unchanged                                                                               |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
@@ -351,7 +364,7 @@ export no_proxy=localhost,127.0.0.1,::1
 
 Uppercase forms and `ALL_PROXY` are supported. Selection and bypass matching follow `httpx2`. Host-owned Web search/scrape/fetch/download requests, remote HTTPS MCP connections and update checks honor these variables, alongside the [Model HTTP client](../a13n-harness/models.md#outbound-http-proxies). Restart the process after changing its environment. When running in a container, the proxy address must be reachable from that container.
 
-The proxy you configure is trusted outbound infrastructure and owns destination DNS and network restrictions. Host Web tools use native HTTP connections and never pre-resolve destination hostnames or pin IP addresses, including on direct and `NO_PROXY` routes. This allows proxy-only hosts to work without local destination DNS. HTTP(S) URL validation, redirect checks, deadlines and response limits remain enabled. TLS verification is enabled by default; only the operator-controlled [outbound TLS switch](../a13n-harness/models.md#outbound-tls-verification) can opt out for owned clients. A failed proxy request does not fall back to direct.
+The proxy owns destination DNS and network restrictions. Host Web does not pre-resolve or pin destination IPs, including direct and `NO_PROXY` requests. URL/redirect checks, deadlines and response bounds remain. TLS verification defaults on; see the [operator-controlled TLS switch](../a13n-harness/models.md#outbound-tls-verification). Proxy failures do not fall back to direct.
 
 Plaintext loopback MCP and plaintext local/provider-private Envd attachments stay direct. HTTPS Envd attachments honor proxy variables. Third-party SDK-owned transports retain their SDK's proxy behavior; daemon-initiated Envd pairing and reverse WebSocket connections are separate from the Python HTTP attachment client.
 
@@ -368,4 +381,4 @@ run_configuration:
     example.reader: {images: true}
 ```
 
-Omit `allowed_hosts` or set it to null for unrestricted destinations; `[]` denies all. Ordinary entries match exact normalized hostnames or IP literals; entries prefixed with `regex:` use Python regular expressions to match the entire normalized hostname. The example allows `docs.example.com` and its subdomains, not `docs.example.com.evil.test`. Use `\.` for literal dots and YAML single quotes to preserve backslashes. Invalid/empty patterns fail configuration validation. Patterns see lowercased ASCII IDNA hostnames or canonical IPs, never URLs, paths or ports; keep them simple and caller-authored. See [host rules and regular expressions](../a13n-harness/context.md#host-rules-and-regular-expressions) for examples, matching boundaries and Python/JSON escaping. Globs and CIDRs are not supported. Include every required Model, Web and MCP hostname. The check uses declared URL hostnames on direct and proxy routes, including owned redirect hops; it never resolves DNS or pins IPs. Root and child compositions retain the snapshot; edits affect later root Runs, not active or reconstructed ones. API-key Model clients and Host Web/MCP support it; opaque subscription Model transports reject restrictive configurations. Extensions are namespaced JSON values for explicitly opting-in consumers, not automatic Capability constructor settings. Arbitrary shell and trusted plugin traffic require deployment or Environment network isolation.
+`allowed_hosts` omitted/null allows all destinations; `[]` denies all. Entries match normalized hostnames or IPs exactly, or use `regex:` for full-hostname Python matches. The example permits `docs.example.com` and subdomains, not `docs.example.com.evil.test`. Preserve backslashes with YAML single quotes; invalid/empty patterns fail validation. Patterns see normalized hosts, not URLs, paths or ports; globs and CIDRs are unsupported. See [host rules](../a13n-harness/context.md#host-rules-and-regular-expressions). Include required Model, Web and MCP hosts. Owned requests check declared hosts and redirect hops without DNS resolution or IP pinning. API-key Models and Host Web/MCP support restrictions; opaque subscription transports reject them. Captures remain fixed for roots and children. Namespaced `extensions` require an opting-in consumer; they are not Capability arguments. Shell and trusted plugin networking still require Environment or deployment isolation.

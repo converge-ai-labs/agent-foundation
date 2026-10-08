@@ -46,7 +46,7 @@ capabilities:
       shell_enabled: true
 ```
 
-This enables native Environment tools, not a second local runner. Use `tools` on the Agent for an exact additional visibility filter and an Environment profile for execution isolation.
+This enables Environment file and shell tools. Filter visible tools with the Agent's `tools` list. Choose where tools run in [Environment settings](environments-and-projects.md).
 
 ### Shell review
 
@@ -60,7 +60,7 @@ security:
     risk_threshold: high
 ```
 
-`model` is a configured **Model resource ID**, not a subagent reference or ambient provider route. The shortcut merges permissions and optional review into one `ToolPermissionsCapability` for shell launches, with explicit root fields taking precedence and unrelated Agent rules preserved. `enable: false` leaves explicit Agent policies untouched. See the [complete shell-review recipe](configuration-recipes.md#configure-shell-review) for defaults, inheritance, errors, and usage. Review is not filesystem or network isolation and is independent of the `code-reviewer` child.
+Set `model` to a configured **Model resource ID**. Explicit root review fields take precedence; unrelated Agent permission rules remain. `enable: false` leaves explicit Agent policies unchanged. Review does not provide isolation. See the [shell-review recipe](configuration-recipes.md#configure-shell-review) for defaults, Guardian linking, and failures.
 
 ### Context management
 
@@ -103,7 +103,7 @@ plugin_key: vendor.memory
 configuration: {}
 ```
 
-Save it under `extensions/`, then select `harness_plugins: [plugin-memory]` in the Agent or root defaults. Unknown/uninstalled keys fail validation; writing the file is not installation.
+Save it under `extensions/`, then select `harness_plugins: [plugin-memory]` in the Agent or root defaults. Validation rejects unknown or uninstalled factory keys.
 
 | Resource kind                                 | Complete fields beyond shared `schema_version`, `kind`, `id`, `name`                                            |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |

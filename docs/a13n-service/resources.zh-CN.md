@@ -15,7 +15,7 @@ description: 工作空间资源的共同规则：生命周期、修订版本、�
 
 **实时** 资源（provider、模型、连接、环境模板、订阅、记忆）直接修改。每次修改增加该记录的 `version`；运行在需要资源时使用当前状态：禁用 provider 或连接会立即阻止新的使用。
 
-**带修订版本的** 资源（agent 和 skill）有主记录和不可变的编号修订版本。每次配置修改新增一个修订版本；修改名称、描述或标签只改变主记录。主记录的 `default_revision_id` 决定未固定修订版本的新运行使用哪个修订版本，运行则固定使用启动时的精确修订版本。主记录通过归档停用，不直接删除。发布内容与当前默认修订版本相同时，不创建新的修订版本：请求以 `201` 再次返回该修订版本，主记录的版本、ETag 和审计记录均不变，无论是否设置 `make_default: false`。
+**带修订版本的** 资源（agent 和 skill）有主记录和不可变的编号修订版本。每次配置修改新增一个修订版本；修改名称、描述或标签只改变主记录。主记录的 `default_revision_id` 决定未固定修订版本的新运行使用哪个修订版本，运行则固定使用启动时的精确修订版本。主记录通过归档停用，不直接删除。发布内容与当前默认修订版本相同时，返回该修订版本（`201`），不修改主记录，即使设置了 `make_default: false`。
 
 运行所依赖的资源不会被直接永久删除：
 
@@ -59,7 +59,7 @@ curl -X POST "$A13N_URL/api/v1/model-providers" \
 
 - **凭据只写不读。** 凭据使用部署的密钥环加密，永不返回；视图只显示 `credential_configured`。`PATCH` 中提供 `credential` 值会替换凭据，`null` 会移除，不提供则保留。
 - **凭据绑定其配置。** 存有凭据时，通过 `PATCH` 修改 `config` 必须同时替换或移除凭据（以及模型 provider 存储的全部额外请求头），否则返回 `invalid_argument`。这样可以避免将凭据发送到原先未授权的端点。
-- **端点遵循部署的出站策略。** Base URL 和其他端点必须通过[端点策略](configuration.md#outbound-requests)；私有地址和明文 HTTP 端点需要运维人员显式允许。
+- **端点遵循部署的出站策略。** Base URL 和其他端点必须通过[端点策略](configuration.md#outbound-requests)；明文 HTTP 端点需要运维人员显式允许其 origin。此策略不阻止私有 IP 地址；请在部署边界实施网络限制。
 - **禁用：** 使用 `PATCH {"enabled": false}`。已禁用的 provider 以 `disabled` 拒绝新使用；环境 provider 被禁用后，其已有环境仍会得到维护。
 - **测试：** 使用 `POST …/{provider_id}/test`（需要 `run` 权限）。它使用保存的配置发送一次低成本探测，返回 `succeeded`、`failed`（附带消息）或 `unsupported`。Web provider、`openai_chatgpt`、`google_vertex`、`aws_bedrock`、`vercel` 和 `typesafe` 模型类型，以及除 `docker` 外的所有环境类型都没有测试，返回 `unsupported`。`docker` 测试只 ping Docker Engine，不创建资源。记忆 provider 的测试列出一个未被任何记忆使用的命名空间中的一页数据。
 

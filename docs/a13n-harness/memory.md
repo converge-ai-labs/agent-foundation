@@ -52,12 +52,12 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-The model addresses the memory by its mount name, `user`. It never sees the directory path.
+The model addresses this memory by its mount name, `user`. Memory mounts are separate from Environment mounts. For isolated execution, keep the backing store outside the Agent's accessible filesystem.
 
 ### What the model gets
 
 - **Instructions.** Each mount is listed with its name, access, and guide. `guide=None` uses `DEFAULT_FILE_GUIDE`, a short rule for what to keep and how to organize it; pass your own text, or `""` for no guide.
-- **Tools.** The `memory_file_*` tools are the only way to read and change a memory. Shell and Environment file tools cannot reach it.
+- **Tools.** `memory_file_*` tools read and change memory through the mount's access rules and version checks.
 - **Context.** At the start of each Run, one `<memory-context>` block per memory shows its `always_load` files and an index with one `path: description` line per file. With cursors, a later Run instead gets only the changed paths and the new content of changed `always_load` files, or no block when nothing changed.
 
 | Tool                 | Does                                                     | Fails when                                            |
@@ -86,7 +86,7 @@ description: Language and tone preferences
 - Keep answers short.
 ```
 
-Paths are relative, such as `prefs/language.md`; directories exist implicitly. `always_load` names files whose full content leads the memory's full context; with cursors, a later Run gets such a file again only when it changed. Only the code that builds the mount chooses them, so a Thread cannot pin its own writes into every later Thread.
+Paths are relative, such as `prefs/language.md`; directories exist implicitly. `always_load` names files whose content is included first, within the context budget; with cursors, a later Run gets such a file again only when it changed. Only the code that builds the mount chooses them, so a Thread cannot pin its own writes into every later Thread.
 
 ### Keep context small across Runs
 
@@ -103,7 +103,7 @@ limits = FileMemoryLimits(context_bytes=16_384, always_load_bytes=4_096, write_r
 memory = FileMemoryCapability([FileMount("user", store, "write")], limits=limits, cursors=cursors)
 ```
 
-`always_load` files come first, then the indexes share the rest. A large index collapses directories into lines such as `archive/ (37 files)` and is cut with a pointer to `memory_file_view` when it still does not fit.
+The budget includes wrappers and view hints. `always_load` files can be truncated or omitted; use `memory_file_view` to read the full file. Indexes share the remaining space, collapsing directories into lines such as `archive/ (37 files)` before truncation. If even minimal blocks do not fit, one short view-and-cleanup reminder replaces them without interrupting the Agent. Truncated or omitted context still advances its cursor, so unchanged files are not automatically sent again on the next Run.
 
 ### Share a memory between processes
 

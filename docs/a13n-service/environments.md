@@ -20,7 +20,7 @@ To use a locally built image for a new workspace, run `make image-docker-environ
 
 The socket-free quickstart does not enable Docker provisioning. For source development, `make dev` explicitly enables **Local** and creates a **Local Workspace** template rooted at that checkout's `var/dev/environments`. Each environment later gets its own subdirectory. Local runs commands directly as the operating-system user of the Service process and provides no isolation.
 
-Local and Docker provisioning both default off in generic Service configuration. Enable them in [Service settings](configuration.md#workspace-provisioning). Workspace creation and each startup of the `all` role set up the missing Local and Docker providers and templates; a failed setup is logged and retried twice. Restart the Service to rediscover an Engine after those retries. Successful initialization runs once: your edits, disabled resources and deletions remain yours, including across restarts. Setup creates no environment: reserve one from the template, or set the template as an agent's `default_environment_template_id`.
+Local and Docker provisioning default off; enable them in [Service settings](configuration.md#workspace-provisioning). The `all` role sets up missing defaults at workspace creation and startup. If setup fails, fix Engine access and restart. Successful setup preserves later edits, disabling and deletions. It creates only providers and templates: reserve an environment, or set an agent's `default_environment_template_id`.
 
 ## Providers
 
@@ -49,17 +49,17 @@ Only a Docker provider can be tested (`POST …/{provider_id}/test`): the engine
 
 ## Templates
 
-A template describes how to build a managed environment and when to stop and delete idle ones. Templates belong to a workspace; creating and changing them needs `write`.
+A template describes how to build a managed environment and when to stop and delete idle ones. Templates belong to a workspace; creating and changing them needs `write`. This example uses a Docker provider; replace `eprov_...` with its ID.
 
 ```sh
 curl -X POST "$A13N_URL/api/v1/environment-templates" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -d '{"name": "Python sandbox", "provider_id": "eprov_...",
-       "config": {"recipe": {"cpus": 2, "memory_gb": 4, "init_script": "pip install pandas"},
+       "config": {"recipe": {"cpus": 2, "memory_gb": 4},
                   "stop_after_seconds": 1800, "delete_after_seconds": 604800}}'
 ```
 
-- `provider_id` names an environment provider of the workspace, and `config.recipe` is validated by its type's recipe schema. For Docker it sets the `image`, host directory `mounts` (their sources must lie below `environments.docker_mount_roots`), `environment` variables, an `init_script`, `disable_network`, the `user`, and resource limits; see [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerenvironmentconfiguration). A rejected recipe names each invalid field's location and the schema's own message, such as `mounts: Host mount sources must lie below a directory the operator allows`, never the value you sent.
+- `provider_id` names an environment provider of the workspace, and `config.recipe` is validated by its type's recipe schema. For Docker it sets the `image`, host directory `mounts` (their sources must lie below `environments.docker_mount_roots`), `environment` variables, an `init_script`, `disable_network`, the `user`, and resource limits; see [`DockerEnvironmentConfiguration`](../environments/configuration-reference.md#dockerenvironmentconfiguration). A rejected recipe identifies the invalid fields without returning their submitted values.
 - `stop_after_seconds` (default 1800, 60–2,592,000) stops an environment no run has used for that long. `delete_after_seconds` (60–31,536,000) deletes one that no run has used for that long and no thread mounts. `null` turns either off. Both count from the environment's last use.
 - `PATCH` changes the name, description, provider, config and labels with the template's `If-Match`. A new provider or recipe applies to environments created afterwards: an environment is built from the template as it is when its creation is dispatched, and keeps that recipe. The idle policy always applies as currently set.
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.

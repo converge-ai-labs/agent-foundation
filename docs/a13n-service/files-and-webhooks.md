@@ -12,7 +12,7 @@ curl -X POST "$A13N_URL/api/v1/uploads" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Idempotency-Key: report-2026-09" -F file=@report.pdf
 ```
 
-The response gives the `upload_id`, filename, content type, size and SHA-256 `digest`. The upload ID is derived from the workspace, the caller and the idempotency key, so retrying a lost request with the same key and file returns the same upload; different content with the same key is `409 conflict` (reason `idempotency_key_reused`). Uploads need `write`, are limited to `objects.upload_bytes` (1 MiB by default), and count against a per-principal rate limit (`objects.upload_limit` per `objects.upload_window_seconds`).
+The response gives the `upload_id`, filename, content type, size and SHA-256 `digest`. Retrying with the same caller, workspace, key, bytes, filename and content type returns the same upload. Changing any upload content or metadata under that key is `409 conflict` (reason `idempotency_key_reused`). Uploads need `write`, are limited to `objects.upload_bytes` (1 MiB by default), and count against a per-principal rate limit (`objects.upload_limit` per `objects.upload_window_seconds`).
 
 ## Assets
 
@@ -70,15 +70,25 @@ Every request carries:
 | `X-A13n-Webhook-Timestamp` | Unix seconds when the request was signed.                                                                   |
 | `X-A13n-Webhook-Signature` | `v1=` followed by the hex HMAC-SHA256 of `{timestamp}.{delivery_id}.{body}`, keyed with the signing secret. |
 
-Verify the signature over the raw body and reject old timestamps:
+Verify the signature over the raw body and reject stale timestamps. This example allows five minutes of clock difference; choose a window for your receiver and keep its clock synchronized:
 
 ```python
-import hashlib, hmac
+import hashlib
+import hmac
+import time
 
-def verify(secret: str, headers, body: bytes) -> bool:
-    signed = f"{headers['X-A13n-Webhook-Timestamp']}.{headers['X-A13n-Delivery-Id']}.".encode() + body
+def verify(secret: str, headers, body: bytes, *, max_age_seconds: int = 300) -> bool:
+    try:
+        timestamp = headers["X-A13n-Webhook-Timestamp"]
+        delivery_id = headers["X-A13n-Delivery-Id"]
+        received = headers["X-A13n-Webhook-Signature"]
+        if abs(time.time() - int(timestamp)) > max_age_seconds:
+            return False
+    except (KeyError, ValueError):
+        return False
+    signed = f"{timestamp}.{delivery_id}.".encode() + body
     expected = "v1=" + hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, headers["X-A13n-Webhook-Signature"])
+    return hmac.compare_digest(expected, received)
 ```
 
 ### Delivery and retries

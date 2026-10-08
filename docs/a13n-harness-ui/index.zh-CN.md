@@ -4,7 +4,7 @@ sidebarTitle: 概览
 description: 在终端和浏览器中与 Agent 一起处理真实项目的工作台。
 ---
 
-Harness UI 是面向个人和可信小团队的 [Harness](../a13n-harness/index.md) 交互式试验工作台。你可以一边处理真实项目，一边尝试不同的模型、指令、工具、Skill 和执行环境。让 Agent 解释代码库、修改文件、运行检查，或将范围明确的调查交给 subagent。
+Harness UI 是面向个人和可信小团队的 [Harness](../a13n-harness/index.md) 交互式试验工作台。让 Agent 解释代码库、修改文件、运行检查或委派调查，并为每种工作流选择 Model、工具、Skill 和执行 Environment。
 
 TUI 是终端中的交互界面，提供个人 Agent 编程工作流。WebUI 是浏览器中的界面，还支持共享对话和草稿、文件、Git 变更、终端和配置编辑。两者使用同一个 Harness UI 应用和 Harness，无须编写 SDK 代码或部署 Service。
 
@@ -43,12 +43,12 @@ a13n-harness-ui webui
 
 TUI 支持 macOS、Linux 和 Windows。安装后的应用不需要 Node.js 或仓库检出目录。如果 PATH 中找不到命令，运行 `uv tool update-shell`，然后打开新终端。
 
-首次启动时，设置向导会带你完成：
+首次启动时：
 
-1. **连接 Model：** 使用支持的订阅登录或 API 密钥，也可以复用现有的兼容账户存储。
-2. **选择模型设置：** 选择提供的模型，以及适用的服务层级。推理和上下文设置可以稍后调整。
-3. **选择执行权限：** Full Control 使用你的宿主机账户；Sandbox 要求本地隔离正常可用，不会静默降级。
-4. **打开输入框：** 设置向导保存可编辑的文件，然后打开 TUI 输入框。在你发送提示之前，不会发出模型请求。
+1. 通过受支持的订阅或 API 密钥连接 Model。
+2. 选择设置向导提供的模型和设置。
+3. 选择 Full Control 或 Sandbox 执行。
+4. 设置向导保存配置并打开输入框后，发送提示。
 
 先试一条范围明确的提示：
 
@@ -57,7 +57,7 @@ Explain this repository's main entry point and tests. Do not modify any files.
 ```
 
 > [!WARNING]
-> Full Control 使用宿主机账户的文件系统和网络权限运行命令，并非沙箱。Sandbox 要求受支持的 Linux/macOS 隔离机制；Windows 内置执行仅支持 Full Control。见[执行权限](environments-and-projects.md#execution-permissions)。
+> Full Control 使用宿主机账户。Sandbox 要求受支持的 Linux/macOS 隔离机制；Windows 内置执行仅支持 Full Control。见[执行权限](environments-and-projects.md#execution-permissions)。
 
 [安装与升级](installation.md)介绍源码开发和依赖更新；[设置](setup.md)介绍登录、取消和高级选项。
 
@@ -112,4 +112,4 @@ a13n-harness-ui config validate
 
 WebUI 实例只应与可信协作者共享：大家共用凭据、配置和可访问文件，没有分别设置的参与者权限。宿主机原生文件访问和终端默认开启；`--no-share-computer` 可以关闭它们，且与 Agent 的执行模式相互独立。
 
-关闭浏览器不会停止正在运行的 Run；停止应用才会。已保存的对话可以从最后一个检查点恢复，但该检查点之后的输入或输出可能丢失。需要受管理的身份和可恢复的 Run 时，使用 [Service](../a13n-service/index.md)。
+活动执行需要应用保持运行。关闭浏览器不会停止 Run。应用重启后，从最后保存的检查点继续。需要受管理的身份和可恢复的 Run 时，使用 [Service](../a13n-service/index.md)。

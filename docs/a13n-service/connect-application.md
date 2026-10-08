@@ -28,7 +28,7 @@ Closing the client or disconnecting stops local observation; it does not stop th
 
 ## Handle a waiting result
 
-If the agent asks a question, needs approval, or calls a client-side tool, the result is waiting. Show the pending requests, collect explicit answers, and use the SDK's waiting-action workflow to submit them. Service currently requires a complete response batch; do not fill unanswered requests with automatic approvals or denials. Resuming continues the work in a successor run.
+If the agent asks a question, needs approval, or calls a client-side tool, the result is waiting. Show the pending requests, collect explicit answers, and use the SDK's waiting-action workflow to submit them. Your application owns collecting and saving answers; Service accepts only a complete response batch through `/resume`. Do not fill unanswered requests with automatic approvals or denials. Resuming continues the work in a successor run.
 
 For failures, inspect the structured failure and follow [troubleshooting](monitoring.md#troubleshoot-a-request-or-run). See [Waits, approvals and questions](agents-and-runs.md#waits-approvals-and-questions) when you need the underlying protocol.
 

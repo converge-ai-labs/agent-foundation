@@ -64,12 +64,12 @@ if __name__ == "__main__":
 
 ### HTTP 选项
 
-| 选项                           | 默认值            | 含义                                                     |
-| ------------------------------ | ----------------- | -------------------------------------------------------- |
-| `verify`                       | `True`            | TLS 验证；支持 SSL context 或 CA 路径，拒绝 `False`      |
-| `request_timeout`              | `30.0` 秒         | 连接/请求超时；控制读取预算会计入操作超时                |
-| `allow_plaintext_private_link` | `False`           | 显式允许支持的私有链路 HTTP 场景，并非不受限制的明文访问 |
-| 请求、响应和帧限制             | 各 `1048576` 字节 | 传输侧边界                                               |
+| 选项                           | 默认值            | 含义                                                                    |
+| ------------------------------ | ----------------- | ----------------------------------------------------------------------- |
+| `verify`                       | `True`            | TLS 验证；支持 SSL context 或 CA 路径；显式 `False` 关闭证书/主机名检查 |
+| `request_timeout`              | `30.0` 秒         | 连接/请求超时；控制读取预算会计入操作超时                               |
+| `allow_plaintext_private_link` | `False`           | 显式允许支持的私有链路 HTTP 场景，并非不受限制的明文访问                |
+| 请求、响应和帧限制             | 各 `1048576` 字节 | 传输侧边界                                                              |
 
 传输不跟随重定向。HTTPS 附加连接通过 `httpx2` 遵循 `HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 及其小写形式；信任部署运维人员的代理来路由连接。明文回环和 provider 私有链路连接保持直连，确保凭据不会离开预期链路。TLS 验证仍使用 `verify`，不使用 `SSL_CERT_FILE` 或 `SSL_CERT_DIR`。`normalize_http_endpoint()` 应用相同端点策略，但不打开连接。允许的 URL 格式、TLS 和凭据归属见 [Remote Envd](../environments/remote-envd.md)。
 

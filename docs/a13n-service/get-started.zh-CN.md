@@ -40,12 +40,12 @@ Service、Console、PostgreSQL 和 Redis 会一同启动。这套配置挂载宿
 4. 选择 **接入供应商**，再从目录中选择模型，或选择 **自定义模型** 并输入上游模型 ID。
 5. 为模型命名，检查上游 ID 和 API，然后选择 **添加模型**。如果使用 OpenAI 兼容端点，请选择它支持的 API，例如 **OpenAI Chat Completions** 。请选择你的 provider 账号有权使用的模型。
 
-出站请求默认拒绝私有地址和明文 HTTP。要使用自己网络中的模型服务器，需先允许访问，参阅[出站请求](configuration.md#outbound-requests)。所有 provider 类型请参阅[模型](models.md)。
+出站请求默认要求 HTTPS。要使用明文 HTTP 模型服务器，需先允许其精确 origin，参阅[出站请求](configuration.md#outbound-requests)。所有 provider 类型请参阅[模型](models.md)。
 
 ## 创建并试用 agent
 
-1. 打开 **Agents → 手动创建**，命名为 `My first agent`，选择模型，并填写指令，例如 `You are a helpful assistant. Answer clearly and briefly.`。
-2. 保存。每次保存都会创建一个不可变的修订版本，在 Console 的 **版本** 中列出。
+1. 打开 **Agents → 手动创建**，命名为 `My first agent`，选择模型，并填写指令，例如 `Answer clearly and briefly. Suggest concrete next steps.`。
+2. 选择**创建 Agent**。初始配置会保存为不可变的修订版本，在 **版本** 中列出。
 3. 选择 **试用 Agent**，发送 `Give me three ideas for a useful agent I could build.`。回复应当流式出现在对话中。
 
 首次对话无需配置执行环境、工具或记忆。模型连接成功后再添加这些能力即可。
@@ -68,7 +68,7 @@ docker compose -f a13n-service.yaml down
 docker compose -f a13n-service.yaml up -d --wait
 ```
 
-请保持相同的 Compose 项目和数据卷。恢复运行时，管理员账号、密码和数据都会保留。要更新镜像，在启动命令中添加 `--pull always`；升级现有部署前，请先阅读 [Compose 升级指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades)。
+保持相同的 Compose 项目和数据卷即可保留数据。要更新镜像，在启动命令中添加 `--pull always`；升级现有部署前，请先阅读 [Compose 升级指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades)。
 
 要**永久删除整套服务的数据**，运行 `docker compose -f a13n-service.yaml down --volumes`。下次启动后，打开 Console 并注册新的管理员账号。
 
@@ -77,11 +77,11 @@ docker compose -f a13n-service.yaml up -d --wait
 - **8080 端口已被占用：** 运行 `A13N_PORT=8081 docker compose -f a13n-service.yaml up -d --wait`，然后打开 <http://127.0.0.1:8081>。恢复运行时继续使用该端口。
 - **启动无法完成：** 检查 `docker compose -f a13n-service.yaml ps -a` 和 `docker compose -f a13n-service.yaml logs service`。Service 必须完成数据库迁移并就绪，Console 才能使用。
 - **Console 显示登录而非注册页面：** Service 已有管理员。请使用注册的账号登录；重启不会重置账号。
-- **模型无法回复：** 检查 provider 凭据、上游模型 ID 和 API 选择。目录列出的模型不代表你的 provider 账号有权使用。私有地址或 HTTP 端点还需要显式配置[出站请求设置](configuration.md#outbound-requests)。
+- **模型无法回复：** 检查 provider 凭据、上游模型 ID 和 API 选择。目录列出的模型不代表你的 provider 账号有权使用。明文 HTTP 端点需要在[出站请求设置](configuration.md#outbound-requests)中显式允许其 origin。
 
 ## 部署 Service
 
-本地 Compose 服务可以保留现有账号和数据，供你继续使用。用于多人共享时，请先配置公共 URL 和访问权限，再开放 Service，具体步骤见下方部署指南。Service 提供 `a13n-service` Python 包、支持 `linux/amd64` 和 `linux/arm64` 的 `ghcr.io/converge-ai-labs/a13n-service` 镜像，以及 Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`。每个部署都需要公共 URL、PostgreSQL、Redis、共享对象存储和加密密钥，参阅[配置 Service](configuration.md#required-infrastructure)。仓库维护了两份部署指南：
+用于多人共享时，请先配置公共 URL 和访问权限，再开放 Service。Service 提供 `a13n-service` Python 包、支持 `linux/amd64` 和 `linux/arm64` 的 `ghcr.io/converge-ai-labs/a13n-service` 镜像，以及 Helm Chart `oci://ghcr.io/converge-ai-labs/charts/a13n-service`。每个部署都需要公共 URL、PostgreSQL、Redis、共享对象存储和加密密钥，参阅[配置 Service](configuration.md#required-infrastructure)。仓库维护了两份部署指南：
 
 - [使用 Docker Compose 单机部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#single-host-deployment-with-native-docker)：在一台机器上运行 Service、PostgreSQL、Redis 和 Console，Docker 环境使用宿主机的 Docker Engine。
 - [使用 Helm 部署到 Kubernetes](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes)：分别部署 control 和 worker Deployment，并使用迁移 Job；提供本地 kind 集群的 values 配置。
@@ -90,7 +90,7 @@ docker compose -f a13n-service.yaml up -d --wait
 
 ## 初始化共享部署
 
-任何尚未初始化的部署都可以在浏览器中[注册管理员](#register-your-administrator-account)。如果其他人能在你打开 Console 之前访问新部署，请先使用运维命令 `bootstrap` 创建管理员。
+如果其他人能在你打开 Console 之前访问新部署，请先用 `bootstrap` 创建管理员，再开放注册。
 
 在能读取 Service 配置的环境中运行以下命令（上述部署中是在 Service 容器内）：
 

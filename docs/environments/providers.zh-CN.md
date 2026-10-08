@@ -249,9 +249,11 @@ environment = await DAYTONA.create(
 )
 try:
     await environment.prepare()
-    saved_state = environment.dump_state()
 finally:
-    await environment.close()
+    try:
+        saved_state = environment.dump_state()
+    finally:
+        await environment.close()
 ```
 
 `create()` 先验证目标配置，再验证账号配置和凭据规则，随后才调用 provider 运行时工厂。工厂前的全部步骤无副作用。你传入的运行时仍由你关闭；`create()` 获取的运行时随适配器关闭。

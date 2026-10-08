@@ -4,7 +4,7 @@ sidebarTitle: API and payload reference
 description: The package's public names, custom events, input metadata, and terminal events.
 ---
 
-Stream Protocol exposes AG-UI 1.0 observation and content projection APIs. It converts public Harness observations into typed AG-UI events; transport, persistence, delivery acknowledgement, UI rendering, and Agent continuation remain outside this package.
+Stream Protocol exposes AG-UI 1.0 conversion, content projection, and compact display normalization. Hosts own transport and checkpoint storage; Harness owns execution continuation.
 
 ## Public names
 
@@ -21,7 +21,24 @@ Stream Protocol exposes AG-UI 1.0 observation and content projection APIs. It co
 | `CustomEventAssembler`             | Reassemble ordered frames within one bounded subscription                                                 |
 | `__version__`                      | Installed distribution version                                                                            |
 
-`HarnessAguiObserver(processor=None)` exposes `observe(item)`, `snapshot(*, start=0, stop=None)`, `event_count`, async `resume(history)`, and read-only `thread_id` / `run_id`. IDs are unbound until observation succeeds. [Events and processors](events.md) owns the live workflow; [Replay and recovery](replay.md) owns atomic reconstruction, validation, and failure behavior.
+Both observer classes accept `processor=None` and `retain_events=True`. They expose `observe(item)`, `snapshot(*, start=0, stop=None)`, `event_count`, async `resume(history)`, `export()`, classmethod `restore(continuation, processor=...)`, and read-only `thread_id` / `run_id`. Restore creates a non-retaining observer. IDs are unbound until observation or reconstruction succeeds.
+
+### Display APIs
+
+Import display types from `a13n_stream_protocol.display`, not the package root:
+
+| API                                                                | Purpose                                                                      |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `DisplayFold(run_id, *, attempt=0, full_content=False)`            | Convert native observations and normalize raw events into display items      |
+| `fold.events(source)`                                              | Convert one native source item with the fold's non-retaining stream observer |
+| `fold.fold(events, source=None)`                                   | Accumulate events and return sequence/item references                        |
+| `fold.export()` / `DisplayFold.restore(snapshot)`                  | Detach and restore a `DisplaySnapshot` containing items and continuation     |
+| `fold.export_continuation()`                                       | Detach parser state separately from display items                            |
+| `DisplaySnapshot`, `DisplayContinuation`, `Item`, `StreamPosition` | Validate and serialize checkpoint content and continuation                   |
+
+The default display preview limits each text, argument, or result field to 262,144 characters and marks truncation. Large observation payloads keep their name rather than an unbounded payload copy. `full_content=True` retains full display content. Neither mode is constant-memory: retained items still grow with the conversation.
+
+See [Events and processors](events.md) for live conversion and [Replay and recovery](replay.md) for executable checkpoint restore and source reconstruction.
 
 ## Fragment a complete custom event
 

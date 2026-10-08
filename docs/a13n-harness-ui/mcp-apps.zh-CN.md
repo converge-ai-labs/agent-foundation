@@ -18,7 +18,7 @@ webui:
 
 Apps 默认关闭。WebUI 会将选中的服务器加入根级和子级 Agent，不修改其 YAML；现有工具过滤和权限仍适用。TUI 和 `run` 继续只使用普通 `mcp_servers` 选择。启用 Apps 或修改沙箱监听后重启 WebUI。App 展示失败时，文本工具结果仍可使用。
 
-服务器必须提供 MCP Apps `ui.resourceUri` 元数据和 `text/html;profile=mcp-app` 资源。旧版 MCP-UI HTML 惯例不是受支持的替代协议。MCP Core `2026-07-28`、Python/TypeScript SDK 主版本和 Apps UI 线协议版本相互独立。升级到 ext-apps 2.x 不会将 UI 线协议版本改成 Core 日期。Host 支持内嵌显示、同服务器工具/资源、文本或结构化上下文、消息、外部链接和主题切换。当前不支持图像上下文、App 提供的模型工具、全屏模式或稳定 origin 的浏览器存储。
+服务器必须提供 `ui.resourceUri` 元数据和 `text/html;profile=mcp-app` 资源。Apps 使用独立 UI 协议，与 [MCP Core 协商](mcp.md#connection-lifetime-and-protocol) 相互独立；不支持旧版 MCP-UI HTML。Host 支持内嵌显示、同服务器工具/资源、文本或结构化上下文、消息、外部链接和主题切换。不支持图像上下文、App 提供的模型工具、全屏和稳定 origin 的浏览器存储。
 
 要运行不需要模型账户的完整本地示例，在源码检出目录运行 `make mcp-apps-demo`。真实 stdio 计数器、公共 App SDK 包和独立服务器说明见仓库 `examples/mcp-apps/README.md`。演示使用脚本化 HTTP 模型，但采用正常的 Host、历史和权限路径。
 
@@ -26,7 +26,7 @@ Apps 默认关闭。WebUI 会将选中的服务器加入根级和子级 Agent，
 
 实时 App 显示在工具结果旁。已保存历史显示 **Open App**，不会自动执行 HTML。打开时显示保留的原始展示，不会重做工具调用或连接服务器。
 
-选择 **Activate interactions**，允许 App 请求同服务器操作。激活和后续请求会检查当前 Agent 选择、工具可见性和权限规则，不会无限期授予旧 Run 权限。子级 App 保留来源身份和当前委派路由；已移除的子级路由不能再提供权限。
+选择 **Activate interactions** 开启同服务器操作。激活和每次操作都使用当前 Agent、工具可见性和权限。子级 App 还要求其委派路由保持选中。
 
 App 工具操作不使用模型审查或自定义 Agent 审查器。`review` 权限允许无需模型请求直接派发；显式 `deny` 仍会阻止，`ask` 仍需要你的审批。Agent 发起的调用保留普通审查策略，包括确认 App 消息后发起的调用。
 

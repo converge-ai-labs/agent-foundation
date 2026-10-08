@@ -14,7 +14,7 @@ The daemon implements EIP 0.1 over trusted stdio, authenticated HTTP(S), and out
 
 Paths address the Device filesystem, not exported mounts. POSIX uses native absolute paths. Windows uses `/C:/...` and `/UNC/server/share/...`; directory discovery at `/` lists available volume roots. The fixed working directory is a default for commands and relative Host routing, not a filesystem access boundary.
 
-The runtime supports bounded text and binary file operations, complete-candidate publication, structured foreground commands, background processes, stdin, retained stdout/stderr, cancellation, receipts, and local port observation. Each descriptor advertises exact methods and platform features. Session and aggregate Device quotas bound retained resources. A timeout after dispatch does not prove a mutation failed; clients must reconcile supported operations rather than blindly replay them.
+The runtime supports bounded text and binary file operations, complete-candidate publication, structured foreground commands, background processes, stdin, retained stdout/stderr, cancellation, receipts, and local port observation. Opt-in [computer use](../../docs/a13n-envd/computer-use.md) adds screenshots and bounded desktop input on macOS, Linux X11, and Windows. It requires disabled Sandbox, inherited egress, and native desktop readiness. Each descriptor advertises exact methods and platform features. Session and aggregate Device quotas bound retained resources. A timeout after dispatch does not prove a mutation failed; clients must reconcile supported operations rather than blindly replay them.
 
 ## Launch configuration
 
@@ -54,11 +54,15 @@ The [configuration guide](../../docs/a13n-envd/configuration.md) owns all bootst
 
 ## Security and cleanup
 
-Ordinary Sessions operate with the daemon account's filesystem and network authority. Linux deployments can opt into [Session egress](../../docs/a13n-envd/egress.md) for transparent destination policy and HTTPS header credential injection. Put mutually untrusted workloads behind separate Host-managed accounts, containers, VMs, or equivalent boundaries. Executable selection and resource accounting are not isolation.
+Sessions use the configured execution identity and selected Sandbox/egress boundary. On Linux, an omitted execution UID/GID preserves the launcher identity; an explicit pair selects a provisioned account. Commands and file RPCs use that identity, while explicit sudo changes only the invoking command's authority. Linux deployments can opt into [Session egress](../../docs/a13n-envd/egress.md) for transparent destination policy and HTTPS header credential injection. Put mutually untrusted workloads behind separate Host-managed accounts, containers, VMs, or equivalent boundaries. Executable selection and resource accounting are not isolation.
 
 Process cleanup owns the initial Unix process group or a non-breakaway Windows Job. Windows assigns a suspended child before execution and retains kill-on-close ownership. Platform limitations remain explicit in descriptors. Neither a process group nor a Job implies filesystem or network containment.
 
 Complete-candidate writes publish via a same-filesystem rename after verification. They do not promise exclusive filesystem access or compare-and-swap: commands and external writers may race. The [operations guide](../../docs/a13n-envd/operations.md) explains capacity, output evidence, cleanup, and uncertain outcomes.
+
+## Rust integration boundary
+
+`a13n_envd::eip` exposes generated request/result types, JSON and binary codecs, method metadata, and dispatch interfaces. The IDL and generator own these protocol artifacts. The daemon's transport and execution modules are private; use the binary for deployment and the Python client or an EIP implementation for remote access.
 
 ## Installation and validation
 

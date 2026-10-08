@@ -4,7 +4,7 @@ sidebarTitle: HTTP API
 description: WebUI 服务器的 HTTP API，用于初始化、对话、实时输出和 Host 面板。
 ---
 
-WebUI 服务器暴露与 TUI 相同的进程内 App。API 支持初始化、配置、对话（根 Thread）、实时输出，以及可选的原生 Host Files、Git Changes 和 Terminal 面板。它与托管 Service 的 `/api/v1` API 不同：调用者共享一个实例访问密钥，操作回执属于当前运行进程，实时事件尽力投递。从 [WebUI](webui.md) 开始；不需要 HTTP 监听时可使用 [Python 嵌入](embedding.md)。
+WebUI API 使用与 TUI 相同的 App。调用者共享实例密钥，回执属于当前进程，实时事件尽力投递。它不是 Service 的托管 `/api/v1` API。从 [WebUI](webui.md) 开始，不需要监听器时用 [Python 嵌入](embedding.md)。
 
 ## 认证与查看协议约定
 
@@ -42,7 +42,7 @@ curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/submit" \
   --data '{"parts":["Explain this project without changing files."]}'
 ```
 
-普通 `/submit` 还接受仅适用于本次 Run 的可选 `model_id` 和 `thinking`。省略 thinking 或设为 null 会继承生效的 Model 设置；false 显式请求 Off。请从 `/api/selectors` 读取模型的 `thinking` 描述，了解接受值、已配置默认值摘要和禁用原因，不要假定所有模型支持所有档位。无效或被阻止的选择会被拒绝，不会回退。两种覆盖都不修改 Thread 保存的配置，引导请求也不接受它们。捕获配置会单独显示所请求的 thinking 摘要，与资源当前默认值区分。
+`/submit` 接受仅用于本次 Run 的 `model_id`、`thinking`、`fast` 和 `reasoning_mode`。省略/null 控件继承 Model 设置，`thinking: false` 请求 Off。从 `/api/selectors` 读取支持值和禁用原因，无效选择拒绝而不回退。这些覆盖不修改 Thread 保存的默认值，引导消息也不接受这些覆盖。配置检查分别显示 Run 实际使用的参数和当前默认值。
 
 返回的 `RootRunReceipt` 包含 `receipt_id`、`thread_id` 和 `submitted_at`。读取 `/api/operations/{receipt_id}`，直到操作达到终态；根操作没有 HTTP `wait` 端点。准备中或运行中不代表已完成。Completed、suspended、failed、cancelled 描述操作状态；还需分别查看 `outcome.execution`、`outcome.continuation` 和 `outcome.environment`。
 
@@ -71,13 +71,13 @@ curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/submit" \
 
 `ThreadSummary.role` 为 `ordinary`、`coordinator` 或 `worker`。`coordinator_thread_id` 标识 worker 的所属 Coordinator，其他情况为 null；`auto_followup` 是 Coordinator 通知设置，其他情况为 null。Project 可包含多个 Coordinator，不暴露单例 lead 字段。
 
-`POST /api/threads` 接受 `coordinator: true`，直接创建 Coordinator，例如 `{"defaults": {"project_id": "project-main"}, "coordinator": true}`。省略或为 false 时创建普通根线程，除非 `coordinator_thread_id` 将它指定给一个所有者。创建 Coordinator 需要可用 Project，并原子保存 Thread 和角色，默认启用自动跟进。创建不启动执行；首条消息通过普通 Thread 提交 API 发送。提交被拒绝时 Coordinator 保留；创建确认结果未知时，先读取保留的 `thread_id` 再重试，不要分配新身份。
+用 `POST /api/threads` 创建 Coordinator，例如 `{"defaults":{"project_id":"project-main"},"coordinator":true}`。需要可用 Project，默认开启自动跟进。创建保存角色，不启动 Run；另行提交输入。提交失败保留 Coordinator。创建不确定时按保留的 `thread_id` 核对，不创建新身份。
 
 `POST /api/threads/{thread_id}/coordinator` 将已有、关联 Project 的普通根线程提升为 Coordinator。需要已接受的 Project、未归档且不活跃的 Thread，并且没有待处理决策。对于已符合条件的 Coordinator，此操作幂等，返回 `ThreadSummary`，不启动 Run 或模型调用。提升保留身份、历史、标题和设置。Worker 和子线程不能提升；没有降级或接管 worker 的 API。
 
 `PATCH /api/threads/{thread_id}/coordinator` 传入 `{"auto_followup": false}` 暂停该 Coordinator 的自动生命周期通知，true 启用。更新采用最后写入生效，并发布 Thread 失效通知。[Sidekick 配置](configuration.md#webui-sidekick)不限制提升或跟进。归档 Coordinator 保留角色，恢复使用普通的预期版本元数据 API。Coordinator 和 worker 不能修改或清除所属 Project。
 
-`GET /api/threads/activity` 接受 `coordinator_thread_id` 来选择一个所有者的 worker；`independent_only=true` 排除 worker，保留普通根线程和 Coordinator。筛选绑定游标，且在计算总计和活跃行前应用。未筛选的人类搜索包含全部根线程。`POST /api/threads` 接受 `coordinator_thread_id`，在同一可用 Project 的未归档 Coordinator 下直接创建 worker。在 `defaults` 中设置 Project，可选保留客户端生成的 `thread_id` 用于核对创建结果。所有者字段与 `coordinator: true` 互斥；所属关系和 Thread 创建原子完成，关系永久保存。用户创建使用普通提交的默认值，不使用 Sidekick 偏好。创建不运行所有者或 worker；用户向初始状态 worker 普通提交时，若启用了自动跟进，会安排尽力投递的所有者通知。创建确认未知时，必须按保留身份核对；首次提交失败也不移除所属关系。人工查看和执行继续使用常规根线程 API。
+活动筛选用 `coordinator_thread_id` 选择某个 owner 的 worker，或用 `independent_only=true` 排除 worker。筛选绑定游标，未筛选的人工搜索包含全部根。创建 worker 时，向 `POST /api/threads` 提交 `coordinator_thread_id`，在 `defaults` 选择 owner 的同一可用 Project。owner 必须未归档；归属永久保存，与 `coordinator: true` 互斥。人工创建使用提交默认值，不用 Sidekick。创建不启动执行；首次人工提交在启用跟进时安排尽力投递的 owner 通知。保留客户端 `thread_id` 以核对不确定创建，提交失败仍保留归属。人工查看和执行使用普通根 API。
 
 旧 Project `/lead` 路由和字段已移除。启动迁移一次性转换已有 lead 绑定和所属关系，保留 ID 与历史；旧的禁用绑定转换为关闭自动跟进的 Coordinator。其他保存的对话仍为普通根线程。
 
@@ -472,7 +472,7 @@ curl --fail-with-body "$HUI_URL/api/threads/configuration-preview" \
 {"version":1,"kind":"subscribe","channel":"focused-root","stream":"focus","root_thread_id":"<thread ID>","after":null}
 ```
 
-摘要提示使用 `stream: "summary"`，省略 `root_thread_id`。同一连接最多十二个通道。使用 `{"version":1,"kind":"unsubscribe","channel":"focused-root"}` 取消订阅。收到 version-1 `ping` 时回复 `{"version":1,"kind":"pong"}`。服务器观测消息包含 `version: 1`、通道 ID 和观测 `frame`。没有 SSE 回退，客户端使用此协议。
+摘要提示用 `stream: "summary"`，不带 `root_thread_id`。活跃根保留容量，其余通道（含摘要）共用最多十二个空闲额度。每个根一个通道，摘要也仅一个。取消订阅用 `{"version":1,"kind":"unsubscribe","channel":"focused-root"}`；version-1 ping 回复 `{"version":1,"kind":"pong"}`。消息包含 `version: 1`、通道 ID 和 `frame`，没有 SSE 回退。
 
 观测帧为 JSON 对象。不带 `after` 的聚焦事件流首先收到 `kind: "snapshot"`。存在 `snapshot.root_stream` 时，快照游标为 null，随后发送 `kind: "root_stream"` 批次；每批最多包含该精确 Run 的已有 Stream Protocol observer 中 16 个带索引事件。将它们应用一次到 Run 临时显示，再保存 `kind: "ready"` 的 `resume_cursor`。Ready 前中断时，丢弃未完成初始化，重新开启观测。没有根回放时，初始快照已携游标。后续 `kind: "event"` 帧携带实时事件及其游标。
 
@@ -480,12 +480,12 @@ curl --fail-with-body "$HUI_URL/api/threads/configuration-preview" \
 
 只在应用帧后保存游标；重连通过新订阅命令的不透明 `after` 字段恢复。有效游标假定客户端保留了显示数据，新加载页面需重新初始化。这不同于 Service Run 事件流的 `Last-Event-ID` 约定。
 
-摘要通道以 `kind: "open"` 开始，并发出 `kind: "invalidation"`；应核对受影响资源，不能将失效通知当作完整资源。Open 的 `resumed: true` 回放错过的提示，无需完整刷新；`resumed: false` 则需初始核对。通过 `POST /api/threads/activity/lookup` 批量查询待更新 Thread ID（最多 100 个），更新已加载导航行。活动分页只在首页返回活跃集合。已结束的 `root_operation` 事件还可能包含 `notice: {receipt_id, status, brief}`，状态为 `completed`、`failed` 或 `suspended`，并附实际纯文本预览，最多 320 字符。通知在 continuation 选择之后尽力投递，不是持久投递。按事件 epoch 和回执 ID 去重。新订阅或事件流 reset 不应触发历史完成通知。聚焦和摘要游标互不相同，绑定范围和 epoch。稀疏序列有效，不要求全局编号连续。
+摘要先发送 `kind: "open"`，再发送 `kind: "invalidation"`，需重新读取受影响资源。`resumed: true` 回放错过提示，false 需初始核对。用 `POST /api/threads/activity/lookup` 批量查询最多 100 个待更新 ID。只有活动首页包含活跃工作。终态 `root_operation` 可携带 `notice: {receipt_id, status, brief}`，状态为 completed/failed/suspended，预览最多 320 字符。通知在续接选择后尽力投递，按 epoch 和回执去重；新订阅或 reset 不通知历史完成。聚焦与摘要游标不同，绑定范围/epoch，稀疏序列有效。
 
 `kind: "reset"` 要求重新获取数据并建立新订阅。实时缓冲区有上限，仅在进程内保存。`watch_thread` 提供先订阅后查询的切换，不提供事务式持久回放。断开停止观测，不停止执行。每个通道独立恢复；根 Run 切换只替换对应聚焦通道，不替换 socket 或无关观测。
 
 ## 错误与版本
 
-App 错误使用 `{"error":{"code":"...","message":"..."}}`。常见状态映射：App 请求无效为 400，冲突、过期版本或预检查要求为 409，请求体超限为 413，资源或回执不可用为 404，App 未就绪或停止中为 503。查询验证可能返回 FastAPI 的 422 验证响应。监听器认证、`Origin` 请求头和 `Host` 请求头拒绝分别使用 401、403 和 400。
+错误使用 `{"error":{"code":"...","message":"..."}}`：400 表示 App 请求无效，409 表示冲突/旧版本/预检查，413 表示请求体超限，404 表示资源/回执不可用，503 表示 App 未就绪/停止中。查询验证使用相同格式，状态 422、码 `request_invalid`。认证、Origin 和 Host 拒绝分别为 401、403、400。
 
 根据错误码和当前状态处理，不要匹配文本。超时或客户端断开不能确定修改是否生效。假定源码文档匹配已部署监听器前，请检查 `/api/status` 和 schema 兼容性。

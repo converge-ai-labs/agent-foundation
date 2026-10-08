@@ -1,7 +1,7 @@
 ---
 title: Envd
 sidebarTitle: 概览
-description: 通过环境交互协议提供文件、命令、进程和端口操作的原生守护进程。
+description: 通过 EIP 提供文件、命令、进程、端口和可选桌面操作的原生守护进程。
 ---
 
 Envd（`a13n-envd`）通过 stdio、HTTP(S) 或向外建立的反向 WebSocket 连接提供**环境交互协议（EIP）**。
@@ -17,6 +17,8 @@ Envd（`a13n-envd`）通过 stdio、HTTP(S) 或向外建立的反向 WebSocket �
 | 安装版本匹配的原生可执行文件         | [安装](installation.md)                                                |
 | 运行 agent 开发容器                  | [沙箱镜像](sandbox.md)                                                 |
 | 运维自己的守护进程或 EIP 传输        | [配置与传输](configuration.md)                                         |
+| 查看和控制共享桌面                   | [电脑操作](computer-use.md)                                            |
+| 限制命令访问目标并注入凭据           | [Session 出站网络](egress.md)                                          |
 | 排查访问问题或缺失的方法             | [执行边界与故障排查](isolation.md)                                     |
 | 通过环境 provider 连接               | [Remote Envd](../environments/remote-envd.md)                          |
 | 实现 EIP 客户端或 provider           | [Python EIP 客户端](python-client.md)                                  |

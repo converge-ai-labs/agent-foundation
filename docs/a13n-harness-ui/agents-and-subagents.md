@@ -8,9 +8,9 @@ An **Agent** is a reusable YAML configuration: it chooses a Model, instructions,
 Choose a child form by what it needs to change:
 
 ```mermaid
-flowchart LR
-    Parent[Parent Agent] -->|markdown: child-role| Markdown[Instructions only; inherits parent Model]
-    Parent -->|agent: agent-reviewer| Resource[Separate Agent resource; own Model and tools]
+flowchart TB
+    Parent[Parent Agent] -->|markdown: child-role| Markdown[Inherits Model and tools]
+    Parent -->|agent: agent-reviewer| Resource[Own Model and tools]
 
     class Parent a13n
 ```
@@ -162,7 +162,7 @@ subagents:
   - agent: agent-reviewer
 ```
 
-That is the whole reference: **use the existing Agent's `id`, not its filename or display name**. It does not copy `reviewer.yaml`, convert it to Markdown, or inherit the parent's Model over `model-review`.
+Use the Agent's `id`, not its filename or display name. The child keeps `model-review`.
 
 ```console
 a13n-harness-ui config validate
@@ -244,7 +244,7 @@ a13n-harness-ui config subagents --format json
 | `executor`      | Autonomous execution of a bounded task; reports completed, partial, or blocked work                   | Scope, constraints, expected result, and an existing task ID if one was assigned        |
 | `explorer`      | Repository discovery and evidence gathering                                                           | The symbol, flow, or concept to locate; starting paths and reason for the investigation |
 
-These roles are package-owned definitions in Harness UI's Markdown subagent format. They inherit the parent's complete Model recipe, including settings and context characteristics, and its Capabilities and visible tools. They carry role instructions, not independent credentials or special permissions. The explorer's intended read-only behavior is instruction guidance, not an enforced separate tool sandbox.
+Built-ins are package-owned Markdown roles. They inherit the parent's Model settings, context characteristics, Capabilities, and visible tools. Role instructions do not restrict tool authority; use an explicit tool filter when you need enforced read-only access.
 
 Configure names in **root** `a13n-harness-ui.yaml`:
 
@@ -312,8 +312,7 @@ subagents:
 
 The body is the child's additional instructions. With no `tools` field it inherits the parent's visible-tool filter. Markdown always inherits the parent Model and has no nested roster.
 
-> [!IMPORTANT]
-> **Do not add `model: inherit` or any other `model` field.** Inheritance is implicit. Remove that field from older local Markdown definitions. For independent Model settings, use the [Agent reference recipe](#reference-an-existing-agent-as-a-subagent), not an expanded Markdown format. Previously captured Run model recipes are not rewritten.
+Markdown frontmatter has no `model` field, including `model: inherit`. Remove that field from older local definitions. For an independent Model, use an [Agent reference](#reference-an-existing-agent-as-a-subagent). Saved Run compositions retain their captured Model recipes.
 
 ## Agent file reference
 

@@ -23,7 +23,7 @@ Choose a ChatGPT, Codex, Grok, or GitHub Copilot subscription, or an API-key con
 | GitHub Copilot subscription | Device login or an existing Copilot CLI login  | Harness UI data root (`oauth/copilot.json`) or the Copilot CLI store |
 | API key                     | Provider/protocol, model ID, and key reference | An environment variable or Harness UI's local key store              |
 
-Existing compatible subscription logins are detected and can be reused. If login is missing, setup offers to sign in (device code, local browser, or callback URL, as the provider supports), to check again after an external `a13n-harness-ui login <provider>`, or to configure without signing in. The TUI has no `/login` command. Malformed or unsupported stores receive repair guidance, not automatic replacement.
+Reuse a detected login, sign in with the offered method, or configure the connection and sign in later with `a13n-harness-ui login <provider>`. If an account store needs repair, follow the displayed guidance. Login runs outside the TUI.
 
 For API keys, setup offers a hidden key field. You can also supply `env:OPENAI_API_KEY` or `key:key-primary`. Never paste a key into the TUI composer. A newly entered key is saved immediately to the separate local key store, not to Model YAML.
 
@@ -31,11 +31,11 @@ For API keys, setup offers a hidden key field. You can also supply `env:OPENAI_A
 
 ## 2. Select the model and settings
 
-Choose from the installed starter catalog or enter a case-sensitive API model ID. The catalog is bundled guidance, **not** a live entitlement or availability check. Existing Model resources retain their settings rather than being silently migrated to new defaults.
+Choose a suggested model or enter a case-sensitive API model ID. Suggestions come from the installed catalog; check availability with your provider. Reusing a Model keeps its existing settings.
 
 For a new Codex connection, setup also offers Fast or Standard service. Fast requests priority; it may consume more quota and does not guarantee speed. Use `/fast` for a temporary change or edit the Model for a permanent one.
 
-Native image/audio/video declarations are saved for known model routes. They tell Harness which inputs to send; they do not add a modality that the actual endpoint lacks. Verify custom endpoints before copying declarations.
+Setup saves known media-input capabilities for the selected route. For custom endpoints, verify supported image, audio, and video input before editing these declarations.
 
 See [Model settings](models-and-authentication.md#native-request-settings-and-connection-wiring), [context budgets](models-and-authentication.md#context-and-modality-policy), and [Fast mode](models-and-authentication.md#fast-mode-and-service-tiers).
 
@@ -56,7 +56,7 @@ a13n-harness-ui setup --advanced
 
 Advanced setup exposes optional context, reasoning, shell-review, subagent, and instruction choices. Normal setup supplies starter values; these are still editable YAML, not hidden application state.
 
-Normal setup includes three built-in child roles and, if absent, enables `security.shell_review` at the `extra_high` threshold. It uses a configured Model to review shell launches and asks for approval when flagged. Existing review settings are preserved. This review is not isolation and does not inspect every command; see [shell review configuration](configuration-recipes.md#configure-shell-review) for the exact policy.
+Normal setup includes three built-in Subagent roles. It also initializes absent `security.shell_review` settings: review shell launches with a Model and request approval at `extra_high` risk. Codex setup selects a separate review Model and enables Guardian credit linking. Existing review settings remain unchanged. Review is separate from isolation; see [shell review configuration](configuration-recipes.md#configure-shell-review).
 
 Built-in subagents inherit the parent Model. Advanced setup offers all or none; edit `subagents.include` to choose individual roles. External Codex/Claude Code subagent import is a separate `/import` workflow, not part of setup.
 
@@ -75,7 +75,7 @@ Use `/agent` to switch the complete Agent. Use `/model` to select a configured M
 
 Use Up/Down and Enter, or type option numbers. Esc goes back; Ctrl+C or Ctrl+D cancels. Cancelling first-use setup returns to the shell without opening the TUI composer.
 
-A completed login or saved key remains even if setup is cancelled. If publishing several files fails, inspect the completed paths shown in the error before retrying. Setup creates no recovery files. A `.a13n-harness-ui-setup-recovery-*` directory from an older release is left untouched; review its content before you delete it.
+Cancelling preserves completed logins and saved keys. If saving several files fails, inspect the paths listed in the error before retrying. Legacy `.a13n-harness-ui-setup-recovery-*` directories are left untouched.
 
 ## Inspect what was saved
 
@@ -86,7 +86,7 @@ webui:
   sidekick: {}
 ```
 
-This does not start work automatically. Set `sidekick: null` or choose **Settings → General → Sidekick → Disabled** to turn off the preference. Repeating setup preserves an explicit opt-out or custom Agent/Model selections.
+To disable Sidekick, set `sidekick: null` or choose **Settings → General → Sidekick → Disabled**. Setup preserves existing Sidekick choices; the preference alone starts no work.
 
 ```console
 a13n-harness-ui config path

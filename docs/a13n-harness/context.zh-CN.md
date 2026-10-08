@@ -3,25 +3,25 @@ title: 上下文与工作状态
 description: 区分模型当前可见的内容、历史压缩，以及结构化的工作状态，并设置允许的主机等 Run 级配置。
 ---
 
-Agent 既需要当前任务相关的输入，也需要足够的状态来继续后续工作。Harness 将这几项职责分开：上下文投影准备当前模型请求，压缩修改历史，工作状态保存结构化的任务事实。
+上下文投影准备当前请求，压缩处理较长历史，工作状态保存任务事实。
 
 ## 选择合适的机制
 
-| 需求                       | 机制                        | 不提供的能力               |
-| -------------------------- | --------------------------- | -------------------------- |
-| 当前时间、用量、文件元数据 | 运行时上下文与工作空间概览  | 扫描所有文件内容           |
-| 当前指令或选定文件         | 文件上下文                  | 不受限制地递归读取整个仓库 |
-| 长 Thread 历史             | Handoff 与压缩              | 恢复未保存的操作副作用     |
-| 跨轮次的任务和笔记         | `HarnessState` 中的工作状态 | 跨 worker 调度或加锁       |
-| 多个 Thread 共享的持久文件 | [文件记忆](memory.md)       | 语义搜索或静默合并         |
-| 按相似度召回事实           | [记录记忆](memory.md)       | 记录版本或冲突检测         |
-| 空闲一段时间后缩减请求     | 冷启动过滤器                | 检测 provider 的缓存有效期 |
+| 需求                       | 机制                        |
+| -------------------------- | --------------------------- |
+| 当前时间、用量、文件元数据 | 运行时上下文与工作空间概览  |
+| 当前指令或选定文件         | 文件上下文                  |
+| 长 Thread 历史             | Handoff 与压缩              |
+| 跨轮次的任务和笔记         | `HarnessState` 中的工作状态 |
+| 多个 Thread 共享的持久文件 | [文件记忆](memory.md)       |
+| 按相似度召回事实           | [记录记忆](memory.md)       |
+| 空闲一段时间后缩减请求     | 冷启动过滤器                |
 
-设置模型上下文预算不会自动启用工具。先选择相应的 Capability，再配置阈值。继续执行时的序列化和人工决策，参阅[状态与恢复](state-and-resume.md)。
+按任务选择 Capability。Thread 的保存与续接见[状态与恢复](state-and-resume.md)。
 
 ## Run 配置
 
-使用 `RunConfiguration` 保存调用方为一次 Run 选择、由多个消费者共享的不可变值，而不是可变工作状态或 Capability 构造参数：
+通过 `RunConfiguration` 传入一次 Run 共享的配置：
 
 ```python
 from a13n_harness import RunBindings, RunConfiguration
@@ -34,13 +34,13 @@ bindings = RunBindings.embedded(configuration=configuration)
 # Pass bindings to executable.run(..., bindings=bindings).
 ```
 
-插件和工具通过 `AgentContext.configuration` 读取配置（原生工具上下文中为 `ctx.deps.configuration`）。消费者显式验证自己的命名空间扩展，例如 `context.configuration.extensions.get("example.reader")`；嵌套值是独立副本，修改它们不会改变接受的快照。Harness 不会自动将 extensions 合并到 Capabilities，也不注册扩展 schema。
+插件和工具通过 `AgentContext.configuration` 读取配置（工具内使用 `ctx.deps.configuration`）。各集成验证自身命名空间下的 `extensions` 值。
 
-`allowed_hosts=None` 不限制目标，空集合拒绝全部目标。普通条目精确匹配规范化后的域名/IP；需要匹配一组主机时，使用下文说明的显式 `regex:` 条目。端口和 CIDR 不是主机规则。在每个自有 HTTP(S) 请求及重定向跳转前调用 `configuration.authorize_url(url)`；它检查声明的主机名，不解析 DNS，也不固定 IP。拥有自有 HTTP 传输的第一方 Model 客户端、Host Web、上下文远程 MCP 和媒体读取器会应用该配置；第三方插件和 Provider 必须自行读取并执行该配置。限制性配置使用 Host Web 工具代替原生搜索，避免直接转发视频 URL，并拒绝无法检查的原生 Model/MCP 路由。限制性配置还会在 SDK 下载或 provider 转发前拒绝原生 Model 的媒体 URL，包括历史和工具返回中的 URL；请将已授权的内容物化为 `BinaryContent`。注入的 Model resolver 必须为自身请求执行该快照。任意 shell 和插件的网络流量仍需部署或 Environment 隔离。Host 为持久恢复和异步子 Run 捕获配置；Harness 在内部恢复及内联子 Run 中复用它。
+`allowed_hosts=None` 放行全部目标，空集合拒绝全部。条目匹配规范化的主机名/IP 或显式 `regex:` 规则。第一方 HTTP 集成执行此允许列表；自定义集成应在请求和重定向前调用 `configuration.authorize_url(url)`。限制目标时，使用本地 MCP 和 Host Web 工具，将已授权媒体物化为 `BinaryContent`，不直接转发 URL。Shell 与第三方插件的网络流量需要 Environment 或部署隔离。
 
 ### 主机规则与正则表达式
 
-精确主机与 `regex:<pattern>` 规则可以混用，任一条目匹配即可放行。正则采用 Python 正则表达式语法，对 **完整的规范化主机名** 执行匹配（`re.fullmatch`），因此 `^` 和 `$` 可省略。它不匹配协议、凭据、端口、路径或查询参数。匹配前会将域名转为小写、移除末尾的点、将国际化域名转为 ASCII IDNA，并规范化 IP 字面值。请使用小写/ASCII 表达式，或显式添加 `(?i)` 等内联标志；正则本身不会被转为小写或 IDNA。
+主机规则通过 `re.fullmatch` 匹配完整的规范化主机名，不匹配 URL 路径或端口。域名会转为小写并做 IDNA 规范化；使用小写 ASCII 表达式或 `(?i)`。精确规则与正则规则可混用。
 
 ```python
 configuration = RunConfiguration(
@@ -58,15 +58,13 @@ configuration = RunConfiguration(
 | `regex:[a-z0-9-]+\.example\.com`      | `api.example.com`                   | `example.com`、`eu.api.example.com`       |
 | `regex:(?:[a-z0-9-]+\.)*example\.com` | `example.com`、`eu.api.example.com` | `notexample.com`、`example.com.evil.test` |
 
-字面量的点应写成 `\.`；未转义的 `.` 会匹配任意字符。`*.example.com` 不是受支持的 glob。单独的 `regex:example` 不会匹配 `example.com`，因为这里不是子串搜索。空表达式或无效表达式会在执行前使配置验证失败。正则属于可信调用方编写的配置：保持简单，避免有歧义的嵌套重复，不要接受模型生成的表达式。`regex:.*` 这样的宽泛规则放行所有有效主机名，但该 Run 仍被视为限制性配置，保留上文的原生传输限制。每个重定向目标都必须独立匹配规则。
+字面点使用 `\.` 转义。`regex:(?:[a-z0-9-]+\.)*example\.com` 匹配基础域名及其子域名；`*.example.com` 不是 glob。每个重定向目标都必须匹配规则。
 
 YAML 中使用单引号保留反斜杠，例如 `'regex:(api|docs)\.example\.com'`。JSON 需要双反斜杠：`"regex:(api|docs)\\.example\\.com"`。上面的 Python 原始字符串可避免额外转义。
 
 ## 组合上下文
 
-Harness 的上下文功能共用一个模型上下文协调器。每个功能只贡献一个大小受限的内容块，不直接改写其他功能的消息。
-
-下面是一种实用的通用组合：
+组合以下 Capabilities，提供当前元数据与选定文件：
 
 ```python
 from a13n_harness.capabilities import (
@@ -86,9 +84,33 @@ capabilities = (
 - 工作空间概览只读取元数据，不读取文件内容，且仅出现在用户输入请求中。
 - 文件上下文在一次逻辑 Run 中只加载一次选定文件，并固定加载时使用的 Environment 路由。
 
-这三种功能都有明确的字节数、条目数、深度或行数限制。应根据实际 Environment 和目标模型配置，不要把默认值当作通用标准。
+通过各 Capability 的配置设置适合工作空间的字节数、条目数、深度和行数限制。
 
-对于上下文生命周期功能，调用方通过 `AgentSpec.model_characteristics` 构建参数提供由 Harness 管理的策略。显式设置的 Harness 上下文窗口会应用到实际使用的原生 `ModelProfile` 上。`HandoffCapability()` 在构建时据此计算 65% 的提醒阈值。未另行配置的 `CompactionCapability()` 则在每次请求时计算 90% 的阈值，优先使用原生 `RunContext` 的上下文窗口和用量，再回退到 Harness 模型特征及已记录的 provider 用量。显式 token 设置会覆盖这些值；这些 Capabilities 仍需主动选择才会启用。
+## 压缩较长的 Thread
+
+添加 `CompactionCapability()` 以启用自动历史压缩。默认根据报告的 token 用量，在有效 Model 上下文窗口的 90% 处触发。Model 缺少窗口信息时，设置 `AgentSpec.model_characteristics`。固定 token 阈值可使用以下策略：
+
+```python
+from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
+
+compaction = CompactionCapability(CompactionPolicy(trigger_tokens=100_000))
+# Include compaction in HarnessBuilder.build(..., capabilities=(compaction,)).
+```
+
+```mermaid
+flowchart TD
+    Usage["报告的请求用量"] --> Threshold{"达到阈值？"}
+    Threshold -->|否| Request["继续模型请求"]
+    Threshold -->|是| Summary["同一 Agent 总结历史"]
+    Summary --> Restore["替换历史并重放当前用户输入"]
+    Restore --> Project["投影当前笔记与任务"]
+    Project --> Request
+    class Usage,Threshold,Summary,Restore,Project,Request a13n
+```
+
+总结请求使用同一 Agent 和完整历史。总结替换旧历史后，按顺序重放当前用户输入与已交付的 steering，包括媒体。压缩发出 `CompactionSummaryEvent`，返回状态中保存替换后的历史。压缩会调用模型，应将该请求纳入预算。
+
+需要显式交接时，添加 `HandoffCapability()` 以启用 `summarize` 工具；默认在上下文窗口的 65% 处提醒。两种 Capability 均需显式选择，仅配置阈值不会启用。
 
 ## 工作状态
 
@@ -108,15 +130,15 @@ capabilities = (WorkingStateCapability(),)
 - `note_delete(key)` 是幂等操作，返回 `deleted` 或 `already_absent`；
 - `note_get(key=None)` 读取一条完整的值，或列出排序后的键及数量。
 
-笔记只在用户输入边界投影；活跃任务则在用户输入和工具结果两个边界都会投影。它们作为大小受限的请求尾部内容，笔记在前，任务在后。已有历史中的投影保持不变，因此工具结果轮次不会刷新旧笔记。能完整放入的笔记以 `<note>` 条目展示；`<note-ref>` 表示可通过 `note_get` 读取其值，`<notes-omitted>` 则提示未纳入投影的条目。笔记内容不会被部分截断；没有笔记时也不会生成笔记块。`WorkingStateConfiguration` 默认最多投影 256 条笔记和 128 个任务，共用 64 KiB 的上下文预算。
+笔记在用户输入请求时投影；任务还会在工具结果请求时刷新。完整笔记以 `<note>` 显示；`<note-ref>` 和 `<notes-omitted>` 指向可通过 `note_get` 读取的值。`WorkingStateConfiguration` 默认投影最多 256 条笔记和 128 个任务，共享 64 KiB 预算。
 
-笔记保存该 Thread 的结构化事实，任务保存执行状态，`summarize` 保留叙述上的连续性和下一步安排。Handoff 前应核对并更新过时的笔记和任务状态，不要将所有笔记或任务复制进摘要。自动压缩同样只替换历史，随后会重新投影当前笔记和任务。压缩内部发起的摘要请求会看到完整且未改动的历史，包括之前的叠加内容和 thinking，不会裁剪或只选择尾部内容。它保留 `tool_choice`，并要求模型不要调用工具。压缩和 `summarize` 都会按顺序重放当前逻辑 Run 的初始输入及已送达的用户引导输入，保留多模态内容；尚未送达的引导输入和内部通知不会重放。
+笔记保存事实，任务记录执行进度，`summarize` 保留续接叙事。交接前清理过时笔记和任务状态，不必将全部内容复制到总结中。
 
 工作状态不是分布式工作流引擎。跨 worker 的所有权、持久租约、调度和交付，由 Host 或任务 provider 负责。
 
 ## 过滤器
 
-`MessageIntegrityFilterCapability` 是必需组件，由 builder 管理。视频输入投影也是内置行为：不兼容的视频或超出编码后 10 MiB 单个／总量预算的内联视频只在 provider 请求中替换；普通 `VideoUrl` 要求通过 `read_video_url` 有界下载，YouTube 则要求 `url_input.video: [youtube]`。即使内联视频未改变，也会获得分离的请求消息。出现 413 或明确的 payload 超限错误后，self-healing 可以移除内联图像和视频并重放一次。保存的历史、源字节、元数据和注释不变。`ContentFilterCapability` 可选。冷启动过滤通过 `AgentSpec.cold_start_filter` 默认启用，空闲间隔为一小时：
+Harness 在模型请求前执行消息完整性与媒体兼容性过滤。媒体预处理不改变保存的历史或源文件。视频使用[媒体读取](multimedia-understanding.md)，图片限制见[图片输入策略](models.md#image-input-policy)。内容过滤可选，冷启动过滤默认在空闲一小时后启用：
 
 ```python
 from a13n_harness import AgentSpec
@@ -138,9 +160,9 @@ spec = AgentSpec(cold_start_filter=ColdStartFilterConfiguration(idle_seconds=3_6
 without_cold_compression = spec.with_updates(cold_start_filter=None)
 ```
 
-内容过滤只用于适配 provider 或模型的多模态兼容性。距离最近一次模型响应达到配置间隔后，冷启动过滤会缩短旧的、已经消费的工具结果字符串；用户输入、thinking、原生媒体和待处理工具结果保持不变。一小时是明确的保留策略，并不代表 provider 的缓存到期时间。如果显式组合了 `ColdStartFilterCapability`，它会使用自己的策略，并阻止自动实例启用。这两种过滤器都不负责传输重试或语义恢复。
+内容过滤选择兼容媒体。冷启动过滤缩短旧工具结果文本，保留用户输入、思考、媒体和待处理结果。显式 `ColdStartFilterCapability` 替换默认策略。
 
-图片预处理也默认启用。每次模型请求前，`ImageFilterCapability` 将较高的静态图片切成完整宽度的分段（每段高 4096 像素，相邻段重叠 50 像素），把每张图片或分段压缩到不超过 5 MiB 的 base64 编码字节和单边 8000 像素，并保留最新的 20 张图片。损坏、无法满足限制或较旧的超额图片，只在本次请求中替换为说明文字；保存的历史和原始文件保留原有像素与元数据。
+图片预处理默认启用。可覆盖所选 Model 的策略或禁用：
 
 ```python
 from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
@@ -154,14 +176,12 @@ without_image_preparation = spec.with_updates(
 )
 ```
 
-所选模型通过 `model_characteristics.image_input` 拥有该策略：省略时采用默认策略，部分对象为未指定字段采用默认值，显式 `null` 禁用自动预处理。显式组合的 `ImageFilterCapability` 保留自己的策略，并阻止自动重复实例。完整参数见[图片输入策略](models.md#image-input-policy)。
-
-设置 `max_image_bytes=0` 或 `max_image_dimension=0` 可独立禁用相应的压缩限制；设置 `support_gif=False` 会移除二进制 GIF 输入。动画图片不会分段，也不会转换成丢失动画的 JPEG。该策略处理原生用户内容序列，以及普通工具返回的单个图片或顶层列表中的图片；不会把嵌套工具 JSON 重新解释为图片输入。图片 URL 参与数量限制，但不会被获取或变换。该策略不限制整个请求的总字节，也不保证所有网关都接受请求。`AgentMediaUnderstandingProvider` 通过自己的 typed `image_input` 参数独立选择图片目标模型的策略，不继承父 Agent 的限制。
+省略 `image_input` 使用默认策略，`None` 禁用预处理。限制与自定义过滤器见[图片输入策略](models.md#image-input-policy)。
 
 ## Handoff 与自动压缩
 
-Handoff 和压缩都会要求 Agent 保留实际使用且仍相关的 Skill 的 `SKILL.md` 路径、简要用途，以及接下来立即需要的支持文件路径。恢复后，会提醒 Agent 在依赖这些指引开展工作之前重新读取；如果完整内容已经在上下文中，则可以复用。这只是指引，不会自动重新加载，也不是工具调用的准入检查。仅查看过的 Skill 不会自动成为正在使用的工作流程，仍完整保留在上下文中的读取结果可以继续使用。
+续接总结保留仍需使用的 Skill 路径与作用。恢复时，若完整内容已不可用，应重新读取。
 
-`HandoffCapability` 提供显式的 `summarize` 工具，`CompactionCapability` 根据请求的上下文用量触发。两者都可选。通常通过[模型特征](models.md#model-characteristics)配置阈值；如果 Agent 需要固定策略，也可以显式设置 token 阈值。
+显式交接使用 `summarize`，自动压缩根据用量触发。阈值见[压缩较长的 Thread](#compact-a-long-thread)。
 
-摘要负责延续叙述，不能代替任务和笔记状态。摘要生成和压缩都不会提交应用存储。只有符合 Host 的结果接受策略时，才保存产生的安全 `HarnessState`。
+按 Host 的接受策略保存返回的 `HarnessState`；总结不会保存应用存储。

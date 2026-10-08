@@ -89,13 +89,13 @@ curl -X POST "$A13N_URL/api/v1/connections" \
 - `bearer` 接受 `{"token": "..."}`，以 `Authorization: Bearer` 发送。`headers` 在 `config.headers` 中列出请求头名称，并以 `{"headers": {"x-api-key": "..."}}` 提供值。不能设置传输和协议请求头（`host`、`content-type`、`cookie`、`mcp-*`、`sec-*`、`proxy-*` 等）。
 - 修改 URL、认证方式或 OAuth 客户端会移除已保存凭据；只修改 `config.tools` 则保留。
 
-每次 attempt 在首次需要时，为它使用的每个连接、工具选择和调用方请求头组合打开一个 MCP 客户端。attempt 内的 Harness 运行（例如内联子 agent）以各自的工具列表复用该客户端；它们不共享可变请求头，客户端也不会在它们之间重连。客户端随 attempt 关闭，不按 URL 建立共享池，也不跨 worker 持久化。MCP SDK 自动协商协议版本，也支持使用旧版协商的服务器。客户端保持打开期间工具目录仍会刷新，每次调用仍会检查连接当前的可用性和 worker 权限。Service 没有用于回复的持久通道，因此不提供 MCP elicitation（服务器请求用户输入）；这与客户端工具等待和审批不同。
+MCP 客户端的生命周期限于一次执行尝试；工具目录可以在尝试期间刷新。每次调用都会检查连接当前的可用性和运行权限。Service 不支持 MCP elicitation（服务器向用户提问）；需要持久等待时，请使用客户端工具或 agent 问题。
 
 ### OAuth
 
 使用 `auth: "oauth"` 时，连接从 MCP 服务器的授权服务器获取 token。连接持有**一份** 凭据，供工作空间中所有运行使用，与授权人无关。
 
-- **浏览器授权**（`grant_type: "authorization_code"`，默认值）。在 Console 选择 **Authorize connection** ，或调用 `POST …/connections/{connection_id}/authorize` 并传入 `{"return_url": ...}`，在 `expires_at` 前让用户访问返回的 `redirect_url`；在此之前 `authorization_pending` 保持 true。Service 发现授权服务器，使用 PKCE（S256）和资源指示符，在自身回调处完成流程，再携结果将浏览器重定向到 `return_url`。浏览器流程始终需要登录会话，并通过限定到回调路径的 cookie 绑定启动流程的浏览器；其他浏览器完成会返回 `browser_mismatch`。API 密钥不能启动流程（`403 forbidden`）：此流程发出的链接可由任何持有者完成，只允许用户自己的登录会话执行。超过 `expires_at` 的回调返回 `authorization_expired`。启动新流程只终止已在进行的完成操作；保留可用凭据和未完成的刷新，刷新继续执行，直到新流程完成。
+- **浏览器授权**（`grant_type: "authorization_code"`，默认值）。在 Console 选择 **Authorize connection**，或使用登录会话调用 `POST …/connections/{connection_id}/authorize` 并传入 `{"return_url": ...}`。在 `expires_at` 前，用同一浏览器打开返回的 `redirect_url`。Service 在回调处完成授权，再重定向到 `return_url`。API 密钥不能启动此流程（`403 forbidden`）；换用其他浏览器会返回 `browser_mismatch`，回调过期会返回 `authorization_expired`。启动新流程会保留可用凭据，直到新流程完成。
 - **客户端注册。** 未设置 `config.oauth.client_id` 时，每次授权都会动态注册公共客户端。预先注册的客户端需设置 `client_id` 和 `token_endpoint_auth_method`（`none`、`client_secret_basic` 或 `client_secret_post`），并提供只写的 `client_secret`。在 provider 中注册 Service 重定向 URI：`GET /api/v1/connections/redirect-uri` 返回它（`{public_url}/api/v1/connections/callback`），Console 连接表单也会显示。
 - **机器凭据**（`grant_type: "client_credentials"`，需客户端密钥）。`authorize` 直接获取 token，无需浏览器，返回 `redirect_url: null`。与 bearer token 一样，它供工作空间所有运行使用。这是 API 密钥唯一可以启动的授权。
 - `config.oauth.scopes` 请求指定 scope；为空时请求服务器声明的 scope。

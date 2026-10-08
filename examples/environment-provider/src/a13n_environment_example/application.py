@@ -218,11 +218,19 @@ async def run_docker(
         finally:
             current_state = cleanup.dump_state()
 
+    async def use_and_destroy() -> None:
+        await _run_with_cleanup(
+            use_target,
+            destroy_target,
+            cleanup_label="Docker destruction",
+            group_message="Docker use and destruction failed",
+        )
+
     await _run_with_cleanup(
-        use_target,
-        destroy_target,
-        cleanup_label="Docker destruction",
-        group_message="Docker use and destruction failed",
+        use_and_destroy,
+        runtime.close,
+        cleanup_label="Docker runtime close",
+        group_message="Docker lifecycle and runtime close failed",
     )
 
     return DockerExampleResult(

@@ -84,7 +84,7 @@ curl -X PATCH "$A13N_URL/api/v1/agents/$AGENT" \
 
 Without `If-Match` the request fails with `428 precondition_required`; with a stale value, with `412 precondition_failed` and the current ETag. Read the resource again, reapply your change and retry. The comparison is exact, so weak validators and `*` never match. The OpenAPI document marks `If-Match` as an optional header, but every operation that declares it requires it.
 
-Inbox operations (edit, withdraw and reorder queued messages), environment and memory mount changes, and thread updates take the **thread's** ETag. Other operations that create things, and commands on a run such as interrupt, take none.
+Inbox operations (edit, withdraw and reorder queued messages), environment and memory mount changes, and thread updates take the **thread's** ETag. Creating an agent or skill revision takes its head's ETag. Other creations and run commands such as interrupt take none.
 
 ## Idempotent requests
 
@@ -94,11 +94,11 @@ These operations require an `Idempotency-Key` header of 1–512 visible ASCII ch
 - `POST …/runs/{run_id}/fork` and `POST …/runs/{run_id}/resume`
 - `POST …/uploads`
 
-Generate a unique key per logical request and reuse it when retrying after a lost response. Repeating a request with the same key and the same body returns the original result with `200` instead of `201`; the same key with a different body or target is `409 conflict` with reason `idempotency_key_reused`. Keys are scoped to the caller and workspace and do not expire.
+Generate a unique key per logical request and reuse it when retrying after a lost response. A first submission returns `201`; uploads return `200`. A retry with the same key and request returns `200` with the same created objects in their current state, not a copy of the first response. Reusing the key with a different body or target is `409 conflict` with reason `idempotency_key_reused`. Keys are scoped to the caller and workspace and do not expire.
 
 ## Paging
 
-Collections return `{"items": [...], "next_cursor": "..."}`. Pass `limit` (1–100, default 50) and, for the next page, `cursor=<next_cursor>`; `next_cursor` is `null` on the last page. A cursor is opaque and bound to its collection, its scope and every filter of the query that produced it; reusing it with a different filter is `invalid_cursor`.
+Collections return `{"items": [...], "next_cursor": "..."}`. Pass `limit` (1–100, default 50) and, for the next page, `cursor=<next_cursor>`; `next_cursor` is `null` on the last page. A cursor is opaque and bound to its collection, its scope and every filter of the query that produced it; reusing it with a different filter is `invalid_cursor`. Bounded catalogs, toolsets, mounts and attempts may return all items without pagination; check the operation's schema.
 
 ## Limits
 

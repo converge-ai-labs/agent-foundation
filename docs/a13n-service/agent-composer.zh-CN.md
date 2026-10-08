@@ -7,7 +7,11 @@ Agent Composer 在普通对话中工作。它读取工作空间中的模型、sk
 
 ## 启动 Agent Composer
 
-在 Console 中打开 **Agents**，选择 **用 AI 创建** 。要修改已有 agent，打开详情页并选择 **用 AI 编辑** 。Console 会准备 Agent Composer，并打开与它的新对话。
+1. 打开 **Agents → 用 AI 创建**，或打开已有 agent 并选择 **用 AI 编辑**。
+2. 检查新对话。**用 AI 编辑**会预填包含 agent 和所选版本的请求；补充希望修改的内容。
+3. 选择**发送**以开始对话。提交批准前，检查每个拟执行的写入操作。
+
+Console 会为拥有 `write` 权限的调用者准备 Agent Composer。仅拥有 `run` 权限的调用者可以使用 builder 已准备好的内置 agent。
 
 通过 API 使用时，先准备它，再用返回的 agent [开始会话](agents-and-runs.md#start-a-conversation)：
 

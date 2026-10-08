@@ -176,7 +176,23 @@ The normal precedence applies: for example, `--allow-sudo true` overrides an env
 
 Select the profile with `A13N_ENVD_TRANSPORT`.
 
-HTTP requires `A13N_ENVD_HTTP_BIND`, `A13N_ENVD_HTTP_CREDENTIAL_FILE`, and either paired TLS certificate/key files or `A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback|provider_private_link`. It exposes authenticated `/eip/control` and `/eip/transfer` routes. Session selection is explicit; neither a TCP connection nor an HTTP pool owns a Session.
+To serve a local HTTP client, first create a private runtime parent and a protected credential file. Use an existing native working directory and numeric bind address:
+
+```bash
+mkdir -p "$HOME/.a13n-envd-runtime"
+chmod 700 "$HOME/.a13n-envd-runtime"
+export A13N_ENVD_RUNTIME_DIR="$HOME/.a13n-envd-runtime"
+export A13N_ENVD_DEVICE_ID=device-http-example
+export A13N_ENVD_TRANSPORT=http
+export A13N_ENVD_HTTP_BIND=127.0.0.1:8787
+export A13N_ENVD_HTTP_CREDENTIAL_FILE=/private/envd-token
+export A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback
+a13n-envd --default-working-directory /absolute/path/to/workspace
+```
+
+Replace the credential-file and workspace paths. Connect the Python client to `http://127.0.0.1:8787` with the same credential and expected Device ID. The server exposes authenticated `/eip/control` and `/eip/transfer` routes; the client takes the base origin.
+
+For HTTPS, run `unset A13N_ENVD_HTTP_PLAINTEXT_SCOPE` and set both `A13N_ENVD_HTTP_TLS_CERT_FILE` and `A13N_ENVD_HTTP_TLS_KEY_FILE` before starting Envd. Configure the client to trust the certificate. A provider-private plaintext deployment uses `provider_private_link` and an explicit client opt-in, not a public HTTP endpoint. [Python transport options](python-client.md#http-options) cover proxy routing and TLS verification.
 
 Reverse WebSocket requires `A13N_ENVD_REVERSE_WS_URL` and `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`. `A13N_ENVD_REVERSE_WS_CA_FILE` adds deployment trust for `wss`. The daemon does not expose an inbound WebSocket listener.
 

@@ -176,7 +176,23 @@ A13N_ENVD_CONFIG_JSON='{"execution":{"allow_sudo":false}}' a13n-envd
 
 通过 `A13N_ENVD_TRANSPORT` 选择配置。
 
-HTTP 需要 `A13N_ENVD_HTTP_BIND`、`A13N_ENVD_HTTP_CREDENTIAL_FILE`，以及成对的 TLS 证书/密钥文件或 `A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback|provider_private_link`。它提供经过身份验证的 `/eip/control` 和 `/eip/transfer` 路由。会话必须显式选择；TCP 连接和 HTTP 连接池都不拥有会话。
+服务本地 HTTP 客户端前，先创建私有运行时父目录和受保护凭据文件。使用已有原生工作目录和数字绑定地址：
+
+```bash
+mkdir -p "$HOME/.a13n-envd-runtime"
+chmod 700 "$HOME/.a13n-envd-runtime"
+export A13N_ENVD_RUNTIME_DIR="$HOME/.a13n-envd-runtime"
+export A13N_ENVD_DEVICE_ID=device-http-example
+export A13N_ENVD_TRANSPORT=http
+export A13N_ENVD_HTTP_BIND=127.0.0.1:8787
+export A13N_ENVD_HTTP_CREDENTIAL_FILE=/private/envd-token
+export A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback
+a13n-envd --default-working-directory /absolute/path/to/workspace
+```
+
+替换凭据文件和工作目录路径。Python 客户端使用相同凭据和预期设备 ID，连接 `http://127.0.0.1:8787`。服务器提供经身份验证的 `/eip/control` 和 `/eip/transfer` 路由，客户端接受基础 origin。
+
+使用 HTTPS 时，先运行 `unset A13N_ENVD_HTTP_PLAINTEXT_SCOPE`，设置 `A13N_ENVD_HTTP_TLS_CERT_FILE` 和 `A13N_ENVD_HTTP_TLS_KEY_FILE`，再启动 Envd。配置客户端以信任该证书。provider 私有明文部署使用 `provider_private_link` 并要求客户端显式启用，不允许公共 HTTP 端点。[Python 传输选项](python-client.md#http-options)介绍代理路由和 TLS 验证。
 
 反向 WebSocket 需要 `A13N_ENVD_REVERSE_WS_URL` 和 `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`。`A13N_ENVD_REVERSE_WS_CA_FILE` 为 `wss` 添加部署信任。守护进程不提供入站 WebSocket 监听器。
 

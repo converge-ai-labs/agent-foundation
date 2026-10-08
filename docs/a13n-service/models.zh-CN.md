@@ -63,11 +63,11 @@ export A13N_PROVIDERS__CHATGPT_CLIENT_ID="approved-public-client"
 export A13N_PROVIDERS__CHATGPT_REDIRECT_URI="https://agent.example.com/api/v1/model-providers/oauth/callback"
 ```
 
-环境变量覆盖 Service TOML 的 `[providers] chatgpt_client_id` 与 `chatgpt_redirect_uri`。HTTPS 回调必须与 Service 配置的公共地址同源，以便发起浏览器的 cookie 返回。Console 提示自动完成并在授权有效期内刷新状态；必须从用户登录会话发起，不能使用 API key。仍可手动粘贴回调。若需自定义公网路径，先注册准确的 URI，并在 provider 或 `A13N_PROVIDERS__CHATGPT_REDIRECT_URI` 中设置。然后在反向代理中把该路径映射到 Service 的 `GET /api/v1/model-providers/oauth/callback`，并保留 query 与 cookie。回调不会根据 Host/转发请求头选择交换 URI。代理/访问日志应排除回调 query。
+HTTPS 回调必须与 `server.public_url` 同源，并由用户登录会话发起，不能使用 API key。Console 自动完成流程，也仍可手动粘贴。要自定义回调路径，请注册准确的 URI，在 provider 或部署中配置，并将该路径代理到 `GET /api/v1/model-providers/oauth/callback`，保留 query 与 cookie。访问日志应排除回调 query。
 
 修改 client ID 会发起新登录，不复用其他 client 的账户绑定；配置或 secret 修改会取消待完成及交换中的登录；现有授权仍使用该授权保存的 client 身份认证刷新。**Use another ChatGPT account** 保留配置的 client。没有自定义 client 时，`A13N_PROVIDERS__CHATGPT_REDIRECT_URI` 只能覆盖回环端口，不能变更 scheme、host 或 `/auth/callback` 路径。
 
-仅获准用于网站登录的 OAuth client 无权使用 ChatGPT 订阅额度。此集成仍要求可刷新的 token，以及允许基于 ChatGPT 套餐调用模型的 scope；托管/商业使用需要另获 OpenAI 批准。机密 client 只在服务端 HTTP Basic 请求头中发送 secret，同时保留 PKCE；交换、刷新和撤销使用随授权冻结的身份认证信息。Issuer、协议端点、resource 和必需 scope 由此集成固定管理，不作为用户可修改的 OAuth 参数。
+只有网站登录权限的 client 无法使用 ChatGPT 订阅额度。此集成需要可刷新的 token 和模型调用 scope；托管/商业使用需要另获 OpenAI 批准。OAuth 限制请参阅[模型认证](../a13n-harness/model-authentication.md)。
 
 ## 添加模型
 
@@ -90,7 +90,7 @@ curl "$A13N_URL/api/v1/model-catalog" -H "Authorization: Bearer $A13N_API_KEY"
   "config": {
     "model_name": "llama3.3",
     "model_api": "ollama.chat_completions",
-    "characteristics": {"capabilities": ["image_understanding"], "context_window_tokens": 131072},
+    "characteristics": {"context_window_tokens": 131072},
     "settings": {"max_tokens": 4096}
   }
 }
@@ -123,16 +123,16 @@ API 字段是 `config.characteristics.image_input`，不是 `config.settings`。
 
 对于 `openai.responses`，**Store response 默认关闭**，包括从未设置 `openai_store` 的已有模型。设置 `openai_store: true` 可开启，设为 `null` 则交由 provider 决定。此设置控制上游响应存储，不影响 Service 自身运行历史或 provider 的其他保留策略。agent 和运行设置可以覆盖默认值。其他调用 API 保持既有存储行为。
 
-模型 Settings JSON 对应 API 的 `config.settings`。agent 的 **Provider-specific settings** 对应 `model_settings`。两者均接受 `extra_headers`；`openai.responses` 和 `openai.chat_completions` 还接受 `extra_body`，用于传入已安装 SDK 尚未识别的推理选项：
+模型 Settings JSON 对应 API 的 `config.settings`。agent 的 **Provider-specific settings** 对应 `model_settings`。优先使用类型化设置，例如 OpenAI Responses：
 
 ```json
 {
-  "extra_body": {"reasoning": {"effort": "future-effort"}},
+  "openai_reasoning_effort": "medium",
   "extra_headers": {"x-experiment": "candidate"}
 }
 ```
 
-此 Responses 示例演示透传，并不表示上游支持该推理强度值。Chat Completions 使用自己的协议字段，例如 `reasoning_effort`。可用时应优先使用常规的类型化设置。SDK 最终浅合并时，原始值覆盖常规推理设置；原始嵌套对象会替换生成的对应对象，不会合并。不能用此方式修改模型选择、消息、工具、结构化输出或 provider 会话状态。请使用原生 `openai_text_verbosity`，不要直接设置 Responses 的 `text`，该容器也承载结构化输出。
+请选择上游模型支持的值。对于已安装 SDK 尚未识别的推理选项，`openai.responses` 和 `openai.chat_completions` 接受 `extra_body`。其原始值通过浅合并覆盖生成的推理字段；嵌套对象会替换，不会合并。它不能修改模型、消息、工具、结构化输出或 provider 会话状态。请使用 `openai_text_verbosity`，不要直接设置 Responses 的 `text`。
 
 省略任一对象会继承模型默认值；设为 `{}` 可在 agent 或运行上清除该默认值。运行的设置会替换 agent 的完整设置对象，因此 `model_settings: {}` 仍继承模型默认值。要清除两层默认值，发送 `model_settings: {"extra_body": {}, "extra_headers": {}}`。这些对象不接受 `null`。模型和 provider 修改影响后续执行尝试，包括恢复后的工作；发出请求前会重新检查设置。
 
@@ -150,12 +150,12 @@ API 字段是 `config.characteristics.image_input`，不是 `config.settings`。
 
 Agent 的模型无法读取图片、视频或音频时，可以交由其他模型处理。每个工作空间可以按媒体类型设置默认模型，每个 agent 也可以单独选择。
 
-在 Console 中使用 **Workspace settings → Media understanding**。通过 API 使用时，工作空间管理员按模型 key 一次性替换三类默认值，并提供 `GET /api/v1/media-understanding-defaults` 返回的 `ETag`：
+在 Console 中使用 **Workspace settings → Media understanding**。通过 API 使用时，工作空间管理员一次性替换三类默认值。将 `IMAGE_MODEL_KEY` 设为已配置且支持图片理解的模型 key，`MEDIA_ETAG` 设为 `GET /api/v1/media-understanding-defaults` 返回的 ETag：
 
 ```sh
 curl -X PUT "$A13N_URL/api/v1/media-understanding-defaults" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" -H "If-Match: $MEDIA_ETAG" \
-  -d '{"image": "gpt-5.5", "audio": null}'
+  -d "{\"image\": \"$IMAGE_MODEL_KEY\", \"video\": null, \"audio\": null}"
 ```
 
 省略或设为 `null` 的类型没有默认模型。每个模型必须在工作空间中可用，并声明对应的模型输入能力（`image_understanding`、`video_understanding` 或 `audio_understanding`）。

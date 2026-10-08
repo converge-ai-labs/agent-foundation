@@ -12,13 +12,13 @@ Threads **mount** memories under names. Each run freezes the thread's memory mou
 
 ```mermaid
 flowchart TB
-    Thread["Thread: memories mounted by name, read or write"] --> Run["Run"]
+    Thread["Thread mounts"] --> Run["Run"]
     subgraph Workspace["Workspace"]
-        File["File memory: versioned text files"]
-        Record["Record memory: records in mem0"]
+        File["Versioned files"]
+        Record["mem0 records"]
     end
-    Run <-->|"Context at start, file tools"| File
-    Run <-->|"Recall at start, record tools"| Record
+    Run <-->|"Context and file tools"| File
+    Run <-->|"Recall and record tools"| Record
 
     class Thread,Run a13n
     class File,Record store
@@ -40,7 +40,7 @@ curl -X POST "$A13N_URL/api/v1/memories" \
 
 - `type` is `postgres`, the Service's own store and the default. The response's `id` (`mem_…`) identifies the memory; memories have no key.
 - `guide` tells agents what belongs in this memory and how to organize it, up to `memory.guide_bytes`. Leave it out or set it to `null` to use the deployment's guide for the memory's kind (`memory.default_guide.file` or `memory.default_guide.record`, else the built-in one); `""` gives the memory no guide. The memory's `inherited_guide` shows the guide `null` resolves to.
-- `always_load` names up to 64 paths whose full content leads the memory's full context, which a thread receives the first time it sees the memory. A path need not exist yet. Only principals with `write` on the memory set them, so a run cannot pin its own writes into every later thread.
+- `always_load` names up to 64 paths whose content is included first, within the context budget, when a thread first sees the memory. A path need not exist yet. Only principals with `write` on the memory set them, so a run cannot pin its own writes into every later thread.
 - `PATCH …/memories/{memory_id}` with the memory's `If-Match` changes `name`, `description`, `labels`, `guide` and `always_load`. Attempts that start afterwards use the change, including a later attempt of a run that is already running.
 - `DELETE …/memories/{memory_id}` with `If-Match` deletes the memory with its files, history and thread mounts. A running run that uses it gets `memory_deleted` from its next memory tool call.
 
@@ -69,7 +69,7 @@ curl -X POST "$A13N_URL/api/v1/memory-providers" \
        "config": {"base_url": "https://mem0.internal.example.com"}, "credential": {"api_key": "..."}}'
 ```
 
-The self-hosted credential is optional and is sent as `X-API-Key`; purging a deleted memory's records needs the server's admin key. A server on a private network or on plain HTTP must be allowed by the deployment's [outbound policy](configuration.md#outbound-requests). The self-hosted server lists at most 1000 records of a memory.
+The self-hosted credential is optional and is sent as `X-API-Key`; purging a deleted memory's records needs the server's admin key. A plain-HTTP server needs an explicit origin allowance in the deployment's [outbound policy](configuration.md#outbound-requests). The self-hosted server lists at most 1000 records of a memory.
 
 `POST …/memory-providers/{provider_id}/test` lists one page of a namespace no memory uses, which checks the address and key without changing anything.
 
@@ -85,7 +85,7 @@ curl -X POST "$A13N_URL/api/v1/memories" \
 - `type` is the provider's type, and the provider must be an enabled Memory Provider of the workspace. `always_load` does not apply.
 - Each record memory owns a **namespace** in the backend, which is mem0's `user_id`. By default it is `a13n-` and 32 hex characters derived from the memory's ID. Set `namespace` to adopt records that already exist under a `user_id`, such as ones your application wrote; it is 1 to 256 printable characters with no whitespace and no `*`. One namespace belongs to one memory: another memory using it is `409 already_exists`.
 - `type`, `provider_id` and `namespace` never change.
-- Deleting a record memory deletes the records in its namespace too, in the background. Until that finishes, a new memory cannot take the namespace (`409 conflict` with reason `namespace_purging`). If the backend keeps refusing, the purge stops after the `memory_purge` outbox policy's `max_attempts` tries (`outbox.by_kind.memory_purge`, else `outbox.defaults`), and the records stay in the backend. The mem0 Platform finishes a purge on its own after accepting it, so its records can linger briefly.
+- Deletion purges the namespace in the background. Until it finishes, a new memory cannot take that namespace (`namespace_purging`). If the backend keeps refusing, records can remain after the retry budget is exhausted; see [outbox policies](operations.md#outbox-retention-and-capacity).
 
 ### Read and edit records
 
@@ -135,7 +135,7 @@ The `memory` [toolset](tools.md#built-in-toolsets) is enabled by default. Its to
 
 Disabling a tool removes it from every mount; disabling the toolset leaves the run its memories' context and recall without tools.
 
-At the start of a run, each file memory adds one context block: its always-loaded files and an index of its files the first time a thread sees it, and afterwards only the files changed since, including changes by other threads and people. A thread whose history was compacted gets full context again. A run's memory context shares `memory.context_bytes` (32 KiB by default), of which each memory's always-loaded files take at most `memory.always_load_bytes`.
+At the start of a run, each file memory adds one context block: its always-loaded files and an index of its files the first time a thread sees it, and afterwards only the files changed since, including changes by other threads and people. A thread whose history was compacted gets full context again. A run's memory context shares `memory.context_bytes` (32 KiB by default), of which each memory's always-loaded files take at most `memory.always_load_bytes`. Files can be truncated or omitted; use `memory_file_view` to read them in full. If minimal blocks cannot fit, a short view-and-cleanup reminder replaces them without interrupting the run. These bounded results still advance the context cursor, so unchanged files are not automatically sent again.
 
 Each memory call checks the run's access to the workspace: `read` to view, list and search, `run` to change a file or record. A refused call fails with `forbidden`, and a call to a record memory whose provider was disabled fails with `unavailable`. A failed file call changes nothing; the model reads the file and decides again.
 
