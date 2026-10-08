@@ -244,7 +244,7 @@ function DebugAncestor({
       />
     );
   return (
-    <>
+    <StoredContents runId={runId} items={live.displayItems}>
       <EarlierItems earlier={live.earlier} />
       <DebugRunSection
         run={run}
@@ -253,7 +253,7 @@ function DebugAncestor({
         index={number(run.id)}
         jumpToDock={jumpToDock}
       />
-    </>
+    </StoredContents>
   );
 }
 
