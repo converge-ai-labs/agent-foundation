@@ -46,7 +46,6 @@ if TYPE_CHECKING:
 
 # Bumped only with an explicit migration or rejection plan for outstanding checkpoints.
 FORMAT = 1
-DISPLAY_FORMAT = 2
 
 type ObjectKind = Literal["state", "tail", "pages", "contents", "subagents", "display-contents"]
 
@@ -182,8 +181,6 @@ async def load_state(objects: ObjectStore, pointer: StatePointer | None) -> RunS
 async def load_tail(objects: ObjectStore, pointer: TailPointer | None, *, hydrate: bool = False) -> Tail:
     if pointer is None:
         return Tail()
-    if pointer.format > DISPLAY_FORMAT:
-        raise conflict("display", pointer.key, "display_incompatible")
     tail = Tail.model_validate_json(await load(objects, pointer))
     if hydrate:
         refs = {ref.id: ref for ref in tail.refs}
@@ -271,7 +268,7 @@ def _display_write(snapshot: Snapshot, refs: list[ObjectRef]) -> DisplayWrite:
             key=tail.key,
             digest=tail.digest,
             size=tail.size,
-            format=DISPLAY_FORMAT,
+            format=FORMAT,
             position=snapshot.tail.position,
             first=snapshot.tail.first,
             count=snapshot.tail.first + len(snapshot.tail.items) - 1,
