@@ -13,11 +13,13 @@ type Row = Pick<Schema<"ThreadActivityView">, "thread"> &
 
 export function CoordinatorEntry({
   row,
+  activeWorkerCount,
   enabled,
   selected,
   selectedUpdatedAt,
 }: {
   row: Row;
+  activeWorkerCount: number;
   enabled: boolean;
   selected?: Schema<"ThreadSummary">;
   selectedUpdatedAt: number;
@@ -103,7 +105,11 @@ export function CoordinatorEntry({
           />
         </Button>
         <div className={styles.conversation}>
-          <ThreadRow row={row} showRestore="compact" />
+          <ThreadRow
+            row={row}
+            activeWorkerCount={activeWorkerCount}
+            showRestore="compact"
+          />
         </div>
       </div>
       {expanded && (
