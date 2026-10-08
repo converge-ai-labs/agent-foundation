@@ -13,7 +13,8 @@ from a13n_service.infra.db import short_session, transaction
 from a13n_service.resources.memories.schemas import MemoryMount
 from a13n_service.resources.memories.tables import MemoryFileRevisionRow
 from a13n_service.runs.attempts import Lease
-from a13n_service.runs.boundaries import Boundaries
+from a13n_service.runs.boundaries import Boundaries, Staged
+from a13n_service.runs.display import DisplayFold, Tail
 from a13n_service.runs.memories.execution import PlannedMemory, file_memory
 from a13n_service.runs.seal import LeaseExpirer
 from a13n_service.runs.tables import AttemptRow, RunRow
@@ -314,6 +315,13 @@ async def test_model_boundary_keeps_canonical_media_and_committed_context() -> N
     from pydantic_ai.models.function import FunctionModel
 
     boundary = Boundaries(lambda: {"memory": "7"})
+    fold = DisplayFold("run", Tail(), attempt=1, page_items=2, page_bytes=65536)
+    boundary.freeze_display = lambda open_calls: fold.snapshot()
+    cuts: list[Staged] = []
+
+    async def commit(staged: Staged) -> None:
+        cuts.append(staged)
+
     image = BinaryContent(b"invalid-image", media_type="image/png")
     seen = []
 
@@ -321,14 +329,16 @@ async def test_model_boundary_keeps_canonical_media_and_committed_context() -> N
         seen.extend(messages)
         yield "done"
 
-    result = (
-        await HarnessBuilder()
-        .build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=provider), capabilities=(boundary,))
-        .run(["inspect", image])
-    )
+    async with boundary.process(commit):
+        result = (
+            await HarnessBuilder()
+            .build(
+                AgentSpec(), output_type=str, model=FunctionModel(stream_function=provider), capabilities=(boundary,)
+            )
+            .run(["inspect", image])
+        )
     assert result.output_or_raise() == "done"
-    assert len(boundary.states) == 1
-    staged = next(iter(boundary.states.values()))
+    [staged] = cuts
     assert staged.cursors == {"memory": "7"}
     assert staged.state.message_history == result.state.message_history[:-1]
     assert "invalid-image" in str(staged.state.message_history)

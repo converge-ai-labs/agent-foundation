@@ -12,4 +12,4 @@ class RunObservation:
 
     run_id: str
     status: ObservedRunStatus
-    event_count: int
+    model_requests: int

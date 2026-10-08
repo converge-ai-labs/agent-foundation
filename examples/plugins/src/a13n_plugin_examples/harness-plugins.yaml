@@ -4,9 +4,9 @@ plugins:
     plugin_key: example.run-recorder
     enabled: true
     configuration:
-      count_events: true
+      record_usage: true
   - plugin_id: recorder-disabled
     plugin_key: example.run-recorder
     enabled: false
     configuration:
-      count_events: false
+      record_usage: false

@@ -2,13 +2,13 @@
 
 ## Design Position
 
-`HarnessEvent` and `HarnessRunResultEvent` are stable process-local output seams. `AbstractCapability[AgentContext]` adapters produce Harness-owned observations, ordered Harness plugin middleware can transform or suppress ordinary non-terminal events and replace the complete result candidate, and one single-consumer `HarnessRunStream` preserves ordering and produces a terminal result event only after final validation and complete run-scoped teardown succeed.
+`HarnessEvent` and `HarnessRunResultEvent` are stable process-local output seams. `AbstractCapability[AgentContext]` adapters produce Harness-owned observations, ordered Harness plugin middleware wraps execution and can replace the complete result candidate, and one single-consumer `HarnessRunStream` preserves ordering and produces a terminal result event only after final validation and complete run-scoped teardown succeed.
 
 Pydantic AI public events remain the source for model output and tool execution, and `RunCancelled` is the source terminal signal for native cancellation. The Harness adds one logical Run-start observation and bounded model-request boundary observations plus correlation, context, state, recovery, managed-invocation, delegation, usage-attribution, and diagnostic events that Pydantic AI does not own. Pydantic AI `RequestUsage` remains the provider-usage input and `RunUsage` the native execution accumulator. Harness derives public usage and model-budget checks from Context-owned contributions, while native tool-call limits retain their upstream semantics. When semantic recovery starts another `ModelAttempt`, events already delivered by the earlier attempt remain observations in the same logical Harness stream and cannot be retracted.
 
 Durable event delivery, cross-run usage aggregation, authoritative financial valuation, billing, and lifecycle facts belong to the Host. The Harness provides default-on deterministic process-local model-cost valuation for run usage; it does not make that quote durable accounting authority. [Harness Observation](19-observation-model.md) separately owns the OpenTelemetry hierarchy, fields, information boundary, and Host export profiles; telemetry never replaces this event or usage contract.
 
-Event behavior inside model, node, or tool execution uses Pydantic Capability hooks with `RunContext[AgentContext]`. A first-class Harness plugin can observe the outer canonical stream and result through `wrap_run`, but it does not install a background event broker, second public stream, usage accumulator, durable log, or broadcast system.
+Event behavior inside model, node, or tool execution uses Pydantic Capability hooks with `RunContext[AgentContext]`. A first-class Harness plugin can wrap execution and its result through async `wrap_run` and emit extensions through `ctx.events.emit()`, but it does not install a background event broker, second public stream, usage accumulator, durable log, or broadcast system.
 
 ## Boundary
 
@@ -35,7 +35,7 @@ class HarnessEvent(BaseModel):
     )
 ```
 
-`AgentStreamEvent` remains the precise authoring type for the installed Pydantic AI release. `AgentStreamEventProtocol` is the minimal open runtime seam for native events added by later compatible releases and trusted plugin transformations: an event exposes one non-blank string `event_kind`, while its concrete type and payload remain owned by its producer. The Harness does not snapshot or reconstruct Pydantic AI's event union at plugin response boundaries. Process-local acceptance does not assert that an arbitrary payload is serializable by every Host transport. Harness-owned `HarnessExtensionEvent` values remain subject to their complete schema, redaction, finite-JSON, and payload-size validation after plugin unwind.
+`AgentStreamEvent` remains the precise authoring type for the installed Pydantic AI release. `AgentStreamEventProtocol` is the minimal open runtime seam for native events added by later compatible releases and trusted native Capability events: an event exposes one non-blank string `event_kind`, while its concrete type and payload remain owned by its producer. The Harness does not snapshot or reconstruct Pydantic AI's event union at public delivery. Process-local acceptance does not assert that an arbitrary payload is serializable by every Host transport. Harness-owned `HarnessExtensionEvent` values remain subject to their complete schema, redaction, finite-JSON, and payload-size validation at emission and delivery.
 
 `thread_id` identifies the independently advancing Thread; `run_id` identifies the process-local Harness Run. Both are present on ordinary and terminal events, including failures that have no returned State. `sequence` is strictly increasing within one Run. The root Run's sequence includes the final `HarnessRunResultEvent`. Resume preserves `thread_id` while starting another `run_id` and sequence domain. Forwarded inline-child events retain the child's run ID and sequence; the Delegation Capability consumes the child's result event internally. Concurrent runs have causal correlation through their `AgentInstanceContext`; timestamps do not establish a total order.
 
@@ -64,34 +64,27 @@ Extension payloads are small discriminated schemas owned by their subsystem. Fir
 
 Producer sequences are local to this observation channel, not public stream cursors or Host display-batch positions. Authored input/media, delivered steering and context summaries are observable before the corresponding model checkpoint. The callback updates local state only and performs no asynchronous persistence or transport I/O. Hosts freeze their display at their existing checkpoint boundaries; producer observation neither selects a checkpoint nor acknowledges an effect.
 
-Public stream plugins remain independent observation middleware. Later rewrites do not redefine producer-captured display; display filtering uses the Host's existing pre-fold processor. Native completion does not establish terminal success: Hosts finalize only from the validated Harness result after teardown. Child observations remain provisional until the parent accepts and retains the child outcome, including retained failed outcomes.
+Execution plugins do not intercept this source stream. Native observations and validated extensions share the Run-owned bounded delivery path; plugin progress does not drive event consumption. Host display filtering uses the existing replay-stable pre-fold processor, and live delivery and persistence use its same output. Checkpoint requests and acknowledgements are Host control, not publicly consumable events. Native completion does not establish terminal success: Hosts finalize only from the validated Harness result after teardown. Child observations remain provisional until the parent accepts and retains the child outcome, including retained failed outcomes.
 
 ## Adaptation
 
 ```mermaid
-sequenceDiagram
-    participant PAI as Pydantic AI
-    participant Capability
-    participant Emitter as HarnessEventEmitter
-    participant Plugins as Harness plugins
-    participant Stream as HarnessRunStream
-    participant Host
-
-    PAI-->>Stream: public AgentStreamEvent
-    Capability->>Emitter: HarnessExtensionEvent
-    Emitter-->>Stream: run-local extension
-    Capability->>Emitter: bind exact inline-child stream
-    Capability->>Emitter: forward through private bound child seam
-    Emitter-->>Stream: validated child observation
-    Stream->>Stream: sequence root events, validate child envelopes, and redact
-    Stream->>Plugins: ordered event and result-candidate unwind
-    Plugins-->>Stream: transformed observations and candidate
-    Stream-->>Host: HarnessEvent values with backpressure
-    Stream->>Stream: validate candidate and finish teardown
-    Stream-->>Host: final HarnessRunResultEvent with usage snapshots
+flowchart TD
+    Native[Pydantic primary-attempt events] --> Observe[Synchronous producer observation]
+    Plugins[Async execution/result plugins] --> Emit[Validated ctx.events.emit]
+    Capability[Harness Capabilities] --> Emit
+    Emit --> Observe
+    Observe --> HostFold[Host processor and common display fold]
+    Native --> Queue[Run-owned bounded event channel]
+    Emit --> Queue
+    Child[Validated inline-child forwarding] --> Queue
+    Queue --> Stream[Independent single public consumer]
+    Plugins --> Result[Validated result after wrapper unwind]
+    Result --> Cleanup[Terminal fence, event drain and teardown]
+    Cleanup --> Terminal[HarnessRunResultEvent]
 ```
 
-Model output, tool, and Capability events preserve their public Pydantic AI types. This includes native `ThinkingPart`, `TextPart`, function-tool call and result events, `DeferredToolRequestsEvent`, `DeferredToolResultsEvent`, and `CapabilityEvent`, plus compatible typed event families that Pydantic AI adds to its public stream. A Capability value emitted through native `RunContext.emit()` therefore reaches the Harness stream with upstream Capability and Tool-call correlation intact; it is not migrated into or duplicated as a `HarnessExtensionEvent`. For these open Agent events, plugin unwind performs only the shallow `AgentStreamEventProtocol` check; it does not apply a second Pydantic schema validation to events already produced or transformed inside the trusted process. Harness extension events retain their separate Harness-owned validation. The Harness observes the public `ModelRequestNode` boundary but does not recreate provider transport, response-delta, thinking, generation, tool, client-call, Capability, or run-terminal lifecycle state machines and does not add a second `DEFERRED_TOOLS` control event. A transport can project a convenience client-tools payload, but only the terminal `HarnessRunResult.deferred` and a Host's accepted durable pending record have continuation meaning. High-frequency Pydantic deltas may be coalesced by a consumer without changing complete messages or `HarnessState`.
+Model output, tool, and Capability events preserve their public Pydantic AI types. This includes native `ThinkingPart`, `TextPart`, function-tool call and result events, `DeferredToolRequestsEvent`, `DeferredToolResultsEvent`, and `CapabilityEvent`, plus compatible typed event families that Pydantic AI adds to its public stream. A Capability value emitted through native `RunContext.emit()` therefore reaches the Harness stream with upstream Capability and Tool-call correlation intact; it is not migrated into or duplicated as a `HarnessExtensionEvent`. For these open Agent events, public adaptation performs only the shallow `AgentStreamEventProtocol` check; it does not apply a second Pydantic schema validation to events already produced inside the trusted process. Harness extension events retain their separate Harness-owned validation. The Harness observes the public `ModelRequestNode` boundary but does not recreate provider transport, response-delta, thinking, generation, tool, client-call, Capability, or run-terminal lifecycle state machines and does not add a second `DEFERRED_TOOLS` control event. A transport can project a convenience client-tools payload, but only the terminal `HarnessRunResult.deferred` and a Host's accepted durable pending record have continuation meaning. High-frequency Pydantic deltas may be coalesced by a consumer without changing complete messages or `HarnessState`.
 
 ### Tool Review Results
 
@@ -142,7 +135,7 @@ Content-bearing Tool observations remain native `CapabilityEvent` values, separa
 
 Harness-owned asynchronous subagent and background-process readiness notices retain their native user-role enqueue semantics. Their canonical request metadata carries `a13n.steering-source`, with values `async_subagent` or `background_process`, and their content annotations use `display: false`. The separate typed input observations carry that source directly, allowing clients to distinguish activity notices from authored user submissions without matching message text. Provenance grants no authority and does not change the notification's model-visible wording or enqueue order.
 
-These event classes are public from `a13n_harness.toolsets.events`. Their payloads contain domain facts rather than preformatted panels or AG-UI types. Native Tool correlation remains owned by `RunContext`, and renderers own interpretation. Event delivery failure never rolls back completed file effects or committed Capability state. These process-local observations retain the backpressure, middleware, redaction, payload-size, and non-durability rules of the enclosing event stream.
+These event classes are public from `a13n_harness.toolsets.events`. Their payloads contain domain facts rather than preformatted panels or AG-UI types. Native Tool correlation remains owned by `RunContext`, and renderers own interpretation. Event delivery failure never rolls back completed file effects or committed Capability state. These process-local observations retain the backpressure, redaction, payload-size, and non-durability rules of the enclosing event stream.
 
 Async subagent completion remains Host-operator state rather than a canonical parent `HarnessEvent`; Host observation or wake never mutates an exported parent continuation or completes the original spawn call. Shell-process final-completion readiness is separately Harness-owned while the exact Run remains active. Its non-consuming watcher can enqueue one bounded instruction to call `shell_wait` with the last returned stdout and stderr offsets, carries no output, and is accompanied by the native advisory shell-status callback rather than a durable state projection. Watcher or enqueue failure never changes process truth. [Async Subagent Lifecycle](20-async-components-and-lifecycle.md) and [Environment Integration](08-environment-integration.md#run-local-shell-observations) own their independent lifecycles.
 
@@ -180,7 +173,7 @@ class HarnessEventEmitter(Protocol):
     ) -> None: ...
 ```
 
-The Harness creates one emitter for each process-local run and places only its `emit()` surface on `AgentContext` for Capability authors. `emit()` creates a run-local extension event and assigns its envelope fields. Inline delegation uses a private Harness-owned child-forwarding seam bound to one exact parent and child stream; arbitrary Capability or plugin code cannot submit a foreign child envelope through the public emitter. The seam preserves child Thread, Run, and source sequence, validates nested descendant registration and monotonic sequence, and seals that provenance through plugin processing. Plugins may transform or suppress the child event payload but cannot change its child correlation or source sequence. The emitter feeds the same ordered internal path as adapted Pydantic events. Harness plugin middleware sees those values before public delivery; already delivered values cannot be retracted. The emitter is not supplied by the Host and is not a general delivery service.
+The Harness creates one emitter per process-local Run and exposes only `emit()` on `AgentContext` to Capability and plugin authors. It validates and redacts a run-local extension before producer observation and enqueueing. Logical Run start and terminal success remain Harness-owned. Inline delegation uses a private forwarding seam bound to one exact parent and child stream; the public emitter does not accept foreign child envelopes. The seam preserves child Thread, Run and source sequence and validates nested descendant registration and monotonic sequence. Native events, extensions and forwarded children use the same bounded Run-owned delivery path, independently of plugin execution. Already delivered events cannot be retracted. The emitter is not supplied by the Host and is not a general delivery service.
 
 `HarnessRunStream` is class-based, lazily starts on first iteration, has exactly one consumer, and applies natural backpressure. It provides no replay or fan-out. An embedded application consumes it directly. A hosted worker consumes it once and projects events to any broker, SSE connection, WebSocket, log, or durable store selected by the host. a13n Service's [run facts, display and thread stream](../a13n-service/07-facts-and-delivery.md) are a separate Host contract: each checkpoint commit writes a display folded from the streamed events, and the thread stream carries only the in-flight tail, so not every process-local delta becomes durable.
 

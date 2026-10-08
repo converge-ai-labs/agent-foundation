@@ -64,7 +64,7 @@ from a13n_service.runs.attempts import (
     authorize_execution,
     lock_thread_lease,
 )
-from a13n_service.runs.boundaries import Boundaries, SafeBoundary
+from a13n_service.runs.boundaries import Boundaries, Staged
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.coalesce import Coalescer
@@ -435,14 +435,10 @@ class _Attempt:
                 output.flush()
                 return self._snapshot()
 
-            def capture(item: HarnessEvent) -> None:
-                if not isinstance(item.event, SafeBoundary):
-                    output.observe(item)
-
             self.boundaries.freeze_display = freeze_display
             bindings = replace(
                 host.bindings(root, self._bindings(agent.model_resolver(root, models))),
-                producer_observer=capture,
+                producer_observer=output.observe,
             )
             start = partial(
                 executable.stream,
@@ -466,10 +462,12 @@ class _Attempt:
             async with stream:
                 interrupt = asyncio.create_task(self._cancel_when_stopped(stream))
                 try:
-                    async for item in stream:
-                        await self._observe(item, stream, output)
+                    async with self.boundaries.process(partial(self._boundary, stream=stream, output=output)):
+                        async for item in stream:
+                            await self._observe(item, output)
                 finally:
                     interrupt.cancel()
+                    await asyncio.gather(interrupt, return_exceptions=True)
         if stream.result is None:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
         return stream.result
@@ -503,38 +501,33 @@ class _Attempt:
                 raise
             raise _EnvironmentUnavailable(error.message) from error
 
-    async def _observe(self, item: HarnessStreamEvent, stream: HarnessRunStream, output: Coalescer) -> None:
+    async def _observe(self, item: HarnessStreamEvent, output: Coalescer) -> None:
         event = item.event if isinstance(item, HarnessEvent) else None
         if isinstance(event, HarnessExtensionEvent) and event.kind == "usage":
             self.usage.report(event.payload)  # Every charge of the run, an inline child run's included.
-        if isinstance(event, SafeBoundary):
-            if item.run_id == stream.run_id:
-                await self._boundary(event, stream, output)
-            return
         if not isinstance(item, HarnessEvent):
-            # Only the validated post-teardown terminal comes from public delivery.
+            # Checkpoint writes cannot race the terminal display or final commit.
+            await self.boundaries.drain()
             output.observe(item)
 
-    async def _boundary(self, boundary: SafeBoundary, stream: HarnessRunStream, output: Coalescer) -> None:
-        if boundary.at == "model":
+    async def _boundary(self, staged: Staged, *, stream: HarnessRunStream, output: Coalescer) -> None:
+        if staged.at == "model":
             self.offers.requested = True
-        staged = self.boundaries.take(boundary.token)
-        assert staged.display is not None
         steers = await self._commit(
             staged.state,
             cursors=staged.cursors,
             snapshot=staged.display,
         )
         output.stream.boundary(staged.display.tail.position.sequence, resume_after=staged.display.tail.resume_after)
-        if boundary.at == "model" and self.control.handoff.is_set():
+        if staged.at == "model" and self.control.handoff.is_set():
             # Yield where the request in flight is simply sent again; at a tool boundary recovery would have to
             # treat calls that never ran as unknown effects. Steers just assigned stay with the run.
             self.yielding = True
+            self.boundaries.stop()
             stream.cancel()
             return
         # A tool boundary waits for the acknowledgement, so steers pending there join the request after the tools.
         await self._offer(stream, steers)
-        self.boundaries.acknowledge(boundary.token)
 
     async def _commit(
         self,
@@ -610,12 +603,14 @@ class _Attempt:
         """Offer the steers assigned at this boundary, and any the Harness could not take before, to the run's next
         request."""
         self.offers.unsent.extend(steers)
-        while self.offers.unsent:
+        while self.offers.unsent and self.boundaries.accepting_steers:
             entry = self.offers.unsent[0]
             content = await self._read(entry, stream.context.environment)
             if content is None:
                 self.offers.unsent.pop(0)
                 continue
+            if not self.boundaries.accepting_steers:
+                return  # Keep the unconsumed entry for continuation after native completion.
             try:
                 await stream.steer(content, input_id=entry.id)
             except RunError as error:

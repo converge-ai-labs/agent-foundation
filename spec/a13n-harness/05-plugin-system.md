@@ -2,7 +2,7 @@
 
 ## Design Position
 
-A Harness plugin is trusted, code-first Python middleware around the complete process-local Harness run. It can transform semantic input, observe or transform stream events, short-circuit execution, replace a complete result candidate, and contribute ordinary Pydantic AI `AbstractCapability[AgentContext]` instances at Agent construction.
+A Harness plugin is trusted, code-first Python middleware around the complete process-local Harness run. It can transform semantic input, emit observations, short-circuit execution, replace a complete result candidate, and contribute ordinary Pydantic AI `AbstractCapability[AgentContext]` instances at Agent construction.
 
 Plugins always become concrete Python objects before Agent composition. A caller may supply them directly in `AgentDefinition.plugins`, or opt one `HarnessBuilder` into the Harness-owned plugin configuration boundary. That boundary reads a small versioned preferred YAML or supported JSON document, selects installed factory entry points, and appends freshly created plugin instances to every definition built by that builder. The Host need not understand plugin factories or perform this reconstruction itself.
 
@@ -279,11 +279,11 @@ class AbstractHarnessPlugin(ABC):
         self,
     ) -> Sequence[AbstractCapability[AgentContext]]: ...
 
-    def wrap_run(
+    async def wrap_run(
         self,
         exchange: PluginRunExchange,
         call_next: PluginRunNext[Any],
-    ) -> PluginRunResponse[Any]: ...
+    ) -> HarnessRunResult[Any]: ...
 ```
 
 A stable non-blank `plugin_id` identifies one configured middleware instance. It is an ordering and lookup key, not authority. Several instances of the same concrete plugin type are allowed when their IDs differ.
@@ -356,29 +356,25 @@ class PluginRunExchange:
 
 
 class PluginRunNext[OutputT]:
-    def __call__(
+    async def __call__(
         self,
         exchange: PluginRunExchange,
-    ) -> PluginRunResponse[OutputT]: ...
-
-
-class PluginRunResponse[OutputT](
-    AsyncIterator[HarnessEvent | HarnessRunResult[OutputT]]
-):
-    async def aclose(self) -> None: ...
+    ) -> HarnessRunResult[OutputT]: ...
 ```
 
-`PluginRunNext` is one-shot. A plugin may call it at most once or short-circuit by returning its own response. `PluginRunResponse` has one consumer and an idempotent `aclose()`.
-
-Input flows outer-to-inner. Events and the complete result candidate flow inner-to-outer. A plugin may:
+`wrap_run` is an async execution/result wrapper, not an event iterator. `PluginRunNext` is one-shot: a plugin may await it at most once, or short-circuit by returning its own `HarnessRunResult`. Input flows outer-to-inner and validated complete results flow inner-to-outer. A plugin may:
 
 - replace semantic input while preserving the trusted `AgentContext`;
-- map or suppress non-terminal events;
+- emit validated Harness extensions through `exchange.context.events.emit()`;
 - short-circuit before the Pydantic Agent starts;
 - translate an explicitly handled error;
 - replace the complete `HarnessRunResult` candidate.
 
-Already emitted events cannot be retracted. At each response boundary, the Harness checks the `HarnessEvent` envelope, root or registered-child correlation, preserved child provenance and sequence, and a non-blank `event_kind` for events satisfying the open `AgentStreamEventProtocol`. It does not reconstruct or schema-validate trusted Pydantic AI or plugin-transformed Agent event payloads. Harness-owned `HarnessExtensionEvent` values are revalidated for their schema, redaction, finite-JSON, and payload-size invariants after plugin transformation. Complete result candidates remain subject to output typing, message suffix, state schema, run correlation, and result-combination validation before public terminal delivery.
+Plugins do not intercept, rewrite, suppress, or manufacture native stream events or terminal success. The Run consumes its bounded event channel independently of plugin progression, including emissions before `call_next`, after its result, and on short-circuit paths. Slow public consumption applies backpressure; stopping the consumer wakes blocked emitters. Binding occurs before consumption starts, so pre-start emissions are bounded and overflow fails rather than waiting for a consumer that does not yet exist.
+
+Already emitted events cannot be retracted. The [event contract](12-events-observability-and-usage.md) owns canonical production, validation, child forwarding and producer observation. Presentation changes belong in the Host's replay-stable Stream Protocol processor before the common live/persisted display fold, not in execution middleware.
+
+At every returned result boundary the Harness validates output typing, message suffix, state schema, run correlation and result combinations. Native Pydantic `AbstractCapability.wrap_run` remains its separate upstream API.
 
 ## Trusted Result and State Composition
 
@@ -396,9 +392,9 @@ A plugin can inspect the actual semantic input and use trusted collaborators or 
 
 ## Result and Cleanup Placement
 
-The inner path yields ordinary Harness events followed by one result candidate. Each response boundary validates a candidate before an outer plugin can observe it, so a later outer failure retains the nearest valid inner outcome.
+The inner path returns one result candidate. Each returned result boundary validates a candidate before an outer plugin can observe it, so a later outer failure retains the nearest valid inner outcome. A replacement that never returns, including when its wrapper's `finally` raises, does not supersede that outcome.
 
-On normal completion, the Harness closes registered plugin responses from inner to outer and then closes remaining run resources before publishing `HarnessRunResultEvent`. Cleanup occurs in the task that entered the async scopes. External cancellation remains pending across cleanup even if cleanup code suppresses an injected `CancelledError`.
+On normal completion, async wrappers unwind inner-to-outer, including their `finally` blocks. The Harness then drains accepted events through the terminal Environment fence and closes remaining run resources before publishing `HarnessRunResultEvent`. Plugin and native cleanup occurs in the task that entered the async scopes. External cancellation remains pending across cleanup even if cleanup code suppresses an injected `CancelledError`.
 
 If middleware or cleanup fails after a valid candidate exists, `RunCleanupError.outcome` retains that nearest immutable candidate and no terminal event is published. If no candidate exists, the original error propagates after cleanup.
 
@@ -430,9 +426,9 @@ Untrusted or separately governed behavior belongs behind a tool, Environment, mo
 | Unknown ordering reference or cycle                | Build fails deterministically                                              |
 | Agent/run replacement changes type, ID, or order   | Build or run setup fails                                                   |
 | Invalid Capability contribution                    | Build fails                                                                |
-| Reused continuation or response iterator           | `PluginError`                                                              |
+| Reused continuation                                | `PluginError`                                                              |
 | Replaced trusted context or invalid semantic input | Inner path fails before Pydantic work                                      |
-| Invalid event or result candidate                  | `PluginError`; nearest earlier valid candidate is retained when one exists |
+| Invalid result candidate                           | `PluginError`; nearest earlier valid candidate is retained when one exists |
 | Middleware or cleanup failure after a candidate    | `RunCleanupError` retains the candidate and withholds terminal delivery    |
 
 ## Boundaries

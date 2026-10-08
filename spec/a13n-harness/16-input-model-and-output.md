@@ -447,7 +447,7 @@ Provider-suspended continuation is not attempt recovery. Pydantic owns the publi
 
 ## Stream Boundary
 
-Pydantic `AgentStreamEvent` values are the source events. The Harness validates each event, adds public Harness correlation and sequence, and lets trusted plugin middleware transform the stream. Public sequence numbers are assigned after transformation.
+Pydantic `AgentStreamEvent` values are the source events. The Harness validates and observes each event at production, adds public Harness correlation, and assigns public sequence numbers at delivery. Plugin middleware wraps execution and results without transforming the event stream.
 
 Events from a recoverable failed attempt remain visible. A later attempt continues the logical run but cannot retract earlier observations. Consumers therefore use the terminal result to determine the logical outcome rather than treating any intermediate model event as completion.
 

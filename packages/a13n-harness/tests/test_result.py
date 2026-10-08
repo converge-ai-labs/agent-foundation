@@ -84,7 +84,6 @@ async def test_plugin_boundaries_do_not_reserialize_normalized_history() -> None
 @pytest.mark.parametrize("invalid_suffix", [False, True])
 async def test_plugin_result_subclass_history_is_normalized_and_validated(invalid_suffix) -> None:
     from a13n_harness import RunCleanupError
-    from a13n_harness.plugins import PluginRunResponse
 
     class CustomResult(HarnessRunResult):
         def new_messages(self):
@@ -93,23 +92,17 @@ async def test_plugin_result_subclass_history_is_normalized_and_validated(invali
             return super().new_messages()
 
     class Plugin(_Passthrough):
-        def wrap_run(self, exchange, call_next):
-            async def iterate():
-                async for item in call_next(exchange):
-                    if isinstance(item, HarnessRunResult):
-                        yield CustomResult(
-                            thread_id=item.thread_id,
-                            run_id=item.run_id,
-                            status=item.status,
-                            output=item.output,
-                            state=item.state,
-                            usage=item.usage,
-                            _messages=item.all_messages(),
-                        )
-                    else:
-                        yield item
-
-            return PluginRunResponse(iterate())
+        async def wrap_run(self, exchange, call_next):
+            item = await call_next(exchange)
+            return CustomResult(
+                thread_id=item.thread_id,
+                run_id=item.run_id,
+                status=item.status,
+                output=item.output,
+                state=item.state,
+                usage=item.usage,
+                _messages=item.all_messages(),
+            )
 
     async def response(messages, info):
         yield "done"

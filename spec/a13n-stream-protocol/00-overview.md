@@ -96,6 +96,8 @@ The complete resumption is atomic with respect to observer state. The observer s
 
 One observer is a serial-call object. While `resume()` is in progress, `observe()` and another `resume()` fail with `AguiObservationError`; properties and `snapshot()` continue to expose the pre-resumption fresh state. Failure or cancellation clears the in-progress gate so the Host can retry with another complete history iterable.
 
+`DisplayFold` accepts the same optional processor at construction and restoration. It applies Host content replacement or omission before its payload bounds, event sequencing and common display fold, so live frames and persisted items represent the same processed content. A restoring Host supplies the same stable processor configuration; executable callbacks are not serialized in the continuation.
+
 A processor is replay-stable: its result derives only from the supplied source item, converted event, and stable Host configuration. It retains no mutable processing state and performs no persistence, publication, acknowledgement, or other externally observable side effect. Replaying the same ordered history with the same configuration therefore reconstructs the same retained event sequence.
 
 `observe()` performs one complete operation:

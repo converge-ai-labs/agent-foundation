@@ -897,9 +897,9 @@ async def test_host_plugin_selects_presentation_after_agent_binding(grouped: boo
             log.append("plugin:for_run")
             return self
 
-        def wrap_run(self, exchange, call_next):
+        async def wrap_run(self, exchange, call_next):
             log.append("plugin:wrap_run")
-            return call_next(exchange)
+            return await call_next(exchange)
 
     target = ("call_proxy_tool", {"group": "crm", "tool": "identify", "arguments": {}}) if grouped else ("identify", {})
     if codeact:

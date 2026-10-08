@@ -14,7 +14,7 @@ from a13n_harness import (
     RunBindings,
     RunCleanupError,
 )
-from a13n_harness.plugins import PluginRunExchange, PluginRunNext, PluginRunResponse
+from a13n_harness.plugins import PluginRunExchange, PluginRunNext
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
@@ -84,14 +84,13 @@ class ReplaceOutput(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "replace-output"
 
-    def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                if isinstance(item, HarnessRunResult) and item.status == "completed":
-                    item = item.replace(output={"items": [{"value": "wrong", "kind": "ok"}]})
-                yield item
-
-        return PluginRunResponse(iterate())
+    async def wrap_run(self, exchange: PluginRunExchange, call_next: PluginRunNext) -> HarnessRunResult:
+        result = await call_next(exchange)
+        return (
+            result.replace(output={"items": [{"value": "wrong", "kind": "ok"}]})
+            if result.status == "completed"
+            else result
+        )
 
 
 async def test_plugin_cannot_replace_valid_output_with_schema_violation() -> None:

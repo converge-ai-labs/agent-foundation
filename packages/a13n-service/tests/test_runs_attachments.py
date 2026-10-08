@@ -350,3 +350,82 @@ async def test_acceptance_refuses_a_queued_file_its_run_could_not_read(
         (_, entry) = await runs_kit.inbox(service, thread_id)
         assert entry["status"] == "failed" and entry["failure"]["code"] == "invalid_argument", entry
         assert (await runs_kit.get_thread(service, thread_id))["current_run_id"] is None
+
+
+@pytest.mark.parametrize("read_in_flight", [False, True])
+async def test_slow_checkpoint_finishes_attachment_steering_before_environment_teardown(
+    serve, settings, scripted_model, runs_kit, tmp_path, monkeypatch, read_in_flight
+) -> None:
+    from a13n_service.runs import execute as execution
+    from a13n_service.runs.boundaries import Boundaries
+    from a13n_service.runs.execute import _Attempt
+
+    async def unexpected_retry(runtime, lease, error):
+        raise AssertionError("A completed model must not retry after attachment steering") from error
+
+    monkeypatch.setattr(execution, "_release", unexpected_retry)
+    finishing, release, reading, model_gate = (asyncio.Event() for _ in range(4))
+    drain, commit, read = Boundaries.drain, _Attempt._commit, _Attempt._read
+
+    async def delayed_read(self, entry, environment):
+        if release.is_set():  # Only the steer, not the initial assigned input.
+            reading.set()
+            await finishing.wait()
+        return await read(self, entry, environment)
+
+    async def draining(self):
+        finishing.set()
+        await drain(self)
+
+    async def delayed(self, state, **kwargs):
+        if kwargs.get("outcome") is None:
+            await release.wait()
+        return await commit(self, state, **kwargs)
+
+    monkeypatch.setattr(Boundaries, "drain", draining)
+    monkeypatch.setattr(_Attempt, "_commit", delayed)
+    monkeypatch.setattr(_Attempt, "_read", delayed_read)
+    async with serve(settings=_with_local_environments(settings)) as service:
+        await runs_kit.pause_sweeps(service)
+        agent = await runs_kit.add_agent(
+            service,
+            "reader",
+            await _model(service, scripted_model),
+            default_environment_template_id=await _local_template(service, tmp_path),
+        )
+        archive = await _asset(service, runs_kit, "late.zip", "application/zip", ARCHIVE)
+        scripted_model.say("Done", gate=model_gate if read_in_flight else None)
+        submitted = await runs_kit.start_thread(service, agent, "finish quickly")
+        run = submitted["run"]
+        running = await runs_kit.attempt(service)
+        async with asyncio.timeout(10):
+            if read_in_flight:
+                await scripted_model.request()
+            else:
+                await finishing.wait()
+            steer = await runs_kit.submit(service, run["thread_id"], _message(agent, _attached(archive)))
+            assert steer.status_code == 201, steer.text
+            release.set()
+            if read_in_flight:
+                await reading.wait()
+                model_gate.set()
+            await running
+        result = await runs_kit.get_run(service, run["id"])
+        assert (result["status"], result["output"]) == ("completed", "Done"), result
+        attempts = (await service.client.get(f"{service.api}/runs/{run['id']}/attempts")).json()["items"]
+        assert len(attempts) == 1 and attempts[0]["status"] == "succeeded"
+        mount = run["environment_mounts"][0]
+        placed = (
+            tmp_path
+            / mount["environment_id"]
+            / ".a13n"
+            / "attachments"
+            / hashlib.sha256(ARCHIVE).hexdigest()
+            / "late.zip"
+        )
+        if read_in_flight:
+            assert placed.read_bytes() == ARCHIVE
+        else:
+            assert not placed.exists()
+        entries = {entry["id"]: entry for entry in await runs_kit.inbox(service, run["thread_id"])}
+        assert entries[steer.json()["entry"]["id"]]["status"] != "failed"

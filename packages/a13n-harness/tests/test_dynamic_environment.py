@@ -52,7 +52,6 @@ from a13n_harness.plugins import (
     AbstractHarnessPlugin,
     PluginRunExchange,
     PluginRunNext,
-    PluginRunResponse,
 )
 from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
@@ -2213,21 +2212,17 @@ class _MountAfterResultPlugin(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return "mount-after-result"
 
-    def wrap_run(
+    async def wrap_run(
         self,
         exchange: PluginRunExchange,
         call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                if isinstance(item, HarnessRunResult):
-                    try:
-                        await self._runtime.mount("local", self._mount, make_default=True)
-                    except EnvironmentError as exc:
-                        self.error_code = exc.code
-                yield item
-
-        return PluginRunResponse(iterate())
+    ) -> HarnessRunResult:
+        result = await call_next(exchange)
+        try:
+            await self._runtime.mount("local", self._mount, make_default=True)
+        except EnvironmentError as exc:
+            self.error_code = exc.code
+        return result
 
 
 def _environment_change_events(items: list[Any]) -> list[HarnessEvent]:
@@ -2319,67 +2314,24 @@ async def test_mount_from_result_middleware_drains_before_terminal_result(tmp_pa
     assert items[-1].result.output_or_raise() == "done"
 
 
-class _TransformEnvironmentChangeEventsPlugin(AbstractHarnessPlugin):
-    def __init__(self) -> None:
-        self.seen = 0
-        self.order: list[str] = []
-
-    @property
-    def plugin_id(self) -> str:
-        return "transform-environment-change-events"
-
-    def wrap_run(
-        self,
-        exchange: PluginRunExchange,
-        call_next: PluginRunNext,
-    ) -> PluginRunResponse:
-        async def iterate():
-            async for item in call_next(exchange):
-                if _environment_change_events([item]):
-                    assert isinstance(item, HarnessEvent)
-                    assert isinstance(item.event, HarnessExtensionEvent)
-                    self.seen += 1
-                    self.order.append("event")
-                    item = HarnessEvent(
-                        thread_id=item.thread_id,
-                        run_id=item.run_id,
-                        sequence=item.sequence,
-                        occurred_at=item.occurred_at,
-                        event=HarnessExtensionEvent(
-                            kind=item.event.kind,
-                            payload={**item.event.payload, "observed_by_plugin": True},
-                        ),
-                    )
-                elif isinstance(item, HarnessRunResult):
-                    self.order.append("result")
-                yield item
-
-        return PluginRunResponse(iterate())
-
-
-async def test_environment_change_events_pass_through_plugin_middleware(tmp_path: Path) -> None:
+async def test_environment_change_events_share_producer_and_public_paths(tmp_path: Path) -> None:
     aggregate = create_empty_environment_runtime()
-    transform_plugin = _TransformEnvironmentChangeEventsPlugin()
+    observed: list[HarnessEvent] = []
 
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+    async def model_stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         await aggregate.mount("local", _local_mount(tmp_path), make_default=True)
         yield "done"
 
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        plugins=(transform_plugin,),
-    )
-    async with executable.stream("start", bindings=RunBindings.embedded(environment=aggregate)) as run:
+    executable = HarnessBuilder().build(AgentSpec(), output_type=str, model=FunctionModel(stream_function=model_stream))
+    async with executable.stream(
+        "start", bindings=RunBindings.embedded(environment=aggregate, producer_observer=observed.append)
+    ) as run:
         items = [item async for item in run]
-
-    change_events = _environment_change_events(items)
-    assert transform_plugin.seen == 1
-    assert transform_plugin.order == ["event", "result"]
-    assert len(change_events) == 1
-    assert change_events[0].event.payload["observed_by_plugin"] is True
+    assert len(_environment_change_events(items)) == 1
+    assert [item.event for item in _environment_change_events(items)] == [
+        item.event for item in _environment_change_events(observed)
+    ]
     assert items[-1].result.output_or_raise() == "done"
 
 

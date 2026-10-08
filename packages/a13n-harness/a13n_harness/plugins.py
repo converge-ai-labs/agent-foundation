@@ -3,28 +3,20 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal, Protocol, cast, runtime_checkable
+from typing import Any, Literal, cast
 
 from pydantic_ai.capabilities import AbstractCapability
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import PluginError
-from a13n_harness.events import HarnessEvent
 from a13n_harness.input import SemanticRunInput
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
 
 type PluginPosition = Literal["outermost", "innermost"]
-type PluginRunItem[OutputT] = HarnessEvent | HarnessRunResult[OutputT]
-type PluginRunItemValidator[OutputT] = Callable[[PluginRunItem[OutputT]], PluginRunItem[OutputT]]
 type StateExporter = Callable[[], Awaitable[HarnessState]]
-
-
-@runtime_checkable
-class _AsyncClosable(Protocol):
-    async def aclose(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,63 +50,21 @@ class PluginRunExchange:
         return await self._state_exporter()
 
 
-class PluginRunResponse[OutputT](AsyncIterator[PluginRunItem[OutputT]]):
-    """Single-consumer, explicitly closeable plugin response."""
-
-    def __init__(self, iterator: AsyncIterator[PluginRunItem[OutputT]]) -> None:
-        self._iterator = iterator
-        self._closed = False
-        self._iterated = False
-        self._item_validator: PluginRunItemValidator[OutputT] | None = None
-
-    def __aiter__(self) -> PluginRunResponse[OutputT]:
-        if self._iterated:
-            raise PluginError(
-                "Plugin responses have exactly one consumer.",
-                code="plugin_response_reused",
-            )
-        self._iterated = True
-        return self
-
-    async def __anext__(self) -> PluginRunItem[OutputT]:
-        if self._closed:
-            raise StopAsyncIteration
-        item = await self._iterator.__anext__()
-        if self._item_validator is not None:
-            item = self._item_validator(item)
-        return item
-
-    def _bind_item_validator(self, validator: PluginRunItemValidator[OutputT]) -> None:
-        """Bind Harness result validation to this response boundary."""
-        self._item_validator = validator
-
-    async def aclose(self) -> None:
-        """Close the underlying iterator once."""
-        if self._closed:
-            return
-        try:
-            if isinstance(self._iterator, _AsyncClosable):
-                await self._iterator.aclose()
-        finally:
-            self._item_validator = None
-            self._closed = True
-
-
 class PluginRunNext[OutputT]:
     """A one-shot continuation to the next inner middleware layer."""
 
-    def __init__(self, factory: Callable[[PluginRunExchange], PluginRunResponse[OutputT]]) -> None:
+    def __init__(self, factory: Callable[[PluginRunExchange], Awaitable[HarnessRunResult[OutputT]]]) -> None:
         self._factory = factory
         self._called = False
 
-    def __call__(self, exchange: PluginRunExchange) -> PluginRunResponse[OutputT]:
+    async def __call__(self, exchange: PluginRunExchange) -> HarnessRunResult[OutputT]:
         if self._called:
             raise PluginError(
                 "A plugin may call its run continuation at most once.",
                 code="plugin_next_reused",
             )
         self._called = True
-        return self._factory(exchange)
+        return await self._factory(exchange)
 
 
 class AbstractHarnessPlugin(ABC):
@@ -142,13 +92,13 @@ class AbstractHarnessPlugin(ABC):
         """Contribute ordinary Pydantic AI Capabilities at Agent construction."""
         return ()
 
-    def wrap_run(
+    async def wrap_run(
         self,
         exchange: PluginRunExchange,
         call_next: PluginRunNext[Any],
-    ) -> PluginRunResponse[Any]:
-        """Wrap the canonical stream path."""
-        return call_next(exchange)
+    ) -> HarnessRunResult[Any]:
+        """Wrap execution and its result; emit observations through context.events."""
+        return await call_next(exchange)
 
 
 class BoundPluginContext:

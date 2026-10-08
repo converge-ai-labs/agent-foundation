@@ -322,15 +322,15 @@ plugins:
     plugin_key: example.run-recorder
     enabled: true
     configuration:
-      count_events: true
+      record_usage: true
   - plugin_id: recorder-disabled
     plugin_key: example.run-recorder
     enabled: false
     configuration:
-      count_events: false
+      record_usage: false
 ```
 
-`plugin_id`, `plugin_key`, and `enabled` belong to the Harness envelope. `count_events` is a real package-owned parameter validated by `RunRecorderConfiguration` and used directly by the plugin. Disabled entries are neither imported on their own nor created.
+`plugin_id`, `plugin_key`, and `enabled` belong to the Harness envelope. `record_usage` is a real package-owned parameter validated by `RunRecorderConfiguration` and used directly by the plugin. Disabled entries are neither imported on their own nor created.
 
 A Host does not need a file. It can pass the same data schema directly:
 
@@ -343,7 +343,7 @@ context = HarnessBuildContext.from_configuration(
                 "plugin_id": "recorder-entrypoint",
                 "plugin_key": "example.run-recorder",
                 "enabled": True,
-                "configuration": {"count_events": True},
+                "configuration": {"record_usage": True},
             }
         ],
     }
@@ -392,7 +392,7 @@ plugin = RunRecorderPlugin(
 uv run plugin-example-harness-code
 ```
 
-Both paths use an offline `FunctionModel` and produce a deterministic result apart from the generated run ID and positive event count:
+Both paths use an offline `FunctionModel` and produce a deterministic result apart from the generated run ID and model request count:
 
 ```text
 selection mode: entrypoint
@@ -400,7 +400,7 @@ plugin id: recorder-entrypoint
 run id: <generated run ID>
 output: offline model response
 observed status: completed
-observed events: <positive count>
+model requests: <positive count>
 ```
 
 Code mode reports `selection mode: code` and `plugin id: recorder-code`.

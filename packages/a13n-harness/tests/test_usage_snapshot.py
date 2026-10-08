@@ -238,7 +238,7 @@ async def test_scope_cancellation_redelivery_does_not_interrupt_producer_cleanup
 
     stream = executable().stream("unused")
     producer_task = asyncio.create_task(producer())
-    stream._response_pump_task = producer_task
+    stream._execution_task = producer_task
     await ready.wait()
 
     async def consumer():
@@ -248,7 +248,7 @@ async def test_scope_cancellation_redelivery_does_not_interrupt_producer_cleanup
                 draining.set()
                 await asyncio.Event().wait()
             finally:
-                await stream._stop_response_pump()
+                await stream._stop_execution()
 
     drain = asyncio.create_task(consumer())
     await draining.wait()

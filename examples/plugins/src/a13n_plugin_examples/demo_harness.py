@@ -150,7 +150,7 @@ def _print_result(result: HarnessDemoResult) -> None:
     print(f"run id: {result.run_id}")
     print(f"output: {result.output}")
     print(f"observed status: {result.observation.status}")
-    print(f"observed events: {result.observation.event_count}")
+    print(f"model requests: {result.observation.model_requests}")
 
 
 def main_entrypoint() -> None:
