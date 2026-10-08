@@ -17,15 +17,17 @@ import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
-from sqlalchemy import or_, select
+from sqlalchemy import Integer, String, column, or_, select, true, values
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from a13n_service.infra.crypto import Envelope, KeyRing
 from a13n_service.infra.db import Storage, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbound import open_http
-from a13n_service.infra.outbox import Claim, Undelivered, enqueue, secret_location, settle
+from a13n_service.infra.outbox import Claim, OutboxRow, Undelivered, prepare, secret_location, settle
 from a13n_service.resources.subscriptions.schemas import SECRET_UNAVAILABLE, LifecycleKind, WebhookTarget
 from a13n_service.resources.subscriptions.service import signing_location
 from a13n_service.resources.subscriptions.tables import SubscriptionRow
@@ -70,41 +72,75 @@ async def stage_webhooks(
     Each delivery adds its own `id` and `type` to `payload`. A subscription whose signing secret cannot be
     decrypted gets dead deliveries instead, so it never fails the transition.
     """
-    subscriptions = (
-        await session.scalars(
-            select(SubscriptionRow)
-            .where(
-                SubscriptionRow.workspace_id == run.workspace_id,
-                SubscriptionRow.enabled,
-                or_(*(SubscriptionRow.kinds.contains([kind]) for kind in kinds)),
-                or_(
-                    ~SubscriptionRow.filter.has_key("agent_id"),
-                    SubscriptionRow.filter["agent_id"].astext == run.agent_id,
-                ),
-                or_(
-                    ~SubscriptionRow.filter.has_key("session_id"),
-                    SubscriptionRow.filter["session_id"].astext == run.session_id,
-                ),
-                or_(
-                    ~SubscriptionRow.filter.has_key("thread_id"),
-                    SubscriptionRow.filter["thread_id"].astext == run.thread_id,
-                ),
+    session.add_all(await prepare_webhooks(session, keys, [Transition(run, kinds, payload)], limit=limit))
+
+
+@dataclass(frozen=True, slots=True)
+class Transition:
+    run: RunFacts
+    kinds: Sequence[LifecycleKind]
+    payload: Mapping[str, JsonValue]
+
+
+async def prepare_webhooks(
+    session: AsyncSession, keys: KeyRing, transitions: Sequence[Transition], *, limit: int
+) -> list[OutboxRow]:
+    """Select subscriptions once for the batch, applying filters and the cap separately to each run."""
+    if not transitions:
+        return []
+    facts = values(
+        column("ordinal", Integer),
+        column("workspace_id", String),
+        column("agent_id", String),
+        column("session_id", String),
+        column("thread_id", String),
+        column("kinds", ARRAY(String)),
+        name="transitions",
+    ).data(
+        [
+            (i, t.run.workspace_id, t.run.agent_id, t.run.session_id, t.run.thread_id, list(t.kinds))
+            for i, t in enumerate(transitions)
+        ]
+    )
+    matches = (
+        select(SubscriptionRow)
+        .where(
+            SubscriptionRow.workspace_id == facts.c.workspace_id,
+            SubscriptionRow.enabled,
+            SubscriptionRow.kinds.has_any(facts.c.kinds),
+            *(
+                or_(~SubscriptionRow.filter.has_key(name), SubscriptionRow.filter[name].astext == facts.c[name])
+                for name in ("agent_id", "session_id", "thread_id")
+            ),
+        )
+        .order_by(SubscriptionRow.id)
+        .limit(limit + 1)
+        .lateral()
+    )
+    subscription = aliased(SubscriptionRow, matches)
+    selected = await session.execute(
+        select(facts.c.ordinal, subscription)
+        .select_from(facts.join(matches, true()))
+        .order_by(facts.c.ordinal, subscription.id)
+    )
+    counts = [0] * len(transitions)
+    rows: list[OutboxRow] = []
+    for ordinal, matched in selected:
+        transition = transitions[ordinal]
+        counts[ordinal] += 1
+        if counts[ordinal] > limit:
+            logger.warning(
+                "Matching subscriptions exceed the workspace cap",
+                extra={"workspace_id": transition.run.workspace_id, "limit": limit},
             )
-            .order_by(SubscriptionRow.id)
-            .limit(limit + 1)
-        )
-    ).all()
-    if len(subscriptions) > limit:
-        logger.warning(
-            "Matching subscriptions exceed the workspace cap", extra={"workspace_id": run.workspace_id, "limit": limit}
-        )
-    for subscription in subscriptions[:limit]:
-        for kind in kinds:
-            if kind in subscription.kinds:
-                _stage(session, keys, subscription, {**payload, "type": kind})
+            continue
+        for kind in transition.kinds:
+            if kind in matched.kinds:
+                rows.append(_prepare(keys, matched, {**transition.payload, "type": kind}))
+    return rows
 
 
-def _stage(session: AsyncSession, keys: KeyRing, subscription: SubscriptionRow, payload: dict[str, JsonValue]) -> None:
+def _prepare(keys: KeyRing, subscription: SubscriptionRow, payload: dict[str, JsonValue]) -> OutboxRow:
     # The delivery ID is the outbox row ID, the dedupe identity receivers see, and the secret's AAD.
     delivery_id = new_object_id("obx")
     dead = None
@@ -116,8 +152,7 @@ def _stage(session: AsyncSession, keys: KeyRing, subscription: SubscriptionRow, 
             extra={"subscription_id": subscription.id, "exception_details": exception_details(error)},
         )
         target, dead = {"url": subscription.url}, SECRET_UNAVAILABLE
-    enqueue(
-        session,
+    return prepare(
         organization_id=subscription.organization_id,
         workspace_id=subscription.workspace_id,
         kind="webhook",

@@ -15,11 +15,13 @@ from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
-from a13n_service.infra.outbox import Delivery, OutboxRow, Policy, enqueue
+from a13n_service.infra.outbox import Delivery, OutboxRow, Policy, enqueue, enqueue_batch
 from a13n_service.resources.subscriptions import service as subscriptions
 from a13n_service.resources.subscriptions.delivery import (
     RunFacts,
+    Transition,
     WebhookSender,
+    prepare_webhooks,
     signature,
     stage_webhooks,
     webhook_target,
@@ -366,3 +368,64 @@ async def test_destinations_are_checked_again_at_delivery(service: SimpleNamespa
         policy = EndpointPolicy.from_http_origins(require_https=True, http_origins=(url.removesuffix("/hook"),))
         await send(runtime, attempts=1, policy=policy)
         assert await status(runtime, allowed) == ("delivered", 1, None) and len(received) == 1
+
+
+async def test_batch_selection_caps_each_run_after_its_filters(service, runs_kit) -> None:  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    runtime, url = service.runtime, "http://127.0.0.1:9/hook"
+    runs = [
+        RunFacts(service.tenant.workspace_id, new_object_id("ap"), new_object_id("ses"), new_object_id("thr"))
+        for _ in range(2)
+    ]
+    subscriptions_by_run = []
+    for run in runs:
+        subscriptions_by_run.append(
+            [
+                await subscribe(
+                    service,
+                    url,
+                    ["run.running", "run_attempt.leased"],
+                    filter={
+                        "agent_id": run.agent_id,
+                        "session_id": run.session_id,
+                        "thread_id": run.thread_id,
+                    },
+                )
+                for _ in range(2)
+            ]
+        )
+    # One selected subscription cannot decrypt. Its dead deliveries must not prevent other runs' deliveries.
+    chosen = [min(group, key=lambda item: item["id"]) for group in subscriptions_by_run]
+    async with transaction(runtime.storage) as session:
+        broken = await session.get_one(SubscriptionRow, chosen[0]["id"])
+        source = await session.get_one(SubscriptionRow, chosen[1]["id"])
+        broken.signing_secret = dict(source.signing_secret)
+    transitions = [
+        Transition(run, ["run.running", "run_attempt.leased"], {"index": index}) for index, run in enumerate(runs)
+    ]
+    # Identical filter identities in a different workspace must not match.
+    transitions.append(
+        Transition(
+            RunFacts(new_object_id("wsp"), runs[0].agent_id, runs[0].session_id, runs[0].thread_id),
+            ["run.running"],
+            {"index": 2},
+        )
+    )
+    async with transaction(runtime.storage) as session:
+        await enqueue_batch(session, await prepare_webhooks(session, runtime.keys, transitions, limit=1))
+    rows = await webhook_rows(service)
+    assert sorted((r.payload["index"], r.subscription_id, r.payload["type"]) for r in rows) == sorted(
+        (index, chosen[index]["id"], kind) for index in range(2) for kind in ("run.running", "run_attempt.leased")
+    )
+    for row in rows:
+        assert row.payload["id"] == row.id
+        if row.payload["index"] == 0:
+            assert (row.status, row.last_error) == ("dead", SECRET_UNAVAILABLE)
+            assert row.settled_at is not None
+        else:
+            assert row.status == "pending" and row.settled_at is None
+            envelope = Envelope.model_validate(row.target["signing_secret"])
+            assert (
+                runtime.keys.reveal(envelope, SecretLocation(row.organization_id, "outbox", "target", row.id))
+                == SECRET.encode()
+            )

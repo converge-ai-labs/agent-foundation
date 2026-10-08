@@ -9,17 +9,19 @@ import secrets
 from datetime import timedelta
 
 from a13n_logging import get_logger
-from sqlalchemy import select
+from sqlalchemy import Integer, String, column, func, insert, select, true, update, values
 
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import now, transaction
 from a13n_service.infra.ids import new_object_id
+from a13n_service.infra.outbox import enqueue_batch
 from a13n_service.infra.telemetry import meter
+from a13n_service.resources.subscriptions.delivery import Transition, prepare_webhooks
 from a13n_service.runs import checkpoints
 from a13n_service.runs.attempts import Lease, lock_lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import AttemptRow, RunRow
-from a13n_service.runs.webhooks import notify_subscribers
+from a13n_service.runs.webhooks import lifecycle_transition, notify_subscribers
 
 logger = get_logger(__name__)
 
@@ -46,10 +48,32 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
                 .with_for_update(skip_locked=True)
             )
         ).all()
-        for run in runs:
-            previous = await session.scalar(
-                select(AttemptRow).where(AttemptRow.run_id == run.id).order_by(AttemptRow.number.desc()).limit(1)
+        if not runs:
+            return []
+        latest = (
+            select(AttemptRow.id, AttemptRow.number, AttemptRow.status)
+            .where(AttemptRow.run_id == RunRow.id)
+            .order_by(AttemptRow.number.desc())
+            .limit(1)
+            .lateral()
+        )
+        previous_by_run = {
+            row.run_id: row
+            for row in await session.execute(
+                select(RunRow.id.label("run_id"), latest.c.id, latest.c.number, latest.c.status)
+                .select_from(RunRow)
+                .join(latest, true())
+                .where(RunRow.id.in_([run.id for run in runs]))
             )
+        }
+        attempts: list[dict] = []
+        updates: list[tuple[str, str, int]] = []
+        transitions: list[Transition] = []
+        takeovers: list[tuple[RunRow, int | None]] = []
+        for run in runs:
+            # Core writes below own persistence; these detached rows are transition snapshots only.
+            session.expunge(run)
+            previous = previous_by_run.get(run.id)
             handoff = previous is not None and previous.status == "yielded"
             token = secrets.token_urlsafe(32)
             attempt = AttemptRow(
@@ -67,18 +91,37 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
                 lease_expires_at=current + timedelta(seconds=runtime.settings.worker.lease_seconds),
                 heartbeat_at=current,
             )
-            session.add(attempt)
+            attempts.append(
+                {
+                    name: getattr(attempt, name)
+                    for name in (
+                        "id",
+                        "organization_id",
+                        "workspace_id",
+                        "run_id",
+                        "number",
+                        "status",
+                        "start_reason",
+                        "replaces_attempt_id",
+                        "worker_id",
+                        "worker_build",
+                        "lease_token_hash",
+                        "lease_expires_at",
+                        "heartbeat_at",
+                    )
+                }
+            )
+            updates.append((run.id, attempt.id, int(not handoff)))
             if not handoff:
                 run.attempts += 1
             waits.append((current - run.available_at).total_seconds())
             run.status, run.current_attempt_id = "running", attempt.id
             run.started_at = run.started_at or current
-            await session.flush()
-            await notify_subscribers(
-                session, runtime, run, ["run.running", "run_attempt.leased"], at=current, attempt=attempt
+            transitions.append(
+                lifecycle_transition(run, ["run.running", "run_attempt.leased"], at=current, attempt=attempt)
             )
             if previous is not None:
-                await checkpoints.reclaim(session, run, before_attempt=attempt.number)
+                takeovers.append((run, attempt.number))
             leases.append(
                 Lease(
                     run_id=run.id,
@@ -91,6 +134,31 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
                     token=token,
                 )
             )
+        await session.execute(insert(AttemptRow).values(attempts))
+        claimed = values(
+            column("run_id", String), column("attempt_id", String), column("charged", Integer), name="claimed"
+        ).data(updates)
+        changed = set(
+            await session.scalars(
+                update(RunRow)
+                .where(RunRow.id == claimed.c.run_id, RunRow.status == "accepted")
+                .values(
+                    status="running",
+                    current_attempt_id=claimed.c.attempt_id,
+                    attempts=RunRow.attempts + claimed.c.charged,
+                    started_at=func.coalesce(RunRow.started_at, current),
+                )
+                .returning(RunRow.id)
+                .execution_options(synchronize_session=False)
+            )
+        )
+        if changed != {run.id for run in runs}:
+            raise RuntimeError("Claimed run set changed while locked")
+        deliveries = await prepare_webhooks(
+            session, runtime.keys, transitions, limit=runtime.settings.control.subscriptions
+        )
+        deliveries.extend(await checkpoints.prepare_reclaims(session, takeovers))
+        await enqueue_batch(session, deliveries)
     for lease, wait in zip(leases, waits, strict=True):
         QUEUE_WAIT.record(wait)
         logger.info(
