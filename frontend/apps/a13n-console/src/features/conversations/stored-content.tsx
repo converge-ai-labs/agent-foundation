@@ -57,20 +57,28 @@ export function StoredContent({
   itemId,
   field,
   value,
+  renderValue,
 }: {
   itemId: string;
   field: string;
   value?: unknown;
+  renderValue?: (value: unknown) => ReactNode;
 }) {
   const context = useContext(Context);
   const reference = context?.items.get(itemId)?.content_refs?.[field];
-  if (!context || !reference) return <Value field={field} value={value} />;
+  if (!context || !reference)
+    return renderValue ? (
+      renderValue(value)
+    ) : (
+      <Value field={field} value={value} />
+    );
   return (
     <LoadContent
       key={reference.id}
       runId={context.runId}
       field={field}
       reference={reference}
+      renderValue={renderValue}
     />
   );
 }
@@ -79,10 +87,12 @@ function LoadContent({
   runId,
   field,
   reference,
+  renderValue,
 }: {
   runId: string;
   field: string;
   reference: ContentRef;
+  renderValue?: (value: unknown) => ReactNode;
 }) {
   const client = useClient(),
     { workspace } = useWorkspace(),
@@ -126,9 +136,17 @@ function LoadContent({
         </p>
       )}
       {loaded ? (
-        <Value field={field} value={loaded.value} />
+        renderValue ? (
+          renderValue(loaded.value)
+        ) : (
+          <Value field={field} value={loaded.value} />
+        )
       ) : reference.media_type === "text/plain" ? (
-        <Value field={field} value={reference.preview} />
+        renderValue ? (
+          renderValue(reference.preview)
+        ) : (
+          <Value field={field} value={reference.preview} />
+        )
       ) : (
         <JsonView value={reference.preview} />
       )}

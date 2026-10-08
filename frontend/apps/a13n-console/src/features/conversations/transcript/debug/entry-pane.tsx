@@ -225,6 +225,7 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
               itemId={entry.itemId ?? entry.id}
               field="arguments"
               value={entry.arguments}
+              renderValue={(value) => <PaneValue value={value} />}
             />
           </PaneSection>
           <PaneSection label={t("Result")}>
@@ -235,6 +236,7 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
                 itemId={entry.itemId ?? entry.id}
                 field="result"
                 value={entry.result}
+                renderValue={(value) => <PaneValue value={value} />}
               />
             )}
           </PaneSection>

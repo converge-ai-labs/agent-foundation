@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import type { DisplayItem } from "a13n-ui/display";
 import { createClient } from "../../service-client";
+import { PaneValue } from "./transcript/debug/pane-parts";
 import {
   StoredContent,
   StoredContents,
@@ -108,6 +109,28 @@ it("keeps the preview on failure and retries without marking the value complete"
     });
   fireEvent.click(screen.getByRole("button", { name: "Expand full content" }));
   expect(await screen.findByText("Recovered body")).toBeTruthy();
+});
+
+it("preserves Debug result formatting for both the preview and expanded value", async () => {
+  const result = item();
+  result.content_refs = { result: result.content_refs!.text! };
+  const saved = "Applied 1 hunk\nsrc/stream.ts";
+  respond = () =>
+    Response.json({ id: "cnt_one", media_type: "text/plain", value: saved });
+  render(
+    <StoredContents runId="run_one" items={[result]}>
+      <StoredContent
+        itemId="itm_one"
+        field="result"
+        renderValue={(value) => <PaneValue value={value} />}
+      />
+    </StoredContents>,
+  );
+  expect(screen.getByText("Short preview").tagName).toBe("PRE");
+  fireEvent.click(screen.getByRole("button", { name: "Expand full content" }));
+  const expanded = await screen.findByText("Applied 1 hunk src/stream.ts");
+  expect(expanded.tagName).toBe("PRE");
+  expect(expanded.textContent).toBe(saved);
 });
 
 it("drops an expanded old version when the committed reference changes", async () => {
