@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterable
 from time import monotonic
 
 import anyio
+from a13n_harness import model_catalog_updates
 from a13n_harness.model_catalog import get_official_model_catalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.definition import ModelProviderDefinition
@@ -31,6 +32,20 @@ REFRESH_SECONDS = 3600.0
 RETRY_SECONDS = 60.0
 
 
+async def run_official_catalog(policy: EndpointPolicy) -> None:
+    """Refresh Harness supplements in every role under the Service outbound policy."""
+
+    async def fetch() -> bytes:
+        async with open_http(
+            policy, timeout=model_catalog_updates.FETCH_SECONDS, max_bytes=model_catalog_updates.MAX_BYTES
+        ) as client:
+            response = await client.get(model_catalog_updates.OFFICIAL_MODELS_URL)
+            response.raise_for_status()
+            return response.content
+
+    await model_catalog_updates.run_official_model_updates(fetch)
+
+
 def catalog_channels(definitions: Iterable[ModelProviderDefinition]) -> frozenset[str]:
     """The catalog channels whose models some registered model provider type serves."""
     return frozenset(channel for definition in definitions for channel in definition.catalog_providers)
@@ -41,13 +56,20 @@ def model_characteristics(
 ) -> HarnessModelCharacteristics | None:
     """Exact metadata match in declared channel order; never infer access or prices.
 
-    The live catalog is primary. Bundled official facts fill missing fields or
+    The live catalog is primary. Current official facts fill missing fields or
     serve cold/unavailable catalogs, without fuzzy model aliases or network I/O.
     """
     official = get_official_model_catalog()
     for channel in channels:
         entry = next((item for item in catalog.items if item.ref.provider == channel and item.ref.model == model), None)
-        bundled = official.get(f"{channel}:{model}")
+        official_channel = {
+            "google": "google-gla",
+            "xai": "grok",
+            "x-ai": "grok",
+            "fireworks-ai": "fireworks",
+            "togetherai": "together",
+        }.get(channel, channel)
+        bundled = official.get(f"{official_channel}:{model}")
         if entry is None and bundled is None:
             continue
         facts = bundled.characteristics.model_dump(exclude_unset=True) if bundled is not None else {}

@@ -70,8 +70,17 @@ def test_official_model_catalog_contains_only_provider_qualified_direct_models()
     assert catalog["openai:gpt-5.5"].characteristics.context_window_tokens == 1_050_000
     assert all(entry.key.count(":") == 1 for entry in catalog.entries)
     assert {entry.key.partition(":")[0] for entry in catalog.entries} <= {
+        "alibaba",
+        "alibaba-cn",
         "anthropic",
+        "cerebras",
         "deepseek",
+        "fireworks",
+        "groq",
+        "minimax",
+        "mistral",
+        "sambanova",
+        "together",
         "google-gla",
         "grok",
         "moonshotai",
@@ -86,8 +95,8 @@ def test_official_model_catalog_contains_only_provider_qualified_direct_models()
     }
     text_only = catalog["zai:glm-4.7"].characteristics
     assert not text_only.capabilities and "capabilities" in text_only.model_fields_set
-    context_only = catalog["deepseek:deepseek-v4-pro"].characteristics
-    assert not context_only.capabilities and "capabilities" not in context_only.model_fields_set
+    text_only = catalog["deepseek:deepseek-v4-pro"].characteristics
+    assert not text_only.capabilities and "capabilities" in text_only.model_fields_set
 
 
 def test_default_pricing_catalog_exports_genai_snapshot_plus_harness_overlay() -> None:
@@ -114,10 +123,10 @@ def test_catalog_preserves_genai_and_overlay_time_window_pricing() -> None:
 
     assert legacy_peak is not None and legacy_peak.cost_usd == Decimal("1.37")
     assert legacy_off_peak is not None and legacy_off_peak.cost_usd == Decimal("0.685")
-    assert current_peak is not None and current_peak.cost_usd == Decimal("1.760")
+    assert current_peak is not None and current_peak.cost_usd == Decimal("1.500")
     assert current_peak.rule_id == "weekday-peak-1"
-    assert current_off_peak is not None and current_off_peak.cost_usd == Decimal("0.880")
-    assert weekend is not None and weekend.cost_usd == Decimal("0.880")
+    assert current_off_peak is not None and current_off_peak.cost_usd == Decimal("0.750")
+    assert weekend is not None and weekend.cost_usd == Decimal("0.750")
 
 
 def test_pricing_updates_replace_one_complete_entry_without_mutating_default() -> None:
@@ -218,10 +227,11 @@ def test_official_metadata_reuses_bundled_context_and_supplements_missing_models
         price_provider = {"grok": "x-ai", "google-gla": "google"}.get(provider, provider)
         price_key = f"{price_provider}:{name}"
         price = pricing.get(price_key)
-        if price is not None and price.context_window is not None:
-            # Supplemental values must either fill a gap or correct a differing value.
-            assert value["characteristics"].get("context_window_tokens") != price.context_window
-            assert official[model].characteristics.context_window_tokens == price.context_window
+        facts = value.get("characteristics", {})
+        if facts and price is not None and price.context_window is not None:
+            expected = facts.get("context_window_tokens", price.context_window)
+            assert official[model].characteristics.context_window_tokens == expected
+        assert "context_window" not in value.get("pricing", {})
     for name in ("gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"):
         facts = official[f"openai:{name}"].characteristics
         assert facts.context_window_tokens == 1050000
@@ -232,7 +242,7 @@ def test_official_metadata_reuses_bundled_context_and_supplements_missing_models
     "context,expected", [("", 123456), ("context_window_tokens: null", None), ("context_window_tokens: 456789", 456789)]
 )
 def test_official_context_merge_preserves_explicit_supplements_and_missing_media(
-    tmp_path, monkeypatch, context, expected
+    monkeypatch, context, expected
 ) -> None:
     from a13n_harness import model_catalog
     from a13n_harness.pricing import PricingCatalog
@@ -240,18 +250,47 @@ def test_official_context_merge_preserves_explicit_supplements_and_missing_media
     price = get_default_pricing_catalog()["openai:gpt-5.5"].model_copy(
         update={"model": "fixture", "context_window": 123456}
     )
-    (tmp_path / "data").mkdir()
-    (tmp_path / "data/official-models.yaml").write_text(
-        "schema_version: 1\nmodels:\n  openai:fixture:\n"
+    from a13n_harness._official_data import parse_official_data
+
+    data = parse_official_data(
+        "schema_version: 2\nmodels:\n  openai:fixture:\n"
         f"    characteristics: {{{context}}}\n"
         "    source_url: https://example.com/model\n"
     )
-    monkeypatch.setattr(model_catalog, "files", lambda _: tmp_path)
-    monkeypatch.setattr(model_catalog, "get_default_pricing_catalog", lambda: PricingCatalog({price.key: price}))
-    get_official_model_catalog.cache_clear()
-    try:
-        facts = get_official_model_catalog()["openai:fixture"].characteristics
-        assert facts.context_window_tokens == expected
-        assert "capabilities" not in facts.model_fields_set
-    finally:
-        get_official_model_catalog.cache_clear()
+    monkeypatch.setattr(model_catalog, "current_official_data", lambda: data)
+    monkeypatch.setattr(model_catalog, "_bundled_upstream_catalog", lambda: PricingCatalog({price.key: price}))
+    facts = get_official_model_catalog()["openai:fixture"].characteristics
+    assert facts.context_window_tokens == expected
+    assert "capabilities" not in facts.model_fields_set
+
+
+@pytest.mark.parametrize(
+    "key,context,input_price,output_price",
+    [
+        ("anthropic:claude-sonnet-5-5", 1000000, "2", "10"),
+        ("anthropic:claude-haiku-5-5", 1000000, "0.1", "0.5"),
+        ("moonshotai:kimi-k3", 1048576, "3", "15"),
+        ("x-ai:grok-4.7", 500000, "2", "6"),
+        ("x-ai:grok-4.20-0309-reasoning", 1000000, "1.25", "2.5"),
+        ("mistral:mistral-large-4", 1000000, "0.68", "2.09"),
+        ("fireworks:accounts/fireworks/models/ember-1", 1040000, "3", "15"),
+        ("together:moonshotai/Kimi-K3", 1048576, "3", "15"),
+        ("together:deepseek-ai/DeepSeek-V4.1-Flash", 1000000, "0.3", "1.2"),
+        ("minimax:MiniMax-M3", 1000000, "0.3", "1.2"),
+    ],
+)
+def test_reviewed_provider_prices_and_context(key, context, input_price, output_price):
+    entry = get_default_pricing_catalog()[key]
+    assert entry.context_window == context
+    parts = {part.price_key: part.price for part in entry.rules[0].prices}
+    assert parts["input_mtok"] == Decimal(input_price)
+    assert parts["output_mtok"] == Decimal(output_price)
+
+
+@pytest.mark.parametrize("tokens,rate", [(199999, "2"), (200000, "4")])
+def test_grok_long_context_includes_threshold(tokens, rate):
+    quote = CatalogModelCostCapability().quote(
+        _cost_input("grok-4.7", "x-ai", datetime(2026, 10, 8, tzinfo=UTC), input_tokens=tokens, output_tokens=0)
+    )
+    assert quote is not None
+    assert quote.cost_usd == Decimal(tokens) * Decimal(rate) / 1_000_000

@@ -496,3 +496,52 @@ async def test_discovery_metadata_resolves_cold_catalog_off_the_event_loop(monke
     assert catalog.due.is_set()
     assert facts["known"] is not None and facts["known"].context_window_tokens == 12345
     assert facts["unknown"] is None
+
+
+@pytest.mark.parametrize(
+    ("channel", "model_id"),
+    [
+        ("google", "gemini-3.8-flash"),
+        ("xai", "grok-4.7"),
+        ("x-ai", "grok-4.7"),
+        ("fireworks-ai", "accounts/fireworks/models/ember-1"),
+    ],
+)
+def test_official_fallback_normalizes_catalog_channel_names(channel, model_id):
+    facts = catalog_module.model_characteristics((channel,), model_id, ModelCatalog(items=[], status="unavailable"))
+    assert facts is not None
+    assert ModelCapability.IMAGE_UNDERSTANDING in facts.capabilities
+
+
+@pytest.mark.anyio
+async def test_official_catalog_fetch_uses_service_outbound_policy(monkeypatch):
+    from a13n_harness import model_catalog_updates
+
+    calls = []
+
+    @asynccontextmanager
+    async def open_client(policy, **limits):
+        calls.append((policy, limits))
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(lambda request: httpx2.Response(200, content=b"official document"))
+        ) as client:
+            yield client
+
+    async def run(fetch):
+        assert await fetch() == b"official document"
+
+    monkeypatch.setattr(catalog_module, "open_http", open_client)
+    monkeypatch.setattr(model_catalog_updates, "run_official_model_updates", run)
+    await catalog_module.run_official_catalog(LOOPBACK)
+    assert calls == [
+        (LOOPBACK, {"timeout": model_catalog_updates.FETCH_SECONDS, "max_bytes": model_catalog_updates.MAX_BYTES})
+    ]
+
+
+def test_together_fallback_preserves_undeclared_hosted_media():
+    facts = catalog_module.model_characteristics(
+        ("togetherai",), "moonshotai/Kimi-K3", ModelCatalog(items=[], status="unavailable")
+    )
+    assert facts is not None
+    assert facts.context_window_tokens == 1048576
+    assert "capabilities" not in facts.model_fields_set

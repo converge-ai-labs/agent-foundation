@@ -39,7 +39,7 @@ from a13n_service.migrations.runner import heads, upgrade
 from a13n_service.providers.environments import offered
 from a13n_service.providers.registry import Registry
 from a13n_service.provisioning.service import Initializer
-from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels
+from a13n_service.resources.models.catalog import ModelsDevCatalog, catalog_channels, run_official_catalog
 from a13n_service.runs.execute import execute
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.stream import ThreadHub
@@ -267,6 +267,7 @@ def build_app(
                     runtime = replace(runtime, workspace_created=initializer)
                     app.state.runtime = runtime
                     await initializer.existing()
+                runtime.tasks.start(run_official_catalog(runtime.endpoint_policy), name="official-model-catalog")
                 if serves_api:
                     catalog = ModelsDevCatalog(
                         catalog_channels(runtime.registry.models.values()), runtime.endpoint_policy

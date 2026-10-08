@@ -55,7 +55,7 @@ Host 可通过 `RunBindings.usage_reporter` 绑定异步 `UsageReporter.report(s
 
 ## 估算模型费用
 
-模型费用估值默认开启。`HarnessBuilder` 注入 `CatalogModelCostCapability`，为构建后的 Agent 固定当前有效的价格目录。Host 未开启更新时，使用内置 `genai-prices` 数据和 Harness 补充。`get_default_pricing_catalog()` 始终读取该内置基线；`get_current_pricing_catalog()` 还采用成功的上游更新。两者返回不可变目录，不下载。读取或导出当前快照：
+模型费用估值默认开启。`HarnessBuilder` 注入 `CatalogModelCostCapability`，为构建后的 Agent 固定当前有效的价格目录。Host 未开启更新时，使用内置 `genai-prices` 数据和 Harness 补充。`get_default_pricing_catalog()` 始终读取该内置基线；`get_current_pricing_catalog()` 还采用成功的上游更新和官方补充更新。两者返回不可变目录，不下载。读取或导出当前快照：
 
 ```python
 from a13n_harness.pricing import get_current_pricing_catalog
@@ -79,6 +79,8 @@ async def main():
 
 上游更新器立即下载，之后每小时下载。启动无须等待首次下载：内置价格立即可用，下载失败保留最后有效数据。后续每次 `HarnessBuilder.build()` 自动捕获验证后的更新，无须重启或清空缓存。已构建的执行对象即使复用也保留旧价格；重建才会更新。同一规则保证活动 Run 和内联后代的价格稳定。
 
+Harness 在同一个官方数据文件中维护模型上下文、媒体能力和价格补充。嵌入式异步 Host 可在已有任务组中启动 `a13n_harness.model_catalog_updates.run_official_model_updates`，并在退出时取消。Harness UI 和 Service 已管理此循环。它从仓库 GitHub `main` 下载，完整验证后一起替换两个视图。启动抖动、每小时刷新、指数退避和进程内共享请求调度避免按 Agent 重复下载。网络或验证失败保留最后有效文件或包内文件。设置 `A13N_OFFICIAL_MODELS_AUTO_UPDATE=0` 可独立于 `genai-prices` 关闭此循环。两个更新器都不改写已保存的模型设置，也不改变活动执行。
+
 异步 Host 应在事件循环外捕获目录，再传给 `HarnessBuilder.build()`。显式快照只用于默认定价；自定义模型费用 Capability 仍优先：
 
 ```python
@@ -90,7 +92,7 @@ catalog = await to_thread.run_sync(get_current_pricing_catalog)
 executable = HarnessBuilder().build(definition, pricing_catalog=catalog)
 ```
 
-下载的条目覆盖包内标准价格；缺失条目保留内置覆盖。上游 `genai-prices` 无服务层级选择器，因此包内层级规则补充更新后的标准条目。价格和来源参与实际版本标识。显式完整条目覆盖仍可替换或移除这些规则。转换失败保留上一有效目录。同样下载内容的版本不随获取时间改变。不创建价格历史或磁盘缓存。停止更新器不清除已下载价格；构建必须忽略其他进程活动、使用内置数据时，将 `get_default_pricing_catalog()` 传入 `pricing_catalog`。
+下载的条目覆盖包内标准价格；缺失条目保留内置覆盖。上游 `genai-prices` 无服务层级选择器，因此当前官方层级规则补充更新后的标准条目。价格和来源参与实际版本标识。显式完整条目覆盖仍可替换或移除这些规则。转换失败保留上一有效目录。同样下载内容的版本不随获取时间改变。不创建价格历史或磁盘缓存。停止更新器不清除已下载价格；构建必须忽略其他进程活动、使用内置数据时，将 `get_default_pricing_catalog()` 传入 `pricing_catalog`。
 
 ### 按实际服务层级定价
 
@@ -100,16 +102,16 @@ Harness 使用 `ModelResponse.provider_details` 中的**实际服务层级**，�
 
 未知或不支持的层级会使 Harness 放弃估值，不静默用标准费率。已有上游费用仍保留原费用来源；否则费用未知，不是零。实际层级元数据格式错误会报告定价失败，不使 Run 失败。缺少层级元数据**不能** 证明采用标准服务。
 
-内置 token 价格覆盖在 **2026 年 9 月 26 日** 依据官方价目表检查：
+官方补充数据包含以下公共 token 价格规则：
 
 | 提供方                                                                                                                    | 包含的公共规则                                                                                                                                                                                                                                                          | 重要限制                                                                                                                                                                                                                                              |
 | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [OpenAI](https://developers.openai.com/api/docs/pricing)                                                                  | Flex 与 Fast 表合计 25 个模型：GPT-6 Astra/Sol/Luna；GPT-5.6 Sol/Terra/Luna；GPT-5.5/Pro；GPT-5.4/Mini/Nano/Pro；GPT-5.2；GPT-5.1；GPT-5/Mini/Nano；GPT-4.1/Mini/Nano；GPT-4o/2024-05-13/Mini；o3；o4-mini                                                              | 每个模型只包含已公布层级。[Fast](https://developers.openai.com/api/docs/guides/fast-mode) 也使用 `priority` 名称。公布的长上下文费率从超过 272,000 输入 token 开始。GPT-5.5 Fast、GPT-5.4 Fast 和 GPT-5.5 Pro Flex 超过该边界时放弃估值，不编造费率。 |
+| [OpenAI](https://developers.openai.com/api/docs/pricing)                                                                  | GPT-6.1 Sol；GPT-6 Astra/Sol/Luna；GPT-5.6 Sol/Terra/Luna；GPT-5.5/Pro；GPT-5.4/Mini/Nano/Pro；GPT-5.2；GPT-5.1；GPT-5/Mini/Nano；GPT-4.1/Mini/Nano；GPT-4o/2024-05-13/Mini；o3；o4-mini                                                                                | 每个模型只包含已公布层级。[Fast](https://developers.openai.com/api/docs/guides/fast-mode) 也使用 `priority` 名称。公布的长上下文费率从超过 272,000 输入 token 开始。GPT-5.5 Fast、GPT-5.4 Fast 和 GPT-5.5 Pro Flex 超过该边界时放弃估值，不编造费率。 |
 | [Gemini Developer API](https://ai.google.dev/gemini-api/docs/pricing)                                                     | Gemini 3.8/3.7/3.6 Flash、3.5 Flash/Flash-Lite、3.1 Flash-Lite/Pro Preview、3 Flash Preview、2.5 Pro/Flash/Flash-Lite 的 Standard、[Flex](https://ai.google.dev/gemini-api/docs/flex-inference) 和 [Priority](https://ai.google.dev/gemini-api/docs/priority-inference) | 保留确切缓存和音频价格，包括多个模型不变的 Flex 缓存价格。Pro 上下文价格分界在超过 200,000 token 时。3.6–3.8 Flash 的初始费率于 2027 年 1 月 1 日改变。                                                                                               |
 | [Vertex AI](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/priority-paygo)                                    | 不自动提供层级费率                                                                                                                                                                                                                                                      | 实际 `traffic_type` 作为小写层级标识传递（如 `on_demand_priority`）。不借用 Developer API 费率为 Vertex 流量定价。需在自定义策略中编写端点专用规则。                                                                                                  |
 | [Anthropic](https://platform.claude.com/docs/en/api/service-tiers) 和 [Groq](https://console.groq.com/docs/service-tiers) | 不推断非标准费率                                                                                                                                                                                                                                                        | Anthropic priority 和 Groq performance 是容量契约，不是通用 token 附加费；Groq Flex 使用按需价格。原生上游适配器目前不公开实际层级。Anthropic Fast 使用独立 `speed` 维度，此处也不可用。请求设置不是计费证据。                                        |
 
-这些是 token 费用估计，不能保证与账单一致：地区加价、容量承诺、存储时间、grounding、其他产品费用和议价不能从层级推导。内置层级价格随包更新，不随上游标准价格下载器改变。
+这些是 token 费用估计，不能保证与账单一致：地区加价、容量承诺、存储时间、grounding、其他产品费用和议价不能从层级推导。DeepSeek 的工作日峰谷估价不包含中国公共节假日的例外。官方层级价格随包更新或官方文件刷新改变，不随上游标准价格下载器改变。
 
 所选 Model 的 `TokenPricingCapability` 策略（包括已保存 Service Model 定价）需在完整条目中添加层级规则。已有仅标准条目不会静默换成公共目录价格；未显式配置前，它们对非标准层级放弃估值。在 Service 中，Console 标准价格编辑器保留编写的层级规则。
 

@@ -38,7 +38,7 @@ async def run_once(configuration_file: Path, prompt: str):
         return thread.thread_id, operation
 ```
 
-同时传入加载后的设置和配置路径。单独构造 `HarnessUiSettings()` 不会加载资源文件。独立实例或测试应向 `load_harness_ui_settings()` 传入隔离的 `data_root`。离线测试关闭 `pricing_auto_update`，并提供测试 Model 协作者。
+同时传入加载后的设置和配置路径。单独构造 `HarnessUiSettings()` 不会加载资源文件。独立实例或测试应向 `load_harness_ui_settings()` 传入隔离的 `data_root`。离线测试关闭 `pricing_auto_update`、设置 `A13N_OFFICIAL_MODELS_AUTO_UPDATE=0`，并提供测试 Model 协作者。
 
 上下文管理器负责启动和关闭。`host_mode="webui"` 开启浏览器模式的协作工具，但不启动 HTTP 监听器。监听器使用 [HTTP 适配器](http-api.md)；可选追踪见[观测](observation.md)。
 

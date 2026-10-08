@@ -38,7 +38,7 @@ async def run_once(configuration_file: Path, prompt: str):
         return thread.thread_id, operation
 ```
 
-Pass the loaded settings and configuration path together. `HarnessUiSettings()` alone does not load resource files. For a separate instance or test, pass an isolated `data_root` to `load_harness_ui_settings()`. Offline tests disable `pricing_auto_update` and supply test Model collaborators.
+Pass the loaded settings and configuration path together. `HarnessUiSettings()` alone does not load resource files. For a separate instance or test, pass an isolated `data_root` to `load_harness_ui_settings()`. Offline tests disable `pricing_auto_update`, set `A13N_OFFICIAL_MODELS_AUTO_UPDATE=0`, and supply test Model collaborators.
 
 The context manager owns startup and shutdown. `host_mode="webui"` enables browser-mode collaboration tools without starting an HTTP listener. Use [the HTTP adapter](http-api.md) for a listener and [observation](observation.md) for optional tracing.
 

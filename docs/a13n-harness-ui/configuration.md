@@ -220,6 +220,8 @@ These settings take effect when the application starts; restart after changing t
 
 `process.max_object_bytes` limits each uncompressed storage object, including checkpoints: default 256 MiB (`268435456`), range 1 KiB–1 GiB. It is not a Thread quota or context limit. On an oversized checkpoint, raise the limit and restart before continuing; larger limits increase peak memory. History is not truncated, and failed saves retain the previous checkpoint. Lowering the limit can prevent reading larger saved objects.
 
+Official model facts and Harness pricing supplements refresh separately from `process.pricing_auto_update`. This background refresh is enabled by default and reads one validated document from the repository's GitHub `main`. Set `A13N_OFFICIAL_MODELS_AUTO_UPDATE=0` before startup to disable it. Failed downloads keep the last valid or bundled data and retry with exponential backoff and jitter. Refreshes do not rewrite saved Models or change active Runs; PDF input remains opt-in. For offline operation, disable this refresh and `process.pricing_auto_update`.
+
 Use `--no-update-check` for a one-invocation override. See [updates and logs](automation-and-troubleshooting.md#logs-updates-and-exit).
 
 ### Goal checks

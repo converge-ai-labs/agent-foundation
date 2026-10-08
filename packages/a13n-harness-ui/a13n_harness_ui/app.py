@@ -21,6 +21,7 @@ from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.http import outbound_tls_verify
 from a13n_harness.input import RunInputValue
+from a13n_harness.model_catalog_updates import run_official_model_updates
 from a13n_harness.plugin_factories import HarnessPluginFactory
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.remote_envd.pairing import PairingChallenge, PairingRequest, PairingResponse
@@ -3283,6 +3284,7 @@ async def open_harness_ui_app(
                 await root_runs.start()
                 app._state = AppState.ready
                 async with create_task_group() as background:
+                    background.start_soon(run_official_model_updates)
                     memory_organizer.start(background)
                     app._logins = LoginSessions(background, app._account)
                     background.start_soon(app._prune_thread_files_periodically)
