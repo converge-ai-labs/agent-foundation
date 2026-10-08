@@ -90,6 +90,7 @@ let failMore: boolean;
 let failSave: boolean;
 let cwd: string;
 let pauseMore: Promise<void> | null;
+let pauseActivity: Promise<void> | null;
 let pageAborted: boolean;
 let recentTitle: string;
 let queryClient: QueryClient;
@@ -109,6 +110,7 @@ beforeEach(() => {
   failSave = false;
   cwd = "/outside";
   pauseMore = null;
+  pauseActivity = null;
   pageAborted = false;
   recentTitle = "Recent 1";
   vi.mocked(watchSummary).mockClear();
@@ -286,6 +288,7 @@ beforeEach(() => {
           return json(result);
         }
         if (url.searchParams.get("project_id") === "project-one") {
+          if (pauseActivity) await pauseActivity;
           const result = page(
             [recentTitle, "Recent 2", "Recent 3", "Recent 4", "Recent 5"],
             "one-next",
@@ -1104,7 +1107,10 @@ it("opens unvisited drafts on demand and refreshes only discovery on a draft hin
   expect(screen.getByRole("button", { name: "Drafts 1" })).toBe(trigger);
   const project = await screen.findByRole("region", { name: "One" });
   const row = within(project).getByRole("link", { name: /old-draft/ });
-  expect(within(row).getByText("Draft")).toBeTruthy();
+  expect(
+    within(row).getByRole("img", { name: "Draft · Unsent input" }),
+  ).toBeTruthy();
+  expect(within(row).queryByText("Draft")).toBeNull();
   expect(within(row).getByText("Running")).toBeTruthy();
   await screen.findByText("Recent 5");
   const activityCalls = activity.length;
@@ -1120,7 +1126,9 @@ it("opens unvisited drafts on demand and refreshes only discovery on a draft hin
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Drafts" })).toBe(trigger),
   );
-  expect(within(row).queryByText("Draft")).toBeNull();
+  expect(
+    within(row).queryByRole("img", { name: "Draft · Unsent input" }),
+  ).toBeNull();
   expect(activity).toHaveLength(activityCalls);
 });
 
@@ -1294,6 +1302,7 @@ it("groups only owners of active unarchived workers under Running and returns th
   const owner = within(project).getByRole("link", { name: /busy-owner/ });
   expect(within(project).getAllByRole("link")[0]).toBe(owner);
   expect(within(owner).queryByText("Running")).toBeNull();
+  const summary = within(owner).getByText("2 workers active").closest("small")!;
   expect(
     screen.queryByRole("link", { name: /worker-one|worker-two/ }),
   ).toBeNull();
@@ -1308,6 +1317,9 @@ it("groups only owners of active unarchived workers under Running and returns th
     within(project).getByRole("heading", { name: "Running · 1" }),
   ).toBeTruthy();
   expect(within(project).getAllByRole("link")[0]).toBe(owner);
+  expect(
+    (await within(owner).findByText("1 worker active")).closest("small"),
+  ).toBe(summary);
 
   activeThreads = [];
   await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
@@ -1320,6 +1332,9 @@ it("groups only owners of active unarchived workers under Running and returns th
     "idle-owner",
   );
   expect(within(project).getByRole("link", { name: /busy-owner/ })).toBe(owner);
+  expect(owner.contains(summary)).toBe(true);
+  expect(summary.textContent).toBe("");
+  expect(summary.getAttribute("aria-hidden")).toBe("true");
   expect(writes).toHaveLength(0);
 });
 
@@ -1699,4 +1714,80 @@ it("moves a starred row only after its save and restores ordinary recency withou
   );
   expect(within(group).getAllByText("Recent 3")).toHaveLength(1);
   expect(screen.getByLabelText("Current route").textContent).toBe("/");
+});
+
+it("retains Coordinator summaries during delayed refresh and failed worker discovery without resetting expansion", async () => {
+  coordinators = [
+    {
+      ...thread("owner"),
+      role: "coordinator",
+      root_activity: { state: "running" },
+    },
+  ];
+  activeThreads = ["worker-one", "worker-two"].map((id) => ({
+    ...thread(id),
+    role: "worker",
+    coordinator_thread_id: "owner",
+    root_activity: { state: "running" },
+  }));
+  // Duplicate in history and a deliberately incomplete disclosure snapshot.
+  workerThreads = [activeThreads[0]];
+  unsentDrafts = [
+    {
+      thread_id: "owner",
+      draft_id: "draft-owner",
+      unsent_since: "2026-09-21T10:00:00Z",
+    },
+  ];
+  unsentThreads = coordinators;
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const owner = await screen.findByRole("link", { name: /owner.*Running/ });
+  const summary = within(owner)
+    .getByText("Running · 2 workers active")
+    .closest("small")!;
+  const spinner = summary.querySelector("svg");
+  await within(owner).findByRole("img", { name: "Draft · Unsent input" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Expand workers for owner" }),
+  );
+  await screen.findByRole("link", { name: /worker-one/ });
+  expect(summary.textContent).toBe("Running · 2 workers active");
+
+  let release!: () => void;
+  pauseActivity = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  failMore = true;
+  let refresh!: Promise<void>;
+  act(() => {
+    refresh = queryClient.invalidateQueries({ queryKey: ["threads"] });
+  });
+  await screen.findByText("Workers unavailable");
+  expect(
+    screen
+      .getByRole("button", { name: "Collapse workers for owner" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(summary.textContent).toBe("Running · 2 workers active");
+  expect(summary.querySelector("svg")).toBe(spinner);
+  expect(screen.getByRole("link", { name: /owner.*Running/ })).toBe(owner);
+
+  coordinators[0].root_activity.state = "inactive";
+  activeThreads = activeThreads.slice(1);
+  workerThreads = [];
+  await act(async () => {
+    release();
+    await refresh;
+  });
+  await waitFor(() => expect(summary.textContent).toBe("1 worker active"));
+  expect(summary.querySelector("svg")).toBeNull();
+  expect(owner.contains(summary)).toBe(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Collapse workers for owner" }),
+  );
+  expect(summary.textContent).toBe("1 worker active");
+  expect(screen.getByRole("link", { name: /owner.*1 worker active/ })).toBe(
+    owner,
+  );
 });

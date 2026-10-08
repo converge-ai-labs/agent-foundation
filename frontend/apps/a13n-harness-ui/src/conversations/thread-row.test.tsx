@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -79,6 +80,7 @@ function mount({
   worker = false,
   waiting = false,
   failed = false,
+  activeWorkerCount = 0,
 } = {}) {
   const row = {
     pending_decision: waiting ? { decision_id: "decision-one" } : null,
@@ -94,20 +96,26 @@ function mount({
       root_activity: { state: running ? "running" : "inactive" },
     },
   } as Schema<"ThreadActivityView">;
-  render(
+  const view = (current: typeof row, workers: number) => (
     <QueryClientProvider client={queries}>
       <TransportContext value={createTransport("test", () => {})}>
         <MemoryRouter
           initialEntries={[selected ? "/threads/thread-one" : "/settings"]}
         >
           <NewConversationDrafts value={newDrafts}>
-            <ThreadRow row={row} />
+            <ThreadRow row={current} activeWorkerCount={workers} />
           </NewConversationDrafts>
           <Location />
         </MemoryRouter>
       </TransportContext>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const rendered = render(view(row, activeWorkerCount));
+  return {
+    row,
+    rerender: (current: typeof row, workers = activeWorkerCount) =>
+      rendered.rerender(view(current, workers)),
+  };
 }
 it("archives directly from the menu with its observed version and opens the New draft", async () => {
   mount();
@@ -309,4 +317,46 @@ it("opens a worker draft from a running Coordinator without sending it a message
     "?project=project-one&coordinator=thread-one",
   );
   expect(requests).toHaveLength(0);
+});
+
+it("keeps Coordinator identity and its status slot mounted through root and worker transitions", () => {
+  const { row, rerender } = mount({ coordinator: true, activeWorkerCount: 2 });
+  const link = screen.getByRole("link", { name: /Example/ });
+  const identity = link.querySelector("svg");
+  const summary = within(link).getByText("2 workers active").closest("small")!;
+  expect(summary.querySelector("svg")).toBeNull();
+
+  row.thread.root_activity.state = "preparing";
+  rerender(row, 2);
+  expect(summary.textContent).toBe("Preparing · 2 workers active");
+  const spinner = summary.querySelector("svg");
+  expect(spinner).not.toBeNull();
+
+  row.thread.root_activity.state = "running";
+  rerender(row, 1);
+  expect(summary.textContent).toBe("Running · 1 worker active");
+  expect(summary.querySelector("svg")).toBe(spinner);
+
+  row.pending_decision = { kind: "question", count: 1 };
+  rerender(row, 1);
+  expect(summary.textContent).toBe("Needs your answer · 1 worker active");
+  expect(summary.querySelector("svg")?.className.baseVal).not.toContain(
+    "threadRunning",
+  );
+
+  row.pending_decision = null;
+  row.thread.root_activity.state = "inactive";
+  row.latest_operation = { status: "failed" } as NonNullable<
+    typeof row.latest_operation
+  >;
+  rerender(row, 0);
+  expect(summary.textContent).toBe("Failed");
+
+  row.latest_operation = null;
+  rerender(row, 0);
+  expect(summary.textContent).toBe("");
+  expect(summary.getAttribute("aria-hidden")).toBe("true");
+  expect(link.contains(summary)).toBe(true);
+  expect(link.querySelector("svg")).toBe(identity);
+  expect(screen.getByRole("link", { name: /Example/ })).toBe(link);
 });

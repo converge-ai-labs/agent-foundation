@@ -130,12 +130,6 @@
   margin: 0;
   padding-block: 12px 4px;
 }
-.unsentMarker {
-  flex: 0 0 auto;
-  color: var(--a13n-secondary);
-  font-size: 11px;
-  line-height: 20px;
-}
 .threadGroups {
   flex: 1;
   overflow: auto;
@@ -309,14 +303,37 @@
   outline: 1px solid var(--ring);
   outline-offset: -2px;
 }
-.threadLink > svg {
-  flex-shrink: 0;
+.threadIcon {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
   margin-top: 2px;
+}
+.threadIcon > svg {
+  width: 18px;
+  height: 18px;
+}
+.draftMarker {
+  position: absolute;
+  inset-inline-end: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: var(--a13n-canvas);
+  color: var(--a13n-secondary);
+}
+.threadRow:has(.selected) .draftMarker {
+  background: var(--a13n-elevated);
 }
 .threadLink > span {
   min-width: 0;
 }
-.threadLink > span:first-of-type {
+.threadLabel {
   flex: 1;
 }
 .threadLink .attentionState {
@@ -335,6 +352,33 @@
   color: var(--a13n-secondary);
   font-size: 11px;
   margin-top: 2px;
+}
+/* Reserve the same line even when idle; refreshes never resize Coordinator rows. */
+.threadLink .coordinatorActivity {
+  position: relative;
+  height: 16px;
+  line-height: 16px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.coordinatorActivity > span:last-child {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coordinatorStateIcon {
+  position: absolute;
+  inset-inline-start: -26px;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 16px;
+}
+.coordinatorStateIcon > svg {
+  width: 12px;
+  height: 12px;
 }
 .resultDot {
   width: 7px;
@@ -362,6 +406,11 @@
   color: var(--info-foreground);
   animation: threadSpin 1.4s linear infinite;
   transform-origin: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .threadRunning {
+    animation: none;
+  }
 }
 @keyframes threadSpin {
   to {

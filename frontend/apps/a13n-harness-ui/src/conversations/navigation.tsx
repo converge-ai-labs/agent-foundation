@@ -367,16 +367,20 @@ function ProjectGroup({
     )
       observed.set(thread.thread_id, { thread });
   }
-  const activeOwnerIds = new Set(
-    [...observed.values()]
-      .filter(
-        ({ thread }) =>
-          !thread.archived &&
-          thread.role === "worker" &&
-          thread.root_activity.state !== "inactive",
-      )
-      .map(({ thread }) => thread.coordinator_thread_id),
-  );
+  // Use the same reconciled observations for grouping and activity summaries.
+  // Worker disclosure queries are lazy and must not reset these counts.
+  const activeWorkerCounts = new Map<string, number>();
+  for (const { thread } of observed.values()) {
+    if (
+      !thread.archived &&
+      thread.role === "worker" &&
+      thread.coordinator_thread_id &&
+      thread.root_activity.state !== "inactive"
+    ) {
+      const owner = thread.coordinator_thread_id;
+      activeWorkerCounts.set(owner, (activeWorkerCounts.get(owner) ?? 0) + 1);
+    }
+  }
   const activeRows: Row[] = [];
   const unreadRows: Row[] = [];
   const recentRows: Row[] = [];
@@ -389,7 +393,7 @@ function ProjectGroup({
     if (row.thread.role === "worker") continue;
     (row.thread.root_activity.state !== "inactive" ||
     (row.thread.role === "coordinator" &&
-      activeOwnerIds.has(row.thread.thread_id))
+      activeWorkerCounts.has(row.thread.thread_id))
       ? activeRows
       : unread
         ? unreadRows
@@ -582,6 +586,9 @@ function ProjectGroup({
               {row.thread.role === "coordinator" ? (
                 <CoordinatorEntry
                   row={row}
+                  activeWorkerCount={
+                    activeWorkerCounts.get(row.thread.thread_id) ?? 0
+                  }
                   enabled={enabled && expanded}
                   selected={selected}
                   selectedUpdatedAt={selectedUpdatedAt}
