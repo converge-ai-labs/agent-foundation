@@ -156,9 +156,11 @@ def test_source_typed_input_folds_to_authored_message_or_generated_observation(s
     if source in {"user", "steering"}:
         assert item.kind == "text_message"
         assert item.content["role"] == "user"
-        assert item.content["text"] == text[:262144]
+        # Service retains full text for checkpoint storage; a length failure stays compact in CI.
+        assert len(item.content["text"]) == length
+        assert item.content["text"] == text
         assert item.content["metadata"]["source_id"] == "inbox_one"
-        assert item.content.get("truncated", False) is (length > 262144)
+        assert item.content.get("truncated", False) is False
     else:
         assert item.kind == "observation"
         assert item.content["name"] == f"a13n.input.{source}"
