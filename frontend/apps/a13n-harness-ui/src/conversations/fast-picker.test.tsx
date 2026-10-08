@@ -31,9 +31,7 @@ it.each(["default", "off"] as const)(
         .getAttribute("aria-pressed"),
     ).toBe("true");
     expect(
-      screen.getByText(
-        state === "default" ? "Default · Provider default" : "Default · Off",
-      ),
+      screen.getByText(state === "default" ? "Provider default" : "Off"),
     ).toBeTruthy();
     expect(change).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Fast mode" }));
@@ -50,7 +48,7 @@ it("follows changed model settings without overriding explicit Off", () => {
       onChange={change}
     />,
   );
-  expect(screen.getByText("Default · Off")).toBeTruthy();
+  expect(screen.getByText("Off")).toBeTruthy();
   view.rerender(<FastPicker model={model} value={false} onChange={change} />);
   expect(
     screen
@@ -106,7 +104,7 @@ it("switches exclusively between inherited Ultrafast, Fast and Off, then resets"
   render(<Control />);
   const fast = screen.getByRole("button", { name: "Fast mode" });
   const ultra = screen.getByRole("button", { name: "Ultrafast mode" });
-  expect(screen.getByText("Default · Ultrafast")).toBeTruthy();
+  expect(screen.getByText("Ultrafast", { selector: "span" })).toBeTruthy();
   expect(ultra.getAttribute("aria-pressed")).toBe("true");
   expect(fast.getAttribute("aria-pressed")).toBe("false");
   expect(screen.getByText(/Pro \$500/)).toBeTruthy();
@@ -123,7 +121,7 @@ it("switches exclusively between inherited Ultrafast, Fast and Off, then resets"
   await user.click(
     screen.getByRole("button", { name: "Use default Fast mode" }),
   );
-  expect(screen.getByText("Default · Ultrafast")).toBeTruthy();
+  expect(screen.getByText("Ultrafast", { selector: "span" })).toBeTruthy();
   expect(ultra.getAttribute("aria-pressed")).toBe("true");
 });
 

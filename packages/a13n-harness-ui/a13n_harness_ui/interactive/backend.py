@@ -200,6 +200,7 @@ class SessionBackend:
             self.thinking_control = None
             self.status.service_tier = None
             self.status.fast = "default"
+            self.status.fast_description = "Provider default"
             self.fast_control = None
             self.reasoning_mode_control = None
             self.status.reasoning_mode = "default"
@@ -216,7 +217,7 @@ class SessionBackend:
             mode_settings = apply_reasoning_mode(model.route, model.settings, self.overrides.reasoning_mode)
             self.status.reasoning_mode = reasoning_mode_state(model.route, mode_settings)
             self.status.reasoning_mode_description = (
-                f"{default_label} (Model default)"
+                (default_label if default_mode == "default" else f"{default_label} (Model default)")
                 if self.overrides.reasoning_mode is None
                 else f"{self.overrides.reasoning_mode.capitalize()} (session override; Model default: {default_label})"
             )
@@ -227,9 +228,19 @@ class SessionBackend:
             )
         try:
             fast_settings = apply_fast(model.route, model.settings, self.overrides.fast)
+            if self.overrides.service_tier is not None:
+                fast_settings.pop(service_tier_setting(model.route), None)
+                fast_settings["service_tier"] = self.overrides.service_tier
+            self.status.fast = fast_state(model.route, fast_settings)
+            self.status.fast_description = self.status.fast_label + (
+                ("" if self.status.fast == "default" else " (Model default)")
+                if self.overrides.fast is None and self.overrides.service_tier is None
+                else " (session override)"
+            )
         except HarnessUiError:
             fast_settings = dict(model.settings)
-        self.status.fast = fast_state(model.route, fast_settings)
+            self.status.fast = "unavailable"
+            self.status.fast_description = "Unavailable selection — /fast reset"
         tier = (
             self.overrides.service_tier
             or fast_settings.get(service_tier_setting(model.route))
@@ -240,7 +251,7 @@ class SessionBackend:
         try:
             effective = apply_thinking(model.route, model.settings, self.overrides.thinking)
             self.status.thinking = summarize_thinking(model.route, effective)
-            if self.overrides.thinking is None:
+            if self.overrides.thinking is None and self.status.thinking != "Provider default":
                 self.status.thinking += " (default)"
         except HarnessUiError:
             # A configuration publication can invalidate a draft choice. Keep
@@ -401,7 +412,7 @@ class SessionBackend:
             {**self.overrides.model_dump(), "service_tier": None, "fast": choices[action]}
         )
         await self.refresh()
-        message = f"Fast · {self.status.fast.capitalize()} · " + (
+        message = f"Fast · {self.status.fast_description} · " + (
             "Model configuration restored." if action == "reset" else "session only; configuration unchanged."
         )
         if self.status.fast in {"on", "ultrafast"}:
@@ -695,8 +706,20 @@ class SessionBackend:
         control = self.thinking_control
         if control is None:
             return ()
+        selected = self.overrides.thinking
+        effective = control.default_value if selected is None else selected
         return tuple(
-            Choice(item.command, item.label, item.disabled_reason or control.reason or item.description)
+            Choice(
+                item.command,
+                item.label,
+                ("Current · " if item.value is not None and item.value == effective else "")
+                + (item.disabled_reason or control.reason or item.description)
+                + (
+                    " · Model default"
+                    if item.value is not None and item.value == effective and selected is None
+                    else ""
+                ),
+            )
             for item in control.options
         )
 

@@ -61,6 +61,7 @@ class Status:
     thinking: str = "default"
     service_tier: str | None = None
     fast: str = "default"
+    fast_description: str = "Provider default"
     reasoning_mode: str = "default"
     reasoning_mode_description: str = "Provider default"
     environment: str = "not selected"
@@ -150,6 +151,14 @@ class Status:
     def service_tier_text(self) -> str:
         return "Fast (priority)" if self.service_tier == "priority" else self.service_tier or "provider default"
 
+    @property
+    def fast_label(self) -> str:
+        return "Provider default" if self.fast == "default" else self.fast.capitalize()
+
+    @property
+    def reasoning_mode_label(self) -> str:
+        return "Provider default" if self.reasoning_mode == "default" else self.reasoning_mode.capitalize()
+
     def line(self, width: int | None = None) -> str:
         elapsed = time.monotonic() - self.started if self.started is not None else self.elapsed
         from prompt_toolkit.utils import get_cwidth
@@ -196,6 +205,8 @@ class Status:
             f"cache {self.cache_rate_text}",
             cost,
             f"{'think' if compact else 'Thinking'} {self.thinking}",
+            *((f"Fast {self.fast_label}",) if speed_label is None else ()),
+            *((f"Mode {self.reasoning_mode_label}",) if self.reasoning_mode != "pro" else ()),
             self.model.split(":")[-1],
             _elapsed_text(elapsed),
         ]

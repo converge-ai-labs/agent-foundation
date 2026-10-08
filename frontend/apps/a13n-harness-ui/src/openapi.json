@@ -14590,6 +14590,16 @@
             "type": "string",
             "title": "Default Summary"
           },
+          "default_value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "options": {
             "items": {
               "$ref": "#/components/schemas/ThinkingOption"

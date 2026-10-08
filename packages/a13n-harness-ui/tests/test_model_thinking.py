@@ -182,3 +182,38 @@ async def test_native_sdk_request_receives_the_selected_value(provider, monkeypa
         assert payload["max_tokens"] == 16384
     else:
         assert payload["config"]["thinking_config"] == {"thinking_level": "LOW", "include_thoughts": True}
+
+
+@pytest.mark.parametrize(
+    "route,settings,expected",
+    [
+        ("openai:gpt-5.4", {"thinking": "high"}, "high"),
+        ("openai:gpt-5.4", {"thinking": "low", "openai_reasoning_effort": "high"}, "high"),
+        ("openai:gpt-5.4", {"thinking": False}, False),
+        ("openai:gpt-5.4", {"openai_reasoning_effort": "none"}, False),
+        ("openai:gpt-5.4", {}, None),
+        ("openai:gpt-5.4", {"thinking": True}, None),
+        ("openai:gpt-5.4", {"openai_reasoning_effort": "custom"}, None),
+        ("openai:gpt-5.4", {"thinking": "high", "extra_body": {"reasoning": {"effort": "low"}}}, None),
+        ("openai:custom", {"thinking": "high"}, None),
+        ("anthropic:claude-sonnet-4-6", {"thinking": "high"}, "high"),
+        ("anthropic:claude-sonnet-4-6", {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "low"}, "low"),
+        ("anthropic:claude-sonnet-4-6", {"anthropic_thinking": {"type": "adaptive"}}, None),
+        ("anthropic:claude-haiku-4-5", {"anthropic_thinking": {"type": "enabled", "budget_tokens": 10000}}, "medium"),
+        ("anthropic:claude-haiku-4-5", {"anthropic_thinking": {"type": "enabled", "budget_tokens": 8192}}, None),
+        ("anthropic:claude-haiku-4-5", {"anthropic_thinking": {"type": "enabled", "budget_tokens": 1234}}, None),
+        ("anthropic:claude-haiku-4-5", {"thinking": "high"}, None),
+        ("google:gemini-3.1-pro-preview", {"google_thinking_config": {"thinking_level": "LOW"}}, "low"),
+        ("google:gemini-2.5-flash", {"google_thinking_config": {"thinking_budget": 8192}}, "medium"),
+        ("google:gemini-2.5-flash", {"google_thinking_config": {"thinking_budget": -1}}, None),
+        ("google:gemini-2.5-flash", {"thinking": "high"}, None),
+        ("google:gemini-2.5-flash", {"google_thinking_config": {"thinking_budget": 0}}, False),
+    ],
+)
+def test_inherited_option_identifies_only_known_configured_levels(route, settings, expected):
+    original = deepcopy(settings)
+    control = describe_thinking(route, settings)
+    assert control.default_value == expected
+    assert type(control.default_value) is type(expected)
+    assert settings == original
+    assert apply_thinking(route, settings, None) == original

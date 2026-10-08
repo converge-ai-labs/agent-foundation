@@ -30,6 +30,7 @@ const model: Schema<"ModelSummary"> = {
   thinking: {
     status: "supported",
     default_summary: "High",
+    default_value: "high",
     options: [
       {
         value: null,
@@ -112,13 +113,20 @@ it("shows only a read-only identity and one settings entry, with explicit defaul
   expect(button("Use default thinking").getAttribute("aria-pressed")).toBe(
     "true",
   );
+  expect(button("High").getAttribute("aria-pressed")).toBe("true");
+  await user.click(button("High"));
+  expect(button("Use default thinking").getAttribute("aria-pressed")).toBe(
+    "false",
+  );
+  expect(button("High").getAttribute("aria-pressed")).toBe("true");
   await user.click(button(/Low/));
+  expect(button("High").getAttribute("aria-pressed")).toBe("false");
   expect(button("Low").getAttribute("aria-pressed")).toBe("true");
-  expect(button(/Low/).getAttribute("aria-pressed")).toBe("true");
   await user.click(button(/Low/));
   expect(button("Low").getAttribute("aria-pressed")).toBe("true");
   await user.click(button("Use default thinking"));
   expect(screen.getByText("Model default: High")).toBeTruthy();
+  expect(button("High").getAttribute("aria-pressed")).toBe("true");
   await user.keyboard("[Escape]");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(trigger);
@@ -192,7 +200,7 @@ it("keeps Fast inside settings, distinguishes false from default, and resets on 
   render(<Choices />);
   expect(screen.queryByRole("button", { name: "Fast mode" })).toBeNull();
   await user.click(button("Agent & Model settings"));
-  expect(screen.getByText("Default · On")).toBeTruthy();
+  expect(screen.getByText("On")).toBeTruthy();
   await user.click(button("Fast mode"));
   expect(button("Fast mode").getAttribute("aria-pressed")).toBe("false");
   await user.keyboard("[Escape]");
@@ -200,7 +208,7 @@ it("keeps Fast inside settings, distinguishes false from default, and resets on 
   await user.click(button("Agent & Model settings"));
   expect(button("Fast mode").getAttribute("aria-pressed")).toBe("false");
   await user.click(button("Use default Fast mode"));
-  expect(screen.getByText("Default · On")).toBeTruthy();
+  expect(screen.getByText("On")).toBeTruthy();
   await user.click(button("Fast mode"));
   await user.click(button("Model"));
   await user.click(button("Other model"));
@@ -208,7 +216,7 @@ it("keeps Fast inside settings, distinguishes false from default, and resets on 
   expect(screen.getByText("No Fast support")).toBeTruthy();
   await user.click(button("Model"));
   await user.click(button(/Agent default/));
-  expect(screen.getByText("Default · On")).toBeTruthy();
+  expect(screen.getByText("On")).toBeTruthy();
 });
 
 it("keeps unsupported overrides resettable instead of silently changing them", async () => {
@@ -321,5 +329,5 @@ it("changes Agent inside settings and clears model controls for the new inherite
   await user.click(button("Agent"));
   await user.click(button(/^Writer/));
   expect(screen.getByText("Model default: High")).toBeTruthy();
-  expect(screen.getByText("Default · On")).toBeTruthy();
+  expect(screen.getByText("On")).toBeTruthy();
 });
