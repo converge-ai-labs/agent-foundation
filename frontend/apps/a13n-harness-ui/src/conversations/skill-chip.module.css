@@ -1,0 +1,9 @@
+.chip {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+  border-radius: 6px;
+  padding: 1px 3px;
+  font-weight: 500;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}

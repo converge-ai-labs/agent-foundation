@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from .input_display import composer_history
 from .panels import tool_arguments, tool_preview, tool_result
-from .rendering import Status, StreamRenderer, terminal_text
+from .rendering import Status, StreamRenderer, skill_ranges, terminal_text
 from .transcript import TranscriptControl, bounded_text
 
 if TYPE_CHECKING:
@@ -77,6 +77,9 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
                 ("> " if user else "") + text,
                 markdown=part.kind in {"assistant", "thinking"},
                 kind="user" if user else "thinking" if part.kind == "thinking" else "text",
+                skills=skill_ranges(part.text or "", part.metadata, 2)
+                if user and text == terminal_text(part.text or "")
+                else (),
             )
 
 

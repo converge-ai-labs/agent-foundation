@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from a13n_harness_ui.skill_input import retained_skill_spans
 from a13n_harness_ui.thread_files import composer_attachment_label
 
 if TYPE_CHECKING:
@@ -48,9 +49,20 @@ def composer_history(parts: tuple[TranscriptPart, ...]) -> list[TranscriptPart]:
         if source_id != part.metadata.source_id:
             source_id = part.metadata.source_id
             seen = set()
-            result.append(part.model_copy(update={"kind": "user", "text": ""}))
+            metadata = part.metadata.model_copy(deep=True)
+            namespace = (metadata.model_extra or {}).get("harness_ui", {})
+            namespace["skills"] = []
+            namespace.pop("long_text", None)
+            result.append(part.model_copy(update={"kind": "user", "text": "", "metadata": metadata}))
         if index not in seen:
             previous = result[-1]
+            namespace = (previous.metadata.model_extra or {}).get("harness_ui", {})
+            offset = len(previous.text or "")
+            if not label:
+                namespace["skills"].extend(
+                    {**span, "start": span["start"] + offset, "end": span["end"] + offset}
+                    for span in retained_skill_spans(text, (part.metadata.model_extra or {}).get("harness_ui", {}))
+                )
             result[-1] = previous.model_copy(
                 update={
                     "text": (previous.text or "") + text,

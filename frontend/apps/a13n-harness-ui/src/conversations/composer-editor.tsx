@@ -9,6 +9,7 @@ import {
   completionStatus,
 } from "@codemirror/autocomplete";
 import { skillCompletion, type LoadSkills } from "./skill-references";
+import { composerSkills, refreshSkills } from "./composer-skills";
 import { composerWordKeymap } from "./composer-word-motion";
 import { defaultKeymap, insertNewline } from "@codemirror/commands";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
@@ -283,12 +284,37 @@ export function ComposerEditor({
     const view = currentView.current;
     if (!view) return;
     closeCompletion(view);
+    let disposed = false;
+    let loaded = false;
+    let pending: ReturnType<LoadSkills> | undefined;
+    const loadCatalog: LoadSkills = () =>
+      (pending ??= load.current!()
+        .then((catalog) => {
+          if (!disposed) {
+            loaded = true;
+            view.dispatch({ effects: refreshSkills.of(catalog) });
+          }
+          return catalog;
+        })
+        .finally(() => {
+          pending = undefined;
+        }));
+    const loadIfNeeded = () => {
+      if (!loaded && view.state.doc.toString().includes("$"))
+        void loadCatalog().catch(() => {
+          /* Ordinary editing remains available. */
+        });
+    };
     view.dispatch({
       effects: skills.current.reconfigure(
         loadSkills
           ? [
+              composerSkills,
+              EditorView.updateListener.of((update) => {
+                if (update.docChanged) loadIfNeeded();
+              }),
               autocompletion({
-                override: [skillCompletion(() => load.current!())],
+                override: [skillCompletion(loadCatalog)],
                 defaultKeymap: false,
                 icons: false,
                 aboveCursor: true,
@@ -361,6 +387,13 @@ export function ComposerEditor({
           : [],
       ),
     });
+    if (loadSkills) {
+      view.dispatch({ effects: refreshSkills.of(undefined) });
+      loadIfNeeded();
+    }
+    return () => {
+      disposed = true;
+    };
   }, [draft, doc, editor, skillContext, !!loadSkills]);
   useEffect(() => {
     report.current({ name: profile.display_name, color: profile.color });

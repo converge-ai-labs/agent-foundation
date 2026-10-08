@@ -671,3 +671,85 @@ it("focuses when the initial page becomes ready without rebuilding or reclaiming
   expect(document.activeElement).toBe(other);
   expect(editor.current).toBe(original);
 });
+
+it("styles manually typed and remote skill text without atomic editing, and discards stale catalogs", async () => {
+  const catalog = {
+    catalog_id: "a".repeat(64),
+    context_kind: "draft" as const,
+    items: [
+      {
+        item_id: "b".repeat(64),
+        name: "review",
+        description: "Review",
+        source_id: "project",
+        logical_path: "/skills/review",
+      },
+    ],
+  };
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "😀 $review $unknown");
+  const editor = { current: null as EditorView | null };
+  let resolveOld!: (value: typeof catalog) => void;
+  const props = {
+    draft,
+    editor,
+    submit: vi.fn(),
+    presence: vi.fn(),
+    profile: { display_name: "A", color: "#2563eb" },
+  };
+  const page = render(
+    <ComposerEditor
+      {...props}
+      skillContext="old"
+      loadSkills={() =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        })
+      }
+    />,
+  );
+  const original = editor.current;
+  page.rerender(
+    <ComposerEditor
+      {...props}
+      skillContext="new"
+      loadSkills={async () => ({ ...catalog, items: [] })}
+    />,
+  );
+  await act(async () => {
+    resolveOld(catalog);
+  });
+  expect(page.container.querySelector("[data-skill]")).toBeNull();
+  page.rerender(
+    <ComposerEditor
+      {...props}
+      skillContext="available"
+      loadSkills={async () => catalog}
+    />,
+  );
+  await waitFor(() =>
+    expect(
+      page.container.querySelector('[data-skill="review"]')?.textContent,
+    ).toBe("$review"),
+  );
+  expect(editor.current).toBe(original);
+  expect(draft.doc.getText("text").toString()).toBe("😀 $review $unknown");
+  act(() => {
+    editor.current!.dispatch({
+      changes: { from: 9, to: 10 },
+      selection: { anchor: 9 },
+    });
+  });
+  expect(draft.doc.getText("text").toString()).toBe("😀 $revie $unknown");
+  await waitFor(() =>
+    expect(page.container.querySelector("[data-skill]")).toBeNull(),
+  );
+  act(() => {
+    draft.doc.getText("text").insert(9, "w");
+  });
+  await waitFor(() =>
+    expect(
+      page.container.querySelector('[data-skill="review"]'),
+    ).not.toBeNull(),
+  );
+});

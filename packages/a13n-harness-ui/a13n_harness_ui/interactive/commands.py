@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import re
 import shlex
 from dataclasses import dataclass
 
+from a13n_harness_ui.skill_input import skill_tokens
 from a13n_harness_ui.surfaces import SkillCatalogView, SkillReference
+from a13n_harness_ui.thread_files import ComposerInput
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,8 +182,9 @@ class CommandRegistry:
                 SkillReference(catalog_id=catalog.catalog_id, item_id=item.item_id, name=item.name),
             )
 
-    def skill_references(self, text: str) -> tuple[SkillReference, ...]:
-        names = dict.fromkeys(re.findall(r"(?:^|\s)\$([^\s]+)", text))
+    def skill_references(self, text: str | ComposerInput) -> tuple[SkillReference, ...]:
+        parts = (text,) if isinstance(text, str) else text.parts
+        names = dict.fromkeys(name for part in parts if isinstance(part, str) for name, _, _ in skill_tokens(part))
         return tuple(self.skills[name][1] for name in names if name in self.skills)
 
     def lookup(self, text: str) -> Command | None:

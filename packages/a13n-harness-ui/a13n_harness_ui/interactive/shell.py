@@ -61,6 +61,7 @@ from .questions import QuestionCard
 from .rendering import Status, StreamRenderer, terminal_text
 from .resume import ResumeBrowser
 from .selection import Choice, Selection, resolve_choice
+from .skill_references import SkillProcessor, preview_skill_ranges
 from .theme import prompt_toolkit_style_rules, resolve_theme
 from .transcript import TranscriptControl
 
@@ -81,7 +82,12 @@ class SlashCompleter(Completer):
         text = document.text_before_cursor
         prefix = text.split()[-1] if text and not text[-1].isspace() else ""
         for value, help_text in self.registry.completions(text):
-            yield Completion(value, start_position=-len(prefix), display_meta=help_text)
+            yield Completion(
+                value + " " if value.startswith("$") else value,
+                start_position=-len(prefix),
+                display=value,
+                display_meta=help_text,
+            )
 
 
 class CliShell:
@@ -137,7 +143,7 @@ class CliShell:
         )
         self.composer.buffer = AttachmentBuffer(self.inline, SlashCompleter(self.registry))
         self.composer.control.buffer = self.composer.buffer
-        processors: list[Processor] = [AttachmentProcessor(self.inline)]
+        processors: list[Processor] = [SkillProcessor(self.registry, self.inline), AttachmentProcessor(self.inline)]
         self.composer.control.input_processors = processors
         self.composer.window = ComposerWindow(
             self.composer.control,
@@ -321,6 +327,7 @@ class CliShell:
                 "selection.hint": rules["session-selector.key"],
                 "warning": rules["status-bar.warning"],
                 "input-area.attachment": rules["session-selector.key"],
+                "input-area.skill": "bold underline",
             }
         )
         return Style.from_dict(rules)
@@ -1486,7 +1493,7 @@ class CliShell:
                 assert self.backend is not None
                 prompt = self.inline.compile(text)
                 result = await self.backend.steer(
-                    prompt, receipt_id=steering_receipt, skill_references=self.registry.skill_references(prompt.text)
+                    prompt, receipt_id=steering_receipt, skill_references=self.registry.skill_references(prompt)
                 )
                 self.emit(result)
             except asyncio.CancelledError:
@@ -1653,14 +1660,14 @@ class CliShell:
             self._sending_draft = None
             self._recoverable = None
 
-        self.renderer.local_input(source_id, prompt.display_text)
+        self.renderer.local_input(source_id, prompt.display_text, preview_skill_ranges(prompt, self.registry))
         self.app.invalidate()
         execution = self.backend.execute(
             self.renderer,
             prompt=prompt,
             flush=self.flush,
             admitted=admitted,
-            skill_references=self.registry.skill_references(prompt.text),
+            skill_references=self.registry.skill_references(prompt),
             mode="goal" if goal else "normal",
         )
 
@@ -1920,7 +1927,7 @@ class CliShell:
         elif name == "steer":
             assert argument is not None
             prompt = self.inline.compile(argument)
-            result = await self.backend.steer(prompt, skill_references=self.registry.skill_references(prompt.text))
+            result = await self.backend.steer(prompt, skill_references=self.registry.skill_references(prompt))
             self.emit(result)
         elif name == "resume" and argument is None:
             self.open_resume()
