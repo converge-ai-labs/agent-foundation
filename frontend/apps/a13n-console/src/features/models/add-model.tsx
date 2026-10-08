@@ -1,4 +1,4 @@
-import { Button, ModalFrame } from "a13n-ui";
+import { ModalFrame } from "a13n-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
@@ -12,21 +12,19 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { ProviderIcon, ResourceEditorButton } from "../../shared/identity";
 import { connectStepDescription, connectStepTitle } from "./add-provider";
-import { CatalogPicker } from "./catalog-picker";
+import { ModelPicker } from "./model-picker";
 import {
-  CatalogNotice,
   ModelFields,
   ModelSelection,
   ModelStatus,
   useModelDraft,
 } from "./model-form";
 import { ModelIcon } from "./model-icon";
-import { ProviderAuthorization } from "./provider-authorization";
 import { useProviderDraft } from "./provider-draft";
 import { ProviderChoice, ProviderConnect } from "./provider-setup";
 import styles from "./models.module.css";
 
-type Step = "provider" | "connect" | "authorization" | "model" | "details";
+type Step = "provider" | "connect" | "model" | "details";
 
 /**
  * Adding a model reads as three questions — which provider, which model, and
@@ -63,7 +61,7 @@ export function AddModel({
     close: () => (providers.length ? setStep("provider") : setOpen(false)),
     onCreated: (provider, preferredApi) => {
       model.acceptProvider(provider, preferredApi);
-      setStep(provider.type === "openai_chatgpt" ? "authorization" : "model");
+      setStep("model");
     },
   });
   const loading = !model.providers.data || !model.definitions.data;
@@ -97,12 +95,7 @@ export function AddModel({
             definitions={definitions}
             onSelect={(id) => {
               model.chooseProvider(id);
-              setStep(
-                providers.find((provider) => provider.id === id)?.type ===
-                  "openai_chatgpt"
-                  ? "authorization"
-                  : "model",
-              );
+              setStep("model");
             }}
             onConnect={() => setStep("connect")}
           />
@@ -112,34 +105,12 @@ export function AddModel({
             draft={providerDraft}
             onBack={providers.length ? () => setStep("provider") : undefined}
           />
-        ) : current === "authorization" && model.selectedProvider ? (
-          <div className="grid gap-4">
-            <ProviderAuthorization provider={model.selectedProvider} />
-            <Button type="button" onClick={() => setStep("model")}>
-              {t("Choose a model")}
-            </Button>
-          </div>
         ) : current === "model" ? (
           <CatalogStep
             backLabel={t("Choose a provider")}
             onBack={providers.length ? () => setStep("provider") : undefined}
           >
-            <CatalogNotice model={model} />
-            {model.catalog.isPending ? (
-              <Loading variant="list" rows={5} />
-            ) : (
-              <CatalogPicker
-                entries={model.catalog.data?.items ?? []}
-                channels={model.channels}
-                allowCompatible={model.selectedProvider?.type === "openai"}
-                providerName={model.definition?.display_name}
-                value={model.draft.catalog_ref}
-                onSelect={(entry) => {
-                  model.chooseCatalog(entry);
-                  setStep("details");
-                }}
-              />
-            )}
+            <ModelPicker model={model} onSelected={() => setStep("details")} />
           </CatalogStep>
         ) : (
           <CatalogStep
@@ -191,11 +162,6 @@ function stepHeading(
           title: t("Connect a new provider"),
           description: t("Choose the service that hosts your models."),
         };
-  if (step === "authorization")
-    return {
-      title: t("ChatGPT authorization"),
-      description: t("Shared by this workspace, not a personal connection."),
-    };
   if (step === "model")
     return {
       title: (
@@ -205,7 +171,11 @@ function stepHeading(
           {t("Choose a model")}
         </BrandTitle>
       ),
-      description: t("Pick one from the catalog, or add a model by its ID."),
+      description: t(
+        model.definition?.supports_model_discovery
+          ? "Choose a model available to this provider, or enter a model ID."
+          : "Pick one from the catalog, or add a model by its ID.",
+      ),
     };
   const chosen =
     model.selectedEntry?.name || model.draft.name || model.draft.model_name;

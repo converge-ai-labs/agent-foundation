@@ -1,4 +1,5 @@
 {
+  "An upstream choice; wire names retain the original account-discovery contract.": "上游模型选项；传输字段名沿用原有的账户模型发现契约。",
   "A tool-call part's streamed arguments so far and the one observation item that holds them.": "工具调用片段目前已流式接收的参数，以及承载这些参数的唯一观察项。",
   "Incomplete custom payloads, not a journal of completed events.": "尚未完整接收的自定义载荷，而非已完成事件的日志。",
   "Native conversion cursors required to resume mid-part, without raw history.": "从片段中途恢复所需的原生转换游标，不包含原始历史。",

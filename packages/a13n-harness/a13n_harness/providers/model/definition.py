@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
@@ -30,7 +30,7 @@ _PROBE_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
 class ProviderOperationError(ValueError):
-    """A bounded, safe connection-probe failure."""
+    """A bounded, safe provider-operation failure."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +41,20 @@ class ConnectionProbeRequest:
 
 type NativeProviderBuilder[C: ProviderConfiguration, K: BaseModel] = Callable[
     [ModelConnection[C, K], httpx2.AsyncClient, str], Provider[Any]
+]
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredModel:
+    """An upstream model choice, not public catalog metadata or a saved Model."""
+
+    model_name: str
+    display_name: str
+
+
+type ModelDiscovery[C: ProviderConfiguration, K: BaseModel] = Callable[
+    [ModelConnection[C, K], OpenAIChatGPTCredentialSource | None, httpx2.AsyncClient],
+    Awaitable[tuple[DiscoveredModel, ...]],
 ]
 type EndpointResolver = Callable[[Mapping[str, object]], str | None]
 type NativeModelBuilder = Callable[[str, Provider[Any]], Model[Any]]
@@ -64,6 +78,7 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
     build_model: NativeModelBuilder | None = None
     endpoint: str | EndpointResolver | None = None
     connection_probe: Callable[[ModelConnection[C, K]], ConnectionProbeRequest] | None = None
+    model_discovery: ModelDiscovery[C, K] | None = None
     reserved_headers: tuple[str, ...] = ("authorization",)
     additional_endpoint_fields: tuple[str, ...] = ()
     # Public model-directory channels that publish this Provider's own model names.
@@ -80,6 +95,30 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
     @property
     def supports_connection_probe(self) -> bool:
         return self.connection_probe is not None
+
+    @property
+    def supports_model_discovery(self) -> bool:
+        return self.model_discovery is not None
+
+    async def discover_models(
+        self,
+        *,
+        configuration: Mapping[str, object],
+        credential: object = None,
+        credential_source: OpenAIChatGPTCredentialSource | None = None,
+        http_client: httpx2.AsyncClient,
+        extra_headers: Mapping[str, str] | None = None,
+        endpoint_policy: EndpointValidator | None = None,
+    ) -> tuple[DiscoveredModel, ...]:
+        """Discover current upstream choices using Host-owned credentials and HTTP bounds."""
+        if self.model_discovery is None:
+            raise ProviderOperationError("Model discovery is not supported by this Provider")
+        connection = self.bind(configuration, credential, extra_headers=extra_headers)
+        if (self.oauth is not None) != (credential_source is not None):
+            raise ProviderOperationError("Model discovery requires the Provider's authentication source")
+        if connection.endpoint is not None:
+            await (endpoint_policy or EndpointPolicy()).validate(connection.endpoint)
+        return await self.model_discovery(connection, credential_source, http_client)
 
     def validate_configuration(
         self, configuration: Mapping[str, object], *, credential_configured: bool, header_names: Sequence[str] = ()

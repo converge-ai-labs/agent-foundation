@@ -183,7 +183,13 @@ Changing the configured client starts without another client's retained subject 
 
 A Worker source reloads this Provider's credentials for requests and serializes refresh using short transactions around a durable exclusive claim. No database session or lock spans network I/O or another worker's wait. Other Workers adopt a published same-account rotation. An uncertain refresh or interrupted claim cannot be replayed and requires reauthorization; only a proven pre-dispatch failure restores eligibility. Successful publication is fenced and installs the complete grant before use.
 
-Disconnect clears local tokens and pending claims before bounded external revocation, retains host/client registration, and reports revocation separately when unconfirmed. Authorization, publication and disconnect record credential-free audit events. `GET …/models` requires `run`, uses the account-specific public catalog, and does not freeze tokens in Model recipes or Runs.
+Disconnect clears local tokens and pending claims before bounded external revocation, retains host/client registration, and reports revocation separately when unconfirmed. Authorization, publication and disconnect record credential-free audit events. [Model discovery](#model-provider-discovery) uses the current account's credentials without freezing tokens in Model recipes or Runs.
+
+### Model Provider Discovery
+
+`GET /model-providers/{id}/models` requires Workspace `read` and Provider `run`, resolves an enabled Provider in that Workspace, and dispatches the registered Harness definition's discovery operation. `supports_model_discovery` in the [type description](08-providers.md#provider-type-descriptions) advertises support to Console, SDK and CLI clients. A definition without the operation returns `invalid_argument` on `provider_id`; authentication and upstream failures return a bounded error, not a public catalog fallback.
+
+The response remains a JSON array of `{slug, display_name}` choices. `slug` is the unchanged upstream model name sent in inference, and server order is preserved. This read uses Host-owned authentication, endpoint policy, `providers.model_timeout` and `providers.response_bytes`, with no database session spanning external I/O. It stores no discovered list and changes neither Provider version nor Model configuration. Public catalog references and prices are not inferred from discovery. Creating or editing a Model does not require enumeration or membership in the discovered list.
 
 ## Models
 

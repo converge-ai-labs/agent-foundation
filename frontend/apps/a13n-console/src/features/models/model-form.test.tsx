@@ -15,24 +15,37 @@ const state = vi.hoisted(() => ({
   GET: vi.fn(),
   POST: vi.fn(),
   PATCH: vi.fn(),
+  DELETE: vi.fn(),
   close: vi.fn(),
   catalog: {} as Record<string, unknown>,
   types: [] as unknown[],
   providers: [] as unknown[],
+  discovered: [] as { slug: string; display_name: string }[],
+  authorization: { state: "connected", pending: false },
+  runAllowed: true,
 }));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({
     http: { GET: state.GET, POST: state.POST, PATCH: state.PATCH },
-    workspace: () => ({ GET: state.GET, POST: state.POST, PATCH: state.PATCH }),
+    workspace: () => ({
+      GET: state.GET,
+      POST: state.POST,
+      PATCH: state.PATCH,
+      DELETE: state.DELETE,
+    }),
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     organization: { id: "org_test" },
     workspace: { id: "ws_test" },
+    can: (verb: string) => verb !== "run" || state.runAllowed,
   }),
 }));
 const provider = {
@@ -173,17 +186,26 @@ beforeEach(() => {
     items: [entry, secondEntry, compatibleEntry],
     status: "ready",
   };
+  state.runAllowed = true;
+  state.discovered = [
+    { slug: "plan-z", display_name: "Plan Z" },
+    { slug: "plan-a", display_name: "Plan A" },
+  ];
+  state.authorization = { state: "connected", pending: false };
   state.types = [definition];
   state.providers = [provider];
   state.GET.mockImplementation(async (path: string) => ({
-    data:
-      path === "/api/v1/provider-types/{kind}"
-        ? { items: state.types, next_cursor: null }
-        : path === "/api/v1/model-catalog"
-          ? state.catalog
-          : path.endsWith("{key}")
-            ? model
-            : { items: state.providers, next_cursor: null },
+    data: path.endsWith("/{provider_id}/models")
+      ? state.discovered
+      : path.endsWith("/authorization")
+        ? state.authorization
+        : path === "/api/v1/provider-types/{kind}"
+          ? { items: state.types, next_cursor: null }
+          : path === "/api/v1/model-catalog"
+            ? state.catalog
+            : path.endsWith("{key}")
+              ? model
+              : { items: state.providers, next_cursor: null },
     response: response(),
   }));
   state.POST.mockImplementation(
@@ -823,3 +845,199 @@ it("keeps invalid image input visible and does not submit it", async () => {
       .max_image_bytes,
   ).toBe(2621440);
 });
+
+function accountProvider() {
+  state.providers = [{ ...provider, type: "openai_chatgpt", config: {} }];
+  state.types = [
+    {
+      ...definition,
+      type: "openai_chatgpt",
+      display_name: "ChatGPT",
+      oauth_scheme: "openai-chatgpt",
+      supports_model_discovery: true,
+      supports_test: false,
+      catalog_providers: [],
+      model_apis: ["openai.responses"],
+      default_model_api: "openai.responses",
+    },
+  ];
+}
+
+it("discovers account models in server order and saves the original slug without public catalog prices", async () => {
+  accountProvider();
+  mount({ providerId: provider.id });
+  const user = userEvent.setup();
+  const z = await screen.findByRole("button", { name: /Plan Z/ });
+  const a = screen.getByRole("button", { name: /Plan A/ });
+  expect(
+    z.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /GPT-5.5/ })).toBeNull();
+  await user.type(screen.getByRole("searchbox"), "plan-z");
+  expect(screen.queryByRole("button", { name: /Plan A/ })).toBeNull();
+  await user.click(z);
+  expect(
+    (screen.getByLabelText("Upstream model") as HTMLInputElement).value,
+  ).toBe("plan-z");
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
+    "Plan Z",
+  );
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalled());
+  const body = state.POST.mock.calls[0][1].body;
+  expect(body).toMatchObject({
+    name: "Plan Z",
+    catalog_ref: null,
+    pricing: null,
+    config: {
+      model_name: "plan-z",
+      model_api: "openai.responses",
+      characteristics: {},
+    },
+  });
+});
+
+it("keeps manual creation available without run permission and does not call discovery", async () => {
+  accountProvider();
+  state.runAllowed = false;
+  mount({ providerId: provider.id });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /Custom model/ }));
+  await user.type(screen.getByLabelText("Upstream model"), "manual-plan-id");
+  await user.type(screen.getByLabelText("Name"), "Manual plan");
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalled());
+  expect(
+    state.GET.mock.calls.some(([path]) =>
+      path.endsWith("/{provider_id}/models"),
+    ),
+  ).toBe(false);
+});
+
+it("offers authorization and manual entry without discovery while disconnected or reauthorizing", async () => {
+  accountProvider();
+  state.authorization = { state: "connected", pending: true };
+  mount({ providerId: provider.id });
+  await screen.findByRole("button", { name: /Custom model/ });
+  expect(
+    state.GET.mock.calls.some(([path]) =>
+      path.endsWith("/{provider_id}/models"),
+    ),
+  ).toBe(false);
+  expect(screen.queryByRole("button", { name: /Plan Z/ })).toBeNull();
+  expect(
+    await screen.findByRole("button", { name: "Restart authorization" }),
+  ).toBeTruthy();
+});
+
+it("retries discovery errors without falling back to public catalog models", async () => {
+  accountProvider();
+  const normal = state.GET.getMockImplementation()!;
+  state.GET.mockImplementation((path, ...args) =>
+    path.endsWith("/{provider_id}/models")
+      ? Promise.reject(new Error("Discovery failed"))
+      : normal(path, ...args),
+  );
+  mount({ providerId: provider.id });
+  const user = userEvent.setup();
+  await screen.findByText("Discovery failed");
+  expect(screen.queryByRole("button", { name: /GPT-5.5/ })).toBeNull();
+  expect(screen.getByRole("button", { name: /Custom model/ })).toBeTruthy();
+  state.GET.mockImplementation(normal);
+  await user.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByRole("button", { name: /Plan Z/ });
+});
+
+it("opens saved account models without discovery and clears stale catalog metadata only on selection", async () => {
+  accountProvider();
+  mount({ modelKey: "smart" });
+  const user = userEvent.setup();
+  await screen.findByDisplayValue("company-smart");
+  expect(
+    state.GET.mock.calls.some(([path]) =>
+      path.endsWith("/{provider_id}/models"),
+    ),
+  ).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Change" }));
+  await user.click(await screen.findByRole("button", { name: /Plan A/ }));
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
+    "Smart",
+  );
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalled());
+  expect(state.PATCH.mock.calls[0][1].body).toMatchObject({
+    name: "Smart",
+    catalog_ref: null,
+    pricing: null,
+    config: {
+      model_name: "plan-a",
+      model_api: "openai.responses",
+      characteristics: {},
+    },
+  });
+});
+
+it.each(["manual_callback", "browser_callback"])(
+  "refreshes account choices after %s and clears them on disconnect",
+  async (method) => {
+    accountProvider();
+    state.POST.mockImplementation(async (path: string) => {
+      if (path.endsWith("/authorize")) {
+        state.authorization = { state: "connected", pending: true };
+        return {
+          data: {
+            method,
+            attempt_id: "attempt-1",
+            expires_at: "2099-01-01T00:00:00Z",
+            authorization_url:
+              "https://auth.openai.com/authorize?state=synthetic",
+          },
+        };
+      }
+      state.authorization = { state: "connected", pending: false };
+      return { data: state.authorization };
+    });
+    state.DELETE.mockImplementation(async () => {
+      state.authorization = { state: "disconnected", pending: false };
+      return {
+        data: { local_tokens_cleared: true, revocation_confirmed: true },
+      };
+    });
+    mount({ providerId: provider.id });
+    const user = userEvent.setup();
+    await screen.findByRole("button", { name: /Plan Z/ });
+    await user.click(
+      screen.getByRole("button", { name: "Restart authorization" }),
+    );
+    await screen.findByLabelText("Complete callback URL");
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Plan Z/ })).toBeNull(),
+    );
+    state.discovered = [
+      { slug: "new-account-plan", display_name: "New account plan" },
+    ];
+    if (method === "manual_callback") {
+      await user.type(
+        screen.getByLabelText("Complete callback URL"),
+        "http://127.0.0.1:1456/auth/callback?code=synthetic",
+      );
+      await user.click(
+        screen.getByRole("button", { name: "Complete sign-in" }),
+      );
+    } else {
+      state.authorization = { state: "connected", pending: false };
+    }
+    await screen.findByRole(
+      "button",
+      { name: /New account plan/ },
+      { timeout: 4000 },
+    );
+    expect(screen.queryByRole("button", { name: /Plan Z/ })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Disconnect" }));
+    await screen.findByText("Not connected");
+    expect(
+      screen.queryByRole("button", { name: /New account plan/ }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: /Custom model/ })).toBeTruthy();
+  },
+);

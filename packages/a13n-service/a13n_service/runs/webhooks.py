@@ -6,7 +6,7 @@ from datetime import datetime
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.resources.subscriptions.delivery import RunFacts, stage_webhooks
+from a13n_service.resources.subscriptions.delivery import RunFacts, Transition, stage_webhooks
 from a13n_service.resources.subscriptions.schemas import LifecycleKind
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import AttemptRow, RunRow
@@ -47,9 +47,22 @@ async def notify_subscribers(
     attempt: AttemptRow | None = None,
 ) -> None:
     """The last phase of a transition: stage the run's lifecycle payload for every matching subscription."""
+    transition = lifecycle_transition(run, kinds, at=at, attempt=attempt)
     await stage_webhooks(
         session,
         runtime.keys,
+        transition.run,
+        transition.kinds,
+        transition.payload,
+        limit=runtime.settings.control.subscriptions,
+    )
+
+
+def lifecycle_transition(
+    run: RunRow, kinds: Sequence[LifecycleKind], *, at: datetime, attempt: AttemptRow | None = None
+) -> Transition:
+    """Capture the lifecycle payload after applying the transition."""
+    return Transition(
         RunFacts(run.workspace_id, run.agent_id, run.session_id, run.thread_id),
         kinds,
         {
@@ -58,5 +71,4 @@ async def notify_subscribers(
             "run": _run(run),
             "attempt": _attempt(attempt) if attempt is not None else None,
         },
-        limit=runtime.settings.control.subscriptions,
     )

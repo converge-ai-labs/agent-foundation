@@ -2403,24 +2403,6 @@
         ],
         "type": "string"
       },
-      "ChatGPTModel": {
-        "properties": {
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "slug": {
-            "title": "Slug",
-            "type": "string"
-          }
-        },
-        "required": [
-          "slug",
-          "display_name"
-        ],
-        "title": "ChatGPTModel",
-        "type": "object"
-      },
       "ChildEnvironmentPolicy": {
         "additionalProperties": false,
         "description": "What a child run mounts: no environment, the parent's, or a new one from `template_id`.",
@@ -8930,6 +8912,25 @@
         "title": "ProviderCreate",
         "type": "object"
       },
+      "ProviderModel": {
+        "description": "An upstream choice; wire names retain the original account-discovery contract.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "display_name"
+        ],
+        "title": "ProviderModel",
+        "type": "object"
+      },
       "ProviderPage": {
         "properties": {
           "items": {
@@ -9169,6 +9170,11 @@
               }
             ],
             "title": "Supports Destroy"
+          },
+          "supports_model_discovery": {
+            "default": false,
+            "title": "Supports Model Discovery",
+            "type": "boolean"
           },
           "supports_stop": {
             "anyOf": [
@@ -21665,7 +21671,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/ChatGPTModel"
+                    "$ref": "#/components/schemas/ProviderModel"
                   },
                   "title": "Response Discover Model Provider Models Api V1 Model Providers  Provider Id  Models Get",
                   "type": "array"
