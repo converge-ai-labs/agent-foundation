@@ -1,17 +1,18 @@
 """Authored Skill references and App-filled model instructions."""
 
+from __future__ import annotations
+
 import re
 from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import replace
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 from xml.sax.saxutils import escape, quoteattr
 
-from a13n_harness.content import ContentItem, ContentMetadata
-from a13n_harness.input import RunInputValue
-from pydantic_ai.messages import TextContent, UserContent
+if TYPE_CHECKING:
+    from a13n_harness.input import RunInputValue
 
-from a13n_harness_ui.surfaces import SkillCatalogView
+    from a13n_harness_ui.surfaces import SkillCatalogView
 
 
 class SkillSpan(TypedDict):
@@ -57,6 +58,9 @@ def retained_skill_spans(text: str, namespace: object) -> list[SkillSpan]:
 
 def prepare_skill_input(prompt: RunInputValue, catalog: SkillCatalogView, names: tuple[str, ...]) -> RunInputValue:
     """Annotate validated selections and append their instruction exactly once."""
+    from a13n_harness.content import ContentItem, ContentMetadata
+    from pydantic_ai.messages import TextContent, UserContent
+
     if not names:
         return prompt
     selected = {item.name: item for item in catalog.items if item.name in names}
