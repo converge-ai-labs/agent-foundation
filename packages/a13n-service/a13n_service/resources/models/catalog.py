@@ -84,6 +84,18 @@ class ModelsDevCatalog:
                     await self.refreshed.wait()
         return self.catalog
 
+    async def characteristics(
+        self, channels: tuple[str, ...], models: tuple[str, ...]
+    ) -> dict[str, HarnessModelCharacteristics | None]:
+        """Enrich discovered IDs from the current snapshot without waiting for network I/O."""
+        snapshot = await self.read(wait=False)
+
+        def resolve() -> dict[str, HarnessModelCharacteristics | None]:
+            return {model: model_characteristics(channels, model, snapshot) for model in models}
+
+        # The bundled fallback lazily reads YAML and builds the pricing snapshot.
+        return await to_thread.run_sync(resolve)
+
     async def run(self) -> None:
         """Refresh the catalog whenever a read finds it old, one refresh at a time."""
         while True:

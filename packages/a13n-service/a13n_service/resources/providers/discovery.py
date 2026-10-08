@@ -1,17 +1,18 @@
 """Authorized provider model choices, fetched outside the storage boundary."""
 
+from typing import Protocol
+
 import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.model.definition import DiscoveredModel, ProviderOperationError
-from anyio import fail_after, to_thread
+from a13n_harness.providers.model.definition import ProviderOperationError
+from a13n_harness.spec import HarnessModelCharacteristics
+from anyio import fail_after
 
 from a13n_service.infra.crypto import KeyRing
 from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.outbound import open_http
 from a13n_service.providers.registry import Registry
-from a13n_service.resources.models.catalog import ModelsDevCatalog, model_characteristics
-from a13n_service.resources.models.schemas import ModelCatalog
 from a13n_service.resources.providers.oauth import ChatGPTCredentialSource
 from a13n_service.resources.providers.schemas import ProviderModel
 from a13n_service.resources.providers.service import resolve_provider
@@ -19,6 +20,14 @@ from a13n_service.resources.providers.tables import ModelProviderRow
 from a13n_service.settings import Providers
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
+
+
+class ModelMetadata(Protocol):
+    """Nonblocking metadata enrichment, independent of the catalog implementation."""
+
+    async def characteristics(
+        self, channels: tuple[str, ...], models: tuple[str, ...]
+    ) -> dict[str, HarnessModelCharacteristics | None]: ...
 
 
 async def discover_models(
@@ -31,7 +40,7 @@ async def discover_models(
     keys: KeyRing,
     policy: EndpointPolicy,
     settings: Providers,
-    catalog: ModelsDevCatalog | None = None,
+    catalog: ModelMetadata,
 ) -> list[ProviderModel]:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
@@ -60,19 +69,12 @@ async def discover_models(
             "unavailable", "Provider model discovery failed; retry or enter a model ID manually"
         ) from None
     # Metadata availability must never delay or replace authenticated choices.
-    metadata = await catalog.read(wait=False) if catalog is not None else ModelCatalog(items=[], status="unavailable")
-    # The bundled fallback lazily reads YAML and builds the pricing snapshot.
-    return await to_thread.run_sync(_choices, models, definition.catalog_providers, metadata)
-
-
-def _choices(
-    models: tuple[DiscoveredModel, ...], channels: tuple[str, ...], metadata: ModelCatalog
-) -> list[ProviderModel]:
+    metadata = await catalog.characteristics(definition.catalog_providers, tuple(model.model_name for model in models))
     return [
         ProviderModel(
             slug=model.model_name,
             display_name=model.display_name,
-            characteristics=model_characteristics(channels, model.model_name, metadata),
+            characteristics=metadata.get(model.model_name),
         )
         for model in models
     ]

@@ -497,7 +497,7 @@ async def test_definition_discovery_declares_capability_and_uses_host_source_and
     from a13n_harness.providers.model.openai_chatgpt import DEFINITION
 
     assert DEFINITION.supports_model_discovery and not DEFINITION.supports_connection_probe
-    assert DEFINITION.catalog_providers == ()
+    assert DEFINITION.catalog_providers == ("openai",)
     assert not replace(DEFINITION, model_discovery=None).supports_model_discovery
     calls = []
 

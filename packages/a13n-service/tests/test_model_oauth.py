@@ -890,6 +890,7 @@ async def test_discovery_checks_capability_scope_and_run_permission_before_netwo
             keys=service.runtime.keys,
             policy=service.runtime.endpoint_policy,
             settings=service.runtime.settings.providers,
+            catalog=service.app.state.model_catalog,
         )
     assert failure.value.code == "forbidden"
 
@@ -937,6 +938,7 @@ async def test_discovery_dispatches_declared_operation_without_a_vendor_table(se
         keys=service.runtime.keys,
         policy=service.runtime.endpoint_policy,
         settings=service.runtime.settings.providers,
+        catalog=service.app.state.model_catalog,
     )
     assert [choice.model_dump() for choice in choices] == [
         {"slug": "custom-upstream", "display_name": "Custom upstream", "characteristics": None}

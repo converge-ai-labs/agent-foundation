@@ -468,3 +468,31 @@ async def test_optional_metadata_read_never_waits_for_the_first_fetch() -> None:
     assert facts.context_window_tokens == 1050000
     assert facts.capabilities == {ModelCapability.IMAGE_UNDERSTANDING}
     assert model_characteristics(("openai",), "unlisted", snapshot) is None
+
+
+@pytest.mark.anyio
+async def test_discovery_metadata_resolves_cold_catalog_off_the_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    from threading import get_ident
+
+    from a13n_harness.spec import HarnessModelCharacteristics
+    from a13n_service.resources.providers.discovery import ModelMetadata
+
+    catalog = ModelsDevCatalog(CHANNELS, LOOPBACK)
+    metadata: ModelMetadata = catalog
+    loop_thread = get_ident()
+    resolved = []
+
+    def resolve(channels: tuple[str, ...], model: str, snapshot: ModelCatalog) -> HarnessModelCharacteristics | None:
+        assert get_ident() != loop_thread
+        assert snapshot.status == "unavailable"
+        assert channels == ("openai",)
+        resolved.append(model)
+        return HarnessModelCharacteristics(context_window_tokens=12345) if model == "known" else None
+
+    monkeypatch.setattr(catalog_module, "model_characteristics", resolve)
+    with anyio.fail_after(1):
+        facts = await metadata.characteristics(("openai",), ("known", "unknown"))
+    assert resolved == ["known", "unknown"]
+    assert catalog.due.is_set()
+    assert facts["known"] is not None and facts["known"].context_window_tokens == 12345
+    assert facts["unknown"] is None
