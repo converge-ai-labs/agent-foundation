@@ -203,3 +203,55 @@ async def test_no_model_cost_capability_explicitly_disables_harness_valuation() 
     assert record.pricing_status == "disabled"
     assert record.pricing_revision == "disabled"
     assert record.cost_source == "unknown"
+
+
+def test_official_metadata_reuses_bundled_context_and_supplements_missing_models() -> None:
+    from importlib.resources import files
+
+    import yaml
+
+    official = get_official_model_catalog()
+    pricing = get_default_pricing_catalog()
+    raw = yaml.safe_load(files("a13n_harness").joinpath("data/official-models.yaml").read_text())
+    for model, value in raw["models"].items():
+        provider, _, name = model.partition(":")
+        price_provider = {"grok": "x-ai", "google-gla": "google"}.get(provider, provider)
+        price_key = f"{price_provider}:{name}"
+        price = pricing.get(price_key)
+        if price is not None and price.context_window is not None:
+            # Supplemental values must either fill a gap or correct a differing value.
+            assert value["characteristics"].get("context_window_tokens") != price.context_window
+            assert official[model].characteristics.context_window_tokens == price.context_window
+    for name in ("gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"):
+        facts = official[f"openai:{name}"].characteristics
+        assert facts.context_window_tokens == 1050000
+        assert facts.capabilities == {"image_understanding"}
+
+
+@pytest.mark.parametrize(
+    "context,expected", [("", 123456), ("context_window_tokens: null", None), ("context_window_tokens: 456789", 456789)]
+)
+def test_official_context_merge_preserves_explicit_supplements_and_missing_media(
+    tmp_path, monkeypatch, context, expected
+) -> None:
+    from a13n_harness import model_catalog
+    from a13n_harness.pricing import PricingCatalog
+
+    price = get_default_pricing_catalog()["openai:gpt-5.5"].model_copy(
+        update={"model": "fixture", "context_window": 123456}
+    )
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data/official-models.yaml").write_text(
+        "schema_version: 1\nmodels:\n  openai:fixture:\n"
+        f"    characteristics: {{{context}}}\n"
+        "    source_url: https://example.com/model\n"
+    )
+    monkeypatch.setattr(model_catalog, "files", lambda _: tmp_path)
+    monkeypatch.setattr(model_catalog, "get_default_pricing_catalog", lambda: PricingCatalog({price.key: price}))
+    get_official_model_catalog.cache_clear()
+    try:
+        facts = get_official_model_catalog()["openai:fixture"].characteristics
+        assert facts.context_window_tokens == expected
+        assert "capabilities" not in facts.model_fields_set
+    finally:
+        get_official_model_catalog.cache_clear()

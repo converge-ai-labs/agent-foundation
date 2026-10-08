@@ -89,6 +89,7 @@ API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
 
 def known_context_window(provider: str, model_id: str, base_url: str) -> int | None:
     """Read the Harness-owned bundled catalog; never query the network."""
+    from a13n_harness.model_catalog import get_official_model_catalog
     from a13n_harness.pricing import get_default_pricing_catalog
 
     catalog_provider = (
@@ -98,6 +99,10 @@ def known_context_window(provider: str, model_id: str, base_url: str) -> int | N
         if provider in {"grok", "xai"}
         else provider
     )
+    official_provider = {"google": "google-gla", "x-ai": "grok"}.get(catalog_provider, catalog_provider)
+    official = get_official_model_catalog().get(f"{official_provider}:{model_id}")
+    if official is not None and official.characteristics.context_window_tokens is not None:
+        return official.characteristics.context_window_tokens
     entry = get_default_pricing_catalog().resolve(model_id, provider=catalog_provider, provider_url=base_url)
     return entry.context_window if entry is not None else None
 
@@ -149,14 +154,14 @@ def known_model_characteristics(route: str) -> HarnessModelCharacteristics | Non
     if entry is None or "capabilities" not in entry.characteristics.model_fields_set:
         return None
     # Native URL facts are selected separately from binary input modalities.
-    # Compatible transports are reviewed for image input only.
+    # Compatible transports are reviewed for image input only. PDF remains a
+    # manual opt-in even when the source declares native document support.
     supported = (
         frozenset(
             {
                 ModelCapability.IMAGE_UNDERSTANDING,
                 ModelCapability.AUDIO_UNDERSTANDING,
                 ModelCapability.VIDEO_UNDERSTANDING,
-                ModelCapability.DOCUMENT_UNDERSTANDING,
             }
         )
         if provider in {"google", "google-gla"}

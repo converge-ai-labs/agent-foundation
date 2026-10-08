@@ -1,3 +1,4 @@
+import { DisclosureSection } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
@@ -41,6 +42,35 @@ export function ProviderForm({
   const { original, type, definition, save } = draft;
   const credentialLabel = t(draft.credentialField.label);
   const keyLink = providerKeyLink(definition);
+  const configuration = definition && (
+    <SchemaFields
+      key={type}
+      schema={ordinaryConfigurationSchema(definition.configuration_schema)}
+      value={draft.configuration}
+      onChange={draft.setConfiguration}
+    />
+  );
+  const credential = draft.section.visible && (
+    <CredentialRow
+      label={credentialLabel}
+      configured={draft.section.removable}
+      removing={draft.section.removing}
+      onRemovingChange={draft.section.setRemoving}
+      onDiscard={() => draft.section.setCredential({})}
+    >
+      {draft.section.mode !== "forbidden" && (
+        <SchemaFields
+          secret
+          autoFocus
+          labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
+          schema={draft.section.schema}
+          requireFields={draft.section.requireFields}
+          value={draft.section.credential}
+          onChange={draft.section.setCredential}
+        />
+      )}
+    </CredentialRow>
+  );
   return (
     <ProviderEditor
       onSubmit={(event) => {
@@ -49,40 +79,13 @@ export function ProviderForm({
       }}
     >
       <ProviderName value={draft.name} onChange={draft.setName} />
-      {definition && (
-        <SchemaFields
-          key={type}
-          schema={ordinaryConfigurationSchema(definition.configuration_schema)}
-          value={draft.configuration}
-          onChange={draft.setConfiguration}
-        />
-      )}
+      {!definition?.oauth_scheme && configuration}
       <ProviderGroup>
         <ProviderEnabled
           checked={draft.enabled}
           onCheckedChange={draft.setEnabled}
         />
-        {draft.section.visible && (
-          <CredentialRow
-            label={credentialLabel}
-            configured={draft.section.removable}
-            removing={draft.section.removing}
-            onRemovingChange={draft.section.setRemoving}
-            onDiscard={() => draft.section.setCredential({})}
-          >
-            {draft.section.mode !== "forbidden" && (
-              <SchemaFields
-                secret
-                autoFocus
-                labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
-                schema={draft.section.schema}
-                requireFields={draft.section.requireFields}
-                value={draft.section.credential}
-                onChange={draft.section.setCredential}
-              />
-            )}
-          </CredentialRow>
-        )}
+        {!definition?.oauth_scheme && credential}
         <ProviderFacts
           configuration={draft.configuration}
           schema={definition?.configuration_schema}
@@ -99,6 +102,16 @@ export function ProviderForm({
             draft.section.removing
           }
         />
+      )}
+      {definition?.oauth_scheme && (
+        <DisclosureSection
+          title={t("Advanced settings")}
+          open={draft.advancedOpen}
+          onOpenChange={draft.setAdvancedOpen}
+        >
+          {configuration}
+          {credential && <ProviderGroup>{credential}</ProviderGroup>}
+        </DisclosureSection>
       )}
       {definition && !definition.oauth_scheme && (
         <ProviderConnection

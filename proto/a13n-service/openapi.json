@@ -8868,6 +8868,16 @@
       "ProviderModel": {
         "description": "An upstream choice; wire names retain the original account-discovery contract.",
         "properties": {
+          "characteristics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HarnessModelCharacteristics-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "display_name": {
             "title": "Display Name",
             "type": "string"

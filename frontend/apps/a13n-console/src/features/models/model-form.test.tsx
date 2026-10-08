@@ -20,7 +20,11 @@ const state = vi.hoisted(() => ({
   catalog: {} as Record<string, unknown>,
   types: [] as unknown[],
   providers: [] as unknown[],
-  discovered: [] as { slug: string; display_name: string }[],
+  discovered: [] as {
+    slug: string;
+    display_name: string;
+    characteristics?: { capabilities: string[]; context_window_tokens: number };
+  }[],
   authorization: { state: "connected", pending: false },
   runAllowed: true,
 }));
@@ -234,6 +238,49 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
+it("adds a catalog model without opening details and preserves its known capabilities", async () => {
+  mount({ providerId: "mprov_test" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /GPT-5\.5/ }));
+  expect(screen.getByText("Images")).toBeTruthy();
+  expect(screen.queryByRole("switch", { name: "Images" })).toBeNull();
+  expect(screen.queryByLabelText("Model key")).toBeNull();
+  expect(screen.queryByLabelText("Settings JSON")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
+  expect(state.POST.mock.calls[0][1].body).toMatchObject({
+    key: null,
+    name: "GPT-5.5",
+    enabled: true,
+    config: {
+      model_name: "gpt-5.5",
+      settings: {},
+      characteristics: entry.characteristics,
+    },
+  });
+});
+
+it("keeps model setup open while saving, including close and escape actions", async () => {
+  let finish!: (value: unknown) => void;
+  state.POST.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  mount({ providerId: "mprov_test" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /GPT-5\.5/ }));
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
+  await user.click(screen.getByRole("button", { name: "Close" }));
+  await user.keyboard("{Escape}");
+  expect(state.close).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  finish({ data: model, response: response() });
+  await waitFor(() => expect(state.close).toHaveBeenCalledOnce());
+});
+
 it("creates a manual model with JSON request defaults in its configuration", async () => {
   mount({ providerId: "mprov_test" });
   const user = userEvent.setup();
@@ -243,14 +290,12 @@ it("creates a manual model with JSON request defaults in its configuration", asy
     "company-smart",
   );
   await user.type(screen.getByLabelText("Name"), "Smart");
+  await user.click(screen.getByRole("button", { name: "Advanced" }));
   await user.type(screen.getByLabelText("Model key"), "smart");
   fireEvent.change(screen.getByLabelText("Description"), {
     target: { value: "Company gateway" },
   });
   await user.click(screen.getByRole("switch", { name: "Enabled" }));
-  expect(screen.queryByLabelText("Thinking effort")).toBeNull();
-  expect(screen.queryByLabelText("Max output tokens")).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Advanced" }));
   fireEvent.change(screen.getByLabelText("Settings JSON"), {
     target: { value: '{"max_tokens":4096,"temperature":0.2}' },
   });
@@ -285,8 +330,8 @@ it("rejects request defaults that are not a JSON object", async () => {
     "company-smart",
   );
   await user.type(screen.getByLabelText("Name"), "Smart");
-  await user.type(screen.getByLabelText("Model key"), "smart");
   await user.click(screen.getByRole("button", { name: "Advanced" }));
+  await user.type(screen.getByLabelText("Model key"), "smart");
   fireEvent.change(screen.getByLabelText("Settings JSON"), {
     target: { value: "[4096]" },
   });
@@ -299,6 +344,7 @@ it("keeps the catalog identity and price for an edited gateway upstream ID", asy
   mount({ providerId: "mprov_test" });
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: /GPT-5\.5/ }));
+  await user.click(screen.getByRole("button", { name: "Advanced" }));
   await user.clear(await screen.findByLabelText("Upstream model"));
   await user.type(screen.getByLabelText("Upstream model"), "company-smart");
   await user.click(screen.getByRole("button", { name: "Add model" }));
@@ -329,6 +375,7 @@ it("applies a newly selected model immediately, including its catalog values", a
     await screen.findByRole("button", { name: "Choose a model" }),
   );
   await user.click(await screen.findByRole("button", { name: /GPT-5\.6/ }));
+  await user.click(screen.getByRole("button", { name: "Advanced" }));
   expect(
     (screen.getByLabelText("Upstream model") as HTMLInputElement).value,
   ).toBe("gpt-5.6");
@@ -460,6 +507,7 @@ it("uses the official model price for an OpenAI-compatible connection", async ()
       "Requires an OpenAI-compatible endpoint serving this model. Enter its upstream model ID.",
     ),
   ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Advanced" }));
   expect(
     screen.getByRole("button", { name: /Pricing/ }).textContent,
   ).not.toContain("Unknown");
@@ -508,6 +556,7 @@ it("falls back to the official price when the selected channel has none", async 
   mount({ providerId: "mprov_test" });
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: /MiniMax-M3/ }));
+  await user.click(screen.getByRole("button", { name: "Advanced" }));
   expect(
     (screen.getByLabelText("Upstream model") as HTMLInputElement).value,
   ).toBe("minimax/MiniMax-M3");
@@ -547,6 +596,7 @@ it("says when the catalog is stale and why a catalog price is missing", async ()
     await screen.findByText("Showing the last available model catalog."),
   ).toBeTruthy();
   await user.click(await screen.findByRole("button", { name: /GPT-5\.5/ }));
+  await user.click(screen.getByRole("button", { name: "Advanced" }));
   expect(
     screen.getByText("Unsupported catalog pricing; configure prices manually"),
   ).toBeTruthy();
@@ -856,7 +906,7 @@ function accountProvider() {
       oauth_scheme: "openai-chatgpt",
       supports_model_discovery: true,
       supports_test: false,
-      catalog_providers: [],
+      catalog_providers: ["openai"],
       model_apis: ["openai.responses"],
       default_model_api: "openai.responses",
     },
@@ -876,9 +926,8 @@ it("discovers account models in server order and saves the original slug without
   await user.type(screen.getByRole("searchbox"), "plan-z");
   expect(screen.queryByRole("button", { name: /Plan A/ })).toBeNull();
   await user.click(z);
-  expect(
-    (screen.getByLabelText("Upstream model") as HTMLInputElement).value,
-  ).toBe("plan-z");
+  expect(screen.queryByLabelText("Upstream model")).toBeNull();
+  expect(screen.getByText("plan-z")).toBeTruthy();
   expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
     "Plan Z",
   );
@@ -1041,3 +1090,88 @@ it.each(["manual_callback", "browser_callback"])(
     expect(screen.getByRole("button", { name: /Custom model/ })).toBeTruthy();
   },
 );
+
+it.each(["catalog", "discovery"])(
+  "prefills %s metadata with PDF off and preserves manual opt-in",
+  async (source) => {
+    const facts = {
+      capabilities: ["image_understanding", "document_understanding"],
+      context_window_tokens: 1050000,
+    };
+    if (source === "discovery") {
+      accountProvider();
+      state.discovered = [
+        {
+          slug: "gpt-6.1-sol",
+          display_name: "GPT-6.1 Sol",
+          characteristics: facts,
+        },
+      ];
+    } else {
+      state.catalog = {
+        items: [{ ...entry, name: "GPT-6.1 Sol", characteristics: facts }],
+        status: "ready",
+      };
+    }
+    mount({ providerId: provider.id });
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: /GPT-6.1 Sol/ }),
+    );
+    expect(screen.getByLabelText("Capabilities").textContent).toContain(
+      "Images",
+    );
+    expect(screen.getByLabelText("Capabilities").textContent).not.toContain(
+      "PDF documents",
+    );
+    await user.click(screen.getByRole("button", { name: "Advanced" }));
+    expect(
+      screen
+        .getByRole("switch", { name: "PDF documents" })
+        .getAttribute("aria-checked"),
+    ).toBe("false");
+    expect(
+      (screen.getByLabelText("Context window") as HTMLInputElement).value,
+    ).toBe("1050000");
+    await user.click(screen.getByRole("switch", { name: "PDF documents" }));
+    await user.click(screen.getByRole("button", { name: "Add model" }));
+    await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
+    const body = state.POST.mock.calls[0][1].body;
+    expect(body.config.characteristics).toMatchObject(facts);
+    if (source === "discovery") {
+      expect(body.pricing).toBeNull();
+      expect(body.catalog_ref).toBeNull();
+      expect(body.config.model_name).toBe("gpt-6.1-sol");
+    }
+  },
+);
+
+it("preserves saved PDF opt-in when editing a model", async () => {
+  const saved = {
+    ...model,
+    config: {
+      ...model.config,
+      characteristics: {
+        capabilities: ["image_understanding", "document_understanding"],
+        context_window_tokens: 123456,
+      },
+    },
+  };
+  const get = state.GET.getMockImplementation()!;
+  state.GET.mockImplementation(async (path: string) =>
+    path.endsWith("{key}") ? { data: saved, response: response() } : get(path),
+  );
+  mount({ modelKey: "smart" });
+  const user = userEvent.setup();
+  expect(
+    (await screen.findByRole("switch", { name: "PDF documents" })).getAttribute(
+      "aria-checked",
+    ),
+  ).toBe("true");
+  await user.type(screen.getByLabelText("Name"), " renamed");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.PATCH).toHaveBeenCalledOnce());
+  expect(state.PATCH.mock.calls[0][1].body.config.characteristics).toEqual(
+    saved.config.characteristics,
+  );
+});

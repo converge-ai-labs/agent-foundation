@@ -1,4 +1,6 @@
 {
+  "Request defaults": "Request defaults",
+  "{{count}} context tokens": "{{count}} context tokens",
   "Not connected": "Not connected",
   "Waiting for sign-in": "Waiting for sign-in",
   "Checking authorization…": "Checking authorization…",

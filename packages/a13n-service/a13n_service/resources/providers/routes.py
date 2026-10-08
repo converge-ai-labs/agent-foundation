@@ -224,7 +224,7 @@ async def disconnect_model_authorization(
 
 @router.get("/model-providers/{provider_id}/models", response_model=list[ProviderModel])
 async def discover_model_provider_models(
-    workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
+    request: Request, workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> list[ProviderModel]:
     return await discovery.discover_models(
         runtime.storage,
@@ -235,4 +235,5 @@ async def discover_model_provider_models(
         keys=runtime.keys,
         policy=runtime.endpoint_policy,
         settings=runtime.settings.providers,
+        catalog=request.app.state.model_catalog,
     )

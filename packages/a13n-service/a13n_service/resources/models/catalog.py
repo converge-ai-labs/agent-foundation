@@ -11,8 +11,10 @@ from collections.abc import Callable, Iterable
 from time import monotonic
 
 import anyio
+from a13n_harness.model_catalog import get_official_model_catalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.definition import ModelProviderDefinition
+from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_logging import exception_details, get_logger
 from anyio import to_thread
 
@@ -34,6 +36,27 @@ def catalog_channels(definitions: Iterable[ModelProviderDefinition]) -> frozense
     return frozenset(channel for definition in definitions for channel in definition.catalog_providers)
 
 
+def model_characteristics(
+    channels: tuple[str, ...], model: str, catalog: ModelCatalog
+) -> HarnessModelCharacteristics | None:
+    """Exact metadata match in declared channel order; never infer access or prices.
+
+    The live catalog is primary. Bundled official facts fill missing fields or
+    serve cold/unavailable catalogs, without fuzzy model aliases or network I/O.
+    """
+    official = get_official_model_catalog()
+    for channel in channels:
+        entry = next((item for item in catalog.items if item.ref.provider == channel and item.ref.model == model), None)
+        bundled = official.get(f"{channel}:{model}")
+        if entry is None and bundled is None:
+            continue
+        facts = bundled.characteristics.model_dump(exclude_unset=True) if bundled is not None else {}
+        if entry is not None:
+            facts.update(entry.characteristics.model_dump(exclude_unset=True, exclude_none=True))
+        return HarnessModelCharacteristics.model_validate(facts)
+    return None
+
+
 class ModelsDevCatalog:
     """Owned by an API-serving process, whose lifespan runs `run`; `url` is the catalog document's."""
 
@@ -52,10 +75,11 @@ class ModelsDevCatalog:
         self.due = anyio.Event()
         self.refreshed = anyio.Event()
 
-    async def read(self) -> ModelCatalog:
+    async def read(self, *, wait: bool = True) -> ModelCatalog:
+        """Request refresh; optional enrichment never waits for the first fetch."""
         if self.clock() >= self.refresh_after:
             self.due.set()
-            if self.catalog.status == "unavailable":
+            if wait and self.catalog.status == "unavailable":
                 with anyio.move_on_after(FETCH_SECONDS):
                     await self.refreshed.wait()
         return self.catalog

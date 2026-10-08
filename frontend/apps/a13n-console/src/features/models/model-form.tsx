@@ -30,7 +30,12 @@ import {
   imageInputPolicy,
   imageInputErrors,
 } from "./image-input";
-import { ModelInformation, characteristicsInput } from "./model-information";
+import {
+  ModelInformation,
+  ModelCapabilitySummary,
+  characteristicsInput,
+  characteristicsDefaults,
+} from "./model-information";
 import { defaultModelKey, keyPattern } from "./model-options";
 import { ModelSettingsFields, requestDefaults } from "./model-settings";
 import {
@@ -110,6 +115,7 @@ export function useModelDraft({
   );
   const [initialSettingsJson] = useState(settingsJson);
   const [settingsExpanded, setSettingsExpanded] = useState(false);
+  const [manual, setManual] = useState(false);
   const providers = useQuery({
     queryKey: ["model-provider-choices", workspace.id],
     enabled: active,
@@ -146,6 +152,7 @@ export function useModelDraft({
   }
   /** Catalog values seed the draft; anything the reader typed wins. */
   function chooseCatalog(item: Schema["CatalogModel"] | null) {
+    setManual(!item || !channels.includes(item.ref.provider));
     if (!item) {
       change("catalog_ref", null);
       return;
@@ -166,20 +173,21 @@ export function useModelDraft({
         ? callingApi
         : "openai.chat_completions",
       name: current.name || item.name,
-      characteristics: characteristicsInput(item.characteristics),
+      characteristics: characteristicsDefaults(item.characteristics),
       pricing: priceTable(pricing),
     }));
   }
   function chooseDiscovered(item: Schema["ProviderModel"] | null) {
+    setManual(!item);
     setPricingBase(null);
-    setImageInput(imageInputDraft());
+    setImageInput(imageInputDraft(item?.characteristics?.image_input));
     setDraft((current) => ({
       ...current,
       catalog_ref: null,
       model_name: item?.slug ?? "",
       model_api: callingApi,
       name: current.name || item?.display_name || "",
-      characteristics: {},
+      characteristics: characteristicsDefaults(item?.characteristics),
       pricing: null,
     }));
   }
@@ -286,6 +294,7 @@ export function useModelDraft({
     setSettingsJson,
     settingsExpanded,
     setSettingsExpanded,
+    manual,
     imageInput,
     setImageInput,
     dirty,
@@ -318,16 +327,16 @@ export function ModelSelection({
   model,
   onChange,
   actions,
+  showAddress = true,
 }: {
   model: ModelDraft;
+  showAddress?: boolean;
   onChange?: () => void;
   /** Quiet links that belong with the connection, not under the fields. */
   actions?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const { draft, selectedEntry, definition, channels } = model;
-  const compatible =
-    !!selectedEntry && !channels.includes(selectedEntry.ref.provider);
+  const { draft, selectedEntry } = model;
   return (
     <div className={sharedStyles.stack}>
       <div className={styles.chosenRow}>
@@ -356,56 +365,81 @@ export function ModelSelection({
         )}
         {actions}
       </div>
-      <div className={sharedStyles.twoColumns}>
-        <FormField
-          label={t("Upstream model")}
-          description={t(
-            compatible
-              ? "Requires an OpenAI-compatible endpoint serving this model. Enter its upstream model ID."
-              : "Sent to the provider. Change this for gateway aliases or deployment IDs.",
-          )}
-        >
-          <Input
-            required
-            maxLength={256}
-            value={draft.model_name}
-            onChange={(event) => model.change("model_name", event.target.value)}
-          />
-        </FormField>
-        {(definition?.model_apis?.length ?? 0) > 1 && (
-          <ChoiceField
-            label={t("API")}
-            value={model.callingApi}
-            onValueChange={(value) => model.change("model_api", value)}
-            options={
-              definition?.model_apis?.map((value) => ({
-                value,
-                label: definition.model_api_labels?.[value] ?? value,
-              })) ?? []
-            }
-          />
-        )}
-      </div>
+      {showAddress && <ModelAddress model={model} />}
     </div>
   );
 }
 
-/** Name, description, declared capabilities, prices, and request defaults. */
-export function ModelFields({ model }: { model: ModelDraft }) {
+function ModelAddress({ model }: { model: ModelDraft }) {
+  const { t } = useTranslation();
+  const { draft, selectedEntry, definition, channels } = model;
+  const compatible =
+    !!selectedEntry && !channels.includes(selectedEntry.ref.provider);
+  const multipleApis = (definition?.model_apis?.length ?? 0) > 1;
+  return (
+    <div
+      className={multipleApis ? sharedStyles.twoColumns : sharedStyles.stack}
+    >
+      <FormField
+        label={t("Upstream model")}
+        description={t(
+          compatible
+            ? "Requires an OpenAI-compatible endpoint serving this model. Enter its upstream model ID."
+            : "Sent to the provider. Change this for gateway aliases or deployment IDs.",
+        )}
+      >
+        <Input
+          required
+          maxLength={256}
+          value={draft.model_name}
+          onChange={(event) => model.change("model_name", event.target.value)}
+        />
+      </FormField>
+      {multipleApis && (
+        <ChoiceField
+          label={t("API")}
+          value={model.callingApi}
+          onValueChange={(value) => model.change("model_api", value)}
+          options={
+            definition?.model_apis?.map((value) => ({
+              value,
+              label: definition.model_api_labels?.[value] ?? value,
+            })) ?? []
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+/** Creating needs only a name; the same detailed controls remain available on demand. */
+export function ModelFields({
+  model,
+  compact = false,
+  requireEnabled = false,
+}: {
+  model: ModelDraft;
+  compact?: boolean;
+  requireEnabled?: boolean;
+}) {
   const { t } = useTranslation();
   const { draft, selectedEntry, original } = model;
-  return (
-    <>
+  const name = (
+    <FormField label={t("Name")}>
+      <Input
+        required
+        maxLength={128}
+        value={draft.name}
+        onChange={(event) => model.change("name", event.target.value)}
+      />
+    </FormField>
+  );
+  const details = (
+    <div className={styles.modelDetails}>
+      {compact && !model.manual && <ModelAddress model={model} />}
       <section className={styles.identityFields}>
-        <div className={sharedStyles.twoColumns}>
-          <FormField label={t("Name")}>
-            <Input
-              required
-              maxLength={128}
-              value={draft.name}
-              onChange={(event) => model.change("name", event.target.value)}
-            />
-          </FormField>
+        <div className={compact ? sharedStyles.stack : sharedStyles.twoColumns}>
+          {!compact && name}
           {original ? (
             <FormField label={t("Model key")} readOnly>
               <Input value={draft.key} readOnly />
@@ -446,6 +480,19 @@ export function ModelFields({ model }: { model: ModelDraft }) {
             )}
           </p>
         )}
+      {compact && !requireEnabled && <ModelStatus model={model} />}
+    </div>
+  );
+  return (
+    <>
+      {compact ? (
+        <>
+          {name}
+          <ModelCapabilitySummary value={draft.characteristics} />
+        </>
+      ) : (
+        details
+      )}
       <DisclosureSection
         title={t("Advanced")}
         summary={
@@ -458,16 +505,19 @@ export function ModelFields({ model }: { model: ModelDraft }) {
         open={model.settingsExpanded}
         onOpenChange={model.setSettingsExpanded}
       >
-        <ModelSettingsFields
-          value={model.settingsJson}
-          onChange={model.setSettingsJson}
-          schema={model.settingsSchema}
-          modelApi={model.callingApi}
-        />
-        <ImageInputFields
-          value={model.imageInput}
-          onChange={model.setImageInput}
-        />
+        <div className={styles.modelDetails}>
+          {compact && details}
+          <ModelSettingsFields
+            value={model.settingsJson}
+            onChange={model.setSettingsJson}
+            schema={model.settingsSchema}
+            modelApi={model.callingApi}
+          />
+          <ImageInputFields
+            value={model.imageInput}
+            onChange={model.setImageInput}
+          />
+        </div>
       </DisclosureSection>
     </>
   );

@@ -779,15 +779,38 @@ async def test_provider_callback_must_share_public_origin_and_never_widens_oss_r
     assert (await service.client.post(path + "/authorize", json={})).status_code == 400
 
 
-async def test_discovery_route_keeps_wire_shape_and_account_order_without_borrowing_database(
+async def test_discovery_route_prefills_metadata_without_changing_account_order_or_borrowing_database(
     service, monkeypatch, no_task_connection
 ):
     from contextlib import asynccontextmanager
 
     import httpx2
+    from a13n_service.resources.models.schemas import ModelCatalog
     from a13n_service.resources.providers import discovery
 
     provider, path, _ = await connect(service, monkeypatch, no_task_connection)
+    metadata = service.app.state.model_catalog
+    metadata.catalog = ModelCatalog.model_validate(
+        {
+            "status": "ready",
+            "items": [
+                {
+                    "ref": {"provider": "openai", "model": "plan-z"},
+                    "identity": "openai/plan-z",
+                    "name": "Public label",
+                    "provider_name": "OpenAI",
+                    "release_date": "2026-09-29",
+                    "characteristics": {
+                        "capabilities": ["image_understanding", "document_understanding"],
+                        "context_window_tokens": 765432,
+                    },
+                    "pricing": None,
+                    "pricing_warning": None,
+                }
+            ],
+        }
+    )
+    metadata.refresh_after = float("inf")
     requests = []
 
     def respond(request):
@@ -801,6 +824,7 @@ async def test_discovery_route_keeps_wire_shape_and_account_order_without_borrow
                     {"slug": "plan-z", "display_name": "Z plan", "visibility": "list"},
                     {"slug": "hidden", "display_name": "Hidden", "visibility": "hidden"},
                     {"slug": "plan-a", "display_name": "A plan", "visibility": "list"},
+                    {"slug": "gpt-6.1-sol", "display_name": "Account Sol", "visibility": "list"},
                 ]
             },
         )
@@ -816,10 +840,18 @@ async def test_discovery_route_keeps_wire_shape_and_account_order_without_borrow
     monkeypatch.setattr(discovery, "open_http", open_http)
     response = await service.client.get(path + "/models")
     assert response.status_code == 200, response.text
-    assert response.json() == [
-        {"slug": "plan-z", "display_name": "Z plan"},
-        {"slug": "plan-a", "display_name": "A plan"},
+    choices = response.json()
+    assert [(item["slug"], item["display_name"]) for item in choices] == [
+        ("plan-z", "Z plan"),
+        ("plan-a", "A plan"),
+        ("gpt-6.1-sol", "Account Sol"),
     ]
+    assert choices[0]["characteristics"]["context_window_tokens"] == 765432
+    assert set(choices[0]["characteristics"]["capabilities"]) == {"image_understanding", "document_understanding"}
+    assert choices[1]["characteristics"] is None
+    assert choices[2]["characteristics"]["context_window_tokens"] == 1050000
+    assert choices[2]["characteristics"]["capabilities"] == ["image_understanding"]
+    assert all("pricing" not in choice and "catalog_ref" not in choice for choice in choices)
     assert len(requests) == 1
     current = (await service.client.get(path)).json()
     assert current["version"] == provider["version"]
@@ -827,7 +859,7 @@ async def test_discovery_route_keeps_wire_shape_and_account_order_without_borrow
     types = (await service.client.get(service.api + "/provider-types/model")).json()["items"]
     chatgpt = next(item for item in types if item["type"] == "openai_chatgpt")
     assert chatgpt["supports_model_discovery"] is True
-    assert chatgpt["supports_test"] is False and chatgpt["catalog_providers"] == []
+    assert chatgpt["supports_test"] is False and chatgpt["catalog_providers"] == ["openai"]
     assert next(item for item in types if item["type"] == "openai")["supports_model_discovery"] is False
 
 
@@ -907,6 +939,6 @@ async def test_discovery_dispatches_declared_operation_without_a_vendor_table(se
         settings=service.runtime.settings.providers,
     )
     assert [choice.model_dump() for choice in choices] == [
-        {"slug": "custom-upstream", "display_name": "Custom upstream"}
+        {"slug": "custom-upstream", "display_name": "Custom upstream", "characteristics": None}
     ]
     assert len(calls) == 1

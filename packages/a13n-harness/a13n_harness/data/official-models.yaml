@@ -1,18 +1,18 @@
+# Supplemental release-pinned model facts, reviewed against official sources.
+# Context comes from the bundled pricing catalog unless missing or overridden here.
+# PDF support is a fact; authoring surfaces keep it opt-in, not a default capability.
 schema_version: 1
 models:
   anthropic:claude-fable-5-1:
     characteristics:
-      context_window_tokens: 1000000
       capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/models/fable-5-1/overview
   anthropic:claude-sonnet-5:
     characteristics:
-      context_window_tokens: 1000000
       capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
   anthropic:claude-opus-5:
     characteristics:
-      context_window_tokens: 1000000
       capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
   anthropic:claude-sonnet-4-6:
@@ -31,6 +31,20 @@ models:
     characteristics:
       capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/models/sonnet-4-5/overview
+  # Verified 2026-10-08. The bundled pricing catalog does not yet cover GPT-6.1 Sol.
+  openai:gpt-6.1-sol:
+    characteristics:
+      context_window_tokens: 1050000
+      capabilities: [image_understanding]
+    source_url: https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  openai:gpt-6-sol:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://developers.openai.com/api/docs/models/gpt-6-sol
+  openai:gpt-6-luna:
+    characteristics:
+      capabilities: [image_understanding]
+    source_url: https://developers.openai.com/api/docs/models/gpt-6-luna
   openai:gpt-6-astra:
     characteristics:
       capabilities: [image_understanding]
@@ -49,7 +63,6 @@ models:
     source_url: https://developers.openai.com/api/docs/models/gpt-5.6-luna
   openai:gpt-5.5:
     characteristics:
-      context_window_tokens: 1050000
       capabilities: [image_understanding]
     source_url: https://developers.openai.com/api/docs/models/gpt-5.5
   openai:gpt-5.4:
@@ -62,21 +75,18 @@ models:
     source_url: https://developers.openai.com/api/docs/models/gpt-5.4-mini
   google-gla:gemini-3.5-flash:
     characteristics:
-      context_window_tokens: 1048576
       capabilities: [image_understanding, audio_understanding, video_understanding]
       url_input:
         video: [youtube]
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash
   google-gla:gemini-3.6-flash:
     characteristics:
-      context_window_tokens: 1048576
       capabilities: [image_understanding, audio_understanding, video_understanding]
       url_input:
         video: [youtube]
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash
   google-gla:gemini-3.5-flash-lite:
     characteristics:
-      context_window_tokens: 1048576
       capabilities: [image_understanding, audio_understanding, video_understanding]
       url_input:
         video: [youtube]
@@ -140,12 +150,10 @@ models:
       capabilities: []
     source_url: https://docs.z.ai/guides/llm/glm-4.5
   deepseek:deepseek-v4-flash:
-    characteristics:
-      context_window_tokens: 1000000
+    characteristics: {}
     source_url: https://api-docs.deepseek.com/quick_start/pricing
   deepseek:deepseek-v4-pro:
-    characteristics:
-      context_window_tokens: 1000000
+    characteristics: {}
     source_url: https://api-docs.deepseek.com/quick_start/pricing
   deepseek:deepseek-v4-flash-vision-exp:
     characteristics:

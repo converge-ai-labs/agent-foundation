@@ -398,3 +398,73 @@ def test_hosted_open_model_providers_offer_their_catalog_channels(provider_type,
         catalog_channels([definition]),
     )
     assert item.ref == CatalogRef(provider=channel, model=model_id)
+
+
+@pytest.mark.parametrize("status", ["ready", "stale"])
+def test_discovery_metadata_uses_exact_channel_and_live_facts_before_bundled(status) -> None:
+    from a13n_service.resources.models.catalog import model_characteristics
+
+    items = parse_catalog(
+        document(
+            {
+                "openai": {
+                    "models": {
+                        "gpt-6.1-sol": model(
+                            limit={"context": 123456}, modalities={"input": ["text", "pdf"], "output": ["text"]}
+                        ),
+                        "text-only": model(modalities={"input": ["text"], "output": ["text"]}),
+                    }
+                }
+            }
+        ),
+        CHANNELS,
+    )
+    catalog = ModelCatalog(items=items, status=status)
+    facts = model_characteristics(("openai",), "gpt-6.1-sol", catalog)
+    assert facts is not None
+    assert facts.context_window_tokens == 123456
+    # Metadata remains factual; authoring policy, not this source, makes PDF opt-in.
+    assert facts.capabilities == {ModelCapability.DOCUMENT_UNDERSTANDING}
+    assert model_characteristics(("other",), "gpt-6.1-sol", catalog) is None
+    assert model_characteristics(("openai",), "GPT-6.1-SOL", catalog) is None
+    assert model_characteristics(("openai",), "gpt-6.1-sol-custom", catalog) is None
+    text = model_characteristics(("openai",), "text-only", catalog)
+    assert text is not None and not text.capabilities
+    assert "capabilities" in text.model_fields_set
+
+
+def test_discovery_metadata_fills_missing_context_without_overwriting_explicit_empty_capabilities() -> None:
+    from a13n_service.resources.models.catalog import model_characteristics
+
+    items = parse_catalog(
+        document(
+            {
+                "openai": {
+                    "models": {
+                        "gpt-6.1-sol": model(limit={}, modalities={"input": ["text"], "output": ["text"]}),
+                    }
+                }
+            }
+        ),
+        CHANNELS,
+    )
+    facts = model_characteristics(("openai",), "gpt-6.1-sol", ModelCatalog(items=items, status="ready"))
+    assert facts is not None
+    assert facts.context_window_tokens == 1050000
+    assert not facts.capabilities
+
+
+@pytest.mark.anyio
+async def test_optional_metadata_read_never_waits_for_the_first_fetch() -> None:
+    from a13n_service.resources.models.catalog import model_characteristics
+
+    catalog = ModelsDevCatalog(CHANNELS, LOOPBACK)
+    with anyio.fail_after(0.1):
+        snapshot = await catalog.read(wait=False)
+    assert snapshot.status == "unavailable" and snapshot.items == []
+    assert catalog.due.is_set()
+    facts = model_characteristics(("openai",), "gpt-6.1-sol", snapshot)
+    assert facts is not None
+    assert facts.context_window_tokens == 1050000
+    assert facts.capabilities == {ModelCapability.IMAGE_UNDERSTANDING}
+    assert model_characteristics(("openai",), "unlisted", snapshot) is None

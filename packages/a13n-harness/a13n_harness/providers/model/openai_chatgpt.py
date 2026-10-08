@@ -132,6 +132,8 @@ DEFINITION = ModelProviderDefinition(
     oauth=ModelOAuth(scheme="openai-chatgpt", build_provider=_provider),
     build_model=_model,
     model_discovery=_discover,
+    # Metadata identity only; choices still come exclusively from the account.
+    catalog_providers=("openai",),
     endpoint="https://api.openai.com/v1",
     setup_url="https://chatgpt.com/settings/usage",
     setup_label="ChatGPT plan usage",

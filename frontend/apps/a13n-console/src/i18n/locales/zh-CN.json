@@ -1,4 +1,6 @@
 {
+  "Request defaults": "请求默认值",
+  "{{count}} context tokens": "{{count}} token 上下文",
   "Not connected": "未连接",
   "Waiting for sign-in": "等待完成登录",
   "Checking authorization…": "正在检查授权…",

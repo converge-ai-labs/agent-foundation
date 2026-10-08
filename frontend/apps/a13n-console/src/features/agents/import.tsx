@@ -111,6 +111,7 @@ export function AgentCreationMenu() {
           />
         )}
       </ModalFrame>
+      {composer.setup}
       <ErrorToast error={composer.error} />
     </>
   );

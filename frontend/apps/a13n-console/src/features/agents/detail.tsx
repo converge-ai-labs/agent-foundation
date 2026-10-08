@@ -346,6 +346,7 @@ export function AgentDetail() {
           onDefaultChanged={reload}
         />
       )}
+      {composer.setup}
       <ErrorToast error={composer.error} />
     </DetailPage>
   );

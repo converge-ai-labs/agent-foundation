@@ -10,6 +10,7 @@ from types import MappingProxyType
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+from a13n_harness.pricing import get_default_pricing_catalog
 from a13n_harness.spec import HarnessModelCharacteristics
 
 
@@ -69,12 +70,27 @@ def get_official_model_catalog() -> OfficialModelCatalog:
     if not isinstance(raw_entries, dict):
         raise RuntimeError("bundled official model catalog must contain a model mapping")
     entries: dict[str, OfficialModelEntry] = {}
+    pricing = get_default_pricing_catalog()
     for key, value in raw_entries.items():
         if not isinstance(key, str) or not isinstance(value, dict):
             raise RuntimeError("bundled official model catalog contains an invalid entry")
         entry = OfficialModelEntry.model_validate({"model": key, **value})
         if entry.key in entries:
             raise RuntimeError(f"bundled official model catalog contains duplicate model {entry.key!r}")
+        # Reuse release-pinned context facts instead of maintaining a second copy.
+        # Exact keys only: pricing's fuzzy aliases must not establish media identity.
+        provider, _, model = entry.key.partition(":")
+        price_provider = {"grok": "x-ai", "google-gla": "google"}.get(provider, provider)
+        price = pricing.get(f"{price_provider}:{model}")
+        if "context_window_tokens" not in entry.characteristics.model_fields_set and price is not None:
+            if price.context_window is not None:
+                entry = entry.model_copy(
+                    update={
+                        "characteristics": entry.characteristics.model_copy(
+                            update={"context_window_tokens": price.context_window}
+                        )
+                    }
+                )
         entries[entry.key] = entry
     return OfficialModelCatalog(entries)
 

@@ -27,6 +27,9 @@ MEDIA = frozenset(
 @pytest.mark.parametrize(
     "route,expected",
     [
+        ("openai-responses:gpt-6.1-sol", IMAGE),
+        ("openai-responses:gpt-6-sol", IMAGE),
+        ("openai-responses:gpt-6-luna", IMAGE),
         ("openai-responses:gpt-6-astra", IMAGE),
         ("openai-chat:gpt-5.4", IMAGE),
         ("openai-codex:gpt-5.6-sol", IMAGE),
@@ -65,7 +68,7 @@ def test_native_google_starter_never_infers_arbitrary_video_url_support(monkeypa
     monkeypatch.setattr(
         model_catalog, "get_official_model_catalog", lambda: model_catalog.OfficialModelCatalog({entry.key: entry})
     )
-    expected = frozenset(ModelCapability)
+    expected = MEDIA
     assert known_model_capabilities("google:gemini-fixture") == expected
     assert known_model_capabilities("openrouter:google/gemini-fixture") == IMAGE
 
@@ -85,7 +88,7 @@ def test_context_only_catalog_entry_is_not_a_text_only_claim(monkeypatch) -> Non
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("capabilities", [None, [], ["audio_understanding"]])
+@pytest.mark.parametrize("capabilities", [None, [], ["audio_understanding"], ["document_understanding"]])
 async def test_app_setup_fills_only_omitted_capabilities(tmp_path: Path, capabilities) -> None:
     characteristics = {
         "context_window_tokens": 123456,
@@ -266,3 +269,10 @@ def test_compatible_and_unknown_routes_never_inherit_native_youtube(route):
 
     inputs = known_model_characteristics(route)
     assert inputs is None or not inputs.url_input.video
+
+
+@pytest.mark.parametrize("model", ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"])
+def test_context_prefill_includes_official_supplements(model) -> None:
+    from a13n_harness_ui.model_presets import known_context_window
+
+    assert known_context_window("openai-responses", model, "https://api.openai.com/v1") == 1050000

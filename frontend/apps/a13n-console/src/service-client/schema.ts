@@ -5962,6 +5962,8 @@ export interface components {
      * @description An upstream choice; wire names retain the original account-discovery contract.
      */
     ProviderModel: {
+      characteristics?:
+        components["schemas"]["HarnessModelCharacteristics-Output"] | null;
       /** Display Name */
       display_name: string;
       /** Slug */

@@ -11,9 +11,15 @@ export function useAgentChoices() {
     queryKey: ["agent-choices", workspace.id],
     queryFn: async ({ signal }) => {
       const [models, skills, connections] = await Promise.all([
-        modelApi(client, workspace.id)
-          .models(signal, undefined, undefined, undefined, true)
-          .then((page) => page.items),
+        allPages((cursor) =>
+          modelApi(client, workspace.id).models(
+            signal,
+            cursor,
+            "",
+            undefined,
+            true,
+          ),
+        ),
         allPages((cursor) =>
           client
             .workspace(workspace.id)

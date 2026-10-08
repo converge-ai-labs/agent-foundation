@@ -168,6 +168,26 @@
 }
 
 /* Dialog steps ----------------------------------------------------------- */
+.setupSteps {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 0 16px;
+  margin: 0;
+  list-style: none;
+  color: var(--a13n-tertiary);
+  font-size: var(--a13n-text-xs);
+}
+.setupSteps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.setupSteps [aria-current] {
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+
 .step {
   display: grid;
   gap: 14px;
@@ -231,6 +251,43 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Detailed controls use whitespace inside the disclosure, not nested panels. */
+.modelDetails {
+  display: grid;
+  min-width: 0;
+  gap: 28px;
+}
+.requestDefaults {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+.capabilityGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 28px;
+}
+.capabilitySummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.capabilitySummary:empty {
+  display: none;
+}
+.capabilitySummary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+@media (max-width: 480px) {
+  .capabilityGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Pricing tiers ---------------------------------------------------------- */

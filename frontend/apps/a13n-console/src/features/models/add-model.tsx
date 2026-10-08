@@ -1,3 +1,4 @@
+import { CheckIcon, CubeIcon, PlugIcon } from "@phosphor-icons/react";
 import { ModalFrame } from "a13n-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,12 +14,7 @@ import { FormActions } from "../../shared/forms";
 import { ProviderIcon, ResourceEditorButton } from "../../shared/identity";
 import { connectStepDescription, connectStepTitle } from "./add-provider";
 import { ModelPicker } from "./model-picker";
-import {
-  ModelFields,
-  ModelSelection,
-  ModelStatus,
-  useModelDraft,
-} from "./model-form";
+import { ModelFields, ModelSelection, useModelDraft } from "./model-form";
 import { ModelIcon } from "./model-icon";
 import { useProviderDraft } from "./provider-draft";
 import { ProviderChoice, ProviderConnect } from "./provider-setup";
@@ -36,8 +32,12 @@ export function AddModel({
   controlledOpen,
   onClose,
   finalFocus,
+  requireEnabled = false,
+  submitLabel,
 }: {
   providerId?: string;
+  requireEnabled?: boolean;
+  submitLabel?: string;
   onSaved?: (model: Schema["Model"]) => void;
 } & ResourceEditorControl) {
   const { t } = useTranslation();
@@ -73,6 +73,13 @@ export function AddModel({
   return (
     <ModalFrame
       {...modalProps}
+      onOpenChange={(value, details) => {
+        if (!value && (model.save.isPending || providerDraft.save.isPending)) {
+          details.cancel();
+          return;
+        }
+        modalProps.onOpenChange(value, details);
+      }}
       trigger={
         controlledOpen === undefined ? (
           <ResourceEditorButton createLabel="Add model" />
@@ -84,6 +91,28 @@ export function AddModel({
       description={heading.description}
       closeLabel={t("Close")}
     >
+      {open && !loading && !error && (
+        <ol className={styles.setupSteps} aria-label={t("Add model")}>
+          {[
+            {
+              label: "Provider",
+              icon: PlugIcon,
+              active: current === "provider" || current === "connect",
+            },
+            { label: "Model", icon: CubeIcon, active: current === "model" },
+            {
+              label: "Details",
+              icon: CheckIcon,
+              active: current === "details",
+            },
+          ].map(({ label, icon: Icon, active }) => (
+            <li key={label} aria-current={active ? "step" : undefined}>
+              <Icon size={16} aria-hidden="true" />
+              <span>{t(label)}</span>
+            </li>
+          ))}
+        </ol>
+      )}
       {open &&
         (error ? (
           <ErrorNotice error={error} />
@@ -124,15 +153,18 @@ export function AddModel({
                 model.save.mutate();
               }}
             >
-              <ModelSelection model={model} />
-              <ModelFields model={model} />
-              <ModelStatus model={model} />
+              <ModelSelection model={model} showAddress={model.manual} />
+              <ModelFields
+                model={model}
+                compact
+                requireEnabled={requireEnabled}
+              />
               <ErrorNotice error={model.save.error} />
               <FormActions
                 onCancel={() => setOpen(false)}
                 pending={model.save.isPending}
                 disabled={model.incomplete}
-                label={t("Add model")}
+                label={submitLabel ?? t("Add model")}
               />
             </form>
           </CatalogStep>
@@ -194,6 +226,6 @@ function stepHeading(
         {chosen ? t("Add {{model}}", { model: chosen }) : t("Add model")}
       </BrandTitle>
     ),
-    description: t("Name this model and set the defaults agents will use."),
+    description: undefined,
   };
 }
