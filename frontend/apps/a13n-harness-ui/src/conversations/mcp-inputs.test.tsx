@@ -56,6 +56,13 @@ function mount() {
     </QueryClientProvider>,
   );
 }
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 beforeEach(() => {
   vi.resetAllMocks();
   client.GET.mockResolvedValue({ data: [request] });
@@ -144,6 +151,71 @@ it.each([502, 503, 504])(
     });
   },
 );
+
+it("disables duplicate checks and reports when the request is still pending", async () => {
+  const checking = deferred<{ data: (typeof request)[] }>();
+  client.POST.mockRejectedValue(new ApiError("Gateway unavailable", 504));
+  mount();
+  fireEvent.change(await screen.findByLabelText("Name"), {
+    target: { value: "Ada" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+  await screen.findByText(/Delivery is uncertain/);
+  await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
+  client.GET.mockReturnValue(checking.promise);
+
+  const check = screen.getByRole("button", { name: "Check request" });
+  fireEvent.click(check);
+
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Checking request…",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Retry same response",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(3));
+  fireEvent.click(screen.getByRole("button", { name: "Checking request…" }));
+  expect(client.GET).toHaveBeenCalledTimes(3);
+  expect(client.POST).toHaveBeenCalledTimes(1);
+
+  checking.resolve({ data: [request] });
+  expect(await screen.findByText("The request is still pending.")).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: "Check request" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(false);
+  expect(client.POST).toHaveBeenCalledTimes(1);
+});
+
+it("removes the request when a manual check finds it resolved", async () => {
+  client.POST.mockRejectedValue(new ApiError("Gateway unavailable", 504));
+  mount();
+  fireEvent.change(await screen.findByLabelText("Name"), {
+    target: { value: "Ada" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+  await screen.findByText(/Delivery is uncertain/);
+  await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
+  client.GET.mockResolvedValue({
+    data: [{ ...request, state: "accepted" }],
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Check request" }));
+
+  await waitFor(() =>
+    expect(screen.queryByLabelText("MCP input request")).toBeNull(),
+  );
+  expect(client.GET).toHaveBeenCalledTimes(3);
+  expect(client.POST).toHaveBeenCalledTimes(1);
+});
 
 it.each(["mcp_input_conflict", "mcp_input_stale"])(
   "does not offer an uncertain-delivery retry for %s",
