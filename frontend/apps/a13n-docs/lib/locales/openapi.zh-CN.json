@@ -1,4 +1,6 @@
 {
+  "An immutable Host-owned value, loaded through that Host's authorized content API.": "由 Host 持有的不可变值，通过该 Host 需要鉴权的内容 API 加载。",
+  "One immutable saved display value, possibly truncated, read under the owning run's authority.": "已保存的不可变显示值，可能已被截断，读取时校验所属运行的访问权限。",
   "An upstream choice; wire names retain the original account-discovery contract.": "上游模型选项；传输字段名沿用原有的账户模型发现契约。",
   "A tool-call part's streamed arguments so far and the one observation item that holds them.": "工具调用片段目前已流式接收的参数，以及承载这些参数的唯一观察项。",
   "Incomplete custom payloads, not a journal of completed events.": "尚未完整接收的自定义载荷，而非已完成事件的日志。",
@@ -261,6 +263,8 @@
   "Fork Run": "分叉运行",
   "Interrupt Run": "中断运行",
   "Run Items": "运行显示项",
+  "Run Content": "运行显示内容",
+  "The complete value behind a committed display reference.": "已提交的显示引用所指向的完整值。",
   "The run and its ancestors, nearest first, across fork origins.": "运行及其祖先，跨分叉来源，按最近到最远排列。",
   "Run Lineage": "运行谱系",
   "Answer the exact waiting run's approvals, client tools and user questions; the successor continues from them.": "回复精确等待运行的审批、客户端工具和用户问题，后继运行从结果继续。",

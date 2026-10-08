@@ -30,6 +30,7 @@ export interface TimelineEdit {
 
 interface EntryBase {
   id: string;
+  itemId?: string;
   subagentRunId?: string;
   startedAt: string | null;
   endedAt: string | null;
@@ -313,6 +314,7 @@ function actionEntry(
   return {
     kind,
     id: step.id,
+    itemId: item?.id,
     subagentRunId: step.subagentRunId,
     name: step.name ?? null,
     arguments: item

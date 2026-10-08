@@ -255,6 +255,7 @@ export function useRunDisplay(
   );
   return {
     items,
+    displayItems: all,
     execution,
     attempts,
     state,

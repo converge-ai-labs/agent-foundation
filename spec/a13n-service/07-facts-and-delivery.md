@@ -64,23 +64,24 @@ Agent rows carry `agent_id`, `name`, `usage` and `runs`; attribution uses the ow
 
 The object store holds immutable bytes under owner-named keys: lowercase slash-separated segments of at most 1024 characters. Its contract, on both the local and S3 backends, is write, read, prefix listing and delete. Every write uses a key no other write uses, ending in 128 random bits or the ID of the row that owns the bytes, so a write is a plain put: repeating an uncertain write stores the same bytes again, and two writers never meet at one key. There is no conditional write and no object catalog table; only committed references make bytes reachable. A committed reference names a key, digest and size, and a read that finds missing or different bytes is `unavailable` (dependency `objects`).
 
-| Key                                                  | Owner                                                                      |
-| ---------------------------------------------------- | -------------------------------------------------------------------------- |
-| `orgs/{org}/runs/{run}/state/{attempt}/{random}`     | A run's checkpoint state, written by that attempt                          |
-| `orgs/{org}/runs/{run}/tail/{attempt}/{random}`      | A run's display tail, written by that attempt                              |
-| `orgs/{org}/runs/{run}/pages/{attempt}/{random}`     | A page of a run's display history, written by that attempt                 |
-| `orgs/{org}/runs/{run}/contents/{attempt}/{random}`  | Large binary content of a run's Harness state, saved by that attempt       |
-| `orgs/{org}/runs/{run}/subagents/{attempt}/{random}` | The state of an inline subagent that ended in a run, saved by that attempt |
-| `orgs/{org}/uploads/{upload}`                        | Upload bytes ([04](04-resources.md#uploads-and-assets))                    |
-| `orgs/{org}/images/{owner}/{random}`                 | Organization, workspace and agent images ([03](03-tenancy.md#images))      |
-| `users/{user}/images/{random}`                       | User avatars                                                               |
+| Key                                                         | Owner                                                                      |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `orgs/{org}/runs/{run}/state/{attempt}/{random}`            | A run's checkpoint state, written by that attempt                          |
+| `orgs/{org}/runs/{run}/tail/{attempt}/{random}`             | A run's display tail, written by that attempt                              |
+| `orgs/{org}/runs/{run}/pages/{attempt}/{random}`            | A page of a run's display history, written by that attempt                 |
+| `orgs/{org}/runs/{run}/contents/{attempt}/{random}`         | Large binary content of a run's Harness state, saved by that attempt       |
+| `orgs/{org}/runs/{run}/display-contents/{attempt}/{random}` | Saved display values and private normalization continuations               |
+| `orgs/{org}/runs/{run}/subagents/{attempt}/{random}`        | The state of an inline subagent that ended in a run, saved by that attempt |
+| `orgs/{org}/uploads/{upload}`                               | Upload bytes ([04](04-resources.md#uploads-and-assets))                    |
+| `orgs/{org}/images/{owner}/{random}`                        | Organization, workspace and agent images ([03](03-tenancy.md#images))      |
+| `users/{user}/images/{random}`                              | User avatars                                                               |
 
 Run objects are compressed with zstd at `worker.compression_level`; a reference's digest and size describe the stored bytes. Publication writes the bytes outside any database session, then commits the reference. A checkpoint writes its state, tail and new pages concurrently and finishes every write before reporting a failure, so failure sealing cannot race a still-running write. A failed publication leaves unused objects.
 
-**Run object cleanup is owner-driven.** Only a run's own attempts write under its prefix, and only its pointers, its page catalog and its checkpoint's references make an object reachable:
+**Run object cleanup is owner-driven.** Only a run's own attempts write under its prefix, and only its pointers, its page catalog and the dependencies recorded with its checkpoint, tail and pages make an object reachable:
 
 1. A checkpoint transaction stages a `checkpoint_cleanup` outbox delivery for the state and tail objects its pointer change replaced, alongside the pointer change. Rollback publishes neither the references nor the reclamation intent. Boundary acknowledgement and successor acceptance do not wait for deletion. A replaced key is never written again, so its deletion is final.
-2. A takeover stages a scan of the run prefix that deletes the objects of earlier attempts, read from each key's attempt segment, keeping the committed pointers, the committed checkpoint's references and the catalogued pages. Objects of the new or later attempts are skipped because no reference may name them yet. The scan does not block execution or consume run attempts on deletion failure. Every seal stages a full prefix scan preserving the same keep set, frozen, including a tail without a state checkpoint.
+2. A takeover scans earlier attempts' objects under the run prefix, keeping committed state/tail pointers, catalogued pages and their dependencies. PostgreSQL records the complete keep set; cleanup does not read object bodies. Current and later attempts are skipped because their writes may be uncommitted. Every seal scans the full prefix against its frozen keep set, including a tail without a state checkpoint. These scans reclaim failed or superseded writes without blocking execution or consuming run attempts on deletion failure.
 3. Each delivery has one total `objects.timeout` I/O budget. A scan lists at most 1000 keys in lexicographic order per claim. It records the last completed key and defers remaining work in a fenced outbox transaction; deferral returns its attempt. Failure retries the same page safely because deletion is idempotent. A deadline with no progress counts as failure. Interruption leaves durable work for another sender; exhausted retries become visible dead deliveries, not a guarantee of unlimited retries.
 4. No attempt starts an object write within `objects.timeout` of its local lease deadline; the Harness state store refuses as a lost lease instead. A stale attempt cannot commit its late bytes. Referenced state is protected during takeover; final scans run only after seal has made the references immutable.
 
@@ -92,7 +93,7 @@ There is no other object reclamation: no age-based upload expiry, orphan invento
 
 ## Checkpoints and display
 
-A **state object** holds the checkpoint format (currently 1), the Harness state, the checkpoint sequence, the attempt number that wrote it, whether the resume's optional input has been incorporated, and for a waiting run the Harness's deferred requests. `runs.checkpoint` points at it with `{key, digest, size, format, seq, attempt, refs}`, where `refs` lists every saved object the Harness state needs at any depth, including those only a saved subagent state references, so cleanup keeps them without reading the state. `runs.tail` points at the display tail with `{key, digest, size, format, position, first, count}`.
+A **state object** holds the Harness state, checkpoint sequence, writing attempt, resume-input incorporation and any deferred requests. `runs.checkpoint` stores `{key, digest, size, format, seq, attempt, refs}`; `refs` includes every object required by the state and its saved subagents. `runs.tail` stores `{key, digest, size, format, position, first, count, refs}` for the display tail and its dependencies. State and display use format 1. Control, Worker and Console must support saved content references, including during rollback.
 
 The persisted Harness state carries no usage ledger: usage records account every contribution, and an attempt never restores accounting from a checkpoint. The worker binds the run's objects as the Harness state store ([Harness 10](../a13n-harness/10-snapshot-and-resume.md#host-state-store)): binary content parts larger than `worker.content_bytes`, wherever the state holds them, and the state of each inline subagent when it ends are saved once as `contents` and `subagents` objects, and the state references them. Later checkpoints, successors and forks that inherit a saved object keep its reference, so a screenshot is uploaded once, not at every boundary. A checkpoint of a newer format waits for a worker that reads it; an older one fails its run ([05](05-runs.md#claim-heartbeat-and-authority)). [05](05-runs.md#assignment-and-incorporation) owns incorporation and the checkpoint commit, which also stores the run's memory cursors in `runs.memory_cursors`, outside the state object ([11](11-memory.md#execution)).
 
@@ -100,7 +101,7 @@ A **display** is folded by the shared Stream Protocol core from Harness producer
 
 ```
 run_item_pages
-  organization_id  workspace_id  run_id  first_ordinal  last_ordinal  key  digest  size
+  organization_id  workspace_id  run_id  first_ordinal  last_ordinal  key  digest  size  refs
   PRIMARY KEY (run_id, first_ordinal)
   CHECK (first_ordinal >= 1 AND last_ordinal >= first_ordinal)
 ```
@@ -108,11 +109,11 @@ run_item_pages
 - A **page** holds consecutive final items. It is written once, catalogued in `run_item_pages` by the checkpoint transaction that commits it, and kept with the run; a trigger refuses every change to a catalogued page.
 - The **tail** holds every later item, `first` through `count`, plus the shared normalization continuation, and each checkpoint replaces it. Restoration preserves stable ordinals and active parser state rather than inferring continuation from visible items.
 
-An item is **final** when no later event of the run can change it. Capturing a checkpoint preserves active text, reasoning, calls and parsing continuation without interrupting them. Terminal and retry policy is separate from snapshot capture; a terminal worker interrupts unfinished items except calls retained by a suspended native response. The tail's leading final items become a page once they reach `worker.page_items` items or `worker.page_bytes` serialized UTF-8 bytes. Active items and their later items remain in the tail even when it exceeds a page limit. An argument observation that the next event can still extend is not pageable. An event that changes an item already in a page fails the attempt.
+An item is **final** when no later event of the run can change it. Capturing a checkpoint preserves active text, reasoning, calls and parsing continuation without interrupting them. Terminal and retry policy is separate from snapshot capture; a terminal worker interrupts unfinished items except calls retained by a suspended native response. The tail's leading final items become a page once they reach `worker.page_items` items or `worker.page_bytes` serialized UTF-8 bytes before field externalization. Active items and their later items remain in the tail even when it exceeds a page limit. An argument observation that the next event can still extend is not pageable. An event that changes an item already in a page fails the attempt.
 
 Every checkpoint commit writes the tail and any new pages, so the durable view always describes exactly the restored history, and output after recovery continues it. Output streamed after the last checkpoint is provisional; a crash removes it from the durable view and the next attempt regenerates it.
 
-Each tail may store `resume_after`, a confirmed Redis delta ID from its attempt covered by the snapshot. Saving a checkpoint reads the latest confirmed position without waiting for Redis; pending, failed or timed-out writes leave the earlier position available. Terminal displays reuse the position retained after bounded stream cleanup; new attempts start without one. Missing IDs read as null. Boundary delivery and checkpoint format remain unchanged. Older readers reject the new field, so Control and Worker must be upgraded together; rollback readers must also support it.
+Each tail may store `resume_after`, a confirmed Redis delta ID from its attempt covered by the snapshot. Saving a checkpoint reads the latest confirmed position without waiting for Redis; pending, failed or timed-out writes leave the earlier position available. Terminal displays reuse the position retained after bounded stream cleanup; new attempts start without one. Missing IDs read as null.
 
 ```
 Item
@@ -124,20 +125,37 @@ Item
   last_stream_id     position of its latest event
   started_at         time of its first event
   ended_at           time of the latest event that left it completed or failed; null otherwise
-  content            the event fields the Console renders
+  content            inline event fields and string previews
+  content_refs       field name → {id, size_bytes, media_type, preview, truncated}; absent when empty
 ```
 
 - Times come from the AG-UI event's own timestamp, or the worker's clock for an event without one.
-- A message text, tool arguments or tool result keeps at most 262144 characters and is marked `truncated`; the state keeps the full value. An observation larger than 32768 bytes keeps only its name.
 - A tool result the model sees as a failure (a retry prompt or denial) leaves its item `failed` with `content.failure = {code: "tool_failed", message}`.
 - A tool call is committed as `in_progress` before it executes, so evidence of an attempted side effect never disappears.
-- Source-typed custom text input (`a13n.input.user` or `a13n.input.steering`) folds into one completed `text_message` item with user role, the custom event's message ID and annotations, and bounded `event.content` text. Generic custom fragments use the Stream Protocol's independent bounded assembly budget before folding, so long input is not reduced to the observation-payload limit or erased by a smaller saved-display budget. Display limits apply after a message item exists. Generated context, recovery, and lifecycle input sources remain observations. The Console folds live authored input identically; its existing gap recovery loads completed displays for fragmented custom events. These presentation observations never mark accepted inbox input incorporated; canonical steering identities retain that authority.
+- Source-typed custom text input (`a13n.input.user` or `a13n.input.steering`) folds into one completed `text_message` item with user role, the custom event's message ID and annotations, and complete `event.content` text, externalized at publication when large. Generic custom fragments use the Stream Protocol's independent bounded assembly budget before folding, so long input is not reduced to the observation-payload limit or erased by a smaller saved-display budget. Display limits apply after a message item exists. Generated context, recovery, and lifecycle input sources remain observations. The Console folds live authored input identically; its existing gap recovery loads completed displays for fragmented custom events. These presentation observations never mark accepted inbox input incorporated; canonical steering identities retain that authority.
 - Other Harness observations become one `observation` item, except a tool call's streamed arguments: the stream protocol reports each argument delta of a model response part as an `a13n.pydantic_ai.part_delta` observation and completes the call only at the part's end, and the consecutive argument deltas of one part fold into one item. It is the first delta's observation with `value.event.delta.args_delta` holding all their text, and the first delta's time.
-- The display is a view, and the state keeps every message: its limits never fail a run, and no item is dropped.
 
 A worker that seals a run failed or cancelled may write its in-memory display as one more tail and pages, with unfinished items interrupted. A run sealed by the sweep, interrupt, archive, a parent's cancel or recovery keeps its last committed display; readers show its `in_progress` items, such as a waiting run's pending calls, as `interrupted`. [05](05-runs.md#reads) owns `GET …/runs/{run}/items`.
 
-The worker converts producer observations through one non-retaining AG-UI observer per Harness root Run and folds them once into compact items. Saved display and live delivery share normalized item semantics; clients continue the saved parsing state with raw AG-UI events. Each live item reference supplies stable identity, kind, state and ordinal, with optional Host-selected response grouping and native failure diagnostics. Inline children retain native IDs and carry `subagentRunId`; display identity includes that attribution, so coincident root and child IDs do not collide. Ordered public tool content parts survive display save/reload within existing bounds, while supplemental model-only content remains hidden. Standard `RUN_FINISHED` interrupt observations retain native deferred tool-call IDs but do not replace Service pending records or partial-answer policy. Child safe boundaries cannot publish a root checkpoint or Environment state, and presentation usage does not replace the usage ledger.
+The worker converts producer observations through one non-retaining AG-UI observer per Harness root Run and folds them once into compact items. Saved display and live delivery share normalized item semantics; clients continue the saved parsing state with raw AG-UI events. Each live item reference supplies stable identity, kind, state and ordinal, with optional Host-selected response grouping and native failure diagnostics. Inline children retain native IDs and carry `subagentRunId`; display identity includes that attribution, so coincident root and child IDs do not collide. Public tool content parts retain their order, subject to the display value limit; supplemental model-only content remains hidden. Standard `RUN_FINISHED` interrupt observations retain native deferred tool-call IDs but do not replace Service pending records or partial-answer policy. Child safe boundaries cannot publish a root checkpoint or Environment state, and presentation usage does not replace the usage ledger.
+
+### Display values
+
+Service applies these limits to each field's uncompressed UTF-8 encoding. Strings encode as `text/plain`; other values encode as compact `application/json`.
+
+| Encoded size                                  | Saved representation                                                                                                                                   |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| At most 32 KiB (32768 bytes)                  | Inline in `content`                                                                                                                                    |
+| Above 32 KiB, at most 16 MiB (16777216 bytes) | One immutable object referenced by `content_refs`                                                                                                      |
+| Above 16 MiB                                  | One object containing the first 16 MiB, shortened to a complete UTF-8 character, with `truncated=true` and `media_type=text/plain`, including for JSON |
+
+Each reference carries the saved byte count and a preview of at most 4 KiB. Text previews also occupy the inline field; structured values keep their preview only in the reference. `truncated` defaults to false. Discarded content, including legacy omissions, cannot be recovered through display reads.
+
+Content objects belong to one Run, are written before their referring tail/pages and become readable only after commit. Failed writes cannot publish a preview as a complete value. Unchanged saved bytes and truncation status retain the same reference across checkpoints, recovery and paging; changed values get a new whole object. Once capped, appends preserve the saved prefix without inserting later text after discarded bytes. There is no chunking or content-based deduplication.
+
+Tail and page objects list their unique dependencies; the commit records those lists in `runs.tail.refs` and `run_item_pages.refs` for [object cleanup](#objects). Private normalization continuation is stored separately when large and restored completely. Neither it nor Harness execution state is subject to the display value cap; public content reads exclude private continuation.
+
+Display publication accompanies checkpoints or terminal failure/cancellation, with no periodic display-only commit. Saved values are captured before the [live transport limits](#the-thread-stream). Console loads them on explicit expansion through the [content API](05-runs.md#reads), shows truncation before and after expansion, and keeps loaded values out of the live normalizer and any separate content cache. Append deltas leave referenced previews intact until a newer committed snapshot arrives.
 
 ## The thread stream
 

@@ -10,12 +10,15 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { useRef } from "react";
+import type { DisplayItem } from "a13n-ui/display";
+import { presentItems } from "../projection";
 import { createClient, type Client } from "../../../service-client";
 import { fixtureRun, fixtureThread } from "./fixture";
 import { HistoryTranscript } from "./history";
 import { useTranscriptScroll } from "./use-transcript-scroll";
 
 let client: Client;
+let displayItems: DisplayItem[] = [];
 const thread = fixtureThread({ id: "thread", session_id: "session" });
 vi.mock("../../../auth/context", () => ({ useClient: () => client }));
 vi.mock("../../../layout/workspace", () => ({
@@ -34,7 +37,8 @@ vi.mock("react-i18next", () => ({
 vi.mock("../agents/queries", () => ({ useAgent: () => ({ data: null }) }));
 vi.mock("../run-display", () => ({
   useRunDisplay: () => ({
-    items: [],
+    items: presentItems(displayItems),
+    displayItems,
     earlier: { items: [], more: false, loading: false, error: null },
     state: "connected",
     execution: {
@@ -104,6 +108,7 @@ class StageObserver {
 }
 
 beforeEach(() => {
+  displayItems = [];
   StageObserver.created = [];
   vi.stubGlobal("IntersectionObserver", StageObserver);
   const original = HTMLElement.prototype.getBoundingClientRect;
@@ -431,3 +436,92 @@ it("reveals an ancestor as a debug section that reads its own display", async ()
   expect(requests.some((url) => url.pathname.endsWith("/items"))).toBe(false);
   cache.clear();
 });
+
+it.each(["reply", "reasoning", "tool"] as const)(
+  "expands a saved %s from an earlier Debug run using that run's content reference",
+  async (kind) => {
+    const field = kind === "tool" ? "result" : "text";
+    const value =
+      kind === "tool" ? { answer: "Full saved result" } : "Full saved message";
+    displayItems = [
+      {
+        id: "itm_saved",
+        ordinal: 1,
+        kind:
+          kind === "tool"
+            ? "tool_call"
+            : kind === "reasoning"
+              ? "reasoning_message"
+              : "text_message",
+        state: "completed",
+        first_stream_id: "2-0",
+        last_stream_id: "2-1",
+        started_at: "2026-09-20T10:00:01.000Z",
+        content:
+          kind === "tool"
+            ? { toolCallName: "read_file", arguments: "{}" }
+            : { role: "assistant", text: "Saved preview" },
+        content_refs: {
+          [field]: {
+            id: "cnt_saved",
+            size_bytes: 50000,
+            media_type: kind === "tool" ? "application/json" : "text/plain",
+            preview:
+              kind === "tool" ? '{"answer":"Saved preview' : "Saved preview",
+          },
+        },
+      },
+    ];
+    const contentRequests: Request[] = [];
+    client = createClient({
+      baseUrl: "https://test.invalid",
+      auth: { type: "session" },
+      fetch: async (input) => {
+        const request = input as Request;
+        const url = new URL(request.url);
+        if (url.pathname.includes("/contents/")) {
+          contentRequests.push(request);
+          return Response.json({
+            id: "cnt_saved",
+            media_type: displayItems[0]!.content_refs![field]!.media_type,
+            value,
+          });
+        }
+        if (url.pathname.endsWith("/lineage"))
+          return Response.json({
+            items: ["current", "parent"].map(ancestor),
+            next_cursor: null,
+          });
+        if (url.pathname.endsWith("/runs") || url.pathname.endsWith("/threads"))
+          return Response.json({ items: [], next_cursor: null });
+        return Response.json({ ...ancestor("parent"), lineage: "root" });
+      },
+    });
+    const { cache } = stage("debug");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Load earlier runs" }),
+    );
+    await screen.findByText("Run");
+    if (kind !== "reply")
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: kind === "tool" ? /read_file/ : /Reasoning/,
+        }),
+      );
+    expect(contentRequests).toHaveLength(0);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Expand full content" }),
+    );
+    expect(
+      await screen.findByText(
+        kind === "tool" ? /Full saved result/ : "Full saved message",
+      ),
+    ).toBeTruthy();
+    expect(contentRequests).toHaveLength(1);
+    expect(new URL(contentRequests[0]!.url).pathname).toBe(
+      "/api/v1/runs/parent/contents/cnt_saved",
+    );
+    expect(contentRequests[0]!.headers.get("x-workspace-id")).toBe("workspace");
+    cache.clear();
+  },
+);

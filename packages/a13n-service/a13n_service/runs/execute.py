@@ -68,6 +68,7 @@ from a13n_service.runs.boundaries import Boundaries, Staged
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.checkpoints import CHECKPOINT_DURATION, Committed, RunObjects, RunState, near_deadline
 from a13n_service.runs.coalesce import Coalescer
+from a13n_service.runs.contents import Contents
 from a13n_service.runs.display import DisplayFold, Snapshot, Tail, open_tool_calls
 from a13n_service.runs.environments.execution import PreparedMount, open_mounts, prepare_mounts
 from a13n_service.runs.environments.mounts import PRIMARY
@@ -242,7 +243,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
     own, base, tail = await asyncio.gather(
         checkpoints.load_state(runtime.objects, checkpoint),
         checkpoints.load_state(runtime.objects, baseline_checkpoint),
-        checkpoints.load_tail(runtime.objects, tail_pointer),
+        checkpoints.load_tail(runtime.objects, tail_pointer, hydrate=True),
     )
     state, resume = _initial(lease.thread_id, base, pending=pending, answers=answers, history=history)
     resume_input = (
@@ -336,6 +337,7 @@ class _Attempt:
     def __init__(self, runtime: Runtime, lease: Lease, control: AttemptControl, plan: _Plan):
         self.runtime, self.lease, self.control, self.plan = runtime, lease, control, plan
         self.committed, self.seq = plan.committed, plan.seq
+        self.contents = Contents(plan.tail.items, plan.tail.refs)
         worker = runtime.settings.worker
         self.fold = DisplayFold(
             lease.run_id, plan.tail, attempt=lease.number, page_items=worker.page_items, page_bytes=worker.page_bytes
@@ -559,6 +561,8 @@ class _Attempt:
                 resume_input_consumed=self.plan.resume_input is None or self.offers.requested,
             ),
             snapshot,
+            contents=self.contents,
+            control=self.control,
         )
         worker = self.runtime.settings.worker
         steers: list[Offered] = []
@@ -593,6 +597,7 @@ class _Attempt:
         CHECKPOINT_DURATION.record(time.monotonic() - started)
         self.committed, self.seq = committed, self.seq + 1
         self.fold.committed(snapshot)
+        self.contents.retire([item.id for page in snapshot.pages for item in page.items])
         self.offers.consumed(consumed)
         self.usage.ingested(usage)
         if outcome is not None:
@@ -709,7 +714,9 @@ class _Attempt:
         display = None
         self.fold.interrupt()
         if not near_deadline(self.runtime, self.control):
-            display = await checkpoints.publish_display(self.runtime, self.lease, self._snapshot())
+            display = await checkpoints.publish_display(
+                self.runtime, self.lease, self._snapshot(), contents=self.contents, control=self.control
+            )
         await seal_attempt(self.runtime, self.lease, outcome, display=display)
 
     def _snapshot(self) -> Snapshot:

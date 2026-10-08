@@ -2,11 +2,15 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { CopyButton } from "../../../shared/identity";
 import { JsonView } from "../../../shared/forms";
-import { MarkdownContent } from "../../../shared/markdown";
 import { AgentAvatar } from "../../agents/avatar";
 import { formatDuration } from "../format";
 import type { ContentEntry } from "../timeline";
 import type { TranscriptBlock } from "./items";
+import {
+  StoredContent,
+  LegacyTruncation,
+  useStoredReference,
+} from "../stored-content";
 import { GuidanceMessage } from "./user-message";
 import { WorkLine } from "./work-line";
 import styles from "./transcript.module.css";
@@ -74,7 +78,11 @@ export function AgentTurn({
               childPath={childPath}
             />
           ) : block.kind === "guidance" ? (
-            <GuidanceMessage key={block.id} text={block.entry.text} />
+            <GuidanceMessage
+              key={block.id}
+              text={block.entry.text}
+              itemId={block.entry.id}
+            />
           ) : (
             <AgentMessage key={block.id} entry={block.entry} />
           ),
@@ -87,6 +95,7 @@ export function AgentTurn({
 
 function AgentMessage({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
+  const stored = useStoredReference(entry.id, "text");
   const streaming = entry.state === "in_progress";
   return (
     <article
@@ -96,14 +105,15 @@ function AgentMessage({ entry }: { entry: ContentEntry }) {
       data-streaming={streaming || undefined}
     >
       {entry.text ? (
-        <MarkdownContent text={entry.text} />
+        <StoredContent itemId={entry.id} field="text" value={entry.text} />
       ) : (
         <p className={styles.thinking}>
           {streaming ? t("Thinking…") : t("No text content")}
         </p>
       )}
       {entry.failure != null && <JsonView value={entry.failure} />}
-      {entry.text && entry.state === "completed" && (
+      <LegacyTruncation itemId={entry.id} />
+      {entry.text && entry.state === "completed" && !stored && (
         <div className={styles.messageActions}>
           <CopyButton
             value={entry.text}

@@ -64,7 +64,7 @@ One process-wide meter provider records the Service's instruments and, on execut
 | `a13n.attempt.queue_wait`      | histogram | —                                                                | how long a due run waited before its claim, 0.1 s to 10 min                            |
 | `a13n.attempt.duration`        | histogram | `status`                                                         | each attempt from its claim to its end, 1 s to 1 h                                     |
 | `a13n.checkpoint.duration`     | histogram | —                                                                | each checkpoint from its first object write to its commit, 10 ms to 10 s               |
-| `a13n.run_object.bytes`        | histogram | `kind`: `state`, `tail`, `pages`, `contents`, `subagents`        | the compressed size of each run object a worker writes, 1 KiB to 16 MiB                |
+| `a13n.run_object.bytes`        | histogram | `kind` ([run objects](07-facts-and-delivery.md#objects))         | the compressed size of each run object a worker writes, 1 KiB to 16 MiB                |
 | `a13n.worker.slots`            | gauge     | `state`: `free`, `busy`                                          | this worker's attempt slots                                                            |
 | `a13n.backlog.size`            | gauge     | `queue`: `runs`, or an outbox kind                               | due work waiting to be claimed, up to max(10,000, the kind's configured backlog count) |
 | `a13n.backlog.oldest_age`      | gauge     | `queue`                                                          | how long the oldest due item has waited; 0 when none waits                             |

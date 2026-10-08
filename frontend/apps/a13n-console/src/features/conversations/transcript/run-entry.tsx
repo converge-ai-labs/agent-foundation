@@ -8,6 +8,7 @@ import { useAgent } from "../../agents/queries";
 import { isActiveRun, type ViewLevel } from "../api";
 import { useRun } from "../queries";
 import { useRunDisplay } from "../run-display";
+import { StoredContents, StoredObservations } from "../stored-content";
 import { runTimeline } from "../timeline";
 import { WorkingRow } from "./assistant-message";
 import { DebugRunSection } from "./debug/run-section";
@@ -58,7 +59,7 @@ export function RunEntry({
   const active = isActiveRun(run.status);
   const stopped = ["failed", "cancelled"].includes(run.status);
   return (
-    <>
+    <StoredContents runId={runId} items={live.displayItems}>
       {live.gap && (
         <p role="status" className={styles.notice}>
           {live.incomplete
@@ -87,6 +88,7 @@ export function RunEntry({
             resubmit={prefill}
             jumpToDock={jumpToDock}
           />
+          <StoredObservations />
         </>
       ) : (
         <div className={debug.runAnchor} data-run={run.id}>
@@ -124,6 +126,6 @@ export function RunEntry({
           </RunBlock>
         </div>
       )}
-    </>
+    </StoredContents>
   );
 }
