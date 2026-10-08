@@ -642,6 +642,44 @@ def test_status_token_abbreviations_keep_one_decimal_at_every_width(tokens: int,
 
 
 @pytest.mark.parametrize("baseline", [False, True])
+@pytest.mark.parametrize("source", ["user", "steering"])
+def test_composed_input_display_renders_once_from_live_events_or_snapshot(baseline: bool, source: str) -> None:
+    from a13n_stream_protocol.display import DisplayFold
+
+    fold = DisplayFold("run")
+    renderer = StreamRenderer(Status())
+    for index, text in enumerate(("Keep ", "this direction")):
+        event = {
+            "type": "CUSTOM",
+            "name": f"a13n.input.{source}",
+            "metadata": {"source_id": "input-one", "harness_ui": {"composer": {"index": index}}},
+            "value": {
+                "event": {
+                    "message_id": f"message-{index}",
+                    "input_id": "input-one",
+                    "source": source,
+                    "role": "user",
+                    "content": text,
+                }
+            },
+        }
+        batch = fold.fold([event])[0]
+        if not baseline:
+            for _ in range(2):
+                renderer.ingest(event["type"], event, run_id="run", display_position=fold.position, item=batch.item)
+    if baseline:
+        for _ in range(2):
+            renderer.ingest(
+                "CUSTOM",
+                {"name": "a13n.display.snapshot", "value": fold.export().model_dump(mode="json")},
+                run_id="run",
+            )
+    assert _text(renderer) == "> Keep this direction"
+    assert all(block.kind == "user" for block in renderer.transcript.blocks.values())
+    assert not renderer.gap
+
+
+@pytest.mark.parametrize("baseline", [False, True])
 def test_compact_tool_arguments_complete_before_result(baseline: bool) -> None:
     from a13n_stream_protocol.display import DisplayFold
 

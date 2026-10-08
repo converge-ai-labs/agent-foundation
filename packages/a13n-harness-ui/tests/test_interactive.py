@@ -682,12 +682,15 @@ async def test_onboarding_import_enrolls_inheriting_subagent_and_is_retryable(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("composed", [False, True])
+@pytest.mark.parametrize("mode", ["concise", "detailed"])
 async def test_active_guidance_reaches_native_model_in_order_without_another_root_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, composed: bool, mode: str
 ) -> None:
 
     import a13n_harness.models.codex as runtime
-    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from a13n_harness_ui.interactive.inline_attachments import InlineAttachments
+    from pydantic_ai.messages import ModelRequest, TextContent, UserPromptPart
 
     path = await _seed(tmp_path, monkeypatch)
     entered, release = asyncio.Event(), asyncio.Event()
@@ -709,25 +712,35 @@ async def test_active_guidance_reaches_native_model_in_order_without_another_roo
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        backend.status.mode = mode
         renderer = StreamRenderer(backend.status)
+        inline = InlineAttachments()
         task = asyncio.create_task(backend.execute(renderer, prompt="Start work"))
         try:
             await asyncio.wait_for(entered.wait(), 5)
             receipt = backend.receipt_id
             assert receipt is not None
-            assert "sent" in await backend.steer("guidance-first", receipt_id=receipt)
-            assert "sent" in await backend.steer("guidance-second", receipt_id=receipt)
+            for text in ("guidance-first", "guidance-second"):
+                guidance = inline.compile(text) if composed else text
+                assert "sent" in await backend.steer(guidance, receipt_id=receipt)
+            assert not any("guidance-" in block.source for block in renderer.transcript.blocks.values())
             release.set()
             assert await asyncio.wait_for(task, 10) == ""
             assert len(observed) == 2
             contents = [
-                part.content
+                content.content if isinstance(content, TextContent) else content
                 for message in observed[-1]
                 if isinstance(message, ModelRequest)
                 for part in message.parts
                 if isinstance(part, UserPromptPart)
+                for content in ([part.content] if isinstance(part.content, str) else part.content)
+                if isinstance(content, (str, TextContent))
             ]
             assert contents.index("guidance-first") < contents.index("guidance-second")
+            inputs = [block.source for block in renderer.transcript.blocks.values() if block.kind == "user"]
+            assert inputs.count("> guidance-first") == 1
+            assert inputs.count("> guidance-second") == 1
+            assert inputs.index("> guidance-first") < inputs.index("> guidance-second")
             assert backend.receipt_id is None
             with pytest.raises(ValueError, match="no longer running"):
                 await backend.steer("too late", receipt_id=receipt)
