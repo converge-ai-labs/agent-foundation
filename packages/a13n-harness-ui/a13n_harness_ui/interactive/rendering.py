@@ -752,7 +752,11 @@ class StreamRenderer:
                         self.ingest(
                             "CUSTOM",
                             {
-                                "name": "a13n.input.media" if media is not None else "a13n.input.text",
+                                "name": (
+                                    "a13n.input.media"
+                                    if media is not None
+                                    else f"a13n.input.{content.get('input_source', 'user')}"
+                                ),
                                 "metadata": metadata,
                                 "value": {"event": {"role": "user", "content": media if media is not None else text}},
                             },

@@ -8,7 +8,7 @@ from a13n_service.infra import outbox
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.outbox import Delivery, OutboxRow, Policy, claim, enqueue, purge_settled, settle
 from a13n_service.runs.backlog import BacklogReporter
-from sqlalchemy import select, update
+from sqlalchemy import event, select, update
 
 pytestmark = pytest.mark.anyio
 
@@ -261,3 +261,39 @@ async def test_purge_budget_allows_cleanup_and_only_suppresses_its_own_timeout(
             with pytest.raises(TimeoutError, match="backend deadline"):
                 await work
     assert cleaned.is_set()
+
+
+@pytest.mark.parametrize("sizes, expected", [([1, 1, 1], [2, 1]), ([40, 40, 1], [1, 2]), ([200, 1], [1, 1]), ([], [])])
+async def test_batch_enqueue_bounds_rows_and_bytes_without_dropping_oversized_rows(
+    runtime, tenant, monkeypatch, sizes, expected
+) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(outbox, "_BATCH_ROWS", 2)
+    monkeypatch.setattr(outbox, "_BATCH_BYTES", 100)
+    rows = [
+        outbox.prepare(
+            organization_id=tenant.organization_id,
+            workspace_id=tenant.workspace_id,
+            kind="webhook",
+            target={},
+            payload={"data": "x" * size},
+        )
+        for size in sizes
+    ]
+    statements = []
+
+    def capture(connection, cursor, statement, parameters, context, executemany):
+        if statement.startswith("INSERT INTO outbox"):
+            assert context.execute_style.name != "EXECUTEMANY"
+            statements.append(len(parameters) // 11)
+
+    engine = runtime.storage.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        async with transaction(runtime.storage) as session:
+            await outbox.enqueue_batch(session, rows)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert statements == expected
+    async with short_session(runtime.storage) as session:
+        stored = list(await session.scalars(select(OutboxRow)))
+    assert {row.id: row.payload for row in stored} == {row.id: row.payload for row in rows}
