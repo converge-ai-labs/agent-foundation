@@ -35,7 +35,7 @@ Use **Save changes** after editing the configuration. New work uses the saved ve
 
 ## Guide the work
 
-- **Questions and approvals:** answer a question or choose **Approve once** or **Deny**, then select **Save response** for that item. Saved responses survive refresh; the agent continues after all required responses are saved. An ordinary message does not resolve the wait.
+- **Questions and approvals:** answer questions and choose **Approve once** or **Deny** for approvals, then select **Submit responses** after completing every pending item. The agent continues after the complete batch is accepted. An ordinary message does not resolve the wait.
 - **Steer or stop:** send another message while a run is active, or stop the active run.
 - **Files and commands:** select an environment under **Run options**, or configure an [environment template](environments.md#templates) as the agent's default.
 - **Shared knowledge:** mount [memory](memory.md) on the thread or set it as an agent default. Memory can supply context automatically; enabled memory tools let the agent search and update it.

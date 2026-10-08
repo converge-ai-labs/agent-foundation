@@ -175,13 +175,6 @@ function mount({
         return Response.json(current);
       }
       reads.push(path);
-      if (path.endsWith("/answers"))
-        return Response.json({
-          run_id: current.id,
-          status: "waiting",
-          answers: [],
-          successor: null,
-        });
       if (path.endsWith("/inbox"))
         return Response.json({
           items: [entry("inb_queued", "Queued test")],
@@ -301,7 +294,7 @@ it("shows feedback instead of a general composer while waiting", async () => {
   await screen.findByText("Waiting for your response");
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   expect(
-    await screen.findByRole("button", { name: "Continue without feedback" }),
+    screen.getByRole("button", { name: "Continue without feedback" }),
   ).toBeTruthy();
 });
 it("does not offer input or retry on historical Runs", () => {

@@ -252,30 +252,6 @@ class Resume(_Frozen):
         return self
 
 
-class PendingAnswer(_Frozen):
-    """One immutable answer to an exact waiting run; no accompanying input."""
-
-    approvals: dict[ToolCallId, ApprovalDecision]
-    calls: dict[ToolCallId, CallResult]
-
-    @model_validator(mode="after")
-    def bounded(self) -> "PendingAnswer":
-        if len(self.approvals) + len(self.calls) != 1:
-            raise ValueError("Submit exactly one pending answer")
-        Resume(approvals=self.approvals, calls=self.calls)
-        return self
-
-    @property
-    def tool_call_id(self) -> str:
-        return next(iter(self.approvals or self.calls))
-
-
-class SavedAnswer(_Frozen):
-    answer: PendingAnswer
-    answered_by_id: str
-    created_at: datetime
-
-
 class PendingCall(_Frozen):
     tool_call_id: ToolCallId
     tool_name: str
@@ -494,13 +470,6 @@ class RunView(BaseModel):
     started_at: datetime | None
     sealed_at: datetime | None
     updated_at: datetime
-
-
-class PendingAnswers(_Frozen):
-    run_id: str
-    status: Literal["waiting", "resumed", "closed"]
-    answers: tuple[SavedAnswer, ...]
-    successor: RunView | None
 
 
 class RunPage(BaseModel):

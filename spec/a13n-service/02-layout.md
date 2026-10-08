@@ -47,9 +47,9 @@ a13n_service/
     local.py  docker.py  defaults.py  tables.py
 
   runs/               how input becomes sealed runs
-    tables.py         sessions, threads, inbox_entries, runs, pending_answers, run_attempts, usage_records
+    tables.py         sessions, threads, inbox_entries, runs, run_attempts, usage_records
     sessions.py  threads.py  archive.py  inbox.py  entries.py  inputs.py  attachments.py  placement.py
-    submit.py  accept.py  admission.py  resume.py  answers.py  claim.py  worker.py  attempts.py  execute.py  seal.py
+    submit.py  accept.py  admission.py  resume.py  claim.py  worker.py  attempts.py  execute.py  seal.py
     agent.py  host.py  calls.py  boundaries.py  checkpoints.py  display.py  deferred.py  children.py  subagents.py
     configuration.py  assets.py  skills.py  web.py
     stream.py  webhooks.py  usage.py  traces.py  backlog.py  runs.py  runtime.py

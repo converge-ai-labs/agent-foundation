@@ -70,7 +70,6 @@ These commands require `Idempotency-Key`: 1 to 512 visible ASCII characters (`^[
 | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------- |
 | `POST …/threads`, `POST …/threads/{thread}/inbox`, `POST …/runs/{run}/fork` | The entry; unique `(workspace_id, principal_id, request_key)` shared by all three | Request kind, target and body digest | 409 `conflict`, `idempotency_key_reused` |
 | `POST …/runs/{run}/resume`                                                  | The successor run; unique `(workspace_id, resumed_by_id, request_key)`            | Digest of the run ID and request     | 409 `conflict`, `idempotency_key_reused` |
-| `POST …/runs/{run}/answers`                                                 | The saved answer; unique `(workspace_id, answered_by_id, request_key)`            | Digest of the run ID and request     | 409 `conflict`, `idempotency_key_reused` |
 | `POST …/uploads`                                                            | The upload; unique `(workspace_id, created_by_id, request_key)`                   | The bytes, filename and content type | 409 `conflict`, `idempotency_key_reused` |
 
 Authentication and current scope permission precede the lookup, and the lookup precedes validation of mutable state. A first call answers 201 (uploads: 200); a replay answers 200 with the created objects in their current state, not a byte-for-byte copy of the first response. Concurrent callers are arbitrated by the unique index: the loser rolls back everything it tentatively created and replays the winner. Pending edits never change the stored digest, and keys and withdrawn entries stay with history, so a key is never reusable. Submissions return `Submitted {thread, entry, run | null}`; resume returns the successor run.
@@ -261,7 +260,6 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/runs/{run}/interrupt`           | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
 | `/runs/{run}/fork`                | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
 | `/runs/{run}/resume`              | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/runs/{run}/answers`             | GET, POST          | [05](05-runs.md#waiting-interrupt-and-fork)      |
 | `/runs/{run}/items`               | GET                | [05](05-runs.md#reads)                           |
 | `/runs/{run}/lineage`             | GET                | [05](05-runs.md#reads)                           |
 | `/runs/{run}/attempts`            | GET                | [05](05-runs.md#reads)                           |

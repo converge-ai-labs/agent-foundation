@@ -31,7 +31,7 @@ description: 选择 agent、交换消息、处理待办并继续对话。
 
 ## 回答问题或审批工具调用
 
-在对话卡片中回答问题、批准或拒绝工具调用，然后为每一项选择**保存答复**。所有待处理项都有答复后，Service 才继续执行。应用可以[逐项保存答复，或一次提交完整的恢复批次](../a13n-service/agents-and-runs.md#waits-approvals-and-questions)。
+在对话卡片中回答问题、批准或拒绝工具调用，完成所有待处理项后选择**提交回应**。应用负责收集答案，准备好后[提交完整的恢复批次](../a13n-service/agents-and-runs.md#waits-approvals-and-questions)。
 
 ## 稍后继续
 

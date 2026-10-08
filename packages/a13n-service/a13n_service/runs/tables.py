@@ -470,7 +470,7 @@ class RunRow(Stamped, Base):
 
 
 class PendingAnswerRow(Base):
-    """An immutable answer; the thread lock serializes collection with resume and closure."""
+    """Retired answer storage retained for migration compatibility; execution never reads or writes it."""
 
     __tablename__ = "pending_answers"
     __table_args__ = (

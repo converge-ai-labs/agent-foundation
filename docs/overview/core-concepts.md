@@ -31,7 +31,7 @@ You see replies and tool activity as they arrive. While the agent works, you can
 
 ## Answer a question or approve a tool call
 
-Answer questions and approve or deny tool calls in their conversation cards, then choose **Save response** for each item. Service continues once every pending item has an answer. Applications can [save answers individually or submit a complete resume batch](../a13n-service/agents-and-runs.md#waits-approvals-and-questions).
+Answer questions and approve or deny tool calls in their conversation cards, then choose **Submit responses** after completing every pending item. Applications collect answers and [submit a complete resume batch](../a13n-service/agents-and-runs.md#waits-approvals-and-questions) when ready.
 
 ## Continue later
 
