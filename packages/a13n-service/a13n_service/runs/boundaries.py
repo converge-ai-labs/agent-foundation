@@ -61,7 +61,8 @@ class Boundaries(AbstractCapability[AgentContext]):
         except ExceptionGroup as error:
             # A single writer/execution failure keeps its Service error or lease semantics.
             if len(error.exceptions) == 1:
-                raise error.exceptions[0] from error
+                failure = error.exceptions[0]
+                raise failure from failure.__cause__
             raise
         finally:
             self._closed = True
