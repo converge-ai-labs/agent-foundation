@@ -80,14 +80,16 @@ async def test_object_verification_encodes_payload_once_and_preserves_canonical_
     canonical_json = objects._canonical_json
     payload_encodes = 0
 
-    def counted_encode(value):
+    def counted_encode(value, *, sort_keys=True):
         nonlocal payload_encodes
         if isinstance(value, dict) and (value == payload or value.get("payload") == payload):
             payload_encodes += 1
-        return canonical_json(value)
+        return canonical_json(value, sort_keys=sort_keys)
 
     monkeypatch.setattr(objects, "_canonical_json", counted_encode)
-    envelope = await store.publish(object_kind=ObjectKind.continuation, object_schema_version="1", payload=payload)
+    envelope = await store.publish(
+        object_kind=ObjectKind.continuation, object_schema_version="1", payload=payload, payload_codec_version="1"
+    )
     assert payload_encodes == 3  # Source, verified staging file, verified published file.
     path = next(layout.objects.rglob("*.json.zst"))
     raw = zstandard.ZstdDecompressor().decompress(path.read_bytes())
@@ -171,7 +173,7 @@ async def test_object_publish_rejects_invalid_or_excessive_payloads(tmp_path: Pa
             object_kind=ObjectKind.configuration_generation,
             object_schema_version="1",
             payload={},
-            payload_codec_version="2",
+            payload_codec_version="999",
         )
     assert unknown_codec.value.code == "object_payload_invalid"
 
@@ -247,7 +249,8 @@ async def test_payload_reader_tolerates_nested_unknown_fields_without_rewriting_
         payload_type.model_validate_json(json.dumps(payload))
 
 
-async def test_payload_reader_preserves_json_types_without_reencoding_with_stdlib(tmp_path, monkeypatch):
+@pytest.mark.parametrize("codec", ["1", "2"])
+async def test_payload_reader_preserves_json_types_without_reencoding_with_stdlib(tmp_path, monkeypatch, codec):
     from math import copysign
 
     from pydantic import ConfigDict, JsonValue, create_model
@@ -267,7 +270,9 @@ async def test_payload_reader_preserves_json_types_without_reencoding_with_stdli
         "future": {"nested": values},
     }
     store, layout = _object_store(tmp_path)
-    envelope = await store.publish(object_kind=ObjectKind.continuation, object_schema_version="1", payload=payload)
+    envelope = await store.publish(
+        object_kind=ObjectKind.continuation, object_schema_version="1", payload=payload, payload_codec_version=codec
+    )
     path = next(layout.objects.rglob("*.json.zst"))
     original = path.read_bytes()
     dumps = json.dumps
@@ -288,7 +293,9 @@ async def test_payload_reader_preserves_json_types_without_reencoding_with_stdli
     assert copysign(1, restored.values[7]) == -1
     assert restored.model_extra == {"future": {"nested": values}}
     assert path.read_bytes() == original
-    assert payload_encodes == 0
+    # Codec 2 verifies its order-preserving encoding once, but typed decoding
+    # still avoids an additional stdlib encoding of the payload.
+    assert payload_encodes == (1 if codec == "2" else 0)
 
 
 @pytest.mark.parametrize("entry", [{"future": True}, {"count": "3", "future": True}])
@@ -364,3 +371,104 @@ async def test_default_store_round_trips_continuation_above_previous_limit(tmp_p
     )
     reopened, _ = _object_store(tmp_path)
     assert (await reopened.read(envelope.ref)).payload == payload
+
+
+@pytest.mark.parametrize(
+    "kind", [ObjectKind.thread_initial_state, ObjectKind.continuation, ObjectKind.child_checkpoint]
+)
+async def test_checkpoint_round_trip_preserves_provider_prompt_bytes(tmp_path, kind):
+    from a13n_harness import HarnessState
+    from a13n_harness_ui.storage.contracts import (
+        CompactChildDisplay,
+        StoredChildCheckpoint,
+        StoredContinuation,
+        StoredThreadInitialState,
+    )
+    from pydantic_ai.messages import ModelRequest, ModelResponse, ToolCallPart, ToolReturnPart, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    state = HarnessState.new(
+        message_history=[
+            ModelRequest(parts=[UserPromptPart("Inspect the synthetic result.")]),
+            ModelResponse(parts=[ToolCallPart("probe", {"z": 1, "a": 2}, "call_probe")]),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        "probe", {"ok": True, "path": "synthetic", "entries": [{"z": 2, "a": 3}]}, "call_probe"
+                    )
+                ]
+            ),
+        ]
+    )
+    composition = ObjectRef(object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="0" * 64)
+    common = {"harness_state": state, "created_at": datetime.now(UTC)}
+    if kind is ObjectKind.thread_initial_state:
+        value = StoredThreadInitialState(**common)
+    elif kind is ObjectKind.continuation:
+        value = StoredContinuation(**common, harness_release="test", run_composition=composition)
+    else:
+        value = StoredChildCheckpoint(
+            **common,
+            harness_release="test",
+            run_composition=composition,
+            execution_id="execution-probe",
+            child_thread_id=state.thread_id,
+            child_run_id="run-probe",
+            segment_index=0,
+            display=CompactChildDisplay(),
+            terminal=True,
+        )
+    store, _ = _object_store(tmp_path)
+    model = OpenAIResponsesModel("gpt-5", provider=OpenAIProvider(api_key="test"))
+    parameters = ModelRequestParameters()
+    expected = await model._map_messages(list(state.message_history), {}, parameters)
+    for _ in range(2):
+        published = await store.publish_model(object_kind=kind, value=value)
+        assert published.payload_codec_version == "2"
+        value = await store.read_model(published.ref, type(value))
+        # Dictionary equality alone cannot detect changes in the strings a
+        # provider produces from structured tool arguments and return values.
+        actual = await model._map_messages(list(value.harness_state.message_history), {}, parameters)
+        assert actual == expected
+
+    # Existing codec-1 objects remain readable, with their already-sorted history.
+    legacy = await store.publish_model(object_kind=kind, value=value, payload_codec_version="1")
+    restored_legacy = await store.read_model(legacy.ref, type(value))
+    assert restored_legacy.harness_state.message_history == state.message_history
+    legacy_wire = await model._map_messages(list(restored_legacy.harness_state.message_history), {}, parameters)
+    assert legacy_wire != expected
+    upgraded = await store.publish_model(object_kind=kind, value=restored_legacy)
+    restored_upgrade = await store.read_model(upgraded.ref, type(value))
+    assert (
+        await model._map_messages(list(restored_upgrade.harness_state.message_history), {}, parameters) == legacy_wire
+    )
+
+
+async def test_checkpoint_mapping_order_participates_in_identity_and_integrity(tmp_path):
+    store, layout = _object_store(tmp_path)
+    first = await store.publish(
+        object_kind=ObjectKind.continuation, object_schema_version="1", payload={"z": 1, "a": {"z": 2, "a": 3}}
+    )
+    second = await store.publish(
+        object_kind=ObjectKind.continuation, object_schema_version="1", payload={"a": {"a": 3, "z": 2}, "z": 1}
+    )
+    assert first.payload == second.payload
+    assert first.ref != second.ref
+    repeated = await store.publish(
+        object_kind=ObjectKind.continuation, object_schema_version="1", payload={"z": 1, "a": {"z": 2, "a": 3}}
+    )
+    assert repeated.ref == first.ref
+    assert list((await store.read(first.ref)).payload) == ["z", "a"]
+    path = next(layout.objects.rglob(f"{first.logical_digest}.json.zst"))
+    fields = json.loads(zstandard.ZstdDecompressor().decompress(path.read_bytes()))
+    # Reordering a codec-2 payload is a content change even if dicts compare equal.
+    path.write_bytes(
+        zstandard.ZstdCompressor(write_checksum=True).compress(
+            json.dumps(fields, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        )
+    )
+    with pytest.raises(ObjectIntegrityError) as error:
+        await store.read(first.ref)
+    assert error.value.code == "object_digest_mismatch"

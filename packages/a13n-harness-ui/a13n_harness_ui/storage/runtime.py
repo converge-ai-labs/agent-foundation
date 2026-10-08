@@ -69,7 +69,7 @@ class LocalStore:
         object_kind: ObjectKind,
         object_schema_version: str,
         payload: JsonValue,
-        payload_codec_version: str = "1",
+        payload_codec_version: str | None = None,
     ) -> ObjectRef:
         """Publish one object file and return its detached reference."""
 

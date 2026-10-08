@@ -19,7 +19,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSON, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.infra.db import Base, Stamped, immutable, rules, trigger
@@ -122,7 +122,7 @@ class ThreadRow(Stamped, Base):
             name="origin_links",
         ),
         CheckConstraint("(origin = 'child') = (subagent IS NOT NULL)", name="subagent"),
-        CheckConstraint("origin = 'new' OR message_history = '[]'::jsonb", name="imported_history"),
+        CheckConstraint("origin = 'new' OR message_history::jsonb = '[]'::jsonb", name="imported_history"),
         # A spawn is identified by its tool call, so the parent's recovery finds the same child thread.
         Index(
             "uq_threads_child_origin",
@@ -149,7 +149,7 @@ class ThreadRow(Stamped, Base):
             """
             CREATE FUNCTION guard_thread_history() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
-                IF NEW.message_history IS DISTINCT FROM OLD.message_history
+                IF NEW.message_history::text IS DISTINCT FROM OLD.message_history::text
                 THEN RAISE EXCEPTION 'thread initial history is immutable'; END IF;
                 RETURN NEW;
             END $$
@@ -165,8 +165,9 @@ class ThreadRow(Stamped, Base):
     origin_thread_id: Mapped[str | None]
     origin_run_id: Mapped[str | None] = mapped_column(String(72))
     origin_tool_call_id: Mapped[str | None]
+    # JSON preserves nested key order: native tool parts render objects into model-visible strings.
     # Imported model context is immutable and distinct from checkpoints and executed facts.
-    message_history: Mapped[list] = mapped_column(JSONB, default=list, server_default=text("'[]'::jsonb"))
+    message_history: Mapped[list] = mapped_column(JSON, default=list, server_default=text("'[]'::jsonb"))
     # The name of the async subagent edge that spawned a child thread, as its parent's graph declared it then.
     subagent: Mapped[str | None]
     # current: accepted or running. last: most recently sealed, the history a successor continues.
