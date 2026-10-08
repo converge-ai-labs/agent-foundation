@@ -21,6 +21,7 @@ from a13n_service.runs.schemas import (
     Message,
     NewThread,
     Resume,
+    RunContent,
     RunItems,
     RunLabels,
     RunPage,
@@ -396,6 +397,20 @@ async def run_lineage(
 ) -> RunPage:
     """The run and its ancestors, nearest first, across fork origins."""
     return await runs.lineage(runtime.storage, actor, workspace_id, run_id, cursor=cursor)
+
+
+@router.get("/runs/{run_id}/contents/{content_id}", response_model=RunContent)
+async def run_content(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    run_id: str,
+    content_id: str,
+    actor: Actor,
+    response: Response,
+) -> RunContent:
+    """The complete value behind a committed display reference."""
+    response.headers["Cache-Control"] = "no-store"
+    return await runs.content(runtime, actor, workspace_id, run_id, content_id)
 
 
 @router.get("/runs/{run_id}/attempts", response_model=Attempts)

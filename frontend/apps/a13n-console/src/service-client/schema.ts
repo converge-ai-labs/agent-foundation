@@ -1597,6 +1597,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/runs/{run_id}/contents/{content_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Run Content
+     * @description The complete value behind a committed display reference.
+     */
+    get: operations["run_content_api_v1_runs__run_id__contents__content_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}/fork": {
     parameters: {
       query?: never;
@@ -4022,6 +4042,28 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
     };
+    /**
+     * ContentRef
+     * @description An immutable Host-owned value, loaded through that Host's authorized content API.
+     */
+    ContentRef: {
+      /** Id */
+      id: string;
+      /**
+       * Media Type
+       * @enum {string}
+       */
+      media_type: "text/plain" | "application/json";
+      /** Preview */
+      preview: string;
+      /** Size Bytes */
+      size_bytes: number;
+      /**
+       * Truncated
+       * @default false
+       */
+      truncated?: boolean;
+    };
     /** CreatedSubscription */
     CreatedSubscription: {
       /**
@@ -4697,6 +4739,10 @@ export interface components {
       /** Content */
       content: {
         [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Content Refs */
+      content_refs?: {
+        [key: string]: components["schemas"]["ContentRef"];
       };
       /** Ended At */
       ended_at?: string | null;
@@ -6192,6 +6238,25 @@ export interface components {
       extensions?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+    };
+    /**
+     * RunContent
+     * @description One immutable saved display value, possibly truncated, read under the owning run's authority.
+     */
+    RunContent: {
+      /** Id */
+      id: string;
+      /**
+       * Media Type
+       * @enum {string}
+       */
+      media_type: "text/plain" | "application/json";
+      /**
+       * Truncated
+       * @default false
+       */
+      truncated?: boolean;
+      value: components["schemas"]["JsonValue"];
     };
     /**
      * RunItems
@@ -11291,6 +11356,34 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["SpanPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  run_content_api_v1_runs__run_id__contents__content_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        content_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunContent"];
         };
       };
       400: components["responses"]["Error"];

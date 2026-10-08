@@ -3204,6 +3204,46 @@
         "title": "ConnectorConfig",
         "type": "object"
       },
+      "ContentRef": {
+        "additionalProperties": false,
+        "description": "An immutable Host-owned value, loaded through that Host's authorized content API.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "media_type": {
+            "enum": [
+              "text/plain",
+              "application/json"
+            ],
+            "title": "Media Type",
+            "type": "string"
+          },
+          "preview": {
+            "title": "Preview",
+            "type": "string"
+          },
+          "size_bytes": {
+            "minimum": 0.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "size_bytes",
+          "media_type",
+          "preview"
+        ],
+        "title": "ContentRef",
+        "type": "object"
+      },
       "CreatedSubscription": {
         "properties": {
           "created_at": {
@@ -4987,6 +5027,13 @@
               "$ref": "#/components/schemas/JsonValue"
             },
             "title": "Content",
+            "type": "object"
+          },
+          "content_refs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ContentRef"
+            },
+            "title": "Content Refs",
             "type": "object"
           },
           "ended_at": {
@@ -9575,6 +9622,38 @@
           }
         },
         "title": "RunConfiguration",
+        "type": "object"
+      },
+      "RunContent": {
+        "description": "One immutable saved display value, possibly truncated, read under the owning run's authority.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "media_type": {
+            "enum": [
+              "text/plain",
+              "application/json"
+            ],
+            "title": "Media Type",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "required": [
+          "id",
+          "media_type",
+          "value"
+        ],
+        "title": "RunContent",
         "type": "object"
       },
       "RunItems": {
@@ -23589,6 +23668,82 @@
           }
         ],
         "summary": "List Attempt Spans",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/api/v1/runs/{run_id}/contents/{content_id}": {
+      "get": {
+        "description": "The complete value behind a committed display reference.",
+        "operationId": "run_content_api_v1_runs__run_id__contents__content_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "content_id",
+            "required": true,
+            "schema": {
+              "title": "Content Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunContent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Run Content",
         "tags": [
           "runs"
         ]

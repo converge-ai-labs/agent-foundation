@@ -7,8 +7,9 @@ zstd, so a key never recurs:
 - `pages`: display history pages, kept with the run once its page catalog records them;
 - `contents` and `subagents`: large binary content and ended inline subagent states the Harness saves through
   the run's state store, kept while the run's checkpoint references them.
+- `display-contents`: complete display fields and private parser state, kept by tail and page dependencies.
 
-Only the typed pointers on the run row, its page catalog and its checkpoint's references make objects reachable,
+Only the typed pointers on the run row, its page catalog and their recorded dependencies make objects reachable,
 and only a transaction proving the worker lease moves them, so a stale attempt's late bytes are garbage, never state.
 """
 
@@ -35,6 +36,7 @@ from a13n_service.infra.outbox import Claim, OutboxKind, OutboxRow, enqueue, set
 from a13n_service.infra.telemetry import meter
 from a13n_service.runs import inbox
 from a13n_service.runs.attempts import AttemptControl, Lease, LeaseLost
+from a13n_service.runs.contents import ContentObject, Contents, decode, live_continuation
 from a13n_service.runs.display import Page, Snapshot, StreamPosition, Tail
 from a13n_service.runs.tables import AttemptRow, RunItemPageRow, RunRow
 from a13n_service.runs.usage import UsageReport, ingest
@@ -44,8 +46,9 @@ if TYPE_CHECKING:
 
 # Bumped only with an explicit migration or rejection plan for outstanding checkpoints.
 FORMAT = 1
+DISPLAY_FORMAT = 2
 
-type ObjectKind = Literal["state", "tail", "pages", "contents", "subagents"]
+type ObjectKind = Literal["state", "tail", "pages", "contents", "subagents", "display-contents"]
 
 _STORED_KINDS: dict[StoredKind, ObjectKind] = {"content": "contents", "subagent_state": "subagents"}
 
@@ -92,6 +95,7 @@ class TailPointer(Pointer):
     position: StreamPosition
     first: int = Field(ge=1)
     count: int = Field(ge=0)
+    refs: tuple[ContentObject, ...] = ()
 
 
 class PageRef(_Frozen):
@@ -102,6 +106,7 @@ class PageRef(_Frozen):
     size: int
     first: int
     last: int
+    refs: tuple[ContentObject, ...] = ()
 
 
 class RunState(_Frozen):
@@ -174,10 +179,23 @@ async def load_state(objects: ObjectStore, pointer: StatePointer | None) -> RunS
     return RunState.model_validate_json(await load(objects, pointer))
 
 
-async def load_tail(objects: ObjectStore, pointer: TailPointer | None) -> Tail:
+async def load_tail(objects: ObjectStore, pointer: TailPointer | None, *, hydrate: bool = False) -> Tail:
     if pointer is None:
         return Tail()
-    return Tail.model_validate_json(await load(objects, pointer))
+    if pointer.format > DISPLAY_FORMAT:
+        raise conflict("display", pointer.key, "display_incompatible")
+    tail = Tail.model_validate_json(await load(objects, pointer))
+    if hydrate:
+        refs = {ref.id: ref for ref in tail.refs}
+        values = {identifier: decode(await load(objects, ref), ref) for identifier, ref in refs.items()}
+        for item in tail.items:
+            for field, ref in item.content_refs.items():
+                item.content[field] = values[ref.id]
+        if tail.continuation_ref is not None:
+            from a13n_stream_protocol.display import DisplayContinuation
+
+            tail.continuation = DisplayContinuation.model_validate(values[tail.continuation_ref.id])
+    return tail
 
 
 async def load_page(objects: ObjectStore, page: PageRef) -> Page:
@@ -253,10 +271,11 @@ def _display_write(snapshot: Snapshot, refs: list[ObjectRef]) -> DisplayWrite:
             key=tail.key,
             digest=tail.digest,
             size=tail.size,
-            format=FORMAT,
+            format=DISPLAY_FORMAT,
             position=snapshot.tail.position,
             first=snapshot.tail.first,
             count=snapshot.tail.first + len(snapshot.tail.items) - 1,
+            refs=snapshot.tail.refs,
         ),
         pages=tuple(
             PageRef(
@@ -265,21 +284,71 @@ def _display_write(snapshot: Snapshot, refs: list[ObjectRef]) -> DisplayWrite:
                 size=ref.size,
                 first=page.items[0].ordinal,
                 last=page.items[-1].ordinal,
+                refs=page.refs,
             )
             for ref, page in zip(pages, snapshot.pages, strict=True)
         ),
     )
 
 
-async def publish_display(runtime: Runtime, lease: Lease, snapshot: Snapshot) -> DisplayWrite:
+async def _contents(
+    runtime: Runtime, lease: Lease, snapshot: Snapshot, contents: Contents | None, control: AttemptControl | None
+) -> Snapshot:
+    contents = contents or Contents()
+
+    async def write(data: bytes) -> ObjectRef:
+        if control is not None and near_deadline(runtime, control):
+            raise LeaseLost()
+        return await _publish(runtime, lease, "display-contents", data)
+
+    pages = []
+    for page in snapshot.pages:
+        items = [await contents.item(item, write) for item in page.items]
+        pages.append(page.model_copy(update={"items": items, "refs": contents.dependencies(items)}))
+    items = [await contents.item(item, write) for item in snapshot.tail.items]
+    refs = contents.dependencies(items)
+    continuation = snapshot.tail.continuation
+    continuation_ref = None
+    if continuation is not None:
+        continuation_ref = await contents.value("continuation", "state", continuation.model_dump(mode="json"), write)
+        if continuation_ref is not None:
+            refs = (*refs, continuation_ref)
+        continuation = live_continuation(continuation)
+    tail = snapshot.tail.model_copy(
+        update={
+            "items": items,
+            "refs": refs,
+            "continuation": continuation,
+            "continuation_ref": continuation_ref,
+        }
+    )
+    return Snapshot(pages, tail)
+
+
+async def publish_display(
+    runtime: Runtime,
+    lease: Lease,
+    snapshot: Snapshot,
+    *,
+    contents: Contents | None = None,
+    control: AttemptControl | None = None,
+) -> DisplayWrite:
     """Write a display snapshot outside any session."""
+    snapshot = await _contents(runtime, lease, snapshot, contents, control)
     return _display_write(snapshot, await _all(_display_writes(runtime, lease, snapshot)))
 
 
 async def publish_checkpoint(
-    runtime: Runtime, lease: Lease, state: RunState, snapshot: Snapshot
+    runtime: Runtime,
+    lease: Lease,
+    state: RunState,
+    snapshot: Snapshot,
+    *,
+    contents: Contents | None = None,
+    control: AttemptControl | None = None,
 ) -> tuple[StatePointer, DisplayWrite]:
     """Write the checkpoint's objects outside any session; `commit` makes them the run's checkpoint."""
+    snapshot = await _contents(runtime, lease, snapshot, contents, control)
     written, *display = await _all(
         [
             _publish(runtime, lease, "state", state.model_dump_json().encode()),
@@ -311,6 +380,7 @@ def record_display(session: AsyncSession, run: RunRow, display: DisplayWrite) ->
             key=page.key,
             digest=page.digest,
             size=page.size,
+            refs=[ref.model_dump(mode="json") for ref in page.refs],
         )
         for page in display.pages
     )
@@ -379,7 +449,15 @@ async def reclaim(session: AsyncSession, run: RunRow, *, before_attempt: int | N
     keep: list[JsonValue] = [pointer["key"] for pointer in (run.checkpoint, run.tail) if pointer]
     if run.checkpoint is not None:
         keep += [ref.key for ref in StatePointer.model_validate(run.checkpoint).refs]
-    keep += (await session.scalars(select(RunItemPageRow.key).where(RunItemPageRow.run_id == run.id))).all()
+    if run.tail is not None:
+        keep += [ref.key for ref in TailPointer.model_validate(run.tail).refs]
+    pages = await session.execute(
+        select(RunItemPageRow.key, RunItemPageRow.refs).where(RunItemPageRow.run_id == run.id)
+    )
+    for key, refs in pages:
+        keep.append(key)
+        keep += [ref["key"] for ref in refs]
+    keep = list(dict.fromkeys(keep))
     enqueue(
         session,
         organization_id=run.organization_id,

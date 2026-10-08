@@ -1837,5 +1837,13 @@
   "origin.new": "Main",
   "origin.fork": "Branch",
   "origin.child": "Subtask",
-  "Choose which conversation history to open.": "Choose which conversation history to open."
+  "Choose which conversation history to open.": "Choose which conversation history to open.",
+  "Loading full content…": "Loading full content…",
+  "Expand full content": "Expand full content",
+  "Full content": "Full content",
+  "This historical record was truncated. The remaining content is unavailable.": "This historical record was truncated. The remaining content is unavailable.",
+  "Loading content…": "Loading content…",
+  "Expand saved content": "Expand saved content",
+  "Saved content": "Saved content",
+  "This content exceeded 16 MiB and was truncated. Only the saved prefix is available.": "This content exceeded 16 MiB and was truncated. Only the saved prefix is available."
 }

@@ -117,7 +117,7 @@ A Host persists incrementally from the values returned by live `observe()` calls
 
 ## Compact display semantics
 
-The shared display fold consumes converted, post-processor events and maintains ordered text, reasoning, tool-call and observation items. Stable identity includes inline scope; argument completion does not imply tool success. Host-assigned coverage records the position that created and last changed each item. Host preview limits preserve truncation metadata without changing canonical execution state. Service owns its immutable pages, mutable tail, publication and retirement; these are not Protocol storage abstractions.
+The shared display fold consumes converted, post-processor events and maintains ordered text, reasoning, tool-call and observation items. Stable identity includes inline scope; argument completion does not imply tool success. Host-assigned coverage records the position that created and last changed each item. Hosts may retain complete values without changing item identity or observation selection, and externalize them through Host-owned content references. Bounded consumers preserve legacy truncation metadata without changing canonical execution state. Service owns its immutable pages, mutable tail, publication and retirement; these are not Protocol storage abstractions.
 
 Raw AG-UI events remain the live wire representation. A Host may attach stream position and item identity, ordinal, state, response grouping or native failure metadata; that envelope does not replace events with item set/append commands. Hosts coalesce unpublished adjacent fragments before allocating display sequences and flush them before freezing a checkpoint. Published events are never rewritten.
 

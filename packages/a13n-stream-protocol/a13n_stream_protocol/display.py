@@ -79,6 +79,17 @@ class StreamPosition(BaseModel):
         return f"{self.attempt}-{self.sequence}"
 
 
+class ContentRef(BaseModel):
+    """An immutable Host-owned value, loaded through that Host's authorized content API."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    size_bytes: int = Field(ge=0)
+    media_type: Literal["text/plain", "application/json"]
+    preview: str
+    truncated: bool = False
+
+
 class Item(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
@@ -92,6 +103,7 @@ class Item(BaseModel):
     started_at: datetime
     ended_at: datetime | None = None
     content: dict[str, JsonValue]
+    content_refs: dict[str, ContentRef] = Field(default_factory=dict, exclude_if=lambda value: not value)
 
 
 class ItemRef(BaseModel):
@@ -240,7 +252,7 @@ def _failed_tool_call(source: HarnessStreamEvent[Any]) -> tuple[str, str] | None
     return part.tool_call_id, message[:4096]
 
 
-def _bound_payloads(source: HarnessStreamEvent[Any], event: Event) -> Event:
+def bound_event(event: Event) -> Event:
     """Cap the payloads the observer retains for the whole attempt; the state keeps them whole.
 
     One character over the bound survives, so the fold still sees the value was truncated.
@@ -272,6 +284,7 @@ class DisplayFold:
         attempt: int = 0,
         first: int = 1,
         full_content: bool = False,
+        retain_content: bool = False,
         processor: AguiEventProcessor | None = None,
         continuation: DisplayContinuation | None = None,
     ):
@@ -281,11 +294,14 @@ class DisplayFold:
         self.changed: set[str] = set(self.items)
         self.sequence = 0
         self.full_content = full_content
+        # Keep the same item identities and observation policy, but let a durable Host store full values.
+        # Unlike full_content, this does not suppress native observations for an interactive Host.
+        self.retain_content = retain_content
         self.response_groups: dict[str, str] = {}
 
         def process(source: HarnessStreamEvent[Any], event: Event) -> Event | None:
             selected = processor(source, event) if processor is not None else event
-            return selected if selected is None or full_content else _bound_payloads(source, selected)
+            return selected if selected is None or full_content or retain_content else bound_event(selected)
 
         self.observer = HarnessAguiStreamObserver(processor=process, retain_events=False)
         self.assembler = CustomEventAssembler()
@@ -332,7 +348,7 @@ class DisplayFold:
         )
 
     def _bounded(self, content: dict[str, JsonValue], field: str, value: str) -> None:
-        if self.full_content:
+        if self.full_content or self.retain_content:
             content[field] = value
         else:
             _bounded(content, field, value)
@@ -403,7 +419,9 @@ class DisplayFold:
         if event_type == "TOOL_CALL_RESULT":
             result = payload.get("content", "")
             if isinstance(result, list):
-                content["result_parts"] = result if self.full_content or _json_size(result) <= MAX_FIELD_CHARS else []
+                content["result_parts"] = (
+                    result if self.full_content or self.retain_content or _json_size(result) <= MAX_FIELD_CHARS else []
+                )
                 if not content["result_parts"]:
                     content["truncated"] = True
             else:
@@ -461,7 +479,11 @@ class DisplayFold:
         }:
             return None
         summary = assembled.get("name") in {"a13n.context.handoff_summary", "a13n.context.compaction_summary"}
-        if not (self.full_content and summary) and _json_size(value) > MAX_OBSERVATION_BYTES:
+        if (
+            not self.retain_content
+            and not (self.full_content and summary)
+            and _json_size(value) > MAX_OBSERVATION_BYTES
+        ):
             value = _OMITTED
         key = item_id(self.run_id, "observation", f"{self.attempt}:{self.sequence}")
         content: dict[str, JsonValue] = {"name": str(assembled.get("name")), "value": value}
@@ -514,7 +536,7 @@ class DisplayFold:
             content["arguments_complete"] = True
         else:
             result_value = source.get("content")
-            if self.full_content or _json_size(result_value) <= MAX_FIELD_CHARS:
+            if self.full_content or self.retain_content or _json_size(result_value) <= MAX_FIELD_CHARS:
                 content["value"] = result_value
             else:
                 content["truncated"] = True
@@ -541,7 +563,7 @@ class DisplayFold:
             key = item_id(self.run_id, "observation", f"{self.attempt}:{self.sequence}")
             held = self.arguments = _Arguments(stream, key, _occurred(event), 0, event, _json_size(event["value"]))
         held.sequence = self.sequence
-        if held.size > MAX_OBSERVATION_BYTES:
+        if not self.retain_content and held.size > MAX_OBSERVATION_BYTES:
             held.event = None
         value = copy.deepcopy(held.event["value"]) if held.event is not None else _OMITTED
         content: dict[str, JsonValue] = {"name": _PART_DELTA, "value": value}

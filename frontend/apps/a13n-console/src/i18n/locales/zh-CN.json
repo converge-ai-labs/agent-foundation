@@ -1837,5 +1837,13 @@
   "origin.new": "主线",
   "origin.fork": "分支",
   "origin.child": "子任务",
-  "Choose which conversation history to open.": "请选择要打开的对话历史。"
+  "Choose which conversation history to open.": "请选择要打开的对话历史。",
+  "Loading full content…": "正在加载全文…",
+  "Expand full content": "展开全文",
+  "Full content": "完整内容",
+  "This historical record was truncated. The remaining content is unavailable.": "这条历史记录已被截断，剩余内容不可用。",
+  "Loading content…": "正在加载内容…",
+  "Expand saved content": "展开已保存内容",
+  "Saved content": "已保存内容",
+  "This content exceeded 16 MiB and was truncated. Only the saved prefix is available.": "此内容超过 16 MiB，已截断，仅保留并展示已保存的前缀。"
 }

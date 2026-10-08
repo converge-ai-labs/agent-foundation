@@ -9,13 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
-from a13n_service.infra.errors import ServiceError, conflict, invalid
+from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.runs import checkpoints
 from a13n_service.runs.checkpoints import PageRef, TailPointer
+from a13n_service.runs.contents import ContentObject, decode
 from a13n_service.runs.display import Page, Tail
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Attempts, AttemptView, RunItems, RunLabels, RunPage, RunView
+from a13n_service.runs.schemas import Attempts, AttemptView, RunContent, RunItems, RunLabels, RunPage, RunView
 from a13n_service.runs.seal import stop
 from a13n_service.runs.tables import AttemptRow, InboxEntryRow, RunItemPageRow, RunRow
 from a13n_service.runs.threads import get_run, get_thread
@@ -201,6 +202,31 @@ async def _load(runtime: Runtime, window: _Window) -> tuple[Tail, list[Page]]:
         checkpoints.load_tail(runtime.objects, window.tail),
         asyncio.gather(*(checkpoints.load_page(runtime.objects, page) for page in window.pages)),
     )
+
+
+async def content(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, content_id: str) -> RunContent:
+    """Read only values reachable from this run's committed tail or immutable pages; no object I/O in the session."""
+    async with short_session(runtime.storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "read")
+        run = await get_run(session, scope.workspace_id, run_id)
+        refs = TailPointer.model_validate(run.tail).refs if run.tail is not None else ()
+        ref = next((value for value in refs if value.id == content_id and value.purpose == "value"), None)
+        if ref is None:
+            page_refs = await session.scalar(
+                select(RunItemPageRow.refs)
+                .where(
+                    RunItemPageRow.run_id == run.id,
+                    RunItemPageRow.refs.contains([{"id": content_id, "purpose": "value"}]),
+                )
+                .limit(1)
+            )
+            ref = next(
+                (ContentObject.model_validate(value) for value in page_refs or [] if value["id"] == content_id), None
+            )
+        if ref is None:
+            raise not_found("run_content", content_id)
+    value = decode(await checkpoints.load(runtime.objects, ref), ref)
+    return RunContent(id=ref.id, media_type=ref.media_type, value=value, truncated=ref.truncated)
 
 
 async def update_labels(

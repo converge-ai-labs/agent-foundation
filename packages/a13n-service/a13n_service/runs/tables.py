@@ -508,6 +508,7 @@ class RunItemPageRow(Base):
     key: Mapped[str]
     digest: Mapped[str] = mapped_column(String(64))
     size: Mapped[int] = mapped_column(BigInteger)
+    refs: Mapped[list[dict]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
 
 
 _ATTEMPT_PROGRESS = (

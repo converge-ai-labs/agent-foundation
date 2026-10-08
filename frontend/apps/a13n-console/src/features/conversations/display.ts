@@ -62,5 +62,28 @@ export function applyDelta(
   delta: ThreadDelta,
   normalizer = new DisplayNormalizer(),
 ) {
+  const previous = delta.item ? items.get(delta.item.id) : undefined;
   normalizer.apply(items, delta);
+  const updated = delta.item ? items.get(delta.item.id) : undefined;
+  if (!previous?.content_refs || !updated) return;
+  const refs = { ...previous.content_refs };
+  const appendField = {
+    TEXT_MESSAGE_CONTENT: "text",
+    REASONING_MESSAGE_CONTENT: "text",
+    TOOL_CALL_ARGS: "arguments",
+  }[String(delta.event.type)];
+  for (const field of Object.keys(refs)) {
+    const appendsObservation =
+      field === "value" &&
+      previous.content.name === "a13n.pydantic_ai.part_delta";
+    if (field === appendField || appendsObservation) {
+      // This is a preview of a committed prefix, not that prefix. Keep it intact until the next snapshot.
+      if (field in previous.content)
+        updated.content[field] = previous.content[field];
+      else delete updated.content[field];
+    } else if (updated.content[field] !== previous.content[field]) {
+      delete refs[field];
+    }
+  }
+  updated.content_refs = refs;
 }

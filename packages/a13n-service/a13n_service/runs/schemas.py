@@ -481,6 +481,15 @@ class RunLabels(_Frozen):
     labels: Labels
 
 
+class RunContent(BaseModel):
+    """One immutable saved display value, possibly truncated, read under the owning run's authority."""
+
+    id: str
+    media_type: Literal["text/plain", "application/json"]
+    value: JsonValue
+    truncated: bool = False
+
+
 class RunItems(BaseModel):
     """Items of a run's committed display, in ordinal order, with the run they describe. Ordinals are dense from 1,
     so the first item's ordinal tells whether earlier ones exist. Live output continues after `position`."""

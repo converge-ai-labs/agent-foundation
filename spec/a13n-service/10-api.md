@@ -261,6 +261,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/runs/{run}/fork`                | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
 | `/runs/{run}/resume`              | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
 | `/runs/{run}/items`               | GET                | [05](05-runs.md#reads)                           |
+| `/runs/{run}/contents/{content}`  | GET                | [05](05-runs.md#reads)                           |
 | `/runs/{run}/lineage`             | GET                | [05](05-runs.md#reads)                           |
 | `/runs/{run}/attempts`            | GET                | [05](05-runs.md#reads)                           |
 

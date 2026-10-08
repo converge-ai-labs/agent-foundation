@@ -12,6 +12,7 @@ import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { emptyExecution } from "../execution";
 import { presentItems } from "../projection";
 import { useEarlierItems } from "../earlier-items";
+import { StoredContents } from "../stored-content";
 import { useRunDisplay } from "../run-display";
 import { runTimeline } from "../timeline";
 import { DebugRunSection } from "./debug/run-section";
@@ -306,22 +307,27 @@ function HistoricalRun({
     );
   return (
     <div className={debug.runAnchor} data-run={run.id}>
-      <RunBlock
-        run={run}
-        thread={own.thread}
-        timeline={timeline}
-        agentName={agent.data?.name}
-        agentImageUrl={agent.data?.image_url}
-        earlier={<EarlierItems earlier={earlier} />}
-        separatorAction={
-          <Link
-            className={styles.separatorLink}
-            to={runPath(basePath, { ...run, run_id: run.id })}
-          >
-            {t("View run")}
-          </Link>
-        }
-      />
+      <StoredContents
+        runId={runId}
+        items={[...earlier.items, ...retained.data.items]}
+      >
+        <RunBlock
+          run={run}
+          thread={own.thread}
+          timeline={timeline}
+          agentName={agent.data?.name}
+          agentImageUrl={agent.data?.image_url}
+          earlier={<EarlierItems earlier={earlier} />}
+          separatorAction={
+            <Link
+              className={styles.separatorLink}
+              to={runPath(basePath, { ...run, run_id: run.id })}
+            >
+              {t("View run")}
+            </Link>
+          }
+        />
+      </StoredContents>
     </div>
   );
 }

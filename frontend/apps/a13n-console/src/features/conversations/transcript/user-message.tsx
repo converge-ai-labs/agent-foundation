@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { JsonView } from "../../../shared/forms";
 import { MarkdownContent } from "../../../shared/markdown";
+import { StoredContent } from "../stored-content";
 import { inputText } from "../input";
 import { isRecord } from "../../../service-client";
 import type { RunRequest } from "../request";
@@ -70,14 +71,26 @@ export function RequestContent({ request }: { request: RunRequest }) {
 }
 
 /** Guidance arrived while the agent worked: the same bubble, drawn open. */
-export function GuidanceMessage({ text }: { text: string }) {
+export function GuidanceMessage({
+  text,
+  itemId,
+}: {
+  text: string;
+  itemId?: string;
+}) {
   const { t } = useTranslation();
   if (!text.trim()) return null;
   return (
     <div className={styles.userTurn}>
       <article className={`${styles.userMessage} ${styles.guidanceMessage}`}>
         <span className={styles.guidanceLabel}>{t("Guidance")}</span>
-        <div className={styles.prose}>{text}</div>
+        <div className={styles.prose}>
+          {itemId ? (
+            <StoredContent itemId={itemId} field="text" value={text} />
+          ) : (
+            text
+          )}
+        </div>
       </article>
     </div>
   );
