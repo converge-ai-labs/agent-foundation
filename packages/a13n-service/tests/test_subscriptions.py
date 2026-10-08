@@ -370,7 +370,10 @@ async def test_destinations_are_checked_again_at_delivery(service: SimpleNamespa
         assert await status(runtime, allowed) == ("delivered", 1, None) and len(received) == 1
 
 
-async def test_batch_selection_caps_each_run_after_its_filters(service, runs_kit) -> None:  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize("reverse_result", [False, True])
+async def test_batch_selection_caps_each_run_after_its_filters(
+    service, runs_kit, monkeypatch, caplog, reverse_result
+) -> None:  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     runtime, url = service.runtime, "http://127.0.0.1:9/hook"
     runs = [
@@ -412,7 +415,20 @@ async def test_batch_selection_caps_each_run_after_its_filters(service, runs_kit
         )
     )
     async with transaction(runtime.storage) as session:
-        await enqueue_batch(session, await prepare_webhooks(session, runtime.keys, transitions, limit=1))
+        execute = session.execute
+
+        async def reversed_matches(*args, **kwargs):
+            # Exercise the same database-selected rows in a different outer query order,
+            # including overflow rows arriving before the subscriptions we must retain.
+            return list(reversed((await execute(*args, **kwargs)).all()))
+
+        with monkeypatch.context() as patch:
+            if reverse_result:
+                patch.setattr(session, "execute", reversed_matches)
+            prepared = await prepare_webhooks(session, runtime.keys, transitions, limit=1)
+        await enqueue_batch(session, prepared)
+    warnings = [r for r in caplog.records if r.getMessage() == "Matching subscriptions exceed the workspace cap"]
+    assert len(warnings) == 2
     rows = await webhook_rows(service)
     assert sorted((r.payload["index"], r.subscription_id, r.payload["type"]) for r in rows) == sorted(
         (index, chosen[index]["id"], kind) for index in range(2) for kind in ("run.running", "run_attempt.leased")

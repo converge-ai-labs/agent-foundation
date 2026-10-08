@@ -17,7 +17,7 @@ import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
-from sqlalchemy import Integer, String, column, or_, select, true, values
+from sqlalchemy import Integer, String, column, func, or_, select, true, values
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -103,7 +103,7 @@ async def prepare_webhooks(
         ]
     )
     matches = (
-        select(SubscriptionRow)
+        select(SubscriptionRow, func.row_number().over(order_by=SubscriptionRow.id).label("match_no"))
         .where(
             SubscriptionRow.workspace_id == facts.c.workspace_id,
             SubscriptionRow.enabled,
@@ -119,16 +119,14 @@ async def prepare_webhooks(
     )
     subscription = aliased(SubscriptionRow, matches)
     selected = await session.execute(
-        select(facts.c.ordinal, subscription)
-        .select_from(facts.join(matches, true()))
-        .order_by(facts.c.ordinal, subscription.id)
+        select(facts.c.ordinal, matches.c.match_no, subscription).select_from(facts.join(matches, true()))
     )
-    counts = [0] * len(transitions)
     rows: list[OutboxRow] = []
-    for ordinal, matched in selected:
+    # The per-run rank identifies the overflow row without sorting the whole batch.
+    # Outer query order is deliberately unspecified.
+    for ordinal, match_no, matched in selected:
         transition = transitions[ordinal]
-        counts[ordinal] += 1
-        if counts[ordinal] > limit:
+        if match_no > limit:
             logger.warning(
                 "Matching subscriptions exceed the workspace cap",
                 extra={"workspace_id": transition.run.workspace_id, "limit": limit},
