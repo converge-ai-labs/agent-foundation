@@ -69,6 +69,13 @@ class ProviderTest(BaseModel):
     message: str | None
 
 
+class ProviderModel(BaseModel):
+    """An upstream choice; wire names retain the original account-discovery contract."""
+
+    slug: str
+    display_name: str
+
+
 class ProviderType(BaseModel):
     type: str
     display_name: str
@@ -78,6 +85,7 @@ class ProviderType(BaseModel):
     setup_url: str | None
     setup_label: str | None
     supports_test: bool
+    supports_model_discovery: bool = False
     # Model types: the calling APIs a model may select, the default first, with their display names and native
     # settings schemas; and the model catalog channels that list the type's own model IDs.
     model_apis: list[str] | None = None

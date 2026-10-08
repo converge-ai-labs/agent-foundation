@@ -491,3 +491,67 @@ async def test_unauthorized_request_replays_once_after_persisted_rotation():
 async def test_client_authentication_never_falls_back_to_public_mode(kwargs):
     with pytest.raises(UserError, match="registered token endpoint"):
         flow(**kwargs)
+
+
+async def test_definition_discovery_declares_capability_and_uses_host_source_and_headers():
+    from a13n_harness.providers.model.openai_chatgpt import DEFINITION
+
+    assert DEFINITION.supports_model_discovery and not DEFINITION.supports_connection_probe
+    assert DEFINITION.catalog_providers == ()
+    assert not replace(DEFINITION, model_discovery=None).supports_model_discovery
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        assert str(request.url) == RESOURCE + "/models"
+        assert request.headers["x-test"] == "discovery"
+        return httpx2.Response(
+            200,
+            json={
+                "models": [
+                    {"slug": "z-plan", "display_name": "Z plan", "visibility": "list"},
+                    {"slug": "hidden", "display_name": "Hidden", "visibility": "hidden"},
+                    {"slug": "a-plan", "display_name": "A plan", "visibility": "list"},
+                ]
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        choices = await DEFINITION.discover_models(
+            configuration={},
+            credential_source=ProcessChatGPTCredentialSource(MemoryStore()),
+            http_client=client,
+            extra_headers={"x-test": "discovery"},
+        )
+    assert [(choice.model_name, choice.display_name) for choice in choices] == [
+        ("z-plan", "Z plan"),
+        ("a-plan", "A plan"),
+    ]
+    assert len(calls) == 1
+
+
+async def test_definition_discovery_refuses_missing_capability_and_auth_before_network():
+    from a13n_harness.providers.model.definition import ProviderOperationError
+    from a13n_harness.providers.model.openai_chatgpt import DEFINITION
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda _: pytest.fail("No request expected"))
+    ) as client:
+        with pytest.raises(ProviderOperationError, match="not supported"):
+            await replace(DEFINITION, model_discovery=None).discover_models(configuration={}, http_client=client)
+        with pytest.raises(ProviderOperationError, match="authentication source"):
+            await DEFINITION.discover_models(configuration={}, http_client=client)
+
+
+async def test_definition_discovery_normalizes_upstream_errors_without_secret_bodies():
+    from a13n_harness.providers.model.definition import ProviderOperationError
+    from a13n_harness.providers.model.openai_chatgpt import DEFINITION
+
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda _: httpx2.Response(403, json={"error": {"message": "synthetic-secret"}}))
+    ) as client:
+        with pytest.raises(ProviderOperationError) as failure:
+            await DEFINITION.discover_models(
+                configuration={}, credential_source=ProcessChatGPTCredentialSource(MemoryStore()), http_client=client
+            )
+    assert "synthetic-secret" not in str(failure.value)

@@ -12,6 +12,14 @@ A `ModelProviderDefinition` extends the [shared Provider core](22-provider-subsy
 
 A Host composes Model definitions in code and selects them through one [`ProviderCatalog`](22-provider-subsystem.md#catalogs), which rejects a duplicate type. Definition and schema loading is inert; vendor SDKs load when their operation needs them.
 
+## Model Discovery
+
+A definition may declare a `model_discovery` operation; `supports_model_discovery` is derived from its presence, independently of connection probes, OAuth, calling APIs, and public `catalog_providers`. `discover_models()` validates the connection and endpoint and invokes that operation with typed connection inputs, the Host credential source when required, and the Host-owned HTTP client. It does not construct a Model or require an arbitrary upstream model name. Hosts own authorization, credential acquisition, request deadlines, and response limits.
+
+Discovery returns ordered `DiscoveredModel` choices containing the unchanged upstream `model_name` and `display_name`. These are current provider/account observations, not public catalog metadata or saved Model configuration. They carry no inferred price, capabilities, or catalog identity and are not a Model creation whitelist. Unsupported discovery fails explicitly. Discovery neither replaces user-owned Model configuration nor makes existing Models depend on successful enumeration.
+
+The built-in `openai_chatgpt` definition discovers through the official Sign in with ChatGPT plan-usage `GET https://api.openai.com/v1/models` endpoint using the same Host access-token source as inference. It includes only entries with `visibility=list`, preserves server order and original slugs, and verifies the account did not change during discovery. Vendor failures are normalized without exposing upstream bodies. The existing standalone ChatGPT discovery helper remains available to other Hosts.
+
 ## Authentication
 
 Model Providers use the shared [`Authentication` declaration](22-provider-subsystem.md#authentication) for static credential presence. A definition may instead declare a `ModelOAuth` runtime-source capability. Such a definition requires an authorized Host token source at construction and never accepts user-supplied access tokens. It may separately declare a server-side OAuth client-authentication credential through the same `Authentication` schema. The default public ChatGPT client forbids that credential and can be saved before authorization; `client_secret_basic` requires a client secret. This does not weaken API-key Providers' presence rules. A local provider may omit setup help. Console applies the declared defaults and conditions without switching on a vendor name: ordinary choices, numbers, and nested fields retain their declared JSON types, while secrets remain write-only.

@@ -777,3 +777,136 @@ async def test_provider_callback_must_share_public_origin_and_never_widens_oss_r
     )
     path = f"{service.api}/model-providers/{provider['id']}"
     assert (await service.client.post(path + "/authorize", json={})).status_code == 400
+
+
+async def test_discovery_route_keeps_wire_shape_and_account_order_without_borrowing_database(
+    service, monkeypatch, no_task_connection
+):
+    from contextlib import asynccontextmanager
+
+    import httpx2
+    from a13n_service.resources.providers import discovery
+
+    provider, path, _ = await connect(service, monkeypatch, no_task_connection)
+    requests = []
+
+    def respond(request):
+        no_task_connection()
+        requests.append(request)
+        assert str(request.url) == "https://api.openai.com/v1/models"
+        return httpx2.Response(
+            200,
+            json={
+                "models": [
+                    {"slug": "plan-z", "display_name": "Z plan", "visibility": "list"},
+                    {"slug": "hidden", "display_name": "Hidden", "visibility": "hidden"},
+                    {"slug": "plan-a", "display_name": "A plan", "visibility": "list"},
+                ]
+            },
+        )
+
+    @asynccontextmanager
+    async def open_http(policy, *, timeout, max_bytes):
+        no_task_connection()
+        assert timeout == service.runtime.settings.providers.model_timeout
+        assert max_bytes == service.runtime.settings.providers.response_bytes
+        async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+            yield client
+
+    monkeypatch.setattr(discovery, "open_http", open_http)
+    response = await service.client.get(path + "/models")
+    assert response.status_code == 200, response.text
+    assert response.json() == [
+        {"slug": "plan-z", "display_name": "Z plan"},
+        {"slug": "plan-a", "display_name": "A plan"},
+    ]
+    assert len(requests) == 1
+    current = (await service.client.get(path)).json()
+    assert current["version"] == provider["version"]
+    assert current["credential_configured"] is False
+    types = (await service.client.get(service.api + "/provider-types/model")).json()["items"]
+    chatgpt = next(item for item in types if item["type"] == "openai_chatgpt")
+    assert chatgpt["supports_model_discovery"] is True
+    assert chatgpt["supports_test"] is False and chatgpt["catalog_providers"] == []
+    assert next(item for item in types if item["type"] == "openai")["supports_model_discovery"] is False
+
+
+async def test_discovery_checks_capability_scope_and_run_permission_before_network(service, monkeypatch):
+    from a13n_service.resources.providers import discovery
+
+    def no_network(*args, **kwargs):
+        pytest.fail("Unauthorized or unsupported discovery must not open a client")
+
+    monkeypatch.setattr(discovery, "open_http", no_network)
+    provider = await create(
+        service, "model", {"type": "openai", "name": "API", "credential": {"api_key": "synthetic-key"}}
+    )
+    path = f"{service.api}/model-providers/{provider['id']}/models"
+    response = await service.client.get(path)
+    assert response.status_code == 400 and response.json()["error"]["code"] == "invalid_argument"
+    other = await add_workspace(service)
+    response = await service.client.get(path, headers={"x-workspace-id": other})
+    assert response.status_code == 404
+    workspace = service.tenant.workspace_id
+    with pytest.raises(ServiceError) as failure:
+        await discovery.discover_models(
+            service.runtime.storage,
+            principal(service, (workspace, "viewer")),
+            workspace,
+            provider["id"],
+            registry=service.runtime.registry,
+            keys=service.runtime.keys,
+            policy=service.runtime.endpoint_policy,
+            settings=service.runtime.settings.providers,
+        )
+    assert failure.value.code == "forbidden"
+
+
+async def test_discovery_without_authorization_is_safe_and_does_not_block_manual_model_creation(service):
+    provider = await create(service, "model", {"type": "openai_chatgpt", "name": "Plan"})
+    response = await service.client.get(f"{service.api}/model-providers/{provider['id']}/models")
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "unavailable"
+    response = await service.client.post(
+        service.api + "/models",
+        json={
+            "provider_id": provider["id"],
+            "name": "Manual",
+            "config": {"model_name": "manual-plan", "model_api": "openai.responses"},
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["catalog_ref"] is None and response.json()["pricing"] is None
+
+
+async def test_discovery_dispatches_declared_operation_without_a_vendor_table(service, monkeypatch):
+    from a13n_harness.providers.model.definition import DiscoveredModel
+    from a13n_service.providers.registry import Registry
+    from a13n_service.resources.providers import discovery
+
+    provider = await create(
+        service, "model", {"type": "openai", "name": "API", "credential": {"api_key": "synthetic-key"}}
+    )
+    calls = []
+
+    async def list_models(connection, source, client):
+        calls.append(connection)
+        assert source is None
+        return (DiscoveredModel(model_name="custom-upstream", display_name="Custom upstream"),)
+
+    definition = replace(service.runtime.registry.get("model", "openai"), model_discovery=list_models)
+    registry = Registry.of([definition])
+    choices = await discovery.discover_models(
+        service.runtime.storage,
+        principal(service, (service.tenant.workspace_id, "admin")),
+        service.tenant.workspace_id,
+        provider["id"],
+        registry=registry,
+        keys=service.runtime.keys,
+        policy=service.runtime.endpoint_policy,
+        settings=service.runtime.settings.providers,
+    )
+    assert [choice.model_dump() for choice in choices] == [
+        {"slug": "custom-upstream", "display_name": "Custom upstream"}
+    ]
+    assert len(calls) == 1

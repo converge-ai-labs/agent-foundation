@@ -3763,13 +3763,6 @@ export interface components {
     };
     /** @enum {string} */
     Certainty: "not_dispatched" | "known" | "unknown";
-    /** ChatGPTModel */
-    ChatGPTModel: {
-      /** Display Name */
-      display_name: string;
-      /** Slug */
-      slug: string;
-    };
     /**
      * ChildEnvironmentPolicy
      * @description What a child run mounts: no environment, the parent's, or a new one from `template_id`.
@@ -5964,6 +5957,16 @@ export interface components {
       /** Type */
       type: string;
     };
+    /**
+     * ProviderModel
+     * @description An upstream choice; wire names retain the original account-discovery contract.
+     */
+    ProviderModel: {
+      /** Display Name */
+      display_name: string;
+      /** Slug */
+      slug: string;
+    };
     /** ProviderPage */
     ProviderPage: {
       /** Items */
@@ -6028,6 +6031,11 @@ export interface components {
       setup_url: string | null;
       /** Supports Destroy */
       supports_destroy?: boolean | null;
+      /**
+       * Supports Model Discovery
+       * @default false
+       */
+      supports_model_discovery?: boolean;
       /** Supports Stop */
       supports_stop?: boolean | null;
       /** Supports Test */
@@ -10510,7 +10518,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ChatGPTModel"][];
+          "application/json": components["schemas"]["ProviderModel"][];
         };
       };
       400: components["responses"]["Error"];

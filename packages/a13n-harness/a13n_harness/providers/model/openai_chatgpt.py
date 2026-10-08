@@ -8,8 +8,8 @@ import httpx2
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from ..authentication import Authentication, AuthenticationCase, CredentialMode
-from .definition import ModelOAuth, ModelProviderDefinition
-from .types import ProviderConfiguration
+from .definition import DiscoveredModel, ModelOAuth, ModelProviderDefinition, ProviderOperationError
+from .types import ModelConnection, ProviderConfiguration
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
@@ -94,6 +94,27 @@ def _model(name: str, provider: Provider[Any]) -> Model[Any]:
     return OpenAIChatGPTResponsesModel(name, provider=provider)
 
 
+async def _discover(
+    connection: ModelConnection[Config, Credential],
+    source: OpenAIChatGPTCredentialSource | None,
+    client: httpx2.AsyncClient,
+) -> tuple[DiscoveredModel, ...]:
+    from openai import OpenAIError
+    from pydantic_ai.exceptions import UserError
+
+    from .chatgpt import discover_chatgpt_models
+    from .oauth.models import ModelAuthenticationError
+
+    assert source is not None
+    try:
+        models = await discover_chatgpt_models(
+            credential_source=source, http_client=client, extra_headers=connection.extra_headers
+        )
+    except (OpenAIError, UserError, ModelAuthenticationError):
+        raise ProviderOperationError("ChatGPT model discovery failed; check authorization and retry") from None
+    return tuple(DiscoveredModel(model_name=model.slug, display_name=model.display_name) for model in models)
+
+
 DEFINITION = ModelProviderDefinition(
     type="openai_chatgpt",
     display_name="ChatGPT",
@@ -110,6 +131,7 @@ DEFINITION = ModelProviderDefinition(
     supported_model_apis=("openai.responses",),
     oauth=ModelOAuth(scheme="openai-chatgpt", build_provider=_provider),
     build_model=_model,
+    model_discovery=_discover,
     endpoint="https://api.openai.com/v1",
     setup_url="https://chatgpt.com/settings/usage",
     setup_label="ChatGPT plan usage",
