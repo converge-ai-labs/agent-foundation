@@ -1,6 +1,9 @@
 # Independent Service SDK repositories (not submodules)
 /sdk/
 
+# Task worktrees
+/.worktrees/
+
 # Local reference and discussion material
 discussion/
 local-reference/
