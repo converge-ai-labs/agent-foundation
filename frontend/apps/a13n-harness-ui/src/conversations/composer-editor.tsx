@@ -300,28 +300,44 @@ export function ComposerEditor({
                 ]),
               ),
               EditorView.theme({
-                ".cm-tooltip-autocomplete": {
-                  backgroundColor: "var(--a13n-surface)",
+                ".cm-tooltip.cm-tooltip-autocomplete": {
+                  backgroundColor: "var(--a13n-elevated)",
                   color: "var(--a13n-text)",
-                  border: "1px solid var(--a13n-border)",
-                  borderRadius: "8px",
-                  maxWidth: "min(560px, calc(100vw - 32px))",
+                  border: "none",
+                  borderRadius: "10px",
+                  boxShadow: "var(--a13n-shadow)",
+                  width: "min(480px, calc(100vw - 32px))",
                   overflow: "hidden",
                 },
                 ".cm-tooltip.cm-tooltip-autocomplete > ul": {
                   fontFamily: "var(--a13n-font)",
                   fontSize: "13px",
-                  maxHeight: "240px",
+                  boxSizing: "border-box",
+                  minWidth: "0",
+                  maxWidth: "100%",
+                  maxHeight: "min(280px, 40vh)",
+                  padding: "5px",
+                  scrollPadding: "5px",
+                  overscrollBehavior: "contain",
+                  scrollbarWidth: "thin",
+                  scrollbarColor: "var(--a13n-scrollbar-thumb) transparent",
                 },
                 ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
-                  padding: "6px 10px",
-                  lineHeight: "1.5",
+                  padding: "7px 10px",
+                  borderRadius: "var(--a13n-radius-row)",
+                  lineHeight: "20px",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                 },
-                ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]":
+                ".cm-tooltip.cm-tooltip-autocomplete > ul > li + li": {
+                  marginTop: "2px",
+                },
+                ".cm-tooltip.cm-tooltip-autocomplete > ul > li:hover": {
+                  backgroundColor: "var(--a13n-hover)",
+                },
+                '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected="true"]':
                   {
-                    backgroundColor: "var(--a13n-canvas)",
+                    backgroundColor: "var(--a13n-selected)",
                     color: "var(--a13n-text)",
                   },
                 ".cm-tooltip-autocomplete .cm-completionLabel": {
@@ -334,6 +350,7 @@ export function ComposerEditor({
                   display: "block",
                   margin: "2px 0 0",
                   fontSize: "12px",
+                  lineHeight: "18px",
                   color: "var(--a13n-secondary)",
                   fontStyle: "normal",
                   overflow: "hidden",
