@@ -60,6 +60,17 @@ packages = ["a13n_service"]
 [tool.hatch.build.hooks.custom]
 path = "hatch_build.py"
 
+# Editable wheels carry the generated index, so cached installs do not depend on
+# a previous build's checkout-side effects. Refresh when canonical inputs change.
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "hatch_build.py" },
+    { file = "build_docs.py" },
+    { file = "../../docs/a13n-service/**/*.md" },
+    { file = "../../docs/a13n-service/meta.json" },
+]
+
 # SQLAlchemy loads psycopg through its configured driver; FastAPI loads
 # python-multipart to parse the upload endpoints' multipart forms.
 [tool.deptry.per_rule_ignores]

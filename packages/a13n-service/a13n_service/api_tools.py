@@ -72,6 +72,57 @@ def api_tools(app: ASGIApp, schema: dict[str, Any], base_url: str, routes: Seque
     return tools
 
 
+def _input_schema(route: HTTPRoute) -> tuple[dict[str, Any], dict[str, dict[str, str]]]:
+    """Keep transport parameters flat and the original JSON body nested."""
+    parameters = deepcopy(route.flat_param_schema)
+    properties = parameters.setdefault("properties", {})
+    mappings = {}
+    for key, mapping in route.parameter_map.items():
+        if mapping["location"] == "body" or (
+            mapping["location"] == "header" and mapping["openapi_name"].lower() in CONTEXT_HEADERS
+        ):
+            properties.pop(key, None)
+            parameters["required"] = [item for item in parameters.get("required", []) if item != key]
+        else:
+            if mapping["location"] == "cookie":
+                raise ValueError(f"MCP operations cannot use cookie parameters: {route.operation_id}")
+            mappings[key] = mapping
+    if "request_body" in properties:
+        raise ValueError(f"MCP parameter collides with request_body: {route.operation_id}")
+    if route.request_body:
+        if set(route.request_body.content_schema) != {"application/json"}:
+            raise ValueError(f"MCP operations must have JSON bodies: {route.operation_id}")
+        properties["request_body"] = deepcopy(route.request_body.content_schema["application/json"])
+        if route.request_body.required:
+            parameters.setdefault("required", []).append("request_body")
+    parameters["additionalProperties"] = False
+    return parameters, mappings
+
+
+def _output_schema(route: HTTPRoute) -> dict[str, Any]:
+    """Describe the HTTP envelope, retaining response and Service error schemas."""
+    error_schema = ErrorEnvelope.model_json_schema()
+    definitions = {**route.response_schemas, **error_schema.pop("$defs", {})}
+    bodies = [error_schema]
+    for response in route.responses.values():
+        if not response.content_schema:
+            bodies.append({"type": "null"})
+        elif set(response.content_schema) == {"application/json"}:
+            bodies.append(response.content_schema["application/json"])
+        else:
+            raise ValueError(f"MCP operations must have JSON responses: {route.operation_id}")
+    return {
+        "type": "object",
+        "properties": {
+            "status": {"type": "integer"},
+            "headers": {"type": "object", "additionalProperties": {"type": "string"}},
+            "body": {"anyOf": bodies},
+        },
+        "required": ["status", "headers", "body"],
+        "$defs": definitions,
+    }
+
+
 class ApiTool(Tool):
     def __init__(
         self,
@@ -83,55 +134,14 @@ class ApiTool(Tool):
         routes: Sequence[APIRoute],
         target: APIRoute,
     ):
-        parameters = deepcopy(route.flat_param_schema)
-        properties = parameters.setdefault("properties", {})
-        mappings = {}
-        for key, mapping in route.parameter_map.items():
-            if mapping["location"] == "body" or (
-                mapping["location"] == "header" and mapping["openapi_name"].lower() in CONTEXT_HEADERS
-            ):
-                properties.pop(key, None)
-                parameters["required"] = [item for item in parameters.get("required", []) if item != key]
-            else:
-                if mapping["location"] == "cookie":
-                    raise ValueError(f"MCP operations cannot use cookie parameters: {route.operation_id}")
-                mappings[key] = mapping
-        if "request_body" in properties:
-            raise ValueError(f"MCP parameter collides with request_body: {route.operation_id}")
-        if route.request_body:
-            if set(route.request_body.content_schema) != {"application/json"}:
-                raise ValueError(f"MCP operations must have JSON bodies: {route.operation_id}")
-            properties["request_body"] = deepcopy(route.request_body.content_schema["application/json"])
-            if route.request_body.required:
-                parameters.setdefault("required", []).append("request_body")
-        parameters["additionalProperties"] = False
-        error_schema = ErrorEnvelope.model_json_schema()
-        definitions = {**route.response_schemas, **error_schema.pop("$defs", {})}
-        bodies = [error_schema]
-        for response in route.responses.values():
-            if not response.content_schema:
-                bodies.append({"type": "null"})
-            elif set(response.content_schema) == {"application/json"}:
-                bodies.append(response.content_schema["application/json"])
-            else:
-                raise ValueError(f"MCP operations must have JSON responses: {route.operation_id}")
-        output = {
-            "type": "object",
-            "properties": {
-                "status": {"type": "integer"},
-                "headers": {"type": "object", "additionalProperties": {"type": "string"}},
-                "body": {"anyOf": bodies} if bodies else {"type": "null"},
-            },
-            "required": ["status", "headers", "body"],
-            "$defs": definitions,
-        }
+        parameters, mappings = _input_schema(route)
         super().__init__(
             name=name,
             description=f"{route.method} {route.path}\n{route.description or route.summary or ''}\n"
             "Returns {status, headers, body}. Use headers.etag as If-Match for subsequent writes. "
             "Writes are not retried; check resource state after an unknown outcome.",
             parameters=parameters,
-            output_schema=output,
+            output_schema=_output_schema(route),
             annotations=ToolAnnotations(read_only_hint=route.method == "GET", open_world_hint=True),
         )
         self._app = app

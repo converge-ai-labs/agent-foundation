@@ -36,9 +36,9 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic import ValidationError
 
-from .test_mcp import call as mcp_call
-from .test_mcp import client as mcp_client
-from .test_mcp import key as mcp_key
+from .mcp_support import call as mcp_call
+from .mcp_support import client as mcp_client
+from .mcp_support import key as mcp_key
 
 pytestmark = pytest.mark.anyio
 

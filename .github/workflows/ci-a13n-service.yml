@@ -170,6 +170,7 @@ jobs:
           uv run --locked python - <<'PY'
           import sys
           from pathlib import Path
+          from importlib.metadata import distribution
           from importlib.resources import files
 
           wheel = next(Path("dist/a13n-service").glob("a13n_service-*.whl")).resolve()
@@ -177,6 +178,7 @@ jobs:
           from a13n_service.documentation import Documents
 
           assert str(files("a13n_service")).startswith(str(wheel))
+          assert str(distribution("a13n-service").locate_file("a13n_service/documentation.json")).startswith(str(wheel))
           docs = Documents()
           assert docs.search("upload")["results"]
           assert docs.search("上传", language="zh-CN")["results"]

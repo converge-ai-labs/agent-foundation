@@ -1,7 +1,12 @@
 """Canonical Markdown becomes a deterministic, offline, source-attributed search bundle."""
 
 import json
+import os
 import runpy
+import shutil
+import subprocess
+import sys
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -43,6 +48,87 @@ def test_rebuild_without_checkout_and_reject_missing_bundle(tmp_path: Path) -> N
     (outside / "a13n_service/documentation.json").write_text(json.dumps({"format": 999, "sections": []}))
     with pytest.raises(ValueError):
         BUILD["prepare_docs"](outside)
+
+
+def test_cached_editable_install_owns_index_and_refreshes_inputs(tmp_path: Path) -> None:
+    source_package = Path(__file__).parents[1]
+    checkout = tmp_path / "checkout"
+    package = checkout / "packages/a13n-service"
+    (package / "a13n_service").mkdir(parents=True)
+    (checkout / "pyproject.toml").write_text('[tool.uv.workspace]\nmembers = ["packages/*"]\n')
+    for name in ("build_docs.py", "hatch_build.py", "a13n_service/__init__.py", "a13n_service/documentation.py"):
+        shutil.copy2(source_package / name, package / name)
+    # Exercise the real build configuration with only the search module's runtime
+    # dependency, not another installation of the full Service dependency graph.
+    manifest = (source_package / "pyproject.toml").read_text()
+    (package / "pyproject.toml").write_text(
+        '[project]\nname = "a13n-service"\nversion = "0.0.0"\n'
+        f'dependencies = ["pydantic=={version("pydantic")}"]\n\n' + manifest[manifest.index("[build-system]") :]
+    )
+    docs = tmp_path / "checkout/docs/a13n-service"
+    (docs / "guides").mkdir(parents=True)
+    (docs / "meta.json").write_text("{}")
+    markdown = docs / "guides/example.md"
+    markdown.write_text("---\ntitle: Guide\n---\n\nOriginal marker\n")
+    environment = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(tmp_path / "installed")}
+
+    def sync() -> None:
+        result = subprocess.run(
+            ["uv", "sync", "--offline", "--no-dev", "--package", "a13n-service", "--python", sys.executable],
+            cwd=checkout,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def search() -> str:
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "--offline",
+                "--no-sync",
+                "--project",
+                str(package),
+                "python",
+                "-c",
+                "from a13n_service.documentation import Documents; "
+                "print(Documents().search('marker')['results'][0]['text'])",
+            ],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout
+
+    sync()
+    assert "Original marker" in search()
+    bundle = package / "a13n_service/documentation.json"
+    built_at = bundle.stat().st_mtime_ns
+    sync()
+    assert bundle.stat().st_mtime_ns == built_at  # Unchanged inputs must not rebuild perpetually.
+
+    markdown.write_text("---\ntitle: Guide\n---\n\nUpdated marker\n")
+    sync()
+    assert "Updated marker" in search()
+    built_at = bundle.stat().st_mtime_ns
+    generator = package / "build_docs.py"
+    generator.write_text(generator.read_text() + "\n# Updated generator input.\n")
+    sync()
+    assert bundle.stat().st_mtime_ns != built_at
+
+    # A fresh environment restores the cached editable wheel, not build-hook
+    # side effects in the checkout. Search must still work without that output.
+    bundle.unlink()
+    environment["UV_PROJECT_ENVIRONMENT"] = str(tmp_path / "restored")
+    sync()
+    assert not bundle.exists()
+    assert "Updated marker" in search()
 
 
 def test_search_is_bounded_attributed_and_language_specific() -> None:

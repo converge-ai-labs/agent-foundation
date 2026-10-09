@@ -2,8 +2,7 @@
 
 import json
 import re
-from importlib.metadata import version
-from importlib.resources import files
+from importlib.metadata import distribution
 from typing import Annotated, Any, Literal
 
 from pydantic import Field
@@ -13,9 +12,12 @@ MAX_TEXT = 3000
 
 class Documents:
     def __init__(self) -> None:
-        bundle = json.loads(files("a13n_service").joinpath("documentation.json").read_text(encoding="utf-8"))
+        package = distribution("a13n-service")
+        # Read the installed artifact, including for editable installs whose Python
+        # modules live in the checkout but whose generated data belongs to the wheel.
+        bundle = json.loads(package.locate_file("a13n_service/documentation.json").read_text(encoding="utf-8"))
         self.sections = bundle["sections"]
-        self.version = version("a13n-service")
+        self.version = package.version
 
     def search(
         self,
