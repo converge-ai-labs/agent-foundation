@@ -207,10 +207,10 @@ For an admitted prompt or deferred response, the App:
 04. captures the current accepted generation and the Thread's local roots with any explicit Run-only environment patch;
 05. resolves the exact Agent graph, Capabilities, tool visibility, Harness Plugins, Content Plugin snapshot, MCP servers, Environment Provider, and Environment Run Extensions;
 06. publishes the immutable resolved Run composition;
-07. creates fresh native collaborators; each subscription-backed Model request resolves and refreshes its compatible OAuth credential when needed;
+07. completes required Environment management and publishes its observed state, supplies authorized Environment connectors, and creates fresh native collaborators; each subscription-backed Model request resolves and refreshes its compatible OAuth credential when needed;
 08. starts one Harness stream and observer from the selected `HarnessState`;
 09. saves complete root model-request checkpoints after input consumption and context transformation, advances its expected continuation after each successful selection, and forwards public live events best effort;
-10. finalizes Environment adapters and publishes changed state;
+10. completes execution-scope cleanup through Harness and records its outcome independently of management-state publication;
 11. publishes and compare-and-selects any available valid terminal checkpoint, including failed or interrupted execution, under the [continuation policy](03-local-storage-and-recovery.md#run-composition-and-continuation);
 12. selects a detached terminal operation outcome with independent execution, continuation, Environment-state, and cleanup facts.
 
@@ -263,7 +263,7 @@ Each segment receives:
 - the child Thread's resolved Agent-resource or Markdown-subagent graph and Capabilities; a Markdown source resolves its explicit inheritance from the parent Run authorizing that linked admission;
 - fresh Model, Harness Plugin, and MCP collaborators;
 - captured Project roots and Environment profile selection;
-- fresh Provider runtimes, Environment adapters, and Environment Run Extensions;
+- authorized Environment connectors, independent Environment executions, and fresh Provider runtimes and Run Extensions;
 - the child Thread's newly published empty `initial_state` for delegate or selected child checkpoint state for resume;
 - one `HarnessAguiStreamObserver` bound to the child Thread and Run.
 

@@ -2,15 +2,13 @@
 
 ## Design Position
 
-Harness integrates already constructed `Environment` instances from the [Environment Provider domain](08a-environment-providers.md). It owns Run-local multi-mount routing, access ceilings, mount-incarnation fencing, readiness aggregation, model projection, portable state aggregation, and non-destructive cleanup. It does not discover Providers, construct provider targets or connections, or choose preparation timing and backing-target retention policy. Hosts supply ready objects or objects that transparently prepare on first actual operation.
+Harness receives fixed-target Environment connectors from the [Environment library](../a13n-environment/01-environment-contract.md). It opens Environment executions and owns Run-local multi-mount routing, access ceilings, mount-incarnation checks, readiness aggregation, tools, model context, continuation references, and execution cleanup. Hosts select and authorize targets and perform any required management before supplying Environment connectors.
 
-The Environment Provider domain owns the only shared lifecycle entities: `EnvironmentProviderDefinition`, `Environment`, and `EnvironmentState`. Harness adds only lightweight mount configuration and a process-local bound aggregate. Those Harness values are not provider lifecycle entities.
+Each mount opens its own Environment execution. Inline children borrow the parent Run's bound facade; independent Runs, including async children, open independent scopes. Closing an Environment execution never stops or destroys a backing sandbox or workspace. It preserves provider-specific resource semantics: Envd closes Session-owned commands, output, and transfers while preserving the Host-owned daemon; Direct Local terminates its owned processes; native Docker and E2B release observations without blanket command termination. A changed Session working directory requires a new Environment execution through mount replacement. Directory routing and shell cwd are not OS isolation boundaries.
 
-Every independent Harness Run receives fresh Environment instances. Harness enters them before Agent input production and closes them after the terminal Run fence. `close()` releases local adapter resources and never destroys a Docker container, E2B sandbox, Host workspace, or other backing target. Inline child execution borrows the parent Run's entered facade; an async child is an independent Run and receives fresh adapters from its Host. Envd-backed adapters own independent Sessions even when their Host reuses a Device connection. Their close cleans Session-owned processes/output/transfers, not the daemon or workspace. The Session default working directory is fixed; changing it requires a fresh adapter through the existing mount replacement boundary. It does not restrict file access to that directory. Harness action ceilings and file routes do not turn shell cwd into an OS sandbox, and remote native paths are not Host-path-preserving aggregate routes.
+`DynamicEnvironmentCapability` derives tools and bounded model context from execution descriptors, current availability, and effective mount permissions. Provider implementations supply structured facts, not Harness prompt text or tool schemas. Target administration never becomes a model tool.
 
-`DynamicEnvironmentCapability` is the optional model adapter. It derives the standard Toolset vocabulary from the effective actions of the selected mounts, refreshing available tools and schemas at model-request boundaries, projects bounded current mount context, and exposes only operations permitted by both Harness access ceilings and provider descriptors. Environment lifecycle administration never becomes a model tool.
-
-Each Toolset owns the mapping from its tool arguments to canonical authorization resources, declared with the tool registration. File tools resolve all affected paths, including both endpoints of every copy or move; shell tools resolve command bindings and their own process references. The Environment layer owns current route selection, readiness, permission checks, and execution-local operation scopes without interpreting tool identifiers or argument schemas. Resource resolution projects metadata; it does not retain an authorization-time selection or install a historical mount-publication fence. Dynamic model context only projects Environment changes and does not mediate Toolset resource resolution. These resource semantics apply to Environment-backed Toolsets independently of the dynamic capability. Direct FileOperator and generic file-scope callers retain their existing behavior, and explicit resource-resolver and execution-guard callbacks remain supported overrides.
+Each Toolset owns the mapping from arguments to canonical authorization resources. File tools resolve all affected paths, including both endpoints of a copy or move; shell tools resolve command bindings and their own process references. Environment integration owns route selection, readiness, permission checks, and execution-local scopes without interpreting tool names or argument schemas. Metadata resolution does not reserve a mount across policy waits; explicit resource resolvers and execution guards remain supported overrides.
 
 ## Run Inputs
 
@@ -19,18 +17,18 @@ The public values are:
 ```python
 @dataclass(frozen=True, slots=True)
 class EnvironmentMount:
-    environment: Environment
+    connector: EnvironmentConnector
     permission_ceiling: EnvironmentPermissionSet = EnvironmentPermissionSet(operations=FILE_EXECUTION_ACTIONS)
     working_directory: str | None = None
     mount_path: str | None = None
     provider_root: str = "/"
 ```
 
-`EnvironmentMount` is a Run input/configuration value. It contains one already constructed adapter plus Run-local policy. It has no independent identity, lifecycle, durable serialization, or Provider discovery behavior.
+`EnvironmentMount` is a Run input/configuration value. It contains one fixed-target `EnvironmentConnector` plus Run-local policy. It has no independent identity, lifecycle, durable serialization, or Provider discovery behavior.
 
-`EnvironmentMount.permission_ceiling` is an exact `EnvironmentPermissionSet` action ceiling. It defaults to `FILE_EXECUTION_ACTIONS`, preserving existing file/execution access but excluding `COMPUTER_ACTIONS`. A Host must explicitly include desktop actions; adding a desktop-capable Provider never silently grants them. A narrower ceiling can expose any combination, such as text read, text write, and remove without other file operations; `FILE_READ_ACTIONS` is the shared constant for file actions that only observe. The ceiling is intersected with the Provider descriptor and can never grant an operation the Provider does not offer. State dump and local close remain trusted lifecycle operations and are not model-authored permissions.
+`EnvironmentMount.permission_ceiling` is an exact `EnvironmentPermissionSet` action ceiling. It defaults to `FILE_EXECUTION_ACTIONS`, preserving existing access to file operations and command execution but excluding `COMPUTER_ACTIONS`. A Host must explicitly include desktop actions; adding a desktop-capable Provider never silently grants them. A narrower ceiling can expose any combination, such as text read, text write, and remove without other file operations; `FILE_READ_ACTIONS` is the shared constant for file actions that only observe. The ceiling is intersected with the Provider descriptor and can never grant an operation the Provider does not offer. Reading the fixed target state and closing an `EnvironmentExecution` remain trusted lifecycle operations and are not model-authored permissions.
 
-`working_directory` defaults to `None`, selecting the adapter descriptor's default. An explicit override is a canonical absolute provider-local path. It contains no NUL, repeated separator, trailing separator other than `/`, or `.`/`..` segment.
+`working_directory` defaults to `None`, selecting the opened `EnvironmentExecution` descriptor's default. An explicit override is a canonical absolute provider-local path. It contains no NUL, repeated separator, trailing separator other than `/`, or `.`/`..` segment.
 
 `provider_root` is the canonical absolute Provider path represented by the aggregate route root; it defaults to `/`. Absolute aggregate suffixes append to this path, and returned Provider paths strip it before aggregate projection. Relative paths still start from `working_directory`, independently of this mapping. A Host-path-preserving envd mount sets both `mount_path` and `provider_root` to the captured native root; a whole-Device virtual route retains `provider_root="/"`. This is file routing, not Session configuration or shell confinement.
 
@@ -42,8 +40,8 @@ class EnvironmentMount:
 run(
     input=None,
     *,
-    environment: Environment | EnvironmentMount | None = None,
-    environments: Mapping[str, Environment | EnvironmentMount] | None = None,
+    environment: EnvironmentConnector | EnvironmentMount | None = None,
+    environments: Mapping[str, EnvironmentConnector | EnvironmentMount] | None = None,
     default_environment: str | None = None,
     bindings: RunBindings | None = None,
     ...,
@@ -57,25 +55,27 @@ The rules are:
 3. Singular input normalizes to mount name `workspace` and becomes the default.
 4. A one-entry mapping selects its only mount as default.
 5. A mapping with several entries has no default unless explicit. Mapping order never selects authority.
-6. An empty mapping, invalid mount name, duplicate Environment instance, invalid policy, equal aggregate route owned by different mounts, or conflict with `RunBindings` fails before `enter()`.
+6. An empty mapping, invalid mount name or policy, equal aggregate route owned by different mounts, or conflict with `RunBindings` fails before opening connections. Each mount owns a distinct `EnvironmentExecution` even when `EnvironmentConnector` objects address the same target.
 7. Omitting all Environment input creates an empty bound facade and exposes no Environment tools.
 8. Inputs never accept an `EnvironmentProviderDefinition`, Provider configuration, Provider Resource, attachment, state envelope, or Provider type.
 
 A mount without `mount_path` retains the compatibility routes: every such mount is addressable at `/environment/{name}`, and the current default is also addressable at `/workspace`. Without a default, `/workspace` is unavailable. A mount with `mount_path` is addressable only at that explicit root; the Harness does not also expose `/workspace` or `/environment/{name}` for it. Relative paths still select the explicit alias or current default and begin at that mount's provider-local `working_directory`.
 
-A hosted worker constructs Environment instances from Host-authoritative configuration and state, and either prepares them before Harness execution or supplies Host-coordinated lazy preparation. An embedded caller can construct them directly through a trusted Provider.
+A hosted worker supplies `EnvironmentConnector` objects from Host-authoritative configuration, state, and credentials after required lifecycle operations complete. Embedded Hosts follow the same boundary through the shared library. Harness opens connections while binding mounts; it does not invoke management preparation on first tool use.
 
 ### Explicit Host runtime construction
 
-An advanced Host supplies an explicit runtime through `RunBindings.environment`, including through `RunBindings.embedded(environment=runtime)`. This conflicts with simultaneous `environment` or `environments` arguments. Ordinary callers can omit bindings and pass adapters directly.
+An advanced Host supplies an explicit runtime through `RunBindings.environment`, including through `RunBindings.embedded(environment=runtime)`. This conflicts with simultaneous `environment` or `environments` arguments. Ordinary callers can omit bindings and pass Environment connectors or `EnvironmentMount` values directly.
 
-Environment Run Extensions are supplied through the runtime factory's `extensions` argument, not a separate `run()` or `stream()` keyword. They form an ordered finite set of fresh instances for this Run; duplicate extension IDs fail before Environment entry.
+Environment Run Extensions are supplied through the runtime factory's `extensions` argument, not a separate `run()` or `stream()` keyword. They form an ordered finite set of fresh instances for this Run; duplicate extension IDs fail before opening Environment executions.
 
-`create_environment_runtime(mounts=..., default_mount=..., extensions=...)` accepts the same `Environment` and `EnvironmentMount` values. A raw Environment selects the default file/execution ceiling, the Provider descriptor's working directory (default `/`), and the ordinary implicit aggregate routes. The explicit runtime retains its existing default-selection rule: `default_mount` is selected only when supplied. Run-local `mount()` and `replace()` accept these same values. Hosts with already constructed Environment objects do not implement another binding adapter to enter or close them.
+`create_environment_runtime(mounts=..., default_mount=..., extensions=...)` accepts the same `EnvironmentConnector` and `EnvironmentMount` values. A bare connector selects the default file/execution ceiling, the opened Provider descriptor's working directory (default `/`), and the ordinary implicit aggregate routes. The explicit runtime selects `default_mount` only when supplied. Run-local `mount()` and `replace()` accept these same values. Hosts supplying Environment connectors do not implement another binding adapter to open or close the resulting Environment executions.
 
-The advanced `EnvironmentRuntimeMount(binding=..., permission_ceiling=..., working_directory=..., mount_path=..., provider_root=...)` input remains supported by explicit runtime construction and mutation. Its `EnvironmentProviderBinding` owns a trusted async `bind()` scope and `discard()` cleanup for a candidate that was accepted but did not enter. It supports Host-specific acquisition, authentication, or resource scopes whose lifetime begins at binding, without requiring a preconstructed `Environment`. Such binding scopes expose the same provider-neutral operations and obey the same permissions, readiness, identity, and cleanup guarantees. This is an explicit Host integration boundary, not another Provider catalog or model-facing lifecycle.
+The advanced `EnvironmentRuntimeMount(binding=..., permission_ceiling=..., working_directory=..., mount_path=..., provider_root=...)` input remains supported by explicit runtime construction, `mount()`, and `replace()`. Its `EnvironmentProviderBinding` owns a trusted async `bind()` scope and idempotent `discard()` cleanup for an accepted candidate that did not enter successfully. It supports Host-specific acquisition, authentication, and resource scopes whose lifetime begins at binding, without requiring a preopened Environment execution. The binding yields an `EnvironmentExecution` and owns its scope cleanup. It obeys the same permissions, readiness, identity, and cleanup guarantees as ordinary connector inputs. This is an explicit Host integration boundary, not another Provider catalog or model-facing lifecycle; binding cannot implicitly create, start, resume, replace, or renew the backing target.
 
-Validation of a complete initial mount set precedes ownership transfer. The same Environment object cannot occupy two initial mounts, including through distinct `EnvironmentMount` values. Ownership transfer precedes entry and is single-use: rebuilding a mount wrapper or constructing another runtime cannot transfer an already accepted Environment again. An already entered object is rejected without closing its existing scope. If an initial set includes an already transferred candidate, cleanup owns only the newly accepted candidates; it never discards the reused candidate. Dynamic mutation validates the prospective routes before transfer, so a rejected route does not consume the fresh candidate. After transfer, entry failure closes every accepted candidate according to the aggregate cleanup contract, including objects that never entered.
+Validation of the complete initial mount set precedes opening Environment executions or accepting advanced binding candidates. An Environment connector holds connection inputs rather than an acquired execution or a transferable client. Where the backend supports repeated opening, the same connector can supply independent executions; each mount owns a distinct execution, and an execution cannot be accepted by two mounts or independent Runs. Returning an execution already owned elsewhere is rejected without closing its existing scope. Failed opening cleans only resources acquired by that opening; after a successful open, binding or validation failure closes the newly acquired execution. Failure or cancellation of initial setup closes every execution acquired for that setup and discards accepted advanced candidates that did not enter.
+
+Advanced binding candidates retain single-use ownership transfer before entry. Rebuilding a mount wrapper or constructing another runtime cannot transfer an already accepted candidate again; rejection never discards or closes the reused candidate. Dynamic `mount()` and `replace()` validate prospective routes before opening an Environment execution or accepting an advanced candidate, so a rejected route does not consume the candidate. They publish only after successful binding and validation; replacement failure leaves the existing mount intact. Cleanup of a retired execution follows the [Run-local mount mutation contract](#run-local-mount-mutation).
 
 ## Ownership Boundary
 
@@ -83,13 +83,13 @@ Validation of a complete initial mount set precedes ownership transfer. The same
 | ---------------------------------------------------------------- | ---------------------------------------------------------------- |
 | Provider selection and desired configuration                     | Host                                                             |
 | Current state, Thread association, retention                     | Host                                                             |
-| Environment construction and single-target I/O                   | Environment package                                              |
+| Fixed-target connection and single-target I/O                    | Environment library                                              |
 | Entry metadata correlation                                       | Harness supplies ephemeral values from Host bindings             |
 | One Run's mount names, IDs, access, aggregate roots, and routing | Harness                                                          |
 | Entered multi-mount facade                                       | Harness-internal bound aggregate                                 |
 | Environment Run Extension protocol and ordering                  | Harness                                                          |
 | Extension selection and serializable configuration               | Host                                                             |
-| Provider operation execution and local cleanup                   | Entered Environment                                              |
+| Provider operation execution and local cleanup                   | EnvironmentExecution                                             |
 | Model-facing file and shell Toolsets                             | Harness Capabilities                                             |
 | Run-local process references, readiness, and observation release | Harness-private Run process controller                           |
 | Portable mount-name-to-state continuation                        | `HarnessState.environment_states`                                |
@@ -104,7 +104,7 @@ Provider denial always narrows Harness access. Mount names, mount IDs, paths, pr
 | ------------------------ | ------------------------------------------------------- | ------------------------------------------------ |
 | Mount name               | Stable Run-local alias such as `workspace`              | Host, routing, model projection                  |
 | Aggregate mount path     | Optional Host-selected model-facing root                | Routing, model projection, provider-result paths |
-| Mount ID                 | Opaque Harness-generated mount scope identity           | Harness internals and provider-neutral artifacts |
+| Mount ID                 | Opaque Harness-generated mount scope identity           | Harness integration and its bound artifacts      |
 | Provider key             | Provider implementation discriminator                   | Trusted Host and provider integration            |
 | Provider target identity | Provider-owned state data such as a Docker container ID | Trusted Host/provider state; never model context |
 | Provider generation      | Entered operation fence when a backend exposes one      | Trusted operation and stale-handle checks        |
@@ -112,7 +112,7 @@ Provider denial always narrows Harness access. Mount names, mount IDs, paths, pr
 
 A replacement keeps the mount name and allocates a fresh mount ID. An old path, process handle, output cursor, or operation receipt never retargets to the replacement.
 
-Core immutable values include:
+Harness-bound immutable values include:
 
 - `EnvironmentPath(mount_id, path)`;
 - `EnvironmentOperationReceipt(mount_id, observed_generation, operation_id, stage, outcome)`;
@@ -120,6 +120,8 @@ Core immutable values include:
 - retained-output references carrying the same mount and generation fence;
 - `EnvironmentSnapshot(mounts, default_mount)`;
 - `EnvironmentChange(sequence, kind, name, previous_default, current_default)`.
+
+These wrappers add Harness mount correlation to the shared library's target/execution-scoped results. The shared provider receives no mount ID.
 
 `EnvironmentMountInfo` contains the mount name, provider key, entered descriptor, access ceiling, provider-local default working directory, mapped `provider_root`, and optional aggregate `mount_path`. It omits opaque mount ID and provider target identity from model context.
 
@@ -154,28 +156,22 @@ The catalog does not select packages or read Host resource files. A Host decides
 
 ## Entry and Aggregate Lifecycle
 
-Harness validates the complete initial mapping before binding any local scope. The Host may already have prepared the supplied objects; Harness entry itself causes no target I/O. Entry then proceeds:
+Harness validates the complete initial mapping before opening any scope. Binding proceeds as follows:
 
-01. normalize each raw Environment into an `EnvironmentMount`;
-02. allocate a fresh opaque mount ID per mount;
-03. bind each adapter's local scope with `enter()` and ephemeral `thread_id`, `run_id`, `agent_instance_id`, mount ID, and bounded Host references;
-04. validate configured provider descriptors and derive bounded effective actions without forcing lazy preparation;
-05. if every mount entered successfully, publish one complete internal `EnvironmentSnapshot` and stable bound facade;
-06. enter Environment Run Extension scopes in supplied order;
-07. bind Environment-aware Capabilities and produce Agent input;
-08. execute model attempts and operations against that same facade;
-09. snapshot portable states when requested;
-10. install the terminal mutation fence, exit extension scopes in reverse order, drain operation leases, and call non-destructive `close()` on each adapter in reverse entry order.
+1. Normalize each Environment connector into an `EnvironmentMount` and allocate its Harness mount identity.
+2. Call `connector.open()` and accept the resulting ready `EnvironmentExecution` under the binding scope.
+3. Validate its descriptor, required working directory, and mount policy; derive effective actions without expanding the Host ceiling.
+4. Publish one complete snapshot only after every initial mount succeeds, then enter Run Extensions and bind Environment-aware Capabilities before Agent input production.
+5. Route operations through the bound facade and read portable target references when exporting continuation.
+6. At the terminal fence, exit extensions, drain admitted work, and close Environment executions in reverse opening order.
 
-A failure before publication unwinds entered adapters and closes every supplied adapter that might own local resources. No partial initial mount set becomes model-visible.
+A failure or cancellation before publication closes every Environment execution already opened; a failed opener cleans its partial acquisition. No partial initial set becomes model-visible. Ephemeral thread, run, Agent-instance, and mount correlation stays in Harness wrappers rather than entering the shared Environment connector or Environment execution API.
 
-Provider state is supplied during adapter construction before Harness receives it. Harness does not restore state after entry.
-
-A successful Run, failed Run, cancellation, state-export failure, or close failure does not select backing-target destruction. The Host can inspect adapter state in its unconditional finalization independently of whether Harness produced a checkpoint.
+State and target selection are fixed by the Host before binding. Harness never restores state into a live Environment execution or performs target lifecycle operations. Environment execution cleanup, continuation export, and Host management-state publication remain independent; a Run or close failure does not select target destruction.
 
 ## Internal Bound Facade
 
-The entered multi-mount aggregate is process-local and Harness-internal. `AgentContext.environment` exposes its provider-neutral operation facade to trusted Capabilities; it does not expose adapter construction, lifecycle preparation, entry, close, stop, keepalive, destroy, Provider discovery, or Host state publication.
+The entered multi-mount aggregate is process-local and Harness-internal. `AgentContext.environment` exposes its provider-neutral operation facade to trusted Capabilities; it does not expose `EnvironmentConnector` objects, target management, `EnvironmentExecution` close, Provider discovery, or Host state publication.
 
 Conceptually it supports:
 
@@ -205,7 +201,7 @@ Mutations are linearizable:
 - `unmount(name)` removes the selected incarnation and clears default when needed;
 - `set_default(name | None)` changes routing only.
 
-Mount and replacement preparation binds the fresh Environment scope before commit without forcing target I/O for a lazy object. Preparation failure leaves the published snapshot unchanged and closes the candidate. Commit publishes one new snapshot and one `EnvironmentChange`; the retired adapter closes after its operation leases drain.
+Mount and replacement open a fresh Environment execution before commit. Opening or validation failure leaves the published snapshot unchanged and closes any acquired candidate. Commit publishes one new snapshot and one `EnvironmentChange`; the retired Environment execution closes after its admitted operations and observations drain. Reopening the same target uses this boundary and invalidates references scoped to the old Environment execution. It does not imply the old Session or its processes survived.
 
 Dynamic mutations are Run-local. They do not discover a Provider, persist desired mounts, mutate Host Thread association, invoke `destroy()`, or change another Run. A durable desired-mount change is a separate Host operation. A Host may reconcile that accepted change into this Run through the controller at a model-request boundary, or supply it before constructing a later Run; Harness owns neither persistence nor authorization of the durable association.
 
@@ -241,11 +237,11 @@ Compound file operations capture exact source and destination incarnations when 
 
 ## Readiness
 
-Readiness is operation-family scoped. Entry binds configured identity and descriptor; it does not establish a target connection or assert live viability for an unprepared object. An actual operation or explicit `ensure_ready()` invokes the object's coordinated preparation when necessary. Merely projecting descriptors or readiness summaries never does. A live descriptor can narrow configured capabilities but cannot broaden accepted access.
+Each published mount has an open `EnvironmentExecution` and a validated descriptor. Readiness is operation-family scoped and remains current evidence, not a survival guarantee. Harness groups requirements by mount incarnation, intersects them with effective actions, and invokes `execution.check_ready()` only for required families. Projection reads bounded observations; it neither reconnects nor manages the target.
 
-Harness groups requirements by current mount incarnation, intersects requested operations with access ceilings and provider descriptors, and invokes readiness only for required families. Concurrent equivalent waits can share provider work. A replacement cannot authorize dispatch captured for an old incarnation; initial preparation can replace the `unprepared` descriptor before the first operation is authorized.
+A failed check returns a typed bounded error. A trusted consumer may reopen the fixed target through its Environment connector according to backend capability and Host policy, using the mount replacement boundary. Target absence, stop, identity change, or insufficient authority is reported to the Host. Harness never silently creates, resumes, renews, or substitutes a target, and never replays an uncertain side effect.
 
-Timeout, provider failure, unavailable family, replacement, and closure produce typed bounded errors. Harness never widens a requirement or retries an uncertain side effect automatically.
+A backend-confirmed transport reattachment within the same valid Environment execution may preserve references; opening a new Environment execution requires fresh incarnation checks. All reconnection coordinates with admitted operations and close. A live descriptor can narrow configured capabilities but cannot broaden accepted access.
 
 ## Model Context Projection
 
@@ -277,7 +273,7 @@ The model-facing Toolset is standard:
 
 The file tool surface exposes a tool when at least one mount supports a valid argument branch. Mutation-only mounts do not require an unrelated read action. Write and empty-old-string edit branches require text-write; existing edits require byte-read plus text-write, not patch-text. A captured mount root is not recreated, including explicit roots without a default mount. Parent creation additionally requires mkdir only when the requested path makes the tool call mkdir, even if that parent already exists. Mkdir, move, and delete require their corresponding actions. Copy requires copy-source and copy-destination, possibly on different mounts; internal streaming does not add separate byte-read/write requirements. Its `overwrite` flag permits replacing an existing regular file but also allows creating an absent destination, consistently with the Provider `copy(replace=True)` contract. With the flag false, an existing destination is a conflict and remains unchanged. Other same-mount requirements cannot be assembled by combining partial actions from different mounts. Tool instructions follow the exposed names. Every call re-authorizes the exact selected current mount incarnation and fails without provider effects when that mount lacks an action required by the requested operation. A foreground-only mount keeps completion-only `shell_exec`; a process-capable mount uses the same name with automatic bounded yield.
 
-Provider preparation and rebuild remain behind the operation object. When the backing target changes, the object supplies bounded change evidence and refreshed context; Harness fences stale operation leases/handles and publishes a new mount incarnation before later dispatch. No stale process reference or pending readiness observation can cross the change. Unknown outcomes from already dispatched operations are returned as explicit errors rather than replayed against a replacement target. Harness does not construct connections itself.
+After Environment execution replacement or changed availability, Harness derives the next model-request context and tool selection from the resulting current snapshot. No stale process reference or readiness observation crosses an Environment execution incarnation. Changing the backing target requires an explicit Host selection and Environment connector replacement; a failed operation is not replayed against the new target.
 
 ## Portable Environment State
 
@@ -291,21 +287,21 @@ class HarnessState(BaseModel):
 
 There is no `EnvironmentMapState` or `EnvironmentMountState` type.
 
-Keys are Harness mount names. Values are imported `EnvironmentState` envelopes. Singular Environment input uses `workspace`. A mount whose adapter returns `None` is omitted; Direct Local and Local Envd are normally stateless.
+Keys are Harness mount names. Values are imported `EnvironmentState` envelopes. Singular Environment input uses `workspace`. A mount whose Environment execution has `state=None` is omitted; Direct Local and Local Envd are normally stateless.
 
 Export rules:
 
 1. capture one complete current mount-set observation under the aggregate operation fence;
-2. call the infallible process-local `dump_state()` cache read for each selected current adapter without refreshing any target;
+2. read each selected Environment execution's detached `state` reference without refreshing any target;
 3. validate the state envelope shape, provider-key consistency, non-blank state-version identifiers, canonical JSON, and Host-admitted size bounds; exact codec compatibility remains Provider-owned;
 4. omit `None` values;
-5. fail the complete export on cancellation or an adapter contract violation rather than silently dropping a stateful mount.
+5. fail the complete export on cancellation or an Environment execution contract violation rather than silently dropping a stateful mount.
 
 The mapping contains no default mount, desired mount definition, access policy, working directory, aggregate mount path, mount ID, provider generation, credential, handle, lease, pending mutation, change sequence, Host Thread association, or retention policy.
 
-Harness does not use this mapping to construct or authorize adapters. A Host selects already constructed adapters before Run entry. For managed Environments, Host current state wins, including authoritative `None`, and suppresses stale portable fallback. A Host may adopt the mapping only through an explicit unmanaged/import flow where no Host authority exists.
+Harness does not use this mapping to select or authorize targets. A Host supplies fixed-target Environment connectors before Run entry. For managed Environments, Host current state wins, including authoritative `None`, and suppresses stale portable fallback. A Host may adopt the mapping only through an explicit unmanaged/import flow where no Host authority exists.
 
-State export is a continuation observation, not durable publication. Host finalization independently compares each adapter's supplied and dumped values and publishes changed state even after execution, cancellation, checkpoint, or close failure. Equal state performs no Host write.
+State export is a continuation observation, not durable management publication. Management operations return observed state to the Host independently of a Run checkpoint. Environment execution only retains its fixed target reference; using it does not require a management-state writeback at Run exit.
 
 ## File Surface
 
@@ -382,7 +378,7 @@ Completion inside the yield window returns observed terminal status and bounded 
 
 The `alias` argument selects an existing public mount name from the active Environment context; it never labels a command or process. Schemas and model guidance make this distinction explicit. An omitted alias uses the default mount unless an absolute command `cwd` or an existing process reference selects its own mount. Unknown or conflicting selections remain errors; Harness does not silently retry on another mount.
 
-`shell_wait` waits boundedly and reads available output at explicit caller offsets. Zero is a poll. Output provenance and evidence follow the [Provider observation contract](08a-environment-providers.md#process-and-output-observations). Returned `requested_offset`, `start_offset`, `next_offset`, available bounds and `omitted_before_bytes` describe this page only. `next_offset` advances only across returned bytes. Unknown producer totals are null rather than buffer lengths. Repeating offsets is valid; Harness has no hidden unread cursor.
+`shell_wait` waits boundedly and reads available output at explicit caller offsets. Zero is a poll. Output provenance and evidence follow the [Provider observation contract](../a13n-environment/01-environment-contract.md#process-and-output-observations). Returned `requested_offset`, `start_offset`, `next_offset`, available bounds and `omitted_before_bytes` describe this page only. `next_offset` advances only across returned bytes. Unknown producer totals are null rather than buffer lengths. Repeating offsets is valid; Harness has no hidden unread cursor.
 
 A transient native reconnect preserves the reference and accumulated observation offsets, appends newly observed text and reports partial coverage. A new Run creates fresh references and observations at zero. Target replacement invalidates identities rather than reusing a PID against another sandbox. Capped output remains readable but cannot be reset by querying or waiting.
 
@@ -432,29 +428,16 @@ Cleanup aggregates failures without changing lifecycle ownership. A close failur
 
 ## Invariants
 
-01. Harness receives already constructed Environment instances and never discovers Providers.
-02. Every independent Run uses fresh adapters; inline children borrow the current entered facade.
-03. State is supplied before Harness entry through adapter construction.
-04. Initial mount publication is atomic.
-05. One Run exposes one stable internal bound facade.
-06. Mount names route; opaque mount IDs fence exact incarnations.
-07. Access is the intersection of Harness ceiling and provider descriptor.
-08. Dynamic mutation is Run-local and cannot change Host durable association.
-09. `HarnessState.environment_states` directly maps mount names to provider state envelopes.
-10. Stateless mounts are omitted; singular input uses `workspace`.
-11. No aggregate or per-mount state wrapper exists.
-12. Harness close never destroys a backing target.
-13. Host state publication is independent from successful Harness checkpoint export.
-14. Model-facing context and tools contain no lifecycle administration, credentials, target IDs, or raw PIDs.
-15. Process-capable `shell_exec` automatically yields a Run-local process reference when the command does not complete inside its initial wait.
-16. Process references are Run-incarnation-qualified, never persisted, reused, rebound, or retargeted.
-17. `shell_wait` uses caller-supplied stdout and stderr offsets; Harness stores no model unread cursor.
-18. Retention omission is explicit, and repeating an offset never falsely claims omitted output was delivered.
-19. Active-Run final-completion readiness is standard best-effort behavior; explicit polling remains authoritative.
-20. Run cleanup releases local observations without blanket process termination.
-21. No model reference, offset, status mirror or watcher enters portable Harness state; backend recovery state remains Provider-owned.
-22. Shell observations and async subagents share no Manager, store, projection, observer registry, or shutdown lifecycle.
-23. Environment Run Extensions are fresh Host-selected aggregate scopes, not another Plugin, Capability, or Provider plane.
+01. Harness accepts fixed-target Environment connectors and mount policy, not Provider selection or target-management authority.
+02. Each mount opens a distinct Environment execution; independent Runs never share Environment execution ownership.
+03. Initial publication is all-or-nothing, and opening, binding failure, cancellation, replacement, and close have explicit cleanup owners.
+04. Effective actions are the intersection of Host ceilings and provider capabilities; desktop access remains explicit.
+05. Mount and Environment execution identities prevent stale paths, process references, observations, and cursors from retargeting.
+06. Harness owns routing, tools, events, and model-context assembly; providers supply structured Environment execution facts.
+07. Readiness and reconnection do not create, start, replace, or renew backing targets, and uncertain operations are never replayed automatically.
+08. Portable state is a direct mount-name mapping of existing `EnvironmentState` values, not authority or a desired mount set.
+09. Run cleanup preserves provider-specific process survival and never selects target destruction.
+10. Dynamic changes publish through the existing mutation boundary and do not persist Host associations.
 
 ## Publishing Live Environment Changes
 

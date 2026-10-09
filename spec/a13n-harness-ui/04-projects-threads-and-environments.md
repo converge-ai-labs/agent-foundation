@@ -194,7 +194,7 @@ Project recency is the maximum `updated_at` over every associated non-archived T
 
 ## Environment Profile and Binding
 
-A Thread selects one local-root Environment profile defined by [Extension Discovery and Management](01a-extension-discovery-and-management.md#environment-provider-discovery-and-profile-resources), plus optional [Device Environment bindings](04a-devices-and-environment-bindings.md). The latter contract owns normalization, remote-only Projects and explicit default selection. A profile chooses one installed Provider plus Harness UI Host adapter configuration; it does not represent the runtime `Environment.environment_id`.
+A Thread selects one local-root Environment profile defined by [Extension Discovery and Management](01a-extension-discovery-and-management.md#environment-provider-discovery-and-profile-resources), plus optional [Device Environment bindings](04a-devices-and-environment-bindings.md). The latter contract owns normalization, remote-only Projects and explicit default selection. A profile chooses one installed Provider plus Harness UI Host adapter configuration; it does not represent the provider target identity.
 
 Harness UI owns two built-in modes:
 
@@ -210,7 +210,7 @@ For each captured Project root, the App:
 1. resolves the exact Provider and approved Host adapter;
 2. loads current Host-authoritative state under the complete binding key;
 3. asks the adapter to materialize root-specific validated Provider configuration;
-4. creates a fresh inert `Environment` operation object and performs Harness UI Host-authorized preparation before passing it to Harness;
+4. performs any required explicit management under App policy, publishes its observed state, and supplies a fixed-target Environment connector for Harness to open;
 5. constructs the deterministic Harness Project mount set;
 6. adds the dedicated user Skill mount when the Run root Agent selects `skills`, unless an exact Host-path-preserving Project mount already owns that root;
 7. adds the selected configuration directory and Thread file area under the contracts below; and
@@ -263,7 +263,7 @@ Thread ID
 + normalized Project root path
 ```
 
-The profile digest reuses the accepted generation's canonical normalized content for `provider_key`, Provider schema version, Provider configuration, Host adapter key, and adapter configuration. It excludes filename, YAML formatting, comments, and display-only fields. State lookup, supplied-state comparison, and publication use exactly that identity. Existing authoritative `None` does not permit fallback from `HarnessState.environment_states`. Continuation Environment state is a portable observation only and can be adopted only through an explicit import boundary.
+The profile digest reuses the accepted generation's canonical normalized content for `provider_key`, Provider configuration, Host adapter key, and adapter configuration. It excludes filename, YAML formatting, comments, and display-only fields. State lookup, supplied-state comparison, and publication use exactly that identity. Existing authoritative `None` does not permit fallback from `HarnessState.environment_states`. Continuation Environment state is a portable observation only and can be adopted only through an explicit import boundary.
 
 Changing the selected Environment profile or any behavior-affecting normalized content produces a different state identity. Presentation-only edits preserve it. Switching back to the same compatible identity can recover its previous state. Removing and later restoring the same Project root behaves similarly. State is never shared merely because two Threads select the same Project.
 
@@ -274,28 +274,29 @@ sequenceDiagram
     participant Caller
     participant App
     participant Store
-    participant Project
     participant Provider
     participant Harness
-
-    Caller->>App: input plus optional Thread configuration patch
-    App->>Store: apply patch and load prior continuation
-    App->>Project: capture current ordered roots
-    App->>Provider: load state, construct and prepare fresh operation objects
-    App->>Harness: Run with captured mounts and extensions
-    Harness-->>App: result and HarnessState
-    App->>Provider: close and read final cached state
-    App->>Store: compare-and-select changed Environment state
-    App->>Store: publish and select continuation
+    participant Connector as EnvironmentConnector
+    Caller->>App: Input and optional Thread configuration patch
+    App->>Store: Apply patch, load continuation and authoritative target state
+    App->>App: Capture roots, profile and authorized bindings
+    App->>Provider: Explicit target management when required
+    Provider-->>App: Outcome and observed EnvironmentState
+    App->>Store: Conditionally publish changed management state
+    App->>Harness: Fixed-target EnvironmentConnector objects, mount policy and extensions
+    Harness->>Connector: Open independent EnvironmentExecution scopes
+    Harness->>Harness: Execute operations and close EnvironmentExecution scopes
+    Harness-->>App: Result and HarnessState
+    App->>Store: Publish and select continuation
 ```
 
-Cleanup precedes final state reading. Environment-state publication occurs after failure or cancellation when a changed final value is known. Equal state performs no write. Environment-state and continuation publication are independent facts and do not roll one another back.
+Management outcome publication retains known state even after a partial failure or cancellation. Equal state performs no write. Opening an Environment execution does not create or replace a target and requires no target-state writeback on Run exit. Management-state and continuation publication are independent facts and do not roll one another back.
 
 ## Async Child Environments
 
 A newly delegated child Thread initializes Project and Environment profile selections from the parent Run capture. Every child segment later uses the child Thread's own current selections and can apply an explicit patch before resume.
 
-Each segment receives fresh Provider runtime collaborators, adapters, and Environment Run Extensions. It never borrows the parent's entered Environment facade. A descendant initializes from its admitting child capture under the same rule.
+Each segment receives authorized Environment connectors, independent Environment execution scopes, and fresh Environment Run Extensions. It never borrows the parent's entered Environment facade. A descendant initializes from its admitting child capture under the same rule.
 
 ## Local EIP Runtime
 
@@ -307,7 +308,7 @@ Acquisition uses HTTPS from the repository-owned release location. Download and 
 
 This is version-based selection, not byte-level identity verification. Harness UI trusts the release source and does not detect replacement bytes that report the same version. Checksums published alongside native releases remain available to standalone installers and other consumers; Harness UI does not embed or require them.
 
-The App lazily owns a Local Envd runtime and reuses its stdio Device connection across roots and Runs with the same Host launch boundary. Each adapter opens an independent Session. For Sandbox, the App supplies fixed grants for the intended native roots and denied networking; Envd contains the complete Session worker and its children. The Thread file worker grants attachments read-only and tmp read-write. Changing grants or network mode requires a separately prepared launch; Session destinations or credential revisions do not change the daemon cache identity. Unsupported Hosts or failed prerequisites make Sandbox unavailable without Full Control fallback.
+The App lazily owns a Local Envd runtime and reuses its stdio Device connection across roots and Runs with the same Host launch boundary. Each Environment connector opens an independent EIP Session. For Sandbox, the App supplies fixed grants for the intended native roots and denied networking; Envd contains the complete Session worker and its children. The Thread file worker grants attachments read-only and tmp read-write. Changing grants or network mode requires a separately prepared launch; Session destinations or credential revisions do not change the daemon cache identity. Unsupported Hosts or failed prerequisites make Sandbox unavailable without Full Control fallback.
 
 Run cleanup closes Sessions, not the shared daemon. App shutdown joins/cancels Runs, closes remaining Sessions and then shuts down its owned local runtimes. There is no cross-App daemon adoption or persisted process recovery. The executable cache carries no Thread, Project, root or Environment authority; connections, generations, process handles and output references remain process-local.
 
@@ -319,18 +320,18 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 
 ## Failure Semantics
 
-| Failure                                                           | Outcome                                                                     |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Invalid or inaccessible Project root                              | Candidate generation or Run capture fails before native execution           |
-| Current directory matches no first root                           | A launch surface receives an unmatched result without creating a Project    |
-| Current directory is equally ambiguous                            | A launch surface receives an ambiguous result without choosing arbitrarily  |
-| Project removed from accepted generation                          | Existing Thread remains inspectable; next Run requires reassignment         |
-| Stale Thread configuration version                                | Patch and admission are rejected without partial changes                    |
-| Provider, Host adapter, or required Sandbox isolation unavailable | Run capture or preparation fails; Full Control is not substituted           |
-| Current Environment state invalid                                 | Admission fails explicitly                                                  |
-| Provider preparation or extension entry fails                     | Harness reports Run failure; known changed cached state is still considered |
-| Cleanup or state publication fails                                | Failure is reported independently from continuation selection               |
-| Continuation publication conflicts                                | Prior or concurrent continuation remains current                            |
+| Failure                                                           | Outcome                                                                         |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Invalid or inaccessible Project root                              | Candidate generation or Run capture fails before native execution               |
+| Current directory matches no first root                           | A launch surface receives an unmatched result without creating a Project        |
+| Current directory is equally ambiguous                            | A launch surface receives an ambiguous result without choosing arbitrarily      |
+| Project removed from accepted generation                          | Existing Thread remains inspectable; next Run requires reassignment             |
+| Stale Thread configuration version                                | Patch and admission are rejected without partial changes                        |
+| Provider, Host adapter, or required Sandbox isolation unavailable | Run capture or preparation fails; Full Control is not substituted               |
+| Current Environment state invalid                                 | Admission fails explicitly                                                      |
+| Connection opening or extension entry fails                       | Harness reports Run failure; management outcome publication remains independent |
+| Cleanup or state publication fails                                | Failure is reported independently from continuation selection                   |
+| Continuation publication conflicts                                | Prior or concurrent continuation remains current                                |
 
 ## Invariants
 
@@ -343,7 +344,7 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 07. A Run captures one configuration generation, one Thread version, and one Project root list.
 08. Root and child Threads can change Agent, extension, MCP, Project, and Environment profile selections between Runs.
 09. Thread and transcript pagination uses query-bound deterministic keyset cursors; root lists bind their optional Project filter.
-10. Every independent Run receives fresh Environment adapters and Run Extensions.
+10. Every independent Run receives independent Environment executions and fresh Run Extensions.
 11. Environment state is isolated by Thread, Environment profile behavior, adapter, and root path.
 12. Steering never changes an active Run's captured composition.
 13. Destructive Provider lifecycle remains outside ordinary Run cleanup.

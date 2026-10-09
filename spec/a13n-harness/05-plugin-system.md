@@ -249,7 +249,7 @@ For every root or nested `AgentDefinition` recursively built by the builder:
 
 A factory is therefore selected once per builder but invoked once per enabled entry per definition. Separate definitions never share the same factory-created plugin prototype. Direct plugins precede configured plugins only as the stable topological tie-breaker; explicit ordering constraints still determine the final middleware graph. An ID collision between direct and configured plugins fails through ordinary plugin validation. Any configuration, discovery, factory, or result failure aborts construction before the affected executable is returned.
 
-Automatic configuration is builder-local, not definition-local. The same configured entries apply to root and nested definitions because one builder owns their process-local construction. A caller that needs a different plugin set constructs a different builder or supplies plugins directly. Environment Providers are not auto-applied: already constructed `Environment` adapters remain fresh Run inputs with Host-owned desired definitions, current state, lifecycle, authority, and reconciliation.
+Automatic configuration is builder-local, not definition-local. The same configured entries apply to root and nested definitions because one builder owns their process-local construction. A caller that needs a different plugin set constructs a different builder or supplies plugins directly. Environment Providers are not auto-applied: fixed-target `EnvironmentConnector` values remain explicit Run inputs with Host-owned desired definitions, current state, lifecycle, authority, and reconciliation. Harness opens and owns each Run's `EnvironmentExecution` scopes.
 
 ## Plugin Contract
 

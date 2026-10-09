@@ -80,7 +80,7 @@ Pydantic AI also owns the native `AgentSpec.retries` budgets. The upstream defau
 ```mermaid
 stateDiagram-v2
     [*] --> created
-    created --> active: fresh Environment adapters entered
+    created --> active: EnvironmentExecution objects opened
     active --> active: ModelAttempt or Run-local mount mutation
     active --> completed: validated output
     active --> suspended: supported native deferred or approval boundary
@@ -105,7 +105,7 @@ sequenceDiagram
     participant Provider
 
     Caller->>Harness: enter stream with input, optional Environment/bindings, and optional state
-    Harness->>Harness: normalize and enter fresh Environment adapters, publish mounts, and create context
+    Harness->>Harness: normalize and open EnvironmentExecution scopes, publish mounts, and create context
     Harness->>Plugins: bind one fresh middleware chain
     Caller->>Harness: request first item
     loop consecutive-failure recovery budget

@@ -105,7 +105,7 @@ A trusted plugin can also transform the complete `HarnessState` at the result bo
 
 ## Authority
 
-Capability presence does not itself grant external authority. Current Identity enters through typed `RunBindings`; already constructed Environment adapters enter through explicit Run inputs. Credentials, policy decisions, invocation grants, durable checkpoints, backing-target authority, runtime mutation authority, and provider sessions remain with their owning Host, Harness facade, or Environment adapter. `DynamicEnvironmentCapability` can project only the current facade and cannot select a Provider, persist desired mounts, publish state, or destroy a backing target.
+Capability presence does not itself grant external authority. Current Identity enters through typed `RunBindings`; fixed-target Environment connectors enter through explicit Run inputs. Credentials, policy decisions, invocation grants, durable checkpoints, backing-target authority, runtime mutation authority, and provider sessions remain with their owning Host, Harness facade, or Environment execution. `DynamicEnvironmentCapability` can project only the current facade and cannot select a Provider, persist desired mounts, publish state, or destroy a backing target.
 
 A Host that requires a particular run Capability constructs and retains the typed instance it trusts. The Harness does not validate class-free role names against a private catalog. Feature-specific code performs any exact type, ID, policy, or collaborator checks required before side effects.
 

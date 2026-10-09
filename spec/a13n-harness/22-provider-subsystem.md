@@ -2,7 +2,7 @@
 
 ## Design Position
 
-A Provider is an inert immutable value that declares how to reach one external capability and how to open it. `a13n_harness.providers` owns one shared core for five Provider domains: Model, Web, Connector, Memory, and Environment. Every domain reuses the same identity, typed input models, credential declaration, setup help, and selection catalog, and adds only the operations its capability actually needs. Installed packages contribute Environment definitions through one plugin contract.
+A Provider is an inert immutable value that declares how to reach one external capability and how to open it. `a13n_harness.providers` owns Model, Web, Connector, and Memory definitions and Host-side selection infrastructure. Environment Provider definitions and implementations belong to the independent [Environment library](../a13n-environment/01-environment-contract.md). Harness catalogs and installed manifests consume those definitions through their declared metadata, without requiring Environment to import Harness.
 
 Providers are values, not registries. Importing a definition performs no I/O, opens no client, and grants no authority. A Host selects the definitions its deployment trusts, supplies validated configuration and a current credential, and owns the resulting resource lifetime.
 
@@ -24,7 +24,7 @@ The subsystem owns no durable record, no process-global registry, no ambient cre
 
 ## Shared Core
 
-Every definition is a frozen dataclass extending one shared core:
+Harness-owned domain definitions are frozen dataclasses extending the following core. Environment owns its independent definition contract; Host catalog and schema projection accept that contract without requiring inheritance from a Harness class:
 
 ```python
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -51,7 +51,7 @@ Construction validates this metadata eagerly, because an installed definition is
 
 ## Authentication
 
-One declaration expresses credential presence for every domain:
+Harness-owned domains use the following credential-presence declaration. Host projections preserve the same required/optional/forbidden semantics for the independently defined Environment metadata:
 
 ```python
 class Authentication(BaseModel):
@@ -77,9 +77,9 @@ Hosts project this declaration alongside the configuration and credential schema
 | Web         | `WebProviderDefinition`         | Optional `search` and `scrape` operations and declared restricted-scrape support                                           |
 | Connector   | `ConnectorProviderDefinition`   | Setup validation and a scoped provider runtime over one bounded HTTP client                                                |
 | Memory      | `MemoryProviderDefinition`      | Opening a record store bound to one namespace, over the caller's HTTP client or a store-owned public HTTPS client          |
-| Environment | `EnvironmentProviderDefinition` | A separate target recipe model, construction of one fresh adapter, and declared target lifecycle capabilities              |
+| Environment | `EnvironmentProviderDefinition` | Imported single-target management, fixed-target `EnvironmentConnector`, and `EnvironmentExecution` contracts               |
 
-[Model Provider Definitions](16b-model-provider-definitions.md) owns Model construction and native API bindings; [Record Memory](21a-record-memory.md#memory-providers) owns the Memory domain; [Environment Providers](08a-environment-providers.md) owns the Environment domain. Declared capability flags are the single source a Host reads before offering an action; a domain rejects a definition whose flags contradict its supplied operations.
+[Model Provider Definitions](16b-model-provider-definitions.md) owns Model construction and native API bindings; [Record Memory](21a-record-memory.md#memory-providers) owns the Memory domain; [Environment Providers](../a13n-environment/01-environment-contract.md) owns the Environment domain. Declared capability flags are the single source a Host reads before offering an action; a domain rejects a definition whose flags contradict its supplied operations.
 
 A definition never stores durable state, chooses retention, or associates a Thread. Acquiring a live resource is a separate explicit call that returns a scoped object owned by the caller.
 
@@ -102,17 +102,17 @@ Composio captures the actual authentication configuration ID and scheme selected
 ## Catalogs
 
 ```python
-class ProviderCatalog[D: ProviderDefinition](Mapping[str, D]):
+class ProviderCatalog[D](Mapping[str, D]):
     def require(self, provider_type: str) -> D: ...
 ```
 
-A catalog is one immutable snapshot of the definitions a deployment selected for a single domain. It rejects a duplicate type at construction and exposes no mutation, late loading, ambient activation, or module replacement; changed Provider code requires a fresh process. Ordinary indexing has standard `Mapping` behavior, while `require()` raises `ProviderNotSelected` so a Host can map a stored-but-unselected type to a safe configuration error instead of an unhandled failure.
+Catalog construction validates the selected domain's definition contract, including imported Environment definitions. A catalog is one immutable snapshot of the definitions a deployment selected for a single domain. It rejects a duplicate type at construction and exposes no mutation, late loading, ambient activation, or module replacement; changed Provider code requires a fresh process. Ordinary indexing has standard `Mapping` behavior, while `require()` raises `ProviderNotSelected` so a Host can map a stored-but-unselected type to a safe configuration error instead of an unhandled failure.
 
 Catalog presence never authorizes use. A Host resolves an allowed type from trusted configuration, validates the exact inputs, resolves the current credential, and only then opens the Provider. Model content, imported Harness state, and a package installed in the environment cannot select a Provider or supply collaborators.
 
 ## Installed Plugins
 
-A third-party distribution contributes Environment Providers through exactly one entry-point group, `a13n_harness.providers.plugins`, whose target is an immutable manifest value:
+A third-party distribution contributes Environment Providers through exactly one entry-point group, `a13n_harness.providers.plugins`, whose target is an immutable manifest value. This is Harness Host discovery; the Environment library itself requires neither this loader nor Harness to use a definition directly:
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -156,7 +156,7 @@ Definitions carry no configuration schema version. A Provider owns exactly one c
 
 ## Invariants
 
-01. One shared core declares identity, typed inputs, credential presence, and setup help for all five domains.
+01. Harness-owned domains share one definition core; imported Environment definitions remain independently usable and retain the same Host-facing metadata semantics.
 02. Defining and selecting a Provider performs no external I/O and creates no client.
 03. `a13n_harness.providers.plugins` is the only Provider entry-point group and the only authoring surface for installed Environment definitions.
 04. A deployment selects entry-point names; it never supplies an import target.
