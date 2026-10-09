@@ -6,6 +6,7 @@ import json
 from collections.abc import AsyncIterable, Callable, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from typing import Any, Literal, Self, cast
 
 from a13n_harness import (
@@ -301,7 +302,7 @@ class HarnessAguiObserver:
                 value=_source_value(
                     item,
                     (
-                        TypeAdapter(CapabilityEvent) if isinstance(source, UnknownCapabilityEvent) else _ANY_ADAPTER
+                        _event_adapter(CapabilityEvent if isinstance(source, UnknownCapabilityEvent) else type(source))
                     ).dump_python(source, mode="json", by_alias=True, warnings="error"),
                 ),
             )
@@ -737,8 +738,15 @@ def _custom_harness_event(item: HarnessEvent, event: HarnessExtensionEvent) -> C
     )
 
 
+@lru_cache(maxsize=128)
+def _event_adapter(event_type: type[Any]) -> TypeAdapter[Any]:
+    # Any-mode serialization skips field serializers on standard dataclasses,
+    # including Pydantic AI's transient provider-details callbacks.
+    return TypeAdapter(event_type)
+
+
 def _custom_pydantic_event(item: HarnessEvent, event: AgentStreamEventProtocol) -> CustomEvent:
-    source = _ANY_ADAPTER.dump_python(event, mode="json", by_alias=True, warnings="error")
+    source = _event_adapter(type(event)).dump_python(event, mode="json", by_alias=True, warnings="error")
     return CustomEvent(
         timestamp=_timestamp_ms(item),
         name=f"a13n.pydantic_ai.{event.event_kind}",
