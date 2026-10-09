@@ -78,7 +78,7 @@ A handle is opened per use from values resolved in a short database session, aft
 | environment | `runs/environments/adapters`                   | one lifecycle operation, or one attempt's mount ([06](06-environments.md)) |
 | memory      | `resources/memories/records.open_record_store` | one API call or purge, or one attempt's record memory ([11](11-memory.md)) |
 
-The web backend's ID is the provider resource ID, so two accounts of one type stay distinct. Fetch and download use the host transport and need no provider resource.
+The web backend's ID is the provider resource ID, so two accounts of one type stay distinct. Each opened search or scrape backend owns one HTTP client for the attempt and reuses its connection pool across calls. The client closes when the backend exits, including on failure or cancellation, and is never shared with another backend or attempt. Fetch and download use the host transport and need no provider resource.
 
 Redis caches under `provider:{type}:` hold only discovery results (MCP tool lists, connector apps and actions) for `providers.discovery_ttl`, keyed by resource version, so any change to the resource, including a new credential, reads fresh. The cache is an accelerator: a miss or a Redis error discovers again.
 

@@ -8,11 +8,12 @@ revision selecting it was validated.
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import anyio
 from a13n_harness.capabilities.web import WebScrapeBackendBinding, WebSearchBackendBinding
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.web.definition import WebProvider
 from a13n_harness.providers.web.options import ScrapeOptions, SearchOptions
-from a13n_harness.providers.web.transport import WebProviderTransport
+from a13n_harness.providers.web.transport import WebProviderTransport, provider_client
 
 from a13n_service.infra.crypto import KeyRing
 from a13n_service.providers.registry import Registry
@@ -44,10 +45,16 @@ async def _open(
     keys: KeyRing,
     policy: EndpointPolicy,
 ) -> AsyncIterator[WebProvider]:
-    async with registry.get("web", provider.type).open(
-        provider.config,
-        provider.reveal_credential(keys),
-        options=options,
-        transport=WebProviderTransport(endpoint_policy=policy),
-    ) as handle:
-        yield handle
+    """One backend owns its HTTP pool for the attempt; exchanges close only their responses."""
+    client = provider_client()
+    try:
+        async with registry.get("web", provider.type).open(
+            provider.config,
+            provider.reveal_credential(keys),
+            options=options,
+            transport=WebProviderTransport(endpoint_policy=policy, client=client),
+        ) as handle:
+            yield handle
+    finally:
+        with anyio.fail_after(5, shield=True):
+            await client.aclose()
