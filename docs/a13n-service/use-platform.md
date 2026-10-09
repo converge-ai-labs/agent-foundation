@@ -24,6 +24,16 @@ Console follows your browser's preferred language when it supports it; otherwise
 
 To return later, open **Sessions** and select **Continue conversation** for that session. This opens Chat on its main thread; if there is no unique main thread, choose the history to open. A thread ID search keeps that exact target. Select **Inspect execution** or click the row to open Debug. You can switch between Chat and Debug in the conversation. If a run fails, inspect its details or share its ID with your administrator; see [troubleshooting](monitoring.md#troubleshoot-a-request-or-run).
 
+Messages show the sender’s current name and original submission time in Chat and Debug. Your own messages have a **You** label; service accounts have a **Service account** label. Select a sender’s name to view and copy their email or account ID. Queued messages, guidance and inherited branch history retain their own senders. Names and emails reflect the current profile.
+
+## Create a conversation branch
+
+Choose **Create branch from here** below the response you want to continue from, or **Create branch** beside a run in Debug. Enter the new branch's first message and select **Create branch and send**. The branch stays in the same session and uses that run's agent version and options. Switch conversations from the header; the branch's origin link returns to the exact run it inherited.
+
+The origin must have stopped executing, and you need permission to run agents. A waiting run can be branched without resolving its original wait; the new branch denies pending approvals and fails unanswered calls. Failed or cancelled runs continue from their last saved checkpoint.
+
+File environments and memory are shared by default, so changes may be visible in both conversations. Under **Environment options**, **Use a new environment** uses the agent's default environment when configured, without copying old files. Memory remains shared.
+
 ## Create your own agent
 
 With the builder or admin role in this workspace:

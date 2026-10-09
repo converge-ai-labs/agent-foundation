@@ -66,71 +66,54 @@ async function openList(name: RegExp) {
   return within(await screen.findByRole("menu"));
 }
 
-it("lists every run of the thread and of its child threads, and opens one", async () => {
+it("lists only the current thread's runs, excluding children and forks", async () => {
   show();
   const list = await openList(/Run 2 of 2/);
-  await list.findByText("Alternative proposal");
   const items = list.getAllByRole("menuitem");
-  // Both threads that branched from Run 2 follow it: the delegation, then the
-  // fork that reads on from it.
   expect(items.map((item) => item.textContent)).toEqual([
     "Run 1Review the release12s",
     "Run 2Write the markerstate.waiting",
-    "Run 1Find prior incidents12s",
-    "Run 1Alternative proposal12s",
   ]);
-  // The child thread is named by the agent that answers it, under its run.
-  expect(list.getByText("Researcher")).toBeTruthy();
-  expect(list.queryByText("Child thread")).toBeNull();
-  await userEvent.setup().click(items[2]!);
-  expect(
-    await screen.findByText(
-      "/workspace/design/sessions/ses_1/threads/thr_child/runs/run_child?view=debug",
-    ),
-  ).toBeTruthy();
-});
-
-it("steps to the previous run and keeps the debug level", async () => {
-  show();
-  const user = userEvent.setup();
-  await screen.findByRole("button", { name: /Run 2 of 2/ });
-  await user.click(screen.getByRole("button", { name: "Previous run" }));
+  expect(list.queryByText("Root thread")).toBeNull();
+  await userEvent.setup().click(items[0]!);
   expect(
     await screen.findByText(
       "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_1?view=debug",
     ),
   ).toBeTruthy();
-  // The child thread's run follows the last run of this thread.
-  expect(
-    screen.getByRole("button", { name: "Next run" }).hasAttribute("disabled"),
-  ).toBe(false);
 });
 
-it("nests a fork under the run it branched from, ahead of its own", async () => {
-  show(fixtureForkThread, "run_fork");
-  const list = await openList(/^Run 1$/);
-  const items = await list.findAllByRole("menuitem");
-  // One run of its own, but the lineage reaches two more in the root thread.
-  expect(items.map((item) => item.textContent)).toEqual([
-    "Run 1Review the release12s",
-    "Run 2Write the markerstate.waiting",
-    "Run 1Alternative proposal12s",
-  ]);
-  const branch = list.getByText("Fork").parentElement;
-  expect(branch?.hasAttribute("data-nested")).toBe(true);
-  expect(branch?.previousElementSibling?.textContent).toContain(
-    "Write the marker",
+it("steps within the current thread and cannot continue into a child or fork", async () => {
+  show();
+  await screen.findByRole("button", { name: /Run 2 of 2/ });
+  expect(screen.getByRole("button", { name: "Next run" })).toHaveProperty(
+    "disabled",
+    true,
   );
-  expect(list.getByText("Root thread")).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: "Next run" }).hasAttribute("disabled"),
-  ).toBe(true);
   await userEvent
     .setup()
     .click(screen.getByRole("button", { name: "Previous run" }));
   expect(
     await screen.findByText(
-      "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_2?view=debug",
+      "/workspace/design/sessions/ses_1/threads/thr_1/runs/run_1?view=debug",
     ),
   ).toBeTruthy();
+});
+
+it("shows a single fork Run without parent runs and disables cross-thread stepping", async () => {
+  show(fixtureForkThread, "run_fork");
+  const list = await openList(/^Run 1 of 1$/);
+  expect(list.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(
+    ["Run 1Alternative proposal12s"],
+  );
+  expect(list.queryByText("Root thread")).toBeNull();
+  expect(list.queryByText("Fork")).toBeNull();
+  expect(screen.getByRole("button", { name: "Previous run" })).toHaveProperty(
+    "disabled",
+    true,
+  );
+  expect(screen.getByRole("button", { name: "Next run" })).toHaveProperty(
+    "disabled",
+    true,
+  );
 });

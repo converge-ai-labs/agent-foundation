@@ -244,26 +244,27 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Sessions, threads and runs
 
-| Path                              | Methods            | Owner                                            |
-| --------------------------------- | ------------------ | ------------------------------------------------ |
-| `/sessions`                       | GET, POST          | [05](05-runs.md#reads)                           |
-| `/sessions/{session}`             | GET, PATCH         | [05](05-runs.md#reads)                           |
-| `/threads`                        | GET, POST          | [05](05-runs.md#submit-and-accept)               |
-| `/threads/{thread}`               | GET, PATCH         | [05](05-runs.md#reads)                           |
-| `/threads/{thread}/archive`       | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/threads/{thread}/runs`          | GET                | [05](05-runs.md#reads)                           |
-| `/threads/{thread}/stream`        | GET                | [07](07-facts-and-delivery.md#the-thread-stream) |
-| `/threads/{thread}/inbox`         | GET, POST          | [05](05-runs.md#submit-and-accept)               |
-| `/threads/{thread}/inbox/order`   | PUT                | [05](05-runs.md#editing-queued-input)            |
-| `/threads/{thread}/inbox/{entry}` | GET, PATCH, DELETE | [05](05-runs.md#editing-queued-input)            |
-| `/runs/{run}`                     | GET, PATCH         | [05](05-runs.md#reads)                           |
-| `/runs/{run}/interrupt`           | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/runs/{run}/fork`                | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/runs/{run}/resume`              | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
-| `/runs/{run}/items`               | GET                | [05](05-runs.md#reads)                           |
-| `/runs/{run}/contents/{content}`  | GET                | [05](05-runs.md#reads)                           |
-| `/runs/{run}/lineage`             | GET                | [05](05-runs.md#reads)                           |
-| `/runs/{run}/attempts`            | GET                | [05](05-runs.md#reads)                           |
+| Path                                  | Methods            | Owner                                            |
+| ------------------------------------- | ------------------ | ------------------------------------------------ |
+| `/sessions`                           | GET, POST          | [05](05-runs.md#reads)                           |
+| `/sessions/{session}`                 | GET, PATCH         | [05](05-runs.md#reads)                           |
+| `/sessions/{session}/message-authors` | GET                | [05](05-runs.md#reads)                           |
+| `/threads`                            | GET, POST          | [05](05-runs.md#submit-and-accept)               |
+| `/threads/{thread}`                   | GET, PATCH         | [05](05-runs.md#reads)                           |
+| `/threads/{thread}/archive`           | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
+| `/threads/{thread}/runs`              | GET                | [05](05-runs.md#reads)                           |
+| `/threads/{thread}/stream`            | GET                | [07](07-facts-and-delivery.md#the-thread-stream) |
+| `/threads/{thread}/inbox`             | GET, POST          | [05](05-runs.md#submit-and-accept)               |
+| `/threads/{thread}/inbox/order`       | PUT                | [05](05-runs.md#editing-queued-input)            |
+| `/threads/{thread}/inbox/{entry}`     | GET, PATCH, DELETE | [05](05-runs.md#editing-queued-input)            |
+| `/runs/{run}`                         | GET, PATCH         | [05](05-runs.md#reads)                           |
+| `/runs/{run}/interrupt`               | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
+| `/runs/{run}/fork`                    | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
+| `/runs/{run}/resume`                  | POST               | [05](05-runs.md#waiting-interrupt-and-fork)      |
+| `/runs/{run}/items`                   | GET                | [05](05-runs.md#reads)                           |
+| `/runs/{run}/contents/{content}`      | GET                | [05](05-runs.md#reads)                           |
+| `/runs/{run}/lineage`                 | GET                | [05](05-runs.md#reads)                           |
+| `/runs/{run}/attempts`                | GET                | [05](05-runs.md#reads)                           |
 
 ### Environments
 

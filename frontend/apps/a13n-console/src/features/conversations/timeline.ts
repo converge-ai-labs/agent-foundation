@@ -83,6 +83,7 @@ export interface ContentEntry extends EntryBase {
   text: string;
   /** `a13n.steering-source` provenance for a Harness-enqueued notice. */
   steeringSource: string | null;
+  sourceId?: string;
   protectedReasoning: boolean;
   failure: unknown;
 }
@@ -390,6 +391,7 @@ function contentEntry(
     subagentRunId: item.subagentRunId,
     text: item.text,
     steeringSource: item.steeringSource ?? null,
+    sourceId: item.sourceId,
     protectedReasoning: item.protectedReasoning,
     failure: item.failure ?? null,
     startedAt: item.startedAt,
@@ -402,7 +404,9 @@ function contentEntry(
   if (item.role === "assistant") return { kind: "reply", ...base };
   if (item.role !== "user") return null;
   const leading = first();
-  return item.steeringSource || !leading ? { kind: "guidance", ...base } : null;
+  return item.steeringSource || item.inputSource === "steering" || !leading
+    ? { kind: "guidance", ...base }
+    : null;
 }
 
 function otherEntry(observations: readonly ExecutionObservation[]): OtherEntry {

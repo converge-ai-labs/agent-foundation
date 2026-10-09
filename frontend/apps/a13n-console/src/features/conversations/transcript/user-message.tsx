@@ -3,6 +3,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { JsonView } from "../../../shared/forms";
 import { MarkdownContent } from "../../../shared/markdown";
+import { MessageAuthor } from "../message-author";
 import { StoredContent } from "../stored-content";
 import { inputText } from "../input";
 import { isRecord } from "../../../service-client";
@@ -11,11 +12,21 @@ import { AssetAttachment, AttachmentChip } from "./attachment";
 import styles from "./transcript.module.css";
 
 /** What the Run was asked to do: a right-aligned bubble under its caption. */
-export function UserMessage({ request }: { request: RunRequest }) {
+export function UserMessage({
+  request,
+  entryId,
+  principalId,
+}: {
+  request: RunRequest;
+  entryId?: string | null;
+  principalId?: string | null;
+}) {
   const { t } = useTranslation();
   return (
     <div className={styles.userTurn}>
-      {request.kind !== "message" && (
+      {request.kind === "message" ? (
+        <MessageAuthor entryId={entryId} principalId={principalId} />
+      ) : (
         <span className={styles.userCaption}>{requestLabel(request, t)}</span>
       )}
       <article className={styles.userMessage}>
@@ -37,7 +48,7 @@ export function requestLabel(request: RunRequest, t: TFunction): string {
     case "delegated_task":
       return t("Delegated task");
     default:
-      return t("You");
+      return t("User");
   }
 }
 
@@ -74,14 +85,19 @@ export function RequestContent({ request }: { request: RunRequest }) {
 export function GuidanceMessage({
   text,
   itemId,
+  sourceId,
+  steeringSource,
 }: {
   text: string;
   itemId?: string;
+  sourceId?: string;
+  steeringSource?: string | null;
 }) {
   const { t } = useTranslation();
   if (!text.trim()) return null;
   return (
     <div className={styles.userTurn}>
+      {!steeringSource && <MessageAuthor entryId={sourceId} />}
       <article className={`${styles.userMessage} ${styles.guidanceMessage}`}>
         <span className={styles.guidanceLabel}>{t("Guidance")}</span>
         <div className={styles.prose}>

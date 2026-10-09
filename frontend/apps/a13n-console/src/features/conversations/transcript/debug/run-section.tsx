@@ -11,7 +11,9 @@ import { formatCost } from "../../../../shared/cost";
 import { formatDuration, formatTokens } from "../../format";
 import { runOutcome } from "../../lifecycle";
 import { runRequest } from "../../request";
+import { ForkRun } from "../../fork-run";
 import type { RunTimeline } from "../../timeline";
+import { MessageAuthor } from "../../message-author";
 import { RequestContent, requestLabel } from "../user-message";
 import { isInteractive } from "../run-actions";
 import {
@@ -113,6 +115,13 @@ export function DebugRunSection({
             <span>{formatCost(timeline.totals.costUsd)}</span>
           )}
         </span>
+        <ForkRun
+          run={run}
+          thread={thread}
+          level="debug"
+          index={index}
+          compact
+        />
         <Button
           variant="ghost"
           size="sm"
@@ -124,7 +133,16 @@ export function DebugRunSection({
         </Button>
       </header>
       <div className={styles.request} data-collapsed={!open || undefined}>
-        <span className={styles.requestLabel}>{requestLabel(request, t)}</span>
+        {request.kind === "message" ? (
+          <MessageAuthor
+            entryId={run.source_entry_id}
+            principalId={run.principal_id}
+          />
+        ) : (
+          <span className={styles.requestLabel}>
+            {requestLabel(request, t)}
+          </span>
+        )}
         <div className={styles.requestBody}>
           <RequestContent request={request} />
         </div>
