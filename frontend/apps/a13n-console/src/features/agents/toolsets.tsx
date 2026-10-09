@@ -1,4 +1,5 @@
 import {
+  DisclosureSection,
   Collapsible,
   CollapsiblePanel,
   CollapsibleTrigger,
@@ -32,6 +33,8 @@ const names: Record<Definition["key"], string> = {
   memory: "Memory",
   assets: "Assets",
   configuration: "Configuration",
+  traces: "Trace queries",
+  findings: "Findings",
 };
 const groupDescriptions: Record<Definition["key"], string> = {
   files: "Read, write, and organize files.",
@@ -40,7 +43,10 @@ const groupDescriptions: Record<Definition["key"], string> = {
   memory: "Read and change the memories a conversation mounts.",
   assets: "Publish files as agent assets.",
   configuration: "Find resources and create agents and versions.",
+  traces: "Read authorized execution evidence.",
+  findings: "Submit findings and report analysis coverage.",
 };
+const platform = new Set(["configuration", "traces", "findings"]);
 const toolDescriptions: Record<string, Record<string, string>> = {
   files: {
     view: "Read file contents",
@@ -82,6 +88,12 @@ const toolDescriptions: Record<string, Record<string, string>> = {
     record_update: "Update a memory record",
     record_delete: "Delete a memory record",
   },
+  traces: {
+    list: "List traces",
+    read: "Read trace",
+    spans: "Read trace steps",
+  },
+  findings: { submit: "Submit finding", report: "Report analysis coverage" },
   assets: { publish: "Publish an asset" },
   configuration: {
     find: "Find workspace resources",
@@ -199,8 +211,11 @@ export function AgentToolsets({
             return [
               tool.key,
               {
+                permission: tool.default_permission,
                 ...selection,
-                enabled: enabled && !providerMissing,
+                enabled: platform.has(group.key)
+                  ? (selection?.enabled ?? tool.default_enabled)
+                  : enabled && !providerMissing,
                 ...(provider && {
                   config: { ...selection?.config, provider_id: provider.id },
                 }),
@@ -222,11 +237,250 @@ export function AgentToolsets({
         ...previous[group],
         tools: {
           ...previous[group]?.tools,
-          [tool]: { ...previous[group]?.tools?.[tool], ...patch },
+          [tool]: {
+            permission:
+              catalog.data?.items
+                .find((item) => item.key === group)
+                ?.tools.find((item) => item.key === tool)?.default_permission ??
+              "inherit",
+            ...previous[group]?.tools?.[tool],
+            ...patch,
+          },
         },
       },
     }));
   }
+  const renderGroup = (group: Definition) => {
+    const enabled = value[group.key]?.enabled ?? group.default_enabled;
+    const expanded = selected === group.key;
+    const activeCount = group.tools.filter(
+      (tool) =>
+        toolState(
+          enabled,
+          tool,
+          value[group.key]?.tools?.[tool.key],
+          providers,
+          providerTypes,
+        ).enabled,
+    ).length;
+    return (
+      <section className={styles.toolsetGroup} key={group.key}>
+        <Collapsible
+          open={expanded}
+          onOpenChange={(open) => setSelected(open ? group.key : null)}
+        >
+          <div className={styles.toolsetGroupHeader}>
+            <Label className={styles.toolsetGroupSwitch}>
+              <Checkbox
+                disabled={readOnly}
+                checked={enabled}
+                onCheckedChange={(checked) =>
+                  updateGroup(group, checked === true)
+                }
+              />
+              <span className="sr-only">
+                {t("Enable {{group}} tools", {
+                  group: t(names[group.key]),
+                })}
+              </span>
+            </Label>
+            <CollapsibleTrigger
+              render={
+                <button type="button" className={styles.toolsetGroupTrigger} />
+              }
+            >
+              <span className={styles.toolsetGroupName}>
+                {t(names[group.key])}
+              </span>
+              <span className={styles.toolsetGroupDescription}>
+                {t(groupDescriptions[group.key])}
+              </span>
+              <span className={styles.toolsetGroupCount}>
+                {enabled
+                  ? t("{{count}} of {{total}} on", {
+                      count: activeCount,
+                      total: group.tools.length,
+                    })
+                  : t("Off")}
+              </span>
+              <CaretDownIcon
+                size={16}
+                className={
+                  expanded ? styles.toolsetCaretOpen : styles.toolsetCaret
+                }
+                aria-hidden="true"
+              />
+            </CollapsibleTrigger>
+          </div>
+          <CollapsiblePanel>
+            <div className={styles.toolsetGroupBody}>
+              {group.tools.map((tool) => {
+                const selection = value[group.key]?.tools?.[tool.key];
+                const selectedPermission =
+                  selection?.permission === "inherit"
+                    ? "allow"
+                    : (selection?.permission ?? tool.default_permission);
+                const {
+                  provider,
+                  providerMissing,
+                  enabled: toolEnabled,
+                } = toolState(
+                  enabled,
+                  tool,
+                  selection,
+                  providers,
+                  providerTypes,
+                );
+                const providerHint = providerMissing
+                  ? webProviders.isPending || webProviderTypes.isPending
+                    ? t("Loading Web Providers…")
+                    : webProviders.error || webProviderTypes.error
+                      ? t("Web Providers could not be loaded.")
+                      : selection?.config?.provider_id
+                        ? t(
+                            "The selected Web Provider is unavailable. Choose another provider to enable this tool.",
+                          )
+                        : t(
+                            "Add an enabled, configured Web Provider to enable this tool.",
+                          )
+                  : undefined;
+                return (
+                  <div
+                    className={`${styles.toolsetTool} ${group.key === "web" ? styles.toolsetToolWeb : ""}`}
+                    key={tool.key}
+                  >
+                    <Collapsible>
+                      <div className={styles.toolsetToolMain}>
+                        <Label
+                          className={styles.toolsetToolName}
+                          title={!toolEnabled ? providerHint : undefined}
+                        >
+                          <Checkbox
+                            aria-describedby={
+                              providerHint
+                                ? `web-provider-${tool.key}-hint`
+                                : undefined
+                            }
+                            disabled={readOnly || !enabled || providerMissing}
+                            checked={toolEnabled}
+                            onCheckedChange={(checked) =>
+                              updateTool(group.key, tool.key, {
+                                enabled: checked === true,
+                                ...(checked === true &&
+                                  provider && {
+                                    config: {
+                                      ...selection?.config,
+                                      provider_id: provider.id,
+                                    },
+                                  }),
+                              })
+                            }
+                          />
+                          <span>{tool.model_name}</span>
+                        </Label>
+                        {providerHint && (
+                          <span
+                            id={`web-provider-${tool.key}-hint`}
+                            className="sr-only"
+                          >
+                            {providerHint}
+                          </span>
+                        )}
+                        <span className={styles.toolsetToolDescription}>
+                          {t(
+                            toolDescriptions[group.key]?.[tool.key] ??
+                              tool.model_name,
+                          )}
+                        </span>
+                        <div className={styles.toolsetToolActions}>
+                          {group.key === "web" && (
+                            <CollapsibleTrigger
+                              render={
+                                <button
+                                  type="button"
+                                  className={styles.webConfigTrigger}
+                                  aria-label={t("Configure {{tool}}", {
+                                    tool: tool.model_name,
+                                  })}
+                                />
+                              }
+                            >
+                              {t("Configure")}
+                              <CaretDownIcon size={14} aria-hidden="true" />
+                            </CollapsibleTrigger>
+                          )}
+                          <ToolPermissions
+                            name={tool.model_name}
+                            value={selectedPermission}
+                            supported={tool.supported_permissions}
+                            readOnly={readOnly}
+                            onChange={(permission) =>
+                              updateTool(group.key, tool.key, {
+                                permission,
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                      {selectedPermission === "review" && (
+                        <p className={styles.toolsetToolHint}>
+                          {t(
+                            "Review is configured for this tool. Choose another permission to replace it.",
+                          )}
+                        </p>
+                      )}
+                      {group.key === "web" && (
+                        <CollapsiblePanel>
+                          <div className={styles.webConfigGrid}>
+                            {tool.resource_selector ? (
+                              <WebToolSettings
+                                operation={tool.resource_selector.operation}
+                                providers={providers}
+                                types={providerTypes}
+                                providerError={
+                                  webProviders.error ?? webProviderTypes.error
+                                }
+                                config={selection?.config ?? {}}
+                                reuseProviderId={
+                                  value.web?.tools?.[
+                                    tool.resource_selector.operation ===
+                                    "search"
+                                      ? "scrape"
+                                      : "search"
+                                  ]?.config?.provider_id
+                                }
+                                readOnly={readOnly}
+                                onChange={(config) =>
+                                  updateTool(group.key, tool.key, {
+                                    config,
+                                  })
+                                }
+                              />
+                            ) : (
+                              <WebLocalSettings
+                                tool={tool.key as "fetch" | "download"}
+                                config={selection?.config ?? {}}
+                                readOnly={readOnly}
+                                onChange={(config) =>
+                                  updateTool(group.key, tool.key, {
+                                    config,
+                                  })
+                                }
+                              />
+                            )}
+                          </div>
+                        </CollapsiblePanel>
+                      )}
+                    </Collapsible>
+                  </div>
+                );
+              })}
+            </div>
+          </CollapsiblePanel>
+        </Collapsible>
+      </section>
+    );
+  };
   return (
     <Section
       title={t("Tools")}
@@ -235,249 +489,20 @@ export function AgentToolsets({
       )}
     >
       <div className={styles.toolsetCard}>
-        {catalog.data?.items.map((group) => {
-          const enabled = value[group.key]?.enabled ?? group.default_enabled;
-          const expanded = selected === group.key;
-          const activeCount = group.tools.filter(
-            (tool) =>
-              toolState(
-                enabled,
-                tool,
-                value[group.key]?.tools?.[tool.key],
-                providers,
-                providerTypes,
-              ).enabled,
-          ).length;
-          return (
-            <section className={styles.toolsetGroup} key={group.key}>
-              <Collapsible
-                open={expanded}
-                onOpenChange={(open) => setSelected(open ? group.key : null)}
-              >
-                <div className={styles.toolsetGroupHeader}>
-                  <Label className={styles.toolsetGroupSwitch}>
-                    <Checkbox
-                      disabled={readOnly}
-                      checked={enabled}
-                      onCheckedChange={(checked) =>
-                        updateGroup(group, checked === true)
-                      }
-                    />
-                    <span className="sr-only">
-                      {t("Enable {{group}} tools", {
-                        group: t(names[group.key]),
-                      })}
-                    </span>
-                  </Label>
-                  <CollapsibleTrigger
-                    render={
-                      <button
-                        type="button"
-                        className={styles.toolsetGroupTrigger}
-                      />
-                    }
-                  >
-                    <span className={styles.toolsetGroupName}>
-                      {t(names[group.key])}
-                    </span>
-                    <span className={styles.toolsetGroupDescription}>
-                      {t(groupDescriptions[group.key])}
-                    </span>
-                    <span className={styles.toolsetGroupCount}>
-                      {enabled
-                        ? t("{{count}} of {{total}} on", {
-                            count: activeCount,
-                            total: group.tools.length,
-                          })
-                        : t("Off")}
-                    </span>
-                    <CaretDownIcon
-                      size={16}
-                      className={
-                        expanded ? styles.toolsetCaretOpen : styles.toolsetCaret
-                      }
-                      aria-hidden="true"
-                    />
-                  </CollapsibleTrigger>
-                </div>
-                <CollapsiblePanel>
-                  <div className={styles.toolsetGroupBody}>
-                    {group.tools.map((tool) => {
-                      const selection = value[group.key]?.tools?.[tool.key];
-                      const selectedPermission =
-                        selection?.permission === "inherit"
-                          ? "allow"
-                          : (selection?.permission ?? "allow");
-                      const {
-                        provider,
-                        providerMissing,
-                        enabled: toolEnabled,
-                      } = toolState(
-                        enabled,
-                        tool,
-                        selection,
-                        providers,
-                        providerTypes,
-                      );
-                      const providerHint = providerMissing
-                        ? webProviders.isPending || webProviderTypes.isPending
-                          ? t("Loading Web Providers…")
-                          : webProviders.error || webProviderTypes.error
-                            ? t("Web Providers could not be loaded.")
-                            : selection?.config?.provider_id
-                              ? t(
-                                  "The selected Web Provider is unavailable. Choose another provider to enable this tool.",
-                                )
-                              : t(
-                                  "Add an enabled, configured Web Provider to enable this tool.",
-                                )
-                        : undefined;
-                      return (
-                        <div
-                          className={`${styles.toolsetTool} ${group.key === "web" ? styles.toolsetToolWeb : ""}`}
-                          key={tool.key}
-                        >
-                          <Collapsible>
-                            <div className={styles.toolsetToolMain}>
-                              <Label
-                                className={styles.toolsetToolName}
-                                title={!toolEnabled ? providerHint : undefined}
-                              >
-                                <Checkbox
-                                  aria-describedby={
-                                    providerHint
-                                      ? `web-provider-${tool.key}-hint`
-                                      : undefined
-                                  }
-                                  disabled={
-                                    readOnly || !enabled || providerMissing
-                                  }
-                                  checked={toolEnabled}
-                                  onCheckedChange={(checked) =>
-                                    updateTool(group.key, tool.key, {
-                                      enabled: checked === true,
-                                      ...(checked === true &&
-                                        provider && {
-                                          config: {
-                                            ...selection?.config,
-                                            provider_id: provider.id,
-                                          },
-                                        }),
-                                    })
-                                  }
-                                />
-                                <span>{tool.model_name}</span>
-                              </Label>
-                              {providerHint && (
-                                <span
-                                  id={`web-provider-${tool.key}-hint`}
-                                  className="sr-only"
-                                >
-                                  {providerHint}
-                                </span>
-                              )}
-                              <span className={styles.toolsetToolDescription}>
-                                {t(
-                                  toolDescriptions[group.key]?.[tool.key] ??
-                                    tool.model_name,
-                                )}
-                              </span>
-                              <div className={styles.toolsetToolActions}>
-                                {group.key === "web" && (
-                                  <CollapsibleTrigger
-                                    render={
-                                      <button
-                                        type="button"
-                                        className={styles.webConfigTrigger}
-                                        aria-label={t("Configure {{tool}}", {
-                                          tool: tool.model_name,
-                                        })}
-                                      />
-                                    }
-                                  >
-                                    {t("Configure")}
-                                    <CaretDownIcon
-                                      size={14}
-                                      aria-hidden="true"
-                                    />
-                                  </CollapsibleTrigger>
-                                )}
-                                <ToolPermissions
-                                  name={tool.model_name}
-                                  value={selectedPermission}
-                                  supported={tool.supported_permissions}
-                                  readOnly={readOnly}
-                                  onChange={(permission) =>
-                                    updateTool(group.key, tool.key, {
-                                      permission,
-                                    })
-                                  }
-                                />
-                              </div>
-                            </div>
-                            {selectedPermission === "review" && (
-                              <p className={styles.toolsetToolHint}>
-                                {t(
-                                  "Review is configured for this tool. Choose another permission to replace it.",
-                                )}
-                              </p>
-                            )}
-                            {group.key === "web" && (
-                              <CollapsiblePanel>
-                                <div className={styles.webConfigGrid}>
-                                  {tool.resource_selector ? (
-                                    <WebToolSettings
-                                      operation={
-                                        tool.resource_selector.operation
-                                      }
-                                      providers={providers}
-                                      types={providerTypes}
-                                      providerError={
-                                        webProviders.error ??
-                                        webProviderTypes.error
-                                      }
-                                      config={selection?.config ?? {}}
-                                      reuseProviderId={
-                                        value.web?.tools?.[
-                                          tool.resource_selector.operation ===
-                                          "search"
-                                            ? "scrape"
-                                            : "search"
-                                        ]?.config?.provider_id
-                                      }
-                                      readOnly={readOnly}
-                                      onChange={(config) =>
-                                        updateTool(group.key, tool.key, {
-                                          config,
-                                        })
-                                      }
-                                    />
-                                  ) : (
-                                    <WebLocalSettings
-                                      tool={tool.key as "fetch" | "download"}
-                                      config={selection?.config ?? {}}
-                                      readOnly={readOnly}
-                                      onChange={(config) =>
-                                        updateTool(group.key, tool.key, {
-                                          config,
-                                        })
-                                      }
-                                    />
-                                  )}
-                                </div>
-                              </CollapsiblePanel>
-                            )}
-                          </Collapsible>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CollapsiblePanel>
-              </Collapsible>
-            </section>
-          );
-        })}
+        {catalog.data?.items
+          .filter((group) => !platform.has(group.key))
+          .map(renderGroup)}
       </div>
+      <DisclosureSection
+        title={t("Advanced / Platform Features")}
+        defaultOpen={false}
+      >
+        <div className={styles.toolsetCard}>
+          {catalog.data?.items
+            .filter((group) => platform.has(group.key))
+            .map(renderGroup)}
+        </div>
+      </DisclosureSection>
       <ErrorNotice error={catalog.error} />
       {validation.error && !refusal && <ErrorNotice error={validation.error} />}
       {refusal && candidate?.text === configText && (

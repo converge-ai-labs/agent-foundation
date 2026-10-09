@@ -28,7 +28,7 @@ a13n_service/
     rows.py           rules every kind's rows share: scoped lookup, partial change, audit and key collisions
     runtime.py        the runtime protocol resource operations use
     requests.py       the HTTP runtime dependency resource routes use
-    agents/           tables  schemas  service  routes  validation  definition  toolsets  composer
+    agents/           tables  schemas  service  routes  validation  definition  toolsets  composer  presets
     skills/           tables  schemas  service  routes  package  content  github  pins
     providers/        tables (all five provider tables)  schemas  service  routes  scope  probe
     models/           tables  schemas  service  routes  catalog  models_dev  media  runtime
@@ -56,6 +56,7 @@ a13n_service/
     requests.py  schemas.py  routes.py  trace_routes.py
     environments/     tables  schemas  service  routes  lifecycle  maintenance  mounts  execution  adapters
                       external
+    findings/         tables  schemas  service  analysis  preset  tools  routes: diagnosis and coverage
     memories/         tables  schemas  routes  mounts  execution
 
   usage/              schemas  routes  service: workspace consumption and Run-duration queries

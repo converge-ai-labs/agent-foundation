@@ -5,7 +5,7 @@ description: Give agents built-in toolsets, MCP and app connections, client tool
 
 An agent's tools come from four places, all selected in its [revision](agents-and-runs.md#agent-configuration):
 
-- **Built-in toolsets**, which the Service runs itself: files, terminal, web, memory, asset publication and agent configuration.
+- **Built-in toolsets**, which the Service runs itself: files, terminal, web, memory, asset publication, agent configuration, trace queries and findings.
 - **Connections**: remote MCP servers and app accounts of a connector provider such as Composio.
 - **Client tools**, which your application executes and answers through [resume](agents-and-runs.md#waits-approvals-and-questions).
 - **Skills**, which add instructions and files; see [Skills](skills.md).
@@ -24,6 +24,10 @@ Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revisi
 | `memory`           | `memory_file_view`, `_grep`, `_create`, `_edit`, `_append`, `_move`, `_delete`; `memory_record_search`, `_list`, `_add`, `_update`, `_delete` | Enabled                                           |
 | `assets`           | `publish_asset`                                                                                                                               | Disabled                                          |
 | `configuration`    | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                           | Disabled; see [Agent Composer](agent-composer.md) |
+| `traces`           | `list_traces`, `read_trace`, `read_trace_spans`                                                                                               | Disabled                                          |
+| `findings`         | `read_finding`, `submit_finding`, `report_analysis`                                                                                           | Disabled                                          |
+
+Configuration, trace queries and finding submission appear under **Advanced / Platform Features**. Group switches preserve individual platform-tool choices. See [Find and improve execution issues](agents-and-runs.md#find-and-improve-execution-issues).
 
 The files and terminal tools act on the run's mounted [environments](environments.md) and are offered to the model only when the run has one. The memory tools act on the run's mounted [memories](memory.md): file tools on file memories and record tools on record memories, and a `read` mount offers only viewing, listing and searching. `publish_asset` turns a file from an environment into a workspace [asset](files-and-webhooks.md#assets).
 

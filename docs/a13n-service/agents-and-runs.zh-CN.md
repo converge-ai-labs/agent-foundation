@@ -45,7 +45,7 @@ curl -X POST "$A13N_URL/api/v1/agents" \
 - `POST …/archive` 阻止 agent 的新运行（`422 disabled`）；已接收的运行会完成。`POST …/unarchive` 取消归档。
 - 列表可按 `label`、`q`（名称或描述）、`archived`、`source`（`custom` 或 `builtin`）以及 `skill_id`、`skill_revision_id` 筛选，后两者保留包含引用该 skill 的修订版本的 agent。
 
-内置 [Agent Composer](agent-composer.md)也是 agent，是工作空间中唯一 `source: "builtin"` 的 agent，不能修改或归档。
+内置 [Agent Composer](agent-composer.md) 和 Finding Agent 也是 agent，均为 `source: "builtin"`，通过 `preset_kind` 区分。它们的完整配置均只读，包括模型和模型设置。准备操作自动选择可用模型，并在当前模型仍可用时保留它。名称等元信息、头像、归档和默认版本切换受到保护。
 
 ### Agent 配置
 
@@ -442,3 +442,15 @@ curl "$A13N_URL/api/v1/usage?thread_id=$THREAD" -H "Authorization: Bearer $A13N_
 - `GET …/trace-backend` 返回后端 `type`（没有时为 `null`）和 `queryable_since`。
 
 查询仅返回工作空间的 span。没有后端时返回 `503 unavailable`。Span 包含多少内容由 `telemetry.trace_content` 决定。
+
+## 发现并改进执行问题
+
+打开 **改进 → 发现（Improve → Findings）**，审阅 Agent Run 的诊断信号。每个发现项包含严重程度、人工审阅结论、引用的 Agent 版本、trace/Run 证据、问题说明和改进建议。即使标记为严重，在人工审阅前也仍是未确认信号。关闭发现项与标记为已确认、预期行为或证据不足是独立操作。
+
+选择 **分析 traces**，设置内置规则和时间范围、数量，无需选择 Agent；默认范围为工作空间内的 traces。分析自动使用内置 Finding Agent。准备操作自动选择可用模型，并在当前模型仍可用时保留它；模型和其他配置均只读。分析按需通过普通 Service Run 执行，需要部署已配置 trace 查询后端。内置规则关注执行失败、重试与恢复、回答质量；成功恢复的错误会结合上下文判断。在已结束的 trace 页面选择 **分析此 trace**，可以仅分析这一条。
+
+选择过程按后端顺序最多扫描 100 个根节点，最多分析 20 条匹配 trace。**分析历史**标签页用表格列出分析范围、运行状态和创建时间。点击记录，在详情弹窗中查看选中、读取和 Agent 报告已审阅的 trace、缺失的覆盖报告和证据局限，并打开分析运行。没有发现项不代表所有 trace 都已审阅，也不代表 Agent 没有问题。
+
+**通过 Composer 修复**会打开引用发现项和对应版本的对话，Composer 通过只读工具读取证据。发送预填消息、审阅 Composer 的建议，再按需要批准配置写入。平台不会自动修复或发布，也不要求先建立实验或 dataset。
+
+自定义 Agent 可以在 **高级 / 平台功能**下启用配置、trace 查询和发现项提交工具。配置写入默认需要询问用户；Finding Agent 的内置配置仅提供配置读取工具，不提供 Agent 写入工具。外部集成可以通过 `POST /api/v1/findings` 提交同一格式，使用在工作区和提交主体范围内唯一、稳定的 `source_key`。提交方负责其 trace/span 引用；Service 会校验引用 Run 的工作区和 Agent 版本。

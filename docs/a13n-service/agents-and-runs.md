@@ -45,7 +45,7 @@ The response's `id` (`ap_…`) identifies the agent in paths and references; age
 - `POST …/archive` stops new runs of the agent (`422 disabled`); runs already accepted finish. `POST …/unarchive` reverses it.
 - Lists filter by `label`, `q` (name or description), `archived`, `source` (`custom` or `builtin`), and `skill_id` or `skill_revision_id`, which keep the agents with a revision pinning it.
 
-The built-in [Agent Composer](agent-composer.md) is an agent too, the workspace's one with `source: "builtin"`; it cannot be changed or archived.
+The built-in [Agent Composer](agent-composer.md) and Finding Agent are agents with `source: "builtin"`, distinguished by `preset_kind`. Their entire configuration is read-only, including models and model settings. Preparation automatically selects a usable model and retains the current one while usable. Metadata, avatar, archiving and default-version changes are protected.
 
 ### Agent configuration
 
@@ -442,3 +442,15 @@ With a trace backend configured (`telemetry.trace_backend`, see [logs, metrics a
 - `GET …/trace-backend` returns the backend `type` (`null` when none) and `queryable_since`.
 
 Queries return only the workspace's spans. Without a backend they answer `503 unavailable`. How much content the spans hold depends on `telemetry.trace_content`.
+
+## Find and improve execution issues
+
+Open **Improve → Findings** to review diagnostic signals about Agent runs. Each finding includes a severity, human assessment, cited Agent version, trace/Run evidence, explanation and suggestion. A critical finding is still unconfirmed until you review it. Closing a finding and marking it confirmed, expected, or insufficient are separate actions.
+
+Choose **Analyze traces**, select built-in rules and a time range/count. No Agent selection is required; the scope covers workspace traces. Analysis automatically uses the built-in Finding Agent. Preparation automatically selects an available model and keeps the current model while it remains usable; its model and configuration are read-only. Analysis runs on demand through an ordinary Service Run. The deployment needs a configured trace query backend. Rules focus on execution failures, retries/recovery and answer quality; an error that recovered successfully is considered in context. From an ended trace, **Analyze trace** selects that one trace.
+
+Selection scans at most 100 roots in backend order and analyzes at most 20 matching traces. The **Analysis history** tab lists analysis scopes, Run status and creation time in a table. Open a row to inspect selected, read and Agent-reported reviewed traces, missing coverage reports and evidence limitations, and open the analysis Run from the detail dialog. No findings does not mean that all traces were reviewed or that the Agent is healthy.
+
+**Fix with Composer** opens a conversation naming the finding and cited version; Composer reads the evidence through its read-only finding tool. Send the proposed message, review Composer's change and approve the configuration write when appropriate. Nothing is automatically repaired or published. Experiments and datasets are not required.
+
+Custom Agents can enable configuration, trace-query and finding-submission tools under **Advanced / Platform Features**. Configuration writes default to asking; Finding Agent's managed preset has read access to configuration and no Agent write tools. External integrations can submit the same finding contract with `POST /api/v1/findings`, using a stable `source_key` unique to the submitting principal in the workspace. The producer is responsible for its trace/span references; the Service validates cited Runs and their Agent revision.

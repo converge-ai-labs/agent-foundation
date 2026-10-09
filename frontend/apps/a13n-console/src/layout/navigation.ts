@@ -1,6 +1,7 @@
 import {
   type Icon,
   BrainIcon,
+  MagnifyingGlassIcon,
   ChartBarIcon,
   PulseIcon,
   HeadCircuitIcon,
@@ -49,6 +50,10 @@ export const navigationGroups: {
       ["traces", "Traces", PulseIcon],
     ],
   },
+  {
+    label: "Improve",
+    entries: [["findings", "Findings", MagnifyingGlassIcon]],
+  },
 ];
 
 /**
@@ -68,9 +73,10 @@ export function routeSkeleton(
     "/environments": 4,
     "/connections": 3,
     "/traces": 5,
+    "/findings": 5,
   };
   if (tail in lists) return { variant: "page", columns: lists[tail] };
-  if (/^\/(agents|traces|environments|memories)\/[^/]+$/.test(tail))
+  if (/^\/(agents|traces|environments|memories|findings)\/[^/]+$/.test(tail))
     return { variant: "detail", columns: 4 };
   return undefined;
 }

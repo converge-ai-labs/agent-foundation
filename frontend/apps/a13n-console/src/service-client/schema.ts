@@ -31,7 +31,7 @@ export interface paths {
     /**
      * List Agents
      * @description Agents of the workspace. `q` matches the name or description, ignoring case; `archived` keeps only
-     *     archived agents, or only open ones; `source=builtin` finds the Agent Composer; the skill filters keep those
+     *     archived agents, or only open ones; `source=builtin` finds managed presets; the skill filters keep those
      *     with a revision pinning that skill or that skill revision.
      */
     get: operations["list_agents_api_v1_agents_get"];
@@ -808,6 +808,77 @@ export interface paths {
     options?: never;
     head?: never;
     patch?: never;
+    trace?: never;
+  };
+  "/api/v1/finding-agent": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Prepare Finding Agent */
+    post: operations["prepare_finding_agent_api_v1_finding_agent_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/finding-analyses": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Analyses */
+    get: operations["list_analyses_api_v1_finding_analyses_get"];
+    put?: never;
+    /** Start Analysis */
+    post: operations["start_analysis_api_v1_finding_analyses_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/findings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Findings */
+    get: operations["list_findings_api_v1_findings_get"];
+    put?: never;
+    /** Create Finding */
+    post: operations["create_finding_api_v1_findings_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/findings/{finding_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Finding */
+    get: operations["get_finding_api_v1_findings__finding_id__get"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Finding */
+    patch: operations["update_finding_api_v1_findings__finding_id__patch"];
     trace?: never;
   };
   "/api/v1/invitations/{invitation_id}/accept": {
@@ -3025,6 +3096,8 @@ export interface components {
       name: string;
       /** Organization Id */
       organization_id: string;
+      /** Preset Kind */
+      preset_kind?: ("composer" | "finding") | null;
       source: components["schemas"]["AgentSource"];
       /**
        * Updated At
@@ -3426,6 +3499,64 @@ export interface components {
       agent_id?: string | null;
       config: components["schemas"]["AgentConfig-Input"];
     };
+    /** Analysis */
+    Analysis: {
+      /** Agent Id */
+      agent_id: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Id */
+      id: string;
+      /** Limitations */
+      limitations: string;
+      /** Read Trace Ids */
+      read_trace_ids: string[];
+      /** Reported */
+      reported: boolean;
+      /** Reviewed Trace Ids */
+      reviewed_trace_ids: string[];
+      /** Run Id */
+      run_id: string;
+      /** Run Status */
+      run_status: string;
+      selection: components["schemas"]["AnalysisCreate"];
+      /** Selection Truncated */
+      selection_truncated: boolean;
+      /** Session Id */
+      session_id: string;
+      /** Thread Id */
+      thread_id: string;
+      /** Trace Ids */
+      trace_ids: string[];
+    };
+    /** AnalysisCreate */
+    AnalysisCreate: {
+      /** Agent Id */
+      agent_id?: string | null;
+      /**
+       * Max Traces
+       * @default 10
+       */
+      max_traces?: number;
+      /** Presets */
+      presets?: components["schemas"]["Preset"][];
+      /** Started After */
+      started_after?: string | null;
+      /** Started Before */
+      started_before?: string | null;
+      /** Trace Id */
+      trace_id?: string | null;
+    };
+    /** AnalysisPage */
+    AnalysisPage: {
+      /** Items */
+      items: components["schemas"]["Analysis"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /** ApiKey */
     ApiKey: {
       /**
@@ -3470,6 +3601,8 @@ export interface components {
        */
       action: "approve";
     };
+    /** @enum {string} */
+    Assessment: "unreviewed" | "confirmed" | "expected" | "insufficient";
     /** Asset */
     Asset: {
       /** Content Type */
@@ -4371,6 +4504,15 @@ export interface components {
     ErrorEnvelope: {
       error: components["schemas"]["ErrorBody"];
     };
+    /** Evidence */
+    Evidence: {
+      /** Run Id */
+      run_id: string;
+      /** Span Ids */
+      span_ids?: string[];
+      /** Trace Id */
+      trace_id: string;
+    };
     /**
      * ExternalTargetCreate
      * @description An envd daemon someone runs, registered by its endpoint and the token it accepts.
@@ -4405,6 +4547,96 @@ export interface components {
       code: string;
       /** Message */
       message: string;
+    };
+    /** Finding */
+    Finding: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** Analysis Id */
+      analysis_id: string | null;
+      assessment: components["schemas"]["Assessment"];
+      /** Category */
+      category: string;
+      /** Closed */
+      closed: boolean;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By Id */
+      created_by_id: string;
+      /** Evidence */
+      evidence: components["schemas"]["Evidence"][];
+      /** Explanation */
+      explanation: string;
+      /** Id */
+      id: string;
+      /**
+       * Limitations
+       * @default
+       */
+      limitations?: string;
+      /** @default warning */
+      severity?: components["schemas"]["Severity"];
+      /** Source Key */
+      source_key: string;
+      /** Source Run Id */
+      source_run_id: string | null;
+      /** Suggestion */
+      suggestion: string;
+      /** Title */
+      title: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** FindingCreate */
+    FindingCreate: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** Category */
+      category: string;
+      /** Evidence */
+      evidence: components["schemas"]["Evidence"][];
+      /** Explanation */
+      explanation: string;
+      /**
+       * Limitations
+       * @default
+       */
+      limitations?: string;
+      /** @default warning */
+      severity?: components["schemas"]["Severity"];
+      /** Source Key */
+      source_key: string;
+      /** Suggestion */
+      suggestion: string;
+      /** Title */
+      title: string;
+    };
+    /** FindingPage */
+    FindingPage: {
+      /** Items */
+      items: components["schemas"]["Finding"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** FindingUpdate */
+    FindingUpdate: {
+      assessment?: components["schemas"]["Assessment"] | null;
+      /** Closed */
+      closed?: boolean | null;
     };
     /** Fork */
     Fork: {
@@ -5810,6 +6042,8 @@ export interface components {
       /** Plugin Key */
       plugin_key: string;
     };
+    /** @enum {string} */
+    Preset: "execution" | "recovery" | "answer";
     /**
      * PriceComponent
      * @description One genai-prices usage dimension and its USD unit price.
@@ -6564,6 +6798,8 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
+    /** @enum {string} */
+    Severity: "critical" | "warning" | "suggestion";
     /** Skill */
     Skill: {
       /** Archived At */
@@ -7296,7 +7532,14 @@ export interface components {
     };
     /** @enum {string} */
     ToolsetKey:
-      "files" | "shell" | "web" | "memory" | "assets" | "configuration";
+      | "files"
+      | "shell"
+      | "web"
+      | "memory"
+      | "assets"
+      | "configuration"
+      | "traces"
+      | "findings";
     /** ToolsetSelection */
     ToolsetSelection: {
       /** Config */
@@ -7713,6 +7956,7 @@ export interface operations {
         q?: string | null;
         archived?: boolean | null;
         source?: components["schemas"]["AgentSource"] | null;
+        preset_kind?: ("composer" | "finding") | null;
         skill_id?: string | null;
         skill_revision_id?: string | null;
         limit?: number;
@@ -9448,6 +9692,210 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["EnvironmentView"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  prepare_finding_agent_api_v1_finding_agent_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Agent"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_analyses_api_v1_finding_analyses_get: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AnalysisPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  start_analysis_api_v1_finding_analyses_post: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AnalysisCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Analysis"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_findings_api_v1_findings_get: {
+    parameters: {
+      query?: {
+        agent_id?: string | null;
+        severity?: components["schemas"]["Severity"] | null;
+        assessment?: components["schemas"]["Assessment"] | null;
+        closed?: boolean | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FindingPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  create_finding_api_v1_findings_post: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FindingCreate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Finding"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_finding_api_v1_findings__finding_id__get: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        finding_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Finding"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  update_finding_api_v1_findings__finding_id__patch: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The resource's ETag: `"{id}:{version}"` of its current view, `"{key}:{version}"` for a model */
+        "If-Match"?: string | null;
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        finding_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["FindingUpdate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Finding"];
         };
       };
       400: components["responses"]["Error"];

@@ -33,7 +33,14 @@ CONFIGURATION_TOOL_IDS = {
     "create_revision": "service.configuration.create_revision",
 }
 
-type ToolsetKey = Literal["files", "shell", "web", "memory", "assets", "configuration"]
+TRACE_TOOL_IDS = {"list": "service.traces.list", "read": "service.traces.read", "spans": "service.traces.spans"}
+FINDING_TOOL_IDS = {
+    "read": "service.findings.read",
+    "submit": "service.findings.submit",
+    "report": "service.findings.report",
+}
+
+type ToolsetKey = Literal["files", "shell", "web", "memory", "assets", "configuration", "traces", "findings"]
 ToolKey = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
 JsonObject = dict[str, JsonValue]
 SupportedPermission = Literal["inherit", "allow", "ask", "deny", "review"]
@@ -229,6 +236,26 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         "Asset publication",
         False,
         (_Tool("publish", "Publish asset", PUBLISH_ASSET_TOOL_ID, "publish_asset"),),
+    ),
+    _Toolset(
+        "traces",
+        "Trace queries",
+        False,
+        (
+            _Tool("list", "List traces", TRACE_TOOL_IDS["list"], "list_traces"),
+            _Tool("read", "Read trace", TRACE_TOOL_IDS["read"], "read_trace"),
+            _Tool("spans", "Read trace steps", TRACE_TOOL_IDS["spans"], "read_trace_spans"),
+        ),
+    ),
+    _Toolset(
+        "findings",
+        "Findings",
+        False,
+        (
+            _Tool("read", "Read finding", FINDING_TOOL_IDS["read"], "read_finding"),
+            _Tool("submit", "Submit finding", FINDING_TOOL_IDS["submit"], "submit_finding"),
+            _Tool("report", "Report analysis coverage", FINDING_TOOL_IDS["report"], "report_analysis"),
+        ),
     ),
     _Toolset(
         "configuration",

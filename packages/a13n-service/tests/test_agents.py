@@ -86,6 +86,8 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
         "web",
         "memory",
         "assets",
+        "traces",
+        "findings",
         "configuration",
     ]
     assert len({tool.execution_id for tool in tools}) == len({tool.model_name for tool in tools}) == len(tools)
@@ -97,7 +99,16 @@ def test_toolsets_normalize_to_the_whole_catalogue() -> None:
     provider = new_object_id("wp")
     selected = config(toolsets={"web": {"tools": {"search": {"config": {"provider_id": provider}}}}})
 
-    assert set(selected.toolsets) == {"files", "shell", "web", "memory", "assets", "configuration"}
+    assert set(selected.toolsets) == {
+        "files",
+        "shell",
+        "web",
+        "memory",
+        "assets",
+        "configuration",
+        "traces",
+        "findings",
+    }
     assert not selected.toolsets["assets"].enabled
     # Memory tools reach a run only through its mounts; a disabled tool is left out of every mount.
     assert toolsets.memory_file_tools(selected.toolsets) == {
@@ -762,6 +773,8 @@ async def test_heads_duplicate_archive_and_offer_toolsets(service) -> None:  # t
         "web",
         "memory",
         "assets",
+        "traces",
+        "findings",
         "configuration",
     ]
 

@@ -19,8 +19,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
 from a13n_service.resources.revisions import RevisionColumns
 
-# `builtin` is the workspace's Agent Composer, which the deployment defines.
+# Managed presets have explicit identities within the builtin source.
 type AgentSource = Literal["custom", "builtin"]
+type PresetKind = Literal["composer", "finding"]
 
 
 class AgentRow(Stamped, Base):
@@ -38,8 +39,14 @@ class AgentRow(Stamped, Base):
             initially="DEFERRED",
         ),
         CheckConstraint("source IN ('custom', 'builtin')", name="source"),
-        # The Agent Composer is the workspace's one builtin agent.
-        Index("uq_agents_builtin", "workspace_id", unique=True, postgresql_where=text("source = 'builtin'")),
+        # One managed agent of each kind per workspace.
+        Index(
+            "uq_agents_builtin", "workspace_id", "preset_kind", unique=True, postgresql_where=text("source = 'builtin'")
+        ),
+        CheckConstraint(
+            "(source = 'builtin' AND preset_kind IS NOT NULL AND preset_kind IN ('composer', 'finding')) OR (source = 'custom' AND preset_kind IS NULL)",
+            name="preset",
+        ),
         rules(identity_guarded("agents")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -50,6 +57,7 @@ class AgentRow(Stamped, Base):
     default_revision_id: Mapped[str | None] = mapped_column(String(72))
     labels: Mapped[dict] = mapped_column(JSONB)
     source: Mapped[AgentSource] = mapped_column(String, default="custom")
+    preset_kind: Mapped[PresetKind | None] = mapped_column(String(32))
     # The avatar's object reference (`infra/images.py`).
     image: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
