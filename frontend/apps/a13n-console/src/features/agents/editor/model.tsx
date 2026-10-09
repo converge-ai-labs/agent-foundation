@@ -1,4 +1,5 @@
 import {
+  Button,
   ChoiceField,
   DisclosureSection,
   FormField,
@@ -6,7 +7,10 @@ import {
   SearchPicker,
   SettingsSection,
 } from "a13n-ui";
-import { useState } from "react";
+import { PlusIcon } from "@phosphor-icons/react";
+import { useRef, useState } from "react";
+import { useWorkspace } from "../../../layout/workspace";
+import { AddModel } from "../../models/add-model";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "../../../shared/feedback";
 import { TextAreaField } from "../../../shared/forms";
@@ -43,6 +47,10 @@ export function ModelSection({
 }) {
   const { t } = useTranslation();
   const [mediaExpanded, setMediaExpanded] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const modelPicker = useRef<HTMLButtonElement>(null);
+  const { can } = useWorkspace();
   const identity = useMediaUnderstandingChoices();
   const workspaceDefault = useWorkspaceMediaDefault();
   const mediaSummary = useMediaSummary();
@@ -70,7 +78,36 @@ export function ModelSection({
           },
         ]}
         onValueChange={draft.setModel}
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        triggerRef={modelPicker}
+        footer={
+          !readOnly && can("write") ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start"
+              onClick={() => {
+                setPickerOpen(false);
+                setAdding(true);
+              }}
+            >
+              <PlusIcon size={14} aria-hidden="true" />
+              {t("Add model")}
+            </Button>
+          ) : undefined
+        }
       />
+      {adding && (
+        <AddModel
+          controlledOpen
+          requireEnabled
+          finalFocus={modelPicker}
+          onClose={() => setAdding(false)}
+          onSaved={(model) => draft.setModel(model.key)}
+        />
+      )}
       <div className={styles.grid}>
         <ChoiceField
           label={t("Thinking effort")}

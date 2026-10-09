@@ -248,6 +248,9 @@ async def test_cancel_after_hidden_key_save_does_not_publish_configuration(tmp_p
         ("openai-responses", "gpt-4.1"),
         ("anthropic", "claude-sonnet-4-5"),
         ("anthropic", "claude-sonnet-4-6"),
+        ("anthropic", "claude-sonnet-5-5"),
+        ("anthropic", "claude-haiku-5-5"),
+        ("anthropic", "claude-opus-5-5"),
     ],
 )
 async def test_presets_reach_native_http_and_preserve_returned_thinking(provider, model_id, monkeypatch) -> None:
@@ -383,12 +386,16 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
 @pytest.mark.parametrize(
     "provider,model_id",
     [
+        ("deepseek", "deepseek-flash"),
         ("deepseek", "deepseek-reasoner"),
         ("deepseek", "deepseek-v4-pro"),
         ("zai", "glm-4.7"),
         ("zai", "glm-5.3"),
         ("moonshotai", "kimi-k2.5"),
         ("moonshotai", "kimi-k2-thinking"),
+        ("moonshotai", "kimi-k3"),
+        ("moonshotai", "kimi-k2.7-code"),
+        ("moonshotai", "kimi-k2.7-code-highspeed"),
     ],
 )
 async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(provider, model_id, monkeypatch) -> None:
@@ -454,7 +461,7 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
         monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", native_request)
         monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
         preset = settings_presets(provider, model_id)[0]
-        assert preset.key == "thinking"
+        assert preset.key == ("max" if model_id == "kimi-k3" else "thinking")
         normalized = PydanticAiModelAdapter().validate(
             route=f"{provider}:{model_id}", settings=preset.settings, model_cfg={}
         )
@@ -504,7 +511,17 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
     assert replayed == ["plan next", "checked result"]
     for payload in payloads:
         assert payload["stream"] is True
-        assert payload["max_completion_tokens"] == 32768
+        if model_id in {"kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed"}:
+            assert "max_completion_tokens" not in payload
+        else:
+            assert payload["max_completion_tokens"] == 32768
+        if model_id == "kimi-k3":
+            assert payload["reasoning_effort"] == "max"
+            assert "thinking" not in payload
+        elif model_id in {"kimi-k2.7-code", "kimi-k2.7-code-highspeed"}:
+            assert payload["thinking"] == {"type": "enabled", "keep": "all"}
+        elif model_id == "deepseek-flash":
+            assert payload["thinking"] == {"type": "enabled"}
         assert "max_tokens" not in payload
         assert "openai_reasoning_summary" not in payload
         assert payload.get("reasoning_effort") != "none"
@@ -730,3 +747,31 @@ def test_affinity_preset_and_custom_name_survive_cli_backtracking_and_publicatio
         "base_url": "https://gateway.example/v1",
         **({"session_affinity_header": header.lower()} if header != "off" else {}),
     }
+
+
+@pytest.mark.parametrize("provider", ["openrouter", "vercel"])
+@pytest.mark.parametrize("model_id", ["anthropic/claude-sonnet-5.5", "openai/gpt-6.1-sol", "moonshotai/kimi-k3"])
+def test_reviewed_gateway_suggestions_prefill_images_not_pdf(provider, model_id):
+    from a13n_harness_ui.model_presets import API_MODEL_SUGGESTIONS, known_model_capabilities
+
+    assert model_id in API_MODEL_SUGGESTIONS[provider]
+    assert known_model_capabilities(f"{provider}:{model_id}") == {"image_understanding"}
+    assert known_model_capabilities(f"{provider}:{model_id}-custom") is None
+
+
+@pytest.mark.parametrize(
+    "provider,model_id,context",
+    [
+        ("deepseek", "deepseek-flash", 1000000),
+        ("mistral", "mistral-large-4", 1000000),
+        ("fireworks", "accounts/fireworks/models/ember-1", 1040000),
+        ("together", "moonshotai/Kimi-K3", 1048576),
+        ("sambanova", "MiniMax-M2.7", 192000),
+        ("grok", "grok-4.7", 500000),
+    ],
+)
+def test_reviewed_hosted_model_suggestions_use_endpoint_context(provider, model_id, context):
+    from a13n_harness_ui.model_presets import API_MODEL_SUGGESTIONS, API_PROVIDER_BY_ROUTE, known_context_window
+
+    assert model_id in API_MODEL_SUGGESTIONS[provider]
+    assert known_context_window(provider, model_id, API_PROVIDER_BY_ROUTE[provider].base_url) == context

@@ -201,6 +201,11 @@ export function ProviderAuthorization({
               autoComplete="off"
               spellCheck={false}
               maxLength={16384}
+              placeholder={
+                attempt.method === "browser_callback"
+                  ? undefined
+                  : "http://127.0.0.1:1456/auth/callback?code=…&state=…"
+              }
               value={callback}
               disabled={busy || !writable}
               onChange={(event) => setCallback(event.target.value)}

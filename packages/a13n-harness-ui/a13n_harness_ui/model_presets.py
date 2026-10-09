@@ -59,6 +59,7 @@ API_PROVIDER_BY_ROUTE = {provider.route: provider for provider in API_PROVIDERS}
 _OPENAI_MODELS = (
     "gpt-6.1-sol",
     "gpt-6-astra",
+    "gpt-6-luna",
     "gpt-5.6-terra",
     "gpt-6-sol",
     "gpt-5.6-sol",
@@ -69,26 +70,58 @@ _OPENAI_MODELS = (
 API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
     "openai-responses": _OPENAI_MODELS,
     "openai-chat": _OPENAI_MODELS,
-    "anthropic": ("claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5", "claude-sonnet-4-5"),
-    "google": ("gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash"),
-    "openrouter": ("anthropic/claude-sonnet-4.6", "openai/gpt-5.4", "google/gemini-2.5-pro"),
-    "deepseek": ("deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner", "deepseek-chat"),
-    "zai": ("glm-5.3", "glm-5.2", "glm-4.7", "glm-4.5"),
-    "moonshotai": ("kimi-k2.6", "kimi-k2.5", "kimi-k2-thinking"),
-    "groq": ("openai/gpt-oss-120b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"),
-    "mistral": ("mistral-large-latest", "mistral-small-latest", "codestral-latest"),
-    "together": ("meta-llama/Llama-3.3-70B-Instruct-Turbo", "Qwen/Qwen3-235B-A22B-Instruct-2507-tput"),
-    "fireworks": ("accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/gpt-oss-120b"),
-    "cerebras": ("gpt-oss-120b",),
-    "sambanova": ("DeepSeek-R1",),
-    "vercel": ("anthropic/claude-sonnet-4.6", "openai/gpt-5.4"),
-    "grok": ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
-    "xai": ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
+    "anthropic": (
+        "claude-sonnet-5-5",
+        "claude-opus-5-5",
+        "claude-haiku-5-5",
+        "claude-fable-5-1",
+        "claude-sonnet-4-6",
+        "claude-opus-4-6",
+        "claude-haiku-4-5",
+    ),
+    "google": (
+        "gemini-3.8-flash",
+        "gemini-3.7-flash",
+        "gemini-3.6-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-3.1-pro-preview",
+        "gemini-3.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+    ),
+    "openrouter": (
+        "anthropic/claude-sonnet-5.5",
+        "openai/gpt-6.1-sol",
+        "moonshotai/kimi-k3",
+        "anthropic/claude-sonnet-4.6",
+        "openai/gpt-5.4",
+        "google/gemini-2.5-pro",
+    ),
+    "deepseek": ("deepseek-flash", "deepseek-v4-pro", "deepseek-v4-flash"),
+    "zai": ("glm-5.3", "glm-5.3-flash", "glm-5.3-flashx", "glm-5.2", "glm-4.7", "glm-4.5"),
+    "moonshotai": (
+        "kimi-k3",
+        "kimi-k2.7-code",
+        "kimi-k2.7-code-highspeed",
+        "kimi-k2.6",
+        "kimi-k2.5",
+        "kimi-k2-thinking",
+    ),
+    "groq": ("openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"),
+    "mistral": ("mistral-large-4", "mistral-small-latest", "codestral-latest"),
+    "together": ("moonshotai/Kimi-K3", "deepseek-ai/DeepSeek-V4.1-Flash", "zai-org/GLM-5.3"),
+    "fireworks": ("accounts/fireworks/models/ember-1", "accounts/fireworks/models/gpt-oss-120b"),
+    "cerebras": ("gpt-oss-120b", "qwen-3.8-27b"),
+    "sambanova": ("MiniMax-M2.7", "DeepSeek-V3.1", "Meta-Llama-3.3-70B-Instruct", "gpt-oss-120b"),
+    "vercel": ("anthropic/claude-sonnet-5.5", "openai/gpt-6.1-sol", "moonshotai/kimi-k3"),
+    "grok": ("grok-4.7", "grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
+    "xai": ("grok-4.7", "grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
 }
 
 
 def known_context_window(provider: str, model_id: str, base_url: str) -> int | None:
-    """Read the Harness-owned bundled catalog; never query the network."""
+    """Read current official facts, then bundled pricing metadata; never fetch."""
+    from a13n_harness.model_catalog import get_official_model_catalog
     from a13n_harness.pricing import get_default_pricing_catalog
 
     catalog_provider = (
@@ -98,6 +131,10 @@ def known_context_window(provider: str, model_id: str, base_url: str) -> int | N
         if provider in {"grok", "xai"}
         else provider
     )
+    official_provider = {"google": "google-gla", "x-ai": "grok"}.get(catalog_provider, catalog_provider)
+    official = get_official_model_catalog().get(f"{official_provider}:{model_id}")
+    if official is not None and official.characteristics.context_window_tokens is not None:
+        return official.characteristics.context_window_tokens
     entry = get_default_pricing_catalog().resolve(model_id, provider=catalog_provider, provider_url=base_url)
     return entry.context_window if entry is not None else None
 
@@ -122,11 +159,12 @@ def known_model_characteristics(route: str) -> HarnessModelCharacteristics | Non
         "openai-responses": "openai",
         "openai-chat": "openai",
         "openai-codex": "openai",
+        "openai-chatgpt": "openai",
         "google": "google-gla",
         "xai": "grok",
     }.get(provider, provider)
     catalog_key = f"{catalog_provider}:{model_id}"
-    if provider == "openrouter":
+    if provider in {"openrouter", "vercel"}:
         publisher, _, upstream_id = model_id.partition("/")
         catalog_provider = {
             "openai": "openai",
@@ -140,6 +178,9 @@ def known_model_characteristics(route: str) -> HarnessModelCharacteristics | Non
         # Reviewed routed spellings; do not strip arbitrary suffixes or rewrite
         # version punctuation on custom model IDs.
         catalog_key = {
+            "anthropic/claude-sonnet-5.5": "anthropic:claude-sonnet-5-5",
+            "anthropic/claude-opus-5.5": "anthropic:claude-opus-5-5",
+            "anthropic/claude-haiku-5.5": "anthropic:claude-haiku-5-5",
             "anthropic/claude-sonnet-4.6": "anthropic:claude-sonnet-4-6",
             "anthropic/claude-opus-4.6": "anthropic:claude-opus-4-6",
             "anthropic/claude-haiku-4.5": "anthropic:claude-haiku-4-5",
@@ -149,14 +190,14 @@ def known_model_characteristics(route: str) -> HarnessModelCharacteristics | Non
     if entry is None or "capabilities" not in entry.characteristics.model_fields_set:
         return None
     # Native URL facts are selected separately from binary input modalities.
-    # Compatible transports are reviewed for image input only.
+    # Compatible transports are reviewed for image input only. PDF remains a
+    # manual opt-in even when the source declares native document support.
     supported = (
         frozenset(
             {
                 ModelCapability.IMAGE_UNDERSTANDING,
                 ModelCapability.AUDIO_UNDERSTANDING,
                 ModelCapability.VIDEO_UNDERSTANDING,
-                ModelCapability.DOCUMENT_UNDERSTANDING,
             }
         )
         if provider in {"google", "google-gla"}
@@ -220,9 +261,29 @@ class SettingsPreset:
 # Provider references and budget semantics: docs/a13n-harness-ui/models-and-authentication.md.
 _OUTPUT_PRESET_MODELS: dict[str, frozenset[str]] = {
     "openai": frozenset({"gpt-5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra"}),
-    "anthropic": frozenset({"claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5", "claude-sonnet-4-5"}),
-    "google": frozenset({"gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-2.5-pro", "gemini-2.5-flash"}),
-    "deepseek": frozenset({"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner"}),
+    "anthropic": frozenset(
+        {
+            "claude-sonnet-5-5",
+            "claude-opus-5-5",
+            "claude-haiku-5-5",
+            "claude-fable-5-1",
+            "claude-sonnet-4-6",
+            "claude-opus-4-6",
+            "claude-haiku-4-5",
+            "claude-sonnet-4-5",
+        }
+    ),
+    "google": frozenset(
+        {
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
+            "gemini-3.1-pro-preview",
+            "gemini-3.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.5-flash",
+        }
+    ),
+    "deepseek": frozenset({"deepseek-flash", "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner"}),
     "zai": frozenset({"glm-5.3", "glm-5.2", "glm-4.7", "glm-4.5"}),
     "moonshotai": frozenset({"kimi-k2.6", "kimi-k2.5", "kimi-k2-thinking"}),
 }
@@ -239,8 +300,8 @@ _OUTPUT_TOKEN_BUDGETS = {
 
 def settings_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...]:
     """Materialize paired thinking/output recommendations as editable native settings."""
-    # Use the public native setting until the SDK profile recognizes Sol 6.1;
-    # unified thinking is otherwise silently omitted from its requests.
+    if provider == "openai-chatgpt":
+        provider = "openai-responses"
     if provider in {"openai", "openai-responses", "openai-chat"} and model_id == "gpt-6.1-sol":
         defaults: dict[str, JsonValue] = (
             {"openai_reasoning_summary": "detailed", "openai_store": False} if provider != "openai-chat" else {}
@@ -280,6 +341,39 @@ def settings_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...]
 
 def _thinking_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...]:
     """Expand thinking choices using the installed upstream model profile, without I/O."""
+    if provider == "deepseek" and model_id == "deepseek-flash":
+        return (
+            SettingsPreset(
+                "thinking",
+                "Thinking · preserved",
+                "Use native thinking; preserve reasoning_content through tools and turns",
+                {"extra_body": {"thinking": {"type": "enabled"}}},
+            ),
+            SettingsPreset("default", "Provider defaults", "Use the model's native thinking mode", {}),
+        )
+    if provider == "moonshotai" and model_id == "kimi-k3":
+        return (
+            *(
+                SettingsPreset(
+                    effort,
+                    f"{effort.title()} thinking · preserved",
+                    "Always-on reasoning; preserve reasoning_content through tools and turns",
+                    {"openai_reasoning_effort": effort},
+                )
+                for effort in ("max", "high", "low")
+            ),
+            SettingsPreset("default", "Provider defaults", "Use the model's native reasoning effort", {}),
+        )
+    if provider == "moonshotai" and model_id in {"kimi-k2.7-code", "kimi-k2.7-code-highspeed"}:
+        return (
+            SettingsPreset(
+                "thinking",
+                "Thinking · preserved",
+                "Always-on reasoning; preserve reasoning_content through tools and turns",
+                {"extra_body": {"thinking": {"type": "enabled", "keep": "all"}}},
+            ),
+            SettingsPreset("default", "Provider defaults", "Always-on preserved thinking", {}),
+        )
     if provider in {"deepseek", "zai", "moonshotai"}:
         from pydantic_ai.profiles.deepseek import deepseek_model_profile
         from pydantic_ai.profiles.moonshotai import moonshotai_model_profile
@@ -337,7 +431,7 @@ def _thinking_presets(provider: str, model_id: str) -> tuple[SettingsPreset, ...
         anthropic_choices = (
             (adaptive, interleaved) if profile.get("anthropic_supports_adaptive_thinking") else (interleaved, adaptive)
         )
-        if profile.get("anthropic_disallows_budget_thinking"):
+        if profile.get("anthropic_disallows_budget_thinking") or model_id == "claude-haiku-5-5":
             anthropic_choices = (adaptive,)
         return (
             *anthropic_choices,

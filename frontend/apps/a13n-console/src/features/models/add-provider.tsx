@@ -1,4 +1,4 @@
-import { Button, FormField, Input } from "a13n-ui";
+import { Button, DisclosureSection, FormField, Input } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
@@ -181,6 +181,23 @@ export function ProviderConnectForm({
   const { t } = useTranslation();
   const { type, save } = draft;
   const keyLink = providerKeyLink(definition);
+  const credential = draft.section.mode !== "forbidden" && (
+    <SchemaFields
+      secret
+      autoFocus
+      labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
+      schema={draft.section.schema}
+      value={draft.section.credential}
+      onChange={draft.section.setCredential}
+    />
+  );
+  const configuration = (
+    <SchemaFields
+      schema={ordinaryConfigurationSchema(definition.configuration_schema)}
+      value={draft.configuration}
+      onChange={draft.setConfiguration}
+    />
+  );
   if (draft.createdProvider)
     return (
       <CatalogStep backLabel={t("All providers")}>
@@ -199,21 +216,12 @@ export function ProviderConnectForm({
           save.mutate();
         }}
       >
-        {draft.section.mode !== "forbidden" && (
-          <SchemaFields
-            secret
-            autoFocus
-            labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
-            schema={draft.section.schema}
-            value={draft.section.credential}
-            onChange={draft.section.setCredential}
-          />
+        {!definition.oauth_scheme && (
+          <>
+            {credential}
+            {configuration}
+          </>
         )}
-        <SchemaFields
-          schema={ordinaryConfigurationSchema(definition.configuration_schema)}
-          value={draft.configuration}
-          onChange={draft.setConfiguration}
-        />
         <FormField
           label={t("Name")}
           description={t("How this provider is listed across the console.")}
@@ -225,7 +233,16 @@ export function ProviderConnectForm({
             onChange={(event) => draft.setName(event.target.value)}
           />
         </FormField>
-        {!definition.oauth_scheme && (
+        {definition.oauth_scheme ? (
+          <DisclosureSection
+            title={t("Advanced settings")}
+            open={draft.advancedOpen}
+            onOpenChange={draft.setAdvancedOpen}
+          >
+            {configuration}
+            {credential}
+          </DisclosureSection>
+        ) : (
           <ProviderConnection
             type={type}
             schema={definition.configuration_schema}

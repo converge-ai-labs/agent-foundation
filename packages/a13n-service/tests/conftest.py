@@ -51,6 +51,11 @@ testcontainers_config.sleep_time = 0.1
 testcontainers_config.max_tries = 1200
 
 
+@pytest.fixture(autouse=True)
+def no_official_model_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("A13N_OFFICIAL_MODELS_AUTO_UPDATE", "0")
+
+
 def database_url(base: str, name: str) -> str:
     return make_url(base).set(database=name).render_as_string(hide_password=False)
 

@@ -1,8 +1,11 @@
 """Authorized provider model choices, fetched outside the storage boundary."""
 
+from typing import Protocol
+
 import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.model.definition import ProviderOperationError
+from a13n_harness.spec import HarnessModelCharacteristics
 from anyio import fail_after
 
 from a13n_service.infra.crypto import KeyRing
@@ -19,6 +22,14 @@ from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
 
+class ModelMetadata(Protocol):
+    """Nonblocking metadata enrichment, independent of the catalog implementation."""
+
+    async def characteristics(
+        self, channels: tuple[str, ...], models: tuple[str, ...]
+    ) -> dict[str, HarnessModelCharacteristics | None]: ...
+
+
 async def discover_models(
     storage: Storage,
     actor: Principal,
@@ -29,6 +40,7 @@ async def discover_models(
     keys: KeyRing,
     policy: EndpointPolicy,
     settings: Providers,
+    catalog: ModelMetadata,
 ) -> list[ProviderModel]:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
@@ -56,4 +68,13 @@ async def discover_models(
         raise ServiceError(
             "unavailable", "Provider model discovery failed; retry or enter a model ID manually"
         ) from None
-    return [ProviderModel(slug=model.model_name, display_name=model.display_name) for model in models]
+    # Metadata availability must never delay or replace authenticated choices.
+    metadata = await catalog.characteristics(definition.catalog_providers, tuple(model.model_name for model in models))
+    return [
+        ProviderModel(
+            slug=model.model_name,
+            display_name=model.display_name,
+            characteristics=metadata.get(model.model_name),
+        )
+        for model in models
+    ]

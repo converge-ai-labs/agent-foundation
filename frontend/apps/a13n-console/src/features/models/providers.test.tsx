@@ -6,8 +6,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
 import { Page } from "../../shared/page";
 import { Providers } from "./providers";
+import { ProviderForm } from "./provider-form";
 
-const state = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
+const state = vi.hoisted(() => ({
+  GET: vi.fn(),
+  POST: vi.fn(),
+  PATCH: vi.fn(),
+}));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ http: state, workspace: () => state }),
 }));
@@ -25,9 +30,10 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-it.each([false, true])(
-  "saves custom OAuth registration (confidential: %s) and keeps first-provider authorization open",
-  async (confidential) => {
+it.each(["default", "public", "confidential"])(
+  "saves %s OAuth registration and keeps first-provider authorization open",
+  async (registration) => {
+    const confidential = registration === "confidential";
     const provider = {
       id: "mprov_test",
       workspace_id: "ws_test",
@@ -37,7 +43,10 @@ it.each([false, true])(
       enabled: true,
       header_names: [],
     } as unknown as Schema["Provider"];
-    const definition = {
+    const definition: Schema["ProviderType"] = {
+      setup_label: null,
+      setup_url: null,
+      supports_test: false,
       type: "openai_chatgpt",
       display_name: "ChatGPT",
       oauth_scheme: "chatgpt",
@@ -129,14 +138,26 @@ it.each([false, true])(
     await user.click(
       await screen.findByRole("button", { name: /ChatGPT.*subscription/ }),
     );
-    await user.type(
-      screen.getByLabelText(/OAuth client ID/i),
-      "provider-client",
-    );
-    await user.type(
-      screen.getByLabelText(/Callback URL/i),
-      "https://agent.example.com/registered/callback",
-    );
+    expect(screen.queryByLabelText(/OAuth client ID/i)).toBeNull();
+    expect(screen.queryByLabelText(/Callback URL/i)).toBeNull();
+    expect(
+      screen.queryByRole("combobox", {
+        name: /Token endpoint authentication/i,
+      }),
+    ).toBeNull();
+    if (registration !== "default") {
+      await user.click(
+        screen.getByRole("button", { name: "Advanced settings" }),
+      );
+      await user.type(
+        screen.getByLabelText(/OAuth client ID/i),
+        "provider-client",
+      );
+      await user.type(
+        screen.getByLabelText(/Callback URL/i),
+        "https://agent.example.com/registered/callback",
+      );
+    }
     expect(screen.queryByLabelText(/OAuth client secret/i)).toBeNull();
     if (confidential) {
       await user.click(
@@ -161,8 +182,11 @@ it.each([false, true])(
     const body = state.POST.mock.calls[0][1].body;
     expect(body.type).toBe("openai_chatgpt");
     expect(body.config).toEqual({
-      client_id: "provider-client",
-      redirect_uri: "https://agent.example.com/registered/callback",
+      client_id: registration === "default" ? null : "provider-client",
+      redirect_uri:
+        registration === "default"
+          ? null
+          : "https://agent.example.com/registered/callback",
       token_endpoint_auth_method: confidential ? "client_secret_basic" : "none",
     });
     if (confidential)
@@ -171,5 +195,35 @@ it.each([false, true])(
     expect(screen.getByRole("dialog")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // Editing keeps the custom registration and write-only secret intact while collapsed.
+    state.PATCH.mockResolvedValue({ data: provider });
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <ProviderForm
+          resource={{
+            value: {
+              ...provider,
+              config: body.config,
+              credential_configured: confidential,
+            },
+            etag: '"provider:1"',
+          }}
+          definitions={[definition]}
+          close={() => {}}
+          reload={async () => {}}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByLabelText(/OAuth client ID/i)).toBeNull();
+    expect(screen.queryByLabelText(/OAuth client secret/i)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(state.PATCH).toHaveBeenCalledOnce());
+    expect(state.PATCH.mock.calls[0][1].body.config).toEqual(body.config);
+    expect(state.PATCH.mock.calls[0][1].body).not.toHaveProperty("credential");
   },
 );

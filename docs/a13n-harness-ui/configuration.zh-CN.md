@@ -220,6 +220,8 @@ Guardian 关联不改变审查器、凭据、端点、service tier、风险策�
 
 `process.max_object_bytes` 限制每个未压缩存储对象，包括检查点：默认 256 MiB（`268435456`），范围 1 KiB–1 GiB，不是 Thread 配额或上下文限制。检查点超限时提高限制并重启后继续；更大限制增加峰值内存。不会截断历史，保存失败保留上一检查点。降低限制可能无法读取较大的已存对象。
 
+官方模型属性和 Harness 价格补充独立于 `process.pricing_auto_update` 刷新。该后台刷新默认开启，从仓库 GitHub `main` 读取一个完整验证的数据文件。启动前设置 `A13N_OFFICIAL_MODELS_AUTO_UPDATE=0` 可关闭。下载失败保留最后有效数据或包内数据，使用指数退避和抖动重试。刷新不改写已保存的 Model，也不改变活动 Run；PDF 输入仍需手动启用。离线运行应同时关闭此刷新和 `process.pricing_auto_update`。
+
 单次覆盖使用 `--no-update-check`。见[更新与日志](automation-and-troubleshooting.md#logs-updates-and-exit)。
 
 ### Goal 检查

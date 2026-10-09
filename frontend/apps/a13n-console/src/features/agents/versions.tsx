@@ -145,6 +145,7 @@ export function AgentVersions({
         ]}
       />
       <Pagination page={page} next={query.data.next_cursor} />
+      {composer.setup}
       <ErrorToast error={composer.error} />
       {selected && (
         <section>

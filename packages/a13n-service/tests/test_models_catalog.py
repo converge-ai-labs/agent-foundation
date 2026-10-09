@@ -398,3 +398,172 @@ def test_hosted_open_model_providers_offer_their_catalog_channels(provider_type,
         catalog_channels([definition]),
     )
     assert item.ref == CatalogRef(provider=channel, model=model_id)
+
+
+@pytest.mark.parametrize("status", ["ready", "stale"])
+def test_discovery_metadata_uses_exact_channel_and_live_facts_before_bundled(status) -> None:
+    from a13n_service.resources.models.catalog import model_characteristics
+
+    items = parse_catalog(
+        document(
+            {
+                "openai": {
+                    "models": {
+                        "gpt-6.1-sol": model(
+                            limit={"context": 123456}, modalities={"input": ["text", "pdf"], "output": ["text"]}
+                        ),
+                        "text-only": model(modalities={"input": ["text"], "output": ["text"]}),
+                    }
+                }
+            }
+        ),
+        CHANNELS,
+    )
+    catalog = ModelCatalog(items=items, status=status)
+    facts = model_characteristics(("openai",), "gpt-6.1-sol", catalog)
+    assert facts is not None
+    assert facts.context_window_tokens == 123456
+    # Metadata remains factual; authoring policy, not this source, makes PDF opt-in.
+    assert facts.capabilities == {ModelCapability.DOCUMENT_UNDERSTANDING}
+    assert model_characteristics(("other",), "gpt-6.1-sol", catalog) is None
+    assert model_characteristics(("openai",), "GPT-6.1-SOL", catalog) is None
+    assert model_characteristics(("openai",), "gpt-6.1-sol-custom", catalog) is None
+    text = model_characteristics(("openai",), "text-only", catalog)
+    assert text is not None and not text.capabilities
+    assert "capabilities" in text.model_fields_set
+
+
+def test_discovery_metadata_fills_missing_context_without_overwriting_explicit_empty_capabilities() -> None:
+    from a13n_service.resources.models.catalog import model_characteristics
+
+    items = parse_catalog(
+        document(
+            {
+                "openai": {
+                    "models": {
+                        "gpt-6.1-sol": model(limit={}, modalities={"input": ["text"], "output": ["text"]}),
+                    }
+                }
+            }
+        ),
+        CHANNELS,
+    )
+    facts = model_characteristics(("openai",), "gpt-6.1-sol", ModelCatalog(items=items, status="ready"))
+    assert facts is not None
+    assert facts.context_window_tokens == 1050000
+    assert not facts.capabilities
+
+
+@pytest.mark.anyio
+async def test_optional_metadata_read_never_waits_for_the_first_fetch() -> None:
+    from a13n_service.resources.models.catalog import model_characteristics
+
+    catalog = ModelsDevCatalog(CHANNELS, LOOPBACK)
+    with anyio.fail_after(0.1):
+        snapshot = await catalog.read(wait=False)
+    assert snapshot.status == "unavailable" and snapshot.items == []
+    assert catalog.due.is_set()
+    facts = model_characteristics(("openai",), "gpt-6.1-sol", snapshot)
+    assert facts is not None
+    assert facts.context_window_tokens == 1050000
+    assert facts.capabilities == {ModelCapability.IMAGE_UNDERSTANDING}
+    assert model_characteristics(("openai",), "unlisted", snapshot) is None
+
+
+@pytest.mark.anyio
+async def test_discovery_metadata_resolves_cold_catalog_off_the_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    from threading import get_ident
+
+    from a13n_harness.spec import HarnessModelCharacteristics
+    from a13n_service.resources.providers.discovery import ModelMetadata
+
+    catalog = ModelsDevCatalog(CHANNELS, LOOPBACK)
+    metadata: ModelMetadata = catalog
+    loop_thread = get_ident()
+    resolved = []
+
+    def resolve(channels: tuple[str, ...], model: str, snapshot: ModelCatalog) -> HarnessModelCharacteristics | None:
+        assert get_ident() != loop_thread
+        assert snapshot.status == "unavailable"
+        assert channels == ("openai",)
+        resolved.append(model)
+        return HarnessModelCharacteristics(context_window_tokens=12345) if model == "known" else None
+
+    monkeypatch.setattr(catalog_module, "model_characteristics", resolve)
+    with anyio.fail_after(1):
+        facts = await metadata.characteristics(("openai",), ("known", "unknown"))
+    assert resolved == ["known", "unknown"]
+    assert catalog.due.is_set()
+    assert facts["known"] is not None and facts["known"].context_window_tokens == 12345
+    assert facts["unknown"] is None
+
+
+@pytest.mark.parametrize(
+    ("channel", "model_id"),
+    [
+        ("google", "gemini-3.8-flash"),
+        ("xai", "grok-4.7"),
+        ("x-ai", "grok-4.7"),
+        ("fireworks-ai", "accounts/fireworks/models/ember-1"),
+    ],
+)
+def test_official_fallback_normalizes_catalog_channel_names(channel, model_id):
+    facts = catalog_module.model_characteristics((channel,), model_id, ModelCatalog(items=[], status="unavailable"))
+    assert facts is not None
+    assert ModelCapability.IMAGE_UNDERSTANDING in facts.capabilities
+
+
+@pytest.mark.anyio
+async def test_official_catalog_fetch_uses_service_outbound_policy(monkeypatch):
+    from a13n_harness import model_catalog_updates
+
+    calls = []
+
+    @asynccontextmanager
+    async def open_client(policy, **limits):
+        calls.append((policy, limits))
+        async with httpx2.AsyncClient(
+            transport=httpx2.MockTransport(lambda request: httpx2.Response(200, content=b"official document"))
+        ) as client:
+            yield client
+
+    async def run(fetch):
+        assert await fetch() == b"official document"
+
+    monkeypatch.setattr(catalog_module, "open_http", open_client)
+    monkeypatch.setattr(model_catalog_updates, "run_official_model_updates", run)
+    await catalog_module.run_official_catalog(LOOPBACK)
+    assert calls == [
+        (LOOPBACK, {"timeout": model_catalog_updates.FETCH_SECONDS, "max_bytes": model_catalog_updates.MAX_BYTES})
+    ]
+
+
+def test_together_fallback_preserves_undeclared_hosted_media():
+    facts = catalog_module.model_characteristics(
+        ("togetherai",), "moonshotai/Kimi-K3", ModelCatalog(items=[], status="unavailable")
+    )
+    assert facts is not None
+    assert facts.context_window_tokens == 1048576
+    assert "capabilities" not in facts.model_fields_set
+
+
+@pytest.mark.parametrize("status", ["ready", "stale"])
+@pytest.mark.parametrize("first_channel_live", [False, True])
+def test_discovery_checks_all_live_channels_before_official_fallback(status, first_channel_live):
+    definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == "xai")
+    assert definition.catalog_providers == ("xai", "x-ai")
+    providers = {
+        "x-ai": {
+            "models": {"grok-4.7": model(limit={"context": 123456}, modalities={"input": ["text"], "output": ["text"]})}
+        }
+    }
+    if first_channel_live:
+        providers["xai"] = {
+            "models": {"grok-4.7": model(limit={"context": 654321}, modalities={"input": ["text"], "output": ["text"]})}
+        }
+    catalog = ModelCatalog(items=parse_catalog(document(providers), catalog_channels([definition])), status=status)
+    facts = catalog_module.model_characteristics(definition.catalog_providers, "grok-4.7", catalog)
+    assert facts is not None
+    assert facts.context_window_tokens == (654321 if first_channel_live else 123456)
+    assert not facts.capabilities
+    assert "capabilities" in facts.model_fields_set

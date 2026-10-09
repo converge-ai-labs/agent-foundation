@@ -1988,13 +1988,30 @@ async def test_app_owns_price_updater_and_releases_it_after_failure(tmp_path, mo
         finally:
             events.append("stop")
 
+    import anyio
+    from a13n_harness_ui import app as app_module
+
+    official_events = []
+    official_started = anyio.Event()
+
+    async def official_updater():
+        official_events.append("start")
+        official_started.set()
+        try:
+            await anyio.sleep_forever()
+        finally:
+            official_events.append("stop")
+
+    monkeypatch.setattr(app_module, "run_official_model_updates", official_updater)
     monkeypatch.setattr(prices, "update_in_background", updater)
     settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": enabled})
     with pytest.RaisesGroup(pytest.RaisesExc(RuntimeError, match="surface failed")):
         async with open_harness_ui_app(settings):
+            await official_started.wait()
             assert events == (["start"] if enabled else [])
             raise RuntimeError("surface failed")
     assert events == (["start", "stop"] if enabled else [])
+    assert official_events == ["start", "stop"]
 
 
 @pytest.mark.parametrize("host_mode", ["local", "webui"])

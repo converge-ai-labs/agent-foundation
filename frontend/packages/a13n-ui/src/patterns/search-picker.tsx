@@ -1,5 +1,5 @@
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import { useState, type ReactNode, type Ref } from "react";
 import { cn } from "../lib/utils";
 
 import {
@@ -50,6 +50,9 @@ export function SearchPicker({
   value,
   onValueChange,
   disabled,
+  open,
+  onOpenChange,
+  triggerRef,
   onSearchChange,
   footer,
   popupClassName,
@@ -63,6 +66,9 @@ export function SearchPicker({
   value?: string;
   onValueChange: (value: string) => void;
   disabled?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  triggerRef?: Ref<HTMLButtonElement>;
   onSearchChange?: (value: string) => void;
   footer?: ReactNode;
   popupClassName?: string;
@@ -82,6 +88,8 @@ export function SearchPicker({
   if (!onSearchChange && options.length <= 8) {
     return (
       <Select
+        open={open}
+        onOpenChange={onOpenChange}
         items={options}
         value={value ?? null}
         onValueChange={(next) => {
@@ -90,6 +98,7 @@ export function SearchPicker({
         disabled={disabled}
       >
         <SelectTrigger
+          ref={triggerRef}
           id={id}
           aria-label={label}
           aria-describedby={describedBy}
@@ -131,6 +140,7 @@ export function SearchPicker({
   }
   return (
     <Combobox
+      open={open}
       autoHighlight
       items={items}
       value={selected}
@@ -144,6 +154,7 @@ export function SearchPicker({
         onSearchChange?.(next);
       }}
       onOpenChange={(open) => {
+        onOpenChange?.(open);
         if (!open) {
           setQuery("");
           onSearchChange?.("");
@@ -167,6 +178,7 @@ export function SearchPicker({
       }
     >
       <ComboboxTrigger
+        ref={triggerRef}
         id={id}
         aria-label={label}
         aria-describedby={describedBy}

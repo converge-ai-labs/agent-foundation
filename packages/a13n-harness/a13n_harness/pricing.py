@@ -12,12 +12,10 @@ from datetime import UTC, date, datetime, time
 from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 from functools import lru_cache
 from importlib.metadata import version
-from importlib.resources import files
 from threading import Lock
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
-import yaml
 from a13n_logging import get_logger
 from genai_prices.data_snapshot import DataSnapshot, get_snapshot
 from genai_prices.types import (
@@ -35,6 +33,8 @@ from a13n_harness.context import AgentContext
 
 if TYPE_CHECKING:
     from pydantic_ai.usage import RequestUsage
+
+    from a13n_harness._official_data import OfficialData
 
 logger = get_logger(__name__)
 
@@ -427,16 +427,22 @@ class NoModelCostCapability(AbstractModelCostCapability):
 @lru_cache(maxsize=1)
 def get_default_pricing_catalog() -> PricingCatalog:
     """Return only bundled prices plus packaged replacements, independently of updates."""
+    from a13n_harness._official_data import bundled_official_data
+
+    return _bundled_upstream_catalog().with_updates(bundled_official_data().pricing)
+
+
+@lru_cache(maxsize=1)
+def _bundled_upstream_catalog() -> PricingCatalog:
     from genai_prices.data import providers
 
     snapshot = DataSnapshot(deepcopy(providers), from_auto_update=False)
-    entries = _entries_from_snapshot(snapshot, bundled=True)
-    entries.update(_load_packaged_updates())
-    return PricingCatalog(entries, source_snapshot=snapshot)
+    return PricingCatalog(_entries_from_snapshot(snapshot, bundled=True), source_snapshot=snapshot)
 
 
 _current_lock = Lock()
 _current_snapshot: DataSnapshot | None = None
+_current_official: OfficialData | None = None
 _current_catalog: PricingCatalog | None = None
 
 
@@ -449,15 +455,18 @@ def get_current_pricing_catalog() -> PricingCatalog:
     """
     from genai_prices.data import providers
 
-    global _current_snapshot, _current_catalog
+    from a13n_harness._official_data import current_official_data
+
+    global _current_snapshot, _current_official, _current_catalog
     with _current_lock:
         snapshot = get_snapshot()
-        default = get_default_pricing_catalog()
-        if snapshot is _current_snapshot:
-            return _current_catalog or default
-        # Clearing the upstream custom snapshot explicitly returns to bundled prices.
+        official = current_official_data()
+        if snapshot is _current_snapshot and official is _current_official and _current_catalog is not None:
+            return _current_catalog
+        default = _bundled_upstream_catalog().with_updates(official.pricing)
+        # Reset upstream prices independently of the current official supplement.
         if snapshot.providers is providers and not snapshot.from_auto_update:
-            _current_snapshot, _current_catalog = snapshot, default
+            _current_snapshot, _current_official, _current_catalog = snapshot, official, default
             return default
         try:
             copied = deepcopy(snapshot)
@@ -488,7 +497,7 @@ def get_current_pricing_catalog() -> PricingCatalog:
             logger.warning("pricing_catalog_update_failed", exc_info=True)
         else:
             _current_catalog = candidate
-        _current_snapshot = snapshot
+        _current_snapshot, _current_official = snapshot, official
         return _current_catalog or default
 
 
@@ -575,25 +584,6 @@ def _components_from_genai(value: ModelPrice) -> tuple[PriceComponent, ...]:
         else:
             raise TypeError("unsupported genai-prices component")
     return tuple(components)
-
-
-def _load_packaged_updates() -> dict[str, ModelPricingEntry]:
-    resource = files("a13n_harness").joinpath("data/pricing-overrides.yaml")
-    raw = yaml.safe_load(resource.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or raw.get("schema_version") != 1:
-        raise RuntimeError("bundled pricing overlay has an unsupported schema")
-    raw_entries = raw.get("entries")
-    if not isinstance(raw_entries, dict):
-        raise RuntimeError("bundled pricing overlay must contain an entry mapping")
-    entries: dict[str, ModelPricingEntry] = {}
-    for key, value in raw_entries.items():
-        if not isinstance(key, str) or not isinstance(value, dict):
-            raise RuntimeError("bundled pricing overlay contains an invalid entry")
-        entry = ModelPricingEntry.model_validate(value)
-        if key != entry.key:
-            raise RuntimeError("bundled pricing overlay key does not match its entry")
-        entries[key] = entry
-    return entries
 
 
 def _catalog_revision(entries: Mapping[str, ModelPricingEntry]) -> str:

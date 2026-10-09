@@ -3,6 +3,7 @@
 import asyncio
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.infra.tasks import Tasks
 
 pytestmark = pytest.mark.anyio
@@ -82,7 +83,7 @@ async def test_application_shutdown_owns_services_and_children_before_clients_cl
     async def open_runtime(stack, *args, **kwargs):  # type: ignore[no-untyped-def]
         stack.push_async_callback(clients_close)
         stack.push_async_callback(tasks.close, timeout=1)
-        return SimpleNamespace(storage=object(), tasks=tasks)
+        return SimpleNamespace(storage=object(), tasks=tasks, endpoint_policy=EndpointPolicy())
 
     class Worker:
         def __init__(self, *args):  # type: ignore[no-untyped-def]
@@ -125,7 +126,7 @@ async def test_application_shutdown_does_not_wait_forever_for_a_service(monkeypa
 
     async def open_runtime(stack, *args, **kwargs):  # type: ignore[no-untyped-def]
         stack.push_async_callback(tasks.close, timeout=0.02)
-        return SimpleNamespace(storage=object(), tasks=tasks)
+        return SimpleNamespace(storage=object(), tasks=tasks, endpoint_policy=EndpointPolicy())
 
     class Worker:
         def __init__(self, *args):  # type: ignore[no-untyped-def]

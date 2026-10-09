@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -27,6 +27,74 @@ const groups = [
   },
 ];
 describe("selection", () => {
+  it.each([0, 1, 9])(
+    "opens setup from a %i-option picker footer and restores trigger focus",
+    async (count) => {
+      const user = userEvent.setup();
+      function Example() {
+        const [open, setOpen] = useState(false);
+        const [adding, setAdding] = useState(false);
+        const trigger = useRef<HTMLButtonElement>(null);
+        return (
+          <>
+            <SearchPicker
+              label="Model"
+              placeholder="Choose a model"
+              emptyMessage="No models"
+              open={open}
+              onOpenChange={setOpen}
+              triggerRef={trigger}
+              onValueChange={() => {}}
+              groups={[
+                {
+                  label: "Models",
+                  options: Array.from({ length: count }, (_, i) => ({
+                    value: `model-${i}`,
+                    label: `Model ${i}`,
+                  })),
+                },
+              ]}
+              footer={
+                <Button
+                  onClick={() => {
+                    setOpen(false);
+                    setAdding(true);
+                  }}
+                >
+                  Add model
+                </Button>
+              }
+            />
+            <ModalFrame
+              open={adding}
+              onOpenChange={setAdding}
+              finalFocus={trigger}
+              title="Model setup"
+              closeLabel="Close"
+            >
+              <input aria-label="Model name" />
+            </ModalFrame>
+          </>
+        );
+      }
+      render(<Example />);
+      const trigger = screen.getByRole("combobox", { name: "Model" });
+      trigger.focus();
+      await user.keyboard("{ArrowDown}");
+      if (count > 8) {
+        const search = within(
+          await screen.findByRole("dialog", { name: "Model" }),
+        ).getByRole("combobox");
+        await user.type(search, "no match");
+        expect(screen.getByText("No models")).toBeTruthy();
+      }
+      await user.click(screen.getByRole("button", { name: "Add model" }));
+      await screen.findByRole("dialog", { name: "Model setup" });
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      await user.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
+    },
+  );
   it("selects short local lists without a search input", async () => {
     const user = userEvent.setup();
     const change = vi.fn();

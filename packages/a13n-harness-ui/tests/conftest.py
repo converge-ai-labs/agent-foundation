@@ -22,6 +22,7 @@ def isolated_user_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def no_background_price_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(prices, "update_in_background", nullcontext)
+    monkeypatch.setenv("A13N_OFFICIAL_MODELS_AUTO_UPDATE", "0")
 
 
 @pytest.fixture(autouse=True)

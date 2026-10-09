@@ -1,41 +1,17 @@
-"""Immutable package-local catalog of official upstream model characteristics."""
+"""Immutable views of curated official model characteristics."""
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from functools import lru_cache
-from importlib.resources import files
 from types import MappingProxyType
 
-import yaml
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
-
-from a13n_harness.spec import HarnessModelCharacteristics
-
-
-class OfficialModelEntry(BaseModel):
-    """One explicitly selected official upstream model declaration."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    model: str = Field(min_length=1, max_length=512)
-    characteristics: HarnessModelCharacteristics
-    source_url: HttpUrl
-
-    @model_validator(mode="after")
-    def _validate_entry(self) -> OfficialModelEntry:
-        if "\x00" in self.model or ":" not in self.model:
-            raise ValueError("official model must use a provider-qualified model name")
-        return self
-
-    @property
-    def key(self) -> str:
-        """Return the canonical catalog key."""
-        return self.model
+from a13n_harness._official_data import OfficialData, OfficialModelEntry, current_official_data, pricing_provider
+from a13n_harness.pricing import _bundled_upstream_catalog
 
 
 class OfficialModelCatalog(Mapping[str, OfficialModelEntry]):
-    """Read-only official model declarations shipped with one Harness release."""
+    """Read-only model declarations captured from one validated official snapshot."""
 
     def __init__(self, entries: Mapping[str, OfficialModelEntry]) -> None:
         copied = dict(entries)
@@ -59,24 +35,29 @@ class OfficialModelCatalog(Mapping[str, OfficialModelEntry]):
 
 
 @lru_cache(maxsize=1)
-def get_official_model_catalog() -> OfficialModelCatalog:
-    """Load and validate the immutable catalog bundled with this Harness release."""
-    resource = files("a13n_harness").joinpath("data/official-models.yaml")
-    raw = yaml.safe_load(resource.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or raw.get("schema_version") != 1:
-        raise RuntimeError("bundled official model catalog has an unsupported schema")
-    raw_entries = raw.get("models")
-    if not isinstance(raw_entries, dict):
-        raise RuntimeError("bundled official model catalog must contain a model mapping")
+def _catalog_from_data(data: OfficialData) -> OfficialModelCatalog:
     entries: dict[str, OfficialModelEntry] = {}
-    for key, value in raw_entries.items():
-        if not isinstance(key, str) or not isinstance(value, dict):
-            raise RuntimeError("bundled official model catalog contains an invalid entry")
-        entry = OfficialModelEntry.model_validate({"model": key, **value})
-        if entry.key in entries:
-            raise RuntimeError(f"bundled official model catalog contains duplicate model {entry.key!r}")
-        entries[entry.key] = entry
+    pricing = _bundled_upstream_catalog()
+    for key, entry in data.models.items():
+        # Exact bundled context is a fallback, never a fuzzy media identity.
+        provider, _, model = key.partition(":")
+        price = pricing.get(f"{pricing_provider(provider)}:{model}")
+        if "context_window_tokens" not in entry.characteristics.model_fields_set and price is not None:
+            if price.context_window is not None:
+                entry = entry.model_copy(
+                    update={
+                        "characteristics": entry.characteristics.model_copy(
+                            update={"context_window_tokens": price.context_window}
+                        )
+                    }
+                )
+        entries[key] = entry
     return OfficialModelCatalog(entries)
+
+
+def get_official_model_catalog() -> OfficialModelCatalog:
+    """Read current official facts, falling back to bundled data without network I/O."""
+    return _catalog_from_data(current_official_data())
 
 
 def get_official_model(model: str) -> OfficialModelEntry:

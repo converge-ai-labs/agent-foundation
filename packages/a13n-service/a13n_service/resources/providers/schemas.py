@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 
 from a13n_harness.providers.authentication import Authentication
 from a13n_harness.providers.model.headers import ExtraHeaders, HeaderName, HeaderValue, normalize_header_names
+from a13n_harness.spec import HarnessModelCharacteristics
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, JsonValue
 
 from a13n_service.providers.registry import WebOperation
@@ -74,6 +75,8 @@ class ProviderModel(BaseModel):
 
     slug: str
     display_name: str
+    # Optional public metadata, not an account entitlement or saved configuration.
+    characteristics: HarnessModelCharacteristics | None = None
 
 
 class ProviderType(BaseModel):

@@ -19,8 +19,9 @@ export function ImageInputFields({
   const { t } = useTranslation();
   const errors = imageInputErrors(value);
   return (
-    <SettingsSection title={t("Image input")}>
+    <SettingsSection title={t("Image input")} variant="plain">
       <SettingsRow
+        stackOnNarrow={false}
         label={t("Prepare images")}
         description={t(
           "Validate and resize images before sending them to this model.",
@@ -35,6 +36,7 @@ export function ImageInputFields({
       {value.enabled && (
         <>
           <SettingsRow
+            stackOnNarrow={false}
             label={t("Support GIF")}
             description={t(
               "Keep binary GIF images; when off, they are omitted from requests.",
@@ -48,7 +50,7 @@ export function ImageInputFields({
               }
             />
           </SettingsRow>
-          <div className={sharedStyles.twoColumns}>
+          <div className={`${sharedStyles.twoColumns} pt-3`}>
             <FormField
               label={t("Max images")}
               description={

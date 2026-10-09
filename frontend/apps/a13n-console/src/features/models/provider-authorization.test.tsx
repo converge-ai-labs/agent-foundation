@@ -80,6 +80,17 @@ it("starts workspace authorization, posts the full callback, clears secret input
   );
   const input = await screen.findByLabelText("Complete callback URL");
   expect(input.getAttribute("type")).toBe("password");
+  expect(input.getAttribute("placeholder")).toBe(
+    "http://127.0.0.1:1456/auth/callback?code=…&state=…",
+  );
+  expect((input as HTMLInputElement).value).toBe("");
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Complete sign-in",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
   expect(screen.getByText("Waiting for sign-in")).toBeTruthy();
   expect(screen.queryByText("Not connected")).toBeNull();
   expect(

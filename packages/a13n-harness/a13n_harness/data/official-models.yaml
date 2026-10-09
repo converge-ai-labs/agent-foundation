@@ -1,153 +1,1753 @@
-schema_version: 1
+# Curated official model facts and pricing supplements.
+# Context belongs to characteristics; omitted facts may use exact bundled upstream data.
+# PDF support remains opt-in on authoring surfaces.
+schema_version: 2
 models:
+  anthropic:claude-sonnet-5-5:
+    characteristics:
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1000000
+    source_url: https://platform.claude.com/docs/en/models/sonnet-5-5/overview
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://platform.claude.com/docs/en/models/sonnet-5-5/overview
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2}
+        - {price_key: output_mtok, price: 10}
+        - {price_key: cache_read_mtok, price: 0.1}
+        - {price_key: cache_write_mtok, price: 2.5}
+        - {price_key: cache_write_1h_mtok, price: 4}
+  anthropic:claude-haiku-5-5:
+    characteristics:
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1000000
+    source_url: https://platform.claude.com/docs/en/models/haiku-5-5/overview
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://platform.claude.com/docs/en/models/haiku-5-5/overview
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.1, tiers: [{start: 100000, price: 0.5}]}
+        - {price_key: output_mtok, price: 0.5, tiers: [{start: 100000, price: 2.5}]}
+        - {price_key: cache_read_mtok, price: 0.01, tiers: [{start: 100000, price: 0.05}]}
+        - {price_key: cache_write_mtok, price: 0.125, tiers: [{start: 100000, price: 0.625}]}
+        - {price_key: cache_write_1h_mtok, price: 0.2, tiers: [{start: 100000, price: 1}]}
+  anthropic:claude-opus-5-5:
+    characteristics:
+      capabilities:
+      - image_understanding
+    source_url: https://platform.claude.com/docs/en/models/opus-5-5/overview
+  moonshotai:kimi-k3:
+    characteristics:
+      capabilities:
+      - image_understanding
+      - video_understanding
+      context_window_tokens: 1048576
+    source_url: https://platform.kimi.ai/docs/guide/kimi-k3-quickstart
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://platform.kimi.ai/docs/pricing/chat
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 3}
+        - {price_key: output_mtok, price: 15}
+        - {price_key: cache_read_mtok, price: 0.3}
+        - {price_key: cache_write_mtok, price: 3}
+        - {price_key: cache_write_1h_mtok, price: 6}
+  moonshotai:kimi-k2.7-code:
+    characteristics:
+      capabilities:
+      - image_understanding
+      - video_understanding
+    source_url: https://platform.kimi.ai/docs/overview
+  moonshotai:kimi-k2.7-code-highspeed:
+    characteristics:
+      capabilities:
+      - image_understanding
+      - video_understanding
+    source_url: https://platform.kimi.ai/docs/overview
+  google-gla:gemini-3.7-flash:
+    characteristics:
+      capabilities:
+      - image_understanding
+      - audio_understanding
+      - video_understanding
+      context_window_tokens: 1048576
+    source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-3.7-flash
+      rules:
+      - rule_id: standard-2026
+        prices:
+        - {price_key: input_mtok, price: 0.75}
+        - {price_key: output_mtok, price: 3.75}
+        - {price_key: cache_read_mtok, price: 0.075}
+      - rule_id: standard-2027
+        constraint:
+          kind: start_date
+          start_date: 2027-01-01
+        prices:
+        - {price_key: input_mtok, price: 1.5}
+        - {price_key: output_mtok, price: 7.5}
+        - {price_key: cache_read_mtok, price: 0.15}
+      - rule_id: flex-2026
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.375}
+        - {price_key: output_mtok, price: 1.875}
+        - {price_key: cache_read_mtok, price: 0.0375}
+      - rule_id: flex-2027
+        service_tier: flex
+        constraint:
+          kind: start_date
+          start_date: 2027-01-01
+        prices:
+        - {price_key: input_mtok, price: 0.75}
+        - {price_key: output_mtok, price: 3.75}
+        - {price_key: cache_read_mtok, price: 0.075}
+      - rule_id: priority-2026
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 1.35}
+        - {price_key: output_mtok, price: 6.75}
+        - {price_key: cache_read_mtok, price: 0.135}
+      - rule_id: priority-2027
+        service_tier: priority
+        constraint:
+          kind: start_date
+          start_date: 2027-01-01
+        prices:
+        - {price_key: input_mtok, price: 2.7}
+        - {price_key: output_mtok, price: 13.5}
+        - {price_key: cache_read_mtok, price: 0.27}
+  google-gla:gemini-3.8-flash:
+    characteristics:
+      capabilities:
+      - image_understanding
+      - audio_understanding
+      - video_understanding
+      context_window_tokens: 1048576
+    source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-3.8-flash
+      rules:
+      - rule_id: standard-2026
+        prices:
+        - {price_key: input_mtok, price: 0.75}
+        - {price_key: output_mtok, price: 3.75}
+        - {price_key: cache_read_mtok, price: 0.075}
+      - rule_id: standard-2027
+        constraint:
+          kind: start_date
+          start_date: 2027-01-01
+        prices:
+        - {price_key: input_mtok, price: 1.5}
+        - {price_key: output_mtok, price: 7.5}
+        - {price_key: cache_read_mtok, price: 0.15}
+      - rule_id: flex-2026
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.375}
+        - {price_key: output_mtok, price: 1.875}
+        - {price_key: cache_read_mtok, price: 0.0375}
+      - rule_id: flex-2027
+        service_tier: flex
+        constraint:
+          kind: start_date
+          start_date: 2027-01-01
+        prices:
+        - {price_key: input_mtok, price: 0.75}
+        - {price_key: output_mtok, price: 3.75}
+        - {price_key: cache_read_mtok, price: 0.075}
+      - rule_id: priority-2026
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 1.35}
+        - {price_key: output_mtok, price: 6.75}
+        - {price_key: cache_read_mtok, price: 0.135}
+      - rule_id: priority-2027
+        service_tier: priority
+        constraint:
+          kind: start_date
+          start_date: 2027-01-01
+        prices:
+        - {price_key: input_mtok, price: 2.7}
+        - {price_key: output_mtok, price: 13.5}
+        - {price_key: cache_read_mtok, price: 0.27}
+  zai:glm-5.3-flash:
+    characteristics:
+      capabilities:
+      - image_understanding
+      - video_understanding
+      context_window_tokens: 1000000
+    source_url: https://docs.z.ai/guides/llm/glm-5.3-flash
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.z.ai/guides/overview/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.15}
+        - {price_key: output_mtok, price: 0.5}
+        - {price_key: cache_read_mtok, price: 0.03}
+  zai:glm-5.3-flashx:
+    characteristics:
+      capabilities:
+      - image_understanding
+      - video_understanding
+      context_window_tokens: 1000000
+    source_url: https://docs.z.ai/guides/llm/glm-5.3-flash
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.z.ai/guides/overview/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.37}
+        - {price_key: output_mtok, price: 1.25}
+        - {price_key: cache_read_mtok, price: 0.075}
+  groq:qwen/qwen3.8-27b:
+    characteristics:
+      capabilities:
+      - image_understanding
+      context_window_tokens: 131072
+    source_url: https://console.groq.com/docs/model/qwen3.8-27b
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://console.groq.com/docs/model/qwen3.8-27b
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.8}
+        - {price_key: output_mtok, price: 4}
+  cerebras:qwen-3.8-27b:
+    characteristics:
+      context_window_tokens: 65536
+      capabilities:
+      - image_understanding
+    source_url: https://inference-docs.cerebras.ai/models/qwen-3.8-27b
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://inference-docs.cerebras.ai/models/qwen-3.8-27b
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.99}
+        - {price_key: output_mtok, price: 1.49}
   anthropic:claude-fable-5-1:
     characteristics:
+      capabilities:
+      - image_understanding
       context_window_tokens: 1000000
-      capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/models/fable-5-1/overview
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-02
+      source_url: https://platform.claude.com/docs/en/about-claude/pricing
+      rules:
+      - rule_id: standard
+        constraint:
+          kind: always
+        prices:
+        - {price_key: input_mtok, price: 10}
+        - {price_key: cache_write_mtok, price: 12.5}
+        - {price_key: cache_write_1h_mtok, price: 20}
+        - {price_key: cache_read_mtok, price: 0.25}
+        - {price_key: output_mtok, price: 50}
   anthropic:claude-sonnet-5:
     characteristics:
+      capabilities:
+      - image_understanding
       context_window_tokens: 1000000
-      capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-08-27
+      source_url: https://platform.claude.com/docs/en/about-claude/pricing
+      rules:
+      - rule_id: standard
+        constraint:
+          kind: always
+        prices:
+        - {price_key: input_mtok, price: 2}
+        - {price_key: cache_write_mtok, price: 2.5}
+        - {price_key: cache_write_1h_mtok, price: 4}
+        - {price_key: cache_read_mtok, price: 0.2}
+        - {price_key: output_mtok, price: 10}
   anthropic:claude-opus-5:
     characteristics:
+      capabilities:
+      - image_understanding
       context_window_tokens: 1000000
-      capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-08-27
+      source_url: https://platform.claude.com/docs/en/about-claude/pricing
+      rules:
+      - rule_id: standard
+        constraint:
+          kind: always
+        prices:
+        - {price_key: input_mtok, price: 5}
+        - {price_key: cache_write_mtok, price: 6.25}
+        - {price_key: cache_write_1h_mtok, price: 10}
+        - {price_key: cache_read_mtok, price: 0.5}
+        - {price_key: output_mtok, price: 25}
   anthropic:claude-sonnet-4-6:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
     source_url: https://platform.claude.com/docs/en/models/sonnet-4-6/overview
   anthropic:claude-opus-4-6:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
     source_url: https://platform.claude.com/docs/en/models/opus-4-6/overview
   anthropic:claude-haiku-4-5:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
   anthropic:claude-sonnet-4-5:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
     source_url: https://platform.claude.com/docs/en/models/sonnet-4-5/overview
+  openai:gpt-6.1-sol:
+    characteristics:
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1050000
+    source_url: https://developers.openai.com/api/docs/models/gpt-6.1-sol
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2, tiers: [{start: 272000, price: 4}]}
+        - {price_key: output_mtok, price: 10, tiers: [{start: 272000, price: 15}]}
+        - {price_key: cache_read_mtok, price: 0.1, tiers: [{start: 272000, price: 0.2}]}
+        - {price_key: cache_write_mtok, price: 2.5, tiers: [{start: 272000, price: 5}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 1, tiers: [{start: 272000, price: 2}]}
+        - {price_key: output_mtok, price: 5, tiers: [{start: 272000, price: 7.5}]}
+        - {price_key: cache_read_mtok, price: 0.05, tiers: [{start: 272000, price: 0.1}]}
+        - {price_key: cache_write_mtok, price: 1.25, tiers: [{start: 272000, price: 2.5}]}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 4, tiers: [{start: 272000, price: 8}]}
+        - {price_key: output_mtok, price: 20, tiers: [{start: 272000, price: 30}]}
+        - {price_key: cache_read_mtok, price: 0.2, tiers: [{start: 272000, price: 0.4}]}
+        - {price_key: cache_write_mtok, price: 5, tiers: [{start: 272000, price: 10}]}
+  openai:gpt-6-sol:
+    characteristics:
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1050000
+    source_url: https://developers.openai.com/api/docs/models/gpt-6-sol
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2.0, tiers: [{start: 272000, price: 4.0}]}
+        - {price_key: cache_read_mtok, price: 0.2, tiers: [{start: 272000, price: 0.4}]}
+        - {price_key: cache_write_mtok, price: 2.5, tiers: [{start: 272000, price: 5.0}]}
+        - {price_key: output_mtok, price: 10.0, tiers: [{start: 272000, price: 15.0}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 1.0, tiers: [{start: 272000, price: 2.0}]}
+        - {price_key: cache_read_mtok, price: 0.1, tiers: [{start: 272000, price: 0.2}]}
+        - {price_key: cache_write_mtok, price: 1.25, tiers: [{start: 272000, price: 2.5}]}
+        - {price_key: output_mtok, price: 5.0, tiers: [{start: 272000, price: 7.5}]}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 4.0, tiers: [{start: 272000, price: 8.0}]}
+        - {price_key: cache_read_mtok, price: 0.4, tiers: [{start: 272000, price: 0.8}]}
+        - {price_key: cache_write_mtok, price: 5.0, tiers: [{start: 272000, price: 10.0}]}
+        - {price_key: output_mtok, price: 20.0, tiers: [{start: 272000, price: 30.0}]}
+  openai:gpt-6-luna:
+    characteristics:
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1050000
+    source_url: https://developers.openai.com/api/docs/models/gpt-6-luna
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.1, tiers: [{start: 272000, price: 0.2}]}
+        - {price_key: cache_read_mtok, price: 0.01, tiers: [{start: 272000, price: 0.02}]}
+        - {price_key: cache_write_mtok, price: 0.125, tiers: [{start: 272000, price: 0.25}]}
+        - {price_key: output_mtok, price: 0.5, tiers: [{start: 272000, price: 0.75}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.05, tiers: [{start: 272000, price: 0.1}]}
+        - {price_key: cache_read_mtok, price: 0.005, tiers: [{start: 272000, price: 0.01}]}
+        - {price_key: cache_write_mtok, price: 0.0625, tiers: [{start: 272000, price: 0.125}]}
+        - {price_key: output_mtok, price: 0.25, tiers: [{start: 272000, price: 0.375}]}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.2, tiers: [{start: 272000, price: 0.4}]}
+        - {price_key: cache_read_mtok, price: 0.02, tiers: [{start: 272000, price: 0.04}]}
+        - {price_key: cache_write_mtok, price: 0.25, tiers: [{start: 272000, price: 0.5}]}
+        - {price_key: output_mtok, price: 1.0, tiers: [{start: 272000, price: 1.5}]}
   openai:gpt-6-astra:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1050000
     source_url: https://developers.openai.com/api/docs/models/gpt-6-astra
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 10.0, tiers: [{start: 272000, price: 20.0}]}
+        - {price_key: cache_read_mtok, price: 1.0, tiers: [{start: 272000, price: 2.0}]}
+        - {price_key: cache_write_mtok, price: 12.5, tiers: [{start: 272000, price: 25.0}]}
+        - {price_key: output_mtok, price: 50.0, tiers: [{start: 272000, price: 75.0}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 5.0, tiers: [{start: 272000, price: 10.0}]}
+        - {price_key: cache_read_mtok, price: 0.5, tiers: [{start: 272000, price: 1.0}]}
+        - {price_key: cache_write_mtok, price: 6.25, tiers: [{start: 272000, price: 12.5}]}
+        - {price_key: output_mtok, price: 25.0, tiers: [{start: 272000, price: 37.5}]}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 20.0, tiers: [{start: 272000, price: 40.0}]}
+        - {price_key: cache_read_mtok, price: 2.0, tiers: [{start: 272000, price: 4.0}]}
+        - {price_key: cache_write_mtok, price: 25.0, tiers: [{start: 272000, price: 50.0}]}
+        - {price_key: output_mtok, price: 100.0, tiers: [{start: 272000, price: 150.0}]}
   openai:gpt-5.6-sol:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1050000
     source_url: https://developers.openai.com/api/docs/models/gpt-5.6-sol
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 4.0, tiers: [{start: 272000, price: 8.0}]}
+        - {price_key: cache_read_mtok, price: 0.4, tiers: [{start: 272000, price: 0.8}]}
+        - {price_key: cache_write_mtok, price: 5.0, tiers: [{start: 272000, price: 10.0}]}
+        - {price_key: output_mtok, price: 20.0, tiers: [{start: 272000, price: 30.0}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 2.0, tiers: [{start: 272000, price: 4.0}]}
+        - {price_key: cache_read_mtok, price: 0.2, tiers: [{start: 272000, price: 0.4}]}
+        - {price_key: cache_write_mtok, price: 2.5, tiers: [{start: 272000, price: 5.0}]}
+        - {price_key: output_mtok, price: 10.0, tiers: [{start: 272000, price: 15.0}]}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 8.0, tiers: [{start: 272000, price: 16.0}]}
+        - {price_key: cache_read_mtok, price: 0.8, tiers: [{start: 272000, price: 1.6}]}
+        - {price_key: cache_write_mtok, price: 10.0, tiers: [{start: 272000, price: 20.0}]}
+        - {price_key: output_mtok, price: 40.0, tiers: [{start: 272000, price: 60.0}]}
   openai:gpt-5.6-terra:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1050000
     source_url: https://developers.openai.com/api/docs/models/gpt-5.6-terra
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2.0, tiers: [{start: 272000, price: 4.0}]}
+        - {price_key: cache_read_mtok, price: 0.2, tiers: [{start: 272000, price: 0.4}]}
+        - {price_key: cache_write_mtok, price: 2.5, tiers: [{start: 272000, price: 5.0}]}
+        - {price_key: output_mtok, price: 12.0, tiers: [{start: 272000, price: 18.0}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 1.0, tiers: [{start: 272000, price: 2.0}]}
+        - {price_key: cache_read_mtok, price: 0.1, tiers: [{start: 272000, price: 0.2}]}
+        - {price_key: cache_write_mtok, price: 1.25, tiers: [{start: 272000, price: 2.5}]}
+        - {price_key: output_mtok, price: 6.0, tiers: [{start: 272000, price: 9.0}]}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 4.0, tiers: [{start: 272000, price: 8.0}]}
+        - {price_key: cache_read_mtok, price: 0.4, tiers: [{start: 272000, price: 0.8}]}
+        - {price_key: cache_write_mtok, price: 5.0, tiers: [{start: 272000, price: 10.0}]}
+        - {price_key: output_mtok, price: 24.0, tiers: [{start: 272000, price: 36.0}]}
   openai:gpt-5.6-luna:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1050000
     source_url: https://developers.openai.com/api/docs/models/gpt-5.6-luna
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.2, tiers: [{start: 272000, price: 0.4}]}
+        - {price_key: cache_read_mtok, price: 0.02, tiers: [{start: 272000, price: 0.04}]}
+        - {price_key: cache_write_mtok, price: 0.25, tiers: [{start: 272000, price: 0.5}]}
+        - {price_key: output_mtok, price: 1.2, tiers: [{start: 272000, price: 1.8}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.1, tiers: [{start: 272000, price: 0.2}]}
+        - {price_key: cache_read_mtok, price: 0.01, tiers: [{start: 272000, price: 0.02}]}
+        - {price_key: cache_write_mtok, price: 0.125, tiers: [{start: 272000, price: 0.25}]}
+        - {price_key: output_mtok, price: 0.6, tiers: [{start: 272000, price: 0.9}]}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.4, tiers: [{start: 272000, price: 0.8}]}
+        - {price_key: cache_read_mtok, price: 0.04, tiers: [{start: 272000, price: 0.08}]}
+        - {price_key: cache_write_mtok, price: 0.5, tiers: [{start: 272000, price: 1.0}]}
+        - {price_key: output_mtok, price: 2.4, tiers: [{start: 272000, price: 3.6}]}
   openai:gpt-5.5:
     characteristics:
+      capabilities:
+      - image_understanding
       context_window_tokens: 1050000
-      capabilities: [image_understanding]
     source_url: https://developers.openai.com/api/docs/models/gpt-5.5
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 5.0, tiers: [{start: 272000, price: 10.0}]}
+        - {price_key: cache_read_mtok, price: 0.5, tiers: [{start: 272000, price: 1.0}]}
+        - {price_key: output_mtok, price: 30.0, tiers: [{start: 272000, price: 45.0}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 2.5, tiers: [{start: 272000, price: 5.0}]}
+        - {price_key: cache_read_mtok, price: 0.25, tiers: [{start: 272000, price: 0.5}]}
+        - {price_key: output_mtok, price: 15.0, tiers: [{start: 272000, price: 22.5}]}
+      - rule_id: priority
+        service_tier: priority
+        max_input_tokens: 272000
+        prices:
+        - {price_key: input_mtok, price: 12.5}
+        - {price_key: cache_read_mtok, price: 1.25}
+        - {price_key: output_mtok, price: 75.0}
   openai:gpt-5.4:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1050000
     source_url: https://developers.openai.com/api/docs/models/gpt-5.4
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2.5, tiers: [{start: 272000, price: 5.0}]}
+        - {price_key: cache_read_mtok, price: 0.25, tiers: [{start: 272000, price: 0.5}]}
+        - {price_key: output_mtok, price: 15.0, tiers: [{start: 272000, price: 22.5}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 1.25, tiers: [{start: 272000, price: 2.5}]}
+        - {price_key: cache_read_mtok, price: 0.13, tiers: [{start: 272000, price: 0.25}]}
+        - {price_key: output_mtok, price: 7.5, tiers: [{start: 272000, price: 11.25}]}
+      - rule_id: priority
+        service_tier: priority
+        max_input_tokens: 272000
+        prices:
+        - {price_key: input_mtok, price: 5.0}
+        - {price_key: cache_read_mtok, price: 0.5}
+        - {price_key: output_mtok, price: 30.0}
   openai:gpt-5.4-mini:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
+      context_window_tokens: 400000
     source_url: https://developers.openai.com/api/docs/models/gpt-5.4-mini
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.75}
+        - {price_key: cache_read_mtok, price: 0.075}
+        - {price_key: output_mtok, price: 4.5}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.375}
+        - {price_key: cache_read_mtok, price: 0.0375}
+        - {price_key: output_mtok, price: 2.25}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 1.5}
+        - {price_key: cache_read_mtok, price: 0.15}
+        - {price_key: output_mtok, price: 9.0}
   google-gla:gemini-3.5-flash:
     characteristics:
-      context_window_tokens: 1048576
-      capabilities: [image_understanding, audio_understanding, video_understanding]
+      capabilities:
+      - image_understanding
+      - audio_understanding
+      - video_understanding
       url_input:
-        video: [youtube]
+        video:
+        - youtube
+      context_window_tokens: 1048576
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 1.5}
+        - {price_key: output_mtok, price: 9.0}
+        - {price_key: cache_read_mtok, price: 0.15}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.75}
+        - {price_key: output_mtok, price: 4.5}
+        - {price_key: cache_read_mtok, price: 0.08}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 2.7}
+        - {price_key: output_mtok, price: 16.2}
+        - {price_key: cache_read_mtok, price: 0.27}
   google-gla:gemini-3.6-flash:
     characteristics:
-      context_window_tokens: 1048576
-      capabilities: [image_understanding, audio_understanding, video_understanding]
+      capabilities:
+      - image_understanding
+      - audio_understanding
+      - video_understanding
       url_input:
-        video: [youtube]
+        video:
+        - youtube
+      context_window_tokens: 1048576
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-3.6-flash
+      rules:
+      - rule_id: standard-2026
+        prices:
+        - {price_key: input_mtok, price: 0.75}
+        - {price_key: output_mtok, price: 3.75}
+        - {price_key: cache_read_mtok, price: 0.075}
+      - rule_id: standard-2027
+        constraint:
+          kind: start_date
+          start_date: 2027-01-01
+        prices:
+        - {price_key: input_mtok, price: 1.5}
+        - {price_key: output_mtok, price: 7.5}
+        - {price_key: cache_read_mtok, price: 0.15}
+      - rule_id: flex-2026
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.375}
+        - {price_key: output_mtok, price: 1.875}
+        - {price_key: cache_read_mtok, price: 0.0375}
+      - rule_id: flex-2027
+        service_tier: flex
+        constraint:
+          kind: start_date
+          start_date: 2027-01-01
+        prices:
+        - {price_key: input_mtok, price: 0.75}
+        - {price_key: output_mtok, price: 3.75}
+        - {price_key: cache_read_mtok, price: 0.075}
+      - rule_id: priority-2026
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 1.35}
+        - {price_key: output_mtok, price: 6.75}
+        - {price_key: cache_read_mtok, price: 0.135}
+      - rule_id: priority-2027
+        service_tier: priority
+        constraint:
+          kind: start_date
+          start_date: 2027-01-01
+        prices:
+        - {price_key: input_mtok, price: 2.7}
+        - {price_key: output_mtok, price: 13.5}
+        - {price_key: cache_read_mtok, price: 0.27}
   google-gla:gemini-3.5-flash-lite:
     characteristics:
-      context_window_tokens: 1048576
-      capabilities: [image_understanding, audio_understanding, video_understanding]
+      capabilities:
+      - image_understanding
+      - audio_understanding
+      - video_understanding
       url_input:
-        video: [youtube]
+        video:
+        - youtube
+      context_window_tokens: 1048576
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-3.5-flash-lite
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.3}
+        - {price_key: output_mtok, price: 2.5}
+        - {price_key: cache_read_mtok, price: 0.03}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.15}
+        - {price_key: output_mtok, price: 1.25}
+        - {price_key: cache_read_mtok, price: 0.02}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.54}
+        - {price_key: output_mtok, price: 4.5}
+        - {price_key: cache_read_mtok, price: 0.05}
   google-gla:gemini-3.1-pro-preview:
     characteristics:
-      capabilities: [image_understanding, audio_understanding, video_understanding]
+      capabilities:
+      - image_understanding
+      - audio_understanding
+      - video_understanding
       url_input:
-        video: [youtube]
+        video:
+        - youtube
+      context_window_tokens: 1048576
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.1-pro-preview
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-pro-preview
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2.0, tiers: [{start: 200000, price: 4.0}]}
+        - {price_key: output_mtok, price: 12.0, tiers: [{start: 200000, price: 18.0}]}
+        - {price_key: cache_read_mtok, price: 0.2, tiers: [{start: 200000, price: 0.4}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 1.0, tiers: [{start: 200000, price: 2.0}]}
+        - {price_key: output_mtok, price: 6.0, tiers: [{start: 200000, price: 9.0}]}
+        - {price_key: cache_read_mtok, price: 0.2, tiers: [{start: 200000, price: 0.4}]}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 3.6, tiers: [{start: 200000, price: 7.2}]}
+        - {price_key: output_mtok, price: 21.6, tiers: [{start: 200000, price: 32.4}]}
+        - {price_key: cache_read_mtok, price: 0.36, tiers: [{start: 200000, price: 0.72}]}
   google-gla:gemini-2.5-pro:
     characteristics:
-      capabilities: [image_understanding, audio_understanding, video_understanding]
+      capabilities:
+      - image_understanding
+      - audio_understanding
+      - video_understanding
       url_input:
-        video: [youtube]
+        video:
+        - youtube
+      context_window_tokens: 1048576
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-pro
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 1.25, tiers: [{start: 200000, price: 2.5}]}
+        - {price_key: output_mtok, price: 10.0, tiers: [{start: 200000, price: 15.0}]}
+        - {price_key: cache_read_mtok, price: 0.125, tiers: [{start: 200000, price: 0.25}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.625, tiers: [{start: 200000, price: 1.25}]}
+        - {price_key: output_mtok, price: 5.0, tiers: [{start: 200000, price: 7.5}]}
+        - {price_key: cache_read_mtok, price: 0.125, tiers: [{start: 200000, price: 0.25}]}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 2.25, tiers: [{start: 200000, price: 4.5}]}
+        - {price_key: output_mtok, price: 18.0, tiers: [{start: 200000, price: 27.0}]}
+        - {price_key: cache_read_mtok, price: 0.225, tiers: [{start: 200000, price: 0.45}]}
   google-gla:gemini-2.5-flash:
     characteristics:
-      capabilities: [image_understanding, audio_understanding, video_understanding]
+      capabilities:
+      - image_understanding
+      - audio_understanding
+      - video_understanding
       url_input:
-        video: [youtube]
+        video:
+        - youtube
+      context_window_tokens: 1048576
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-2.5-flash
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.3}
+        - {price_key: input_audio_mtok, price: 1.0}
+        - {price_key: output_mtok, price: 2.5}
+        - {price_key: cache_read_mtok, price: 0.03}
+        - {price_key: cache_audio_read_mtok, price: 0.1}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.15}
+        - {price_key: input_audio_mtok, price: 0.5}
+        - {price_key: output_mtok, price: 1.25}
+        - {price_key: cache_read_mtok, price: 0.03}
+        - {price_key: cache_audio_read_mtok, price: 0.1}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.54}
+        - {price_key: input_audio_mtok, price: 1.8}
+        - {price_key: output_mtok, price: 4.5}
+        - {price_key: cache_read_mtok, price: 0.054}
+        - {price_key: cache_audio_read_mtok, price: 0.18}
   grok:grok-4.7:
     characteristics:
-      capabilities: [image_understanding]
-    source_url: https://docs.x.ai/developers/grok-4-7
+      capabilities:
+      - image_understanding
+      context_window_tokens: 500000
+    source_url: https://docs.x.ai/developers/models/grok-4.7
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.x.ai/developers/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2, tiers: [{start: 199999, price: 4}]}
+        - {price_key: cache_read_mtok, price: 0.5, tiers: [{start: 199999, price: 1.0}]}
+        - {price_key: output_mtok, price: 6, tiers: [{start: 199999, price: 12}]}
   grok:grok-4.6:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
+      context_window_tokens: 500000
     source_url: https://docs.x.ai/developers/models/grok-4.6
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.x.ai/developers/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2, tiers: [{start: 199999, price: 4}]}
+        - {price_key: cache_read_mtok, price: 0.5, tiers: [{start: 199999, price: 1.0}]}
+        - {price_key: output_mtok, price: 6, tiers: [{start: 199999, price: 12}]}
   grok:grok-4.5:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
+      context_window_tokens: 500000
     source_url: https://docs.x.ai/developers/models/grok-4.5
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.x.ai/developers/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2, tiers: [{start: 199999, price: 4}]}
+        - {price_key: cache_read_mtok, price: 0.3, tiers: [{start: 199999, price: 0.6}]}
+        - {price_key: output_mtok, price: 6, tiers: [{start: 199999, price: 12}]}
   grok:grok-4.20-0309-reasoning:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1000000
     source_url: https://docs.x.ai/developers/models/grok-4.20-0309-reasoning
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.x.ai/developers/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 1.25, tiers: [{start: 199999, price: 2.5}]}
+        - {price_key: cache_read_mtok, price: 0.2, tiers: [{start: 199999, price: 0.4}]}
+        - {price_key: output_mtok, price: 2.5, tiers: [{start: 199999, price: 5.0}]}
   moonshotai:kimi-k2.6:
     characteristics:
-      capabilities: [image_understanding, video_understanding]
+      capabilities:
+      - image_understanding
+      - video_understanding
     source_url: https://platform.kimi.ai/docs/overview
   moonshotai:kimi-k2.5:
     characteristics:
-      capabilities: [image_understanding, video_understanding]
+      capabilities:
+      - image_understanding
+      - video_understanding
     source_url: https://www.kimi.com/blog/kimi-k2-5.html
   zai:glm-5.3:
     characteristics:
+      context_window_tokens: 1000000
       capabilities: []
     source_url: https://docs.z.ai/guides/llm/glm-5.3
   zai:glm-5.2:
     characteristics:
+      context_window_tokens: 1000000
       capabilities: []
     source_url: https://docs.z.ai/guides/llm/glm-5.2
   zai:glm-4.7:
     characteristics:
       capabilities: []
     source_url: https://docs.z.ai/guides/llm/glm-4.7
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.z.ai/guides/overview/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.6}
+        - {price_key: cache_read_mtok, price: 0.11}
+        - {price_key: output_mtok, price: 2.2}
   zai:glm-4.5:
     characteristics:
       capabilities: []
     source_url: https://docs.z.ai/guides/llm/glm-4.5
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.z.ai/guides/overview/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.6}
+        - {price_key: cache_read_mtok, price: 0.11}
+        - {price_key: output_mtok, price: 2.2}
+  deepseek:deepseek-flash:
+    characteristics:
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1000000
+    source_url: https://api-docs.deepseek.com/quick_start/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://api-docs.deepseek.com/quick_start/pricing
+      rules:
+      - rule_id: off-peak
+        constraint:
+          kind: always
+        prices:
+        - {price_key: input_mtok, price: 0.15}
+        - {price_key: cache_read_mtok, price: 0.003}
+        - {price_key: output_mtok, price: 0.6}
+      - rule_id: weekday-peak-1
+        constraint:
+          kind: daily_time
+          start_time: 01:00:00
+          end_time: 04:00:00
+          weekdays:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+        prices:
+        - {price_key: input_mtok, price: 0.3}
+        - {price_key: cache_read_mtok, price: 0.006}
+        - {price_key: output_mtok, price: 1.2}
+      - rule_id: weekday-peak-2
+        constraint:
+          kind: daily_time
+          start_time: 06:00:00
+          end_time: '10:00:00'
+          weekdays:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+        prices:
+        - {price_key: input_mtok, price: 0.3}
+        - {price_key: cache_read_mtok, price: 0.006}
+        - {price_key: output_mtok, price: 1.2}
   deepseek:deepseek-v4-flash:
     characteristics:
+      capabilities:
+      - image_understanding
       context_window_tokens: 1000000
     source_url: https://api-docs.deepseek.com/quick_start/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://api-docs.deepseek.com/quick_start/pricing
+      rules:
+      - rule_id: off-peak
+        constraint:
+          kind: always
+        prices:
+        - {price_key: input_mtok, price: 0.15}
+        - {price_key: cache_read_mtok, price: 0.003}
+        - {price_key: output_mtok, price: 0.6}
+      - rule_id: weekday-peak-1
+        constraint:
+          kind: daily_time
+          start_time: 01:00:00
+          end_time: 04:00:00
+          weekdays:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+        prices:
+        - {price_key: input_mtok, price: 0.3}
+        - {price_key: cache_read_mtok, price: 0.006}
+        - {price_key: output_mtok, price: 1.2}
+      - rule_id: weekday-peak-2
+        constraint:
+          kind: daily_time
+          start_time: 06:00:00
+          end_time: '10:00:00'
+          weekdays:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+        prices:
+        - {price_key: input_mtok, price: 0.3}
+        - {price_key: cache_read_mtok, price: 0.006}
+        - {price_key: output_mtok, price: 1.2}
   deepseek:deepseek-v4-pro:
     characteristics:
+      capabilities: []
       context_window_tokens: 1000000
     source_url: https://api-docs.deepseek.com/quick_start/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-08-27
+      source_url: https://api-docs.deepseek.com/quick_start/pricing
+      rules:
+      - rule_id: off-peak
+        constraint:
+          kind: always
+        prices:
+        - {price_key: input_mtok, price: 0.66}
+        - {price_key: cache_read_mtok, price: 0.022}
+        - {price_key: output_mtok, price: 1.98}
+      - rule_id: weekday-peak-1
+        constraint:
+          kind: daily_time
+          start_time: 01:00:00
+          end_time: 04:00:00
+          weekdays:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+        prices:
+        - {price_key: input_mtok, price: 1.32}
+        - {price_key: cache_read_mtok, price: 0.044}
+        - {price_key: output_mtok, price: 3.96}
+      - rule_id: weekday-peak-2
+        constraint:
+          kind: daily_time
+          start_time: 06:00:00
+          end_time: '10:00:00'
+          weekdays:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+        prices:
+        - {price_key: input_mtok, price: 1.32}
+        - {price_key: cache_read_mtok, price: 0.044}
+        - {price_key: output_mtok, price: 3.96}
   deepseek:deepseek-v4-flash-vision-exp:
     characteristics:
-      capabilities: [image_understanding]
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1000000
     source_url: https://api-docs.deepseek.com/guides/vision
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://api-docs.deepseek.com/quick_start/pricing
+      rules:
+      - rule_id: off-peak
+        constraint:
+          kind: always
+        prices:
+        - {price_key: input_mtok, price: 0.15}
+        - {price_key: cache_read_mtok, price: 0.003}
+        - {price_key: output_mtok, price: 0.6}
+      - rule_id: weekday-peak-1
+        constraint:
+          kind: daily_time
+          start_time: 01:00:00
+          end_time: 04:00:00
+          weekdays:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+        prices:
+        - {price_key: input_mtok, price: 0.3}
+        - {price_key: cache_read_mtok, price: 0.006}
+        - {price_key: output_mtok, price: 1.2}
+      - rule_id: weekday-peak-2
+        constraint:
+          kind: daily_time
+          start_time: 06:00:00
+          end_time: '10:00:00'
+          weekdays:
+          - 0
+          - 1
+          - 2
+          - 3
+          - 4
+        prices:
+        - {price_key: input_mtok, price: 0.3}
+        - {price_key: cache_read_mtok, price: 0.006}
+        - {price_key: output_mtok, price: 1.2}
+  mistral:mistral-large-4:
+    characteristics:
+      capabilities:
+      - image_understanding
+      context_window_tokens: 1000000
+    source_url: https://docs.mistral.ai/models/mistral-large-4-0
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.mistral.ai/models/mistral-large-4-0
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.68}
+        - {price_key: cache_read_mtok, price: 0.07}
+        - {price_key: output_mtok, price: 2.09}
+  fireworks:accounts/fireworks/models/ember-1:
+    characteristics:
+      context_window_tokens: 1040000
+      capabilities:
+      - image_understanding
+    source_url: https://fireworks.ai/models/fireworks/ember-1
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://fireworks.ai/models/fireworks/ember-1
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 3}
+        - {price_key: cache_read_mtok, price: 0.3}
+        - {price_key: output_mtok, price: 15}
+  sambanova:MiniMax-M2.7:
+    characteristics:
+      context_window_tokens: 192000
+      capabilities: []
+    source_url: https://docs.sambanova.ai/docs/en/models/sambacloud-models
+  sambanova:MiniMax-M3:
+    characteristics:
+      context_window_tokens: 1000000
+      capabilities: []
+    source_url: https://docs.sambanova.ai/docs/en/models/sambacloud-models
+  sambanova:DeepSeek-V3.1:
+    characteristics:
+      context_window_tokens: 128000
+      capabilities: []
+    source_url: https://docs.sambanova.ai/docs/en/models/sambacloud-models
+  sambanova:Meta-Llama-3.3-70B-Instruct:
+    characteristics:
+      context_window_tokens: 128000
+      capabilities: []
+    source_url: https://docs.sambanova.ai/docs/en/models/sambacloud-models
+  sambanova:gpt-oss-120b:
+    characteristics:
+      context_window_tokens: 128000
+      capabilities: []
+    source_url: https://docs.sambanova.ai/docs/en/models/sambacloud-models
+  minimax:MiniMax-M3:
+    characteristics:
+      context_window_tokens: 1000000
+      capabilities:
+      - image_understanding
+    source_url: https://platform.minimax.io/docs/guides/models-intro
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://platform.minimax.io/docs/guides/pricing-paygo
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.3, tiers: [{start: 512000, price: 0.6}]}
+        - {price_key: cache_read_mtok, price: 0.06, tiers: [{start: 512000, price: 0.12}]}
+        - {price_key: output_mtok, price: 1.2, tiers: [{start: 512000, price: 2.4}]}
+      - rule_id: priority
+        prices:
+        - {price_key: input_mtok, price: 0.45, tiers: [{start: 512000, price: 0.9}]}
+        - {price_key: cache_read_mtok, price: 0.09, tiers: [{start: 512000, price: 0.18}]}
+        - {price_key: output_mtok, price: 1.8, tiers: [{start: 512000, price: 3.6}]}
+        service_tier: priority
+  alibaba:qwen3.8-max:
+    characteristics:
+      context_window_tokens: 1000000
+      capabilities:
+      - image_understanding
+      - video_understanding
+    source_url: https://www.alibabacloud.com/help/en/model-studio/qwen3-8-max
+  alibaba-cn:qwen3.8-max:
+    characteristics:
+      context_window_tokens: 1000000
+      capabilities:
+      - image_understanding
+      - video_understanding
+    source_url: https://www.alibabacloud.com/help/en/model-studio/qwen3-8-max
+  openai:gpt-5.5-pro:
+    characteristics:
+      context_window_tokens: 1000000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 30.0, tiers: [{start: 272000, price: 60.0}]}
+        - {price_key: output_mtok, price: 180.0, tiers: [{start: 272000, price: 270.0}]}
+      - rule_id: flex
+        service_tier: flex
+        max_input_tokens: 272000
+        prices:
+        - {price_key: input_mtok, price: 15.0}
+        - {price_key: output_mtok, price: 90.0}
+  openai:gpt-5.4-nano:
+    characteristics:
+      context_window_tokens: 400000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.2}
+        - {price_key: cache_read_mtok, price: 0.02}
+        - {price_key: output_mtok, price: 1.25}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.1}
+        - {price_key: cache_read_mtok, price: 0.01}
+        - {price_key: output_mtok, price: 0.625}
+  openai:gpt-5.4-pro:
+    characteristics:
+      context_window_tokens: 1050000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 30.0, tiers: [{start: 272000, price: 60.0}]}
+        - {price_key: output_mtok, price: 180.0, tiers: [{start: 272000, price: 270.0}]}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 15.0, tiers: [{start: 272000, price: 30.0}]}
+        - {price_key: output_mtok, price: 90.0, tiers: [{start: 272000, price: 135.0}]}
+  openai:gpt-5.2:
+    characteristics:
+      context_window_tokens: 400000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 1.75}
+        - {price_key: cache_read_mtok, price: 0.175}
+        - {price_key: output_mtok, price: 14.0}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.875}
+        - {price_key: cache_read_mtok, price: 0.0875}
+        - {price_key: output_mtok, price: 7.0}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 3.5}
+        - {price_key: cache_read_mtok, price: 0.35}
+        - {price_key: output_mtok, price: 28.0}
+  openai:gpt-5.1:
+    characteristics:
+      context_window_tokens: 400000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 1.25}
+        - {price_key: cache_read_mtok, price: 0.125}
+        - {price_key: output_mtok, price: 10.0}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.625}
+        - {price_key: cache_read_mtok, price: 0.0625}
+        - {price_key: output_mtok, price: 5.0}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 2.5}
+        - {price_key: cache_read_mtok, price: 0.25}
+        - {price_key: output_mtok, price: 20.0}
+  openai:gpt-5:
+    characteristics:
+      context_window_tokens: 400000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 1.25}
+        - {price_key: cache_read_mtok, price: 0.125}
+        - {price_key: output_mtok, price: 10.0}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.625}
+        - {price_key: cache_read_mtok, price: 0.0625}
+        - {price_key: output_mtok, price: 5.0}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 2.5}
+        - {price_key: cache_read_mtok, price: 0.25}
+        - {price_key: output_mtok, price: 20.0}
+  openai:gpt-5-mini:
+    characteristics:
+      context_window_tokens: 400000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.25}
+        - {price_key: cache_read_mtok, price: 0.025}
+        - {price_key: output_mtok, price: 2.0}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.125}
+        - {price_key: cache_read_mtok, price: 0.0125}
+        - {price_key: output_mtok, price: 1.0}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.45}
+        - {price_key: cache_read_mtok, price: 0.045}
+        - {price_key: output_mtok, price: 3.6}
+  openai:gpt-5-nano:
+    characteristics:
+      context_window_tokens: 400000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.05}
+        - {price_key: cache_read_mtok, price: 0.005}
+        - {price_key: output_mtok, price: 0.4}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.025}
+        - {price_key: cache_read_mtok, price: 0.0025}
+        - {price_key: output_mtok, price: 0.2}
+  openai:gpt-4.1:
+    characteristics:
+      context_window_tokens: 1000000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2.0}
+        - {price_key: cache_read_mtok, price: 0.5}
+        - {price_key: output_mtok, price: 8.0}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 3.5}
+        - {price_key: cache_read_mtok, price: 0.875}
+        - {price_key: output_mtok, price: 14.0}
+  openai:gpt-4.1-mini:
+    characteristics:
+      context_window_tokens: 1000000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.4}
+        - {price_key: cache_read_mtok, price: 0.1}
+        - {price_key: output_mtok, price: 1.6}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.7}
+        - {price_key: cache_read_mtok, price: 0.175}
+        - {price_key: output_mtok, price: 2.8}
+  openai:gpt-4.1-nano:
+    characteristics:
+      context_window_tokens: 1000000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.1}
+        - {price_key: cache_read_mtok, price: 0.025}
+        - {price_key: output_mtok, price: 0.4}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.2}
+        - {price_key: cache_read_mtok, price: 0.05}
+        - {price_key: output_mtok, price: 0.8}
+  openai:gpt-4o:
+    characteristics:
+      context_window_tokens: 128000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2.5}
+        - {price_key: cache_read_mtok, price: 1.25}
+        - {price_key: output_mtok, price: 10.0}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 4.25}
+        - {price_key: cache_read_mtok, price: 2.125}
+        - {price_key: output_mtok, price: 17.0}
+  openai:gpt-4o-2024-05-13:
+    characteristics:
+      context_window_tokens: 128000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 5.0}
+        - {price_key: output_mtok, price: 15.0}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 8.75}
+        - {price_key: output_mtok, price: 26.25}
+  openai:gpt-4o-mini:
+    characteristics:
+      context_window_tokens: 128000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.15}
+        - {price_key: cache_read_mtok, price: 0.075}
+        - {price_key: output_mtok, price: 0.6}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.25}
+        - {price_key: cache_read_mtok, price: 0.125}
+        - {price_key: output_mtok, price: 1.0}
+  openai:o3:
+    characteristics:
+      context_window_tokens: 200000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 2.0}
+        - {price_key: cache_read_mtok, price: 0.5}
+        - {price_key: output_mtok, price: 8.0}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 1.0}
+        - {price_key: cache_read_mtok, price: 0.25}
+        - {price_key: output_mtok, price: 4.0}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 3.5}
+        - {price_key: cache_read_mtok, price: 0.875}
+        - {price_key: output_mtok, price: 14.0}
+  openai:o4-mini:
+    characteristics:
+      context_window_tokens: 200000
+    source_url: https://developers.openai.com/api/docs/pricing
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://developers.openai.com/api/docs/pricing
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 1.1}
+        - {price_key: cache_read_mtok, price: 0.275}
+        - {price_key: output_mtok, price: 4.4}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.55}
+        - {price_key: cache_read_mtok, price: 0.138}
+        - {price_key: output_mtok, price: 2.2}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 2.0}
+        - {price_key: cache_read_mtok, price: 0.5}
+        - {price_key: output_mtok, price: 8.0}
+  google-gla:gemini-3.1-flash-lite:
+    characteristics:
+      context_window_tokens: 1048576
+    source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-lite
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-3.1-flash-lite
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.25}
+        - {price_key: input_audio_mtok, price: 0.5}
+        - {price_key: output_mtok, price: 1.5}
+        - {price_key: cache_read_mtok, price: 0.025}
+        - {price_key: cache_audio_read_mtok, price: 0.05}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.125}
+        - {price_key: input_audio_mtok, price: 0.25}
+        - {price_key: output_mtok, price: 0.75}
+        - {price_key: cache_read_mtok, price: 0.0125}
+        - {price_key: cache_audio_read_mtok, price: 0.025}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.45}
+        - {price_key: input_audio_mtok, price: 0.9}
+        - {price_key: output_mtok, price: 2.7}
+        - {price_key: cache_read_mtok, price: 0.045}
+        - {price_key: cache_audio_read_mtok, price: 0.09}
+  google-gla:gemini-3-flash-preview:
+    characteristics:
+      context_window_tokens: 1048576
+    source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-3-flash-preview
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-3-flash-preview
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.5}
+        - {price_key: input_audio_mtok, price: 1.0}
+        - {price_key: output_mtok, price: 3.0}
+        - {price_key: cache_read_mtok, price: 0.05}
+        - {price_key: cache_audio_read_mtok, price: 0.1}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.25}
+        - {price_key: input_audio_mtok, price: 0.5}
+        - {price_key: output_mtok, price: 1.5}
+        - {price_key: cache_read_mtok, price: 0.05}
+        - {price_key: cache_audio_read_mtok, price: 0.1}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.9}
+        - {price_key: input_audio_mtok, price: 1.8}
+        - {price_key: output_mtok, price: 5.4}
+        - {price_key: cache_read_mtok, price: 0.09}
+        - {price_key: cache_audio_read_mtok, price: 0.18}
+  google-gla:gemini-2.5-flash-lite:
+    characteristics:
+      context_window_tokens: 1048576
+    source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash-lite
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-09-26
+      source_url: https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash-lite
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.1}
+        - {price_key: input_audio_mtok, price: 0.3}
+        - {price_key: output_mtok, price: 0.4}
+        - {price_key: cache_read_mtok, price: 0.01}
+        - {price_key: cache_audio_read_mtok, price: 0.03}
+      - rule_id: flex
+        service_tier: flex
+        prices:
+        - {price_key: input_mtok, price: 0.05}
+        - {price_key: input_audio_mtok, price: 0.15}
+        - {price_key: output_mtok, price: 0.2}
+        - {price_key: cache_read_mtok, price: 0.01}
+        - {price_key: cache_audio_read_mtok, price: 0.03}
+      - rule_id: priority
+        service_tier: priority
+        prices:
+        - {price_key: input_mtok, price: 0.18}
+        - {price_key: input_audio_mtok, price: 0.54}
+        - {price_key: output_mtok, price: 0.72}
+        - {price_key: cache_read_mtok, price: 0.018}
+        - {price_key: cache_audio_read_mtok, price: 0.054}
+  together:moonshotai/Kimi-K3:
+    characteristics:
+      context_window_tokens: 1048576
+    source_url: https://docs.together.ai/docs/serverless/models
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.together.ai/docs/serverless/models
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 3}
+        - {price_key: cache_read_mtok, price: 0.3}
+        - {price_key: output_mtok, price: 15}
+  together:deepseek-ai/DeepSeek-V4.1-Flash:
+    characteristics:
+      context_window_tokens: 1000000
+    source_url: https://docs.together.ai/docs/serverless/models
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.together.ai/docs/serverless/models
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 0.3}
+        - {price_key: cache_read_mtok, price: 0.006}
+        - {price_key: output_mtok, price: 1.2}
+  together:zai-org/GLM-5.3:
+    characteristics:
+      context_window_tokens: 1048575
+    source_url: https://docs.together.ai/docs/serverless/models
+    pricing:
+      source: harness_overlay
+      source_revision: official-2026-10-08
+      source_url: https://docs.together.ai/docs/serverless/models
+      rules:
+      - rule_id: standard
+        prices:
+        - {price_key: input_mtok, price: 1.4}
+        - {price_key: cache_read_mtok, price: 0.26}
+        - {price_key: output_mtok, price: 4.4}
