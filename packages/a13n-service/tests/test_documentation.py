@@ -70,11 +70,24 @@ def test_cached_editable_install_owns_index_and_refreshes_inputs(tmp_path: Path)
     (docs / "meta.json").write_text("{}")
     markdown = docs / "guides/example.md"
     markdown.write_text("---\ntitle: Guide\n---\n\nOriginal marker\n")
-    environment = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(tmp_path / "installed")}
+    environment = {
+        **os.environ,
+        "UV_CACHE_DIR": str(tmp_path / "cache"),
+        "UV_PROJECT_ENVIRONMENT": str(tmp_path / "installed"),
+    }
 
-    def sync() -> None:
+    def sync(*, offline: bool = True) -> None:
         result = subprocess.run(
-            ["uv", "sync", "--offline", "--no-dev", "--package", "a13n-service", "--python", sys.executable],
+            [
+                "uv",
+                "sync",
+                *(["--offline"] if offline else []),
+                "--no-dev",
+                "--package",
+                "a13n-service",
+                "--python",
+                sys.executable,
+            ],
             cwd=checkout,
             env=environment,
             capture_output=True,
@@ -106,7 +119,9 @@ def test_cached_editable_install_owns_index_and_refreshes_inputs(tmp_path: Path)
         assert result.returncode == 0, result.stderr
         return result.stdout
 
-    sync()
+    # Prepare dependencies in a cold, isolated cache before testing offline reuse.
+    # The runner's existing cache need not contain resolution or build metadata.
+    sync(offline=False)
     assert "Original marker" in search()
     bundle = package / "a13n_service/documentation.json"
     built_at = bundle.stat().st_mtime_ns
