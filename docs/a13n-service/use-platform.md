@@ -13,6 +13,8 @@ Use your team's agents through Console. You need the Console URL, an account, an
 
 In the selected workspace, **runner** allows agent execution and **builder** also allows resource creation. Roles granted at the organization or workspace apply; ask an administrator for access if needed. See [Roles](identity.md#roles).
 
+Console follows your browser's preferred language when it supports it; otherwise, it uses English. To choose a language, open your user menu and select **Preferences → Display language**. Choose **System** to follow the browser again.
+
 ## Try an agent
 
 1. Open **Sessions → New session**, then **Choose an agent**.

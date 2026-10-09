@@ -140,7 +140,7 @@ Every interactive element keeps a visible focus ring at both densities. Titled r
 
 ## Themes and Language
 
-Applications load the shared stylesheet once and opt into base typography with `a13n-root` on the document body. Light is the default theme; the document element toggles the `dark` class so portaled content inherits tokens. Console uses English as the default and fallback and supports Simplified Chinese; shared components receive application-owned strings.
+Applications load the shared stylesheet once and opt into base typography with `a13n-root` on the document body. Light is the default theme; the document element toggles the `dark` class so portaled content inherits tokens. Console owns display-language selection as defined by [Console](console.md#navigation-and-scope); shared components receive application-owned strings.
 
 ## Development Showcase and Validation
 
