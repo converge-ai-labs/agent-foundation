@@ -579,9 +579,10 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if resume_usage and self._usage_snapshot is None:
             raise StateError("Accounting resume requires usage state.", code="usage_state_missing")
         self.run_id = f"run-{uuid4().hex}"
+        self._initial_history = self._previous_state.message_history
         self._tool_recovery = (
             prepare_tool_recovery(
-                self._previous_state.message_history,
+                self._initial_history,
                 tool_recovery,
                 deferred_resume,
             )
@@ -608,7 +609,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
 
         # Native attempts update the complete live history while sharing usage and cancellation.
         self._attempt_events: AgentRunEvents[OutputT | DeferredToolRequests] | None = None
-        self._latest_messages: tuple[ModelMessage, ...] = self._previous_state.message_history
+        self._latest_messages: tuple[ModelMessage, ...] = self._initial_history
         self._new_message_index = len(self._latest_messages)
         self._cancel_event = asyncio.Event()
 
@@ -1351,7 +1352,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         attempt_index = 0
         recovery = exchange.context._model_recovery
         current_history = await exchange.context._storage.resolve_messages(
-            self._tool_recovery.messages if self._tool_recovery is not None else self._previous_state.message_history
+            self._tool_recovery.messages if self._tool_recovery is not None else self._initial_history
         )
         deferred_results = (
             self._deferred_resume.results
