@@ -201,28 +201,28 @@ description: 从 provider 模型生成的全部内置环境 provider 配置字�
 
 ## `DockerEnvironmentConfiguration`
 
-| 字段                          | 必填  | 类型 / 可选值                             | 约束与默认值                                                                                |
-| ----------------------------- | ----- | ----------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `image`                       | false | string                                    | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-docker-environment:dev" |
-| `pull_policy`                 | false | "never", "if_missing"                     | default="if_missing"                                                                        |
-| `mounts`                      | false | 数组，元素类型为 DockerMountConfiguration | default=[]                                                                                  |
-| `environment`                 | false | object                                    | —; 默认值由模型工厂计算                                                                     |
-| `init_script`                 | false | string 或 null                            | maxLength=1048576; format="multiline"; default=null                                         |
-| `disable_network`             | false | boolean                                   | default=false                                                                               |
-| `user`                        | false | string 或 null                            | minLength=1; maxLength=128; default=null                                                    |
-| `shell`                       | false | string                                    | default="/bin/sh"                                                                           |
-| `python`                      | false | string                                    | default="python3"                                                                           |
-| `cpus`                        | false | number 或 null                            | minimum=0.001; default=null                                                                 |
-| `memory_gb`                   | false | number 或 null                            | minimum=0.006291456; default=null                                                           |
-| `pids_limit`                  | false | integer 或 null                           | exclusiveMinimum=0; default=null                                                            |
-| `stop_grace_seconds`          | false | integer                                   | minimum=0; maximum=300; default=10                                                          |
-| `request_timeout_seconds`     | false | integer                                   | maximum=3600; exclusiveMinimum=0; default=60                                                |
-| `max_file_bytes`              | false | integer                                   | exclusiveMinimum=0; default=16777216                                                        |
-| `max_query_entries`           | false | integer                                   | exclusiveMinimum=0; default=100000                                                          |
-| `max_output_preview_bytes`    | false | integer                                   | exclusiveMinimum=0; default=65536                                                           |
-| `max_output_bytes_per_stream` | false | integer                                   | exclusiveMinimum=0; default=16777216                                                        |
-| `max_spool_bytes`             | false | integer                                   | exclusiveMinimum=0; default=67108864                                                        |
-| `max_concurrent_processes`    | false | integer                                   | exclusiveMinimum=0; default=128                                                             |
+| 字段                          | 必填  | 类型 / 可选值                             | 约束与默认值                                                                     |
+| ----------------------------- | ----- | ----------------------------------------- | -------------------------------------------------------------------------------- |
+| `image`                       | false | string                                    | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `pull_policy`                 | false | "never", "if_missing"                     | default="if_missing"                                                             |
+| `mounts`                      | false | 数组，元素类型为 DockerMountConfiguration | default=[]                                                                       |
+| `environment`                 | false | object                                    | —; 默认值由模型工厂计算                                                          |
+| `init_script`                 | false | string 或 null                            | maxLength=1048576; format="multiline"; default=null                              |
+| `disable_network`             | false | boolean                                   | default=false                                                                    |
+| `user`                        | false | string 或 null                            | minLength=1; maxLength=128; default=null                                         |
+| `shell`                       | false | string                                    | default="/bin/sh"                                                                |
+| `python`                      | false | string                                    | default="python3"                                                                |
+| `cpus`                        | false | number 或 null                            | minimum=0.001; default=null                                                      |
+| `memory_gb`                   | false | number 或 null                            | minimum=0.006291456; default=null                                                |
+| `pids_limit`                  | false | integer 或 null                           | exclusiveMinimum=0; default=null                                                 |
+| `stop_grace_seconds`          | false | integer                                   | minimum=0; maximum=300; default=10                                               |
+| `request_timeout_seconds`     | false | integer                                   | maximum=3600; exclusiveMinimum=0; default=60                                     |
+| `max_file_bytes`              | false | integer                                   | exclusiveMinimum=0; default=16777216                                             |
+| `max_query_entries`           | false | integer                                   | exclusiveMinimum=0; default=100000                                               |
+| `max_output_preview_bytes`    | false | integer                                   | exclusiveMinimum=0; default=65536                                                |
+| `max_output_bytes_per_stream` | false | integer                                   | exclusiveMinimum=0; default=16777216                                             |
+| `max_spool_bytes`             | false | integer                                   | exclusiveMinimum=0; default=67108864                                             |
+| `max_concurrent_processes`    | false | integer                                   | exclusiveMinimum=0; default=128                                                  |
 
 ## `DockerMountConfiguration`
 

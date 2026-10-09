@@ -34,7 +34,7 @@ services:
       A13N_SERVER__PUBLIC_URL: http://127.0.0.1:${A13N_PORT:-8080}
       A13N_DATABASE__URL: postgresql+psycopg://a13n_service:a13n_service@postgres:5432/a13n_service
       A13N_REDIS__URL: redis://redis:6379/0
-      # Prepare Docker + Linux Sandbox per workspace; the companion image follows this Service release.
+      # Prepare Docker + Linux Sandbox per workspace; the sandbox image uses the Service-reviewed independent release.
       A13N_PROVISIONING__DOCKER: '{"enabled":true${A13N_DOCKER_ENVIRONMENT_IMAGE:+,"image":"$A13N_DOCKER_ENVIRONMENT_IMAGE"}}'
       # Generated on first start in the service-data volume; back it up with the database.
       A13N_ENCRYPTION__KEY_FILE: /app/var/encryption.key

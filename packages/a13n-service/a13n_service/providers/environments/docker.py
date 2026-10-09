@@ -30,26 +30,16 @@ from pydantic import Field, field_validator
 from a13n_service.providers.endpoints import engine_endpoint
 
 _MOUNTS = HarnessRecipe.model_fields["mounts"]
+# Reviewed Envd-owned sandbox release; independent of the Service version.
+DEFAULT_SANDBOX_IMAGE = "ghcr.io/converge-ai-labs/a13n-sandbox:0.1.3"
 
 
 def default_image() -> str:
-    """The Service release's companion image; source and development builds use the mutable dev tag."""
+    """Source builds follow main; published Service releases use a reviewed sandbox pin."""
     installed = Version(version("a13n-service"))
     if installed.base_version == "0.0.0" or installed.is_devrelease:
-        tag = "dev"
-    else:
-        if (
-            installed.epoch
-            or len(installed.release) != 3
-            or installed.local is not None
-            or installed.post is not None
-            or (installed.pre is not None and (installed.pre[0] != "rc" or installed.pre[1] < 1))
-        ):
-            raise ValueError(f"No Docker environment image release for a13n-service {installed}")
-        tag = installed.base_version
-        if installed.pre is not None:
-            tag += f"-rc.{installed.pre[1]}"
-    return f"ghcr.io/converge-ai-labs/a13n-docker-environment:{tag}"
+        return "ghcr.io/converge-ai-labs/a13n-sandbox:dev"
+    return DEFAULT_SANDBOX_IMAGE
 
 
 def _worker_bound(name: str) -> Any:

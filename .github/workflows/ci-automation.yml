@@ -15,13 +15,11 @@ on:
       - "scripts/prepare-release-version.py"
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
-      - "scripts/prepare_harness_ui_image.py"
       - "scripts/k8s_local.py"
       - "scripts/tests/test_k8s_local.py"
       - "scripts/deploy_smoke.py"
       - "scripts/tests/test_deploy_smoke.py"
       - "scripts/tests/test_image_workflows.py"
-      - "scripts/tests/test_prepare_harness_ui_image.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
       - "scripts/tests/test_envd_ci_workflow.py"
       - "scripts/tests/test_service_contract_notification.py"
@@ -55,13 +53,11 @@ on:
       - "scripts/prepare-release-version.py"
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
-      - "scripts/prepare_harness_ui_image.py"
       - "scripts/k8s_local.py"
       - "scripts/tests/test_k8s_local.py"
       - "scripts/deploy_smoke.py"
       - "scripts/tests/test_deploy_smoke.py"
       - "scripts/tests/test_image_workflows.py"
-      - "scripts/tests/test_prepare_harness_ui_image.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
       - "scripts/tests/test_envd_ci_workflow.py"
       - "scripts/tests/test_service_contract_notification.py"
@@ -149,7 +145,6 @@ jobs:
           scripts/verify_cache.py
           scripts/verify_dependencies.py
           scripts/impact.py
-          scripts/prepare_harness_ui_image.py
           scripts/k8s_local.py
           scripts/deploy_smoke.py
 
@@ -173,7 +168,6 @@ jobs:
           scripts/tests/test_verify_cache.py
           scripts/tests/test_impact.py
           scripts/tests/test_image_workflows.py
-          scripts/tests/test_prepare_harness_ui_image.py
           scripts/tests/test_k8s_local.py
           scripts/tests/test_deploy_smoke.py
           scripts/tests/test_harness_ui_release_workflow.py

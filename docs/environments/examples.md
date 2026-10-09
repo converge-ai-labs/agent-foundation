@@ -93,13 +93,13 @@ With a local Docker Engine available, build the repository sandbox image and run
 
 ```bash
 # From the repository root
-make image-docker-environment
+make image-sandbox
 
 cd examples/environment-provider
 uv run environment-provider-example docker
 ```
 
-The example selects `a13n-docker-environment:local`, the image produced by `make image-docker-environment`. Pass `--image IMAGE` to use another compatible image; ordinary Docker authentication and pull behavior apply.
+The example selects `a13n-sandbox:local`, the image produced by `make image-sandbox`. Pass `--image IMAGE` to use another compatible image; ordinary Docker authentication and pull behavior apply.
 
 The Docker path demonstrates state and retention explicitly:
 

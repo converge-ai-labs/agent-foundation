@@ -119,7 +119,7 @@ def _parser() -> argparse.ArgumentParser:
     docker.add_argument(
         "--image",
         default=DEFAULT_EXAMPLE_DOCKER_IMAGE,
-        help="Sandbox image reference; defaults to the image built by make image-docker-environment.",
+        help="Sandbox image reference; defaults to the image built by make image-sandbox.",
     )
     for name in ("http_envd", "websocket_envd"):
         remote = providers.add_parser(name, help="Connect to an externally operated daemon; never destroy its target.")

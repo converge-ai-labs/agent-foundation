@@ -11,7 +11,7 @@ WebUI is the project-centric collaborative browser surface of Harness UI. Truste
 | [00-overview.md](00-overview.md)                                       | Browser product boundary, navigation, Project configuration experience, and application integration                                     |
 | [01-collaborative-conversations.md](01-collaborative-conversations.md) | Page/focus presence, editor presence, shared prompt CRDT, submission, and independent delivery boundaries                               |
 | [02-host-computer-sharing.md](02-host-computer-sharing.md)             | Native Host files, Git-aware views, PTY, access gating, and human development workflows                                                 |
-| [03-distribution.md](03-distribution.md)                               | Bundled browser assets and the ready-to-use Docker development image                                                                    |
+| [03-distribution.md](03-distribution.md)                               | Bundled browser assets and the ready-to-use Python distribution                                                                         |
 | [04-workbench-interaction.md](04-workbench-interaction.md)             | Default user journey, participant awareness, composer/comment controls, configuration UX, code/diff workflows, and terminal interaction |
 | [05-output-comments.md](05-output-comments.md)                         | Published comments on saved assistant text, immutable anchors, author attribution, publication/reconciliation, and execution separation |
 

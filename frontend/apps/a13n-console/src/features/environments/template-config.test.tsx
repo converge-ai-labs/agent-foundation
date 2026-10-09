@@ -85,7 +85,7 @@ const dockerSchema = {
     image: {
       type: "string",
       title: "Image",
-      default: "a13n-docker-environment:dev",
+      default: "a13n-sandbox:dev",
     },
     memory_gb: { type: "number", title: "Memory (GB)" },
     mounts: { type: "array", title: "Mounts", items: { type: "object" } },

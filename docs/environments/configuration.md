@@ -49,7 +49,9 @@ The Host owns one shared `LocalEnvdProviderRuntime`, its binary/bootstrap and sh
 
 ## Docker
 
-`DockerEnvironmentConfiguration` uses an Envd-free image and native Docker exec. The default image is `ghcr.io/converge-ai-labs/a13n-docker-environment:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present. With the default `pull_policy="if_missing"` it pulls an absent image; with `"never"` it fails with `environment_image_missing`. Rebuilding or pulling a tag does not recreate an existing Environment container.
+When `user` is omitted, the provider uses the image label `ai.a13n.environment.user`, falling back to the image USER for unlabeled custom images. `a13n-sandbox` selects `sandbox` (UID/GID 1000); an explicit recipe `user` takes precedence.
+
+`DockerEnvironmentConfiguration` uses native Docker exec without starting the bundled Envd daemon. The default image is `ghcr.io/converge-ai-labs/a13n-sandbox:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present. With the default `pull_policy="if_missing"` it pulls an absent image; with `"never"` it fails with `environment_image_missing`. Rebuilding or pulling a tag does not recreate an existing Environment container.
 
 The private container filesystem supplies `/workspace`. Optional bind mounts have an existing absolute `source` on the Docker Engine's machine, a container `target`, and a `read_only` flag (default true). They cannot replace `/workspace` or private command metadata. Named volumes are not a recipe option; external data is preserved on destruction.
 

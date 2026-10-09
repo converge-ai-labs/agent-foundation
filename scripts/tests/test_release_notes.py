@@ -397,7 +397,6 @@ def _commit(root: Path, path: str, subject: str) -> str:
         ("a13n-envd", "proto/a13n-envd/eip/v1/eip.proto"),
         ("a13n-service", "frontend/apps/a13n-console/app.tsx"),
         ("a13n-service", "deploy/docker/images/a13n-service/Dockerfile"),
-        ("a13n-service", "deploy/docker/images/docker-environment/Dockerfile"),
         ("a13n-service", "deploy/docker/compose/a13n-service.yaml"),
         ("a13n-service", "deploy/kubernetes/helm/a13n-service/values.yaml"),
         ("a13n-service", "deploy/monitoring/alerts.yaml"),

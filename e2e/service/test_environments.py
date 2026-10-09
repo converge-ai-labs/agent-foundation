@@ -1,7 +1,7 @@
 """An environment journey: a run's shell tool acts in its sandbox, which is then stopped, reused and deleted.
 
 `local` runs on every host. `docker` needs a reachable Engine and the native execution image
-(`make image-docker-environment`). A hosted type needs its vendor account in the environment (`hosted_account`)
+(`make image-sandbox`). A hosted type needs its vendor account in the environment (`hosted_account`)
 and creates billable sandboxes, which its journey deletes, after a failure too; hosted journeys run only when asked
 for: `--hosted`, `-m hosted`, or `-k` naming their type. A journey whose dependency is missing is skipped, or fails
 under `--require-all`.
@@ -30,7 +30,7 @@ from .stack import docker_host, unavailable
 
 pytestmark = pytest.mark.anyio
 
-DOCKER_IMAGE = os.environ.get("DOCKER_ENVIRONMENT_IMAGE", "a13n-docker-environment:local")
+DOCKER_IMAGE = os.environ.get("SANDBOX_IMAGE", "a13n-sandbox:local")
 HOSTED = ("e2b", "daytona", "modal", "vercel", "sprites", "runloop")
 
 
@@ -164,7 +164,7 @@ async def backend(provider: str, directory: Path, config: pytest.Config) -> Asyn
         with engine() as client:
             client.images.get(DOCKER_IMAGE)
     except ImageNotFound:
-        unavailable(config, f"{DOCKER_IMAGE} is not built; run make image-docker-environment")
+        unavailable(config, f"{DOCKER_IMAGE} is not built; run make image-sandbox")
     except DockerException as error:
         unavailable(config, f"No Docker Engine is reachable: {error}")
     # The account names no engine, so it uses the operator's.
@@ -225,6 +225,13 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
     )
 
     command = "echo live-$((6 * 7)) > proof.txt && cat proof.txt"
+    if account.type == "docker":
+        # Native execution must not inherit the sandbox image's root daemon identity.
+        command = (
+            'test "$(id -u)" = 1000 && test "$(id -g)" = 1000 '
+            '&& test "$HOME" = /home/sandbox && test -w /tmp/a13n '
+            '&& test "$(sudo -n id -u)" = 0 && ' + command
+        )
     await model.call("shell_exec", {"command": command}, call_id="call_write", to="[write]")
     await model.say("Written.", to="[write]")
     receipt = await api.start(agent, "[write] Write the proof")
@@ -249,7 +256,11 @@ async def use_environment(stack, account: Backend, cleanup: list[str]) -> None: 
             return expect(await api.client.get(path), 200)["status"] == "stopped"
 
         await eventually(stopped, timeout=timeout)
-    await model.call("shell_exec", {"command": "cat proof.txt"}, call_id="call_read", to="[read]")
+    if account.type == "docker":
+        # Exercise the native file helper after restart as well as shell execution.
+        await model.call("view", {"file_path": "/workspace/proof.txt"}, call_id="call_read", to="[read]")
+    else:
+        await model.call("shell_exec", {"command": "cat proof.txt"}, call_id="call_read", to="[read]")
     await model.say("Read.", to="[read]")
     again = (await api.send(thread_id, agent, "[read] Read the proof"))["run"]
     assert again["environment_mounts"] == [mount]

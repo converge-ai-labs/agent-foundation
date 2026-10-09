@@ -61,7 +61,7 @@ def resolve_image(client, image_ref: str, *, pull_policy: Literal["never", "if_m
                 EnvironmentProviderErrorCategory.INVALID,
                 description=(
                     "Image is missing from the configured Docker Engine and pull_policy is never. "
-                    "Build or load it first; for the supplied image run make image-docker-environment."
+                    "Build or load it first; for the supplied image run make image-sandbox."
                 ),
             ) from None
         return client.images.pull(image_ref), "pulled"
@@ -259,7 +259,7 @@ class DockerEnvironment(Environment):
             command=["import signal; signal.pause()"],
             init=True,
             detach=True,
-            user=self.config.user,
+            user=self.config.user or image.labels.get("ai.a13n.environment.user"),
             working_dir="/workspace",
             environment=self.config.environment,
             network_mode="none" if self.config.disable_network else "bridge",

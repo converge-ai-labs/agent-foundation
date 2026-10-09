@@ -26,7 +26,7 @@ from a13n_harness.providers.environment.models import (
     EnvironmentState,
 )
 
-DEFAULT_EXAMPLE_DOCKER_IMAGE = "a13n-docker-environment:local"
+DEFAULT_EXAMPLE_DOCKER_IMAGE = "a13n-sandbox:local"
 _MESSAGE_PATH = "/provider-example.txt"
 _FILE_OPERATIONS: frozenset[EnvironmentOperationFamily] = frozenset({"files"})
 
