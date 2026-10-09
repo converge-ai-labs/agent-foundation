@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
 import anyio
 import pytest
@@ -38,7 +38,7 @@ from ag_ui.core.events import (
     ToolCallResultEvent,
     ToolCallStartEvent,
 )
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, PydanticSchemaGenerationError, TypeAdapter
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import (
     CapabilityEvent,
@@ -72,11 +72,22 @@ class ExternalCapabilityProgressEvent(CapabilityEvent, namespace="test.external"
     progress: int
 
 
+@dataclass(kw_only=True)
+class ExternalCapabilityDetailsEvent(CapabilityEvent, namespace="test.external"):
+    delta: ThinkingPartDelta
+
+
 @dataclass(frozen=True, slots=True)
 class ExtendedAgentStreamEvent:
     event_kind: str = "capability"
     kind: str = "user.demo.progress"
     value: int = 1
+
+
+@dataclass
+class AliasedDataclassEvent:
+    event_kind: str = "external"
+    value: Annotated[int, Field(serialization_alias="progressValue")] = 1
 
 
 class AliasedExtendedAgentStreamEvent(BaseModel):
@@ -196,21 +207,86 @@ def test_extended_agent_stream_event_uses_generic_custom_event() -> None:
     }
 
 
-def test_extended_agent_stream_event_preserves_serialization_aliases() -> None:
-    event = HarnessAguiObserver().observe(_event(0, AliasedExtendedAgentStreamEvent()))[0]
+@pytest.mark.parametrize("event_type", [AliasedExtendedAgentStreamEvent, AliasedDataclassEvent])
+def test_extended_agent_stream_event_preserves_serialization_aliases(event_type: type) -> None:
+    source = event_type()
+    event = HarnessAguiObserver().observe(_event(0, source))[0]
 
     assert isinstance(event, CustomEvent)
     assert event.value["event"] == {
-        "event_kind": "capability",
+        "event_kind": source.event_kind,
         "progressValue": 1,
     }
 
 
-def test_unserializable_agent_stream_event_fails_atomically() -> None:
+@pytest.mark.parametrize("callback", [False, True])
+def test_thinking_metadata_delta_uses_native_json_serializer(callback: bool) -> None:
+    def merge_details(existing: dict[str, Any] | None) -> dict[str, Any]:
+        pytest.fail("Observation must not execute the provider details callback")
+
+    details = merge_details if callback else {"signature": "provider-signature"}
+    delta = ThinkingPartDelta(provider_name="test", provider_details=details)
+    source = PartDeltaEvent(index=0, delta=delta)
+    observer = HarnessAguiObserver()
+    observer.observe(_event(0, PartStartEvent(index=0, part=ThinkingPart("reasoning"))))
+
+    event = observer.observe(_event(1, source))[0]
+
+    assert isinstance(event, CustomEvent)
+    assert event.name == "a13n.pydantic_ai.part_delta"
+    assert event.value == {
+        "thread_id": "thread-1",
+        "run_id": "run-1",
+        "sequence": 1,
+        "occurred_at": _OCCURRED_AT.isoformat(),
+        "event": {
+            "event_kind": "part_delta",
+            "index": 0,
+            "delta": {
+                "part_delta_kind": "thinking",
+                "content_delta": None,
+                "signature_delta": None,
+                "provider_name": "test",
+                "provider_details": None if callback else details,
+            },
+        },
+    }
+    TypeAdapter(Event).dump_json(event)
+    assert delta.provider_details is details
+    following = observer.observe(_event(2, PartDeltaEvent(index=0, delta=ThinkingPartDelta(content_delta=" more"))))
+    assert len(following) == 1
+    assert isinstance(following[0], ReasoningMessageContentEvent)
+    assert following[0].delta == " more"
+
+
+def test_capability_event_uses_nested_field_serializer() -> None:
+    def merge_details(existing: dict[str, Any] | None) -> dict[str, Any]:
+        pytest.fail("Observation must not execute the provider details callback")
+
+    delta = ThinkingPartDelta(provider_name="test", provider_details=merge_details)
+    source = ExternalCapabilityDetailsEvent(capability_id="external-capability", delta=delta)
+    event = HarnessAguiObserver().observe(_event(0, source))[0]
+
+    assert isinstance(event, CustomEvent)
+    assert event.name == source.kind
+    assert event.value["event"]["capability_id"] == "external-capability"
+    assert event.value["event"]["delta"]["provider_details"] is None
+    assert delta.provider_details is merge_details
+    TypeAdapter(Event).dump_json(event)
+
+
+@pytest.mark.parametrize(
+    ("source", "error"),
+    [
+        (UnserializableAgentStreamEvent(), PydanticSchemaGenerationError),
+        (ExtendedAgentStreamEvent(value=lambda: None), PydanticSerializationError),
+    ],
+)
+def test_unserializable_agent_stream_event_fails_atomically(source: object, error: type[Exception]) -> None:
     observer = HarnessAguiObserver()
 
-    with pytest.raises(PydanticSerializationError):
-        observer.observe(_event(0, UnserializableAgentStreamEvent()))
+    with pytest.raises(error):
+        observer.observe(_event(0, source))
 
     assert observer.thread_id is None
     assert observer.run_id is None
