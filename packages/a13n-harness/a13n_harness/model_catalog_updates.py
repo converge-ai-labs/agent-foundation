@@ -15,6 +15,7 @@ from a13n_logging import get_logger
 from anyio.to_thread import run_sync
 
 from a13n_harness._official_data import parse_official_data, publish_official_data
+from a13n_harness.http import outbound_tls_verify
 
 logger = get_logger(__name__)
 
@@ -39,7 +40,9 @@ def official_model_updates_enabled() -> bool:
 
 
 async def _fetch() -> bytes:
-    async with httpx2.AsyncClient(timeout=httpx2.Timeout(FETCH_SECONDS, connect=5)) as client:
+    async with httpx2.AsyncClient(
+        timeout=httpx2.Timeout(FETCH_SECONDS, connect=5), verify=outbound_tls_verify()
+    ) as client:
         async with client.stream("GET", OFFICIAL_MODELS_URL) as response:
             response.raise_for_status()
             content = bytearray()

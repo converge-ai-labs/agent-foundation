@@ -545,3 +545,25 @@ def test_together_fallback_preserves_undeclared_hosted_media():
     assert facts is not None
     assert facts.context_window_tokens == 1048576
     assert "capabilities" not in facts.model_fields_set
+
+
+@pytest.mark.parametrize("status", ["ready", "stale"])
+@pytest.mark.parametrize("first_channel_live", [False, True])
+def test_discovery_checks_all_live_channels_before_official_fallback(status, first_channel_live):
+    definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == "xai")
+    assert definition.catalog_providers == ("xai", "x-ai")
+    providers = {
+        "x-ai": {
+            "models": {"grok-4.7": model(limit={"context": 123456}, modalities={"input": ["text"], "output": ["text"]})}
+        }
+    }
+    if first_channel_live:
+        providers["xai"] = {
+            "models": {"grok-4.7": model(limit={"context": 654321}, modalities={"input": ["text"], "output": ["text"]})}
+        }
+    catalog = ModelCatalog(items=parse_catalog(document(providers), catalog_channels([definition])), status=status)
+    facts = catalog_module.model_characteristics(definition.catalog_providers, "grok-4.7", catalog)
+    assert facts is not None
+    assert facts.context_window_tokens == (654321 if first_channel_live else 123456)
+    assert not facts.capabilities
+    assert "capabilities" in facts.model_fields_set

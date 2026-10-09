@@ -60,8 +60,17 @@ def model_characteristics(
     serve cold/unavailable catalogs, without fuzzy model aliases or network I/O.
     """
     official = get_official_model_catalog()
-    for channel in channels:
-        entry = next((item for item in catalog.items if item.ref.provider == channel and item.ref.model == model), None)
+    entry = next(
+        (
+            item
+            for channel in channels
+            for item in catalog.items
+            if item.ref.provider == channel and item.ref.model == model
+        ),
+        None,
+    )
+    # A later declared live channel still outranks an earlier official-only fallback.
+    for channel in (entry.ref.provider,) if entry is not None else channels:
         official_channel = {
             "google": "google-gla",
             "xai": "grok",

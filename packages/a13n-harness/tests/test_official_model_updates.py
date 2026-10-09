@@ -231,16 +231,23 @@ async def test_http_retry_after_and_recovery_reset_backoff():
 
 
 @pytest.mark.anyio
-async def test_real_http_fetcher_uses_fixed_url_and_publishes(monkeypatch):
+@pytest.mark.parametrize("tls_setting,verify", [(None, True), ("false", False)])
+async def test_real_http_fetcher_uses_fixed_url_and_tls_policy(monkeypatch, tls_setting, verify):
     client_type = httpx2.AsyncClient
+    if tls_setting is None:
+        monkeypatch.delenv("A13N_OUTBOUND_TLS_VERIFY", raising=False)
+    else:
+        monkeypatch.setenv("A13N_OUTBOUND_TLS_VERIFY", tls_setting)
 
     def serve(request):
         assert str(request.url) == updates.OFFICIAL_MODELS_URL
         return httpx2.Response(200, content=payload())
 
-    monkeypatch.setattr(
-        httpx2, "AsyncClient", lambda **kwargs: client_type(transport=httpx2.MockTransport(serve), **kwargs)
-    )
+    def client(**kwargs):
+        assert kwargs["verify"] is verify
+        return client_type(transport=httpx2.MockTransport(serve), **kwargs)
+
+    monkeypatch.setattr(httpx2, "AsyncClient", client)
     await updates._refresh(updates._fetch)
     assert _official_data._current is not None
 
