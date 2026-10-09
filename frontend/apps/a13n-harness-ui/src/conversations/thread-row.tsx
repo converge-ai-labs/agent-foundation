@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
 import {
   ChatCircle,
+  CaretRight,
   Question,
   CircleNotch,
   WarningCircleIcon,
@@ -66,11 +67,13 @@ export function ThreadRow({
   showRestore = false,
   showProject = false,
   activeWorkerCount = 0,
+  disclosure,
 }: {
   row: ActivityRow;
   showRestore?: boolean | "compact";
   showProject?: boolean;
   activeWorkerCount?: number;
+  disclosure?: { expanded: boolean; onToggle: () => void };
 }) {
   const coordinator = useCoordinatorMutation(row.thread);
   const [promoting, setPromoting] = useState(false);
@@ -89,6 +92,7 @@ export function ThreadRow({
   );
   const isCoordinator = row.thread.role === "coordinator";
   const state = threadState(row);
+  const needsAttention = !!row.pending_decision || state === "Failed";
   const activity = [
     state,
     activeWorkerCount > 0
@@ -194,29 +198,19 @@ export function ThreadRow({
                     : "Without a project")}
               </small>
             )}
-            {isCoordinator ? (
-              <small
-                className={styles.coordinatorActivity}
-                aria-hidden={!activity || undefined}
-                title={activity || undefined}
-              >
-                <span className={styles.coordinatorStateIcon}>
-                  {state && <ThreadStateIcon row={row} />}
-                </span>
+            {needsAttention ? (
+              <small className={styles.attentionState}>
+                {isCoordinator ? activity : state}
+              </small>
+            ) : !isCoordinator && state ? (
+              <small className={styles.srOnly}>{state}</small>
+            ) : null}
+            {isCoordinator && activity && !needsAttention && (
+              <small className={styles.coordinatorActivity} title={activity}>
+                {state && <ThreadStateIcon row={row} />}
                 <span>{activity}</span>
               </small>
-            ) : state ? (
-              <small
-                className={
-                  row.pending_decision ||
-                  row.latest_operation?.status === "failed"
-                    ? styles.attentionState
-                    : styles.srOnly
-                }
-              >
-                {state}
-              </small>
-            ) : null}
+            )}
           </span>
           {unread && (
             <span
@@ -248,7 +242,7 @@ export function ThreadRow({
             aria-label={`Starred conversation: ${title}`}
             title="Starred · Shared with everyone in this project"
           >
-            <Star size={14} weight="fill" aria-hidden="true" />
+            <Star size={12} weight="fill" aria-hidden="true" />
           </span>
         )}
         <Menu>
@@ -339,6 +333,22 @@ export function ThreadRow({
             </MenuItem>
           </MenuPopup>
         </Menu>
+        {disclosure && (
+          <button
+            type="button"
+            className={styles.threadDisclosure}
+            aria-label={`${disclosure.expanded ? "Collapse" : "Expand"} workers for ${title}`}
+            aria-expanded={disclosure.expanded}
+            onClick={disclosure.onToggle}
+          >
+            <CaretRight
+              aria-hidden="true"
+              className={
+                disclosure.expanded ? styles.expandedChevron : undefined
+              }
+            />
+          </button>
+        )}
       </div>
       <ErrorNotice error={star.error || archive.error || coordinator.error} />
       <CoordinatorPromotion

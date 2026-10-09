@@ -24,28 +24,8 @@
   flex-shrink: 0;
   margin-right: 4px;
 }
-.heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 2px;
-}
-.toggle {
-  flex-shrink: 0;
-  margin-top: 0;
-  color: var(--a13n-secondary);
-}
-.toggle svg {
-  transition: transform 120ms ease;
-}
-.expandedChevron {
-  transform: rotate(90deg);
-}
-.conversation {
-  flex: 1;
-  min-width: 0;
-}
 .workers {
-  margin-left: 26px;
+  margin-inline-start: 20px;
   padding-bottom: 8px;
 }
 .workers > small {

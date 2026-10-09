@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { CaretRight } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -91,27 +90,12 @@ export function CoordinatorEntry({
     });
   return (
     <>
-      <div className={styles.heading}>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={styles.toggle}
-          aria-label={`${expanded ? "Collapse" : "Expand"} workers for ${row.thread.title || "Coordinator"}`}
-          aria-expanded={expanded}
-          onClick={() => setExpanded(!expanded)}
-        >
-          <CaretRight
-            className={expanded ? styles.expandedChevron : undefined}
-          />
-        </Button>
-        <div className={styles.conversation}>
-          <ThreadRow
-            row={row}
-            activeWorkerCount={activeWorkerCount}
-            showRestore="compact"
-          />
-        </div>
-      </div>
+      <ThreadRow
+        row={row}
+        activeWorkerCount={activeWorkerCount}
+        showRestore="compact"
+        disclosure={{ expanded, onToggle: () => setExpanded(!expanded) }}
+      />
       {expanded && (
         <div
           className={styles.workers}
