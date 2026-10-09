@@ -436,12 +436,25 @@ function ProjectGroup({
       className={`${styles.projectGroup} ${order.moving === group.id ? styles.movingProject : ""}`}
     >
       <div className={styles.groupHeading}>
+        {group.projectId && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={styles.projectDrag}
+            aria-label={`Reorder ${group.name}`}
+            aria-pressed={order.moving === group.id}
+            title="Drag to reorder, or press Space and use arrow keys"
+            {...order.handle(group.id)}
+          >
+            <DotsSixVertical />
+          </Button>
+        )}
         <button
           className={styles.groupToggle}
           aria-expanded={expanded}
           onClick={() => toggle(!expanded)}
         >
-          <Folder />
+          <Folder className={styles.projectIcon} />
           <span title={group.name}>{group.name}</span>
           {unreadCount > 0 && (
             <small
@@ -459,19 +472,6 @@ function ProjectGroup({
           </span>
         </button>
         <div className={styles.groupActions}>
-          {group.projectId && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className={styles.projectDrag}
-              aria-label={`Reorder ${group.name}`}
-              aria-pressed={order.moving === group.id}
-              title="Drag to reorder, or press Space and use arrow keys"
-              {...order.handle(group.id)}
-            >
-              <DotsSixVertical />
-            </Button>
-          )}
           {expanded && list.isFetching && !!list.data && (
             <span
               role="status"
@@ -538,7 +538,7 @@ function ProjectGroup({
           )}
         </div>
       </div>
-      <div hidden={!expanded}>
+      <div hidden={!expanded} className={styles.groupThreads}>
         <ErrorNotice error={owners.error} retry={() => void owners.refetch()} />
         <div>
           {rows.map((row, index) => (

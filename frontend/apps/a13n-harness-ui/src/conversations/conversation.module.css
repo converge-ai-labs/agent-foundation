@@ -212,9 +212,41 @@
   transform: rotate(90deg);
 }
 .projectDrag {
+  position: absolute;
+  inset-inline-start: 3px;
+  top: 3px;
+  width: 28px;
+  height: 28px;
+  z-index: 1;
   touch-action: none;
   cursor: grab;
-  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.groupHeading:has(.projectDrag) .projectIcon {
+  visibility: hidden;
+}
+@media (hover: hover) and (pointer: fine) {
+  .projectDrag {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .groupHeading:has(.projectDrag) .projectIcon {
+    visibility: visible;
+  }
+  .groupHeading:hover .projectDrag,
+  .groupHeading:focus-within .projectDrag,
+  .projectDrag[aria-pressed="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .groupHeading:has(.projectDrag):hover .projectIcon,
+  .groupHeading:has(.projectDrag):focus-within .projectIcon,
+  .groupHeading:has(.projectDrag[aria-pressed="true"]) .projectIcon {
+    visibility: hidden;
+  }
+}
+.groupThreads {
+  margin-inline-start: 16px;
 }
 .projectDrag[aria-pressed="true"] {
   cursor: grabbing;
@@ -297,8 +329,7 @@
   .threadActions[data-popup-open],
   .groupHeading:hover .groupActions,
   .groupHeading:focus-within .groupActions,
-  .groupActions:has([data-popup-open]),
-  .groupActions:has([aria-pressed="true"]) {
+  .groupActions:has([data-popup-open]) {
     opacity: 1;
   }
 }
