@@ -1383,17 +1383,21 @@
             ],
             "title": "Agent Id"
           },
+          "cited_trace_count": {
+            "title": "Cited Trace Count",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
           },
+          "finding_count": {
+            "title": "Finding Count",
+            "type": "integer"
+          },
           "id": {
             "title": "Id",
-            "type": "string"
-          },
-          "limitations": {
-            "title": "Limitations",
             "type": "string"
           },
           "read_trace_ids": {
@@ -1403,17 +1407,6 @@
             "title": "Read Trace Ids",
             "type": "array"
           },
-          "reported": {
-            "title": "Reported",
-            "type": "boolean"
-          },
-          "reviewed_trace_ids": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Reviewed Trace Ids",
-            "type": "array"
-          },
           "run_id": {
             "title": "Run Id",
             "type": "string"
@@ -1421,6 +1414,15 @@
           "run_status": {
             "title": "Run Status",
             "type": "string"
+          },
+          "selected_traces": {
+            "items": {
+              "$ref": "#/components/schemas/SelectedTrace"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Selected Traces",
+            "type": "array"
           },
           "selection": {
             "$ref": "#/components/schemas/AnalysisCreate"
@@ -1436,13 +1438,6 @@
           "thread_id": {
             "title": "Thread Id",
             "type": "string"
-          },
-          "trace_ids": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Trace Ids",
-            "type": "array"
           }
         },
         "required": [
@@ -1453,12 +1448,11 @@
           "run_id",
           "run_status",
           "selection",
-          "trace_ids",
+          "selected_traces",
           "selection_truncated",
           "read_trace_ids",
-          "reviewed_trace_ids",
-          "reported",
-          "limitations",
+          "finding_count",
+          "cited_trace_count",
           "created_at"
         ],
         "title": "Analysis",
@@ -10759,6 +10753,28 @@
           "updated_at"
         ],
         "title": "RunView",
+        "type": "object"
+      },
+      "SelectedTrace": {
+        "additionalProperties": false,
+        "properties": {
+          "run_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "trace_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trace_id",
+          "run_id"
+        ],
+        "title": "SelectedTrace",
         "type": "object"
       },
       "ServiceAccount": {

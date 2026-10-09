@@ -9,7 +9,6 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.telemetry import correlation_attributes
 from a13n_service.providers.traces import Span, SpanPage
 from a13n_service.runs.findings import analysis
-from a13n_service.runs.findings.schemas import AnalysisReport
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, ExecutionAuthority, Grant, Principal, WorkspaceScope
 from pydantic_ai.exceptions import ToolFailed
 
@@ -185,7 +184,7 @@ async def test_builtin_configuration_is_readonly_and_models_are_selected_automat
         assert denied.status_code == 409
 
 
-async def test_native_analysis_executes_tools_and_reports_real_coverage(service, scripted_model, runs_kit):
+async def test_native_analysis_validates_evidence_and_derives_counts(service, scripted_model, runs_kit):
     agent, run = await target(service, scripted_model, runs_kit)
     backend = Backend(service, run["id"])
     runtime = replace(service.runtime, traces=backend)
@@ -198,19 +197,13 @@ async def test_native_analysis_executes_tools_and_reports_real_coverage(service,
     assert created.status_code == 201, created.text
     result = created.json()
     assert result["agent_id"] == agent["id"]
-    assert result["trace_ids"] == [TRACE] and not result["reported"]
+    assert result["selected_traces"] == [{"trace_id": TRACE, "run_id": run["id"]}]
+    assert result["finding_count"] == result["cited_trace_count"] == 0
+    assert "reported" not in result and "limitations" not in result
     assert (await service.client.post("/api/v1/finding-analyses", json=body, headers=headers)).status_code == 200
     assert (
         await service.client.post("/api/v1/finding-analyses", json={**body, "max_traces": 2}, headers=headers)
     ).status_code == 409
-    with pytest.raises(ServiceError):
-        await analysis.report(
-            runtime,
-            actor(service),
-            service.tenant.workspace_id,
-            result["run_id"],
-            AnalysisReport(reviewed_trace_ids=[TRACE]),
-        )
     with pytest.raises(ServiceError):
         await analysis.read_scope(runtime, actor(service), service.tenant.workspace_id, result["run_id"], "c" * 32)
     from a13n_service.runs.findings.schemas import FindingCreate
@@ -228,23 +221,24 @@ async def test_native_analysis_executes_tools_and_reports_real_coverage(service,
     submitted = finding(agent, run)
     submitted["source_key"] = result["id"] + ":execution"
     scripted_model.call("submit_finding", {"finding": submitted}, call_id="submit-1")
+    # Two distinct diagnoses citing one trace count as two findings and one cited trace.
     scripted_model.call(
-        "report_analysis",
-        {"report": {"reviewed_trace_ids": [TRACE], "limitations": "Only the root was captured."}},
-        call_id="report-1",
+        "submit_finding", {"finding": {**submitted, "source_key": result["id"] + ":answer"}}, call_id="submit-2"
     )
     scripted_model.say("One unconfirmed issue reported.")
     await (await runs_kit.attempt(service, runtime=runtime))
     rows = (await service.client.get("/api/v1/findings")).json()["items"]
-    assert len(rows) == 1 and rows[0]["analysis_id"] == result["id"]
+    assert len(rows) == 2 and all(row["analysis_id"] == result["id"] for row in rows)
     assert rows[0]["source_run_id"] == result["run_id"]
     status = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
-    assert status["reported"] and status["read_trace_ids"] == status["reviewed_trace_ids"] == [TRACE]
+    assert status["read_trace_ids"] == [TRACE]
+    assert status["finding_count"] == 2 and status["cited_trace_count"] == 1
+    assert (status["session_id"], status["thread_id"]) == (result["session_id"], result["thread_id"])
     assert status["run_status"] == "completed"
     while not scripted_model.requests.empty():
         last_request = scripted_model.requests.get_nowait()
     tools = last_request["tools"]
-    assert "create_agent_revision" not in {tool["function"]["name"] for tool in tools}
+    assert {"create_agent_revision", "report_analysis"}.isdisjoint(tool["function"]["name"] for tool in tools)
 
 
 async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_runs(service, scripted_model, runs_kit):
@@ -290,21 +284,49 @@ async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_ru
     assert created.status_code == 201, created.text
     result = created.json()
     assert result["agent_id"] is None and result["selection"]["agent_id"] is None
-    assert result["trace_ids"] == [TRACE, "b" * 32]
+    assert result["selected_traces"] == [
+        {"trace_id": TRACE, "run_id": first_run["id"]},
+        {"trace_id": "b" * 32, "run_id": second_run["id"]},
+    ]
+    assert result["selection"]["started_after"] and result["selection"]["started_before"]
+    replay = await service.client.post(
+        "/api/v1/finding-analyses", json={}, headers={"Idempotency-Key": "workspace-analysis"}
+    )
+    assert replay.json()["selection"] == result["selection"]
+    assert replay.json()["selected_traces"] == result["selected_traces"]
+    # Two first reads in parallel must preserve both observations.
+    import asyncio
+
+    await asyncio.gather(
+        analysis.record_read(runtime, actor(service), service.tenant.workspace_id, result["run_id"], TRACE),
+        analysis.record_read(runtime, actor(service), service.tenant.workspace_id, result["run_id"], "b" * 32),
+    )
+    read_status = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
+    assert set(read_status["read_trace_ids"]) == {TRACE, "b" * 32}
     for index, (agent, run, trace_id) in enumerate(((first, first_run, TRACE), (second, second_run, "b" * 32))):
         scripted_model.call("read_trace", {"trace_id": trace_id}, call_id=f"read-{index}")
         submitted = finding(agent, run)
         submitted["evidence"][0]["trace_id"] = trace_id
         submitted["source_key"] = result["id"] + f":{index}"
         scripted_model.call("submit_finding", {"finding": submitted}, call_id=f"submit-{index}")
-    scripted_model.call("report_analysis", {"report": {"reviewed_trace_ids": result["trace_ids"]}}, call_id="report")
     scripted_model.say("Two issues reported")
     await (await runs_kit.attempt(service, runtime=runtime))
     rows = (await service.client.get("/api/v1/findings")).json()["items"]
     assert {row["agent_id"] for row in rows} == {first["id"], second["id"]}
     assert all(row["analysis_id"] == result["id"] and row["source_run_id"] == result["run_id"] for row in rows)
     status = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
-    assert status["run_status"] == "completed" and status["reviewed_trace_ids"] == result["trace_ids"]
+    assert status["run_status"] == "completed" and set(status["read_trace_ids"]) == {TRACE, "b" * 32}
+    assert status["finding_count"] == status["cited_trace_count"] == 2
+    # Repeated observations remain idempotent and cannot record unselected traces.
+
+    await asyncio.gather(
+        analysis.record_read(runtime, actor(service), service.tenant.workspace_id, result["run_id"], TRACE),
+        analysis.record_read(runtime, actor(service), service.tenant.workspace_id, result["run_id"], "b" * 32),
+    )
+    with pytest.raises(ServiceError):
+        await analysis.record_read(runtime, actor(service), service.tenant.workspace_id, result["run_id"], "c" * 32)
+    refreshed = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
+    assert set(refreshed["read_trace_ids"]) == {TRACE, "b" * 32}
     while not scripted_model.requests.empty():
         last_request = scripted_model.requests.get_nowait()
     prompt = str(last_request["messages"])
@@ -326,6 +348,14 @@ async def test_workspace_analysis_reviews_multiple_agents_and_excludes_finder_ru
                 FindingCreate.model_validate(submitted),
                 source_run_id=result["run_id"],
             )
+
+    capped = await service.client.post(
+        "/api/v1/finding-analyses", json={"max_traces": 1}, headers={"Idempotency-Key": "capped-analysis"}
+    )
+    assert capped.status_code == 201, capped.text
+    assert capped.json()["selected_traces"] == [{"trace_id": TRACE, "run_id": first_run["id"]}]
+    assert capped.json()["selection_truncated"]
+    assert capped.json()["finding_count"] == capped.json()["cited_trace_count"] == 0
 
 
 async def test_analysis_backend_unavailable_and_delegated_tool_authority(service, scripted_model, runs_kit):
@@ -402,3 +432,67 @@ async def test_preset_migration_backfills_existing_composer_and_preserves_other_
     preserved = (await service.client.get(f"/api/v1/agents/{finder['id']}")).json()
     assert preserved["source"] == "custom" and preserved["preset_kind"] is None
     assert preserved["default_revision_id"] == finder["default_revision_id"]
+
+
+async def test_analysis_selection_migration_preserves_order_reads_and_evidence(
+    service, scripted_model, runs_kit, database
+):
+    import json
+
+    from a13n_service.distribution import OSS
+    from a13n_service.migrations.runner import migration_connection, upgrade
+    from alembic import command
+    from sqlalchemy import text
+
+    agent, run = await target(service, scripted_model, runs_kit)
+    runtime = replace(service.runtime, traces=Backend(service, run["id"]))
+    service.app.state.runtime = runtime
+    await service.client.post("/api/v1/finding-agent")
+    created = await service.client.post(
+        "/api/v1/finding-analyses", json={"trace_id": TRACE}, headers={"Idempotency-Key": "migration-analysis"}
+    )
+    assert created.status_code == 201, created.text
+    result = created.json()
+    await analysis.record_read(runtime, actor(service), service.tenant.workspace_id, result["run_id"], TRACE)
+    from a13n_service.runs.findings.schemas import FindingCreate
+    from a13n_service.runs.findings.service import create_finding
+
+    evidence = await create_finding(
+        runtime.storage,
+        actor(service),
+        service.tenant.workspace_id,
+        FindingCreate.model_validate(finding(agent, run)),
+        source_run_id=result["run_id"],
+    )
+    with migration_connection(database, OSS) as config:
+        command.downgrade(config, "74b2192ae6ee")
+        connection = config.attributes["connection"]
+        connection.execute(
+            text("""
+            UPDATE finding_analyses SET
+                trace_ids = CAST(:traces AS jsonb), trace_runs = CAST(:runs AS jsonb),
+                reviewed_trace_ids = CAST(:reads AS jsonb), reported = true, limitations = 'Old report'
+            WHERE id = :id
+        """),
+            {
+                "id": result["id"],
+                "traces": json.dumps(["b" * 32, TRACE]),
+                "runs": json.dumps({TRACE: run["id"], "b" * 32: run["id"]}),
+                "reads": json.dumps([TRACE]),
+            },
+        )
+        connection.commit()
+    upgrade(database, OSS)
+    restored = (await service.client.get("/api/v1/finding-analyses")).json()["items"][0]
+    assert restored["selected_traces"] == [
+        {"trace_id": "b" * 32, "run_id": run["id"]},
+        {"trace_id": TRACE, "run_id": run["id"]},
+    ]
+    assert restored["read_trace_ids"] == [TRACE]
+    assert restored["finding_count"] == restored["cited_trace_count"] == 1
+    assert restored["session_id"] == result["session_id"] and restored["thread_id"] == result["thread_id"]
+    # Coverage claims are deliberately discarded; Findings' evidence and limitations survive.
+    finding_id = evidence.id
+    preserved = (await service.client.get(f"/api/v1/findings/{finding_id}")).json()
+    assert preserved["evidence"] == evidence.model_dump(mode="json")["evidence"]
+    assert "reported" not in restored and "limitations" not in restored

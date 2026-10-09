@@ -37,7 +37,6 @@ TRACE_TOOL_IDS = {"list": "service.traces.list", "read": "service.traces.read", 
 FINDING_TOOL_IDS = {
     "read": "service.findings.read",
     "submit": "service.findings.submit",
-    "report": "service.findings.report",
 }
 
 type ToolsetKey = Literal["files", "shell", "web", "memory", "assets", "configuration", "traces", "findings"]
@@ -254,7 +253,6 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         (
             _Tool("read", "Read finding", FINDING_TOOL_IDS["read"], "read_finding"),
             _Tool("submit", "Submit finding", FINDING_TOOL_IDS["submit"], "submit_finding"),
-            _Tool("report", "Report analysis coverage", FINDING_TOOL_IDS["report"], "report_analysis"),
         ),
     ),
     _Toolset(
@@ -301,7 +299,9 @@ def normalize_toolset_overrides(value: dict[ToolsetKey, ToolsetSelection]) -> di
 def _normalize(toolset: _Toolset, selected: ToolsetSelection | None) -> ToolsetSelection:
     selected = selected or ToolsetSelection(enabled=toolset.default_enabled)
     EmptyConfiguration.model_validate(selected.config)
-    unknown = selected.tools.keys() - {tool.key for tool in toolset.tools}
+    # Old immutable revisions may contain the retired report tool; never expose it again.
+    retired = {"report"} if toolset.key == "findings" else set()
+    unknown = selected.tools.keys() - {tool.key for tool in toolset.tools} - retired
     if unknown:
         raise ValueError(f"unknown {toolset.key} tool {sorted(unknown)[0]!r}")
     tools: dict[str, ToolSelection] = {}

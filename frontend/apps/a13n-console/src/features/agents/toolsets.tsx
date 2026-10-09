@@ -44,7 +44,7 @@ const groupDescriptions: Record<Definition["key"], string> = {
   assets: "Publish files as agent assets.",
   configuration: "Find resources and create agents and versions.",
   traces: "Read authorized execution evidence.",
-  findings: "Submit findings and report analysis coverage.",
+  findings: "Submit findings with execution evidence.",
 };
 const platform = new Set(["configuration", "traces", "findings"]);
 const toolDescriptions: Record<string, Record<string, string>> = {
@@ -93,7 +93,7 @@ const toolDescriptions: Record<string, Record<string, string>> = {
     read: "Read trace",
     spans: "Read trace steps",
   },
-  findings: { submit: "Submit finding", report: "Report analysis coverage" },
+  findings: { submit: "Submit finding" },
   assets: { publish: "Publish an asset" },
   configuration: {
     find: "Find workspace resources",

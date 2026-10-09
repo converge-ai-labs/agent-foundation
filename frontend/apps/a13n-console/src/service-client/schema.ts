@@ -3503,25 +3503,25 @@ export interface components {
     Analysis: {
       /** Agent Id */
       agent_id: string | null;
+      /** Cited Trace Count */
+      cited_trace_count: number;
       /**
        * Created At
        * Format: date-time
        */
       created_at: string;
+      /** Finding Count */
+      finding_count: number;
       /** Id */
       id: string;
-      /** Limitations */
-      limitations: string;
       /** Read Trace Ids */
       read_trace_ids: string[];
-      /** Reported */
-      reported: boolean;
-      /** Reviewed Trace Ids */
-      reviewed_trace_ids: string[];
       /** Run Id */
       run_id: string;
       /** Run Status */
       run_status: string;
+      /** Selected Traces */
+      selected_traces: components["schemas"]["SelectedTrace"][];
       selection: components["schemas"]["AnalysisCreate"];
       /** Selection Truncated */
       selection_truncated: boolean;
@@ -3529,8 +3529,6 @@ export interface components {
       session_id: string;
       /** Thread Id */
       thread_id: string;
-      /** Trace Ids */
-      trace_ids: string[];
     };
     /** AnalysisCreate */
     AnalysisCreate: {
@@ -6649,6 +6647,13 @@ export interface components {
       wait_reason: components["schemas"]["WaitReason"] | null;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** SelectedTrace */
+    SelectedTrace: {
+      /** Run Id */
+      run_id: string;
+      /** Trace Id */
+      trace_id: string;
     };
     /** ServiceAccount */
     ServiceAccount: {

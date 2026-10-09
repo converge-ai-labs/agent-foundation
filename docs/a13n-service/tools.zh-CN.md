@@ -25,7 +25,7 @@ Agent 的工具来自四个地方，都在[修订版本](agents-and-runs.md#agen
 | `assets`        | `publish_asset`                                                                                                                               | 禁用                                           |
 | `configuration` | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                           | 禁用；参阅 [Agent Composer](agent-composer.md) |
 | `traces`        | `list_traces`, `read_trace`, `read_trace_spans`                                                                                               | 禁用                                           |
-| `findings`      | `read_finding`, `submit_finding`, `report_analysis`                                                                                           | 禁用                                           |
+| `findings`      | `read_finding`, `submit_finding`                                                                                                              | 禁用                                           |
 
 配置、trace 查询和发现项提交工具位于 **高级 / 平台功能**下。工具集开关会保留各平台工具的独立选择。参阅[发现并改进执行问题](agents-and-runs.md#find-and-improve-execution-issues)。
 

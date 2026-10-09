@@ -81,9 +81,9 @@ class AnalysisCreate(_Input):
         return self
 
 
-class AnalysisReport(_Input):
-    reviewed_trace_ids: list[TraceId] = Field(default_factory=list, max_length=20)
-    limitations: str = Field(default="", max_length=4096)
+class SelectedTrace(_Input):
+    trace_id: TraceId
+    run_id: ObjectId
 
 
 class Analysis(BaseModel):
@@ -95,12 +95,11 @@ class Analysis(BaseModel):
     run_id: str
     run_status: str
     selection: AnalysisCreate
-    trace_ids: list[str]
+    selected_traces: list[SelectedTrace] = Field(min_length=1, max_length=20)
     selection_truncated: bool
     read_trace_ids: list[str]
-    reviewed_trace_ids: list[str]
-    reported: bool
-    limitations: str
+    finding_count: int
+    cited_trace_count: int
     created_at: datetime
 
 

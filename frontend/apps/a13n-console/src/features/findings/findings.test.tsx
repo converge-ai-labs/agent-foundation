@@ -114,7 +114,7 @@ function mount(path = "/workspace/ws_test/findings") {
   );
   return userEvent.setup();
 }
-it("makes empty coverage explicit and blocks analysis when trace query is disabled", async () => {
+it("does not infer health from empty findings and blocks analysis when trace query is disabled", async () => {
   const user = mount();
   await screen.findByText("No findings in this view");
   expect(
@@ -257,12 +257,14 @@ it("switches collections without stacking tables and preserves analysis evidence
                 thread_id: "thread_analysis",
                 run_id: "run_analysis",
                 run_status: "completed",
-                trace_ids: ["a".repeat(32), "b".repeat(32)],
+                selected_traces: [
+                  { trace_id: "a".repeat(32), run_id: "run_a" },
+                  { trace_id: "b".repeat(32), run_id: "run_b" },
+                ],
                 read_trace_ids: ["a".repeat(32)],
-                reviewed_trace_ids: [],
-                reported: false,
+                finding_count: 3,
+                cited_trace_count: 1,
                 selection_truncated: true,
-                limitations: "Partial capture",
                 created_at: "2026-10-09T10:00:00Z",
               },
             ],
@@ -282,7 +284,10 @@ it("switches collections without stacking tables and preserves analysis evidence
   expect(screen.getByRole("button", { name: "Analyze traces" })).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Workspace traces" }));
   await screen.findByRole("dialog", { name: "Analysis details" });
-  expect(screen.getByText(/Coverage not reported/)).toBeTruthy();
+  expect(screen.getByText("Selected traces: 2")).toBeTruthy();
+  expect(screen.getByText("Findings: 3")).toBeTruthy();
+  expect(screen.getByText("Evidence-cited traces: 1")).toBeTruthy();
+  expect(screen.queryByText(/Coverage not reported/)).toBeNull();
   expect(screen.getByText(/Selection capped/)).toBeTruthy();
   expect(
     screen
@@ -291,7 +296,7 @@ it("switches collections without stacking tables and preserves analysis evidence
   ).toBe(
     "/workspace/ws_test/sessions/sess_analysis/threads/thread_analysis/runs/run_analysis",
   );
-  expect(screen.getByText("Partial capture")).toBeTruthy();
+  expect(screen.getByText(/See the analysis run's final reply/)).toBeTruthy();
   expect(
     screen.getByRole("link", { name: "a".repeat(32) }).getAttribute("href"),
   ).toBe("/workspace/ws_test/traces/" + "a".repeat(32));

@@ -54,7 +54,10 @@ async def create_finding(
             if analysis is not None and (
                 (analysis.agent_id is not None and analysis.agent_id != body.agent_id)
                 or evidence.trace_id not in analysis.read_trace_ids
-                or analysis.trace_runs.get(evidence.trace_id) != evidence.run_id
+                or not any(
+                    item["trace_id"] == evidence.trace_id and item["run_id"] == evidence.run_id
+                    for item in analysis.selected_traces
+                )
             ):
                 raise invalid("evidence", "the analysis must read a selected trace before citing it")
         row = FindingRow(

@@ -95,6 +95,13 @@ def test_the_toolset_catalogue_names_each_tool_once() -> None:
     assert supported["web.search"] and not supported["web.scrape"] and supported["web.fetch"]
 
 
+def test_retired_analysis_report_tool_is_not_exposed_from_stored_configs() -> None:
+    selected = config(toolsets={"findings": {"enabled": True, "tools": {"report": {"enabled": True}}}})
+    assert "report" not in selected.toolsets["findings"].tools
+    catalog = next(item for item in toolsets.catalog(frozenset()).items if item.key == "findings")
+    assert "report" not in {item.key for item in catalog.tools}
+
+
 def test_toolsets_normalize_to_the_whole_catalogue() -> None:
     provider = new_object_id("wp")
     selected = config(toolsets={"web": {"tools": {"search": {"config": {"provider_id": provider}}}}})

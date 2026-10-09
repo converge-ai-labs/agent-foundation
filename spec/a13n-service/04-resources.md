@@ -129,9 +129,9 @@ It also enables read-only finding and trace-query tools to inspect durable evide
 
 Deployments update API-serving and Worker roles together before preparing new presets: older builds assume a single builtin Agent and do not understand the new toolsets. The migration backfills existing builtin heads as Composer; a downgrade preserves Finding Agent heads as custom Agents without promising older builds can execute their configurations.
 
-Finding Agent reads configuration and authorized trace evidence, submits unreviewed findings, and reports analysis coverage ([07](07-facts-and-delivery.md#findings-and-analysis)). Its default configuration offers no Agent creation or revision tools. Analysis runs use ordinary Session, Thread, Run, usage and interruption lifecycles.
+Finding Agent reads configuration and authorized trace evidence, submits unreviewed findings, and summarizes results and limitations in its final reply ([07](07-facts-and-delivery.md#findings-and-analysis)). Its default configuration offers no Agent creation or revision tools. Analysis runs use ordinary Session, Thread, Run, usage and interruption lifecycles.
 
-The `traces` and `findings` toolsets are disabled by default and selectable per tool for custom Agents. Trace tools list roots, read a root and page through its steps using the same authorized backend queries as HTTP. Finding submission uses the same validation and authority as HTTP; its source Run comes from trusted execution context. Coverage reporting applies only to managed analysis Runs. Tool permissions remain independently selectable; configuration writes retain their default `ask` permission.
+The `traces` and `findings` toolsets are disabled by default and selectable per tool for custom Agents. Trace tools list roots, read a root and page through its steps using the same authorized backend queries as HTTP. Finding submission uses the same validation and authority as HTTP; its source Run comes from trusted execution context. Tool permissions remain independently selectable; configuration writes retain their default `ask` permission.
 
 ## Skills
 

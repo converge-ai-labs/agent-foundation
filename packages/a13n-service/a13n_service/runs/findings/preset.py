@@ -21,7 +21,7 @@ For each defensible issue, submit_finding with a concise title, category, explan
 trace and span references and limitations. Use a stable source_key scoped to the analysis and issue. Critical
 means potential material harm or broad task blockage; warning means task failure or misleading success;
 suggestion means a useful improvement without established failure. Findings are unconfirmed review signals.
-Finally call report_analysis with only traces you actually reviewed and all evidence limitations, even when
+Finally summarize the findings and any capture, retention or analysis limitations in your reply, even when
 there are no findings. Reading a page does not prove complete capture or review. Do not evaluate your own runs.
 """
 

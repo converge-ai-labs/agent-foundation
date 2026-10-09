@@ -1,16 +1,17 @@
 """On-demand analysis starts an ordinary run atomically with its bounded provenance."""
 
 import hashlib
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
-from a13n_harness.observation import redact_json
-from sqlalchemy import select
+from sqlalchemy import distinct, func, select, true, type_coerce
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import advisory_lock, short_session, transaction, violated_constraint
-from a13n_service.infra.errors import conflict, invalid, not_found
+from a13n_service.infra.errors import conflict, invalid
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.agents import service as agents
 from a13n_service.resources.agents.tables import AgentRow
@@ -18,8 +19,8 @@ from a13n_service.resources.rows import audit_row
 from a13n_service.runs import traces
 from a13n_service.runs.accept import Source, accept
 from a13n_service.runs.findings.preset import RULES
-from a13n_service.runs.findings.schemas import Analysis, AnalysisCreate, AnalysisPage, AnalysisReport
-from a13n_service.runs.findings.tables import AnalysisRow
+from a13n_service.runs.findings.schemas import Analysis, AnalysisCreate, AnalysisPage, SelectedTrace
+from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
 from a13n_service.runs.inbox import Request, append_message, find_request
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Message, MessagePayload, RunOptions, TextPart, UsageLimit, canonical_json
@@ -31,14 +32,56 @@ from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal, execution_authority
 
 
-async def _view(session: AsyncSession, row: AnalysisRow) -> Analysis:
-    run = await session.get_one(RunRow, row.run_id)
+async def _finding_counts(session: AsyncSession, rows: Sequence[AnalysisRow]) -> dict[str, tuple[int, int]]:
+    if not rows:
+        return {}
+    evidence = func.jsonb_array_elements(FindingRow.evidence).table_valued("value").lateral()
+    query = (
+        select(
+            FindingRow.analysis_id,
+            func.count(distinct(FindingRow.id)),
+            func.count(distinct(type_coerce(evidence.c.value, JSONB)["trace_id"].astext)),
+        )
+        .select_from(FindingRow)
+        .join(evidence, true())
+        .where(
+            FindingRow.workspace_id == rows[0].workspace_id,
+            FindingRow.analysis_id.in_([row.id for row in rows]),
+        )
+        .group_by(FindingRow.analysis_id)
+    )
+    return {analysis_id: (findings, traces) for analysis_id, findings, traces in await session.execute(query)}
+
+
+def _read_model(row: AnalysisRow, run: RunRow, counts: tuple[int, int]) -> Analysis:
     return Analysis.model_validate(
         {
-            **{name: getattr(row, name) for name in Analysis.model_fields if name != "run_status"},
+            **{
+                name: getattr(row, name)
+                for name in (
+                    "id",
+                    "agent_id",
+                    "run_id",
+                    "selection",
+                    "selected_traces",
+                    "selection_truncated",
+                    "read_trace_ids",
+                    "created_at",
+                )
+            },
+            "session_id": run.session_id,
+            "thread_id": run.thread_id,
             "run_status": run.status,
+            "finding_count": counts[0],
+            "cited_trace_count": counts[1],
         }
     )
+
+
+async def _view(session: AsyncSession, row: AnalysisRow) -> Analysis:
+    run = await session.get_one(RunRow, row.run_id)
+    counts = await _finding_counts(session, [row])
+    return _read_model(row, run, counts.get(row.id, (0, 0)))
 
 
 async def start(
@@ -71,8 +114,7 @@ async def start(
         finder_id, revision_id = finder.id, finder.default_revision_id
     before = body.started_before or datetime.now(UTC)
     after = body.started_after or before - timedelta(days=1)
-    selected: list[str] = []
-    trace_runs: dict[str, str] = {}
+    selected: list[SelectedTrace] = []
     targets: dict[str, dict[str, str]] = {}
     target_id = body.agent_id
     cursor = None
@@ -117,10 +159,9 @@ async def start(
                 isinstance(run_id, str)
                 and run_id in allowed
                 and root.ended_at is not None
-                and root.trace_id not in selected
+                and all(item.trace_id != root.trace_id for item in selected)
             ):
-                selected.append(root.trace_id)
-                trace_runs[root.trace_id] = run_id
+                selected.append(SelectedTrace(trace_id=root.trace_id, run_id=run_id))
                 targets[root.trace_id] = allowed[run_id]
                 if body.trace_id:
                     target_id = allowed[run_id]["agent_id"]
@@ -135,12 +176,12 @@ async def start(
         )
     analysis_id = new_object_id("fan")
     prompt = (
-        f"Analysis {analysis_id}. Selected traces: {selected}.\n"
+        f"Analysis {analysis_id}. Selected traces: {canonical_json([item.model_dump() for item in selected]).decode()}.\n"
         + "Target Agent revisions by trace: "
-        + canonical_json({key: targets[key] for key in selected}).decode()
+        + canonical_json({item.trace_id: targets[item.trace_id] for item in selected}).decode()
         + "\n"
         + "\n".join(f"{key}: {RULES[key]}" for key in body.presets)
-        + "\nQuery and review only these traces, submit findings, then report_analysis."
+        + "\nQuery and review only these traces, submit defensible findings, then summarize the results and evidence limitations in your final reply."
     )
     message = Message(
         agent_id=finder_id,
@@ -193,19 +234,15 @@ async def start(
                 organization_id=scope.organization_id,
                 workspace_id=scope.workspace_id,
                 agent_id=target_id,
-                session_id=owner.id,
-                thread_id=thread.id,
                 run_id=entry.assigned_run_id,
                 request_key=request_key,
                 request_digest=digest,
-                selection=body.model_dump(mode="json"),
-                trace_ids=selected,
+                selection=body.model_copy(
+                    update={"started_after": after, "started_before": before} if body.trace_id is None else {}
+                ).model_dump(mode="json"),
+                selected_traces=[item.model_dump(mode="json") for item in selected],
                 selection_truncated=truncated,
-                trace_runs={key: trace_runs[key] for key in selected},
                 read_trace_ids=[],
-                reviewed_trace_ids=[],
-                reported=False,
-                limitations="",
                 created_by_id=actor.id,
                 updated_by_id=actor.id,
             )
@@ -234,21 +271,14 @@ async def list_analyses(
             cursor=cursor,
             newest_first=True,
         )
-        # Load statuses in one bounded query rather than a query per analysis.
+        # Navigation and status come from Runs; evidence counts are aggregated for this bounded page.
         runs = {
-            run.id: run.status
+            run.id: run
             for run in (await session.scalars(select(RunRow).where(RunRow.id.in_([row.run_id for row in rows])))).all()
         }
+        counts = await _finding_counts(session, rows)
         return AnalysisPage(
-            items=[
-                Analysis.model_validate(
-                    {
-                        **{name: getattr(row, name) for name in Analysis.model_fields if name != "run_status"},
-                        "run_status": runs[row.run_id],
-                    }
-                )
-                for row in rows
-            ],
+            items=[_read_model(row, runs[row.run_id], counts.get(row.id, (0, 0))) for row in rows],
             next_cursor=next_cursor,
         )
 
@@ -261,7 +291,7 @@ async def read_scope(runtime: Runtime, actor: Principal, workspace_id: str, run_
         )
         if row is None:
             return
-        if trace_id not in row.trace_ids:
+        if not any(item["trace_id"] == trace_id for item in row.selected_traces):
             raise invalid("trace_id", "outside the analysis selection")
 
 
@@ -273,31 +303,8 @@ async def record_read(runtime: Runtime, actor: Principal, workspace_id: str, run
             .where(AnalysisRow.workspace_id == scope.workspace_id, AnalysisRow.run_id == run_id)
             .with_for_update()
         )
-        if row is not None and trace_id not in row.trace_ids:
+        if row is not None and not any(item["trace_id"] == trace_id for item in row.selected_traces):
             raise invalid("trace_id", "outside the analysis selection")
         if row is not None and trace_id not in row.read_trace_ids:
             row.read_trace_ids = [*row.read_trace_ids, trace_id]
             row.updated_by_id = actor.id
-
-
-async def report(runtime: Runtime, actor: Principal, workspace_id: str, run_id: str, body: AnalysisReport) -> Analysis:
-    async with transaction(runtime.storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "write")
-        row = await session.scalar(
-            select(AnalysisRow)
-            .where(AnalysisRow.workspace_id == scope.workspace_id, AnalysisRow.run_id == run_id)
-            .with_for_update()
-        )
-        if row is None:
-            raise not_found("finding_analysis", run_id)
-        if not set(body.reviewed_trace_ids) <= set(row.read_trace_ids):
-            raise invalid("reviewed_trace_ids", "only selected traces read by this analysis may be reported reviewed")
-        safe = AnalysisReport.model_validate(redact_json(body.model_dump(mode="json")))
-        row.reviewed_trace_ids, row.limitations, row.reported = (
-            list(dict.fromkeys(safe.reviewed_trace_ids)),
-            safe.limitations,
-            True,
-        )
-        row.updated_by_id = actor.id
-        await session.flush()
-        return await _view(session, row)

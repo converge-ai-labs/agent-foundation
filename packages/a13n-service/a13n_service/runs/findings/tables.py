@@ -25,19 +25,13 @@ class AnalysisRow(Stamped, Base):
     workspace_id: Mapped[str]
     # Omission selects workspace traces rather than one target Agent.
     agent_id: Mapped[str | None]
-    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.id"))
-    thread_id: Mapped[str] = mapped_column(ForeignKey("threads.id"))
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), unique=True)
     request_key: Mapped[str] = mapped_column(String(512))
     request_digest: Mapped[str]
     selection: Mapped[dict] = mapped_column(JSONB)
-    trace_ids: Mapped[list] = mapped_column(JSONB)
-    trace_runs: Mapped[dict] = mapped_column(JSONB)
+    selected_traces: Mapped[list] = mapped_column(JSONB)
     selection_truncated: Mapped[bool] = mapped_column(Boolean)
     read_trace_ids: Mapped[list] = mapped_column(JSONB)
-    reviewed_trace_ids: Mapped[list] = mapped_column(JSONB)
-    reported: Mapped[bool] = mapped_column(Boolean)
-    limitations: Mapped[str]
     created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
     updated_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
 

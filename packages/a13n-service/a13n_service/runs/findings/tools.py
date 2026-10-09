@@ -18,7 +18,7 @@ from a13n_service.resources.agents.toolsets import FINDING_TOOL_IDS, TRACE_TOOL_
 from a13n_service.runs import traces
 from a13n_service.runs.attempts import Lease
 from a13n_service.runs.findings import analysis, service
-from a13n_service.runs.findings.schemas import AnalysisReport, FindingCreate, TraceId
+from a13n_service.runs.findings.schemas import FindingCreate, TraceId
 from a13n_service.runs.findings.tables import AnalysisRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tools import tool_failures
@@ -69,12 +69,6 @@ class FindingCapability(AbstractCapability[AgentContext]):
                 "submit",
                 self.submit_finding,
                 "Persist an unconfirmed finding with evidence and a suggestion. A stable source_key makes retries safe.",
-                True,
-            ),
-            (
-                "report",
-                self.report_analysis,
-                "Report reviewed trace IDs and evidence limitations for this on-demand analysis, including when there are no findings.",
                 True,
             ),
         ):
@@ -185,14 +179,5 @@ class FindingCapability(AbstractCapability[AgentContext]):
             self._authorize("write")
             result = await service.create_finding(
                 self.runtime.storage, self.principal, self.scope.workspace_id, finding, source_run_id=self.lease.run_id
-            )
-            return result.model_dump(mode="json")
-
-    async def report_analysis(self, report: AnalysisReport) -> JsonValue:
-        with tool_failures():
-            self._authorize("read")
-            self._authorize("write")
-            result = await analysis.report(
-                self.runtime, self.principal, self.scope.workspace_id, self.lease.run_id, report
             )
             return result.model_dump(mode="json")

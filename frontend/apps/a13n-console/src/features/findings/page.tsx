@@ -301,7 +301,7 @@ export function FindingsPage() {
                     icon={<MagnifyingGlassIcon aria-hidden="true" />}
                     title={t("No findings in this view")}
                     description={t(
-                      "No findings does not mean every trace was analyzed. Check analysis coverage or start a bounded analysis.",
+                      "No findings does not mean every trace was analyzed. Check the analysis run or start a bounded analysis.",
                     )}
                     action={start}
                   />
@@ -356,7 +356,10 @@ function AnalysisHistory({
         : false,
   });
   const progress = query.data?.items
-    .map((item) => `${item.id}:${item.run_status}:${item.reported}`)
+    .map(
+      (item) =>
+        `${item.id}:${item.run_status}:${item.finding_count}:${item.cited_trace_count}`,
+    )
     .join(";");
   useEffect(() => {
     if (progress)
@@ -453,46 +456,34 @@ function AnalysisHistory({
                 </Link>
               )}
             </div>
-            <Section title={t("Trace coverage")}>
-              <p className={styles.hint}>
-                {t(
-                  "Coverage is limited to selected traces. Capture, retention, and model review may be incomplete.",
-                )}
+            <Section title={t("Analysis summary")}>
+              <p>
+                {t("Selected traces: {{count}}", {
+                  count: selected.selected_traces.length,
+                })}
               </p>
               <p>
-                {t("{{reviewed}} / {{selected}} reviewed", {
-                  reviewed: selected.reviewed_trace_ids.length,
-                  selected: selected.trace_ids.length,
+                {t("Findings: {{count}}", { count: selected.finding_count })}
+              </p>
+              <p>
+                {t("Evidence-cited traces: {{count}}", {
+                  count: selected.cited_trace_count,
                 })}
               </p>
               <p className={styles.hint}>
-                {t("{{count}} traces read", {
-                  count: selected.read_trace_ids.length,
-                })}{" "}
-                ·{" "}
-                {selected.reported
-                  ? t("Coverage reported")
-                  : t("Coverage not reported")}
-                {selected.selection_truncated
-                  ? ` · ${t("Selection capped; more traces may exist")}`
-                  : ""}
+                {t(
+                  "Evidence citations do not show how many traces were fully analyzed. See the analysis run's final reply for results and limitations.",
+                )}
               </p>
-            </Section>
-            <Section title={t("Evidence limitations")}>
-              <p className={styles.prose}>
-                {selected.limitations ||
-                  (!selected.reported
-                    ? t(
-                        "The Agent has not reported its review coverage. No conclusion can be drawn from an empty result.",
-                      )
-                    : t(
-                        "These are the Agent's reported review results, not a guarantee of complete trace capture.",
-                      ))}
-              </p>
+              {selected.selection_truncated && (
+                <p className={styles.hint}>
+                  {t("Selection capped; more traces may exist")}
+                </p>
+              )}
             </Section>
             <Section title={t("Traces")}>
               <div className={styles.links}>
-                {selected.trace_ids.map((trace) => (
+                {selected.selected_traces.map(({ trace_id: trace }) => (
                   <Link key={trace} to={`${basePath}/traces/${trace}`}>
                     {trace}
                   </Link>

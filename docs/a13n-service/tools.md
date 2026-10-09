@@ -25,7 +25,7 @@ Every tool has a [permission](agents-and-runs.md#tool-permissions) in the revisi
 | `assets`           | `publish_asset`                                                                                                                               | Disabled                                          |
 | `configuration`    | `find_resources`, `read_resource`, `describe_agent_config`, `create_agent`, `create_agent_revision`                                           | Disabled; see [Agent Composer](agent-composer.md) |
 | `traces`           | `list_traces`, `read_trace`, `read_trace_spans`                                                                                               | Disabled                                          |
-| `findings`         | `read_finding`, `submit_finding`, `report_analysis`                                                                                           | Disabled                                          |
+| `findings`         | `read_finding`, `submit_finding`                                                                                                              | Disabled                                          |
 
 Configuration, trace queries and finding submission appear under **Advanced / Platform Features**. Group switches preserve individual platform-tool choices. See [Find and improve execution issues](agents-and-runs.md#find-and-improve-execution-issues).
 
