@@ -783,7 +783,7 @@ it("keeps rows, title and DOM identity across a failed background refresh", asyn
   });
   expect(screen.getByRole("link", { name: "Recent 1" })).toBe(original);
   expect(screen.queryByLabelText("Loading conversations")).toBeNull();
-  expect(screen.getByTitle("One").textContent).toBe("One");
+  expect(screen.getByRole("button", { name: "One" }).textContent).toBe("One");
   expect(scroller.scrollTop).toBe(40);
   await act(async () => release());
   await screen.findByText("Archive filter unavailable");
@@ -906,7 +906,10 @@ it("shows every active conversation before five recent rows and reconciles compl
   }));
   mount("/threads/Active%200");
   const project = await screen.findByRole("region", { name: "One" });
-  await within(project).findByRole("heading", { name: "Running · 6" });
+  await within(project).findByRole("link", { name: /Active 5/ });
+  expect(
+    within(project).queryByRole("heading", { name: /Running/ }),
+  ).toBeNull();
   const runningLinks = () =>
     within(project)
       .getAllByRole("link")
@@ -961,7 +964,7 @@ it("keeps the selected lifecycle observation across pagination but accepts a ref
   ];
   mount("/threads/Selected");
   const project = await screen.findByRole("region", { name: "One" });
-  await within(project).findByRole("heading", { name: "Running · 1" });
+  await within(project).findByRole("link", { name: /Selected.*Running/ });
   const row = within(project).getByRole("link", { name: /Selected/ });
 
   await act(async () => {
@@ -1035,7 +1038,7 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
     within(group).getByRole("heading", { name: "New results · 1" }),
   ).toBeTruthy();
   expect(
-    within(group).getByRole("heading", { name: "Running · 1" }),
+    within(group).getByRole("link", { name: /Running result/ }),
   ).toBeTruthy();
   expect(
     within(group).getAllByRole("img", { name: "New result" }),
@@ -1070,7 +1073,7 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   ).toBeNull();
   expect(within(group).queryByText(/New results/)).toBeNull();
   expect(
-    within(group).getByRole("heading", { name: "Running · 1" }),
+    within(group).getByRole("link", { name: /Running result/ }),
   ).toBeTruthy();
   expect(writes).toEqual([]);
   vi.restoreAllMocks();
@@ -1224,7 +1227,7 @@ it("keeps workers collapsed on direct navigation and pages them separately from 
   mount("/threads/worker-7");
   await screen.findByRole("link", { name: /coordinator-one/ });
   await screen.findByRole("link", { name: /ordinary-running/ });
-  expect(screen.getByRole("heading", { name: "Running · 2" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: /ordinary-running/ })).toBeTruthy();
   expect(screen.queryByRole("link", { name: /worker-/ })).toBeNull();
   expect(
     activity.filter((url) => url.searchParams.has("coordinator_thread_id")),
@@ -1298,7 +1301,7 @@ it("groups only owners of active unarchived workers under Running and returns th
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const project = screen.getByRole("region", { name: "One" });
-  await within(project).findByRole("heading", { name: "Running · 1" });
+  await within(project).findByRole("link", { name: /busy-owner/ });
   const owner = within(project).getByRole("link", { name: /busy-owner/ });
   expect(within(project).getAllByRole("link")[0]).toBe(owner);
   expect(within(owner).queryByText("Running")).toBeNull();
@@ -1314,7 +1317,7 @@ it("groups only owners of active unarchived workers under Running and returns th
   activeThreads = activeThreads.slice(1);
   await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
   expect(
-    within(project).getByRole("heading", { name: "Running · 1" }),
+    within(project).getByRole("link", { name: /busy-owner/ }),
   ).toBeTruthy();
   expect(within(project).getAllByRole("link")[0]).toBe(owner);
   expect(
@@ -1352,7 +1355,7 @@ it("keeps an off-page owner in Running while its worker is active without loadin
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const project = screen.getByRole("region", { name: "One" });
-  await within(project).findByRole("heading", { name: "Running · 1" });
+  await within(project).findByRole("link", { name: /off-page-owner/ });
   expect(within(project).getAllByRole("link")[0].textContent).toContain(
     "off-page-owner",
   );
@@ -1576,6 +1579,20 @@ it("counts an unread Coordinator once and retains its anchor after fresh paginat
   );
   await within(group).findByRole("link", { name: /owner.*Coordinator/ });
   fireEvent.click(
+    await within(group).findByRole("button", {
+      name: "Recent conversations in One",
+    }),
+  );
+  expect(
+    within(group).getByRole("link", { name: /owner.*Coordinator/ }),
+  ).toBeTruthy();
+  expect(
+    within(group).getByRole("heading", { name: "New results · 1" }),
+  ).toBeTruthy();
+  fireEvent.click(
+    within(group).getByRole("button", { name: "Recent conversations in One" }),
+  );
+  fireEvent.click(
     await screen.findByRole("button", {
       name: "Show more conversations in One",
     }),
@@ -1600,6 +1617,12 @@ it("keeps an expanded archived owner mounted while pagination discovers another 
   }));
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  await screen.findByText("earlier");
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "Show more conversations in One",
+    }),
+  );
   fireEvent.click(
     await screen.findByRole("button", { name: "Expand workers for earlier" }),
   );
@@ -1645,6 +1668,16 @@ it("keeps all project stars above ordinary recent rows across More and shared up
     within(group)
       .getAllByRole("link")
       .map((item) => item.querySelector("strong")!.textContent);
+  expect(names()).toEqual([
+    "Running starred",
+    ...Array.from({ length: 5 }, (_, i) => `Reference ${6 - i}`),
+  ]);
+  fireEvent.click(
+    within(group).getByRole("button", {
+      name: "Show more conversations in One",
+    }),
+  );
+  expect(activity).toHaveLength(1);
   expect(names()).toEqual([
     "Running starred",
     ...Array.from({ length: 7 }, (_, i) => `Reference ${6 - i}`),
@@ -1789,4 +1822,176 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
   expect(screen.getByRole("link", { name: /owner.*1 worker active/ })).toBe(
     owner,
   );
+});
+
+it("collapses only read history while retaining every active and unread conversation", async () => {
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  const results = new ResultTracker(createTransport("test", () => {}));
+  vi.spyOn(results, "invalidate").mockImplementation(() => {});
+  activeThreads = Array.from({ length: 7 }, (_, i) => ({
+    ...thread(`Active ${i}`),
+    root_activity: { state: "running" },
+  }));
+  for (let i = 0; i < 6; i++) {
+    const item = {
+      ...thread(`Unread ${i}`),
+      completion: {
+        version: 1,
+        run_id: `run-${i}`,
+        continuation_id: "a".repeat(64),
+        completed_at: "2026-09-16T00:00:00Z",
+      },
+    } as Schema<"ThreadSummary">;
+    await results.follow({ ...item, completion: null });
+    results.observe(item);
+  }
+  mount("/threads/selected-old", false, results);
+  const group = await screen.findByRole("region", { name: "One" });
+  await within(group).findByRole("link", { name: /Active 6/ });
+  const selected = within(group).getByRole("link", { name: "selected-old" });
+  const recent = within(group).getByRole("button", {
+    name: "Recent conversations in One",
+  });
+  fireEvent.click(recent);
+  expect(recent.getAttribute("aria-expanded")).toBe("false");
+  expect(within(group).getAllByRole("link")).toHaveLength(14);
+  expect(
+    within(group).getAllByRole("img", { name: "New result" }),
+  ).toHaveLength(6);
+  expect(within(group).queryByRole("link", { name: "Recent 1" })).toBeNull();
+  expect(within(group).getByRole("link", { name: "selected-old" })).toBe(
+    selected,
+  );
+  expect(activity).toHaveLength(1);
+  fireEvent.click(recent);
+  fireEvent.click(
+    within(group).getByRole("button", {
+      name: "Show more conversations in One",
+    }),
+  );
+  await within(group).findByRole("link", { name: "Older two" });
+  fireEvent.click(
+    within(group).getByRole("button", {
+      name: "Show fewer conversations in One",
+    }),
+  );
+  expect(within(group).queryByRole("link", { name: "Older two" })).toBeNull();
+  expect(document.activeElement).toBe(recent);
+  expect(within(group).getByRole("link", { name: "selected-old" })).toBe(
+    selected,
+  );
+  const requests = activity.length;
+  fireEvent.click(
+    within(group).getByRole("button", {
+      name: "Show more conversations in One",
+    }),
+  );
+  expect(within(group).getByRole("link", { name: "Older two" })).toBeTruthy();
+  expect(activity).toHaveLength(requests);
+  expect(writes).toEqual([]);
+  vi.restoreAllMocks();
+});
+
+it("previews project paths on keyboard focus without loading collapsed history", async () => {
+  const user = userEvent.setup();
+  mount();
+  const project = await screen.findByRole("button", { name: "One" });
+  await user.keyboard("{Tab}");
+  act(() => project.focus());
+  const preview = await screen.findByRole("tooltip");
+  expect(within(preview).getByText("/one")).toBeTruthy();
+  expect(within(preview).queryByText(/conversations/)).toBeNull();
+  expect(activity).toHaveLength(0);
+  await user.keyboard("{Escape}");
+  await user.click(project);
+  await screen.findByRole("link", { name: "Recent 5" });
+  await user.keyboard("{Tab}{Shift>}{Tab}{/Shift}");
+  const populated = await screen.findByRole("tooltip");
+  expect(within(populated).getByText("7 conversations")).toBeTruthy();
+  expect(activity).toHaveLength(1);
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+  expect(document.activeElement).toBe(project);
+});
+
+it("keeps collapsed history reachable when every loaded recent row becomes unread", async () => {
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  const results = new ResultTracker(createTransport("test", () => {}));
+  vi.spyOn(results, "invalidate").mockImplementation(() => {});
+  mount("/", false, results);
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  await screen.findByRole("link", { name: "Recent 5" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Recent conversations in One" }),
+  );
+  await act(async () => {
+    for (let i = 1; i <= 5; i++) {
+      const item = {
+        ...thread(`Recent ${i}`),
+        completion: {
+          version: 1,
+          run_id: `run-${i}`,
+          continuation_id: "a".repeat(64),
+          completed_at: "2026-09-16T00:00:00Z",
+        },
+      } as Schema<"ThreadSummary">;
+      await results.follow({ ...item, completion: null });
+      results.observe(item);
+    }
+  });
+  expect(screen.getByRole("heading", { name: "New results · 5" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: /Recent 5/ })).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Recent conversations in One",
+      expanded: false,
+    }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Show more conversations in One" }),
+  );
+  await screen.findByRole("link", { name: "Older two" });
+  vi.restoreAllMocks();
+});
+
+it("keeps the owner of an unread worker above collapsed history", async () => {
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  coordinators = [
+    { ...thread("worker-owner"), role: "coordinator", archived: true },
+  ];
+  const results = new ResultTracker(createTransport("test", () => {}));
+  vi.spyOn(results, "invalidate").mockImplementation(() => {});
+  const worker = {
+    ...thread("unread-worker"),
+    role: "worker",
+    coordinator_thread_id: "worker-owner",
+    completion: {
+      version: 1,
+      run_id: "run-done",
+      continuation_id: "a".repeat(64),
+      completed_at: "2026-09-16T00:00:00Z",
+    },
+  } as Schema<"ThreadSummary">;
+  await results.follow({ ...worker, completion: null });
+  results.observe(worker);
+  mount("/", false, results);
+  fireEvent.click(await screen.findByRole("button", { name: /^One/ }));
+  const owner = await screen.findByRole("link", {
+    name: /worker-owner.*Coordinator/,
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Recent conversations in One" }),
+  );
+  expect(screen.getByRole("link", { name: /worker-owner.*Coordinator/ })).toBe(
+    owner,
+  );
+  expect(screen.getByRole("heading", { name: "New results · 1" })).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Expand workers for worker-owner" }),
+  );
+  await screen.findByRole("link", { name: /unread-worker.*New result/ });
+  expect(
+    screen.getByRole("button", { name: "Restore worker-owner" }),
+  ).toBeTruthy();
+  vi.restoreAllMocks();
 });
