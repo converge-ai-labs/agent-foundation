@@ -88,6 +88,21 @@ def test_makefile_selects_all_container_commands() -> None:
     assert all(any(path.full_match(pattern) for pattern in patterns) for patterns in filters.values())
 
 
+@pytest.mark.parametrize("path", ["docs/a13n-service/mcp.md", "docs/a13n-service/mcp.zh-CN.md"])
+def test_bundled_service_docs_select_package_and_image_builds(path: str) -> None:
+    for name in ("ci-a13n-service.yml", "ci-containers.yml", "images.yml"):
+        workflow = yaml.safe_load((WORKFLOWS / name).read_text())
+        for event in ("pull_request", "push"):
+            if event in workflow[True]:
+                assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
+        if name != "ci-a13n-service.yml":
+            classifier = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+            filters = yaml.safe_load(classifier["with"]["filters"])
+            assert {key for key, patterns in filters.items() if any(Path(path).full_match(p) for p in patterns)} == {
+                "service"
+            }
+
+
 def test_service_ci_runs_service_tests_and_checks() -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     jobs = workflow["jobs"]

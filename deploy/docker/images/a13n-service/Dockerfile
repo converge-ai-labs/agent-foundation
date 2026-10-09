@@ -42,6 +42,7 @@ COPY packages/a13n-harness packages/a13n-harness
 COPY packages/a13n-stream-protocol packages/a13n-stream-protocol
 COPY packages/a13n-logging packages/a13n-logging
 COPY packages/a13n-service packages/a13n-service
+COPY docs/a13n-service docs/a13n-service
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package a13n-service \
     && rm -rf packages/a13n-envd-client/tests \

@@ -12,6 +12,12 @@ from fnmatch import fnmatchcase
 from pathlib import Path
 
 TEST_INPUTS: dict[str, tuple[str, ...]] = {
+    "packages/a13n-service/tests/test_documentation.py": (
+        "docs/a13n-service/*",
+        "packages/a13n-service/build_docs.py",
+        "packages/a13n-service/hatch_build.py",
+        "packages/a13n-service/pyproject.toml",
+    ),
     "packages/a13n-service/tests/test_migrations.py": ("packages/a13n-service/a13n_service/migrations/*",),
     "packages/a13n-harness-ui/tests/test_coordinator_migration.py": (
         "packages/a13n-harness-ui/a13n_harness_ui/storage/migrations/*",
@@ -32,7 +38,7 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         "proto/a13n-envd/eip/v1/artifacts/generated-files.json",
     ),
     "test_pr_labels.py": (".github/workflows/*.yml",),
-    "test_ci_inputs.py": (".github/workflows/ci-*.yml",),
+    "test_ci_inputs.py": (".github/workflows/ci-*.yml", ".github/workflows/images.yml"),
     "test_envd_ci_workflow.py": (".github/workflows/ci-a13n-envd.yml",),
     "test_envd_release_workflow.py": (".github/workflows/release-a13n-envd.yml",),
     "test_harness_ui_ci_workflow.py": (

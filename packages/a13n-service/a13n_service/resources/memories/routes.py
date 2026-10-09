@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/v1/memories", tags=["memories"])
 RecordId = Annotated[str, Path(max_length=256)]
 
 
-@router.post("", response_model=Memory, status_code=201)
+@router.post("", response_model=Memory, status_code=201, openapi_extra={"x-a13n-mcp": True})
 async def create_memory(
     response: Response, workspace_id: WorkspaceId, body: MemoryCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Memory:
@@ -44,7 +44,7 @@ async def create_memory(
     return tagged(response, result)
 
 
-@router.get("", response_model=MemoryPage)
+@router.get("", response_model=MemoryPage, openapi_extra={"x-a13n-mcp": True})
 async def list_memories(
     workspace_id: WorkspaceId,
     actor: Actor,
@@ -68,7 +68,7 @@ async def list_memories(
     )
 
 
-@router.get("/{memory_id}", response_model=Memory)
+@router.get("/{memory_id}", response_model=Memory, openapi_extra={"x-a13n-mcp": True})
 async def get_memory(
     response: Response, workspace_id: WorkspaceId, memory_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Memory:
@@ -76,7 +76,7 @@ async def get_memory(
     return tagged(response, result)
 
 
-@router.patch("/{memory_id}", response_model=Memory)
+@router.patch("/{memory_id}", response_model=Memory, openapi_extra={"x-a13n-mcp": True})
 async def update_memory(
     response: Response,
     workspace_id: WorkspaceId,
@@ -92,7 +92,7 @@ async def update_memory(
     return tagged(response, result)
 
 
-@router.delete("/{memory_id}", status_code=204)
+@router.delete("/{memory_id}", status_code=204, openapi_extra={"x-a13n-mcp": True})
 async def delete_memory(
     workspace_id: WorkspaceId, memory_id: str, actor: Actor, runtime: CurrentRuntime, if_match: IfMatch = None
 ) -> Response:
@@ -100,7 +100,7 @@ async def delete_memory(
     return Response(status_code=204)
 
 
-@router.get("/{memory_id}/files", response_model=MemoryFilePage)
+@router.get("/{memory_id}/files", response_model=MemoryFilePage, openapi_extra={"x-a13n-mcp": True})
 async def list_files(
     workspace_id: WorkspaceId,
     memory_id: str,
@@ -122,7 +122,7 @@ async def list_files(
     )
 
 
-@router.post("/{memory_id}/files", response_model=MemoryFile, status_code=201)
+@router.post("/{memory_id}/files", response_model=MemoryFile, status_code=201, openapi_extra={"x-a13n-mcp": True})
 async def create_file(
     response: Response,
     workspace_id: WorkspaceId,
@@ -137,7 +137,7 @@ async def create_file(
     return tagged(response, result)
 
 
-@router.post("/{memory_id}/files/move", response_model=MemoryFile)
+@router.post("/{memory_id}/files/move", response_model=MemoryFile, openapi_extra={"x-a13n-mcp": True})
 async def move_file(
     response: Response,
     workspace_id: WorkspaceId,
@@ -154,7 +154,7 @@ async def move_file(
     return tagged(response, result)
 
 
-@router.get("/{memory_id}/files/{path:path}", response_model=MemoryFile)
+@router.get("/{memory_id}/files/{path:path}", response_model=MemoryFile, openapi_extra={"x-a13n-mcp": True})
 async def read_file(
     response: Response, workspace_id: WorkspaceId, memory_id: str, path: str, actor: Actor, runtime: CurrentRuntime
 ) -> MemoryFile:
@@ -164,7 +164,7 @@ async def read_file(
     return tagged(response, result)
 
 
-@router.put("/{memory_id}/files/{path:path}", response_model=MemoryFile)
+@router.put("/{memory_id}/files/{path:path}", response_model=MemoryFile, openapi_extra={"x-a13n-mcp": True})
 async def replace_file(
     response: Response,
     workspace_id: WorkspaceId,
@@ -188,7 +188,7 @@ async def replace_file(
     return tagged(response, result)
 
 
-@router.delete("/{memory_id}/files/{path:path}", status_code=204)
+@router.delete("/{memory_id}/files/{path:path}", status_code=204, openapi_extra={"x-a13n-mcp": True})
 async def delete_file(
     workspace_id: WorkspaceId,
     memory_id: str,
@@ -203,7 +203,7 @@ async def delete_file(
     return Response(status_code=204)
 
 
-@router.get("/{memory_id}/revisions", response_model=MemoryRevisionPage)
+@router.get("/{memory_id}/revisions", response_model=MemoryRevisionPage, openapi_extra={"x-a13n-mcp": True})
 async def list_revisions(
     workspace_id: WorkspaceId,
     memory_id: str,
@@ -219,7 +219,7 @@ async def list_revisions(
     )
 
 
-@router.delete("/{memory_id}/revisions", response_model=HistoryPurge)
+@router.delete("/{memory_id}/revisions", response_model=HistoryPurge, openapi_extra={"x-a13n-mcp": True})
 async def purge_history(
     workspace_id: WorkspaceId,
     memory_id: str,
@@ -233,14 +233,14 @@ async def purge_history(
     )
 
 
-@router.get("/{memory_id}/revisions/{seq}", response_model=MemoryRevisionDetail)
+@router.get("/{memory_id}/revisions/{seq}", response_model=MemoryRevisionDetail, openapi_extra={"x-a13n-mcp": True})
 async def get_revision(
     workspace_id: WorkspaceId, memory_id: str, seq: int, actor: Actor, runtime: CurrentRuntime
 ) -> MemoryRevisionDetail:
     return await files.get_revision(runtime.storage, actor, workspace_id, memory_id, seq)
 
 
-@router.post("/{memory_id}/revisions/{seq}/restore", response_model=MemoryFileState)
+@router.post("/{memory_id}/revisions/{seq}/restore", response_model=MemoryFileState, openapi_extra={"x-a13n-mcp": True})
 async def restore_revision(
     response: Response,
     workspace_id: WorkspaceId,
@@ -259,7 +259,7 @@ async def restore_revision(
     return result
 
 
-@router.get("/{memory_id}/records", response_model=MemoryRecordPage)
+@router.get("/{memory_id}/records", response_model=MemoryRecordPage, openapi_extra={"x-a13n-mcp": True})
 async def list_records(
     workspace_id: WorkspaceId,
     memory_id: str,
@@ -271,7 +271,7 @@ async def list_records(
     return await records.list_records(runtime, actor, workspace_id, memory_id, limit=limit, cursor=cursor)
 
 
-@router.post("/{memory_id}/records/search", response_model=MemoryRecordPage)
+@router.post("/{memory_id}/records/search", response_model=MemoryRecordPage, openapi_extra={"x-a13n-mcp": True})
 async def search_records(
     workspace_id: WorkspaceId, memory_id: str, body: MemoryRecordSearch, actor: Actor, runtime: CurrentRuntime
 ) -> MemoryRecordPage:
@@ -279,14 +279,16 @@ async def search_records(
     return await records.search_records(runtime, actor, workspace_id, memory_id, body)
 
 
-@router.post("/{memory_id}/records", response_model=MemoryRecordView, status_code=201)
+@router.post(
+    "/{memory_id}/records", response_model=MemoryRecordView, status_code=201, openapi_extra={"x-a13n-mcp": True}
+)
 async def add_record(
     workspace_id: WorkspaceId, memory_id: str, body: MemoryRecordText, actor: Actor, runtime: CurrentRuntime
 ) -> MemoryRecordView:
     return await records.add_record(runtime, actor, workspace_id, memory_id, body)
 
 
-@router.put("/{memory_id}/records/{record_id}", response_model=MemoryRecordView)
+@router.put("/{memory_id}/records/{record_id}", response_model=MemoryRecordView, openapi_extra={"x-a13n-mcp": True})
 async def update_record(
     workspace_id: WorkspaceId,
     memory_id: str,
@@ -299,7 +301,7 @@ async def update_record(
     return await records.update_record(runtime, actor, workspace_id, memory_id, record_id, body)
 
 
-@router.delete("/{memory_id}/records/{record_id}", status_code=204)
+@router.delete("/{memory_id}/records/{record_id}", status_code=204, openapi_extra={"x-a13n-mcp": True})
 async def delete_record(
     workspace_id: WorkspaceId, memory_id: str, record_id: RecordId, actor: Actor, runtime: CurrentRuntime
 ) -> Response:

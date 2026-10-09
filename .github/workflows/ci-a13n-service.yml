@@ -10,6 +10,7 @@ on:
       - "scripts/tests/test_ci_inputs.py"
       - "dev/**"
       - "packages/a13n-service/**"
+      - "docs/a13n-service/**"
       - "packages/a13n-logging/**"
       - "pyproject.toml"
       - "Makefile"
@@ -29,6 +30,7 @@ on:
       - "scripts/tests/test_ci_inputs.py"
       - "dev/**"
       - "packages/a13n-service/**"
+      - "docs/a13n-service/**"
       - "packages/a13n-logging/**"
       - "pyproject.toml"
       - "Makefile"
@@ -164,6 +166,22 @@ jobs:
           make a13n-service-assets
           uv build --package a13n-logging --out-dir dist/a13n-service
           uv build --package a13n-service --out-dir dist/a13n-service
+          # uv builds the wheel from the sdist. Search that artifact, not the editable checkout.
+          uv run --locked python - <<'PY'
+          import sys
+          from pathlib import Path
+          from importlib.resources import files
+
+          wheel = next(Path("dist/a13n-service").glob("a13n_service-*.whl")).resolve()
+          sys.path.insert(0, str(wheel))
+          from a13n_service.documentation import Documents
+
+          assert str(files("a13n_service")).startswith(str(wheel))
+          docs = Documents()
+          assert docs.search("upload")["results"]
+          assert docs.search("上传", language="zh-CN")["results"]
+          assert any("assigned_run_id" in item["text"] for item in docs.search("Execute an Agent", limit=10)["results"])
+          PY
 
   python:
     name: a13n Service Python

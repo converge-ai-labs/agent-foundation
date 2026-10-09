@@ -23,7 +23,7 @@ from a13n_service.tenancy.requests import Actor, WorkspaceId
 router = APIRouter(prefix="/api/v1", tags=["environments"])
 
 
-@router.get("/environments", response_model=EnvironmentPage)
+@router.get("/environments", response_model=EnvironmentPage, openapi_extra={"x-a13n-mcp": True})
 async def list_environments(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -37,7 +37,7 @@ async def list_environments(
     )
 
 
-@router.post("/environments", response_model=EnvironmentView, status_code=201)
+@router.post("/environments", response_model=EnvironmentView, status_code=201, openapi_extra={"x-a13n-mcp": True})
 async def create_environment(
     runtime: CurrentRuntime,
     response: Response,
@@ -54,7 +54,7 @@ async def create_environment(
     return tagged(response, result)
 
 
-@router.get("/environments/{environment_id}", response_model=EnvironmentView)
+@router.get("/environments/{environment_id}", response_model=EnvironmentView, openapi_extra={"x-a13n-mcp": True})
 async def get_environment(
     runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, environment_id: str, actor: Actor
 ) -> EnvironmentView:
@@ -62,7 +62,7 @@ async def get_environment(
     return tagged(response, result)
 
 
-@router.patch("/environments/{environment_id}", response_model=EnvironmentView)
+@router.patch("/environments/{environment_id}", response_model=EnvironmentView, openapi_extra={"x-a13n-mcp": True})
 async def update_environment(
     runtime: CurrentRuntime,
     response: Response,
@@ -76,7 +76,12 @@ async def update_environment(
     return tagged(response, result)
 
 
-@router.post("/environments/{environment_id}/stop", response_model=EnvironmentView, status_code=202)
+@router.post(
+    "/environments/{environment_id}/stop",
+    response_model=EnvironmentView,
+    status_code=202,
+    openapi_extra={"x-a13n-mcp": True},
+)
 async def stop_environment(
     runtime: CurrentRuntime,
     response: Response,
@@ -89,7 +94,12 @@ async def stop_environment(
     return tagged(response, result)
 
 
-@router.delete("/environments/{environment_id}", response_model=EnvironmentView, status_code=202)
+@router.delete(
+    "/environments/{environment_id}",
+    response_model=EnvironmentView,
+    status_code=202,
+    openapi_extra={"x-a13n-mcp": True},
+)
 async def delete_environment(
     runtime: CurrentRuntime,
     response: Response,
@@ -102,7 +112,7 @@ async def delete_environment(
     return tagged(response, result)
 
 
-@router.get("/threads/{thread_id}/environments", response_model=MountPage)
+@router.get("/threads/{thread_id}/environments", response_model=MountPage, openapi_extra={"x-a13n-mcp": True})
 async def list_mounts(
     runtime: CurrentRuntime, response: Response, workspace_id: WorkspaceId, thread_id: str, actor: Actor
 ) -> MountPage:
@@ -111,7 +121,9 @@ async def list_mounts(
     return page
 
 
-@router.post("/threads/{thread_id}/environments", response_model=MountView, status_code=201)
+@router.post(
+    "/threads/{thread_id}/environments", response_model=MountView, status_code=201, openapi_extra={"x-a13n-mcp": True}
+)
 async def add_mount(
     runtime: CurrentRuntime,
     response: Response,
@@ -126,7 +138,7 @@ async def add_mount(
     return mount
 
 
-@router.delete("/threads/{thread_id}/environments/{name}", status_code=204)
+@router.delete("/threads/{thread_id}/environments/{name}", status_code=204, openapi_extra={"x-a13n-mcp": True})
 async def remove_mount(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,

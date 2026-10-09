@@ -18,7 +18,7 @@ TraceId = Annotated[str, Path(pattern=r"^[0-9a-f]{32}$")]
 IdFilter = Annotated[ObjectId | None, Query()]
 
 
-@router.get("/runs/{run_id}/attempts/{attempt_id}/trace", response_model=SpanPage)
+@router.get("/runs/{run_id}/attempts/{attempt_id}/trace", response_model=SpanPage, openapi_extra={"x-a13n-mcp": True})
 async def list_attempt_spans(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -34,7 +34,7 @@ async def list_attempt_spans(
     )
 
 
-@router.get("/traces", response_model=SpanPage)
+@router.get("/traces", response_model=SpanPage, openapi_extra={"x-a13n-mcp": True})
 async def list_traces(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -65,13 +65,13 @@ async def list_traces(
     )
 
 
-@router.get("/traces/{trace_id}", response_model=Span)
+@router.get("/traces/{trace_id}", response_model=Span, openapi_extra={"x-a13n-mcp": True})
 async def get_trace(runtime: CurrentRuntime, workspace_id: WorkspaceId, trace_id: TraceId, actor: Actor) -> Span:
     """The trace's root span."""
     return await traces.get_trace(runtime.storage, runtime.traces, actor, workspace_id, trace_id)
 
 
-@router.get("/traces/{trace_id}/spans", response_model=SpanPage)
+@router.get("/traces/{trace_id}/spans", response_model=SpanPage, openapi_extra={"x-a13n-mcp": True})
 async def list_trace_spans(
     runtime: CurrentRuntime,
     workspace_id: WorkspaceId,
@@ -86,7 +86,7 @@ async def list_trace_spans(
     )
 
 
-@router.get("/trace-backend", response_model=traces.TraceBackend)
+@router.get("/trace-backend", response_model=traces.TraceBackend, openapi_extra={"x-a13n-mcp": True})
 async def get_trace_backend(runtime: CurrentRuntime, workspace_id: WorkspaceId, actor: Actor) -> traces.TraceBackend:
     """The backend trace queries read, and how far back they find a trace."""
     return await traces.describe_backend(runtime.storage, runtime.traces, actor, workspace_id)

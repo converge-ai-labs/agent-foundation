@@ -39,7 +39,7 @@ async def get_redirect_uri(actor: Actor, runtime: CurrentRuntime) -> OAuthRedire
     return OAuthRedirect(redirect_uri=callback_url(runtime.settings))
 
 
-@router.get("/mcp-servers", response_model=mcp_catalog.McpServerPage)
+@router.get("/mcp-servers", response_model=mcp_catalog.McpServerPage, openapi_extra={"x-a13n-mcp": True})
 async def list_mcp_servers(
     actor: Actor,
     runtime: CurrentRuntime,
@@ -100,7 +100,7 @@ async def complete_authorization(
     return answer
 
 
-@router.post(COLLECTION, response_model=Connection, status_code=201)
+@router.post(COLLECTION, response_model=Connection, status_code=201, openapi_extra={"x-a13n-mcp": True})
 async def create_connection(
     response: Response, workspace_id: WorkspaceId, body: ConnectionCreate, actor: Actor, runtime: CurrentRuntime
 ) -> Connection:
@@ -116,7 +116,7 @@ async def create_connection(
     return tagged(response, result)
 
 
-@router.get(COLLECTION, response_model=ConnectionPage)
+@router.get(COLLECTION, response_model=ConnectionPage, openapi_extra={"x-a13n-mcp": True})
 async def list_connections(
     workspace_id: WorkspaceId,
     actor: Actor,
@@ -127,14 +127,14 @@ async def list_connections(
     return await service.list_connections(runtime.storage, actor, workspace_id, limit=limit, cursor=cursor)
 
 
-@router.get(ITEM, response_model=Connection)
+@router.get(ITEM, response_model=Connection, openapi_extra={"x-a13n-mcp": True})
 async def get_connection(
     response: Response, workspace_id: WorkspaceId, connection_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Connection:
     return tagged(response, await service.get_connection(runtime.storage, actor, workspace_id, connection_id))
 
 
-@router.patch(ITEM, response_model=Connection)
+@router.patch(ITEM, response_model=Connection, openapi_extra={"x-a13n-mcp": True})
 async def update_connection(
     response: Response,
     workspace_id: WorkspaceId,
@@ -158,7 +158,7 @@ async def update_connection(
     return tagged(response, result)
 
 
-@router.post(ITEM + "/test", response_model=ConnectionTest)
+@router.post(ITEM + "/test", response_model=ConnectionTest, openapi_extra={"x-a13n-mcp": True})
 async def test_connection(
     workspace_id: WorkspaceId, connection_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> ConnectionTest:
@@ -175,7 +175,7 @@ async def test_connection(
     )
 
 
-@router.get(ITEM + "/tools", response_model=ToolPage)
+@router.get(ITEM + "/tools", response_model=ToolPage, openapi_extra={"x-a13n-mcp": True})
 async def list_tools(workspace_id: WorkspaceId, connection_id: str, actor: Actor, runtime: CurrentRuntime) -> ToolPage:
     return await discovery.list_tools(
         runtime.storage,
@@ -229,7 +229,7 @@ async def authorize_connection(
     return result
 
 
-@router.post(ITEM + "/revoke", response_model=RevokedConnection)
+@router.post(ITEM + "/revoke", response_model=RevokedConnection, openapi_extra={"x-a13n-mcp": True})
 async def revoke_connection(
     response: Response,
     workspace_id: WorkspaceId,

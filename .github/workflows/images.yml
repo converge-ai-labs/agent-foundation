@@ -38,6 +38,7 @@ on:
       - "scripts/prepare_a13n_harness_ui_assets.py"
       - "Makefile"
       - "packages/a13n-service/*"
+      - "docs/a13n-service/**"
       - "packages/a13n-service/a13n_service/**"
       - "packages/a13n-logging/*"
       - "packages/a13n-logging/a13n_logging/**"
@@ -92,6 +93,7 @@ jobs:
               - 'packages/a13n-stream-protocol/a13n_stream_protocol/**'
               - 'packages/a13n-harness-ui/pyproject.toml'
               - 'packages/a13n-service/*'
+              - 'docs/a13n-service/**'
               - 'packages/a13n-service/a13n_service/**'
               - 'packages/a13n-logging/*'
               - 'packages/a13n-logging/a13n_logging/**'
