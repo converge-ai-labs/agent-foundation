@@ -57,6 +57,8 @@ where
         config.default_working_directory.clone().into(),
     )
     .await?;
+    // Move this same buffer through read_next so prefetched frames survive dispatch.
+    let reader = tokio::io::BufReader::new(reader);
     let mut next = Box::pin(read_next(reader, max_control, max_data));
     let outcome = async {
         loop {
@@ -287,22 +289,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn detached_worker_can_close_without_a_public_attachment() {
+    async fn detached_worker_can_close_from_a_prefetched_frame() {
         let config = Config::for_test("device-framing");
         let (client, server) = tokio::io::duplex(4096);
         let (reader, writer) = tokio::io::split(server);
         let task = tokio::spawn(serve(reader, writer, config, 1, "session-framing-1".into()));
         let (mut reader, mut writer) = tokio::io::split(client);
         assert_eq!(received(&mut reader).await.ticket, 0);
-        writer
-            .write_all(&frame(Command::Detach { ticket: 1 }))
-            .await
-            .unwrap();
+        // Prefetching Close with Detach must not lose the second frame.
+        let mut commands = frame(Command::Detach { ticket: 1 });
+        commands.extend(frame(Command::Close { ticket: 2 }));
+        writer.write_all(&commands).await.unwrap();
         assert_eq!(received(&mut reader).await.ticket, 1);
-        writer
-            .write_all(&frame(Command::Close { ticket: 2 }))
-            .await
-            .unwrap();
         let closed = received(&mut reader).await;
         assert_eq!(closed.ticket, 2);
         assert_eq!(closed.payload, json!({"closed": true}));
