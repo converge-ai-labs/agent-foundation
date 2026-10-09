@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from contextlib import ExitStack
 from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from typing import Any
@@ -61,6 +62,8 @@ class ImageFilterCapability(AbstractCapability[AgentContext]):
 
 
 def _project_images(messages: list[ModelMessage], configuration: ImageInputPolicy) -> list[ModelMessage] | None:
+    if not _needs_image_projection(messages, configuration):
+        return None
     # Bytes are immutable and shared by deepcopy; mutable native metadata and
     # message envelopes remain detached from canonical history and original inputs.
     projected = deepcopy(list(messages))
@@ -132,6 +135,25 @@ def _project_images(messages: list[ModelMessage], configuration: ImageInputPolic
     return projected if changed or has_inline_image else None
 
 
+def _needs_image_projection(messages: list[ModelMessage], configuration: ImageInputPolicy) -> bool:
+    url_count = 0
+    for message in messages:
+        if not isinstance(message, ModelRequest):
+            continue
+        for part in message.parts:
+            items = _image_content_items(part)
+            if items is None:
+                continue
+            for item in items:
+                if isinstance(item, BinaryContent) and item.is_image:
+                    return True
+                if isinstance(item, ImageUrl):
+                    url_count += 1
+                    if url_count > configuration.max_images:
+                        return True
+    return False
+
+
 def _image_content_items(part: object) -> list[Any] | None:
     if isinstance(part, UserPromptPart):
         if isinstance(part.content, (list, tuple)):
@@ -188,29 +210,37 @@ def _prepare_binary_image(item: BinaryContent, configuration: ImageInputPolicy) 
                 step = configuration.image_split_max_height - configuration.image_split_overlap
                 while top < source.height:
                     bottom = min(top + configuration.image_split_max_height, source.height)
-                    with source.crop((0, top, source.width, bottom)) as segment:
+                    with ExitStack() as stack:
+                        segment = stack.enter_context(source.crop((0, top, source.width, bottom)))
+                        if segment.mode == "CMYK":
+                            segment = stack.enter_context(segment.convert("RGB"))
                         data = _encode_segment(segment)
-                    native = _replace_image(
-                        item, data, "image/png", identifier=f"{item.identifier}-segment-{len(segments) + 1}"
-                    )
-                    segments.append(_compress_image(native, configuration))
+                        native = _replace_image(
+                            item, data, "image/png", identifier=f"{item.identifier}-segment-{len(segments) + 1}"
+                        )
+                        segments.append(_compress_image(native, configuration, segment))
                     if bottom == source.height:
                         break
                     top += step
                 return segments
             normalized = _replace_image(item, item.data, media_type)
-            return [_compress_image(normalized, configuration)]
+            if (
+                source.format in {"JPEG", "MPO"}
+                and configuration.max_image_dimension > 0
+                and max(source.size) > configuration.max_image_dimension
+            ):
+                # Pillow's JPEG thumbnail path uses decoder-level draft scaling.
+                # Reuse would change its pixels because validation already loaded them.
+                with Image.open(io.BytesIO(item.data)) as thumbnail_source:
+                    return [_compress_image(normalized, configuration, thumbnail_source)]
+            return [_compress_image(normalized, configuration, source)]
     except (OSError, ValueError, Image.DecompressionBombError):
         return [_REMOVED_LIMIT]
 
 
 def _encode_segment(image: Image.Image) -> bytes:
     buffer = io.BytesIO()
-    if image.mode == "CMYK":
-        with image.convert("RGB") as rgb:
-            rgb.save(buffer, format="PNG")
-    else:
-        image.save(buffer, format="PNG")
+    image.save(buffer, format="PNG")
     return buffer.getvalue()
 
 
@@ -228,28 +258,27 @@ def _replace_image(
     )
 
 
-def _compress_image(item: BinaryContent, configuration: ImageInputPolicy) -> BinaryContent | str:
+def _compress_image(item: BinaryContent, configuration: ImageInputPolicy, source: Image.Image) -> BinaryContent | str:
+    # The caller owns validated pixels. Reopening encoded bytes would decode them
+    # again whenever resizing or conversion is required.
     raw_limit = (configuration.max_image_bytes // 4) * 3 if configuration.max_image_bytes else None
-    with Image.open(io.BytesIO(item.data)) as source:
-        oversized_dimension = (
-            configuration.max_image_dimension > 0 and max(source.size) > configuration.max_image_dimension
+    oversized_dimension = configuration.max_image_dimension > 0 and max(source.size) > configuration.max_image_dimension
+    oversized_bytes = raw_limit is not None and len(item.data) > raw_limit
+    if not oversized_bytes and not oversized_dimension:
+        return item
+    if source.width * source.height > _MAX_PROCESSING_PIXELS:
+        return _REMOVED_LIMIT
+    if oversized_dimension:
+        source.thumbnail(
+            (configuration.max_image_dimension, configuration.max_image_dimension), Image.Resampling.LANCZOS
         )
-        oversized_bytes = raw_limit is not None and len(item.data) > raw_limit
-        if not oversized_bytes and not oversized_dimension:
-            return item
-        if source.width * source.height > _MAX_PROCESSING_PIXELS:
-            return _REMOVED_LIMIT
-        if oversized_dimension:
-            source.thumbnail(
-                (configuration.max_image_dimension, configuration.max_image_dimension), Image.Resampling.LANCZOS
-            )
-        if source.mode in ("RGBA", "LA", "PA") or (source.mode == "P" and "transparency" in source.info):
-            with source.convert("RGBA") as rgba:
-                image = Image.new("RGB", source.size, "white")
-                with rgba.getchannel("A") as alpha:
-                    image.paste(rgba, mask=alpha)
-        else:
-            image = source.convert("RGB")
+    if source.mode in ("RGBA", "LA", "PA") or (source.mode == "P" and "transparency" in source.info):
+        with source.convert("RGBA") as rgba:
+            image = Image.new("RGB", source.size, "white")
+            with rgba.getchannel("A") as alpha:
+                image.paste(rgba, mask=alpha)
+    else:
+        image = source.convert("RGB")
     try:
         for resize_pass in range(6):
             qualities = (20,) if resize_pass == 5 else (95, 85, 75, 60, 45, 30, 20)

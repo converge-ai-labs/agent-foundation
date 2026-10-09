@@ -24,6 +24,7 @@ from a13n_harness.content import (
     request_input_content,
 )
 from a13n_harness.filters import ImageFilterCapability
+from a13n_harness.filters import image as image_module
 from a13n_harness.filters.image import _project_images
 from a13n_harness.models import SelfHealingModelCapability
 from a13n_harness.toolsets.file_media import AgentMediaUnderstandingProvider, MediaUnderstandingRequest
@@ -46,6 +47,59 @@ from pydantic_ai.messages import (
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize("content", ["text", ["text"], [ImageUrl("https://example.com/image.png")]])
+async def test_noop_projection_does_not_copy_history(content, monkeypatch: pytest.MonkeyPatch) -> None:
+    history = [ModelRequest(parts=[UserPromptPart(content)]), ModelResponse(parts=[TextPart("previous")])]
+
+    def unexpected_copy(value):
+        del value
+        pytest.fail("A no-op image projection must not deepcopy history")
+
+    monkeypatch.setattr(image_module, "deepcopy", unexpected_copy)
+    assert _project_images(history, ImageInputPolicy()) is None
+
+
+@pytest.mark.parametrize("split", [False, True])
+async def test_png_compression_reuses_validated_pixels(split: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+    from PIL import PngImagePlugin
+
+    native = BinaryImage(_png((80, 2600 if split else 80)), media_type="image/png", identifier="source")
+    decoded = 0
+    original_load = PngImagePlugin.PngImageFile.load
+
+    def counted_load(image, *args, **kwargs):
+        nonlocal decoded
+        if image.tile:
+            decoded += 1
+        return original_load(image, *args, **kwargs)
+
+    monkeypatch.setattr(PngImagePlugin.PngImageFile, "load", counted_load)
+    projected = _project_images(
+        [ModelRequest(parts=[UserPromptPart([native])])],
+        ImageInputPolicy(image_split_max_height=1000, image_split_overlap=100, max_image_dimension=40),
+    )
+    assert projected is not None
+    assert decoded == 1
+    assert len(_images(projected)) == (3 if split else 1)
+    assert all(image.media_type == "image/jpeg" for image in _images(projected))
+
+
+async def test_jpeg_resize_preserves_decoder_draft_pixels() -> None:
+    buffer = io.BytesIO()
+    with Image.effect_noise((512, 512), 50).convert("RGB") as image:
+        image.save(buffer, format="JPEG")
+    native = BinaryImage(buffer.getvalue(), media_type="image/jpeg")
+    expected = io.BytesIO()
+    with Image.open(io.BytesIO(native.data)) as image:
+        image.thumbnail((32, 32), Image.Resampling.LANCZOS)
+        image.save(expected, format="JPEG", quality=95, optimize=True)
+    projected = _project_images(
+        [ModelRequest(parts=[UserPromptPart([native])])], ImageInputPolicy(max_image_dimension=32, max_image_bytes=0)
+    )
+    assert projected is not None
+    assert _images(projected)[0].data == expected.getvalue()
 
 
 def _png(size: tuple[int, int], *, mode: str = "RGB", color: object = "red") -> bytes:
