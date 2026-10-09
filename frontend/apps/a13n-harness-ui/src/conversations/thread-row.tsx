@@ -67,14 +67,12 @@ export function ThreadRow({
   showRestore = false,
   showProject = false,
   activeWorkerCount = 0,
-  treeRow = false,
   disclosure,
 }: {
   row: ActivityRow;
   showRestore?: boolean | "compact";
   showProject?: boolean;
   activeWorkerCount?: number;
-  treeRow?: boolean;
   disclosure?: { expanded: boolean; onToggle: () => void };
 }) {
   const coordinator = useCoordinatorMutation(row.thread);
@@ -164,25 +162,6 @@ export function ThreadRow({
   return (
     <div>
       <div key={row.thread.thread_id} className={styles.threadRow}>
-        {(treeRow || disclosure) && (
-          <span className={styles.threadDisclosure}>
-            {disclosure && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`${disclosure.expanded ? "Collapse" : "Expand"} workers for ${title}`}
-                aria-expanded={disclosure.expanded}
-                onClick={disclosure.onToggle}
-              >
-                <CaretRight
-                  className={
-                    disclosure.expanded ? styles.expandedChevron : undefined
-                  }
-                />
-              </Button>
-            )}
-          </span>
-        )}
         <NavLink
           to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
           className={({ isActive }) =>
@@ -354,6 +333,22 @@ export function ThreadRow({
             </MenuItem>
           </MenuPopup>
         </Menu>
+        {disclosure && (
+          <button
+            type="button"
+            className={styles.threadDisclosure}
+            aria-label={`${disclosure.expanded ? "Collapse" : "Expand"} workers for ${title}`}
+            aria-expanded={disclosure.expanded}
+            onClick={disclosure.onToggle}
+          >
+            <CaretRight
+              aria-hidden="true"
+              className={
+                disclosure.expanded ? styles.expandedChevron : undefined
+              }
+            />
+          </button>
+        )}
       </div>
       <ErrorNotice error={star.error || archive.error || coordinator.error} />
       <CoordinatorPromotion
