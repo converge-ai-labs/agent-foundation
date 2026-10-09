@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from a13n_harness.content import ContentItem, ContentMetadata
     from a13n_harness.context import AgentContext, RunBindings
     from a13n_harness.environment import (
-        Environment,
+        EnvironmentConnector,
         EnvironmentEntry,
         EnvironmentMount,
     )
@@ -84,7 +84,7 @@ _EXPORTS = {
     ),
     "a13n_harness.content": ("ContentItem", "ContentMetadata"),
     "a13n_harness.environment": (
-        "Environment",
+        "EnvironmentConnector",
         "EnvironmentEntry",
         "EnvironmentMount",
     ),

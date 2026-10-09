@@ -1,13 +1,13 @@
-"""A project workspace provider usable directly or through a Host that selects the manifest, such as Harness UI."""
+"""A Host-managed workspace with independent Direct Local execution connectors."""
 
 import asyncio
-from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from a13n_harness.providers.environment import EnvironmentProviderDefinition
-from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
-from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL, DirectLocalEnvironment
-from a13n_harness.providers.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_environment import EnvironmentConnector, EnvironmentProvider, EnvironmentProviderDefinition, EnvironmentStatus
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_environment.errors import EnvironmentProviderErrorCategory, provider_error
+from a13n_environment.models import EnvironmentDescriptor, EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -28,66 +28,106 @@ class WorkspaceConfiguration(BaseModel):
     directory: str = Field(default="projects", pattern=r"^[a-z][a-z0-9_-]{0,31}$")
 
 
-@dataclass(frozen=True)
-class WorkspaceRuntime:
-    root: Path
+def workspace(account: WorkspaceConnection, recipe: WorkspaceConfiguration, environment_id: str) -> Path:
+    if Path(environment_id).name != environment_id or environment_id in {".", ".."}:
+        raise ValueError("Environment identity must be one path component")
+    return account.root / recipe.directory / environment_id
 
 
-class Workspace(DirectLocalEnvironment):
-    def __init__(
-        self,
-        configuration: WorkspaceConfiguration,
-        environment_id: str,
-        runtime: WorkspaceRuntime,
-        *,
-        allow_create: bool,
-    ):
-        self.workspace = runtime.root / configuration.directory / environment_id
-        self.allow_create = allow_create
-        super().__init__(
-            DirectLocalEnvironmentConfiguration.model_validate({"root": {"path": self.workspace}}),
-            environment_id=environment_id,
-        )
-
-    @property
-    def provider_key(self) -> str:
-        return "acme_workspace"
-
-    async def _prepare(self, *, mount_id: str) -> None:
-        if self.allow_create:
-            await asyncio.to_thread(self.workspace.mkdir, parents=True, exist_ok=True)
-        await super()._prepare(mount_id=mount_id)
-
-
-async def runtime(
+def connector(
     *,
     configuration: WorkspaceConnection,
-    credential: object | None,
-) -> WorkspaceRuntime:
-    del credential
-    return WorkspaceRuntime(configuration.root)
-
-
-def construct(
-    *,
-    configuration: WorkspaceConfiguration,
+    credential: object,
+    environment: WorkspaceConfiguration,
     environment_id: str,
     state: EnvironmentState | None,
-    runtime: WorkspaceRuntime | None,
-    operation_id: str,
-    allow_create: bool,
-) -> Workspace:
-    del operation_id
-    if runtime is None or state is not None:
-        raise ValueError("Workspace requires a stateless local runtime")
-    return Workspace(configuration, environment_id, runtime, allow_create=allow_create)
+    runtime: object,
+) -> EnvironmentConnector:
+    del credential, runtime
+    return DIRECT_LOCAL.execution_connector(
+        {"root": {"path": str(workspace(configuration, environment, environment_id))}},
+        environment_id=environment_id,
+        state=state,
+    )
+
+
+class WorkspaceProvider(EnvironmentProvider[WorkspaceConfiguration]):
+    def __init__(self, account: WorkspaceConnection):
+        self.account = account
+
+    def _root(self, environment: object, environment_id: str, state: EnvironmentState | None) -> Path:
+        if state is not None:
+            raise ValueError("Workspace uses its directory recipe and accepts no stored state")
+        return workspace(self.account, WorkspaceConfiguration.model_validate(environment), environment_id)
+
+    async def create(
+        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None = None
+    ) -> None:
+        await asyncio.to_thread(self._root(environment, environment_id, state).mkdir, parents=True, exist_ok=True)
+
+    async def start(
+        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
+    ) -> None:
+        if not await asyncio.to_thread(self._root(environment, environment_id, state).is_dir):
+            raise provider_error("acme_workspace", "provider_target_missing", EnvironmentProviderErrorCategory.MISSING)
+
+    async def inspect(
+        self, environment: object, *, environment_id: str, state: EnvironmentState | None
+    ) -> EnvironmentStatus:
+        exists = await asyncio.to_thread(self._root(environment, environment_id, state).is_dir)
+        return EnvironmentStatus("running" if exists else "absent", None)
+
+    async def stop(
+        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
+    ) -> None:
+        raise provider_error(
+            "acme_workspace", "provider_operation_unsupported", EnvironmentProviderErrorCategory.UNSUPPORTED
+        )
+
+    async def destroy(
+        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
+    ) -> None:
+        raise provider_error(
+            "acme_workspace", "provider_operation_unsupported", EnvironmentProviderErrorCategory.UNSUPPORTED
+        )
+
+    async def keepalive(
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        state: EnvironmentState | None,
+        deadline: datetime,
+        operation_id: str,
+    ) -> datetime | None:
+        raise provider_error(
+            "acme_workspace", "provider_operation_unsupported", EnvironmentProviderErrorCategory.UNSUPPORTED
+        )
+
+    def keepalive_horizon(
+        self, environment: object, *, environment_id: str, state: EnvironmentState | None
+    ) -> timedelta:
+        return timedelta(0)
+
+    def execution_connector(
+        self, environment: object, *, environment_id: str, state: EnvironmentState | None
+    ) -> EnvironmentConnector:
+        root = self._root(environment, environment_id, state)
+        return DIRECT_LOCAL.execution_connector({"root": {"path": str(root)}}, environment_id=environment_id)
+
+    async def close(self) -> None:
+        pass
+
+
+async def open_provider(
+    *, configuration: WorkspaceConnection, credential: object, runtime: object
+) -> WorkspaceProvider:
+    del credential, runtime
+    return WorkspaceProvider(configuration)
 
 
 def describe(configuration: WorkspaceConfiguration) -> EnvironmentDescriptor:
-    del configuration
-    return DIRECT_LOCAL.describe_environment(
-        DirectLocalEnvironmentConfiguration.model_validate({"root": {"path": "/"}})
-    )
+    return DIRECT_LOCAL.describe_environment(DIRECT_LOCAL.validate_environment({"root": {"path": "/"}}))
 
 
 acme_environment = EnvironmentProviderDefinition(
@@ -95,9 +135,7 @@ acme_environment = EnvironmentProviderDefinition(
     display_name="Acme project workspace",
     configuration_model=WorkspaceConnection,
     environment_model=WorkspaceConfiguration,
-    construct=construct,
+    provider_factory=open_provider,
+    connector_factory=connector,
     describe_environment=describe,
-    runtime_factory=runtime,
-    supports_stop=True,
-    supports_destroy=True,
 )

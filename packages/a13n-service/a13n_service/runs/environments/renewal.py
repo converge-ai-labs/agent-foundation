@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import anyio
-from a13n_harness.providers.environment.errors import (
+from a13n_environment.errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
     EnvironmentProviderOutcomeCertainty,
@@ -42,7 +42,7 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.providers.service import read_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments.adapters import Target, close, construct, provider_identity
+from a13n_service.runs.environments.adapters import Target, close, open_provider, provider_identity
 from a13n_service.runs.environments.lifecycle import LOST, Fault, fault_of, lost, reached_with, record_failure
 from a13n_service.runs.environments.schemas import EnvironmentFailure, Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -102,13 +102,21 @@ async def perform(runtime: Runtime, renewal: Renewal) -> datetime | Exception:
     adapter = None
     try:
         with anyio.fail_after(renewal.seconds):
-            # Renewal acts for the sandbox's users, not its owner, so it never creates one.
-            adapter = await construct(runtime, renewal.target, operation_id=None, allow_create=False)
-            deadline = datetime.now(UTC) + adapter.keepalive_horizon
-            expiry = await adapter.keepalive(deadline=deadline, operation_id=new_object_id("envrenew"))
+            adapter = await open_provider(runtime, renewal.target)
+            target = renewal.target
+            deadline = datetime.now(UTC) + adapter.keepalive_horizon(
+                dict(target.recipe), environment_id=target.environment_id, state=target.state
+            )
+            expiry = await adapter.keepalive(
+                dict(target.recipe),
+                environment_id=target.environment_id,
+                state=target.state,
+                deadline=deadline,
+                operation_id=new_object_id("envrenew"),
+            )
             if expiry is None or expiry < deadline:
                 raise provider_error(
-                    adapter.provider_key,
+                    target.state.provider_key if target.state is not None else "environment",
                     "provider_keepalive_unsatisfied",
                     EnvironmentProviderErrorCategory.UNAVAILABLE,
                     certainty=EnvironmentProviderOutcomeCertainty.KNOWN,

@@ -31,9 +31,9 @@ Workspace membership does not by itself select a release group. The Harness rele
 
 `packages/a13n-logging` is a shared library with an independent `release/a13n-logging-v<version>` release channel. Its workflow versions and publishes only the `a13n-logging` Python distribution through the existing `foundation-pypi` environment. a13n Service releases neither version nor republish logging. Consumers retain unversioned source workspace dependencies and consume published logging independently of their own release versions.
 
-`packages/a13n-environment` contains the independent `a13n-environment` distribution under Python namespace `a13n_environment`. It owns the [single-environment contracts and vendor implementations](a13n-environment/README.md); Harness and its Hosts consume it without reverse imports. Package extraction does not itself select a new release channel or change existing state formats. Publication follows an explicitly configured owning release workflow, with unversioned source workspace dependencies and declared consumer compatibility bounds.
+`packages/a13n-environment` contains the independent `a13n-environment` distribution under Python namespace `a13n_environment`. It owns the [single-environment contracts and vendor implementations](a13n-environment/README.md); Harness and its Hosts consume it without reverse imports. It releases independently through `release/a13n-environment-v<version>`; its workflow versions and publishes only this Python distribution through the existing `foundation-pypi` environment. Consumers retain unversioned source workspace dependencies and declare compatible published bounds. Extraction does not change existing persisted state formats.
 
-`packages/a13n-envd-client` participates in root Python development and validation but is versioned and published with `crates/a13n-envd` by the a13n-envd release workflow. Harness and Harness UI consume a compatible published version. The client owns only EIP transport/session behavior and never discovers, downloads, installs, or launches the native executable. Other release-group exceptions require an explicit owning specification and release workflow rather than inference from directory placement.
+`packages/a13n-envd-client` participates in root Python development and validation but is versioned and published with `crates/a13n-envd` by the a13n-envd release workflow. Environment and Harness UI consume a compatible published version. The client owns only EIP transport/session behavior and never discovers, downloads, installs, or launches the native executable. Other release-group exceptions require an explicit owning specification and release workflow rather than inference from directory placement.
 
 a13n-envd native releases publish immutable archives for Linux, macOS, and Windows x86_64/ARM64 plus `SHA256SUMS`. Repository-owned POSIX shell and Windows PowerShell installers select and verify one release archive and publish the executable to an absolute user-selected directory; they do not define a self-updater, service installation, or install database. The detailed installer contract is owned by [Protocol Source, Client, and Generation](a13n-envd/08-protocol-source-client-and-generation.md#executable-distribution-and-installation).
 
@@ -118,12 +118,13 @@ Each consuming package owns its cross-release-group Python requirements in its `
 
 The current cross-group requirements are:
 
-| Consumer                     | Dependency               | Published requirement                |
-| ---------------------------- | ------------------------ | ------------------------------------ |
-| Harness UI                   | Harness, Stream Protocol | `>=0.8.1,<0.9.0`, identical for both |
-| Service                      | Harness, Stream Protocol | `>=0.8.1,<0.9.0`, identical for both |
-| Harness UI, Harness, Service | `a13n-logging`           | `>=0.2.0,<0.3.0`                     |
-| Harness, Harness UI          | `a13n-envd-client`       | `>=0.1.0,<0.2.0`                     |
+| Consumer                     | Dependency               | Published requirement                 |
+| ---------------------------- | ------------------------ | ------------------------------------- |
+| Harness UI                   | Harness, Stream Protocol | `>=0.9.0,<0.10.0`, identical for both |
+| Service                      | Harness, Stream Protocol | `>=0.9.0,<0.10.0`, identical for both |
+| Harness UI, Harness, Service | `a13n-logging`           | `>=0.2.0,<0.3.0`                      |
+| Environment, Harness UI      | `a13n-envd-client`       | `>=0.1.0,<0.2.0`                      |
+| Harness, Harness UI, Service | `a13n-environment`       | `>=0.1.0,<0.2.0`                      |
 
 Independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
 

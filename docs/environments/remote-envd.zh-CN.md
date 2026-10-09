@@ -43,8 +43,8 @@ provider close preserved remote daemon and workspace
 运维人员通过受保护渠道提供 HTTP(S) origin、配置的 `A13N_ENVD_DEVICE_ID` 和凭据。origin 不含 `/eip/control` 后缀：客户端自行构造 EIP 资源路径。
 
 ```python
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_environment.builtins import select_builtin_environment_providers
+from a13n_environment.models import EnvironmentState
 
 (http_envd,) = select_builtin_environment_providers(("http_envd",))
 state = EnvironmentState(
@@ -52,20 +52,19 @@ state = EnvironmentState(
     state_version="1",
     state={"device_id": "env-remote-machine"},
 )
-environment = await http_envd.create(
+environment = http_envd.execution_connector(
     {"working_directory": "/work/project"},
     configuration={"endpoint": "https://envd.example.com"},
     credential={"token": token_from_your_secret_store},
     environment_id="env-my-project",  # Your Host's logical identity.
     state=state,
-    allow_create=False,
 )
 
 # Harness binds, uses and closes this fresh adapter for the Run.
 result = await executable.run("Inspect the workspace", environment=environment)
 ```
 
-必须设置 `allow_create=False`：两个远程 provider 都声明 `supports_managed=False`，并在任何外部调用前拒绝托管创建。
+必须设置 HTTP 和 WebSocket Envd 都声明 `supports_managed=False`，只提供固定设备的连接配置；调用 `open_provider()` 会在任何外部请求之前被拒绝。
 
 不用 Harness 时，按 `remote.py` 进入适配器、确保就绪、使用操作接口，再在 `finally` 关闭适配器。共享 `HttpEnvdProviderRuntime` 保持打开，直到 Host 关闭。
 
@@ -130,15 +129,15 @@ async def authenticated_envd_handler(connection):
 使用其中一个连接：
 
 ```python
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.models import EnvironmentState
-from a13n_harness.providers.environment.remote_envd.configuration import (
+from a13n_environment.builtins import select_builtin_environment_providers
+from a13n_environment.models import EnvironmentState
+from a13n_environment.remote_envd.configuration import (
     WebSocketEnvdConnectionConfiguration,
 )
-from a13n_harness.providers.environment.remote_envd.websocket import WebSocketEnvdProviderRuntime
+from a13n_environment.remote_envd.websocket import WebSocketEnvdProviderRuntime
 
 (websocket_envd,) = select_builtin_environment_providers(("websocket_envd",))
-environment = await websocket_envd.create(
+environment = websocket_envd.execution_connector(
     {"working_directory": "/work/project"},
     environment_id="env-my-project",
     state=EnvironmentState(
@@ -146,7 +145,6 @@ environment = await websocket_envd.create(
         state_version="1",
         state={"device_id": "env-remote-machine"},
     ),
-    allow_create=False,
     runtime=WebSocketEnvdProviderRuntime(
         connections,
         WebSocketEnvdConnectionConfiguration(connection_timeout=30),

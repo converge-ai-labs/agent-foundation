@@ -1,123 +1,57 @@
 ---
 title: Environments
-description: Mount Environments into a Run so the Agent can work with files, commands, and processes.
+description: Mount fixed-target Environment connectors into a Run for files, commands, and processes.
 ---
 
-An Environment is one fresh process-local adapter for a single provider target. The [Environment Provider domain](../environments/index.md) owns target creation, re-entry, provider operations, cached state, and explicit destruction. Harness owns only one Run's mount names, access ceilings, routing, state aggregation, and non-destructive cleanup.
-
-Applications pass already constructed `Environment` instances to `run()` or `stream()`. Harness never accepts a Provider definition, Provider type, configuration, state envelope, or transport session as a Run input.
-
-Environment lifecycle is separate from model-facing tools:
-
-- a Host selects a trusted Provider definition, account configuration, credential, target recipe, and current `EnvironmentState`;
-- the definition constructs a fresh Environment, acquiring a live collaborator only in its runtime factory;
-- Harness enters the Environment before input production and closes it after the Run stops all work;
-- `DynamicEnvironmentCapability` optionally exposes permitted operations to the model;
-- `close()` releases process-local resources and never destroys the backing target;
-- only explicit Host policy creates a fresh adapter and calls `destroy()`.
+The independent `a13n-environment` library owns single-environment management and execution. The Host explicitly creates, starts, stops, renews, and destroys targets. Harness accepts fixed-target `EnvironmentConnector` inputs and owns Run-local mounts, permissions, routing, and execution cleanup.
 
 ## Start without an Environment
-
-Environment input is optional. A Run with no Environment receives an empty facade and no Environment tools:
 
 ```python
 result = await executable.run("Answer without using a workspace")
 ```
 
-## Construct one fresh Environment per Run
+Environment input is optional. A Run without mounts receives an empty facade and no Environment tools.
 
-Construct the Environment with a trusted Provider before calling Harness. Direct Local is stateless, so each Run passes `state=None`:
+## Supply a connector
 
 ```python
 from pathlib import Path
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
 
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-
-(direct_local,) = select_builtin_environment_providers(("direct_local",))
-environment = await direct_local.create(
+connector = DIRECT_LOCAL.execution_connector(
     {"root": {"path": str(Path("./workspace").resolve())}},
-    environment_id="workspace",
-    state=None,
+    environment_id="env-workspace",
 )
-
-result = await executable.run(
-    "Update the workspace",
-    environment=environment,
-)
+result = await executable.run("Inspect the workspace", environment=connector)
 ```
 
-Recipe validation and adapter construction are inert. The Host calls `await environment.prepare()` for eager preparation, or leaves preparation to the first readiness check for lazy use. `environment.enter(...)` only binds the local Run scope. Harness closes the adapter on success, failure, cancellation, abandoned stream consumption, or initial multi-mount unwind. That close is non-destructive; Direct Local never deletes the Host directory, and Docker close never removes the container.
+Connector construction performs no I/O. Harness calls `open()` for every mount, publishes only a complete ready set, and closes its executions after success, failure, or cancellation. The connector can serve later Runs; an already opened execution is not an ordinary Run input.
 
-Do not retain and reuse the adapter for a later independent Run. Construct a fresh adapter each time, even when several Runs re-enter the same provider target.
+Enable `DynamicEnvironmentCapability` to expose permitted tools. `EnvironmentMount` adds Run-local path and permission policy.
 
-## Re-enter stateful targets
+## The Host owns management state
 
-For a stateful Provider, the Host supplies its latest authoritative state before Harness receives the adapter. Harness does not restore a Provider after entry and does not treat `HarnessState` as live authority:
+Complete management and save `EnvironmentState` before constructing the connector:
 
 ```python
 current_state = await environment_state_store.load(thread_id, "workspace")
-environment = await definition.create(
-    recipe,
-    configuration=backend_configuration,
-    credential=current_credential,
-    environment_id="workspace",
-    state=current_state,
+connector = definition.execution_connector(
+    recipe, configuration=backend_configuration, credential=current_credential,
+    environment_id="env-workspace", state=current_state,
 )
-
-try:
-    result = await executable.run(
-        "Continue the task",
-        environment=environment,
-        previous_state=previous_harness_state,
-    )
-finally:
-    await environment_state_store.publish(
-        thread_id,
-        "workspace",
-        environment.dump_state(),
-    )
+result = await executable.run(
+    "Continue the task", environment=connector, previous_state=previous_harness_state,
+)
 ```
 
-`dump_state()` is a synchronous, infallible read of a detached copy of the latest validated cache. It performs no target I/O. The Host can therefore read it in unconditional finalization after partial entry, cancellation, checkpoint failure, execution failure, or close failure.
+Execution uses this fixed state and produces no new target reference to publish at Run exit. `HarnessState.environment_states` aggregates mount state without replacing Host management records. After partial management failure or cancellation, the Host can obtain the known reference with `observed_environment_state()` and publish it; see [Lifecycle and state](../environments/lifecycle.md).
 
-`HarnessState.environment_states` records the current mount-name-to-state aggregate for continuation export. It is useful evidence, but the Host still decides which managed state is authoritative, reconstructs fresh credentials and runtime collaborators, and supplies a fresh Environment. State contains no credential, live client, PID, transport session, mount policy, or destruction authority.
-
-## Runtime ownership and creation policy
-
-`definition.create()` either acquires a runtime from account `configuration` and `credential`, or borrows a supplied `runtime`. Do not pass account inputs alongside a borrowed runtime. An acquired closable runtime is released with the adapter; a borrowed runtime remains the Host's responsibility.
-
-`allow_create` and `operation_id` apply to the new adapter in both modes. A reusable runtime does not carry either value. Provider authors pass them through `construct()` rather than `runtime_factory()`. This separation lets the same Host-owned connection serve a managed adapter and a connect-only adapter without changing shared policy.
-
-## Explicit destruction belongs to the Host
-
-Harness never calls `destroy()`. When retention policy selects cleanup, the Host constructs a fresh adapter from the exact current state and calls `destroy()` explicitly:
-
-```python
-cleanup = await definition.create(
-    recipe,
-    configuration=backend_configuration,
-    credential=current_credential,
-    environment_id="workspace",
-    state=current_state,
-    allow_create=False,
-)
-try:
-    await cleanup.destroy()
-finally:
-    latest_state = cleanup.dump_state()
-    await cleanup.close()
-    await environment_state_store.publish(
-        thread_id,
-        "workspace",
-        latest_state,
-    )
-```
-
-Successful destruction clears the adapter's state. An incompatible target or unknown external outcome fails and preserves the last validated state for later Host inspection or retry. The Provider removes only the exact target and provider-owned bootstrap material represented by that state; external bind sources and shared Host directories remain Host-owned.
+Execution close never destroys the target. The Host calls the separate `EnvironmentProvider.destroy()` and clears management state only after confirmed completion. Previously generated connectors remain usable after the management client closes; the Host closes borrowed runtimes separately.
 
 ## Use several Environments
 
-Pass `environments=` to name several already constructed adapters. `EnvironmentMount` adds one Run-local permission ceiling and working directory:
+Pass `environments=` to name several fixed-target connectors. `EnvironmentMount` adds one Run-local permission ceiling and working directory:
 
 ```python
 from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
@@ -263,11 +197,12 @@ A production Host normally keeps desired Provider configuration and current `Env
 
 1. selects the trusted Provider and validates desired configuration;
 2. loads current managed state, where authoritative `None` suppresses stale fallback state;
-3. constructs fresh runtime collaborators and one fresh Environment per mount;
-4. invokes Harness with those already constructed adapters;
-5. reads every adapter's cached state in unconditional finalization;
-6. publishes changed state according to Host concurrency policy;
-7. invokes explicit destruction only when retention or prune policy authorizes it.
+3. performs any required management operation and publishes its observed state, including partial failure or cancellation;
+4. constructs fixed-target connectors from the published state;
+5. invokes Harness, which opens and closes one fresh execution per mount;
+6. invokes explicit destruction only when retention or prune policy authorizes it.
+
+Execution does not update authoritative Provider state. A stopped or missing target fails opening; the Host must manage it explicitly before retrying.
 
 The shared package deliberately defines no Host table, lease, Thread-link, prune-candidate, pause-mode, or reconciliation-operation schema. A Host can add those models without moving lifecycle authority back into Harness.
 
@@ -275,21 +210,21 @@ The shared package deliberately defines no Host table, lease, Thread-link, prune
 
 Most applications should use `environment=` or `environments=`. Trusted Harness integrations can use the advanced Environment runtime when they need live Run-local `mount()`, `replace()`, `unmount()`, or `set_default()` behavior.
 
-Each mutation still accepts an `EnvironmentMount` containing one fresh adapter. A candidate is entered before commit; failure leaves the published mount set unchanged and closes the candidate. Replacement allocates a fresh mount incarnation, preserves default selection, and retires the old adapter only after its operation leases drain. Mutation never discovers a Provider, restores state, persists desired mounts, or calls `destroy()`.
+Each mutation accepts an `EnvironmentMount` containing a connector. A fresh candidate execution is opened and checked before commit; failure leaves the published mount set unchanged and closes the candidate. Replacement allocates a fresh mount incarnation, preserves default selection, and retires the old execution only after its operation leases drain. Mutation never discovers a Provider, restores state, persists desired mounts, or calls `destroy()`.
 
-High-level Environment arguments and an explicitly supplied advanced runtime are mutually exclusive. They use the same routing, permission, fencing, state-dump, and non-destructive cleanup implementation.
+High-level Environment arguments and an explicitly supplied advanced runtime are mutually exclusive. They use the same routing, permission, fencing, and non-destructive cleanup implementation.
 
 ## Direct Local boundary
 
 `direct_local` exposes an explicitly selected existing Host directory. It is an operation backend, not a sandbox claim:
 
 - the Host creates, selects, retains, backs up, shares, and removes the directory;
-- a fresh Direct Local Environment validates and uses it for one Run;
-- `dump_state()` returns `None` because the target is deterministic and stateless;
+- a Direct Local connector opens a fresh execution that validates and uses it for one Run;
+- `state` returns `None` because the target is deterministic and stateless;
 - `close()` and `destroy()` never delete the directory;
 - the Provider root is always writable; a permission ceiling constrains Environment operations but is not an operating-system sandbox against an allowed child process.
 
-Use Local Envd or Docker when untrusted code needs an isolated execution boundary. Both still require fresh adapters per independent Run; Local Envd owns only its current private daemon generation, while Docker can re-enter the exact container represented by state.
+Use Local Envd or Docker when untrusted code needs an isolated execution boundary. Each Run opens a fresh execution. The Host owns the Local Envd daemon, while a Docker connector attaches to the exact running container represented by state.
 
 ## Temporary tool-result files
 

@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
-from a13n_harness.providers.environment.direct_local.configuration import (
+from a13n_environment import EnvironmentConnector
+from a13n_environment.definition import EnvironmentProviderDefinition
+from a13n_environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
-from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL, DirectLocalEnvironment
-from a13n_harness.providers.environment.management import Environment, EnvironmentProviderConfiguration
-from a13n_harness.providers.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_environment.management import EnvironmentProviderConfiguration
+from a13n_environment.models import EnvironmentDescriptor, EnvironmentState
 from a13n_harness.providers.plugins import ProviderManifest
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -36,12 +37,6 @@ class WorkspaceEnvironmentConfiguration(BaseModel):
         return expanded
 
 
-class WorkspaceEnvironment(DirectLocalEnvironment):
-    @property
-    def provider_key(self) -> str:
-        return PROVIDER_TYPE
-
-
 def _direct_configuration(configuration: WorkspaceEnvironmentConfiguration) -> DirectLocalEnvironmentConfiguration:
     return DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=configuration.root))
 
@@ -50,20 +45,20 @@ def _describe(configuration: WorkspaceEnvironmentConfiguration) -> EnvironmentDe
     return DIRECT_LOCAL.describe_environment(_direct_configuration(configuration))
 
 
-def _construct(
+def _connector(
     *,
-    configuration: WorkspaceEnvironmentConfiguration,
+    configuration: EnvironmentProviderConfiguration,
+    credential: BaseModel | None,
+    environment: WorkspaceEnvironmentConfiguration,
     environment_id: str,
     state: EnvironmentState | None,
     runtime: object | None,
-    operation_id: str,
-    allow_create: bool,
-) -> Environment:
-    """This deterministic Provider needs no credential or SDK collaborator."""
-    del runtime, operation_id, allow_create
-    if state is not None:
-        raise TypeError("example_workspace accepts no stored state")
-    return WorkspaceEnvironment(_direct_configuration(configuration), environment_id=environment_id)
+) -> EnvironmentConnector:
+    """Map the plugin's recipe to the existing Direct Local execution provider."""
+    del configuration, credential, runtime
+    return DIRECT_LOCAL.execution_connector(
+        _direct_configuration(environment), environment_id=environment_id, state=state
+    )
 
 
 WORKSPACE_ENVIRONMENT = EnvironmentProviderDefinition(
@@ -71,18 +66,16 @@ WORKSPACE_ENVIRONMENT = EnvironmentProviderDefinition(
     display_name="Example workspace",
     configuration_model=EnvironmentProviderConfiguration,
     environment_model=WorkspaceEnvironmentConfiguration,
-    construct=_construct,
+    connector_factory=_connector,
     describe_environment=_describe,
-    supports_stop=True,
-    supports_destroy=True,
+    supports_managed=False,
 )
 
-manifest = ProviderManifest(api_version=1, environment=(WORKSPACE_ENVIRONMENT,))
+manifest = ProviderManifest(api_version=2, environment=(WORKSPACE_ENVIRONMENT,))
 
 __all__ = [
     "PROVIDER_TYPE",
     "WORKSPACE_ENVIRONMENT",
-    "WorkspaceEnvironment",
     "WorkspaceEnvironmentConfiguration",
     "manifest",
 ]

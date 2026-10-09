@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from a13n_environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
 from a13n_harness import (
     HarnessBuilder,
     RunBindings,
@@ -43,10 +47,6 @@ from a13n_harness.environment.advanced import (
 )
 from a13n_harness.environment.providers import (
     EnvironmentRuntimeMount,
-)
-from a13n_harness.providers.environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
 )
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from a13n_harness.usage import (
@@ -827,9 +827,7 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
     if not has_backing_identity:
         # Exercise real file scopes across fresh bindings without continuity evidence,
         # as with Remote Envd. Dispatch still has independent mount/generation fences.
-        monkeypatch.setattr(
-            "a13n_harness.providers.environment.direct_local.provider.local_backing_identity", lambda **kwargs: None
-        )
+        monkeypatch.setattr("a13n_environment.direct_local.provider.local_backing_identity", lambda **kwargs: None)
 
     original, replacement = tmp_path / "original", tmp_path / "replacement"
     original.mkdir()

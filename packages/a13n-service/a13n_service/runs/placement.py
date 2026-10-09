@@ -6,8 +6,8 @@ is complete.
 
 from collections.abc import AsyncIterator
 
-from a13n_harness.providers.environment.files import FileMetadata, FileOperator
-from a13n_harness.providers.environment.models import EnvironmentError
+from a13n_environment.files import FileMetadata, FileOperator
+from a13n_environment.models import EnvironmentError
 
 ROOT = "/workspace/.a13n"
 _CHUNK_BYTES = 64 * 1024

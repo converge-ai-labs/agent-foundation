@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_environment.models import EnvironmentState
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, SecretStr, StringConstraints
 
 from a13n_service.infra.ids import ObjectId

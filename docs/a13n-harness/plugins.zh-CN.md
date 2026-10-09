@@ -278,8 +278,8 @@ Provider 插件发布 Environment 定义供 Host 选择。Model、Web、Connecto
 声明 Provider 类型、显示名称、配置、凭据与 runtime factory：
 
 ```python
-from a13n_harness.providers.authentication import Authentication, CredentialMode
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_environment.authentication import Authentication, CredentialMode
+from a13n_environment.definition import EnvironmentProviderDefinition
 
 ACME_SANDBOX = EnvironmentProviderDefinition(
     type="acme_sandbox",
@@ -287,9 +287,9 @@ ACME_SANDBOX = EnvironmentProviderDefinition(
     configuration_model=AcmeConnectionConfiguration,
     credential_model=AcmeCredential,
     environment_model=AcmeEnvironmentConfiguration,
-    construct=_construct,
+    provider_factory=_open_provider,
+    connector_factory=_connector,
     describe_environment=_describe,
-    runtime_factory=_runtime,
     authentication=Authentication(mode=CredentialMode.required),
     setup_url="https://acme.example/dashboard",
     setup_label="Acme dashboard",
@@ -303,7 +303,7 @@ ACME_SANDBOX = EnvironmentProviderDefinition(
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=2, environment=(ACME_SANDBOX,))
 ```
 
 ```toml
@@ -339,7 +339,7 @@ Harness 自带内置 Provider 定义。使用对应后端时安装 extra：
 | `modal`  | Modal SDK            | `modal` Environment Provider  |
 
 ```console
-uv add "a13n-harness[docker,e2b]"
+uv add a13n-harness "a13n-environment[docker,e2b]"
 ```
 
 读取 Provider 元数据无需厂商 SDK；缺少 extra 时，Provider 打开失败。

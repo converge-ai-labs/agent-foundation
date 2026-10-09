@@ -64,11 +64,8 @@ async def _run_extension_demo(
     configuration = provider.validate_environment(
         {"root": str(workspace_root)},
     )
-    environment = await provider.create(
-        environment_id="extension-workspace",
-        environment=configuration,
-        state=None,
-        runtime=None,
+    environment = provider.execution_connector(
+        configuration, environment_id="extension-workspace", state=None, runtime=None
     )
     extension_id = f"marker-{selection_mode}"
     marker_path = "/workspace/.example-run"
@@ -94,7 +91,7 @@ async def _run_extension_demo(
     environment_runtime = create_environment_runtime(
         mounts={
             "workspace": EnvironmentMount(
-                environment=environment,
+                connector=environment,
                 permission_ceiling=EnvironmentPermissionSet(
                     operations=frozenset(
                         {

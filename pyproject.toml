@@ -12,7 +12,8 @@ members = ["packages/*"]
 
 [dependency-groups]
 dev = [
-    "a13n-harness[docker,e2b,modal]",
+    "a13n-environment[docker,e2b,modal]",
+    "a13n-harness",
     "deptry>=0.25,<0.26",
     "import-linter>=2.3,<3",
     # Keep real MCP server fixtures available in the default local development environment.
@@ -43,6 +44,7 @@ default-groups = ["dev"]
 package = false
 
 [tool.uv.sources]
+a13n-environment = { workspace = true }
 a13n-envd-client = { workspace = true }
 a13n-harness = { workspace = true }
 a13n-stream-protocol = { workspace = true }
@@ -60,6 +62,7 @@ ignore = ["E501"]
 [tool.pyright]
 include = [
     "packages/a13n-envd-client/a13n_envd_client",
+    "packages/a13n-environment/a13n_environment",
     "packages/a13n-harness/a13n_harness",
     "packages/a13n-stream-protocol/a13n_stream_protocol",
     "packages/a13n-harness-ui/a13n_harness_ui",
@@ -99,6 +102,7 @@ filterwarnings = [
 ]
 testpaths = [
     "packages/a13n-envd-client/tests",
+    "packages/a13n-environment/tests",
     "packages/a13n-harness/tests",
     "packages/a13n-stream-protocol/tests",
     "packages/a13n-harness-ui/tests",

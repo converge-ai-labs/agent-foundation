@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
+from a13n_environment.models import EnvironmentState
 from a13n_harness import (
     AgentDefinition,
     DefinitionError,
@@ -26,7 +27,6 @@ from a13n_harness import (
 from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness.context import AgentContext
 from a13n_harness.events import _RunEventEmitter
-from a13n_harness.providers.environment.models import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability

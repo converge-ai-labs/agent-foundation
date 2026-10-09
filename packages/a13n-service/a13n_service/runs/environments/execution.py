@@ -11,9 +11,11 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 import anyio
+from a13n_environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_environment.files import FileOperator
+from a13n_environment.models import EnvironmentDescriptor, EnvironmentError, EnvironmentState
 from a13n_harness import EnvironmentMount as HarnessMount
 from a13n_harness import RunConfiguration
-from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, update
 
@@ -23,7 +25,7 @@ from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import Lease, lock_lease
 from a13n_service.runs.environments import external
-from a13n_service.runs.environments.adapters import Target, close, construct, provider_identity
+from a13n_service.runs.environments.adapters import Target, execution_connector, provider_identity
 from a13n_service.runs.environments.lifecycle import advance, begin
 from a13n_service.runs.environments.mounts import PRIMARY, require_usable
 from a13n_service.runs.environments.schemas import Handle
@@ -121,60 +123,96 @@ async def _inspect(
 async def open_mounts(
     runtime: Runtime, prepared: Sequence[PreparedMount], *, configuration: RunConfiguration | None = None
 ) -> AsyncIterator[dict[str, HarnessMount]]:
-    """Unentered adapters for `agent.stream(environments=..., default_environment=PRIMARY if present)`.
+    """Inert connectors for `agent.stream(environments=..., default_environment=PRIMARY if present)`.
 
-    The Harness enters and closes the adapters it binds; leaving closes the rest and marks the instances used.
+    Harness opens and closes each execution; leaving marks the instances used.
     `workspace` keeps the Harness's `/workspace` route; other mounts appear at `/mnt/{name}`.
     """
     async with AsyncExitStack() as stack:
         stack.push_async_callback(_mark_used, runtime, [item.target.environment_id for item in prepared])
         mounts: dict[str, HarnessMount] = {}
         for item in prepared:
-            adapter = await construct(
-                runtime, item.target, operation_id=None, allow_create=False, configuration=configuration
-            )
-            stack.push_async_callback(close, adapter)
+            connector = await execution_connector(runtime, item.target, configuration=configuration)
             if item.working_directory is not None:
-                # Prepare without entering: Harness still owns the single-use operation scope.
-                # This checks this mount's selection, never the shared instance's lifecycle state.
-                with anyio.fail_after(runtime.settings.environments.wait_seconds):
-                    await adapter.prepare()
-                    files = adapter.operations.files
-                    if files is None:
-                        raise conflict(
-                            "environment",
-                            item.target.environment_id,
-                            "working_directory_unsupported",
-                            mount=item.name,
-                            working_directory=item.working_directory,
-                        )
-                    try:
-                        await files.list(item.working_directory, max_results=1)
-                    except EnvironmentError as error:
-                        if error.code not in {
-                            "environment_not_found",
-                            "environment_denied",
-                            "environment_request_invalid",
-                        }:
-                            raise
-                        raise ServiceError(
-                            "invalid_argument",
-                            f"Working directory {item.working_directory!r} for mount {item.name!r} "
-                            "cannot be opened. Select an existing accessible directory in this environment.",
-                            {
-                                "environment_id": item.target.environment_id,
-                                "mount": item.name,
-                                "working_directory": item.working_directory,
-                                "reason": error.code,
-                            },
-                        ) from error
+                connector = _DirectoryConnector(connector, item, runtime.settings.environments.wait_seconds)
             mounts[item.name] = HarnessMount(
-                adapter,
+                connector,
                 working_directory=item.working_directory,
                 mount_path=None if item.name == PRIMARY else f"/mnt/{item.name}",
-                provider_root=item.working_directory or adapter.descriptor.working_directory,
+                provider_root=item.working_directory or connector.descriptor.working_directory,
             )
         yield mounts
+
+
+class _DirectoryConnector(EnvironmentConnector):
+    """Check the Host's mount selection in the exact execution Harness will own."""
+
+    def __init__(self, connector: EnvironmentConnector, mount: PreparedMount, seconds: float) -> None:
+        self._connector, self._mount, self._seconds = connector, mount, seconds
+
+    @property
+    def provider_key(self) -> str:
+        return self._connector.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self._connector.environment_id
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self._connector.state
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self._connector.descriptor
+
+    async def open(self) -> EnvironmentExecution:
+        execution = None
+        try:
+            with anyio.fail_after(self._seconds):
+                execution = await self._connector.open()
+                await _check_directory(self._mount, execution.operations.files)
+            return execution
+        except BaseException as error:
+            if execution is not None:
+                with anyio.CancelScope(shield=True):
+                    try:
+                        await execution.close()
+                    except BaseException as cleanup_error:
+                        error.add_note(f"Environment execution cleanup also failed: {cleanup_error!r}")
+            raise
+
+
+async def _check_directory(item: PreparedMount, files: FileOperator | None) -> None:
+    assert item.working_directory is not None
+    if files is None:
+        raise conflict(
+            "environment",
+            item.target.environment_id,
+            "working_directory_unsupported",
+            mount=item.name,
+            working_directory=item.working_directory,
+        )
+    try:
+        await files.list(item.working_directory, max_results=1)
+    except EnvironmentError as error:
+        if error.code not in {
+            "environment_not_found",
+            "environment_denied",
+            "environment_request_invalid",
+        }:
+            raise
+        raise ServiceError(
+            "invalid_argument",
+            f"Working directory {item.working_directory!r} for mount {item.name!r} "
+            "cannot be opened. Select an existing accessible directory in this environment.",
+            {
+                "environment_id": item.target.environment_id,
+                "mount": item.name,
+                "working_directory": item.working_directory,
+                "reason": error.code,
+            },
+        ) from error
 
 
 async def _mark_used(runtime: Runtime, environment_ids: list[str]) -> None:

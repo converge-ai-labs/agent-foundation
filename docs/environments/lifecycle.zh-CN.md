@@ -1,195 +1,97 @@
 ---
 title: 生命周期与状态
-description: 在执行之间保存环境状态、重新进入目标，并显式销毁目标。
+description: 分别管理环境目标、连接配置和独立执行对象。
 ---
 
-要在执行之间保留工作，保存环境状态，并在下一次执行时提供给新适配器。provider 构建适配器；每个适配器连接一个目标。
+Host 先管理目标并保存结果，再将固定目标的连接配置交给 Harness。独立的 `a13n-environment` 包也可直接用于普通应用。
 
-无需 agent 的首次文件操作见[快速入门](getting-started.md)。
+## 三个对象
 
-## 生命周期概览
+| 对象                   | 职责                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------------------------ |
+| `EnvironmentProvider`  | 账号级管理客户端，显式创建、启动、检查、停止、续期和销毁目标                               |
+| `EnvironmentConnector` | 可重复使用的固定目标连接配置；构造时不获取活跃客户端                                       |
+| `EnvironmentExecution` | `await connector.open()` 返回的已就绪执行对象，拥有自己的客户端、操作句柄和 `execution_id` |
 
-```mermaid
-flowchart TB
-    Host[Host 策略与持久化] --> Definition[EnvironmentProviderDefinition]
-    Definition --> Adapter[新环境]
-    State[EnvironmentState 或无状态] --> Adapter
-    Runtime[新运行时协作对象] --> Adapter
-    Adapter --> Harness[Harness 执行]
-    Harness --> Operations[文件、shell、进程、输出和端口]
-    Adapter --> Latest[缓存状态的独立副本]
-    Host <--- Latest
+连接配置可以用于多个 Run。每次 `open()` 都创建独立执行对象。打开、检查就绪和执行清理不会创建、启动、替换或续期目标。已知目标丢失会报错，不能换用同名资源。
 
-    class Host app
-    class Definition,Adapter,Harness a13n
-    class State,Latest store
-```
+`close()` 只释放当前对象拥有的资源。执行关闭后的原生进程是否保留遵循 provider 契约；例如 E2B 断开观测，Direct Local 清理自己启动的进程。目标保留和销毁由 Host 决定。
 
-正常执行按以下顺序进行：
+## 先管理，再发布状态
 
-1. Host 从目录中解析允许使用的 provider 类型。
-2. 定义先验证不含凭据的目标配置，再验证账号配置和凭据（除非 Host 提供运行时）。
-3. Host 提供最新权威 `EnvironmentState`。
-4. 定义获取运行时协作对象，再构建新适配器；运行时工厂之前的全部步骤均无副作用。Host 传入的运行时为借用；定义获取的运行时属于适配器。
-5. Host 主动提前准备，或让首次操作延迟准备。Harness 绑定本地范围、使用操作、导出缓存状态并关闭适配器。
-6. Host 单独持久保存最新状态并应用保留策略。
-
-`close()` 释放该适配器管理的客户端、Envd 会话、临时输出和其他本地句柄，包括 `create()` 为其获取的运行时。它幂等且不销毁目标。Host 传入的共享 Envd 设备运行时属于 Host，在 Host 关闭时另行关闭。Harness 绝不调用 `destroy()`。
-
-保留策略决定移除时，Host 从精确当前状态构建另一个新适配器，显式调用 `destroy()`。销毁成功清空该适配器缓存状态。失败或结果未知时，保留最后验证状态用于检查或重试。
-
-## 解析并构建环境
-
-持久保存的 `EnvironmentProviderSpec` 只包含 provider 类型和不含凭据的 JSON 目标配置：
+以下片段中的状态存储、并发控制和取消保护由 Host 提供：
 
 ```python
-from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.models import EnvironmentProviderSpec
+from a13n_environment.docker.provider import DOCKER
+from a13n_environment.errors import observed_environment_state
 
-spec = EnvironmentProviderSpec(
-    provider_key="direct_local",
-    configuration={
-        "root": {"path": "/srv/agent-workspaces/current"},
-    },
-)
+recipe = {"image": "ghcr.io/converge-ai-labs/a13n-sandbox:dev"}
+state = await state_store.load(environment_key)
+async with await DOCKER.open_provider(configuration=account_configuration) as provider:
+    try:
+        if state is None:
+            state = await provider.create(recipe, environment_id="env-workspace", operation_id="op-create")
+        else:
+            state = await provider.start(recipe, environment_id="env-workspace", state=state, operation_id="op-start")
+    except BaseException as error:
+        observed = observed_environment_state(error, state)
+        await state_store.publish(environment_key, observed)
+        raise
+    await state_store.publish(environment_key, state)
+    connector = provider.execution_connector(recipe, environment_id="env-workspace", state=state)
 
-catalog = ProviderCatalog(select_builtin_environment_providers(("direct_local",)))
-definition = catalog.require(spec.provider_key)
-environment = await definition.create(
-    spec.configuration,
-    environment_id="workspace",
-    state=None,
-)
+result = await executable.run("Continue the task", environment=connector)
 ```
 
-没有配置 schema 版本：provider 只管理一个目标配置模型，改变输入含义就改变 provider 类型。选择、配置验证和适配器构建不进行目标操作。`enter()` 也不进行目标 I/O。`prepare()` 创建、恢复或连接目标；延迟准备时，`ensure_ready()` 在首次使用触发准备。
+`EnvironmentState` 保留原有的无凭据格式。它不包含活跃客户端、执行句柄、Harness 挂载策略或销毁权限。管理方法返回当前引用；`inspect()` 返回状态和引用。
 
-将新适配器传给 Harness：
+管理部分成功后仍可能失败。`EnvironmentManagementError` 和 `EnvironmentManagementCancelled` 保留当时已知的引用；`observed_environment_state(error, previous)` 也能从异常链中读取它。已确认清空的 `None` 与没有观察到新状态不同。Host 应在释放管理操作归属前，以自己的条件更新和取消保护保存结果。
 
-```python
-result = await executable.run(
-    "Inspect the workspace",
-    environment=environment,
-)
-```
-
-Harness 对适配器进入和关闭各一次。每次独立执行都构建另一个适配器，即使多次执行使用同一工作目录、容器、虚拟机或远程沙箱。
-
-## 重新进入有状态目标
-
-Host 在进入前提供状态：
-
-```python
-current_state = await state_store.load(environment_key)
-environment = await definition.create(
-    spec.configuration,
-    configuration=backend_configuration,
-    credential=current_credential,
-    environment_id="workspace",
-    state=current_state,
-)
-
-try:
-    result = await executable.run(
-        "Continue the task",
-        environment=environment,
-        previous_state=previous_harness_state,
-    )
-finally:
-    await state_store.publish(environment_key, environment.dump_state())
-```
-
-`dump_state()` 同步执行，不进行目标 I/O。它返回最新已验证缓存状态的独立深拷贝，调用者修改不会影响适配器缓存。目标身份变化一经确定，provider 就更新缓存，先于可能失败的后续就绪工作。
-
-状态是软引用，不证明目标仍存在。构建时验证编解码器和兼容性；准备时，provider 检查已验证状态选择的精确目标。仅进入适配器不会执行检查。只有权威确认目标不存在、Host 允许创建，且 provider 契约允许时，provider 才可创建替代目标。绝不会把不兼容目标、含糊发现、不可用控制平面或未知修改结果视为目标不存在。
-
-`EnvironmentState` 不包含 bearer 凭据、活跃客户端、任务、进程内句柄、Harness 挂载策略或销毁权限。存储、授权、保留、调度和权威版本选择仍由 Host 负责。
+连接配置的 `state` 是固定的独立副本。执行只验证和使用这个目标，不产生新的管理状态。Run 结束后不需要从执行对象回写目标引用。`HarnessState.environment_states` 是挂载状态汇总，不能取代 Host 的管理记录。
 
 ## 显式销毁
 
-销毁要求尚未进入的新适配器：
-
 ```python
-cleanup = await definition.create(
-    spec.configuration,
-    configuration=backend_configuration,
-    credential=current_credential,
-    environment_id="workspace",
-    state=current_state,
-    allow_create=False,
-)
-try:
-    await cleanup.destroy()
-finally:
-    await state_store.publish(environment_key, cleanup.dump_state())
-    await cleanup.close()
+async with await definition.open_provider(
+    configuration=account_configuration, credential=current_credential
+) as provider:
+    try:
+        await provider.destroy(recipe, environment_id="env-workspace", state=state, operation_id="op-destroy")
+    except BaseException as error:
+        await state_store.publish(environment_key, observed_environment_state(error, state))
+        raise
+    await state_store.publish(environment_key, None)
 ```
 
-provider 只移除已验证状态代表的精确底层目标和自身管理的启动材料。共享 Host 目录、Docker 绑定源和外部命名卷仍由外部管理。
+只有确认销毁完成才清空状态。不确定的结果保留已知引用，供 Host 后续检查。销毁只针对经过验证的目标及 provider 拥有的材料；共享 Host 目录、绑定源和外部卷不会随执行关闭被删除。
 
-不要把退出上下文、Harness 完成、暂停或取消当作隐式销毁信号。这些路径只关闭进程内资源。
+## 管理与执行方法
 
-## 就绪、恢复与维护
+| 方法                                                                        | 作用                                             |
+| --------------------------------------------------------------------------- | ------------------------------------------------ |
+| `definition.open_provider(...)`                                             | 获取账号级管理客户端，不选择或改变目标           |
+| `provider.create(recipe, ..., operation_id=...)`                            | 显式创建或核对管理目标                           |
+| `provider.start(recipe, ..., state=..., operation_id=...)`                  | 显式启动已有目标；不重建丢失目标                 |
+| `provider.inspect(recipe, ..., state=...)`                                  | 只读返回 `running`、`stopped` 或 `absent` 及引用 |
+| `provider.stop(...)` / `destroy(...)`                                       | 按 provider 能力显式停止或销毁                   |
+| `provider.keepalive(...)`                                                   | 显式续期；调度由 Host 负责                       |
+| `definition.execution_connector(...)` / `provider.execution_connector(...)` | 纯构造固定目标连接配置                           |
+| `connector.open()`                                                          | 打开新的、已就绪的执行对象                       |
+| `execution.check_ready(families)`                                           | 只读检查当前执行，不进行目标恢复                 |
+| `execution.close()`                                                         | 幂等释放该执行的资源                             |
 
-| 操作                                        | 行为                                                             |
-| ------------------------------------------- | ---------------------------------------------------------------- |
-| `enter()` / `async with`                    | 绑定一次性范围；不准备目标                                       |
-| `prepare()`                                 | 从已验证状态创建、恢复或连接；Host 可在进入前调用                |
-| `check_ready(operations)`                   | 检查已进入的连接，不供应或恢复目标                               |
-| `ensure_ready(operations)`                  | 首次使用时准备，检查必需类别，仅执行 provider 支持的恢复         |
-| `recover()`                                 | 在支持时执行已显式授权的范围内恢复；不提供通用修改重放           |
-| `reconcile()`                               | 将已放弃准备的目标观测为运行/停止/不存在，不创建、启动或替换目标 |
-| `stop()`                                    | 在支持时可恢复地停止目标；不同于关闭和销毁                       |
-| `keepalive(deadline=..., operation_id=...)` | 在支持时延长运行中目标的存活期限；时机和重试由 Host 负责         |
-| `dump_state()`                              | 读取独立缓存状态，不进行目标 I/O                                 |
-| `close()`                                   | 幂等清理本地资源                                                 |
-| `destroy()`                                 | 通过尚未进入的新适配器移除精确自有目标                           |
+关闭管理客户端不影响它先前生成的连接配置。借用的运行时仍由 Host 关闭；传入运行时时可以同时提供账号配置，但不能再传凭据。Local Envd 必须借用 Host 运行时；HTTP 和 WebSocket Envd 只提供连接能力，不提供目标管理。
 
-支持的就绪恢复可能报告 `environment_connection_refreshed` 或 `environment_rebuilt`，不会悄悄继续原请求操作。重连同一目标与替换丢失代次的后果不同。继续前重新检查进程观测和临时文件。Remote Envd 准备失败需要新适配器，不能假定支持范围内恢复。
+## 处理失败
 
-provider 能力声明告诉 Host 可以选择哪些维护路径：
+管理和 provider 边界使用 `EnvironmentProviderError`，操作使用 `EnvironmentError`。通过 `safe_projection()` 向用户展示安全信息，保留完整异常用于本地诊断。
 
-| 内置 provider              | 托管选择     | 可恢复停止                         | 销毁                               | 需要保活       |
-| -------------------------- | ------------ | ---------------------------------- | ---------------------------------- | -------------- |
-| Direct Local               | 是，无状态   | 已声明，对 Host 目录不执行实际操作 | 已声明，对 Host 目录不执行实际操作 | 否             |
-| Local Envd                 | 是，无状态   | 否                                 | 否                                 | 否             |
-| Docker                     | 是           | 是                                 | 是                                 | 否             |
-| E2B                        | 是           | 是                                 | 是                                 | 是             |
-| Daytona                    | 是           | 是                                 | 是                                 | 否             |
-| Modal                      | 是           | 仅托管，文件系统快照               | 是                                 | 是，仅固定期限 |
-| Vercel Sandbox             | 是           | 是                                 | 是                                 | 是             |
-| Fly.io Sprites             | 是           | 否；原生自动休眠                   | 是                                 | 否             |
-| Runloop                    | 是           | 是                                 | 是                                 | 是             |
-| 远程 HTTP / WebSocket Envd | 否，外部管理 | 否                                 | 否                                 | 否             |
+| 确定性           | Host 的处理                            |
+| ---------------- | -------------------------------------- |
+| `not_dispatched` | 修复输入或运行时条件后，再决定是否尝试 |
+| `known`          | 按已知结果处理，不代表一定可以重试     |
+| `unknown`        | 先检查原操作和目标，不能直接重放       |
 
-文件系统、内存和过期差异见[六个云平台比较](providers.md#reconnection-and-lifecycle)。支持托管选择不代表所有 provider 都创建存储或拥有 Host 目录。不支持的基类方法不会仅因出现在抽象接口中就变得可用。根据 provider 的 `keepalive_horizon` 和实际目标策略调度保活；不要把基类的 300 秒默认值当作通用云 TTL。
+控制面不可用不等于目标不存在。恢复连接需要显式打开新的执行对象；Harness 中使用显式挂载替换。旧执行的进程、输出和电脑操作引用不能用于新执行。
 
-## 处理结构化失败
-
-配置、目录、生命周期和后端失败使用 `EnvironmentProviderError`。操作失败使用 `EnvironmentError`。两者不能与模型工具错误封装互换。
-
-provider 错误具有稳定代码、类别、确定性、恢复提示、有界上下文，以及更详细的本地描述/详情。类别为 `invalid`、`unsupported`、`missing`、`denied`、`conflict`、`unavailable`、`timeout`、`unknown_outcome`、`cleanup` 和 `provider_failure`。
-
-| 证据                        | Host 应对方式                                     |
-| --------------------------- | ------------------------------------------------- |
-| 确定性 `not_dispatched`     | 未分派；先修复所述输入/运行时条件，再决定是否尝试 |
-| 确定性 `known`              | 使用已知结果；不要推断所有已知错误都可重试        |
-| 确定性 `unknown`            | 任何可能的重放前，先核对原操作/目标               |
-| 提示 `fix_input`            | 修正已验证配置或请求数据                          |
-| 提示 `refresh_runtime`      | 重建当前获授权的运行时协作对象                    |
-| 提示 `retry_same_operation` | 保留所属操作身份及其重试契约                      |
-| 提示 `reconcile`            | 检查持久 provider/Host 证据                       |
-| 提示 `none`                 | 没有自动恢复建议                                  |
-
-公开展示使用 `error.safe_projection()`。它保留有界关联和可安全公开的类别消息，排除详细本地描述/详情。按 Host 的实际需求控制本地诊断访问；直接序列化异常不等于使用安全投影。
-
-始终按 Host 策略发布最新已验证缓存状态，包括就绪失败或清理结果未知后。绝不能把控制平面不可用变为目标不存在、为了掩盖不兼容状态而替换目标，或把 `destroy()` 用作通用错误处理。
-
-## Host 检查清单
-
-- 每次独立执行（包括恢复后的执行）都构建新适配器。
-- 成功或失败后读取最新独立状态，并按 Host 策略发布。
-- 控制平面不可用或修改结果未知应视为不确定，不是目标不存在。
-- 本地资源关闭独立于保留策略。只通过新适配器销毁精确已验证目标。
-- 凭据、授权和活跃客户端不能放入环境或 Harness 续接数据。
+各云环境的停止、文件保留和到期规则见 [Provider 对比](providers.md#reconnection-and-lifecycle)。

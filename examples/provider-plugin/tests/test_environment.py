@@ -2,26 +2,18 @@ import pytest
 from a13n_harness.providers.plugins import load_provider_plugins
 
 
-def _files(environment):
-    operations = environment.operations.files
-    assert operations is not None, "the prepared workspace must expose file operations"
-    return operations
-
-
 @pytest.mark.anyio
 async def test_installed_workspace_direct_operations_and_reuse(tmp_path):
-    """One installed plugin performs real operations without an Agent Run."""
+    """Management publishes the directory before either execution is opened."""
     definition = load_provider_plugins(("acme",))[0].manifest.environment[0]
-    first = await definition.create({"directory": "notes"}, configuration={"root": str(tmp_path)})
-    await first.prepare()  # Provisioning before binding is supported.
-    async with first:
-        await _files(first).write_text("/hello.txt", "persistent", mode="create")
-    second = await definition.create(
-        {"directory": "notes"},
-        configuration={"root": str(tmp_path)},
-        environment_id=first.environment_id,
-        allow_create=False,
-    )
-    async with second:
-        await second.prepare()
-        assert (await _files(second).read_text("/hello.txt")).text == "persistent"
+    recipe = {"directory": "notes"}
+    async with await definition.open_provider(configuration={"root": str(tmp_path)}) as provider:
+        state = await provider.create(recipe, environment_id="env-notes", operation_id="op-create")
+        connector = provider.execution_connector(recipe, environment_id="env-notes", state=state)
+        async with await connector.open() as first:
+            assert first.operations.files is not None
+            await first.operations.files.write_text("/hello.txt", "persistent", mode="create")
+    async with await connector.open() as second:
+        assert second.execution_id != first.execution_id
+        assert second.operations.files is not None
+        assert (await second.operations.files.read_text("/hello.txt")).text == "persistent"

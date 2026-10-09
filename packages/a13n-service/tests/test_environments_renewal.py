@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from a13n_harness.providers.environment.errors import EnvironmentProviderErrorCategory, provider_error
+from a13n_environment.errors import EnvironmentProviderErrorCategory, provider_error
 from a13n_service.distribution import OSS
 from a13n_service.infra.db import transaction
 from a13n_service.runs.environments import lifecycle, renewal

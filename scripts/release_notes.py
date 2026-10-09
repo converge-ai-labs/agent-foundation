@@ -10,6 +10,7 @@ from urllib.parse import quote
 from release_version import COMPONENTS, parse_release_version, validate_version_syntax
 
 TAG_PREFIXES = {
+    "a13n-environment": "release/a13n-environment-v",
     "a13n-harness": "release/a13n-harness-v",
     "a13n-harness-ui": "release/a13n-harness-ui-v",
     "a13n-logging": "release/a13n-logging-v",
@@ -17,6 +18,7 @@ TAG_PREFIXES = {
     "a13n-envd": "release/a13n-envd-v",
 }
 INITIAL_NOTES = {
+    "a13n-environment": "Initial release for a13n Environment.",
     "a13n-harness": "Initial release for a13n Harness libraries.",
     "a13n-harness-ui": "Initial release for a13n Harness UI.",
     "a13n-logging": "Initial release for a13n Logging.",
@@ -28,10 +30,10 @@ RELEASE_NOTES_DIRECTORY = Path(".github/release-notes")
 # Scope by shipped source, not commit-title scopes or mutable GitHub labels.
 # Shared root lockfiles and unrelated release channels do not select a change.
 COMPONENT_PATHS = {
+    "a13n-environment": ("packages/a13n-environment", "docs/environments", "spec/a13n-environment"),
     "a13n-harness": (
         "packages/a13n-harness",
         "packages/a13n-stream-protocol",
-        "docs/environments",
         "docs/a13n-stream-protocol",
         "spec/a13n-stream-protocol",
     ),

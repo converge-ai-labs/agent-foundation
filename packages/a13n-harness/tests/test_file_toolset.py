@@ -8,8 +8,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
-from a13n_harness.providers.environment.files import FileEntriesResult, FileMetadata
+from a13n_environment.direct_local.files import LocalFileOperator
+from a13n_environment.files import FileEntriesResult, FileMetadata
 from a13n_harness.toolsets.files import FileTextEdit, FileToolset
 from a13n_harness.toolsets.output import disclose_sequence_field
 
@@ -23,7 +23,7 @@ def file_tools(tmp_path: Path):
     files = LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="file-tools",
+        execution_id="file-tools",
         generation="test",
     )
     context = cast(Any, SimpleNamespace(deps=SimpleNamespace(), capabilities={}))
@@ -109,7 +109,7 @@ async def test_text_view_batches_obey_actual_page_budget(tmp_path: Path, provide
     files = LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=provider_budget),
-        mount_id="workspace",
+        execution_id="workspace",
         generation="test",
     )
     toolset = FileToolset(files)
@@ -136,7 +136,7 @@ async def test_file_toolset_creates_nested_parents_and_returns_stable_missing_er
     files = LocalFileOperator(
         root=tmp_path,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
-        mount_id="mount-1",
+        execution_id="mount-1",
         generation="generation-1",
     )
     toolset = FileToolset(files)

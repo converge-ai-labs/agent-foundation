@@ -4,12 +4,13 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from a13n_harness import RunError
-from a13n_harness.providers.environment.direct_local.configuration import (
+from a13n_environment import EnvironmentConnector, EnvironmentExecution
+from a13n_environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
-from a13n_harness.providers.environment.direct_local.provider import DirectLocalEnvironment
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness import RunError
 from pydantic_ai.messages import ModelMessage, ModelRequest
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -18,20 +19,40 @@ from a13n_agent_app_example import ConversationApplication
 pytestmark = pytest.mark.anyio
 
 
-class _MockEnvironment(DirectLocalEnvironment):
+class _MockEnvironment(EnvironmentConnector):
     def __init__(self, configuration: DirectLocalEnvironmentConfiguration, lifecycle: list[str]) -> None:
-        super().__init__(configuration, environment_id="mock-environment")
-        self._lifecycle_events = lifecycle
+        self.connector = DIRECT_LOCAL.execution_connector(configuration, environment_id="mock-environment")
+        self.lifecycle = lifecycle
 
-    async def _prepare(self, *, mount_id: str) -> None:
-        self._lifecycle_events.append("prepare")
-        await super()._prepare(mount_id=mount_id)
+    @property
+    def provider_key(self):
+        return self.connector.provider_key
 
-    async def _close(self) -> None:
-        try:
-            await super()._close()
-        finally:
-            self._lifecycle_events.append("close")
+    @property
+    def environment_id(self):
+        return self.connector.environment_id
+
+    @property
+    def state(self):
+        return self.connector.state
+
+    @property
+    def descriptor(self):
+        return self.connector.descriptor
+
+    async def open(self) -> EnvironmentExecution:
+        self.lifecycle.append("open")
+        execution = await self.connector.open()
+        close = execution.close
+
+        async def tracked_close():
+            try:
+                await close()
+            finally:
+                self.lifecycle.append("close")
+
+        execution.close = tracked_close
+        return execution
 
 
 class _MockEnvironmentFactory:
@@ -43,7 +64,7 @@ class _MockEnvironmentFactory:
         )
         self.lifecycle: list[str] = []
 
-    def __call__(self) -> DirectLocalEnvironment:
+    def __call__(self) -> EnvironmentConnector:
         self.lifecycle.append("construct")
         return _MockEnvironment(self._configuration, self.lifecycle)
 
@@ -110,8 +131,8 @@ async def test_conversation_streams_multiple_turns_and_recovers_after_restart(
     assert len(recovered_after_turn.message_history) > len(second_state.message_history)
     assert recovered_history_sizes == [initial_history_sizes[1] + 2]
     assert state_path.read_text(encoding="utf-8").startswith("{\n")
-    assert initial_environment.lifecycle == ["construct", "close", "construct", "close"]
-    assert recovered_environment.lifecycle == ["construct", "close"]
+    assert initial_environment.lifecycle == ["construct", "open", "close", "construct", "open", "close"]
+    assert recovered_environment.lifecycle == ["construct", "open", "close"]
 
 
 async def test_abandoned_turn_scope_cleans_environment_and_allows_the_next_turn(
@@ -126,11 +147,11 @@ async def test_abandoned_turn_scope_cleans_environment_and_allows_the_next_turn(
 
     async with application.stream_turn("abandoned turn") as stream:
         assert await anext(stream) == "scoped:"
-        assert environment.lifecycle == ["construct"]
+        assert environment.lifecycle == ["construct", "open"]
 
-    assert environment.lifecycle == ["construct", "close"]
+    assert environment.lifecycle == ["construct", "open", "close"]
     assert await _collect_turn(application, "completed turn") == ["scoped:", "turn-1"]
-    assert environment.lifecycle == ["construct", "close", "construct", "close"]
+    assert environment.lifecycle == ["construct", "open", "close", "construct", "open", "close"]
 
 
 async def test_failed_turn_keeps_the_last_completed_state_and_cleans_environment(
@@ -161,4 +182,4 @@ async def test_failed_turn_keeps_the_last_completed_state_and_cleans_environment
 
     assert exc_info.value.code == "agent_run_failed"
     assert state_path.read_text(encoding="utf-8") == completed_payload
-    assert environment.lifecycle == ["construct", "close", "construct", "close"]
+    assert environment.lifecycle == ["construct", "open", "close", "construct", "open", "close"]

@@ -1,195 +1,97 @@
 ---
 title: Lifecycle and state
-description: Save Environment state between Runs, re-enter targets, and destroy them explicitly.
+description: Manage targets separately from reusable connectors and independent executions.
 ---
 
-To retain work between Runs, save the Environment's state and supply it to a fresh adapter on the next Run. A Provider constructs adapters; each adapter connects to one target.
+The Host manages a target and saves the result before passing a fixed-target connector to Harness. The independent `a13n-environment` package also works directly in ordinary applications.
 
-For a first file operation without an Agent, start with [Getting started](getting-started.md).
+## Three objects
 
-## Lifecycle at a glance
+| Object                 | Responsibility                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `EnvironmentProvider`  | Account-scoped management client for explicit create, start, inspect, stop, keepalive, and destroy                  |
+| `EnvironmentConnector` | Reusable configuration for a fixed target; construction acquires no live client                                     |
+| `EnvironmentExecution` | A ready execution returned by `await connector.open()`, with its own clients, operation handles, and `execution_id` |
 
-```mermaid
-flowchart TB
-    Host[Host policy and persistence] --> Definition[EnvironmentProviderDefinition]
-    Definition --> Adapter[Fresh Environment]
-    State[EnvironmentState or none] --> Adapter
-    Runtime[Fresh runtime collaborators] --> Adapter
-    Adapter --> Harness[Harness Run]
-    Harness --> Operations[Files, shell, processes, output, and ports]
-    Adapter --> Latest[Detached cached state]
-    Host <--- Latest
+A connector can serve several Runs. Every `open()` creates a separate execution. Opening, readiness checks, and execution cleanup never create, start, replace, or renew the target. A lost saved target fails instead of selecting another resource with the same name.
 
-    class Host app
-    class Definition,Adapter,Harness a13n
-    class State,Latest store
-```
+`close()` releases only resources owned by that object. Native process survival follows the Provider contract: E2B disconnects observations, while Direct Local cleans up processes it started. Target retention and destruction remain Host decisions.
 
-A normal Run follows this sequence:
+## Manage and publish before execution
 
-1. The Host resolves an allowlisted Provider type from its catalog.
-2. The definition validates the credential-free target recipe, then the account configuration and credential (unless the Host supplied a runtime).
-3. The Host supplies the latest authoritative `EnvironmentState`.
-4. The definition acquires its runtime collaborator, then constructs one fresh adapter; everything before the runtime factory is pure. A runtime the Host passes in is borrowed; one the definition acquires belongs to the adapter.
-5. The Host prepares eagerly, or lets the first operation prepare lazily. Harness binds the local scope, uses operations, exports cached state, and closes the adapter.
-6. The Host persists the latest state and applies retention policy separately.
-
-`close()` releases the clients, Envd Session, temporary output, and other local handles owned by that adapter, including a runtime that `create()` acquired for it. It is idempotent and non-destructive. Shared Envd Device runtimes the Host passes in belong to the Host and are closed separately at Host shutdown. Harness never calls `destroy()`.
-
-When retention policy selects removal, the Host constructs a different fresh adapter from the exact current state and calls `destroy()` explicitly. Successful destruction clears that adapter's cached state. A failed or unknown outcome preserves the last validated state for inspection or retry.
-
-## Resolve and construct an Environment
-
-A persisted `EnvironmentProviderSpec` contains only a Provider type and credential-free JSON recipe:
+In this fragment, the Host supplies state storage, concurrency control, and cancellation protection:
 
 ```python
-from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.models import EnvironmentProviderSpec
+from a13n_environment.docker.provider import DOCKER
+from a13n_environment.errors import observed_environment_state
 
-spec = EnvironmentProviderSpec(
-    provider_key="direct_local",
-    configuration={
-        "root": {"path": "/srv/agent-workspaces/current"},
-    },
-)
+recipe = {"image": "ghcr.io/converge-ai-labs/a13n-sandbox:dev"}
+state = await state_store.load(environment_key)
+async with await DOCKER.open_provider(configuration=account_configuration) as provider:
+    try:
+        if state is None:
+            state = await provider.create(recipe, environment_id="env-workspace", operation_id="op-create")
+        else:
+            state = await provider.start(recipe, environment_id="env-workspace", state=state, operation_id="op-start")
+    except BaseException as error:
+        observed = observed_environment_state(error, state)
+        await state_store.publish(environment_key, observed)
+        raise
+    await state_store.publish(environment_key, state)
+    connector = provider.execution_connector(recipe, environment_id="env-workspace", state=state)
 
-catalog = ProviderCatalog(select_builtin_environment_providers(("direct_local",)))
-definition = catalog.require(spec.provider_key)
-environment = await definition.create(
-    spec.configuration,
-    environment_id="workspace",
-    state=None,
-)
+result = await executable.run("Continue the task", environment=connector)
 ```
 
-There is no configuration schema version: a Provider owns exactly one recipe model, and changing an input's meaning changes the Provider type. Selection, recipe validation, and adapter construction are inert. `enter()` also performs no target I/O. `prepare()` creates, resumes or connects the target; `ensure_ready()` triggers it on first use when preparation is lazy.
+`EnvironmentState` retains its existing credential-free format. It contains no live client, execution handle, Harness mount policy, or destruction authority. Management methods return the current reference; `inspect()` returns both status and reference.
 
-Pass the fresh adapter to Harness:
+Management can fail after partial success. `EnvironmentManagementError` and `EnvironmentManagementCancelled` preserve the reference known at failure. `observed_environment_state(error, previous)` also follows exception chains to find that observation. A confirmed cleared `None` differs from having no new observation. Publish under the Host's conditional update and cancellation policy before releasing management ownership.
 
-```python
-result = await executable.run(
-    "Inspect the workspace",
-    environment=environment,
-)
-```
-
-Harness enters and closes the adapter exactly once. Construct another adapter for every independent Run, even when several Runs target the same working directory, container, VM, or remote sandbox.
-
-## Re-enter a stateful target
-
-The Host supplies state before entry:
-
-```python
-current_state = await state_store.load(environment_key)
-environment = await definition.create(
-    spec.configuration,
-    configuration=backend_configuration,
-    credential=current_credential,
-    environment_id="workspace",
-    state=current_state,
-)
-
-try:
-    result = await executable.run(
-        "Continue the task",
-        environment=environment,
-        previous_state=previous_harness_state,
-    )
-finally:
-    await state_store.publish(environment_key, environment.dump_state())
-```
-
-`dump_state()` is synchronous and performs no target I/O. It returns a detached deep copy of the latest validated cached state, so caller mutation cannot alter the adapter's cache. Providers update that cache as soon as changed target identity is known, before later readiness work that might fail.
-
-State is a soft reference, not proof that a target still exists. Construction validates its codec and compatibility; during preparation, the Provider inspects the exact target selected by that validated state. Merely entering the adapter does not perform that inspection. The Provider may create a replacement only after authoritative absence, only when the Host allows creation, and only as that Provider's contract permits. It never treats an incompatible target, ambiguous discovery, unavailable control plane, or unknown mutation outcome as absence.
-
-`EnvironmentState` contains no bearer credential, live client, task, process-local handle, Harness mount policy, or destruction authority. Storage, authorization, retention, scheduling, and selection of the authoritative version remain Host responsibilities.
+A connector's `state` is a detached fixed reference. Execution only validates and uses that target; it produces no new management state to publish after a Run. `HarnessState.environment_states` aggregates mount state and does not replace the Host's authoritative management record.
 
 ## Explicit destruction
 
-Destroy requires a fresh, not-yet-entered adapter:
-
 ```python
-cleanup = await definition.create(
-    spec.configuration,
-    configuration=backend_configuration,
-    credential=current_credential,
-    environment_id="workspace",
-    state=current_state,
-    allow_create=False,
-)
-try:
-    await cleanup.destroy()
-finally:
-    await state_store.publish(environment_key, cleanup.dump_state())
-    await cleanup.close()
+async with await definition.open_provider(
+    configuration=account_configuration, credential=current_credential
+) as provider:
+    try:
+        await provider.destroy(recipe, environment_id="env-workspace", state=state, operation_id="op-destroy")
+    except BaseException as error:
+        await state_store.publish(environment_key, observed_environment_state(error, state))
+        raise
+    await state_store.publish(environment_key, None)
 ```
 
-The Provider removes only the exact backing target and Provider-owned bootstrap material represented by validated state. Shared Host directories, Docker bind sources, and external named volumes remain externally owned.
+Clear state only after confirmed destruction. Unknown outcomes retain the known reference for later inspection. Destruction addresses the validated target and Provider-owned material; execution close never deletes shared Host directories, bind sources, or external volumes.
 
-Do not use context exit, Harness completion, suspension, or cancellation as an implicit destruction signal. Those paths close process-local resources only.
+## Management and execution methods
 
-## Readiness, recovery, and maintenance
+| Method                                                                      | Effect                                                                    |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `definition.open_provider(...)`                                             | Acquire account management clients without selecting or changing a target |
+| `provider.create(recipe, ..., operation_id=...)`                            | Explicitly create or reconcile a managed target                           |
+| `provider.start(recipe, ..., state=..., operation_id=...)`                  | Explicitly start an existing target; never recreate a lost target         |
+| `provider.inspect(recipe, ..., state=...)`                                  | Read-only `running`, `stopped`, or `absent` status plus reference         |
+| `provider.stop(...)` / `destroy(...)`                                       | Explicit lifecycle mutation when supported                                |
+| `provider.keepalive(...)`                                                   | Explicit renewal scheduled by the Host                                    |
+| `definition.execution_connector(...)` / `provider.execution_connector(...)` | Pure construction of fixed-target connection inputs                       |
+| `connector.open()`                                                          | Open a new ready execution                                                |
+| `execution.check_ready(families)`                                           | Read-only check of the current execution without target recovery          |
+| `execution.close()`                                                         | Idempotent cleanup of this execution's resources                          |
 
-| Operation                                   | What it does                                                                                                 |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `enter()` / `async with`                    | Bind the one-use scope; no target preparation                                                                |
-| `prepare()`                                 | Create, resume, or connect from validated state; the Host may call it before entry                           |
-| `check_ready(operations)`                   | Check an entered connection without provisioning or recovery                                                 |
-| `ensure_ready(operations)`                  | Prepare on first use, check required families, and perform only Provider-supported recovery                  |
-| `recover()`                                 | Explicitly authorized in-scope recovery where supported; not generic mutation replay                         |
-| `reconcile()`                               | Observe an abandoned preparation as running/stopped/absent without creating, starting, or replacing a target |
-| `stop()`                                    | Resumable target stop where supported; distinct from close and destroy                                       |
-| `keepalive(deadline=..., operation_id=...)` | Extend a running target's lifetime where supported; the Host owns timing and retries                         |
-| `dump_state()`                              | Detached cached state, with no target I/O                                                                    |
-| `close()`                                   | Idempotent local-resource cleanup                                                                            |
-| `destroy()`                                 | Remove the exact owned target through a fresh, unentered adapter                                             |
+Closing a management client leaves its previously generated connectors usable. The Host closes borrowed runtimes; account configuration may accompany a borrowed runtime, but credentials may not. Local Envd requires a Host runtime. HTTP and WebSocket Envd expose connection only, with no target management.
 
-A supported readiness recovery can report `environment_connection_refreshed` or `environment_rebuilt` rather than silently continuing the originally requested operation. Same-target reconnection and replacement of a lost generation have different consequences. Recheck process observations and temporary files before continuing. Remote Envd preparation failures require fresh adapters rather than assumed in-scope recovery.
+## Handle failures
 
-Provider capability declarations tell a Host which maintenance paths it may select:
+Management and Provider boundaries use `EnvironmentProviderError`; operations use `EnvironmentError`. Present `safe_projection()` to users and retain full exceptions for local diagnostics.
 
-| Built-in Provider            | Managed selection    | Resumable stop                          | Destroy                                 | Keepalive required       |
-| ---------------------------- | -------------------- | --------------------------------------- | --------------------------------------- | ------------------------ |
-| Direct Local                 | Yes, stateless       | Declared, no-op over the Host directory | Declared, no-op over the Host directory | No                       |
-| Local Envd                   | Yes, stateless       | No                                      | No                                      | No                       |
-| Docker                       | Yes                  | Yes                                     | Yes                                     | No                       |
-| E2B                          | Yes                  | Yes                                     | Yes                                     | Yes                      |
-| Daytona                      | Yes                  | Yes                                     | Yes                                     | No                       |
-| Modal                        | Yes                  | Managed only, filesystem snapshot       | Yes                                     | Yes, fixed deadline only |
-| Vercel Sandbox               | Yes                  | Yes                                     | Yes                                     | Yes                      |
-| Fly.io Sprites               | Yes                  | No; automatic native sleep              | Yes                                     | No                       |
-| Runloop                      | Yes                  | Yes                                     | Yes                                     | Yes                      |
-| Remote HTTP / WebSocket Envd | No, externally owned | No                                      | No                                      | No                       |
+| Certainty        | Host response                                                      |
+| ---------------- | ------------------------------------------------------------------ |
+| `not_dispatched` | Fix input or runtime conditions before considering another attempt |
+| `known`          | Act on the known outcome; this does not imply retryability         |
+| `unknown`        | Inspect the original operation and target before any replay        |
 
-See the [six-cloud comparison](providers.md#reconnection-and-lifecycle) for filesystem, memory, and expiry differences. Managed selection does not mean every Provider creates storage or owns the Host directory. Unsupported base methods are not usable merely because they appear on the abstract interface. Schedule keepalive from the Provider's `keepalive_horizon` and actual target policy; do not treat the 300-second base default as a universal cloud TTL.
+An unavailable control plane does not mean an absent target. Reconnection requires an explicit new execution, or explicit mount replacement in Harness. Process, output, and computer references from an old execution cannot be used in the new one.
 
-## Handle typed failures
-
-Configuration, catalog, lifecycle, and backend failures use `EnvironmentProviderError`. Operation failures use `EnvironmentError`. They are not interchangeable with a model-tool error envelope.
-
-A Provider error has a stable code, category, certainty, recovery hint, bounded context, and richer local description/details. Categories are `invalid`, `unsupported`, `missing`, `denied`, `conflict`, `unavailable`, `timeout`, `unknown_outcome`, `cleanup`, and `provider_failure`.
-
-| Evidence                    | Host response                                                                                   |
-| --------------------------- | ----------------------------------------------------------------------------------------------- |
-| Certainty `not_dispatched`  | No dispatch occurred; fix the stated input/runtime condition before deciding on another attempt |
-| Certainty `known`           | Use the known outcome; do not infer that every known error is retryable                         |
-| Certainty `unknown`         | Reconcile the original operation/target before any possible replay                              |
-| Hint `fix_input`            | Correct validated configuration or request data                                                 |
-| Hint `refresh_runtime`      | Reconstruct current authorized runtime collaborators                                            |
-| Hint `retry_same_operation` | Preserve the owning operation identity and its retry contract                                   |
-| Hint `reconcile`            | Inspect durable Provider/Host evidence                                                          |
-| Hint `none`                 | No automatic recovery recommendation                                                            |
-
-Use `error.safe_projection()` for public presentation. It retains bounded correlation and a safe category message, excluding the rich local description/details. Keep local diagnostic access appropriate to the Host; blindly serializing the exception is not equivalent to the safe projection.
-
-Always publish the latest validated cached state according to Host policy, including after failed readiness or unknown cleanup. Never convert control-plane unavailability into target absence, replace a target to hide incompatible state, or call `destroy()` as generic error handling.
-
-## Host checklist
-
-- Construct one fresh adapter per independent Run, including resumed Runs.
-- Read the latest detached state after success or failure, and publish it according to Host policy.
-- Treat an unavailable control plane or unknown mutation outcome as uncertainty, not target absence.
-- Close local resources independently of retention. Destroy only an exact validated target through a fresh adapter.
-- Keep credentials, authorization, and live clients out of both Environment and Harness continuation data.
+See the [Provider comparison](providers.md#reconnection-and-lifecycle) for cloud-specific stop, filesystem, and expiry rules.

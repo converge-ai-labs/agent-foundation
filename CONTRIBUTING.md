@@ -231,9 +231,10 @@ When bootstrapping an empty registry namespace, publish dependency owners before
 
 1. publish the a13n-envd release so `a13n-envd` and `a13n-envd-client` exist;
 2. publish the independent a13n Logging release so `a13n-logging` exists; this can run independently or in parallel with the a13n-envd release;
-3. publish the Harness release group after compatible `a13n-envd-client` and `a13n-logging` releases are available;
-4. publish Harness UI after compatible releases of its dependencies are available from PyPI;
-5. publish a13n Service after its compatible library dependencies, including `a13n-logging`, are available.
+3. publish the independent a13n Environment release after a compatible `a13n-envd-client` release is available;
+4. publish the Harness release group after compatible `a13n-environment` and `a13n-logging` releases are available;
+5. publish Harness UI after compatible releases of its dependencies are available from PyPI;
+6. publish a13n Service after its compatible library dependencies, including `a13n-logging`, are available.
 
 Harness releases use `release/a13n-harness-v<version>`. The workflow assigns exactly the same version to `a13n-harness` and `a13n-stream-protocol`, pins the published Protocol dependency to that exact Harness version, builds both wheels and source distributions, publishes them through the `harness-pypi` environment, and attaches all four artifacts to one GitHub Release.
 
@@ -242,6 +243,8 @@ Cross-group dependencies use the consuming manifest's `[tool.a13n.release-depend
 Harness UI releases use `release/a13n-harness-ui-v<version>`. The UI version advances independently. The workflow injects its bounded dependency requirements, builds the private WebUI into the sdist and wheel alongside the Python CLI and reusable App, publishes through `agent-ui-pypi`, and attaches the two artifacts to one GitHub Release. The GitHub Release follows Python publication; no Harness UI image is built or published. The private frontend has no independent npm publication.
 
 Local EIP derives its canonical native version from installed `a13n-envd-client` metadata, not a packaged version file or a latest-release lookup. Automatic acquisition requires public access to the co-versioned daemon's archives; a private repository does not provide anonymous download access. This runtime prerequisite does not gate publication. Source client version `0.0.0`, missing metadata, or invalid metadata blocks only managed acquisition; source development can use an explicit validated executable override. Full Control does not require managed acquisition.
+
+a13n Environment releases use `release/a13n-environment-v<version>` and advance independently of Harness and its Hosts. The workflow versions only `a13n-environment` and its root lock entry, injects the declared Envd client compatibility bounds, builds its wheel and source distribution, publishes through `foundation-pypi` using `PYPI_TOKEN`, and attaches both artifacts to one GitHub Release. Before the first release, allow `release/a13n-environment-v*` in that environment's deployment tag policy and ensure the token can publish `a13n-environment`.
 
 a13n Logging releases use `release/a13n-logging-v<version>` and advance independently of Service, Harness, and Harness UI. The workflow versions only `a13n-logging` and its root lock entry, builds its wheel and source distribution, publishes through the existing `foundation-pypi` environment using `PYPI_TOKEN`, and attaches both artifacts to one GitHub Release. The environment's deployment tag policy must allow `release/a13n-logging-v*` alongside `release/a13n-service-v*`; the token must permit publishing `a13n-logging`. No new environment is required.
 

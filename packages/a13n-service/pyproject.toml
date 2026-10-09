@@ -8,7 +8,8 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 dependencies = [
     "a13n-logging",
-    "a13n-harness[docker,e2b,modal]",
+    "a13n-harness",
+    "a13n-environment[docker,e2b,modal]",
     "a13n-stream-protocol",
     "ag-ui-protocol>=1.0.0,<2",
     "aiobotocore[httpx2]>=3.9,<4",
@@ -81,6 +82,7 @@ known_first_party = ["a13n_service"]
 package_module_name_map = { "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "argon2-cffi" = "argon2", "fastmcp-slim" = "fastmcp", "pyyaml" = "yaml" }
 
 [tool.a13n.release-dependencies]
+a13n-environment = ">=0.1.0,<0.2.0"
 a13n-logging = ">=0.2.0,<0.3.0"
-a13n-harness = ">=0.8.1,<0.9.0"
-a13n-stream-protocol = ">=0.8.1,<0.9.0"
+a13n-harness = ">=0.9.0,<0.10.0"
+a13n-stream-protocol = ">=0.9.0,<0.10.0"

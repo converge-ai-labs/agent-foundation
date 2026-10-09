@@ -13,6 +13,8 @@ from secrets import token_urlsafe
 from typing import Any, Literal, cast
 from xml.etree.ElementTree import Element, SubElement, tostring
 
+from a13n_environment.files import FileOperator
+from a13n_environment.models import EnvironmentError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import ModelSettings, RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
@@ -65,8 +67,6 @@ from a13n_harness.model_context import (
     _requires_exact_boundary,
 )
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
-from a13n_harness.providers.environment.files import FileOperator
-from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.tools.invocation import disabled_tool_execution
 from a13n_harness.toolsets.context import HandoffToolset
 

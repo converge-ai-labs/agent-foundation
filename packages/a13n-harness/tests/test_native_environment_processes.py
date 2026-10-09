@@ -8,13 +8,14 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from a13n_environment._guest_files import GuestFiles
+from a13n_environment.e2b.commands import GuestCommands
+from a13n_environment.e2b.configuration import E2BEnvironmentConfiguration
+from a13n_environment.e2b.provider import E2B, E2BProviderRuntime, E2BTarget
+from a13n_environment.models import EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
-from a13n_harness.providers.environment._guest_files import GuestFiles
-from a13n_harness.providers.environment.e2b.commands import GuestCommands
-from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
-from a13n_harness.providers.environment.e2b.provider import E2BEnvironment, E2BProviderRuntime
-from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentPermissionSet
+from a13n_harness.environment.sources import EnvironmentMount
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from pydantic import SecretStr
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
@@ -80,18 +81,24 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
     monkeypatch.setattr(GuestFiles, "stat", AsyncMock())
     monkeypatch.setattr(GuestCommands, "files", AsyncMock(return_value={"path": "/home/user"}))
 
-    class NativeEnvironment(E2BEnvironment):
-        async def _prepare(self, **kwargs):
-            permissions = self.descriptor.permissions
-            self._remember(sandbox.sandbox_id)
-            await self._open_operations(sandbox, kwargs["mount_id"])
-            self._descriptor = self._descriptor.model_copy(update={"permissions": permissions})
-
-        async def _ensure_ready(self, operations):
-            pass
-
     configuration = E2BEnvironmentConfiguration()
     runtime = E2BProviderRuntime(SecretStr("test-only"))
+    target = E2BTarget(configuration, environment_id="env-test", state=None, runtime=runtime)
+    target._remember(sandbox.sandbox_id)
+    state = target.state
+
+    async def attach(*args, **kwargs):
+        return sandbox
+
+    async def ready(*args, **kwargs):
+        return True
+
+    async def close(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr("a13n_environment.e2b.provider.open_sandbox", attach)
+    monkeypatch.setattr("a13n_environment.e2b.provider.close_sandbox", close)
+    sandbox.is_running = ready
     policy_resources = []
 
     async def allow(invocation, metadata, *, context):
@@ -132,7 +139,7 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
             capabilities=(DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),),
         )
 
-    first = NativeEnvironment(configuration, environment_id="env-test", state=None, runtime=runtime)
+    first = E2B.execution_connector(configuration, environment_id="env-test", state=state, runtime=runtime)
     await executable([lambda _: ("shell_exec", {"command": "sleep 60", "yield_time_seconds": 0})]).run(
         "start", environment=first, bindings=bindings()
     )
@@ -141,17 +148,16 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
     assert "disconnect" in native.calls
     assert "kill" not in native.calls
     old_ref = results[-1]["process_id"]
-    state = first.dump_state()
-    assert state is not None
-    second = NativeEnvironment(configuration, environment_id="env-test", state=state, runtime=runtime)
-    if discovery_only:
-        second._descriptor = second.descriptor.model_copy(
-            update={
-                "permissions": EnvironmentPermissionSet(
-                    operations=frozenset({EnvironmentAction.PROCESS_LIST, EnvironmentAction.PROCESS_INSPECT})
-                ),
-            }
+    second = (
+        EnvironmentMount(
+            first,
+            permission_ceiling=EnvironmentPermissionSet(
+                operations=frozenset({EnvironmentAction.PROCESS_LIST, EnvironmentAction.PROCESS_INSPECT})
+            ),
         )
+        if discovery_only
+        else first
+    )
     selected = None
 
     def inspect(returns):

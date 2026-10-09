@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Installed Environment Provider plugin example for Agent Foundation"
 requires-python = ">=3.13"
 dependencies = [
+    "a13n-environment",
     "a13n-harness>=0,<1",
     "pydantic>=2.12,<3",
 ]
@@ -29,6 +30,7 @@ packages = ["src/acme_provider"]
 members = []
 
 [tool.uv.sources]
+a13n-environment = { path = "../../packages/a13n-environment", editable = true }
 a13n-envd-client = { path = "../../packages/a13n-envd-client", editable = true }
 a13n-harness = { path = "../../packages/a13n-harness", editable = true }
 a13n-logging = { path = "../../packages/a13n-logging", editable = true }

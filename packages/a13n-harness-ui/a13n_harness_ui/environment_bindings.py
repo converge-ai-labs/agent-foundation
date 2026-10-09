@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Annotated, Self
 
 from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
-from a13n_harness.providers.environment.envd_policy import EnvdBoundaryRequirement, EnvdEgressConfiguration
-from a13n_harness.providers.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentPermissionSet
+from a13n_environment.envd_policy import EnvdBoundaryRequirement, EnvdEgressConfiguration
+from a13n_environment.models import FILE_EXECUTION_ACTIONS, EnvironmentPermissionSet
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _HOST_ALIASES = frozenset({"workspace", "thread-files", "configuration", "builtin-skills", "user-skills"})

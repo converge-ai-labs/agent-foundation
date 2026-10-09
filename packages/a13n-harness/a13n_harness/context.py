@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from a13n_harness.capabilities.steering import SteeringBridge
     from a13n_harness.capabilities.web import WebBinding
     from a13n_harness.capabilities.working_state import TaskStateBinding, WorkingStateObserver
+    from a13n_harness.environment.models import EnvironmentPath
     from a13n_harness.environment.providers import BoundEnvironment as Environment
     from a13n_harness.environment.providers import EnvironmentRuntime
     from a13n_harness.events import HarnessEvent, HarnessEventEmitter
@@ -42,7 +43,6 @@ if TYPE_CHECKING:
     from a13n_harness.models import RunModelResolver
     from a13n_harness.plugins import BoundPluginContext
     from a13n_harness.pricing import AbstractModelCostCapability
-    from a13n_harness.providers.environment.models import EnvironmentPath
     from a13n_harness.recovery import ToolRecoveryPlan
     from a13n_harness.spec import HarnessModelCharacteristics
     from a13n_harness.tools._output import _ToolResultSpillStore
@@ -283,7 +283,7 @@ class SkillPath:
     directory: EnvironmentPath
 
     def __post_init__(self) -> None:
-        from a13n_harness.providers.environment.models import EnvironmentPath
+        from a13n_harness.environment.models import EnvironmentPath
 
         _validate_runtime_metadata_id(self.name, "skill name")
         _validate_runtime_metadata_id(self.source_id, "skill source_id")

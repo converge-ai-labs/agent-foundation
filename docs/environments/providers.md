@@ -14,7 +14,7 @@ The recipe describes the target; the runtime holds its clients and credentials.
 
 ```python
 from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_environment.builtins import select_builtin_environment_providers
 from a13n_harness.providers.plugins import load_provider_plugins
 
 plugins = load_provider_plugins(("acme",))
@@ -41,18 +41,18 @@ acme = "acme_agent_environment:manifest"
 ```python
 from a13n_harness.providers.plugins import ProviderManifest
 
-manifest = ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))
+manifest = ProviderManifest(api_version=2, environment=(ACME_SANDBOX,))
 ```
 
 An `EnvironmentProviderDefinition` should:
 
-1. declare one stable `type` matching `^[a-z][a-z0-9_]{0,63}$`, a `display_name`, and optional HTTPS `setup_url` and `setup_label`;
-2. declare a `configuration_model` for account inputs, an optional `credential_model`, and an `environment_model` for the desired target recipe;
-3. acquire shared collaborators inside `runtime_factory(configuration=..., credential=...)`, or defer operation connections and sessions to preparation; never perform I/O at import or validation time;
-4. return one fresh inert `Environment` from `construct(configuration=recipe, environment_id=..., state=..., runtime=..., operation_id=..., allow_create=...)`; keep per-adapter creation policy and operation identity out of reusable runtimes, and project configured capabilities from `describe_environment()` without target I/O;
-5. validate supplied state before mutation and update cached state at every target-identity transition;
-6. expose Provider-neutral `EnvironmentOperations` after entry;
-7. declare `supports_managed`, `supports_stop`, `supports_destroy`, and `requires_keepalive` truthfully, keep `close()` non-destructive, and remove a target only in explicit `destroy()`.
+1. declare a stable `type`, display name, and optional HTTPS setup link;
+2. declare separate models for account configuration, credentials, and target recipes;
+3. return an account-scoped `EnvironmentProvider` from `provider_factory` for explicit management;
+4. return a fixed-target `EnvironmentConnector` from the pure `connector_factory`;
+5. return a fresh ready `EnvironmentExecution` from every `open()`, with its own `execution_id` and operations;
+6. validate references and preserve known state on management failure or cancellation; execution does not change it;
+7. declare management capabilities truthfully. Opening, checking, and closing execution never creates, starts, replaces, renews, or destroys targets.
 
 The runnable [Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins) shows one installed manifest with the same catalog, validation, construction, and Harness path. [Plugins and extensions](../a13n-harness/plugins.md#provider-plugins) covers the shared authoring contract.
 
@@ -89,7 +89,7 @@ Start with the [built-in examples](examples.md) or [run both remote transports l
 The Host selects one compatible `a13n-envd` executable and private-runtime allocator:
 
 ```python
-from a13n_harness.providers.environment.local_envd.runtime import (
+from a13n_environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
     resolve_a13n_envd_executable,
@@ -111,7 +111,7 @@ Docker uses an Engine connection from the Host process. No bootstrap store, gues
 
 ```python
 import docker
-from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
+from a13n_environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 
 engine = DockerSDKEngine(docker.from_env())
 runtime = DockerProviderRuntime(engine=engine)
@@ -144,7 +144,7 @@ Daytona, Modal, Vercel, Sprites, and Runloop recipes accept `root`, `python`, `s
 
 ### Reconnection and lifecycle
 
-Keep the latest `EnvironmentState` in Host storage and supply it to each fresh adapter. Each fresh adapter consumes that state. Closing an adapter only releases local transports. Managed allocation uses stable ownership metadata or a native name; confirmed loss can rebuild the frozen recipe. Timeouts, permission failures, and unknown responses never count as absence. Rebuilding changes the backing identity and does not recover lost files.
+The Host saves the latest `EnvironmentState` and supplies it to a fixed-target connector. Execution close releases only owned resources. A lost saved target is never automatically rebuilt; management must explicitly decide what follows. Timeouts, permission failures, and unknown responses do not count as absence.
 
 | Provider       | Explicit stop/resume                                                            | Memory                    | Expiry and retention                                                                                                                                                                                                          |
 | -------------- | ------------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -155,7 +155,7 @@ Keep the latest `EnvironmentState` in Host storage and supply it to each fresh a
 | Fly.io Sprites | No explicit stop API; idle Sprites sleep and wake on exec                       | Not promised              | Durable filesystem survives native automatic sleep. The Provider does not support `stop()`, so do not schedule an explicit stop; destruction is separate.                                                                     |
 | Runloop        | Native suspend/resume preserves disk                                            | Not preserved             | Idle policy suspends the Devbox. Keepalive acknowledges a new idle interval; it cannot start a suspended target.                                                                                                              |
 
-Stop is never implemented as unprotected deletion. Modal's internal snapshots are Provider state, not a user-facing snapshot resource. Their deletion requires matching native ownership tags. A Modal adapter constructed with `allow_create=False` (an external registration) cannot use snapshot-based stop/resume, because restoring would allocate another native sandbox. All external registrations require Provider state and never allocate implicitly. Daytona, Modal, Vercel, Sprites, and Runloop also refuse adapter destruction of externally owned targets.
+Modal stop first saves a filesystem snapshot. Explicit `start()` restores from that snapshot and returns the resulting reference; `open()` performs neither restoration nor snapshot cleanup. Snapshot deletion requires matching native ownership tags. External registration supplies a connector only; destruction authority belongs to management and cannot be inferred from a state reference.
 
 An interrupted create is reconciled through the native name or ownership metadata. Unknown dispatched commands are not replayed. For Daytona, Modal, Vercel, Sprites, and Runloop, each foreground command has a bounded guest-side deadline; losing or cancelling its transport does not prove the command stopped immediately. Cancellation closes local transport resources; the guest command runner bounds the foreground command and kills its process group. This is not sandbox-wide process containment: descendants that deliberately detach into a new session require native target lifecycle cleanup. Timeout output is partial and has no invented producer total. Modal's SDK retries native commands with a stable exec ID and filesystem snapshots with a stable snapshot request ID.
 
@@ -166,19 +166,20 @@ E2B executes commands directly through its native asynchronous SDK. Bounded Pyth
 ```python
 import os
 
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_environment.builtins import select_builtin_environment_providers
 
 (E2B,) = select_builtin_environment_providers(("e2b",))
-environment = await E2B.create(
-    {"template": "base", "timeout_seconds": 300},
-    configuration={"domain": "e2b.dev"},
-    credential={"api_key": os.environ["E2B_API_KEY"]},
-    environment_id="environment-example",
-    state=None,
-)
+recipe = {"template": "base", "timeout_seconds": 300}
+async with await E2B.open_provider(
+    configuration={"domain": "e2b.dev"}, credential={"api_key": os.environ["E2B_API_KEY"]}
+) as provider:
+    state = await provider.create(recipe, environment_id="env-example", operation_id="op-create")
+    await state_store.publish(environment_key, state)
+    connector = provider.execution_connector(recipe, environment_id="env-example", state=state)
+result = await executable.run("Inspect the sandbox", environment=connector)
 ```
 
-Pass this Environment to Harness as usual. Persist `environment.dump_state()` on the Host and give it to a fresh adapter for re-entry. `close()` preserves the sandbox and user files; it disconnects this adapter's output observations without killing commands. Use fresh adapters for `stop()` (pause), `prepare()` (resume) and `destroy()` (kill). Keepalive reports actual expiry and never resumes a paused sandbox. The library never reads `.env`; the Host passes the domain as Provider configuration and `api_key` as its credential.
+`close()` preserves the sandbox and files, disconnecting this execution's observations without killing commands. Management explicitly calls `stop()`, `start()`, `keepalive()`, and `destroy()`. Opening uses a read-only lookup of a running target without renewal or resume, and rejects E2B targets configured for automatic resume. The library never reads `.env`; the Host supplies credentials.
 
 A fresh adapter can use native process discovery to find commands still running in the same sandbox. This is best-effort: the sandbox ID is not proof that a particular process survived, and missing commands are never restarted automatically. Native listing is not paginated by the SDK; returned projections are bounded, but the upstream inventory is not.
 
@@ -236,27 +237,19 @@ Default root: `/home/user`; Python: guest-PATH `python3`. Runloop documents its 
 Use the same catalog and typed runtime construction as Service:
 
 ```python
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_environment.builtins import select_builtin_environment_providers
 
 (DAYTONA,) = select_builtin_environment_providers(("daytona",))
-environment = await DAYTONA.create(
-    {},
-    configuration={"organization_id": "your-organization"},
-    # Read this value from your Host's private credential storage.
-    credential={"api_key": api_key},
-    environment_id="env-workspace",
-    state=saved_state,
+connector = DAYTONA.execution_connector(
+    {}, configuration={"organization_id": "your-organization"},
+    credential={"api_key": api_key}, environment_id="env-workspace", state=saved_state,
 )
-try:
-    await environment.prepare()
-finally:
-    try:
-        saved_state = environment.dump_state()
-    finally:
-        await environment.close()
+async with await connector.open() as execution:
+    assert execution.operations.files is not None
+    listing = await execution.operations.files.list("/", max_results=20)
 ```
 
-`create()` validates the recipe, then the account configuration and credential rule before calling the Provider's runtime factory. Everything before that factory is pure. A runtime you pass in stays yours to close; one `create()` acquires closes with the adapter.
+`execution_connector()` validates inputs without acquiring clients. `open()` acquires clients for each execution. The Host closes borrowed runtimes; management and execution clients have independent lifetimes.
 
 ### Cloud validation
 
@@ -264,7 +257,7 @@ Deterministic tests run the adapters through catalog construction, native HTTP r
 
 ```sh
 A13N_TEST_CLOUD_PROVIDERS=daytona make test \
-  PYTHON_TEST_DIRS=packages/a13n-harness/tests/providers_environment/test_cloud_live.py
+  PYTHON_TEST_DIRS=packages/a13n-environment/tests/test_cloud_live.py
 ```
 
 Provide `A13N_TEST_DAYTONA_BACKEND_JSON` and `A13N_TEST_DAYTONA_CREDENTIAL_JSON` through your private test environment; the corresponding uppercase Provider prefixes work for the other four. Optional `A13N_TEST_<PROVIDER>_RECIPE_JSON` overrides the recipe. The fixture allocates billable targets and attempts deletion in cleanup, including after failures. Never commit credential JSON. Missing opt-in or credentials produces a skip, not live validation.

@@ -6,16 +6,18 @@ from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
+from a13n_environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_environment.models import FILE_EXECUTION_ACTIONS, EnvironmentError, EnvironmentPermissionSet
+from a13n_logging import get_logger
+
 from a13n_harness.identity import AgentInstanceContext
-from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentError, EnvironmentPermissionSet
 
 from ._mount_path import parse_mount_path, validate_working_directory
 from .providers import (
-    BoundEnvironmentProvider,
     EnvironmentProviderBinding,
     EnvironmentRuntime,
     EnvironmentRuntimeMount,
+    _claim_execution,
 )
 
 _DEFAULT_ACTIONS = EnvironmentPermissionSet(operations=FILE_EXECUTION_ACTIONS)
@@ -31,9 +33,9 @@ class EnvironmentScope:
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentMount:
-    """One already constructed Environment plus Run-local permission and path policy."""
+    """One fixed-target connector plus Run-local permission and path policy."""
 
-    environment: Environment
+    connector: EnvironmentConnector
     permission_ceiling: EnvironmentPermissionSet = _DEFAULT_ACTIONS
     working_directory: str | None = None
     mount_path: str | None = None
@@ -41,44 +43,42 @@ class EnvironmentMount:
     observer: Callable[[str, EnvironmentScope, BaseException | None], None] | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.environment, Environment):
-            raise TypeError("EnvironmentMount environment must be an Environment")
+        if not isinstance(self.connector, EnvironmentConnector):
+            raise TypeError("EnvironmentMount connector must be an EnvironmentConnector")
         if not isinstance(self.permission_ceiling, EnvironmentPermissionSet):
             raise TypeError("EnvironmentMount permission_ceiling must be an EnvironmentPermissionSet")
         if self.working_directory is None:
-            object.__setattr__(self, "working_directory", self.environment.descriptor.working_directory)
+            object.__setattr__(self, "working_directory", self.connector.descriptor.working_directory)
         validate_working_directory(self.working_directory)
         validate_working_directory(self.provider_root)
         if self.mount_path is not None:
             parse_mount_path(self.mount_path)
 
 
-type EnvironmentEntry = Environment | EnvironmentMount
+type EnvironmentEntry = EnvironmentConnector | EnvironmentMount
 
 
-class _EnvironmentAdapterBinding(EnvironmentProviderBinding):
+class _EnvironmentConnectorBinding(EnvironmentProviderBinding):
     def __init__(self, mount: EnvironmentMount) -> None:
-        self._environment = mount.environment
+        self._connector = mount.connector
         self._observer = mount.observer
         self._used = False
         self._discarded = False
 
     @property
-    def _transfer_owner(self) -> object:
-        return self._environment
-
-    def _claim_transfer(self) -> bool:
-        if self._used or self._discarded or self._environment.is_entered:
-            return False
-        return super()._claim_transfer()
-
-    @property
     def provider_type(self) -> str:
-        return self._environment.provider_key
+        return self._connector.provider_key
 
     @property
     def environment_id(self) -> str:
-        return self._environment.environment_id
+        return self._connector.environment_id
+
+    def _observe(self, event: str, scope: EnvironmentScope, error: BaseException | None = None) -> None:
+        if self._observer is not None:
+            try:
+                self._observer(event, scope, error)
+            except Exception:
+                get_logger(__name__).exception("Environment lifecycle observation failed")
 
     @asynccontextmanager
     async def bind(
@@ -89,23 +89,34 @@ class _EnvironmentAdapterBinding(EnvironmentProviderBinding):
         instance: AgentInstanceContext,
         mount_id: str,
         host_refs: Mapping[str, str],
-    ) -> AsyncGenerator[BoundEnvironmentProvider]:
+    ) -> AsyncGenerator[EnvironmentExecution]:
         if self._used or self._discarded:
-            raise EnvironmentError("Environment adapter is single-use.", code="environment_provider_binding_reused")
+            raise EnvironmentError("Environment binding is single-use.", code="environment_provider_binding_reused")
         self._used = True
+        scope = EnvironmentScope(thread_id, run_id, instance.agent_instance_id, mount_id)
+        self._observe("started", scope)
         try:
-            if self._observer is not None:
-                observer = self._observer
-                scope = EnvironmentScope(thread_id, run_id, instance.agent_instance_id, mount_id)
-                self._environment.observe(lambda event, binding, error: observer(event, scope, error))
-            await self._environment.enter(mount_id=mount_id)
-            yield self._environment
+            execution = await self._connector.open()
+        except BaseException as error:
+            self._observe("failed", scope, error)
+            raise
+        if not _claim_execution(execution, self):
+            raise EnvironmentError("Environment execution is already owned.", code="environment_execution_reused")
+        self._observe("ready", scope)
+        try:
+            yield execution
         finally:
-            await self._environment.close()
+            try:
+                await execution.close()
+            except BaseException as error:
+                self._observe("closed", scope, error)
+                raise
+            else:
+                self._observe("closed", scope)
 
     async def discard(self) -> None:
+        # Inert connectors have no resource to close before opening.
         self._discarded = True
-        await self._environment.close()
 
 
 def normalize_environment_inputs(
@@ -157,7 +168,7 @@ def _normalize_runtime_mount(entry: EnvironmentEntry | EnvironmentRuntimeMount) 
         return entry
     mount = _normalize_entry(entry)
     return EnvironmentRuntimeMount(
-        binding=_EnvironmentAdapterBinding(mount),
+        binding=_EnvironmentConnectorBinding(mount),
         permission_ceiling=mount.permission_ceiling,
         working_directory=mount.working_directory,
         mount_path=mount.mount_path,
@@ -168,9 +179,9 @@ def _normalize_runtime_mount(entry: EnvironmentEntry | EnvironmentRuntimeMount) 
 def _normalize_entry(entry: EnvironmentEntry) -> EnvironmentMount:
     if isinstance(entry, EnvironmentMount):
         return entry
-    if isinstance(entry, Environment):
+    if isinstance(entry, EnvironmentConnector):
         return EnvironmentMount(entry)
     raise EnvironmentError(
-        "Environment inputs must be Environment or EnvironmentMount values.",
+        "Environment inputs must be EnvironmentConnector or EnvironmentMount values.",
         code="environment_request_invalid",
     )

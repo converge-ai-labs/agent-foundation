@@ -6,7 +6,9 @@ on:
     paths:
       - ".github/workflows/ci-a13n-harness.yml"
       - ".github/workflows/release-a13n-harness.yml"
+      - ".github/workflows/release-a13n-environment.yml"
       - "packages/a13n-harness/**"
+      - "packages/a13n-environment/**"
       - "packages/a13n-envd-client/a13n_envd_client/**"
       - "packages/a13n-envd-client/pyproject.toml"
       - "packages/a13n-logging/a13n_logging/**"
@@ -25,7 +27,9 @@ on:
     paths:
       - ".github/workflows/ci-a13n-harness.yml"
       - ".github/workflows/release-a13n-harness.yml"
+      - ".github/workflows/release-a13n-environment.yml"
       - "packages/a13n-harness/**"
+      - "packages/a13n-environment/**"
       - "packages/a13n-envd-client/a13n_envd_client/**"
       - "packages/a13n-envd-client/pyproject.toml"
       - "packages/a13n-logging/a13n_logging/**"
@@ -63,7 +67,7 @@ jobs:
             runner: ubuntu-24.04
             # Two file-grouped workers, one per vCPU of the standard runner.
             test_options: -n 2 --dist loadgroup
-            test_targets: packages/a13n-harness/tests
+            test_targets: packages/a13n-harness/tests packages/a13n-environment/tests
           - name: Windows
             runner: windows-2025
             test_options: ""
@@ -71,6 +75,7 @@ jobs:
               packages/a13n-harness/tests/test_environment_core.py
               packages/a13n-harness/tests/test_monitored_process.py
               packages/a13n-harness/tests/providers_environment
+              packages/a13n-environment/tests
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:
@@ -95,7 +100,7 @@ jobs:
 
       - name: Type-check a13n Harness
         if: matrix.name == 'Linux'
-        run: uv run --locked pyright packages/a13n-harness/a13n_harness
+        run: uv run --locked pyright packages/a13n-harness/a13n_harness packages/a13n-environment/a13n_environment
 
       - name: Test a13n Harness
         run: uv run --locked python -m pytest -vv ${{ matrix.test_options }} ${{ matrix.test_targets }} --junitxml=test-results/harness.xml --durations=30 -r a
@@ -114,4 +119,6 @@ jobs:
 
       - name: Build a13n Harness distribution
         if: matrix.name == 'Linux'
-        run: uv build --package a13n-harness --out-dir dist/harness
+        run: |
+          uv build --package a13n-environment --out-dir dist/harness
+          uv build --package a13n-harness --out-dir dist/harness

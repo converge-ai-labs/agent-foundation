@@ -7,22 +7,25 @@ from typing import Literal
 from uuid import uuid4
 
 import httpx2
-from a13n_harness.providers.authentication import Authentication, CredentialMode
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
-from a13n_harness.providers.environment.errors import (
+from a13n_environment.authentication import Authentication, CredentialMode
+from a13n_environment.definition import EnvironmentProviderDefinition
+from a13n_environment.errors import (
+    EnvironmentManagementError,
+    EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
     EnvironmentProviderOutcomeCertainty,
     provider_error,
 )
-from a13n_harness.providers.environment.management import Environment, EnvironmentProviderConfiguration
-from a13n_harness.providers.environment.models import (
+from a13n_environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_environment.management import EnvironmentProvider, EnvironmentProviderConfiguration, EnvironmentStatus
+from a13n_environment.models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentOperationFamily,
     EnvironmentPermissionSet,
     EnvironmentState,
 )
-from a13n_harness.providers.environment.operations import EnvironmentOperations
+from a13n_environment.operations import EnvironmentOperations
 from a13n_service.distribution import OSS
 from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.db import transaction
@@ -74,10 +77,86 @@ DESCRIPTOR = EnvironmentDescriptor(
 )
 
 
-class FakeEnvironment(Environment):
-    def __init__(self, environment_id: str, operation_id: str, *, allow_create: bool, state: EnvironmentState | None):
-        super().__init__(state)
-        self._id, self._operation, self._allow_create = environment_id, operation_id, allow_create
+def _state(environment_id: str) -> EnvironmentState:
+    return EnvironmentState(provider_key="fake", state_version="1", state={"instance": environment_id})
+
+
+class FakeProvider(EnvironmentProvider[FakeRecipe]):
+    async def create(
+        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None = None
+    ) -> EnvironmentState:
+        BACKEND.preparations.append(operation_id)
+        BACKEND.instances[environment_id] = "running"
+        observed = _state(environment_id)
+        try:
+            BACKEND.answer()
+        except EnvironmentProviderError as error:
+            raise EnvironmentManagementError(
+                error, state=observed, environment_id=environment_id, operation_id=operation_id
+            ) from error
+        return observed
+
+    async def start(
+        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
+    ) -> EnvironmentState:
+        if environment_id not in BACKEND.instances:
+            raise provider_error("fake", "provider_target_missing", EnvironmentProviderErrorCategory.MISSING)
+        return await self.create(environment, environment_id=environment_id, operation_id=operation_id, state=state)
+
+    async def inspect(
+        self, environment: object, *, environment_id: str, state: EnvironmentState | None
+    ) -> EnvironmentStatus:
+        return EnvironmentStatus(BACKEND.instances.get(environment_id, "absent"), state)
+
+    async def stop(
+        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
+    ) -> EnvironmentState | None:
+        BACKEND.instances[environment_id] = "stopped"
+        BACKEND.answer()
+        return state
+
+    async def destroy(
+        self, environment: object, *, environment_id: str, operation_id: str, state: EnvironmentState | None
+    ) -> None:
+        BACKEND.instances.pop(environment_id, None)
+        BACKEND.answer()
+
+    def keepalive_horizon(
+        self, environment: object, *, environment_id: str, state: EnvironmentState | None
+    ) -> timedelta:
+        return timedelta(seconds=300)
+
+    async def keepalive(
+        self,
+        environment: object,
+        *,
+        environment_id: str,
+        state: EnvironmentState | None,
+        deadline: datetime,
+        operation_id: str,
+    ) -> datetime:
+        BACKEND.renewals.append(environment_id)
+        if environment_id not in BACKEND.instances:
+            raise provider_error("fake", "provider_target_missing", EnvironmentProviderErrorCategory.MISSING)
+        if BACKEND.instances[environment_id] != "running":
+            raise provider_error("fake", "provider_target_stopped", EnvironmentProviderErrorCategory.CONFLICT)
+        if BACKEND.renewal_error is not None:
+            raise BACKEND.renewal_error
+        BACKEND.expiries[environment_id] = deadline
+        return deadline
+
+    def execution_connector(
+        self, environment: object, *, environment_id: str, state: EnvironmentState | None
+    ) -> EnvironmentConnector:
+        return FakeConnector(environment_id, state)
+
+    async def close(self) -> None:
+        pass
+
+
+class FakeConnector(EnvironmentConnector):
+    def __init__(self, environment_id: str, state: EnvironmentState | None):
+        self._id, self._state = environment_id, state
 
     @property
     def provider_key(self) -> str:
@@ -86,6 +165,41 @@ class FakeEnvironment(Environment):
     @property
     def environment_id(self) -> str:
         return self._id
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self._state
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return DESCRIPTOR
+
+    async def open(self) -> EnvironmentExecution:
+        if BACKEND.instances.get(self._id) != "running":
+            raise provider_error("fake", "provider_target_missing", EnvironmentProviderErrorCategory.MISSING)
+        return FakeExecution(self)
+
+
+class FakeExecution(EnvironmentExecution):
+    def __init__(self, connector: FakeConnector):
+        self._connector = connector
+        self._execution_id = "exec-" + uuid4().hex
+
+    @property
+    def provider_key(self) -> str:
+        return "fake"
+
+    @property
+    def environment_id(self) -> str:
+        return self._connector.environment_id
+
+    @property
+    def execution_id(self) -> str:
+        return self._execution_id
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self._connector.state
 
     @property
     def descriptor(self) -> EnvironmentDescriptor:
@@ -99,56 +213,19 @@ class FakeEnvironment(Environment):
     def operations(self) -> EnvironmentOperations:
         return EnvironmentOperations()
 
-    async def _prepare(self, *, mount_id: str) -> None:
-        BACKEND.preparations.append(self._operation)
-        if BACKEND.instances.get(self._id) != "running":
-            if not self._allow_create:
-                raise provider_error("fake", "provider_target_missing", EnvironmentProviderErrorCategory.MISSING)
-            BACKEND.instances[self._id] = "running"
-        self._cache_state(EnvironmentState(provider_key="fake", state_version="1", state={"instance": self._id}))
-        BACKEND.answer()
+    async def check_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
+        pass
 
-    async def reconcile(self) -> Literal["running", "stopped", "absent"]:
-        return BACKEND.instances.get(self._id, "absent")
-
-    def _require_owner(self) -> None:
-        """Like the hosted backends, only an adapter acting as the instance's owner stops or destroys it."""
-        if not self._allow_create:
-            raise provider_error("fake", "provider_denied", EnvironmentProviderErrorCategory.DENIED)
-
-    async def _stop(self) -> None:
-        self._require_owner()
-        BACKEND.instances[self._id] = "stopped"
-        BACKEND.answer()
-
-    async def _destroy(self) -> None:
-        self._require_owner()
-        BACKEND.instances.pop(self._id, None)
-        BACKEND.answer()
-
-    async def keepalive(self, *, deadline: datetime, operation_id: str) -> datetime:
-        """Like the hosted backends: it observes the instance, never starts or creates one."""
-        BACKEND.renewals.append(self._id)
-        if self._id not in BACKEND.instances:
-            raise provider_error("fake", "provider_target_missing", EnvironmentProviderErrorCategory.MISSING)
-        if BACKEND.instances[self._id] != "running":
-            raise provider_error("fake", "provider_target_stopped", EnvironmentProviderErrorCategory.CONFLICT)
-        if BACKEND.renewal_error is not None:
-            raise BACKEND.renewal_error
-        BACKEND.expiries[self._id] = deadline
-        return deadline
-
-    async def _ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None:
-        return None
-
-    async def _close(self) -> None:
-        return None
+    async def close(self) -> None:
+        pass
 
 
-def _construct(
-    *, environment_id: str, state: EnvironmentState | None, operation_id: str, allow_create: bool, **_: object
-) -> Environment:
-    return FakeEnvironment(environment_id, operation_id, allow_create=allow_create, state=state)
+async def _provider(**_: object) -> EnvironmentProvider:
+    return FakeProvider()
+
+
+def _connector(*, environment_id: str, state: EnvironmentState | None, **_: object) -> EnvironmentConnector:
+    return FakeConnector(environment_id, state)
 
 
 FAKE = EnvironmentProviderDefinition(
@@ -156,7 +233,8 @@ FAKE = EnvironmentProviderDefinition(
     display_name="Fake",
     configuration_model=EnvironmentProviderConfiguration,
     environment_model=FakeRecipe,
-    construct=_construct,
+    provider_factory=_provider,
+    connector_factory=_connector,
     describe_environment=lambda recipe: DESCRIPTOR,
     supports_stop=True,
     supports_destroy=True,

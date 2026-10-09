@@ -5,12 +5,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from a13n_environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
+from a13n_environment.local_envd.provider import LOCAL_ENVD
+from a13n_environment.models import EnvironmentError
 from a13n_harness import RunBindings
 from a13n_harness.environment import EnvironmentMount
 from a13n_harness.environment.advanced import create_environment_runtime
-from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
-from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
-from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import EnvironmentLifecycleError
 from a13n_harness_ui.sandbox import create_sandbox_runtime, validate_sandbox_runtime
@@ -71,16 +71,16 @@ async def test_shared_sandbox_sessions_preserve_host_paths_and_hide_unrelated_fi
     (project / "escape").symlink_to(secret)
     monkeypatch.setenv("PRIVATE_HOST_TOKEN", "not inherited")
     owner = create_sandbox_runtime(binary, roots=(project, scratch), protected_roots=(forbidden,))
-    first, second = [
-        LocalEnvdEnvironment(
-            LocalEnvdEnvironmentConfiguration(working_directory=root.as_posix()), owner, environment_id=name
+    first_connector, second_connector = [
+        LOCAL_ENVD.execution_connector(
+            LocalEnvdEnvironmentConfiguration(working_directory=root.as_posix()), runtime=owner, environment_id=name
         )
         for root, name in ((project, "first"), (scratch, "second"))
     ]
     async with owner:
         try:
-            await first.prepare()
-            await second.prepare()
+            first = await first_connector.open()
+            second = await second_connector.open()
             device = await owner.acquire_device()
             assert len(device._sessions) == 2
             assert first.descriptor.generation != second.descriptor.generation
@@ -90,10 +90,11 @@ async def test_shared_sandbox_sessions_preserve_host_paths_and_hide_unrelated_fi
             for path in (secret, project / "escape"):
                 with pytest.raises(EnvironmentError):
                     await first.operations.files.read_text(path.as_posix())
+            await first.close()
             runtime = create_environment_runtime(
                 mounts={
                     "workspace": EnvironmentMount(
-                        first, mount_path=project.as_posix(), provider_root=project.as_posix()
+                        first_connector, mount_path=project.as_posix(), provider_root=project.as_posix()
                     )
                 },
                 default_mount="workspace",
@@ -271,12 +272,14 @@ async def test_thread_attachment_grant_is_read_only(binary, tmp_path):
     attachment = thread / "attachments/input"
     attachment.write_text("submitted input")
     owner = create_sandbox_runtime(binary, roots=(thread,), thread_files_root=thread)
-    environment = LocalEnvdEnvironment(
-        LocalEnvdEnvironmentConfiguration(working_directory=thread.as_posix()), owner, environment_id="thread-files"
+    environment = LOCAL_ENVD.execution_connector(
+        LocalEnvdEnvironmentConfiguration(working_directory=thread.as_posix()),
+        runtime=owner,
+        environment_id="thread-files",
     )
     async with owner:
         try:
-            await environment.prepare()
+            environment = await environment.open()
             files = environment.operations.files
             assert files is not None
             assert (await files.read_text(attachment.as_posix())).text == "submitted input"

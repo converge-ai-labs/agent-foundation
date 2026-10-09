@@ -20,7 +20,7 @@ from uuid import uuid4
 import docker
 import httpx2
 import pytest
-from a13n_harness.providers.environment.management import Environment
+from a13n_environment.management import Environment
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
 from docker.errors import DockerException, ImageNotFound
 

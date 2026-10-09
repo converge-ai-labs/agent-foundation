@@ -1,4 +1,4 @@
-"""Runnable Host-side examples for the built-in Environment Providers."""
+"""Standalone management and execution examples; Harness is not required."""
 
 from __future__ import annotations
 
@@ -8,27 +8,20 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.direct_local.provider import DirectLocalEnvironment
-from a13n_harness.providers.environment.docker.provider import DockerEnvironment
-from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
-from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
-from a13n_harness.providers.environment.local_envd.runtime import (
+from a13n_environment import EnvironmentExecution
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
+from a13n_environment.docker.provider import DOCKER
+from a13n_environment.errors import observed_environment_state
+from a13n_environment.local_envd.provider import LOCAL_ENVD
+from a13n_environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
     resolve_a13n_envd_executable,
 )
-from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import (
-    EnvironmentOperationFamily,
-    EnvironmentProviderSpec,
-    EnvironmentState,
-)
+from a13n_environment.models import EnvironmentState
 
 DEFAULT_EXAMPLE_DOCKER_IMAGE = "a13n-sandbox:local"
 _MESSAGE_PATH = "/provider-example.txt"
-_FILE_OPERATIONS: frozenset[EnvironmentOperationFamily] = frozenset({"files"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,234 +49,80 @@ class DockerExampleResult:
 
 
 async def run_direct_local(workspace: Path) -> StatelessExampleResult:
-    """Run one Direct Local adapter against a Host-owned workspace."""
-
     root = _prepare_workspace(workspace)
-    spec = EnvironmentProviderSpec(
-        provider_key="direct_local",
-        configuration={
-            "root": {"path": str(root)},
-        },
-    )
-    provider = ProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(spec.provider_key)
-    configuration = provider.validate_environment(spec.configuration)
-    environment = await provider.create(
-        environment=configuration, environment_id="direct-local-example", state=None, runtime=None
-    )
-    if not isinstance(environment, DirectLocalEnvironment):
-        raise TypeError("Direct Local Provider returned an unexpected Environment")
-
-    text = await _run_and_close(
-        environment,
-        lambda: _write_and_read(environment, run_id="run-direct-local"),
-    )
-    state = environment.dump_state()
-
+    connector = DIRECT_LOCAL.execution_connector({"root": {"path": str(root)}}, environment_id="direct-local-example")
+    async with await connector.open() as execution:
+        text = await _write_and_read(execution)
     return StatelessExampleResult(
-        provider_key=environment.provider_key,
-        environment_id=environment.environment_id,
-        text=text,
-        workspace=root,
-        workspace_preserved=root.is_dir(),
-        state=state,
+        connector.provider_key, connector.environment_id, text, root, root.is_dir(), connector.state
     )
 
 
-async def run_local_envd(
-    workspace: Path,
-    *,
-    executable: Path | None = None,
-) -> StatelessExampleResult:
-    """Use a Session on a Host-owned Local Device, then close the Host runtime."""
-
+async def run_local_envd(workspace: Path, *, executable: Path | None = None) -> StatelessExampleResult:
     root = _prepare_workspace(workspace)
-    spec = EnvironmentProviderSpec(
-        provider_key="local_envd",
-        configuration={
-            "working_directory": _device_path(root),
-        },
-    )
-    provider = ProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(spec.provider_key)
-    configuration = provider.validate_environment(spec.configuration)
-    runtime = LocalEnvdProviderRuntime(
+    async with LocalEnvdProviderRuntime(
         executable=resolve_a13n_envd_executable(executable),
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
-    )
-    environment = await provider.create(
-        environment=configuration,
-        environment_id="local-envd-example",
-        state=None,
-        runtime=runtime,
-    )
-    if not isinstance(environment, LocalEnvdEnvironment):
-        raise TypeError("Local Envd Provider returned an unexpected Environment")
-
-    async with runtime:
-        text = await _run_and_close(
-            environment,
-            lambda: _write_and_read(
-                environment, run_id="run-local-envd", path=_device_path(root / "provider-example.txt")
-            ),
+    ) as runtime:
+        connector = LOCAL_ENVD.execution_connector(
+            {"working_directory": _device_path(root)},
+            environment_id="local-envd-example",
+            runtime=runtime,
         )
-        state = environment.dump_state()
-
+        async with await connector.open() as execution:
+            text = await _write_and_read(execution, path=_device_path(root / "provider-example.txt"))
     return StatelessExampleResult(
-        provider_key=environment.provider_key,
-        environment_id=environment.environment_id,
-        text=text,
-        workspace=root,
-        workspace_preserved=root.is_dir(),
-        state=state,
+        connector.provider_key, connector.environment_id, text, root, root.is_dir(), connector.state
     )
 
 
-async def run_docker(
-    *,
-    image: str = DEFAULT_EXAMPLE_DOCKER_IMAGE,
-) -> DockerExampleResult:
-    """Create, re-enter, and explicitly destroy one Docker Environment."""
+async def run_docker(*, image: str = DEFAULT_EXAMPLE_DOCKER_IMAGE) -> DockerExampleResult:
+    recipe = DOCKER.validate_environment({"image": image})
+    async with await DOCKER.open_provider() as provider:
+        state = None
+        first_text = reentered_text = state_version = ""
 
-    spec = EnvironmentProviderSpec(
-        provider_key="docker",
-        configuration={
-            "image": image,
-        },
-    )
-    provider = ProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(spec.provider_key)
-    configuration = provider.validate_environment(spec.configuration)
-    runtime = DockerProviderRuntime(
-        engine=await asyncio.to_thread(
-            DockerSDKEngine.connect, os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock")
-        ),
-    )
+        async def use():
+            nonlocal state, first_text, reentered_text, state_version
+            try:
+                state = await provider.create(recipe, environment_id="docker-example", operation_id="op-create")
+            except BaseException as error:
+                state = observed_environment_state(error, state)
+                raise
+            assert state is not None
+            state_version = state.state_version
+            connector = provider.execution_connector(recipe, environment_id="docker-example", state=state)
+            async with await connector.open() as first:
+                first_text = await _write_and_read(first)
+            async with await connector.open() as second:
+                assert second.operations.files is not None
+                reentered_text = (await second.operations.files.read_text(_MESSAGE_PATH)).text
 
-    current_state: EnvironmentState | None = None
-    first_text = ""
-    reentered_text = ""
-    state_version = ""
+        async def destroy():
+            if state is not None:
+                await provider.destroy(recipe, environment_id="docker-example", state=state, operation_id="op-delete")
 
-    async def use_target() -> None:
-        nonlocal current_state, first_text, reentered_text, state_version
-        first = await provider.create(
-            environment=configuration,
-            environment_id="docker-example",
-            state=None,
-            runtime=runtime,
-        )
-        if not isinstance(first, DockerEnvironment):
-            raise TypeError("Docker Provider returned an unexpected Environment")
-        try:
-            first_text = await _run_and_close(
-                first,
-                lambda: _write_and_read(first, run_id="run-docker-create"),
-            )
-        finally:
-            current_state = first.dump_state()
-
-        if current_state is None:
-            raise RuntimeError("Docker Provider did not publish re-entry state")
-        state_version = current_state.state_version
-
-        reentered = await provider.create(
-            environment=configuration,
-            environment_id="docker-example",
-            state=current_state,
-            runtime=runtime,
-        )
-        if not isinstance(reentered, DockerEnvironment):
-            raise TypeError("Docker Provider returned an unexpected re-entry Environment")
-        try:
-            reentered_text = await _run_and_close(
-                reentered,
-                lambda: _read_existing(reentered, run_id="run-docker-reenter"),
-            )
-        finally:
-            current_state = reentered.dump_state()
-
-    async def destroy_target() -> None:
-        nonlocal current_state
-        if current_state is None:
-            return
-        cleanup = await provider.create(
-            environment=configuration,
-            allow_create=False,
-            environment_id="docker-example",
-            state=current_state,
-            runtime=runtime,
-        )
-        if not isinstance(cleanup, DockerEnvironment):
-            raise TypeError("Docker Provider returned an unexpected cleanup Environment")
-        try:
-            await _run_and_close(cleanup, cleanup.destroy)
-        finally:
-            current_state = cleanup.dump_state()
-
-    async def use_and_destroy() -> None:
-        await _run_with_cleanup(
-            use_target,
-            destroy_target,
-            cleanup_label="Docker destruction",
-            group_message="Docker use and destruction failed",
-        )
-
-    await _run_with_cleanup(
-        use_and_destroy,
-        runtime.close,
-        cleanup_label="Docker runtime close",
-        group_message="Docker lifecycle and runtime close failed",
-    )
-
-    return DockerExampleResult(
-        provider_key=spec.provider_key,
-        environment_id="docker-example",
-        first_text=first_text,
-        reentered_text=reentered_text,
-        state_version=state_version,
-        destroyed=current_state is None,
-    )
+        await _run_with_cleanup(use, destroy)
+    return DockerExampleResult("docker", "docker-example", first_text, reentered_text, state_version, True)
 
 
-async def _run_and_close[T](
-    environment: Environment,
-    operation: Callable[[], Awaitable[T]],
-) -> T:
-    return await _run_with_cleanup(
-        operation,
-        environment.close,
-        cleanup_label="Environment close",
-        group_message="Environment use and close failed",
-    )
-
-
-async def _run_with_cleanup[T](
-    operation: Callable[[], Awaitable[T]],
-    cleanup: Callable[[], Awaitable[None]],
-    *,
-    cleanup_label: str,
-    group_message: str,
-) -> T:
-    use_error: BaseException | None = None
+async def _run_with_cleanup[T](operation: Callable[[], Awaitable[T]], cleanup: Callable[[], Awaitable[None]]) -> T:
+    primary: BaseException | None = None
     try:
         return await operation()
     except BaseException as error:
-        use_error = error
+        primary = error
         raise
     finally:
         try:
             await cleanup()
-        except BaseException as cleanup_error:
-            if use_error is None:
+        except BaseException as error:
+            if primary is None:
                 raise
-            if isinstance(use_error, asyncio.CancelledError):
-                use_error.add_note(f"{cleanup_label} also failed: {cleanup_error!r}")
-            elif isinstance(cleanup_error, asyncio.CancelledError):
-                cleanup_error.add_note(f"Primary operation also failed: {use_error!r}")
-                raise cleanup_error from None
+            if isinstance(primary, asyncio.CancelledError):
+                primary.add_note(f"Target cleanup also failed: {error!r}")
             else:
-                raise BaseExceptionGroup(
-                    group_message,
-                    [use_error, cleanup_error],
-                ) from None
+                raise BaseExceptionGroup("Target use and cleanup failed", [primary, error]) from None
 
 
 def _device_path(path: Path) -> str:
@@ -291,30 +130,11 @@ def _device_path(path: Path) -> str:
     return f"/{value}" if os.name == "nt" else value
 
 
-async def _write_and_read(environment: Environment, *, run_id: str, path: str = _MESSAGE_PATH) -> str:
-    await _enter(environment, run_id=run_id)
-    files = environment.operations.files
-    if files is None:
-        raise RuntimeError("The entered Environment does not expose file operations")
-    await files.write_text(
-        path,
-        f"hello from {environment.provider_key}\n",
-        mode="upsert",
-    )
+async def _write_and_read(execution: EnvironmentExecution, *, path: str = _MESSAGE_PATH) -> str:
+    files = execution.operations.files
+    assert files is not None
+    await files.write_text(path, f"hello from {execution.provider_key}\n", mode="upsert")
     return (await files.read_text(path)).text
-
-
-async def _read_existing(environment: Environment, *, run_id: str) -> str:
-    await _enter(environment, run_id=run_id)
-    files = environment.operations.files
-    if files is None:
-        raise RuntimeError("The entered Environment does not expose file operations")
-    return (await files.read_text(_MESSAGE_PATH)).text
-
-
-async def _enter(environment: Environment, *, run_id: str) -> None:
-    await environment.enter(mount_id="workspace")
-    await environment.ensure_ready(_FILE_OPERATIONS)
 
 
 def _prepare_workspace(workspace: Path) -> Path:

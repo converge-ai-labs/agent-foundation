@@ -234,7 +234,7 @@ async def test_stop_and_delete_wait_for_active_use_and_a_run_restarts_a_stopped_
     async with open_mounts(env.runtime, mounts) as opened:
         mount = opened["workspace"]
         assert (mount.mount_path, mount.provider_root, mount.working_directory) == (None, "/work", "/work")
-        assert mount.environment.environment_id == environment_id
+        assert mount.connector.environment_id == environment_id
 
 
 async def test_a_disabled_provider_still_stops_its_sandboxes(env) -> None:  # type: ignore[no-untyped-def]
@@ -654,10 +654,10 @@ async def local_instance(env: SimpleNamespace, tmp_path: Path) -> tuple[str, Pat
 
 
 async def test_shared_local_mounts_route_files_and_commands_per_thread(env, local_instance) -> None:  # type: ignore[no-untyped-def]
+    from a13n_environment.commands import CommandRequest, ShellCommand
+    from a13n_environment.retention import EnvironmentOutputPolicy
     from a13n_harness import RunBindings
     from a13n_harness.environment.advanced import create_environment_runtime
-    from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
-    from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 
     identity, root = local_instance
     other = await env.client.post(f"{env.api}/agents", json={"name": "Collaborator", "config": {"model": "unused"}})
@@ -733,8 +733,9 @@ async def test_invalid_directory_fails_only_its_mount(env, local_instance, monke
     [lease] = await claim_run(env.runtime, worker_id="worker-test", worker_build="test", limit=1)
     prepared = await _prepare(env, lease)
     with pytest.raises(ServiceError, match="existing accessible directory") as error:
-        async with open_mounts(env.runtime, prepared):
-            pytest.fail("Invalid mount was opened")
+        async with open_mounts(env.runtime, prepared) as mounts:
+            async with await mounts["workspace"].connector.open():
+                pytest.fail("Invalid mount was opened")
     assert error.value.details["working_directory"] == path
     assert error.value.details["mount"] == "workspace"
     current = await environment(env, identity)
@@ -748,8 +749,8 @@ async def test_invalid_directory_fails_only_its_mount(env, local_instance, monke
 
 
 async def test_directory_check_preserves_transient_provider_errors(env, local_instance, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
-    from a13n_harness.providers.environment.models import EnvironmentError
+    from a13n_environment.direct_local.files import LocalFileOperator
+    from a13n_environment.models import EnvironmentError
 
     async def unavailable(*args, **kwargs):
         raise EnvironmentError("Connection interrupted", code="environment_unavailable")
@@ -760,7 +761,53 @@ async def test_directory_check_preserves_transient_provider_errors(env, local_in
     prepared = await _prepare(env, lease)
     monkeypatch.setattr(LocalFileOperator, "list", unavailable)
     with pytest.raises(EnvironmentError) as error:
-        async with open_mounts(env.runtime, prepared):
-            pytest.fail("Disconnected mount was opened")
+        async with open_mounts(env.runtime, prepared) as mounts:
+            async with await mounts["workspace"].connector.open():
+                pytest.fail("Disconnected mount was opened")
     assert error.value.code == "environment_unavailable"
     assert (await environment(env, identity))["failure"] is None
+
+
+async def test_cancelled_management_publishes_observed_state_before_reraising(env, monkeypatch) -> None:
+    from a13n_environment.errors import EnvironmentManagementCancelled
+
+    from .environments_support import FakeProvider, _state, stored
+
+    identity = (await reserve(env, env.template["id"]))["id"]
+
+    async def interrupted(self, environment, *, environment_id, operation_id, state=None):
+        raise EnvironmentManagementCancelled(_state(environment_id), operation_id)
+
+    monkeypatch.setattr(FakeProvider, "create", interrupted)
+    with pytest.raises(EnvironmentManagementCancelled):
+        await advance(env.runtime, identity, owner="interrupted-worker")
+    row = await stored(env, identity)
+    assert row.handle["state"]["state"] == {"instance": identity}
+    assert row.failure["certainty"] == "unknown"
+    assert row.status == "creating"
+
+
+async def test_timed_out_management_publishes_observed_state(env, monkeypatch) -> None:
+    import asyncio
+
+    from a13n_environment.errors import EnvironmentManagementCancelled
+
+    from .environments_support import FakeProvider, _state, stored
+
+    identity = (await reserve(env, env.template["id"]))["id"]
+    operation = await claim(env.runtime, identity, owner="timed-out-worker")
+    assert operation is not None
+
+    async def interrupted(self, environment, *, environment_id, operation_id, state=None):
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError as error:
+            raise EnvironmentManagementCancelled(_state(environment_id), operation_id) from error
+
+    monkeypatch.setattr(FakeProvider, "create", interrupted)
+    outcome = await perform(env.runtime, replace(operation, seconds=0.01))
+    assert outcome.fault is not None and outcome.fault.code == "environment_operation_timeout"
+    await publish(env.runtime, operation, outcome)
+    row = await stored(env, identity)
+    assert row.handle["state"]["state"] == {"instance": identity}
+    assert row.failure["certainty"] == "unknown"

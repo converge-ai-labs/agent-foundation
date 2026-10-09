@@ -10,10 +10,10 @@ Configure the target, backend connection, and credentials separately. Keep runti
 | Target recipe (`environment_model`)           | What this Environment should expose             | Root directory, Docker mounts, E2B template              |
 | Account configuration (`configuration_model`) | Where the Host reaches the backend              | Docker daemon, E2B domain, HTTP endpoint                 |
 | Credential (`credential_model`)               | Current access to that backend                  | E2B API key or HTTP EIP token                            |
-| Runtime collaborator                          | Live clients, sessions, and Host allocations    | Supplied by the Host or acquired by `runtime_factory`    |
+| Runtime collaborator                          | Live clients, sessions, and Host allocations    | Supplied by the Host or acquired on explicit open        |
 | `EnvironmentState`                            | Validated reference to an exact retained target | Container/sandbox identity and configuration fingerprint |
 
-Call `definition.create(recipe, configuration=..., credential=..., state=...)` to acquire a runtime, or pass `runtime=...` to borrow one you already manage. With a borrowed runtime, omit account configuration and credentials. Creation validates the recipe before account inputs and acquires the runtime after validation. See [Providers and runtime](providers.md) for catalog selection and construction.
+`definition.open_provider(configuration=..., credential=...)` acquires management clients. `definition.execution_connector(recipe, configuration=..., credential=..., state=...)` only validates inputs and builds a connector; `open()` acquires execution resources. A Host may pass `runtime=...` to borrow a shared connection, together with account configuration but without credentials.
 
 A definition owns exactly one model of each kind. There is no configuration schema version: changing the meaning of an input changes the Provider type.
 

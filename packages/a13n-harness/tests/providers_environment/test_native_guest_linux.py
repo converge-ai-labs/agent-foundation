@@ -5,12 +5,12 @@ import os
 import subprocess
 
 import pytest
+from a13n_environment._guest_files import GuestFiles
+from a13n_environment.builtins import select_builtin_environment_providers
+from a13n_environment.commands import CommandLimits, CommandRequest, ShellCommand
+from a13n_environment.native.commands import NativeCommands
+from a13n_environment.retention import EnvironmentOutputPolicy
 from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment._guest_files import GuestFiles
-from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.commands import CommandLimits, CommandRequest, ShellCommand
-from a13n_harness.providers.environment.native.commands import NativeCommands
-from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 
 
 @pytest.fixture(scope="module")

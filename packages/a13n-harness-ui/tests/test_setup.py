@@ -445,7 +445,7 @@ async def test_native_preflight_never_resolves_envd(tmp_path: Path) -> None:
 async def test_sandbox_preflight_uses_production_denied_network_and_does_not_downgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from a13n_harness.providers.environment.models import EnvironmentError
+    from a13n_environment.models import EnvironmentError
     from a13n_harness_ui import setup
 
     observed = []
@@ -880,7 +880,7 @@ async def test_sandbox_adapter_selects_only_the_session_directory(
     from dataclasses import replace
     from unittest.mock import Mock
 
-    from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+    from a13n_environment.local_envd.provider import LOCAL_ENVD
     from a13n_harness_ui.composition.models import ResolvedEnvironmentProfile
     from a13n_harness_ui.extensions import environment_adapters as adapters
 

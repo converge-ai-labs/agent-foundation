@@ -20,6 +20,7 @@ INTERNAL_REQUIREMENTS = {
     "a13n-stream-protocol": "a13n-harness",
 }
 LOCAL_INSTALL_DEPENDENCIES = {
+    "a13n-environment": "a13n_environment",
     "a13n-envd-client": "a13n_envd_client",
     "a13n-logging": "a13n_logging",
 }

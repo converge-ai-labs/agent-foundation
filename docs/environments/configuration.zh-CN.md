@@ -5,15 +5,15 @@ description: 分别配置 provider 的目标、后端连接和凭据。
 
 分别配置目标、后端连接和凭据。运行时客户端保留在内存中，保存 `EnvironmentState` 以便之后重新连接。
 
-| 值                                | 职责                               | 示例                                      |
-| --------------------------------- | ---------------------------------- | ----------------------------------------- |
-| 目标配置（`environment_model`）   | 该环境应开放什么                   | 根目录、Docker 挂载、E2B 模板             |
-| 账号配置（`configuration_model`） | Host 从哪里连接后端                | Docker 守护进程、E2B 域名、HTTP 端点      |
-| 凭据（`credential_model`）        | 当前访问后端的权限                 | E2B API key 或 HTTP EIP token             |
-| 运行时协作对象                    | 活跃客户端、会话和 Host 分配的资源 | 由 Host 提供，或由 `runtime_factory` 获取 |
-| `EnvironmentState`                | 已验证、指向精确保留目标的引用     | 容器/沙箱身份和配置指纹                   |
+| 值                                | 职责                               | 示例                                 |
+| --------------------------------- | ---------------------------------- | ------------------------------------ |
+| 目标配置（`environment_model`）   | 该环境应开放什么                   | 根目录、Docker 挂载、E2B 模板        |
+| 账号配置（`configuration_model`） | Host 从哪里连接后端                | Docker 守护进程、E2B 域名、HTTP 端点 |
+| 凭据（`credential_model`）        | 当前访问后端的权限                 | E2B API key 或 HTTP EIP token        |
+| 运行时协作对象                    | 活跃客户端、会话和 Host 分配的资源 | 由 Host 提供，或在显式打开时获取     |
+| `EnvironmentState`                | 已验证、指向精确保留目标的引用     | 容器/沙箱身份和配置指纹              |
 
-调用 `definition.create(recipe, configuration=..., credential=..., state=...)` 获取运行时，或传入 `runtime=...` 借用自己已管理的运行时。借用运行时时，省略账号配置和凭据。创建过程先验证目标配置，再验证账号输入，验证完成后才获取运行时。目录选择和构建见 [Provider 与运行时](providers.md)。
+`definition.open_provider(configuration=..., credential=...)` 获取管理客户端。`definition.execution_connector(recipe, configuration=..., credential=..., state=...)` 只验证输入并构造连接配置，`open()` 才获取执行资源。Host 也可传入 `runtime=...` 借用共享连接，此时允许提供账号配置，但不能同时提供凭据。
 
 每个定义对每种类别只管理一个模型。没有配置 schema 版本：改变输入含义就改变了 provider 类型。
 

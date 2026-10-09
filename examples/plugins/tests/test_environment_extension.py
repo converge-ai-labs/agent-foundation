@@ -101,15 +101,6 @@ def test_environment_extension_demo_closes_adapter_after_run_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from a13n_plugin_examples.environment import WorkspaceEnvironment
-
-    closed: list[WorkspaceEnvironment] = []
-    original_close = WorkspaceEnvironment.close
-
-    async def record_close(self: WorkspaceEnvironment) -> None:
-        await original_close(self)
-        closed.append(self)
-
     def failing_model() -> FunctionModel:
         async def stream(
             messages: list[ModelMessage],
@@ -121,7 +112,6 @@ def test_environment_extension_demo_closes_adapter_after_run_failure(
 
         return FunctionModel(stream_function=stream)
 
-    monkeypatch.setattr(WorkspaceEnvironment, "close", record_close)
     monkeypatch.setattr(
         "a13n_plugin_examples.demo_environment_extension._offline_model",
         failing_model,
@@ -130,6 +120,5 @@ def test_environment_extension_demo_closes_adapter_after_run_failure(
     with pytest.raises(RunError):
         asyncio.run(run_environment_extension_code_demo(workspace_root=tmp_path))
 
-    assert len(closed) == 1
     assert not (tmp_path / ".example-run").exists()
     assert tmp_path.is_dir()

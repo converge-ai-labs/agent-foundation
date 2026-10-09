@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from a13n_environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
 from a13n_harness import (
     AgentDefinition,
     AgentIdentityRef,
@@ -34,10 +38,6 @@ from a13n_harness.environment.advanced import (
 )
 from a13n_harness.environment.providers import (
     EnvironmentRuntimeMount,
-)
-from a13n_harness.providers.environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
 )
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from a13n_harness.toolsets import (

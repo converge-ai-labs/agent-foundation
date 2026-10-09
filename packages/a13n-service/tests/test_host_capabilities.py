@@ -13,6 +13,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from a13n_environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_environment.direct_local.provider import DIRECT_LOCAL
 from a13n_harness import (
     AgentContext,
     AgentSpec,
@@ -26,17 +31,12 @@ from a13n_harness import (
 from a13n_harness.capabilities.web import WebCapability, WebSearchRequest, WebSearchResponse, WebSearchResult
 from a13n_harness.errors import DefinitionError
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
-from a13n_harness.providers.environment.direct_local.configuration import (
-    DirectLocalEnvironmentConfiguration,
-    DirectLocalRootConfiguration,
-)
 from a13n_harness.providers.web.definition import WebProviderDefinition
 from a13n_harness.providers.web.options import SearchOptions
 from a13n_harness.providers.web.transport import WebProviderTransport
 from a13n_service.distribution import OSS
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError
-from a13n_service.providers.environments.local import LocalEnvironment
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.agents.schemas import SkillSelection
 from a13n_service.resources.agents.toolsets import FetchConfiguration, SearchConfiguration, WebTools, web_configuration
@@ -94,8 +94,10 @@ class Script:
 
 
 def mount(root: Path, environment_id: str = ENVIRONMENT) -> EnvironmentMount:
+    root = root / environment_id
     recipe = DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=root))
-    return EnvironmentMount(LocalEnvironment(recipe, environment_id=environment_id, managed=True))
+    root.mkdir(parents=True, exist_ok=True)
+    return EnvironmentMount(DIRECT_LOCAL.execution_connector(recipe, environment_id=environment_id))
 
 
 async def run(

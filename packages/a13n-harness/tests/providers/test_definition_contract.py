@@ -3,9 +3,9 @@
 from dataclasses import replace
 
 import pytest
+from a13n_environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
 from a13n_harness.providers.authentication import Authentication, AuthenticationCase, CredentialMode
 from a13n_harness.providers.connector.builtins import COMPOSIO
-from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.web.builtins import built_in_web_providers
 
@@ -49,7 +49,9 @@ def test_every_domain_rejects_the_same_invalid_metadata(definition, domain, conf
 @pytest.mark.parametrize("definition", NO_CREDENTIAL)
 def test_no_credential_model_forbids_credentials_without_declaring_authentication(definition):
     assert definition.credential_model is None
-    assert definition.authentication == Authentication(mode=CredentialMode.forbidden)
+    assert definition.authentication.model_dump(mode="json") == Authentication(
+        mode=CredentialMode.forbidden
+    ).model_dump(mode="json")
     assert definition.parse_credential(definition.configuration_model(), None) is None
     with pytest.raises(ValueError, match="does not accept a credential"):
         definition.parse_credential(definition.configuration_model(), {"api_key": "secret"})
@@ -59,7 +61,7 @@ def test_no_credential_model_forbids_credentials_without_declaring_authenticatio
 
 @pytest.mark.parametrize(("definition", "domain", "configuration"), CREDENTIALED)
 def test_required_credentials_are_enforced_before_a_provider_is_opened(definition, domain, configuration):
-    if definition.authentication.mode is not CredentialMode.required:
+    if definition.authentication.mode.value != CredentialMode.required.value:
         pytest.skip(f"{domain} built-in does not require a credential")
     parsed = definition.configuration_model.model_validate(configuration)
     with pytest.raises(ValueError, match="credential is required"):

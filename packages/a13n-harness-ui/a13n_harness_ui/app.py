@@ -16,6 +16,8 @@ from uuid import uuid4
 import httpx2
 from a13n_envd_client.eip.v1 import DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
+from a13n_environment.definition import EnvironmentProviderDefinition
+from a13n_environment.remote_envd.pairing import PairingChallenge, PairingRequest, PairingResponse
 from a13n_harness import HarnessInstrumentation
 from a13n_harness.content import ContentItem, ContentMetadata
 from a13n_harness.environment import EnvironmentRunExtensionFactory
@@ -23,8 +25,6 @@ from a13n_harness.http import outbound_tls_verify
 from a13n_harness.input import RunInputValue
 from a13n_harness.model_catalog_updates import run_official_model_updates
 from a13n_harness.plugin_factories import HarnessPluginFactory
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
-from a13n_harness.providers.environment.remote_envd.pairing import PairingChallenge, PairingRequest, PairingResponse
 from a13n_harness.providers.memory import DirectoryFileStore, MemoryStoreError
 from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_harness.usage import RunUsageSummary

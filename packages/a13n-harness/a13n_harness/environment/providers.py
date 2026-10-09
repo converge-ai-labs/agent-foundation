@@ -8,7 +8,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from a13n_harness.providers.environment.commands import (
+from a13n_environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     PortObservation,
@@ -23,33 +23,33 @@ from a13n_harness.providers.environment.commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
-from a13n_harness.providers.environment.computer import (
+from a13n_environment.computer import (
     ComputerActionResult,
     ComputerDescription,
     ComputerInput,
     ComputerScreenshot,
 )
-from a13n_harness.providers.environment.files import FileOperator
-from a13n_harness.providers.environment.models import (
+from a13n_environment.execution import EnvironmentExecution
+from a13n_environment.files import FileOperator
+from a13n_environment.models import (
     EnvironmentAction,
-    EnvironmentAvailability,
-    EnvironmentChange,
-    EnvironmentDescriptor,
-    EnvironmentMountObservation,
-    EnvironmentOperationFamily,
     EnvironmentOperationReceipt,
-    EnvironmentPath,
     EnvironmentPermissionSet,
-    EnvironmentReadinessRequirement,
-    EnvironmentSnapshot,
     EnvironmentState,
 )
-from a13n_harness.providers.environment.operations import EnvironmentOperations
-from a13n_harness.providers.environment.retention import (
+from a13n_environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputPolicy,
     EnvironmentOutputReadResult,
+)
+
+from a13n_harness.environment.models import (
+    EnvironmentChange,
+    EnvironmentMountObservation,
+    EnvironmentPath,
+    EnvironmentReadinessRequirement,
+    EnvironmentSnapshot,
 )
 
 from ._mount_path import parse_mount_path, validate_working_directory
@@ -174,12 +174,13 @@ class BoundProcessOperations(Protocol):
 class BoundPortOperations(Protocol):
     """Alias-aware port observations routed by one BoundEnvironment."""
 
-    async def inspect(self, target: PortTarget) -> PortObservation: ...
+    async def inspect(self, target: PortTarget, *, alias: str | None = None) -> PortObservation: ...
 
     async def wait(
         self,
         target: PortTarget,
         *,
+        alias: str | None = None,
         desired: Literal["listening", "not_listening"],
         timeout_seconds: float,
     ) -> PortObservation: ...
@@ -205,27 +206,15 @@ class BoundOutputOperations(Protocol):
     ) -> EnvironmentOperationReceipt: ...
 
 
-class BoundEnvironmentProvider(Protocol):
-    """One entered Environment adapter with a stable observed generation."""
-
-    @property
-    def provider_key(self) -> str: ...
-
-    @property
-    def environment_id(self) -> str: ...
-
-    @property
-    def descriptor(self) -> EnvironmentDescriptor: ...
-
-    @property
-    def availability(self) -> EnvironmentAvailability: ...
-
-    @property
-    def operations(self) -> EnvironmentOperations: ...
-
-    async def ensure_ready(self, operations: frozenset[EnvironmentOperationFamily]) -> None: ...
-
-    def dump_state(self) -> EnvironmentState | None: ...
+def _claim_execution(execution: EnvironmentExecution, owner: EnvironmentProviderBinding) -> bool:
+    """Keep ownership on the execution across mount wrappers and independent Runs."""
+    marker = "_a13n_harness_execution_owner"
+    try:
+        previous = object.__getattribute__(execution, marker)
+    except AttributeError:
+        object.__setattr__(execution, marker, owner)
+        return True
+    return previous is owner
 
 
 class EnvironmentProviderBinding(ABC):
@@ -266,7 +255,7 @@ class EnvironmentProviderBinding(ABC):
         instance: AgentInstanceContext,
         mount_id: str,
         host_refs: Mapping[str, str],
-    ) -> AbstractAsyncContextManager[BoundEnvironmentProvider]:
+    ) -> AbstractAsyncContextManager[EnvironmentExecution]:
         """Enter this candidate exactly once under a Harness-generated mount identity."""
 
     @abstractmethod

@@ -1,18 +1,13 @@
-"""Fresh Harness adapters for one environment instance, built from plain values after the session closed.
-
-A managed instance's registry definition is its provider contract: `create()` builds a single-use adapter from
-the provider account, the instance's recipe and its portable state. An external target's adapter is the Harness
-HTTP envd one, built from the target's own endpoint and token. Lifecycle operations use an adapter once and close
-it; execution hands it to the Harness, which enters and closes it.
-"""
+"""Detached Host inputs for explicit management and fixed-target execution."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import anyio
+from a13n_environment.execution import EnvironmentConnector, EnvironmentExecution
+from a13n_environment.management import EnvironmentProvider
+from a13n_environment.models import EnvironmentState
 from a13n_harness import RunConfiguration
-from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 
@@ -49,17 +44,31 @@ class Target:
     recipe: Mapping[str, JsonValue]
     state: EnvironmentState | None
 
+    def __post_init__(self) -> None:
+        # Old persisted handles omitted the then-fixed image, even for interrupted creates.
+        # Resolve that stored meaning once for both management and execution; new handles pin defaults.
+        if isinstance(self.account, ResolvedProvider) and self.account.type == "docker" and "image" not in self.recipe:
+            object.__setattr__(
+                self, "recipe", {**self.recipe, "image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"}
+            )
 
-async def construct(
-    runtime: Runtime,
-    target: Target,
-    *,
-    operation_id: str | None,
-    allow_create: bool,
-    configuration: RunConfiguration | None = None,
-) -> Environment:
-    """A fresh, unentered adapter. `allow_create=False` connects to the existing instance and never creates,
-    starts or replaces one; an external target is only ever connected to."""
+
+async def open_provider(runtime: Runtime, target: Target) -> EnvironmentProvider:
+    """Acquire account management clients after leaving the database transaction."""
+    account = target.account
+    if isinstance(account, ExternalAccount):
+        raise ValueError("External targets have no Service management authority")
+    await runtime.registry.check_environment_endpoint(account.type, account.config, runtime.endpoint_policy)
+    return await runtime.registry.get("environment", account.type).open_provider(
+        configuration=account.config,
+        credential=account.reveal_credential(runtime.keys),
+    )
+
+
+async def execution_connector(
+    runtime: Runtime, target: Target, *, configuration: RunConfiguration | None = None
+) -> EnvironmentConnector:
+    """Check Host endpoint policy, then construct an inert connector to the published target."""
     policy = runtime.endpoint_policy.for_run(configuration or RunConfiguration())
     account = target.account
     if isinstance(account, ExternalAccount):
@@ -70,32 +79,24 @@ async def construct(
             device_id=account.device_id,
             policy=policy,
         )
-    registry = runtime.registry
-    recipe = dict(target.recipe)
-    if account.type == "docker" and "image" not in recipe:
-        # Legacy handles omitted the then-fixed default, including interrupted creates without portable state.
-        # New handles freeze the effective image before dispatch, so absence always retains the old meaning.
-        recipe["image"] = "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"
-    await registry.check_environment_endpoint(account.type, account.config, policy)
-    return await registry.get("environment", account.type).create(
-        recipe,
+    await runtime.registry.check_environment_endpoint(account.type, account.config, policy)
+    return runtime.registry.get("environment", account.type).execution_connector(
+        dict(target.recipe),
         configuration=account.config,
         credential=account.reveal_credential(runtime.keys),
         environment_id=target.environment_id,
         state=target.state,
-        operation_id=operation_id,
-        allow_create=allow_create,
     )
 
 
-async def close(adapter: Environment) -> None:
-    """Release the adapter's local resources, boundedly and even when cancelled; the instance itself stays."""
+async def close(resource: EnvironmentProvider | EnvironmentExecution) -> None:
+    """Release owned local clients within the Host cleanup deadline."""
     with anyio.CancelScope(shield=True), anyio.move_on_after(_CLOSE_SECONDS):
         try:
-            await adapter.close()
+            await resource.close()
         except Exception as error:
             logger.warning(
-                "Environment adapter close failed",
+                "Environment resource close failed",
                 extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
             )
 

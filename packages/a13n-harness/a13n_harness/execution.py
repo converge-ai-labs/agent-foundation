@@ -12,6 +12,7 @@ from traceback import walk_tb
 from typing import TYPE_CHECKING, Any, cast, overload
 from uuid import uuid4
 
+from a13n_environment.models import EnvironmentError
 from a13n_logging import get_logger
 from anyio import CancelScope
 from opentelemetry.trace import StatusCode
@@ -55,6 +56,7 @@ from a13n_harness.context import (
     SubagentCollection,
     _CapabilityProvenance,
 )
+from a13n_harness.environment.models import EnvironmentChange
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime
 from a13n_harness.environment.sources import EnvironmentEntry, normalize_environment_inputs
 from a13n_harness.errors import (
@@ -103,7 +105,6 @@ from a13n_harness.plugins import (
     bind_run_plugins,
 )
 from a13n_harness.pricing import AbstractModelCostCapability
-from a13n_harness.providers.environment.models import EnvironmentChange, EnvironmentError
 from a13n_harness.recovery import (
     InterruptedResponseTracker,
     ToolRecoveryMode,

@@ -11,9 +11,9 @@ import json
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field, replace
 
-from a13n_harness.providers.definition import ProviderDefinition
+from a13n_environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.authentication import Authentication
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.web.definition import WebProviderDefinition
@@ -27,7 +27,7 @@ from a13n_service.infra.db import Storage, assign, short_session, transaction
 from a13n_service.infra.errors import invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
-from a13n_service.providers.registry import ProviderKind, Registry, web_operations
+from a13n_service.providers.registry import ProviderKind, RegisteredProvider, Registry, web_operations
 from a13n_service.resources.providers.probe import probe, supports_probe
 from a13n_service.resources.providers.schemas import (
     Credential,
@@ -277,7 +277,7 @@ def list_provider_types(registry: Registry, kind: ProviderKind) -> ProviderTypeP
 
 
 def _validated_config(
-    definition: ProviderDefinition,
+    definition: RegisteredProvider,
     config: Mapping[str, JsonValue],
     credential: Credential | None,
     *,
@@ -308,7 +308,7 @@ def _validated_config(
 
 
 def _check_header_names(
-    definition: ProviderDefinition,
+    definition: RegisteredProvider,
     config: Mapping[str, JsonValue],
     names: Collection[str],
     *,
@@ -376,14 +376,14 @@ def _updated_headers(keys: KeyRing, row: ProviderRow, updates: Mapping[str, str 
     return headers
 
 
-def _describe(registry: Registry, definition: ProviderDefinition) -> ProviderType:
+def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderType:
     credential = definition.credential_model
     described = ProviderType(
         type=definition.type,
         display_name=definition.display_name,
         configuration_schema=definition.configuration_model.model_json_schema(),
         credential_schema=None if credential is None else credential.model_json_schema(),
-        authentication=definition.authentication,
+        authentication=Authentication.model_validate(definition.authentication.model_dump(mode="json")),
         setup_url=definition.setup_url,
         setup_label=definition.setup_label,
         supports_test=supports_probe(definition),

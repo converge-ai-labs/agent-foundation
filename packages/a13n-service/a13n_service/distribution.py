@@ -12,7 +12,6 @@ from pathlib import Path
 from types import MappingProxyType
 
 from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
-from a13n_harness.providers.definition import ProviderDefinition
 from a13n_harness.providers.memory import BUILT_IN_MEMORY_PROVIDERS
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.web.builtins import built_in_web_providers
@@ -25,6 +24,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbox import Delivery, OutboxRow, purge_settled
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.providers.environments import BUILT_IN_ENVIRONMENT_PROVIDERS
+from a13n_service.providers.registry import RegisteredProvider
 from a13n_service.provisioning.tables import WorkspaceProvisioningRow
 from a13n_service.resources.agents.routes import router as agents_router
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
@@ -120,7 +120,7 @@ class Distribution:
     migrations: tuple[Path, ...] = ()
     settings: Mapping[str, type[Section]] = field(default_factory=dict)
     sweeps: tuple[SweepFactory, ...] = ()
-    providers: tuple[ProviderDefinition, ...] = ()
+    providers: tuple[RegisteredProvider, ...] = ()
     admission: AdmissionPolicy | None = None
     # None keeps the local password/session/API-key authenticator.
     authenticator: Authenticator | None = None

@@ -11,35 +11,38 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
-from pydantic import JsonValue
-
-from a13n_harness._json import dump_json_bytes
-from a13n_harness.identity import AgentInstanceContext
-from a13n_harness.providers.environment.commands import (
+from a13n_environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     ProcessIdentity,
 )
-from a13n_harness.providers.environment.files import FileOperator
-from a13n_harness.providers.environment.models import (
+from a13n_environment.execution import EnvironmentExecution
+from a13n_environment.files import FileOperator
+from a13n_environment.models import (
     DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS,
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_DISPATCH,
     EnvironmentAction,
     EnvironmentAvailability,
-    EnvironmentChange,
     EnvironmentDescriptor,
     EnvironmentError,
-    EnvironmentMountInfo,
-    EnvironmentMountObservation,
     EnvironmentOperationFamily,
-    EnvironmentPath,
     EnvironmentPermissionSet,
-    EnvironmentReadinessRequirement,
-    EnvironmentSnapshot,
     EnvironmentState,
 )
-from a13n_harness.providers.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+from a13n_environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+from pydantic import JsonValue
+
+from a13n_harness._json import dump_json_bytes
+from a13n_harness.environment.models import (
+    EnvironmentChange,
+    EnvironmentMountInfo,
+    EnvironmentMountObservation,
+    EnvironmentPath,
+    EnvironmentReadinessRequirement,
+    EnvironmentSnapshot,
+)
+from a13n_harness.identity import AgentInstanceContext
 
 from ._mount_path import (
     mount_path_from_provider_path,
@@ -52,7 +55,6 @@ from .extensions import EnvironmentRunExtension, EnvironmentRunExtensionContext
 from .providers import (
     BoundComputerOperations,
     BoundEnvironment,
-    BoundEnvironmentProvider,
     BoundOutputOperations,
     BoundPortOperations,
     BoundProcessOperations,
@@ -61,6 +63,7 @@ from .providers import (
     EnvironmentRuntime,
     EnvironmentRuntimeMount,
     FileScopeSelection,
+    _claim_execution,
 )
 from .sources import EnvironmentEntry, _normalize_runtime_mount
 from .virtual_files import VirtualFileOperator, _PreparedFile
@@ -248,7 +251,11 @@ class CompositeBoundEnvironment(BoundEnvironment):
         route = self._resolve_path(path, alias=alias)
         return FileScopeSelection(
             logical_path=path,
-            resolved_path=EnvironmentPath(mount_id=route.entered.mount_id, path=route.provider_path),
+            resolved_path=EnvironmentPath(
+                mount_id=route.entered.mount_id,
+                execution_id=route.entered.provider.execution_id,
+                path=route.provider_path,
+            ),
             observed_generation=route.entered.public.descriptor.generation,
             mount_path=route.mount_path,
         )
@@ -373,7 +380,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         return entered.mount_id
 
     def _track_process_handle(self, handle: BoundProcessHandle, *, added: bool) -> None:
-        key = handle.mount_id
+        key = self._entered_for_execution(handle.execution_id).mount_id
         if added:
             self._active_process_handles.setdefault(key, set()).add(handle)
         else:
@@ -570,6 +577,8 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     [primary, cleanup],
                 ) from None
             raise
+        if not _claim_execution(provider, candidate):
+            raise EnvironmentError("Environment execution is already owned.", code="environment_execution_reused")
         try:
             entered = _validate_entered(request, mount_id, candidate, provider)
         except BaseException as primary:
@@ -619,7 +628,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
     def resolve_path(self, path: str, *, alias: str | None = None) -> EnvironmentPath:
         """Resolve one aggregate or relative path to a provider-local path."""
         route = self._resolve_path(path, alias=alias)
-        return EnvironmentPath(mount_id=route.entered.mount_id, path=route.provider_path)
+        return EnvironmentPath(
+            mount_id=route.entered.mount_id, execution_id=route.entered.provider.execution_id, path=route.provider_path
+        )
 
     def _resolve_path(self, path: str, *, alias: str | None = None) -> _ResolvedPath:
         self._assert_open()
@@ -789,12 +800,16 @@ class CompositeBoundEnvironment(BoundEnvironment):
             )
         return entered
 
+    def _entered_for_execution(self, execution_id: str) -> _EnteredMount:
+        matches = [mount for mount in self._entered_by_id.values() if mount.provider.execution_id == execution_id]
+        if len(matches) != 1:
+            raise EnvironmentError("Execution reference is stale or ambiguous.", code="environment_stale_mount")
+        return matches[0]
+
     def _entered_for_handle(self, handle: BoundProcessHandle) -> _EnteredMount:
         if not isinstance(handle, BoundProcessHandle):
             raise EnvironmentError("Process handle is invalid.", code="environment_request_invalid")
-        entered = self._entered_by_id.get(handle.mount_id)
-        if entered is None:
-            raise EnvironmentError("Process handle refers to a stale mount.", code="environment_stale_mount")
+        entered = self._entered_for_execution(handle.execution_id)
         if (
             handle.observed_generation != entered.public.descriptor.generation
             or handle.identity.provider_type != entered.public.provider_type
@@ -847,7 +862,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     code="environment_provider_failure",
                 )
             provider_path = base if path == "." else normalize_operation_path(f"{base.rstrip('/')}/{path}")
-        return EnvironmentPath(mount_id=entered.mount_id, path=provider_path)
+        return EnvironmentPath(
+            mount_id=entered.mount_id, execution_id=entered.provider.execution_id, path=provider_path
+        )
 
     @asynccontextmanager
     async def _prepare_scoped_file(
@@ -1184,15 +1201,24 @@ class CompositeBoundEnvironment(BoundEnvironment):
 
     async def _prepare_provider(self, entered: _EnteredMount, family: EnvironmentOperationFamily) -> None:
         try:
-            await entered.provider.ensure_ready(frozenset({family}))
+            await entered.provider.check_ready(frozenset({family}))
         finally:
-            # Recovery can publish a new target and then report its replacement to
-            # the caller. Publish that observation even when readiness raises.
+            # Readiness can narrow capabilities, but cannot replace this execution
+            # or its backing target. Reopening uses explicit mount replacement.
             async with self._operation_lock:
                 current = self._current_publication(entered)
                 refreshed = _EnteredMount(
                     current.mount_id, current.configured, current.provider, current.environment_id
                 )
+                previous_descriptor = current.public.descriptor
+                descriptor = refreshed.public.descriptor
+                if (
+                    descriptor.generation != previous_descriptor.generation
+                    or descriptor.backing_identity != previous_descriptor.backing_identity
+                ):
+                    raise EnvironmentError(
+                        "Environment target changed within an execution.", code="environment_stale_mount"
+                    )
                 self._validate_live_observation(refreshed, refreshed.provider.availability)
                 self._entered_by_id[current.mount_id] = refreshed
                 if self._entered.get(current.public.name) is current:
@@ -1211,9 +1237,6 @@ class CompositeBoundEnvironment(BoundEnvironment):
                                 current_default=self._snapshot.default_mount,
                             )
                         )
-                if current.public.descriptor.generation != refreshed.public.descriptor.generation:
-                    self._active_process_handles.pop(current.mount_id, None)
-                    self._refresh_mount_drained(current.mount_id)
 
     async def _ensure_provider_family(
         self,
@@ -1327,7 +1350,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         """Read each entered adapter's last validated portable state without I/O."""
         states: dict[str, EnvironmentState] = {}
         for entered in self._entered.values():
-            state = entered.provider.dump_state()
+            state = entered.provider.state
             if state is None:
                 continue
             if state.provider_key != entered.public.provider_type:
@@ -1460,7 +1483,7 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
                 self._activation_changed.set()
             raise primary
 
-        scopes: list[AbstractAsyncContextManager[BoundEnvironmentProvider]] = []
+        scopes: list[AbstractAsyncContextManager[EnvironmentExecution]] = []
         entered: dict[str, _EnteredMount] = {}
         successfully_entered: set[int] = set()
         journal = EnvironmentChangeJournal()
@@ -1477,8 +1500,12 @@ class ManagedEnvironmentRuntime(EnvironmentRuntime):
                 )
                 async with asyncio.timeout(DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS):
                     provider = await scope.__aenter__()
-                scopes.append(scope)
                 successfully_entered.add(id(candidate))
+                if not _claim_execution(provider, candidate):
+                    raise EnvironmentError(
+                        "Environment execution is already owned.", code="environment_execution_reused"
+                    )
+                scopes.append(scope)
                 entered[requested.name] = _validate_entered(requested, mount_id, candidate, provider)
 
             snapshot = EnvironmentSnapshot(
@@ -1660,7 +1687,7 @@ def _validate_entered(
     requested: _MountRequest,
     mount_id: str,
     candidate: EnvironmentProviderBinding,
-    provider: BoundEnvironmentProvider,
+    provider: EnvironmentExecution,
 ) -> _EnteredMount:
     descriptor = provider.descriptor
     availability = provider.availability
@@ -1675,11 +1702,13 @@ def _validate_entered(
         raise EnvironmentError("Provider identity changed during entry.", code="environment_provider_failure")
     if not availability.ready_families <= descriptor.operation_families:
         raise EnvironmentError("Provider readiness advertises an absent family.", code="environment_provider_failure")
-    if not callable(getattr(provider, "ensure_ready", None)):
+    if not callable(getattr(provider, "check_ready", None)):
         raise EnvironmentError("Provider has no readiness path.", code="environment_provider_failure")
-    if not callable(getattr(provider, "dump_state", None)):
-        raise EnvironmentError("Provider has no state cache path.", code="environment_provider_failure")
 
+    if availability.status not in {"available", "degraded"}:
+        raise EnvironmentError("Provider did not return a ready execution.", code="environment_unavailable")
+    if not isinstance(provider.execution_id, str) or not provider.execution_id or len(provider.execution_id) > 128:
+        raise EnvironmentError("Provider returned an invalid execution identity.", code="environment_provider_failure")
     _validate_operation_facets(descriptor, availability, operations)
 
     effective = EnvironmentPermissionSet(
@@ -1690,7 +1719,9 @@ def _validate_entered(
         provider_type=provider.provider_key,
         descriptor=descriptor,
         permission_ceiling=effective,
-        default_working_directory=requested.default_working_directory,
+        default_working_directory=requested.default_working_directory
+        if requested.default_working_directory is not None
+        else descriptor.working_directory,
         mount_path=requested.mount_path,
         provider_root=requested.provider_root,
     )
@@ -1815,7 +1846,7 @@ async def _close_extension_scopes(
 
 async def _close_provider_scopes_after_tasks(
     tasks: tuple[asyncio.Task[Any], ...],
-    scopes: list[AbstractAsyncContextManager[BoundEnvironmentProvider]],
+    scopes: list[AbstractAsyncContextManager[EnvironmentExecution]],
 ) -> None:
     await asyncio.gather(*tasks, return_exceptions=True)
     await _close_provider_scopes(scopes)
@@ -1823,7 +1854,7 @@ async def _close_provider_scopes_after_tasks(
 
 async def _raise_with_provider_cleanup(
     primary: BaseException,
-    scope: AbstractAsyncContextManager[BoundEnvironmentProvider],
+    scope: AbstractAsyncContextManager[EnvironmentExecution],
 ) -> NoReturn:
     try:
         await _await_cleanup_shielded(_close_provider_scopes([scope]))
@@ -1837,7 +1868,7 @@ async def _raise_with_provider_cleanup(
 
 
 async def _close_provider_scopes(
-    scopes: list[AbstractAsyncContextManager[BoundEnvironmentProvider]],
+    scopes: list[AbstractAsyncContextManager[EnvironmentExecution]],
 ) -> None:
     failures: list[BaseException] = []
     for scope in reversed(scopes):

@@ -5,11 +5,11 @@ daemon are in `test_environments_envd.py`.
 from types import SimpleNamespace
 
 import pytest
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_environment.errors import EnvironmentProviderError
 from a13n_service.infra.db import transaction
 from a13n_service.infra.ids import new_object_id
 from a13n_service.runs.environments import external
-from a13n_service.runs.environments.adapters import construct
+from a13n_service.runs.environments.adapters import execution_connector
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.settings import Settings
 
@@ -59,9 +59,7 @@ async def test_an_endpoint_outside_the_operator_policy_is_never_dialed(  # type:
         # A target whose endpoint the policy now denies is refused at its next dial and at re-verification.
         environment_id = await insert(service, "http://127.0.0.1:9")
         with pytest.raises(EnvironmentProviderError) as refused:
-            await construct(
-                service.runtime, await target(service, environment_id), operation_id=None, allow_create=False
-            )
+            await execution_connector(service.runtime, await target(service, environment_id))
         assert refused.value.code == "provider_endpoint_denied"
         changed = await change(service, environment_id, {"token": "another-token"})
         assert changed.status_code == 409 and details(changed)["reason"] == "provider_endpoint_denied"

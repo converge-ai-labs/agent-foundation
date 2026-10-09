@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
-from a13n_harness.providers.environment.commands import (
+from a13n_environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     PortObservation,
@@ -21,7 +21,7 @@ from a13n_harness.providers.environment.commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
-from a13n_harness.providers.environment.computer import (
+from a13n_environment.computer import (
     COMPUTER_INPUT_ACTIONS,
     ComputerActionResult,
     ComputerClick,
@@ -32,12 +32,12 @@ from a13n_harness.providers.environment.computer import (
     ComputerScreenshot,
     ComputerScroll,
 )
-from a13n_harness.providers.environment.models import (
+from a13n_environment.models import (
     EnvironmentAction,
     EnvironmentError,
     EnvironmentOperationReceipt,
 )
-from a13n_harness.providers.environment.retention import (
+from a13n_environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputPolicy,
@@ -86,8 +86,13 @@ class _ComputerFacade:
         action = COMPUTER_INPUT_ACTIONS[request.kind]
         if isinstance(request, ComputerClick | ComputerMove | ComputerDrag | ComputerScroll):
             observation = request.observation
-            entered = self._environment.require_action(observation.mount_id, action)
-            if alias is not None and self._environment._select_entered(alias).mount_id != observation.mount_id:
+            entered = self._environment.require_action(
+                self._environment._entered_for_execution(observation.execution_id).mount_id, action
+            )
+            if (
+                alias is not None
+                and self._environment._select_entered(alias).provider.execution_id != observation.execution_id
+            ):
                 raise EnvironmentError("Observation belongs to another mount.", code="environment_stale_mount")
             if observation.observed_generation != entered.public.descriptor.generation:
                 raise EnvironmentError("Computer observation is stale.", code="environment_stale_mount")
@@ -145,7 +150,9 @@ class _OutputFacade:
         selected: BoundOutputReference | BoundOutputCursor,
         action: EnvironmentAction,
     ) -> AsyncGenerator[_EnteredMount]:
-        entered = self._environment.require_action(selected.mount_id, action)
+        entered = self._environment.require_action(
+            self._environment._entered_for_execution(selected.execution_id).mount_id, action
+        )
         if selected.observed_generation != entered.public.descriptor.generation:
             raise EnvironmentError("Output selector is stale.", code="environment_stale_mount")
         async with self._environment._operation_lease(
@@ -287,7 +294,9 @@ class _ProcessFacade:
 
     async def write_stdin(self, handle: BoundProcessHandle, data: bytes, **kwargs: Any) -> ProcessWriteStdinResult:
         if kwargs.get("close_after_write") is True:
-            self._environment.require_action(handle.mount_id, EnvironmentAction.PROCESS_CLOSE_STDIN)
+            self._environment.require_action(
+                self._environment._entered_for_handle(handle).mount_id, EnvironmentAction.PROCESS_CLOSE_STDIN
+            )
         return await self._call(handle, EnvironmentAction.PROCESS_WRITE_STDIN, "write_stdin", data, **kwargs)
 
     async def close_stdin(self, handle: BoundProcessHandle) -> EnvironmentOperationReceipt:
@@ -351,15 +360,16 @@ class _PortFacade:
     def __init__(self, environment: CompositeBoundEnvironment) -> None:
         self._environment = environment
 
-    async def inspect(self, target: PortTarget) -> PortObservation:
-        return await self._call(target, EnvironmentAction.PORT_INSPECT, "inspect")
+    async def inspect(self, target: PortTarget, *, alias: str | None = None) -> PortObservation:
+        return await self._call(target, EnvironmentAction.PORT_INSPECT, "inspect", alias=alias)
 
-    async def wait(self, target: PortTarget, **kwargs: Any) -> PortObservation:
+    async def wait(self, target: PortTarget, *, alias: str | None = None, **kwargs: Any) -> PortObservation:
         timeout = kwargs.get("timeout_seconds")
         return await self._call(
             target,
             EnvironmentAction.PORT_WAIT,
             "wait",
+            alias=alias,
             timeout_seconds=timeout if isinstance(timeout, int | float) else None,
             kwargs=kwargs,
         )
@@ -370,10 +380,11 @@ class _PortFacade:
         action: EnvironmentAction,
         method: str,
         *,
+        alias: str | None,
         timeout_seconds: float | None = None,
         kwargs: Mapping[str, Any] | None = None,
     ) -> Any:
-        entered = self._environment._select_entered(target.alias)
+        entered = self._environment._select_entered(alias)
         async with self._environment._operation_lease(
             entered,
             action,
@@ -384,6 +395,6 @@ class _PortFacade:
             if ports is None:
                 raise EnvironmentError("Port operation facet is unavailable.", code="environment_unsupported")
             call = getattr(ports, method)
-            result = await call(target.model_copy(update={"alias": None}), **dict(kwargs or {}))
+            result = await call(target, **dict(kwargs or {}))
             _validate_provider_artifacts(entered, result)
             return result

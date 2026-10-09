@@ -551,7 +551,7 @@ class RootRunExecutor:
                     finalization = (
                         EnvironmentFinalization(cleanup_errors=(), state_publications=())
                         if environment is None
-                        else await environment.finalize(timeout_seconds=self._cleanup_timeout_seconds)
+                        else environment.finalization
                     )
                 except Exception as exc:
                     finalization_error = exc

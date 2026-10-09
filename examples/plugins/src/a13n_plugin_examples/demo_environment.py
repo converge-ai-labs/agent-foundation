@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Literal
 
+from a13n_environment import EnvironmentProviderDefinition
 from a13n_harness import (
     AgentSpec,
     EnvironmentMount,
@@ -17,7 +18,6 @@ from a13n_harness import (
 )
 from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
 from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.plugins import load_provider_plugins
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -52,17 +52,11 @@ async def _run_environment_demo(
     docs_root: Path,
 ) -> EnvironmentDemoResult:
     provider = catalog.require(PROVIDER_TYPE)
-    source = await provider.create(
-        environment_id="workspace-source",
-        environment=_configuration(provider, source_root),
-        state=None,
-        runtime=None,
+    source = provider.execution_connector(
+        _configuration(provider, source_root), environment_id="workspace-source", state=None, runtime=None
     )
-    docs = await provider.create(
-        environment_id="workspace-docs",
-        environment=_configuration(provider, docs_root),
-        state=None,
-        runtime=None,
+    docs = provider.execution_connector(
+        _configuration(provider, docs_root), environment_id="workspace-docs", state=None, runtime=None
     )
     default_text = ""
     docs_text = ""

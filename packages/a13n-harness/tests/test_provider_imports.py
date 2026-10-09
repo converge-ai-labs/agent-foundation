@@ -43,11 +43,11 @@ def test_package_import_and_provider_metadata_stay_inert() -> None:
         # Domain metadata needs no optional SDK.
         "from a13n_harness.providers.plugins import ProviderManifest\n"
         "from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS\n"
-        "from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS\n"
+        "from a13n_environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS\n"
         "from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS\n"
         "from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS\n"
         "from a13n_harness.providers.web.builtins import built_in_web_providers\n"
-        "manifest = ProviderManifest(api_version=1, environment=BUILT_IN_ENVIRONMENT_PROVIDERS)\n"
+        "manifest = ProviderManifest(api_version=2, environment=BUILT_IN_ENVIRONMENT_PROVIDERS)\n"
         "assert len(manifest.environment) == 11\n"
         "assert all(item.configuration_model.model_json_schema() for item in manifest.environment)\n"
         "assert BUILT_IN_CONNECTOR_PROVIDERS and BUILT_IN_MODEL_PROVIDERS\n"
@@ -58,7 +58,7 @@ def test_package_import_and_provider_metadata_stay_inert() -> None:
         "assert built_in_web_providers()\n"
         # Selecting one built-in needs no other Provider runtime.
         "from a13n_harness.providers.catalog import ProviderCatalog\n"
-        "from a13n_harness.providers.environment.builtins import select_builtin_environment_providers\n"
+        "from a13n_environment.builtins import select_builtin_environment_providers\n"
         "catalog = ProviderCatalog(select_builtin_environment_providers(('direct_local',)))\n"
         "assert catalog.require('direct_local').validate_environment({'root': {'path': '/tmp'}})\n"
     )

@@ -8,6 +8,7 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import AbstractAsyncContextManager, aclosing
 from pathlib import Path
 
+from a13n_environment import EnvironmentConnector
 from a13n_harness import (
     AgentSpec,
     HarnessBuilder,
@@ -16,7 +17,6 @@ from a13n_harness import (
     HarnessRunResultEvent,
     HarnessState,
 )
-from a13n_harness.providers.environment.management import Environment
 from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
 from pydantic_ai.models import Model
 
@@ -31,7 +31,7 @@ class ConversationApplication:
         *,
         model: Model,
         state_path: Path,
-        environment_factory: Callable[[], Environment],
+        environment_factory: Callable[[], EnvironmentConnector],
         instructions: str = _DEFAULT_INSTRUCTIONS,
     ) -> None:
         self._state_path = state_path

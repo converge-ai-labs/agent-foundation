@@ -8,11 +8,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Literal, overload
 
+from a13n_environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.connector.definition import ConnectorProviderDefinition
 from a13n_harness.providers.definition import ProviderDefinition
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.memory.definition import MemoryProviderDefinition
 from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.web.definition import WebProviderDefinition
@@ -21,6 +21,8 @@ from pydantic import JsonValue
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.endpoints import check_endpoint, dialed_endpoint
 from a13n_service.providers.model_settings import check_settings, settings_schema
+
+type RegisteredProvider = ProviderDefinition | EnvironmentProviderDefinition
 
 type ProviderKind = Literal["model", "environment", "connector", "web", "memory"]
 type WebOperation = Literal["search", "scrape"]
@@ -46,7 +48,7 @@ class Registry:
     model_settings: Mapping[str, Mapping[str, JsonValue]]
 
     @classmethod
-    def of(cls, definitions: Iterable[ProviderDefinition]) -> "Registry":
+    def of(cls, definitions: Iterable[RegisteredProvider]) -> "Registry":
         """Group definitions by domain; a duplicate type within a domain or an unknown domain fails assembly.
 
         Deriving the settings schemas imports each calling API's SDK, here rather than inside a request.
@@ -80,7 +82,7 @@ class Registry:
             {api: settings_schema(api) for api in sorted(apis)},
         )
 
-    def catalog(self, kind: ProviderKind) -> Mapping[str, ProviderDefinition]:
+    def catalog(self, kind: ProviderKind) -> Mapping[str, RegisteredProvider]:
         match kind:
             case "model":
                 return self.models
@@ -93,7 +95,7 @@ class Registry:
             case "memory":
                 return self.memory
 
-    def types(self, kind: ProviderKind) -> list[ProviderDefinition]:
+    def types(self, kind: ProviderKind) -> list[RegisteredProvider]:
         return sorted(self.catalog(kind).values(), key=lambda definition: definition.type)
 
     @overload
@@ -107,8 +109,8 @@ class Registry:
     @overload
     def get(self, kind: Literal["memory"], type_: str) -> MemoryProviderDefinition: ...
     @overload
-    def get(self, kind: ProviderKind, type_: str) -> ProviderDefinition: ...
-    def get(self, kind: ProviderKind, type_: str) -> ProviderDefinition:
+    def get(self, kind: ProviderKind, type_: str) -> RegisteredProvider: ...
+    def get(self, kind: ProviderKind, type_: str) -> RegisteredProvider:
         """The definition a resource's `type` selects; an unregistered type is an unavailable dependency."""
         definition = self.catalog(kind).get(type_)
         if definition is None:

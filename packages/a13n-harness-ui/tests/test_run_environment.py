@@ -176,3 +176,84 @@ async def test_automatic_interaction_timeout_retains_run_environment(tmp_path, m
         assert (await app.wait_root_operation(latest.receipt.receipt_id)).status is RootOperationStatus.completed
         assert [capture.environment_profile.profile_id for capture in captures] == ["environment-sandbox"] * 2
         assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
+
+
+@pytest.mark.parametrize("failure", ["management_error", "cancel", "execution_error"])
+async def test_management_state_is_published_before_execution_and_after_partial_failure(tmp_path, monkeypatch, failure):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_environment import EnvironmentConnector
+    from a13n_environment.direct_local.provider import DIRECT_LOCAL
+    from a13n_environment.errors import (
+        EnvironmentManagementCancelled,
+        EnvironmentManagementError,
+        EnvironmentProviderErrorCategory,
+        provider_error,
+    )
+    from a13n_environment.models import EnvironmentError, EnvironmentState
+    from a13n_harness import RunBindings
+    from a13n_harness_ui.storage import EnvironmentBindingKey, StoredEnvironmentState
+
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
+    ) as app:
+        thread = await app.create_thread()
+        executor = app._root_runs._executor
+        captured = await executor._compositions.publish(
+            await app.current_configuration(), _selection(await app._threads.get(thread.thread_id))
+        )
+        composition = captured.value
+        profile = composition.environment_profile.model_copy(update={"provider_key": "test_managed"})
+        composition = composition.model_copy(update={"environment_profile": profile})
+        service = executor._environments
+        observed = EnvironmentState(provider_key="test_managed", state_version="1", state={"target_id": "allocated"})
+        key = EnvironmentBindingKey(
+            thread_id=thread.thread_id,
+            environment_profile_id=profile.profile_id,
+            profile_digest=profile.behavior_digest,
+            adapter_key=profile.adapter_key,
+            normalized_root=str(composition.project_roots[0]),
+        )
+        reconstructed = SimpleNamespace(adapter=SimpleNamespace(preserves_host_paths=False))
+        monkeypatch.setattr(service._reconstructor, "reconstruct", lambda profile: reconstructed)
+        connector = Mock(
+            spec=EnvironmentConnector,
+            state=observed,
+            provider_key="test_managed",
+            environment_id="env-test",
+            descriptor=DIRECT_LOCAL.execution_connector({"root": {"path": str(tmp_path)}}).descriptor,
+            open=AsyncMock(side_effect=EnvironmentError("Target unavailable", code="environment_unavailable")),
+        )
+
+        async def bind(*args, **kwargs):
+            if failure == "cancel":
+                raise EnvironmentManagementCancelled(observed, "op-create")
+            if failure == "management_error":
+                error = provider_error(
+                    "test_managed", "provider_unknown_outcome", EnvironmentProviderErrorCategory.UNKNOWN_OUTCOME
+                )
+                raise EnvironmentManagementError(error, observed, "op-create", "env-test")
+            return connector
+
+        monkeypatch.setattr(service._reconstructor, "bind", bind)
+        if failure == "execution_error":
+            plan = await service.prepare(composition)
+            connector.open.assert_not_awaited()
+            with pytest.raises(EnvironmentError):
+                async with plan.runtime.bind(
+                    thread_id=thread.thread_id,
+                    run_id="run-test",
+                    instance=RunBindings.embedded().instance,
+                    host_refs={},
+                ):
+                    pytest.fail("Failed execution must not be published")
+        else:
+            with pytest.raises(asyncio.CancelledError if failure == "cancel" else EnvironmentManagementError):
+                await service.prepare(composition)
+            connector.open.assert_not_awaited()
+        head = await app._store.environment_states.get(key)
+        assert head is not None and head.state is not None
+        saved = await app._store.objects.read_model(head.state, StoredEnvironmentState)
+        assert saved.state == observed

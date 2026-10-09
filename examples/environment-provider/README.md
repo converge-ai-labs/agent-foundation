@@ -1,17 +1,8 @@
 # Environment Provider Example
 
-This standalone project demonstrates how a Host selects and drives the built-in `a13n_harness.providers.environment` backends without involving Agent Harness or a model.
+This standalone project demonstrates how a Host selects and drives the built-in `a13n_environment` backends without involving Agent Harness or a model.
 
-It covers the common Provider lifecycle:
-
-1. create a credential-free `EnvironmentProviderSpec`;
-2. build an explicit allowlisted Provider catalog;
-3. validate the recipe against the Provider's declared model;
-4. supply fresh process-local runtime collaborators when required;
-5. construct one fresh, inert `Environment` adapter;
-6. enter it, require file readiness, and use provider-neutral operations;
-7. read `dump_state()` and close the adapter non-destructively;
-8. for Docker, give the state to a fresh adapter and destroy the target explicitly.
+The Host explicitly manages backing targets through `EnvironmentProvider`, records the returned state, and builds a reusable `EnvironmentConnector`. Each `open()` returns an independent `EnvironmentExecution` with ready operations. Execution close releases its connection and local resources; target deletion requires an explicit management call.
 
 ## Demonstrated routes
 
@@ -115,12 +106,12 @@ The example defaults to `a13n-sandbox:local`, the image built by that Make targe
 
 The example intentionally exercises the complete stateful lifecycle:
 
-1. create and enter one container-backed Environment;
-2. write `/provider-example.txt` and capture `EnvironmentState`;
-3. close the first adapter without stopping or deleting the container;
-4. construct a fresh adapter from the captured state and read the same file;
-5. close the re-entry adapter;
-6. construct a third fresh adapter and call `destroy()` explicitly.
+1. explicitly create a container and retain the returned `EnvironmentState`;
+2. construct a connector for that exact target;
+3. open an execution, write a file, and close the execution;
+4. open another execution from the same connector and read the file;
+5. close the second execution;
+6. explicitly destroy the container through the management provider.
 
 If the process is interrupted after target creation, inspect the retained Docker container before retrying or removing them. State is the exact soft reference needed for safe re-entry or destruction; do not guess a replacement target from a name.
 
@@ -148,10 +139,10 @@ Read [`application.py`](src/a13n_environment_example/application.py) for the com
 
 - Provider configuration contains desired behavior, not credentials or current target identity.
 - Runtime collaborators such as the daemon path, Docker client, and Engine endpoint are fresh process-local values.
-- Every independent Run or Host lifecycle action uses a fresh adapter.
-- `dump_state()` performs no I/O and may be read during unconditional finalization.
+- Every `open()` creates an independently owned execution; the connector is reusable.
+- Management results and `observed_environment_state()` expose references to persist before execution.
 - `close()` releases process-local resources without destroying a backing target.
-- Only explicit Host retention policy should construct a fresh adapter and call `destroy()`.
+- Only explicit Host retention policy should call provider `destroy()`.
 - Harness owns multi-mount routing and model-facing tools; this example stays at the lower single-Environment Provider boundary.
 
 ## Native E2B

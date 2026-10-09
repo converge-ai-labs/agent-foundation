@@ -6,13 +6,13 @@ only the endpoint, the device ID and the token, encrypted for the row; every lat
 """
 
 import anyio
-from a13n_harness.providers.environment.errors import EnvironmentProviderError
-from a13n_harness.providers.environment.models import EnvironmentError as OperationError
+from a13n_environment.errors import EnvironmentProviderError
+from a13n_environment.models import EnvironmentError as OperationError
 
 from a13n_service.infra.crypto import Envelope, KeyRing, SecretLocation
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.providers import envd
-from a13n_service.runs.environments.adapters import ExternalAccount, close
+from a13n_service.runs.environments.adapters import ExternalAccount
 from a13n_service.runs.environments.lifecycle import PERMANENT
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -49,10 +49,8 @@ async def verify(runtime: Runtime, environment_id: str, endpoint: str, token: st
             adapter = await envd.connect(
                 endpoint, token, environment_id=environment_id, device_id=identity, policy=runtime.endpoint_policy
             )
-            try:
-                await adapter.prepare()
-            finally:
-                await close(adapter)
+            async with await adapter.open():
+                pass
             return identity
     except EnvironmentProviderError as error:
         if error.category not in PERMANENT:

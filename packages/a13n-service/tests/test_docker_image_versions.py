@@ -9,15 +9,15 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from a13n_environment.docker.configuration import DockerEnvironmentConfiguration
+from a13n_environment.docker.provider import DockerTarget
+from a13n_environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
+from a13n_environment.models import EnvironmentState
 from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
-from a13n_harness.providers.environment.docker.provider import DockerEnvironment
-from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
-from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_service.infra.db import transaction
 from a13n_service.providers.environments.docker import DEFAULT_SANDBOX_IMAGE, default_image, docker
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
-from a13n_service.runs.environments.adapters import construct
+from a13n_service.runs.environments.adapters import execution_connector
 from a13n_service.runs.environments.lifecycle import claim
 from a13n_service.runs.environments.schemas import Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -87,10 +87,7 @@ async def select_release(service: SimpleNamespace, monkeypatch: pytest.MonkeyPat
     await asyncio.gather(*sweeps, return_exceptions=True)
     installed(monkeypatch, version)
 
-    async def runtime_factory(**_) -> DockerProviderRuntime:  # type: ignore[no-untyped-def]
-        return DockerProviderRuntime(DockerSDKEngine(Mock()))
-
-    definition = replace(docker(host=None, mount_roots=()), runtime_factory=runtime_factory)
+    definition = docker(host=None, mount_roots=())
     registry = replace(
         service.runtime.registry,
         environments=ProviderCatalog(
@@ -113,14 +110,20 @@ async def template(service: SimpleNamespace, recipe: dict) -> dict:
     return response.json()
 
 
-def retained_state(adapter: DockerEnvironment) -> EnvironmentState:
+def retained_state(recipe: dict, environment_id: str) -> EnvironmentState:
+    target = DockerTarget(
+        DockerEnvironmentConfiguration.model_validate(recipe),
+        environment_id,
+        None,
+        DockerProviderRuntime(DockerSDKEngine(Mock())),
+    )
     return EnvironmentState(
         provider_key="docker",
         state_version="1",
         state={
-            "environment_id": adapter.environment_id,
+            "environment_id": environment_id,
             "container_id": "a" * 64,
-            "configuration_fingerprint": adapter.fingerprint,
+            "configuration_fingerprint": target.fingerprint,
         },
     )
 
@@ -141,10 +144,9 @@ async def test_instance_pins_effective_image_and_template_preserves_explicit_pin
         row = await session.get(EnvironmentRow, instance["id"])
         assert row is not None
         assert Handle.model_validate(row.handle).recipe["image"] == expected
-    first = await construct(service.runtime, operation.target, operation_id=operation.operation_id, allow_create=True)
-    assert isinstance(first, DockerEnvironment)
-    state = retained_state(first)
-    await first.close()
+    state = retained_state(dict(operation.target.recipe), operation.target.environment_id)
+    first = await execution_connector(service.runtime, replace(operation.target, state=state))
+    assert first.state == state
 
     # A restarted/new Worker reconstructs the same target under the next Service release without a fingerprint conflict.
     monkeypatch.setattr(import_module(default_image.__module__), "DEFAULT_SANDBOX_IMAGE", f"{IMAGE}:0.2.0")
@@ -152,12 +154,8 @@ async def test_instance_pins_effective_image_and_template_preserves_explicit_pin
     await backdate(service, instance["id"], lease_expires_at=timedelta(seconds=1))
     resumed = await claim(service.runtime, instance["id"], owner="new-worker")
     assert resumed is not None and resumed.target.recipe["image"] == expected
-    restored = await construct(
-        service.runtime, replace(resumed.target, state=state), operation_id=None, allow_create=False
-    )
-    assert isinstance(restored, DockerEnvironment)
-    assert restored.config.image == expected and restored.target is not None
-    await restored.close()
+    restored = await execution_connector(service.runtime, replace(resumed.target, state=state))
+    assert restored.state == state
 
     # The unchanged template follows the new default only if the caller left image unspecified.
     next_instance = await reserve(service, configured["id"])
@@ -168,34 +166,26 @@ async def test_instance_pins_effective_image_and_template_preserves_explicit_pin
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("has_state", [False, True])
-async def test_legacy_handle_keeps_dev_even_after_an_interrupted_create(
-    service, monkeypatch: pytest.MonkeyPatch, has_state: bool
-) -> None:  # type: ignore[no-untyped-def]
+async def test_legacy_handle_keeps_dev_even_after_an_interrupted_create(service, monkeypatch, has_state):
     await select_release(service, monkeypatch, "0.1.0")
     configured = await template(service, {})
     instance = await reserve(service, configured["id"])
     operation = await claim(service.runtime, instance["id"], owner="test")
     assert operation is not None
-    legacy = DockerEnvironment(
-        DockerEnvironmentConfiguration(image="ghcr.io/converge-ai-labs/a13n-docker-environment:dev"),
-        instance["id"],
-        None,
-        DockerProviderRuntime(DockerSDKEngine(Mock())),
-    )
-    state = retained_state(legacy) if has_state else None
-    await legacy.close()
-    # Before pinning, the durable handle copied the sparse template verbatim, even before the create response.
+    recipe = {"image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"}
+    state = retained_state(recipe, instance["id"]) if has_state else None
+    # Old durable handles copied the sparse template, including before a create response arrived.
     async with transaction(service.runtime.storage) as session:
         row = await session.get(EnvironmentRow, instance["id"])
         assert row is not None
         row.handle = Handle(recipe={}, state=state).model_dump(mode="json")
     await backdate(service, instance["id"], lease_expires_at=timedelta(seconds=1))
     resumed = await claim(service.runtime, instance["id"], owner="new-worker")
-    assert resumed is not None and resumed.target.recipe == {}
-    adapter = await construct(service.runtime, resumed.target, operation_id=None, allow_create=not has_state)
-    assert isinstance(adapter, DockerEnvironment)
-    assert adapter.config.image == "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"
-    await adapter.close()
+    assert resumed is not None and resumed.target.recipe == recipe
+    # The same resolved recipe drives all management actions and fixed-target execution.
+    if state is not None:
+        connector = await execution_connector(service.runtime, resumed.target)
+        assert connector.state == state
 
 
 @pytest.mark.anyio

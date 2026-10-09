@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING, Any
 
-from a13n_harness.providers.environment.commands import (
+from a13n_environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
     CommandEnvironment,
@@ -24,7 +24,8 @@ from a13n_harness.providers.environment.commands import (
     ShellCommand,
     ShellExecResult,
 )
-from a13n_harness.providers.environment.files import (
+from a13n_environment.execution import EnvironmentConnector
+from a13n_environment.files import (
     FileCopyResult,
     FileEntriesResult,
     FileIgnoreMode,
@@ -40,8 +41,7 @@ from a13n_harness.providers.environment.files import (
     FileWriteMode,
     FileWriteResult,
 )
-from a13n_harness.providers.environment.management import Environment
-from a13n_harness.providers.environment.models import (
+from a13n_environment.models import (
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_CATALOG_VERSION,
     ENVIRONMENT_ACTION_DISPATCH,
@@ -50,20 +50,14 @@ from a13n_harness.providers.environment.models import (
     EnvironmentAction,
     EnvironmentActionDispatch,
     EnvironmentAvailability,
-    EnvironmentChange,
     EnvironmentDescriptor,
     EnvironmentError,
     EnvironmentMountDescriptor,
-    EnvironmentMountInfo,
-    EnvironmentMountObservation,
     EnvironmentOperationFamily,
-    EnvironmentPath,
     EnvironmentPermissionSet,
-    EnvironmentReadinessRequirement,
-    EnvironmentSnapshot,
     EnvironmentState,
 )
-from a13n_harness.providers.environment.retention import (
+from a13n_environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputCapture,
@@ -73,6 +67,15 @@ from a13n_harness.providers.environment.retention import (
     OpaqueOutputCursor,
     OpaqueOutputReference,
     OpaqueProcessHandle,
+)
+
+from a13n_harness.environment.models import (
+    EnvironmentChange,
+    EnvironmentMountInfo,
+    EnvironmentMountObservation,
+    EnvironmentPath,
+    EnvironmentReadinessRequirement,
+    EnvironmentSnapshot,
 )
 
 from .extension_factories import (
@@ -131,11 +134,11 @@ __all__ = [
     "CommandRequest",
     "DynamicEnvironmentCapability",
     "DynamicEnvironmentConfiguration",
-    "Environment",
     "EnvironmentAction",
     "EnvironmentActionDispatch",
     "EnvironmentAvailability",
     "EnvironmentChange",
+    "EnvironmentConnector",
     "EnvironmentDescriptor",
     "EnvironmentEntry",
     "EnvironmentError",

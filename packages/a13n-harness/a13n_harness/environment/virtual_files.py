@@ -7,8 +7,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any
 
-from a13n_harness.environment.providers import FileScopeSelection
-from a13n_harness.providers.environment.files import (
+from a13n_environment.files import (
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
@@ -21,7 +20,10 @@ from a13n_harness.providers.environment.files import (
     FileWriteMode,
     FileWriteResult,
 )
-from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPath
+from a13n_environment.models import EnvironmentAction, EnvironmentError
+
+from a13n_harness.environment.models import EnvironmentPath
+from a13n_harness.environment.providers import FileScopeSelection
 
 
 @dataclass(frozen=True, slots=True)
