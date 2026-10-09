@@ -48,6 +48,11 @@ url = "2.5.7"
 rcgen = "0.14"
 zeroize = "1.8"
 
+[target.'cfg(all(target_arch = "aarch64", any(target_os = "linux", target_os = "macos")))'.dependencies]
+# sha2 0.10 gates ARM SHA intrinsics behind asm, with runtime CPU detection and fallback.
+# Its ARM runtime detection does not support Windows.
+sha2 = { version = "0.10.9", features = ["asm"] }
+
 [target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))'.dependencies]
 image = { version = "0.25.8", default-features = false, features = ["jpeg"] }
 
