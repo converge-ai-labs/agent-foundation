@@ -85,7 +85,7 @@ Each business layer's `runtime.py` owns its runtime type: tenancy and resources 
 ## Import direction
 
 ```
-app.py, cli.py, distribution.py, migrations/  ->  everything   (no infra, business or provider module imports them)
+app.py, cli.py, distribution.py, mcp.py, api_tools.py, documentation.py, migrations/  ->  everything   (no infra, business or provider module imports them)
 usage ->  runs  ->  resources  ->  tenancy  ->  infra
 provisioning  ->  resources, tenancy, providers.registry, settings, infra
 runs, resources  ->  providers.registry, providers.tools, providers.traces
@@ -97,16 +97,16 @@ providers  ->  infra                                          (and the Harness)
 
 `packages/a13n-service/.importlinter` states these contracts, and `make service-boundaries` checks them; `make typecheck`, `make verify` and the Service CI workflow run it.
 
-| Contract                | Rule                                                                                                                                |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `layers`                | `usage` above `runs` above `resources` above `tenancy` above `infra`; a lower layer never imports a higher one                      |
-| `providers`             | `providers` never imports `tenancy`, `resources`, `runs`, `usage` or `provisioning`: providers are adapters over infrastructure     |
-| `assembly`              | `infra`, `tenancy`, `resources`, `runs`, `usage`, `provisioning` and `providers` never import `app`, `distribution` or `cli`        |
-| `infrastructure`        | `infra` never imports `settings`; callers pass configuration values                                                                 |
-| `environment-providers` | `tenancy`, `resources`, `runs` and `usage` never import `providers.environments`; they reach environment types through the registry |
-| `provisioning`          | `provisioning` never imports `runs` or `usage`                                                                                      |
-| `provisioning-entry`    | Infrastructure, tenancy, resources, execution, usage, providers and settings never import provisioning; assembly wires it           |
-| `acyclic-resources`     | the packages under `resources/` depend on each other without cycles                                                                 |
+| Contract                | Rule                                                                                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `layers`                | `usage` above `runs` above `resources` above `tenancy` above `infra`; a lower layer never imports a higher one                                                    |
+| `providers`             | `providers` never imports `tenancy`, `resources`, `runs`, `usage` or `provisioning`: providers are adapters over infrastructure                                   |
+| `assembly`              | `infra`, `tenancy`, `resources`, `runs`, `usage`, `provisioning` and `providers` never import `app`, `distribution`, `cli`, `mcp`, `api_tools` or `documentation` |
+| `infrastructure`        | `infra` never imports `settings`; callers pass configuration values                                                                                               |
+| `environment-providers` | `tenancy`, `resources`, `runs` and `usage` never import `providers.environments`; they reach environment types through the registry                               |
+| `provisioning`          | `provisioning` never imports `runs` or `usage`                                                                                                                    |
+| `provisioning-entry`    | Infrastructure, tenancy, resources, execution, usage, providers and settings never import provisioning; assembly wires it                                         |
+| `acyclic-resources`     | the packages under `resources/` depend on each other without cycles                                                                                               |
 
 Generic mechanisms belong in `infra`: the outbox table and its claim, settle and retry rules are there, while delivery handlers and scan predicates stay with their business owners and are wired in `distribution.py`.
 

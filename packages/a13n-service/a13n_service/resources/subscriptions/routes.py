@@ -19,7 +19,7 @@ from a13n_service.tenancy.requests import Actor, WorkspaceId
 router = APIRouter(prefix="/api/v1/subscriptions", tags=["subscriptions"])
 
 
-@router.post("", response_model=CreatedSubscription, status_code=201)
+@router.post("", response_model=CreatedSubscription, status_code=201, openapi_extra={"x-a13n-mcp": True})
 async def create_subscription(
     response: Response, workspace_id: WorkspaceId, body: SubscriptionCreate, actor: Actor, runtime: CurrentRuntime
 ) -> CreatedSubscription:
@@ -37,7 +37,7 @@ async def create_subscription(
     return tagged(response, result)
 
 
-@router.get("", response_model=SubscriptionPage)
+@router.get("", response_model=SubscriptionPage, openapi_extra={"x-a13n-mcp": True})
 async def list_subscriptions(
     workspace_id: WorkspaceId,
     actor: Actor,
@@ -50,7 +50,7 @@ async def list_subscriptions(
     )
 
 
-@router.get("/{subscription_id}", response_model=Subscription)
+@router.get("/{subscription_id}", response_model=Subscription, openapi_extra={"x-a13n-mcp": True})
 async def get_subscription(
     response: Response, workspace_id: WorkspaceId, subscription_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Subscription:
@@ -58,7 +58,7 @@ async def get_subscription(
     return tagged(response, result)
 
 
-@router.patch("/{subscription_id}", response_model=Subscription)
+@router.patch("/{subscription_id}", response_model=Subscription, openapi_extra={"x-a13n-mcp": True})
 async def update_subscription(
     response: Response,
     workspace_id: WorkspaceId,
@@ -82,7 +82,7 @@ async def update_subscription(
     return tagged(response, result)
 
 
-@router.delete("/{subscription_id}", status_code=204)
+@router.delete("/{subscription_id}", status_code=204, openapi_extra={"x-a13n-mcp": True})
 async def delete_subscription(
     workspace_id: WorkspaceId, subscription_id: str, actor: Actor, runtime: CurrentRuntime, if_match: IfMatch = None
 ) -> Response:
@@ -92,7 +92,7 @@ async def delete_subscription(
     return Response(status_code=204)
 
 
-@router.get("/{subscription_id}/deliveries", response_model=DeliveryPage)
+@router.get("/{subscription_id}/deliveries", response_model=DeliveryPage, openapi_extra={"x-a13n-mcp": True})
 async def list_deliveries(
     workspace_id: WorkspaceId,
     subscription_id: str,
@@ -106,7 +106,11 @@ async def list_deliveries(
     )
 
 
-@router.post("/{subscription_id}/deliveries/{delivery_id}/redeliver", response_model=WebhookDelivery)
+@router.post(
+    "/{subscription_id}/deliveries/{delivery_id}/redeliver",
+    response_model=WebhookDelivery,
+    openapi_extra={"x-a13n-mcp": True},
+)
 async def redeliver(
     workspace_id: WorkspaceId, subscription_id: str, delivery_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> WebhookDelivery:

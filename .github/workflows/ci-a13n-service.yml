@@ -10,6 +10,7 @@ on:
       - "scripts/tests/test_ci_inputs.py"
       - "dev/**"
       - "packages/a13n-service/**"
+      - "docs/a13n-service/**"
       - "packages/a13n-logging/**"
       - "pyproject.toml"
       - "Makefile"
@@ -29,6 +30,7 @@ on:
       - "scripts/tests/test_ci_inputs.py"
       - "dev/**"
       - "packages/a13n-service/**"
+      - "docs/a13n-service/**"
       - "packages/a13n-logging/**"
       - "pyproject.toml"
       - "Makefile"
@@ -64,7 +66,7 @@ jobs:
           - name: tests
             runner: ubuntu-24.04
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -114,7 +116,9 @@ jobs:
 
       - name: Test a13n Service
         if: matrix.name == 'tests'
-        timeout-minutes: 10
+        # Allow the full database-backed suite to finish on slower hosted runners.
+        # Individual stalled tests still fail through faulthandler below.
+        timeout-minutes: 15
         run: >-
           /usr/bin/time -p uv run --locked python -m pytest
           -n 3 --dist loadgroup --max-worker-restart=0
@@ -164,6 +168,24 @@ jobs:
           make a13n-service-assets
           uv build --package a13n-logging --out-dir dist/a13n-service
           uv build --package a13n-service --out-dir dist/a13n-service
+          # uv builds the wheel from the sdist. Search that artifact, not the editable checkout.
+          uv run --locked python - <<'PY'
+          import sys
+          from pathlib import Path
+          from importlib.metadata import distribution
+          from importlib.resources import files
+
+          wheel = next(Path("dist/a13n-service").glob("a13n_service-*.whl")).resolve()
+          sys.path.insert(0, str(wheel))
+          from a13n_service.documentation import Documents
+
+          assert str(files("a13n_service")).startswith(str(wheel))
+          assert str(distribution("a13n-service").locate_file("a13n_service/documentation.json")).startswith(str(wheel))
+          docs = Documents()
+          assert docs.search("upload")["results"]
+          assert docs.search("上传", language="zh-CN")["results"]
+          assert any("assigned_run_id" in item["text"] for item in docs.search("Execute an Agent", limit=10)["results"])
+          PY
 
   python:
     name: a13n Service Python

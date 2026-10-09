@@ -44,6 +44,12 @@ Organize business code by feature and add layers only for a real capability; do 
 - Durable asynchronous lifecycles use idempotent sweeps and fenced attempts. Model, tool, Redis, and stream waits happen outside database transactions.
 - Process-role wiring selects routers and bounded background work; roles share the same domain models. [Runtime composition](spec/a13n-service/09-runtime.md) owns their business contributions.
 
+### MCP Query Endpoints
+
+New or changed Service JSON query endpoints (read, list and search, including read-only `POST` searches) default to explicit MCP admission within the [MCP management surface](spec/a13n-service/10-api.md#mcp-management-surface). Add `openapi_extra={"x-a13n-mcp": True}` to the owning FastAPI route, preserving any existing OpenAPI extras. Apply the same convention to Distribution-contributed queries.
+
+This is an authoring default, not automatic exposure by HTTP method: unmarked operations remain absent. Keep the owning contract's exclusions, including execution/control, live output/SSE, file transfers and binary content, tenant administration, and browser/OAuth flows. Explain intentional omissions for otherwise eligible queries during review. Update MCP discovery and affected schema or invocation tests alongside the route; keep business authorization and validation in their existing HTTP and application owners.
+
 ### Naming
 
 Use the package and module hierarchy as a namespace instead of repeating it in every identifier.

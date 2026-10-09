@@ -13,7 +13,7 @@ from a13n_service.tenancy.requests import Actor, WorkspaceId
 router = APIRouter(prefix="/api/v1/connector-providers/{provider_id}", tags=["connections"])
 
 
-@router.get("/apps", response_model=ConnectorAppPage)
+@router.get("/apps", response_model=ConnectorAppPage, openapi_extra={"x-a13n-mcp": True})
 async def list_apps(
     workspace_id: WorkspaceId,
     provider_id: str,
@@ -41,7 +41,7 @@ async def list_apps(
     )
 
 
-@router.get("/apps/{app}", response_model=ConnectorApp)
+@router.get("/apps/{app}", response_model=ConnectorApp, openapi_extra={"x-a13n-mcp": True})
 async def get_app(
     workspace_id: WorkspaceId, provider_id: str, app: str, actor: Actor, runtime: CurrentRuntime
 ) -> ConnectorApp:
@@ -58,7 +58,7 @@ async def get_app(
     )
 
 
-@router.get("/apps/{app}/actions", response_model=ConnectorActionPage)
+@router.get("/apps/{app}/actions", response_model=ConnectorActionPage, openapi_extra={"x-a13n-mcp": True})
 async def list_actions(
     workspace_id: WorkspaceId, provider_id: str, app: str, actor: Actor, runtime: CurrentRuntime
 ) -> ConnectorActionPage:

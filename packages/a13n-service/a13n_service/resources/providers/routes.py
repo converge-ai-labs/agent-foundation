@@ -45,7 +45,13 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
     item = collection + "/{provider_id}"
 
     # Every kind shares these handlers; name the kind so each operation stays distinguishable.
-    @router.post(collection, response_model=Provider, status_code=201, summary=f"Create {kind} provider")
+    @router.post(
+        collection,
+        response_model=Provider,
+        status_code=201,
+        summary=f"Create {kind} provider",
+        openapi_extra={"x-a13n-mcp": True},
+    )
     async def create_provider(
         response: Response, workspace_id: WorkspaceId, body: ProviderCreate, actor: Actor, runtime: CurrentRuntime
     ) -> Provider:
@@ -54,7 +60,9 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         )
         return tagged(response, result)
 
-    @router.get(collection, response_model=ProviderPage, summary=f"List {kind} providers")
+    @router.get(
+        collection, response_model=ProviderPage, summary=f"List {kind} providers", openapi_extra={"x-a13n-mcp": True}
+    )
     async def list_providers(
         workspace_id: WorkspaceId,
         actor: Actor,
@@ -64,14 +72,14 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
     ) -> ProviderPage:
         return await service.list_providers(runtime.storage, actor, row_type, workspace_id, limit=limit, cursor=cursor)
 
-    @router.get(item, response_model=Provider, summary=f"Get {kind} provider")
+    @router.get(item, response_model=Provider, summary=f"Get {kind} provider", openapi_extra={"x-a13n-mcp": True})
     async def get_provider(
         response: Response, workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
     ) -> Provider:
         result = await service.get_provider(runtime.storage, actor, row_type, workspace_id, provider_id)
         return tagged(response, result)
 
-    @router.patch(item, response_model=Provider, summary=f"Update {kind} provider")
+    @router.patch(item, response_model=Provider, summary=f"Update {kind} provider", openapi_extra={"x-a13n-mcp": True})
     async def update_provider(
         response: Response,
         workspace_id: WorkspaceId,
@@ -95,7 +103,9 @@ def _add_routes(row_type: type[ProviderRow]) -> None:
         )
         return tagged(response, result)
 
-    @router.post(item + "/test", response_model=ProviderTest, summary=f"Test {kind} provider")
+    @router.post(
+        item + "/test", response_model=ProviderTest, summary=f"Test {kind} provider", openapi_extra={"x-a13n-mcp": True}
+    )
     async def test_provider(
         workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
     ) -> ProviderTest:
@@ -116,7 +126,7 @@ for _row_type in (ModelProviderRow, EnvironmentProviderRow, ConnectorProviderRow
     _add_routes(_row_type)
 
 
-@router.get("/provider-types/{kind}", response_model=ProviderTypePage)
+@router.get("/provider-types/{kind}", response_model=ProviderTypePage, openapi_extra={"x-a13n-mcp": True})
 async def list_provider_types(kind: ProviderKind, actor: Actor, runtime: CurrentRuntime) -> ProviderTypePage:
     return service.list_provider_types(runtime.registry, kind)
 
@@ -222,7 +232,9 @@ async def disconnect_model_authorization(
     )
 
 
-@router.get("/model-providers/{provider_id}/models", response_model=list[ProviderModel])
+@router.get(
+    "/model-providers/{provider_id}/models", response_model=list[ProviderModel], openapi_extra={"x-a13n-mcp": True}
+)
 async def discover_model_provider_models(
     request: Request, workspace_id: WorkspaceId, provider_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> list[ProviderModel]:

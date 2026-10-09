@@ -15,7 +15,7 @@ Read the relevant contribution and engineering sections before changing that sur
 
 Write canonical repository content in English; localized user documentation and UI translation resources use their target language, as required by [CONTRIBUTING.md](CONTRIBUTING.md#repository-language).
 
-For local Service work, use the stable Make targets and discover checkout-specific ports with `make dev-status`; [dev/service/README.md](dev/service/README.md) owns lifecycle and data boundaries.
+For local Service work, use the stable Make targets and discover checkout-specific ports with `make dev-status`; [dev/service/README.md](dev/service/README.md) owns lifecycle and data boundaries. New or changed Service JSON query endpoints default to explicit MCP admission; follow [MCP Query Endpoints](DEVELOPMENT.md#mcp-query-endpoints) for the marker, scope exclusions and validation.
 
 ## Scope and Authorization
 
