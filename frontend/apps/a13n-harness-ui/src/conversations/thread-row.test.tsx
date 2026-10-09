@@ -319,7 +319,7 @@ it("opens a worker draft from a running Coordinator without sending it a message
   expect(requests).toHaveLength(0);
 });
 
-it("keeps Coordinator identity and its status slot mounted through root and worker transitions", () => {
+it("keeps Coordinator identity through compact activity and explicit attention states", () => {
   const { row, rerender } = mount({ coordinator: true, activeWorkerCount: 2 });
   const link = screen.getByRole("link", { name: /Example/ });
   const identity = link.querySelector("svg");
@@ -339,10 +339,10 @@ it("keeps Coordinator identity and its status slot mounted through root and work
 
   row.pending_decision = { kind: "question", count: 1 };
   rerender(row, 1);
-  expect(summary.textContent).toBe("Needs your answer · 1 worker active");
-  expect(summary.querySelector("svg")?.className.baseVal).not.toContain(
-    "threadRunning",
-  );
+  expect(
+    within(link).getByText("Needs your answer · 1 worker active"),
+  ).toBeTruthy();
+  expect(link.querySelectorAll("svg")).toHaveLength(1);
 
   row.pending_decision = null;
   row.thread.root_activity.state = "inactive";
@@ -350,13 +350,11 @@ it("keeps Coordinator identity and its status slot mounted through root and work
     typeof row.latest_operation
   >;
   rerender(row, 0);
-  expect(summary.textContent).toBe("Failed");
+  expect(within(link).getByText("Failed")).toBeTruthy();
 
   row.latest_operation = null;
   rerender(row, 0);
-  expect(summary.textContent).toBe("");
-  expect(summary.getAttribute("aria-hidden")).toBe("true");
-  expect(link.contains(summary)).toBe(true);
+  expect(link.querySelector("small")).toBeNull();
   expect(link.querySelector("svg")).toBe(identity);
   expect(screen.getByRole("link", { name: /Example/ })).toBe(link);
 });

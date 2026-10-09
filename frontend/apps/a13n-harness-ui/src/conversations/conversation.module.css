@@ -240,19 +240,37 @@
 }
 .threadRow {
   display: flex;
+  align-items: flex-start;
+  min-height: 34px;
+  border-radius: 8px;
+}
+.threadDisclosure {
+  display: flex;
   align-items: center;
-  border-radius: 6px;
+  justify-content: center;
+  flex: 0 0 24px;
+  height: 34px;
+  color: var(--a13n-secondary);
+}
+.threadDisclosure button {
+  width: 24px;
+  height: 28px;
+}
+.threadDisclosure svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 120ms ease;
 }
 .threadRow:hover,
 .threadRow:has([data-popup-open]) {
   background: var(--a13n-hover);
 }
 .threadRow:has(.selected) {
-  background: var(--a13n-elevated);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+  background: var(--a13n-selected);
 }
 .threadActions {
   flex-shrink: 0;
+  margin-top: 3px;
   margin-inline-end: 4px;
   color: var(--a13n-secondary);
   background: transparent;
@@ -261,8 +279,9 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  margin-inline: 4px;
-  color: var(--a13n-secondary);
+  height: 34px;
+  margin-inline: 3px;
+  color: var(--a13n-tertiary);
 }
 @media (hover: hover) and (pointer: fine) {
   .threadActions,
@@ -289,11 +308,12 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 7px 8px;
+  border-radius: 8px;
   color: var(--a13n-text);
   text-decoration: none;
   font-size: 13px;
+  line-height: 20px;
 }
 .threadLink:hover,
 .selected {
@@ -309,7 +329,8 @@
   flex: 0 0 18px;
   width: 18px;
   height: 18px;
-  margin-top: 2px;
+  margin-top: 1px;
+  color: var(--a13n-secondary);
 }
 .threadIcon > svg {
   width: 18px;
@@ -328,7 +349,7 @@
   color: var(--a13n-secondary);
 }
 .threadRow:has(.selected) .draftMarker {
-  background: var(--a13n-elevated);
+  background: var(--a13n-selected);
 }
 .threadLink > span {
   min-width: 0;
@@ -353,30 +374,22 @@
   font-size: 11px;
   margin-top: 2px;
 }
-/* Reserve the same line even when idle; refreshes never resize Coordinator rows. */
 .threadLink .coordinatorActivity {
   position: relative;
-  height: 16px;
   line-height: 16px;
-  font-size: 12px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.coordinatorActivity > span:last-child {
+.coordinatorActivity > span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.coordinatorStateIcon {
+.coordinatorActivity > svg {
   position: absolute;
-  inset-inline-start: -26px;
-  top: 0;
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 16px;
-}
-.coordinatorStateIcon > svg {
+  inset-inline-start: -23px;
+  top: 2px;
   width: 12px;
   height: 12px;
 }

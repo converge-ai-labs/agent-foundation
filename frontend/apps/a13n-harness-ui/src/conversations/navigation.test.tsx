@@ -1332,9 +1332,8 @@ it("groups only owners of active unarchived workers under Running and returns th
     "idle-owner",
   );
   expect(within(project).getByRole("link", { name: /busy-owner/ })).toBe(owner);
-  expect(owner.contains(summary)).toBe(true);
-  expect(summary.textContent).toBe("");
-  expect(summary.getAttribute("aria-hidden")).toBe("true");
+  expect(owner.contains(summary)).toBe(false);
+  expect(owner.querySelector("small")).toBeNull();
   expect(writes).toHaveLength(0);
 });
 

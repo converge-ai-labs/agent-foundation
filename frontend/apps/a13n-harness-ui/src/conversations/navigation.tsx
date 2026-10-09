@@ -594,7 +594,7 @@ function ProjectGroup({
                   selectedUpdatedAt={selectedUpdatedAt}
                 />
               ) : (
-                <ThreadRow row={row} />
+                <ThreadRow row={row} treeRow />
               )}
             </Fragment>
           ))}
