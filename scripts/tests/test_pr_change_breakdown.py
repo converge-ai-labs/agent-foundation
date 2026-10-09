@@ -77,7 +77,6 @@ def test_classification_precedence(path, category):
     ("path", "name"),
     [
         ("deploy/docker/images/a13n-service/Dockerfile", "a13n-service"),
-        ("deploy/docker/compose/a13n-harness-ui.yaml", "a13n-harness-ui"),
         ("deploy/kubernetes/helm/a13n-service/values.yaml", "a13n-service"),
         ("deploy/kubernetes/README.md", "Repository"),
         ("e2e/service/stack.py", "a13n-service"),

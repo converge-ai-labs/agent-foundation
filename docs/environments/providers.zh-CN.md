@@ -123,7 +123,7 @@ runtime = DockerProviderRuntime(engine=engine)
 
 `close()` 断开本地观测，不停止容器或后台进程。新的托管适配器复用已保存容器；确认不存在时创建替代容器，其私有 `/workspace` 为空。传输失败不能证明目标不存在。Docker 文件路径为原生容器路径，Harness 添加聚合挂载前缀；相对工具路径从 `/workspace` 开始。
 
-Docker 目标配置接受 `pull_policy="if_missing"`（默认）或 `"never"`。`never` 对缺失镜像返回 `environment_image_missing`，绝不联系镜像仓库。使用 `make image-docker-environment` 构建镜像，直接 provider 使用见 [Docker 生命周期示例](examples.md#docker)。Service 从模板管理 Docker 环境；参见 [Service 环境](../a13n-service/environments.md)。
+Docker 目标配置接受 `pull_policy="if_missing"`（默认）或 `"never"`。`never` 对缺失镜像返回 `environment_image_missing`，绝不联系镜像仓库。使用 `make image-sandbox` 构建镜像，直接 provider 使用见 [Docker 生命周期示例](examples.md#docker)。Service 从模板管理 Docker 环境；参见 [Service 环境](../a13n-service/environments.md)。
 
 ## 云 provider
 

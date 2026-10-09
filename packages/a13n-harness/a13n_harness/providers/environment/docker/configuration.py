@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from ..models import EnvironmentTargetState
 
-DEFAULT_DOCKER_IMAGE = "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"
+DEFAULT_DOCKER_IMAGE = "ghcr.io/converge-ai-labs/a13n-sandbox:dev"
 
 
 class DockerMountConfiguration(BaseModel):

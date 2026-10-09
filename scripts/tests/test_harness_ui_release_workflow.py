@@ -15,10 +15,6 @@ def test_release_publishes_after_build_without_validation_jobs(component: str) -
     jobs = yaml.safe_load(workflow.read_text())["jobs"]
     expected_jobs = {"build-python", "publish-python", "create-release"}
     release_needs = {"build-python", "publish-python"}
-    if component == "a13n-harness-ui":
-        expected_jobs.add("publish-image")
-        release_needs.add("publish-image")
-        assert set(jobs["publish-image"]["needs"]) == {"build-python", "publish-python"}
     assert set(jobs) == expected_jobs
     assert jobs["publish-python"]["needs"] == "build-python"
     assert set(jobs["create-release"]["needs"]) == release_needs

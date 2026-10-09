@@ -102,16 +102,9 @@ a13n-harness-ui webui --no-share-computer
 
 WebUI serves shared conversations, live output, approvals, setup, configuration, and native Files/Git/terminal panels. Native computer access is enabled by default and operates as the server account, independently of Agent permissions; disable it with `--no-share-computer`. Participants share instance authority rather than separate authenticated identities. Keep the server running for active work. For access-key options and browser workflows, see [Use WebUI](../../docs/a13n-harness-ui/webui.md); for integration, see the [HTTP API](../../docs/a13n-harness-ui/http-api.md).
 
-### Docker
+### Distribution
 
-The development image packages the same WebUI. The default container command exposes the container account's files, terminals, and mounted paths; select `--no-share-computer` if that is not wanted.
-
-```console
-docker compose -f deploy/docker/compose/a13n-harness-ui.yaml up -d
-docker compose -f deploy/docker/compose/a13n-harness-ui.yaml logs harness-ui
-```
-
-The Compose file uses persistent configuration, data, and work volumes. Bind-mounted directories must be writable by UID/GID `10001:10001`. Keep startup output private (it may contain a generated login link) and do not run `down --volumes` to preserve data. See the [distribution specification](../../spec/a13n-harness-ui/webui/03-distribution.md) for image build and deployment details.
+Harness UI ships as a Python wheel and sdist with the bundled WebUI, not an official container image. Operators who need a containerized server can install a pinned Python distribution in their own image and configure listeners, authentication and persistent mounts explicitly. `a13n-sandbox` supplies Agent execution, not a WebUI server. See the [distribution specification](../../spec/a13n-harness-ui/webui/03-distribution.md).
 
 ## Windows Local Execution
 

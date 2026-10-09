@@ -27,6 +27,8 @@ def native(monkeypatch):
     engine.client.containers.get.side_effect = NotFound("missing")
     container = Mock(id="a" * 64, status="created")
     engine.client.containers.create.return_value = container
+    engine.client.images.get.return_value.labels = {}
+    engine.client.images.pull.return_value.labels = {}
     engine.client.images.get.return_value.id = "sha256:" + "f" * 64
     engine.client.images.pull.return_value.id = "sha256:" + "e" * 64
     monkeypatch.setattr(DockerCommands, "execute", AsyncMock(return_value=b""))
@@ -44,6 +46,7 @@ async def test_create_native_container_records_state_and_overrides_entrypoint(na
         assert options["init"] is True and options["working_dir"] == "/workspace"
         assert options["entrypoint"] == ["python3", "-I", "-c"]
         assert options["network_mode"] == "bridge"
+        assert options["user"] is None
         assert options["mem_limit"] == 250_000_000
         engine.client.images.get.assert_called_once_with("python:3.13-slim")
         assert engine.client.containers.create.call_args.args[0] == "sha256:" + "f" * 64
@@ -385,7 +388,7 @@ async def test_image_policy_controls_missing_image_pull(native, policy):
             with pytest.raises(EnvironmentProviderError) as raised:
                 await candidate.prepare()
             assert raised.value.code == "environment_image_missing"
-            assert "make image-docker-environment" in str(raised.value)
+            assert "make image-sandbox" in str(raised.value)
             engine.client.images.pull.assert_not_called()
             engine.client.containers.create.assert_not_called()
         else:
@@ -393,3 +396,23 @@ async def test_image_policy_controls_missing_image_pull(native, policy):
             engine.client.images.pull.assert_called_once_with(config.image)
     finally:
         await candidate.close()
+
+
+@pytest.mark.parametrize(
+    "configured,label,expected", [(None, "sandbox", "sandbox"), ("0", "sandbox", "0"), (None, None, None)]
+)
+async def test_native_execution_user_prefers_recipe_then_image_label(native, configured, label, expected):
+    original, engine, container = native
+    engine.client.images.get.return_value.labels = {} if label is None else {"ai.a13n.environment.user": label}
+    env = DockerEnvironment(
+        original.config.model_copy(update={"user": configured}),
+        "env_identity",
+        None,
+        original.runtime,
+    )
+    container.labels = env.labels
+    await env.prepare()
+    try:
+        assert engine.client.containers.create.call_args.kwargs["user"] == expected
+    finally:
+        await env.close()

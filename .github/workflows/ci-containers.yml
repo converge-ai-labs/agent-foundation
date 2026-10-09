@@ -15,7 +15,6 @@ on:
       - "scripts/deploy_smoke.py"
       - "scripts/k8s_local.py"
       - "deploy/docker/images/sandbox/Dockerfile"
-      - "deploy/docker/images/docker-environment/Dockerfile"
       - "LICENSE"
       - "Makefile"
       - "crates/a13n-envd/**"
@@ -93,10 +92,6 @@ jobs:
               - 'frontend/tsconfig.base.json'
               - 'frontend/apps/a13n-console/package.json'
               - 'frontend/packages/a13n-ui/package.json'
-            docker_environment:
-              - ".github/workflows/ci-containers.yml"
-              - "deploy/docker/images/docker-environment/Dockerfile"
-              - "Makefile"
             sandbox:
               - '.dockerignore'
               - 'Makefile'
@@ -111,7 +106,6 @@ jobs:
         id: matrix
         env:
           A13N_SERVICE_CHANGED: ${{ steps.filter.outputs.service }}
-          DOCKER_ENVIRONMENT_CHANGED: ${{ steps.filter.outputs.docker_environment }}
           SANDBOX_CHANGED: ${{ steps.filter.outputs.sandbox }}
         run: |
           python - <<'PY'
@@ -134,13 +128,6 @@ jobs:
                   "runner": "ubuntu-24.04",
                   "build_target": "image-sandbox",
                   "check_target": "image-check-sandbox",
-              })
-          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["DOCKER_ENVIRONMENT_CHANGED"] == "true":
-              images.append({
-                  "name": "a13n-docker-environment",
-                  "runner": "ubuntu-latest",
-                  "build_target": "image-docker-environment",
-                  "check_target": "image-check-docker-environment",
               })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")

@@ -93,7 +93,7 @@ async def test_concurrent_initialization_creates_one_atomic_pair_per_component(r
             assert provider.config == {} and template.provider_id == provider.id
             if receipt.component == "docker":
                 assert template.config["recipe"] == {
-                    "image": "ghcr.io/converge-ai-labs/a13n-docker-environment:dev",
+                    "image": "ghcr.io/converge-ai-labs/a13n-sandbox:dev",
                     "pull_policy": "if_missing",
                 }
             else:
@@ -106,7 +106,7 @@ async def test_concurrent_initialization_creates_one_atomic_pair_per_component(r
     assert not runtime.settings.provisioning.local.root.exists()
 
 
-async def test_docker_template_uses_the_service_release_image(service, initializer, monkeypatch):
+async def test_docker_template_uses_the_reviewed_sandbox_release(service, initializer, monkeypatch):
     monkeypatch.setattr(import_module("a13n_service.providers.environments.docker"), "version", lambda _: "0.1.2")
     await initializer(service.tenant.workspace_id)
     receipt = next(
@@ -115,7 +115,7 @@ async def test_docker_template_uses_the_service_release_image(service, initializ
     async with short_session(service.runtime.storage) as session:
         template = await session.get_one(EnvironmentTemplateRow, receipt.template_id)
         assert template.config["recipe"] == {
-            "image": "ghcr.io/converge-ai-labs/a13n-docker-environment:0.1.2",
+            "image": "ghcr.io/converge-ai-labs/a13n-sandbox:0.1.3",
             "pull_policy": "if_missing",
         }
 

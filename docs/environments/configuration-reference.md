@@ -201,28 +201,28 @@ Host-selected daemon launch configuration, shared by every Session on this runti
 
 ## `DockerEnvironmentConfiguration`
 
-| Field                         | Required | Type / choices                    | Constraints and default                                                                     |
-| ----------------------------- | -------- | --------------------------------- | ------------------------------------------------------------------------------------------- |
-| `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-docker-environment:dev" |
-| `pull_policy`                 | false    | "never", "if_missing"             | default="if_missing"                                                                        |
-| `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                                  |
-| `environment`                 | false    | object                            | —; default from model factory                                                               |
-| `init_script`                 | false    | string or null                    | maxLength=1048576; format="multiline"; default=null                                         |
-| `disable_network`             | false    | boolean                           | default=false                                                                               |
-| `user`                        | false    | string or null                    | minLength=1; maxLength=128; default=null                                                    |
-| `shell`                       | false    | string                            | default="/bin/sh"                                                                           |
-| `python`                      | false    | string                            | default="python3"                                                                           |
-| `cpus`                        | false    | number or null                    | minimum=0.001; default=null                                                                 |
-| `memory_gb`                   | false    | number or null                    | minimum=0.006291456; default=null                                                           |
-| `pids_limit`                  | false    | integer or null                   | exclusiveMinimum=0; default=null                                                            |
-| `stop_grace_seconds`          | false    | integer                           | minimum=0; maximum=300; default=10                                                          |
-| `request_timeout_seconds`     | false    | integer                           | maximum=3600; exclusiveMinimum=0; default=60                                                |
-| `max_file_bytes`              | false    | integer                           | exclusiveMinimum=0; default=16777216                                                        |
-| `max_query_entries`           | false    | integer                           | exclusiveMinimum=0; default=100000                                                          |
-| `max_output_preview_bytes`    | false    | integer                           | exclusiveMinimum=0; default=65536                                                           |
-| `max_output_bytes_per_stream` | false    | integer                           | exclusiveMinimum=0; default=16777216                                                        |
-| `max_spool_bytes`             | false    | integer                           | exclusiveMinimum=0; default=67108864                                                        |
-| `max_concurrent_processes`    | false    | integer                           | exclusiveMinimum=0; default=128                                                             |
+| Field                         | Required | Type / choices                    | Constraints and default                                                          |
+| ----------------------------- | -------- | --------------------------------- | -------------------------------------------------------------------------------- |
+| `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:dev" |
+| `pull_policy`                 | false    | "never", "if_missing"             | default="if_missing"                                                             |
+| `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                       |
+| `environment`                 | false    | object                            | —; default from model factory                                                    |
+| `init_script`                 | false    | string or null                    | maxLength=1048576; format="multiline"; default=null                              |
+| `disable_network`             | false    | boolean                           | default=false                                                                    |
+| `user`                        | false    | string or null                    | minLength=1; maxLength=128; default=null                                         |
+| `shell`                       | false    | string                            | default="/bin/sh"                                                                |
+| `python`                      | false    | string                            | default="python3"                                                                |
+| `cpus`                        | false    | number or null                    | minimum=0.001; default=null                                                      |
+| `memory_gb`                   | false    | number or null                    | minimum=0.006291456; default=null                                                |
+| `pids_limit`                  | false    | integer or null                   | exclusiveMinimum=0; default=null                                                 |
+| `stop_grace_seconds`          | false    | integer                           | minimum=0; maximum=300; default=10                                               |
+| `request_timeout_seconds`     | false    | integer                           | maximum=3600; exclusiveMinimum=0; default=60                                     |
+| `max_file_bytes`              | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
+| `max_query_entries`           | false    | integer                           | exclusiveMinimum=0; default=100000                                               |
+| `max_output_preview_bytes`    | false    | integer                           | exclusiveMinimum=0; default=65536                                                |
+| `max_output_bytes_per_stream` | false    | integer                           | exclusiveMinimum=0; default=16777216                                             |
+| `max_spool_bytes`             | false    | integer                           | exclusiveMinimum=0; default=67108864                                             |
+| `max_concurrent_processes`    | false    | integer                           | exclusiveMinimum=0; default=128                                                  |
 
 ## `DockerMountConfiguration`
 

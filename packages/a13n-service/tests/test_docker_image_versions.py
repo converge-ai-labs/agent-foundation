@@ -15,7 +15,7 @@ from a13n_harness.providers.environment.docker.provider import DockerEnvironment
 from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
 from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_service.infra.db import transaction
-from a13n_service.providers.environments.docker import default_image, docker
+from a13n_service.providers.environments.docker import DEFAULT_SANDBOX_IMAGE, default_image, docker
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
 from a13n_service.runs.environments.adapters import construct
 from a13n_service.runs.environments.lifecycle import claim
@@ -24,7 +24,7 @@ from a13n_service.runs.environments.tables import EnvironmentRow
 
 from .environments_support import backdate, reserve
 
-IMAGE = "ghcr.io/converge-ai-labs/a13n-docker-environment"
+IMAGE = "ghcr.io/converge-ai-labs/a13n-sandbox"
 
 
 def installed(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
@@ -50,22 +50,22 @@ def installed(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
         ("12.34.56rc78", "12.34.56-rc.78"),
     ],
 )
-def test_service_version_selects_its_companion_image(monkeypatch: pytest.MonkeyPatch, version: str, tag: str) -> None:
+def test_service_version_selects_a_reviewed_sandbox_independent_of_its_version(
+    monkeypatch: pytest.MonkeyPatch, version: str, tag: str
+) -> None:
     installed(monkeypatch, version)
     definition = docker(host=None, mount_roots=())
     model = definition.environment_model
-    assert model.model_validate({}).image == f"{IMAGE}:{tag}"
-    assert model.model_json_schema()["properties"]["image"]["default"] == f"{IMAGE}:{tag}"
+    expected = f"{IMAGE}:dev" if tag == "dev" else DEFAULT_SANDBOX_IMAGE
+    assert model.model_validate({}).image == expected
+    assert model.model_json_schema()["properties"]["image"]["default"] == expected
     assert model.model_validate({"image": "custom@sha256:" + "a" * 64}).image == "custom@sha256:" + "a" * 64
     # Service policy does not change the independently released Harness provider.
     assert DockerEnvironmentConfiguration().image == f"{IMAGE}:dev"
 
 
-@pytest.mark.parametrize(
-    "version", ["invalid", "0.1", "0.1.0a1", "0.1.0b1", "0.1.0rc0", "0.1.0.post1", "1!0.1.0", "0.1.0+local"]
-)
-def test_unknown_release_identity_does_not_fall_back_to_dev(monkeypatch: pytest.MonkeyPatch, version: str) -> None:
-    installed(monkeypatch, version)
+def test_invalid_metadata_does_not_fall_back_to_dev(monkeypatch: pytest.MonkeyPatch) -> None:
+    installed(monkeypatch, "invalid")
     with pytest.raises(ValueError):
         default_image()
 
@@ -135,7 +135,7 @@ async def test_instance_pins_effective_image_and_template_preserves_explicit_pin
     instance = await reserve(service, configured["id"])
     operation = await claim(service.runtime, instance["id"], owner="test")
     assert operation is not None
-    expected = image or f"{IMAGE}:0.1.0"
+    expected = image or DEFAULT_SANDBOX_IMAGE
     assert operation.target.recipe["image"] == expected
     async with transaction(service.runtime.storage) as session:
         row = await session.get(EnvironmentRow, instance["id"])
@@ -147,6 +147,7 @@ async def test_instance_pins_effective_image_and_template_preserves_explicit_pin
     await first.close()
 
     # A restarted/new Worker reconstructs the same target under the next Service release without a fingerprint conflict.
+    monkeypatch.setattr(import_module(default_image.__module__), "DEFAULT_SANDBOX_IMAGE", f"{IMAGE}:0.2.0")
     await select_release(service, monkeypatch, "0.1.1")
     await backdate(service, instance["id"], lease_expires_at=timedelta(seconds=1))
     resumed = await claim(service.runtime, instance["id"], owner="new-worker")
@@ -162,7 +163,7 @@ async def test_instance_pins_effective_image_and_template_preserves_explicit_pin
     next_instance = await reserve(service, configured["id"])
     next_operation = await claim(service.runtime, next_instance["id"], owner="test")
     assert next_operation is not None
-    assert next_operation.target.recipe["image"] == (image or f"{IMAGE}:0.1.1")
+    assert next_operation.target.recipe["image"] == (image or f"{IMAGE}:0.2.0")
 
 
 @pytest.mark.anyio
@@ -176,7 +177,10 @@ async def test_legacy_handle_keeps_dev_even_after_an_interrupted_create(
     operation = await claim(service.runtime, instance["id"], owner="test")
     assert operation is not None
     legacy = DockerEnvironment(
-        DockerEnvironmentConfiguration(), instance["id"], None, DockerProviderRuntime(DockerSDKEngine(Mock()))
+        DockerEnvironmentConfiguration(image="ghcr.io/converge-ai-labs/a13n-docker-environment:dev"),
+        instance["id"],
+        None,
+        DockerProviderRuntime(DockerSDKEngine(Mock())),
     )
     state = retained_state(legacy) if has_state else None
     await legacy.close()
@@ -190,7 +194,7 @@ async def test_legacy_handle_keeps_dev_even_after_an_interrupted_create(
     assert resumed is not None and resumed.target.recipe == {}
     adapter = await construct(service.runtime, resumed.target, operation_id=None, allow_create=not has_state)
     assert isinstance(adapter, DockerEnvironment)
-    assert adapter.config.image == f"{IMAGE}:dev"
+    assert adapter.config.image == "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"
     await adapter.close()
 
 

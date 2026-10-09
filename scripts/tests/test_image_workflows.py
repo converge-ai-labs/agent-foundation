@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -28,7 +29,7 @@ def test_development_images_publish_only_dev_without_smoke_or_sha_tags(tmp_path,
     output = tmp_path / "output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
-    for name in ("A13N_SERVICE_CHANGED", "SANDBOX_CHANGED", "HARNESS_UI_CHANGED", "DOCKER_ENVIRONMENT_CHANGED"):
+    for name in ("A13N_SERVICE_CHANGED", "SANDBOX_CHANGED"):
         monkeypatch.setenv(name, "false")
     matrix = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
     subprocess.run(["bash", "-eu", "-c", matrix["run"]], check=True)
@@ -36,21 +37,14 @@ def test_development_images_publish_only_dev_without_smoke_or_sha_tags(tmp_path,
     assert {image["name"] for image in images} == {
         "a13n-service",
         "a13n-sandbox",
-        "a13n-harness-ui",
-        "a13n-docker-environment",
     }
-    assert (
-        next(image for image in images if image["name"] == "a13n-harness-ui")["context"] == "dist/a13n-harness-ui-image"
-    )
     assert {image["name"]: image["platforms"] for image in images} == {
         "a13n-service": "linux/amd64,linux/arm64",
-        "a13n-docker-environment": "linux/amd64,linux/arm64",
-        "a13n-sandbox": "linux/amd64",
-        "a13n-harness-ui": "linux/amd64",
+        "a13n-sandbox": "linux/amd64,linux/arm64",
     }
 
 
-@pytest.mark.parametrize("component", ["a13n-service", "a13n-envd", "a13n-harness-ui"])
+@pytest.mark.parametrize("component", ["a13n-service", "a13n-envd"])
 @pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.2"])
 def test_all_release_image_tags_follow_one_channel_policy(component, version, tmp_path, monkeypatch) -> None:
     jobs = yaml.safe_load((ROOT / f".github/workflows/release-{component}.yml").read_text())["jobs"]
@@ -66,17 +60,7 @@ def test_all_release_image_tags_follow_one_channel_policy(component, version, tm
     assert tags == ([f"{image}:{version}"] if "-rc." in version else [f"{image}:{version}", f"{image}:latest"])
 
 
-def test_ui_release_reuses_published_wheel_without_rebuilding_browser() -> None:
-    jobs = yaml.safe_load((ROOT / ".github/workflows/release-a13n-harness-ui.yml").read_text())["jobs"]
-    steps = jobs["publish-image"]["steps"]
-    artifact = next(step for step in steps if step.get("uses", "").startswith("actions/download-artifact"))
-    assert artifact["with"]["name"] == "a13n-harness-ui-python-dist"
-    commands = "\n".join(step.get("run", "") for step in steps)
-    assert "prepare_harness_ui_image.py --release-dist dist/release" in commands
-    assert "pnpm" not in str(steps) and "pytest" not in commands
-
-
-@pytest.mark.parametrize("component", ["a13n-service", "a13n-harness-ui"])
+@pytest.mark.parametrize("component", ["a13n-service"])
 @pytest.mark.parametrize(
     "tag,installed,accepted",
     [
@@ -162,26 +146,26 @@ def test_package_tests_do_not_trigger_images(package: str, suffix: str, workflow
         ("packages/a13n-service/a13n_service/app.py", {"service"}),
         ("packages/a13n-service/a13n_service/migrations/versions/initial.py", {"service"}),
         ("packages/a13n-service/README.md", {"service"}),
-        ("packages/a13n-harness/a13n_harness/types.py", {"service", "harness_ui"}),
-        ("packages/a13n-envd-client/a13n_envd_client/eip/client.py", {"service", "harness_ui"}),
-        ("packages/a13n-logging/a13n_logging/__init__.py", {"service", "harness_ui"}),
-        ("packages/a13n-harness/pyproject.toml", {"service", "harness_ui"}),
-        ("packages/a13n-harness/LICENSE", {"service", "harness_ui"}),
-        ("packages/a13n-harness-ui/pyproject.toml", {"service", "harness_ui"}),
-        ("packages/a13n-harness-ui/hatch_build.py", {"harness_ui"}),
-        ("packages/a13n-harness-ui/build_skills.py", {"harness_ui"}),
-        ("packages/a13n-harness-ui/a13n_harness_ui/app.py", {"harness_ui"}),
-        ("frontend/apps/a13n-harness-ui/src/shell/workbench.tsx", {"harness_ui"}),
-        ("frontend/packages/a13n-ui/src/components/button.tsx", {"service", "harness_ui"}),
-        ("frontend/pnpm-lock.yaml", {"service", "harness_ui"}),
-        ("frontend/tsconfig.base.json", {"service", "harness_ui"}),
-        ("docs/a13n-harness-ui/configuration.md", {"harness_ui"}),
-        ("docs/a13n-harness-ui/meta.json", {"harness_ui"}),
+        ("packages/a13n-harness/a13n_harness/types.py", {"service"}),
+        ("packages/a13n-envd-client/a13n_envd_client/eip/client.py", {"service"}),
+        ("packages/a13n-logging/a13n_logging/__init__.py", {"service"}),
+        ("packages/a13n-harness/pyproject.toml", {"service"}),
+        ("packages/a13n-harness/LICENSE", {"service"}),
+        ("packages/a13n-harness-ui/pyproject.toml", {"service"}),
+        ("packages/a13n-harness-ui/hatch_build.py", set()),
+        ("packages/a13n-harness-ui/build_skills.py", set()),
+        ("packages/a13n-harness-ui/a13n_harness_ui/app.py", set()),
+        ("frontend/apps/a13n-harness-ui/src/shell/workbench.tsx", set()),
+        ("frontend/packages/a13n-ui/src/components/button.tsx", {"service"}),
+        ("frontend/pnpm-lock.yaml", {"service"}),
+        ("frontend/tsconfig.base.json", {"service"}),
+        ("docs/a13n-harness-ui/configuration.md", set()),
+        ("docs/a13n-harness-ui/meta.json", set()),
         ("deploy/docker/images/a13n-service/service.toml", {"service"}),
         ("deploy/docker/images/a13n-service/entrypoint.sh", {"service"}),
         ("deploy/docker/images/sandbox/Dockerfile", {"sandbox"}),
         ("crates/a13n-envd/src/main.rs", {"sandbox"}),
-        ("uv.lock", {"service", "harness_ui"}),
+        ("uv.lock", {"service"}),
         ("frontend/apps/a13n-console/src/app.tsx", {"service"}),
         ("proto/a13n-service/openapi.json", {"service"}),
         ("frontend/apps/a13n-docs/index.md", set()),
@@ -247,26 +231,45 @@ def test_service_release_publishes_both_architectures_and_pins_its_compose_image
     ]
 
 
-@pytest.mark.parametrize("version", ["0.1.0", "0.1.0-rc.1"])
-def test_service_publishes_companion_before_consumers_without_mutable_tags(version: str) -> None:
-    workflow = yaml.safe_load((ROOT / ".github/workflows/release-a13n-service.yml").read_text())
-    jobs = workflow["jobs"]
-    companion = jobs["publish-environment-image"]
-    assert companion["needs"] == "build-python"
-    assert companion["permissions"]["packages"] == "write"
-    build = next(step for step in companion["steps"] if step.get("uses", "").startswith("docker/build-push-action"))
-    options = build["with"]
-    assert options["context"] == "deploy/docker/images/docker-environment"
-    assert options["file"] == "deploy/docker/images/docker-environment/Dockerfile"
-    assert options["platforms"] == "linux/amd64,linux/arm64" and options["push"] is True
-    tags = options["tags"].replace("${{ env.DOCKER_ENVIRONMENT_IMAGE }}", workflow["env"]["DOCKER_ENVIRONMENT_IMAGE"])
-    tags = tags.replace("${{ needs.build-python.outputs.version }}", version)
-    assert tags.splitlines() == [f"ghcr.io/converge-ai-labs/a13n-docker-environment:{version}"]
-    assert "BUILD_VERSION=${{ needs.build-python.outputs.version }}" in options["build-args"]
-    assert "BUILD_REVISION=${{ github.sha }}" in options["build-args"]
-    assert "publish-environment-image" in jobs["publish-python"]["needs"]
-    assert "publish-python" in jobs["publish-image"]["needs"]
-    assert "publish-image" in jobs["create-release"]["needs"]
+@pytest.mark.parametrize("available", [True, False])
+def test_service_release_requires_its_reviewed_sandbox(available, tmp_path, monkeypatch) -> None:
+    jobs = yaml.safe_load((ROOT / ".github/workflows/release-a13n-service.yml").read_text())["jobs"]
+    steps = jobs["build-python"]["steps"]
+    gate = next(step for step in steps if step["name"] == "Verify reviewed sandbox release is published")
+    assert steps.index(gate) < next(i for i, step in enumerate(steps) if step.get("id") == "version")
+    assert jobs["publish-python"]["needs"] == "build-python"
+    output = tmp_path / "image"
+    docker = tmp_path / "docker"
+    docker.write_text(f'#!/bin/sh\necho "$*" > "{output}"\nexit {0 if available else 1}\n')
+    docker.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    result = subprocess.run(["bash", "-eu", "-c", gate["run"]], cwd=ROOT, capture_output=True, text=True)
+    assert (result.returncode == 0) is available, result.stderr
+    assert output.read_text().strip() == "manifest inspect ghcr.io/converge-ai-labs/a13n-sandbox:0.1.3"
+
+
+def test_sandbox_image_changes_trigger_native_docker_e2e() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci-a13n-service-e2e.yml").read_text())
+    image = Path("deploy/docker/images/sandbox/Dockerfile")
+    for event in ("pull_request", "push"):
+        assert any(image.full_match(pattern) for pattern in workflow[True][event]["paths"])
+
+
+def test_only_service_and_sandbox_images_are_published() -> None:
+    service = yaml.safe_load((ROOT / ".github/workflows/release-a13n-service.yml").read_text())["jobs"]
+    ui = yaml.safe_load((ROOT / ".github/workflows/release-a13n-harness-ui.yml").read_text())["jobs"]
+    sandbox = yaml.safe_load((ROOT / ".github/workflows/release-a13n-envd.yml").read_text())["jobs"]
+    assert "publish-environment-image" not in service
+    assert service["publish-python"]["needs"] == "build-python"
+    assert "publish-image" not in ui
+    assert set(ui["create-release"]["needs"]) == {"build-python", "publish-python"}
+    build = next(
+        step
+        for step in sandbox["publish-image"]["steps"]
+        if step.get("uses", "").startswith("docker/build-push-action")
+    )
+    assert build["with"]["platforms"] == "linux/amd64,linux/arm64"
+    assert build["with"]["file"] == "deploy/docker/images/sandbox/Dockerfile"
 
 
 def test_quickstart_waits_for_initialization_without_host_authority() -> None:

@@ -2,7 +2,6 @@
 
 A13N_SERVICE_IMAGE ?= a13n-service:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
-A13N_HARNESS_UI_IMAGE ?= a13n-harness-ui:local
 COMPOSE_PULL ?= always
 EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins examples/provider-plugin examples/mcp-apps
 PYTHON_TEST_DIRS ?=
@@ -476,20 +475,8 @@ image-a13n-service: ## Build the local a13n-service container image, which serve
 image-sandbox: ## Build the local sandbox image with a13n-envd
 	@docker build -f deploy/docker/images/sandbox/Dockerfile -t "$(SANDBOX_IMAGE)" .
 
-.PHONY: a13n-harness-ui-image-context
-a13n-harness-ui-image-context: a13n-harness-ui-assets ## Stage source wheels and locked constraints for the UI image
-	@uv run --locked python scripts/prepare_harness_ui_image.py
-
-.PHONY: image-a13n-harness-ui
-image-a13n-harness-ui: a13n-harness-ui-image-context ## Build the local packaged Harness UI image
-	@docker build -f deploy/docker/images/a13n-harness-ui/Dockerfile -t "$(A13N_HARNESS_UI_IMAGE)" dist/a13n-harness-ui-image
-
 .PHONY: images
-images: image-a13n-service image-sandbox image-docker-environment image-a13n-harness-ui ## Build all local container images
-
-.PHONY: image-check-a13n-harness-ui
-image-check-a13n-harness-ui: ## Check an existing UI image locally; not a CI or release prerequisite
-	@uv run --locked python scripts/check_harness_ui_image.py "$(A13N_HARNESS_UI_IMAGE)"
+images: image-a13n-service image-sandbox ## Build all local container images
 
 .PHONY: image-check-a13n-service
 image-check-a13n-service: ## Smoke-check the existing a13n-service container image
@@ -507,13 +494,14 @@ image-check-sandbox: ## Smoke-check sandbox defaults, development account, sudo 
 		test "$$A13N_ENVD_EXECUTION_UID:$$A13N_ENVD_EXECUTION_GID" = "1000:1000"; \
 		test "$$A13N_ENVD_FULL_CONTROL" = "true"; \
 		test "$${A13N_ENVD_EGRESS_MODE:-inherit}" = "inherit"; \
-		test -w /workspace && test -w /home/sandbox; \
+		test -w /workspace && test -w /home/sandbox && test -w /tmp/a13n; \
 		test "$$(sudo -n id -u)" = "0"'
+	@docker run --rm --user sandbox --entrypoint sh "$(SANDBOX_IMAGE)" -ec 'python3 --version; python3 -m pip --version; python3 -m venv /tmp/a13n/venv; uv --version; node --version; npm --version; pnpm --version; git --version; cc --version; c++ --version; make --version; pkg-config --version; a13n-envd --version'
 	@docker run --rm "$(SANDBOX_IMAGE)"
 
 .PHONY: image-check
 image-check: images ## Build and smoke-check all container images
-	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox image-check-a13n-harness-ui image-check-docker-environment
+	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox
 
 .PHONY: python-check
 python-check: lint typecheck ## Run Python workspace lint and type checks
@@ -569,18 +557,9 @@ dev-state-check: sync ## Check the local development tools, including seeding a 
 	@uv run --locked pyright dev/service
 	@uv run --locked python -m pytest dev/service/tests -q --tb=short
 
-DOCKER_ENVIRONMENT_IMAGE ?= a13n-docker-environment:local
-.PHONY: image-docker-environment image-check-docker-environment
-image-docker-environment: ## Build the native Docker execution image without Envd
-	@docker build -f deploy/docker/images/docker-environment/Dockerfile -t "$(DOCKER_ENVIRONMENT_IMAGE)" deploy/docker/images/docker-environment
-
-image-check-docker-environment: ## Validate native Docker image prerequisites
-	@test "$$(docker image inspect --format '{{.Config.User}}' "$(DOCKER_ENVIRONMENT_IMAGE)")" = "sandbox"
-	@docker run --rm --entrypoint sh "$(DOCKER_ENVIRONMENT_IMAGE)" -ec 'python3 --version; python3 -m pip --version; python3 -m venv /tmp/a13n/venv; uv --version; git --version; bash --version; node --version; npm --version; pnpm --version; curl --version; rg --version; jq --version; cc --version; c++ --version; make --version; pkg-config --version; test -w /workspace; test -w /tmp/a13n; ! command -v a13n-envd'
-
 .PHONY: service-e2e-docker
-service-e2e-docker: sync image-docker-environment ## Run the environment journey on the native Docker provider
-	@DOCKER_ENVIRONMENT_IMAGE="$(DOCKER_ENVIRONMENT_IMAGE)" uv run --locked python -m e2e.service -k docker --require-all
+service-e2e-docker: sync image-sandbox ## Run the environment journey on the native Docker provider
+	@SANDBOX_IMAGE="$(SANDBOX_IMAGE)" uv run --locked python -m e2e.service -k docker --require-all
 
 .PHONY: service-boundaries
 service-boundaries: sync ## Verify Service import direction
