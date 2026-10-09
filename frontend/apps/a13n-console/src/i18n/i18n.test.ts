@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,17 @@ test("starts in English and supports Simplified Chinese", async () => {
 test("falls back to English for unsupported languages", async () => {
   await i18n.changeLanguage("fr");
   expect(i18n.t("Session")).toBe(en.Session);
+});
+
+test("programmatic language changes do not persist a manual choice", async () => {
+  const setItem = vi.fn();
+  vi.stubGlobal("localStorage", { setItem });
+  try {
+    await i18n.changeLanguage("zh-CN");
+    expect(setItem).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 test("translations have matching keys", () => {

@@ -3,12 +3,22 @@ import { ChoiceField } from "a13n-ui";
 import { SettingsRow, SettingsSection } from "a13n-ui";
 
 import { useTranslation } from "react-i18next";
+import { useState } from "react";
+import {
+  readLanguagePreference,
+  resolveLanguage,
+  saveLanguage,
+  type LanguagePreference,
+} from "../../i18n/preferences";
 import { useAppearance } from "../../layout/appearance";
 import styles from "./settings.module.css";
 
 export function Preferences() {
   const { t, i18n } = useTranslation(),
     { theme, setTheme } = useAppearance();
+  const [languagePreference, setLanguagePreference] = useState(
+    readLanguagePreference,
+  );
   return (
     <div className={styles.sections}>
       <SettingsSection title={t("Appearance")}>
@@ -36,11 +46,19 @@ export function Preferences() {
         >
           <ChoiceField
             placeholder={t("Language")}
-            value={i18n.resolvedLanguage ?? "en"}
-            onValueChange={(value) => void i18n.changeLanguage(value)}
+            value={languagePreference}
+            onValueChange={(value) => {
+              if (value !== "system" && value !== "en" && value !== "zh-CN")
+                return;
+              const preference: LanguagePreference = value;
+              setLanguagePreference(preference);
+              saveLanguage(preference);
+              void i18n.changeLanguage(resolveLanguage(preference));
+            }}
             label={t("Display language")}
             hideLabel
             options={[
+              { value: "system", label: t("System") },
               { value: "en", label: "English" },
               { value: "zh-CN", label: "简体中文" },
             ]}
