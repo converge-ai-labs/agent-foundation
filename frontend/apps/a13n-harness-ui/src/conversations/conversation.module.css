@@ -142,7 +142,48 @@
   }
 }
 .projectGroup {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
+}
+.projectSummary {
+  width: 280px;
+  max-width: calc(100vw - 48px);
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px 4px;
+  text-align: start;
+  text-wrap: wrap;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.projectSummary strong,
+.projectSummary p {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.projectSummary strong {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.projectSummary svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--a13n-secondary);
+}
+.projectSummaryActivity {
+  padding: 6px 0 0 24px;
+  color: var(--a13n-secondary);
+}
+.projectPaths {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--a13n-border);
+  margin-top: 10px;
+  padding-top: 10px;
+  color: var(--a13n-secondary);
 }
 .groupHeading {
   position: relative;
@@ -212,9 +253,41 @@
   transform: rotate(90deg);
 }
 .projectDrag {
+  position: absolute;
+  inset-inline-start: 3px;
+  top: 3px;
+  width: 28px;
+  height: 28px;
+  z-index: 1;
   touch-action: none;
   cursor: grab;
-  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.groupHeading:has(.projectDrag) .projectIcon {
+  visibility: hidden;
+}
+@media (hover: hover) and (pointer: fine) {
+  .projectDrag {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .groupHeading:has(.projectDrag) .projectIcon {
+    visibility: visible;
+  }
+  .groupHeading:hover .projectDrag,
+  .groupHeading:focus-within .projectDrag,
+  .projectDrag[aria-pressed="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .groupHeading:has(.projectDrag):hover .projectIcon,
+  .groupHeading:has(.projectDrag):focus-within .projectIcon,
+  .groupHeading:has(.projectDrag[aria-pressed="true"]) .projectIcon {
+    visibility: hidden;
+  }
+}
+.groupThreads {
+  margin-inline-start: 16px;
 }
 .projectDrag[aria-pressed="true"] {
   cursor: grabbing;
@@ -297,8 +370,7 @@
   .threadActions[data-popup-open],
   .groupHeading:hover .groupActions,
   .groupHeading:focus-within .groupActions,
-  .groupActions:has([data-popup-open]),
-  .groupActions:has([aria-pressed="true"]) {
+  .groupActions:has([data-popup-open]) {
     opacity: 1;
   }
 }
@@ -1107,27 +1179,47 @@
   line-height: 1.75;
 }
 
-.sectionHeading {
+.sectionHeading,
+.recentToggle {
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: 26px;
-  margin-block: 12px 2px;
+  margin-block: 4px 0;
   padding-inline: 8px 4px;
   color: var(--a13n-secondary);
   font-size: 11px;
   font-weight: 500;
 }
 .sectionHeading small {
+  margin-inline-start: 4px;
   color: var(--a13n-tertiary);
-  font-variant-numeric: tabular-nums;
   font-size: inherit;
 }
 .sectionHeading > button {
   margin-inline-start: auto;
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-  font-size: 11px;
+  width: 24px;
+  height: 24px;
+}
+.recentToggle {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  text-align: start;
+}
+.recentToggle:hover {
+  background: var(--a13n-hover);
+}
+.recentToggle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.recentToggle > svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 120ms ease;
 }
 .showMore {
   margin: 4px 0 0 8px;
