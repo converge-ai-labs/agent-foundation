@@ -122,7 +122,7 @@ Use the Makefile as the stable development interface:
 | `make deps-check`                | Check each Python package's dependency declarations with deptry    |
 | `make typecheck`                 | Type-check Python package sources with Pyright                     |
 | `make docs-serve`                | Serve the documentation site at `/docs` with live reload           |
-| `make docs-build`                | Build the static documentation site and check its links            |
+| `make docs-build`                | Test localization, build the documentation site, and check links   |
 | `make site-serve`                | Serve the landing page with live reload                            |
 | `make site-build`                | Build the landing page with the documentation under `/docs`        |
 | `make service-e2e`               | Run Service end-to-end scenarios with disposable stores (Docker)   |
@@ -288,7 +288,8 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 - Link other pages by relative English file path, such as `models.md#credentials`. The site resolves the target in the current language and keeps the canonical English heading IDs in translated pages. Preserve heading count, order, and depth in translations. The site build fails on any broken internal link or anchor.
 - Use `.mdx` only for composed pages such as the site home page. Pages under `docs/a13n-harness-ui/` stay `.md` because the Skill bundles them verbatim.
 - `frontend/apps/a13n-docs` owns the documentation site: layout, theme, and Service API reference pages generated from `proto/a13n-service/openapi.json`. English pages use unprefixed paths under `/docs/`; Simplified Chinese human pages use `/docs/zh-CN/`. It also publishes English-only `llms.txt`, `llms-full.txt`, and Markdown under `/docs/md/`; the bundled Harness UI configuration Skill stays English. Machine-readable OpenAPI and Schema downloads remain unchanged.
-- Run `make docs-build` after documentation or site changes.
+- Changes to Service OpenAPI summaries or descriptions also require updating `frontend/apps/a13n-docs/lib/locales/openapi.zh-CN.json`, including summaries generated from route function names. See [Service contract exports](proto/a13n-service/README.md).
+- Run `make docs-build` after documentation or site changes. It runs localization tests before building, then checks exported pages and links; missing API translations fail before the build.
 - The canonical documentation site is [a13n.converge.ai/docs](https://a13n.converge.ai/docs/). The landing page in `frontend/apps/a13n-site` owns the site root.
 - The `Site` GitHub Actions workflow builds both applications, publishes build artifacts for pull requests, and deploys `main` to the `a13n-site` Cloudflare Pages project.
 

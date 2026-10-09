@@ -256,7 +256,8 @@ docs-serve: frontend-sync ## Serve the documentation site locally with live relo
 	@pnpm --dir frontend --filter a13n-docs run dev
 
 .PHONY: docs-build
-docs-build: frontend-sync ## Build the static documentation site and check its links
+docs-build: frontend-sync ## Test localization, build the documentation site, and check its links
+	@pnpm --dir frontend --filter a13n-docs run test
 	@pnpm --dir frontend --filter a13n-docs run build
 
 .PHONY: site-serve
