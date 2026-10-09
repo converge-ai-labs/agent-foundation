@@ -379,6 +379,7 @@ class HarnessRunResult[OutputT]:
     def replace(self, ...) -> HarnessRunResult[Any]: ...
     def raise_for_status(self) -> None: ...
     def output_or_raise(self) -> OutputT: ...
+    def output_json(self) -> JsonValue: ...
 ```
 
 All mutable values are copied on construction and access, including the complete nested `RunUsageSummary` and mixed-source usage records. `all_messages()` and `new_messages()` decode detached copies. `replace()` preserves Thread and Run correlation and message views while allowing trusted middleware to replace terminal fields.
@@ -394,7 +395,7 @@ Valid field combinations are:
 
 A completed output may legitimately be `None` when the output contract permits it. A result's private message view is independent from the optional continuation state under the trusted plugin contract; structural validation does not impose state provenance or equality.
 
-`raise_for_status()` returns only for completion. `output_or_raise()` preserves a valid `None` output instead of using truthiness.
+`raise_for_status()` returns only for completion. `output_or_raise()` preserves a valid `None` output instead of using truthiness. `output_json()` projects completed output to detached finite JSON using the Run's business-output contract, including declared serializers. Projection is lazy and may fail without changing the native outcome; consumers own omission, redaction, and size limits. `replace()` retains the process-local output contract, and Harness rebinds every accepted plugin candidate to the active executable's contract. A manually constructed result outside execution has only runtime structured-type serialization, not erased declaration metadata.
 
 ## Events
 

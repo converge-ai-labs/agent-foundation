@@ -25,7 +25,7 @@ from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness._json import (
     dump_json_bytes,
-    require_finite_json,
+    project_json,
 )
 from a13n_harness._review_context import ReviewEvidence, append_review_evidence, record_approval_denials
 from a13n_harness._tool_observation import record_tool_operation_failure
@@ -75,7 +75,6 @@ _UNMANAGED_OUTPUT_POLICY = ToolOutputPolicy(
     redact=True,
 )
 
-_ANY_ADAPTER = TypeAdapter(Any)
 _JSON_OBJECT_ADAPTER = TypeAdapter(dict[str, JsonValue])
 _INVOCATION_SCOPE: contextvars.ContextVar[InvocationScope | None] = contextvars.ContextVar(
     "a13n_harness_invocation_scope",
@@ -641,8 +640,7 @@ async def _prepare_invocation(
 ) -> _PreparedInvocation:
     try:
         typed_arguments = deepcopy(tool_args)
-        require_finite_json(typed_arguments)
-        projected = _ANY_ADAPTER.dump_python(typed_arguments, mode="json", warnings="error")
+        projected = project_json(typed_arguments)
         normalized = _JSON_OBJECT_ADAPTER.validate_python(projected, strict=True)
         encoded = dump_json_bytes(normalized, sort_keys=True)
     except (TypeError, ValueError, ValidationError) as exc:

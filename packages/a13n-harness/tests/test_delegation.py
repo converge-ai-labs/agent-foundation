@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any
 
 import a13n_harness.tools.invocation as tool_invocation_module
 import a13n_harness.tools.surface as tool_surface_module
@@ -59,7 +59,7 @@ from a13n_harness.tools import (
 )
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from a13n_harness.usage import USAGE_CAPABILITY_ID
-from pydantic import BaseModel
+from pydantic import BaseModel, PlainSerializer
 from pydantic_ai import Tool
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -72,6 +72,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.output import TextOutput
 from pydantic_ai.usage import UsageLimits
 
 pytestmark = pytest.mark.anyio
@@ -151,6 +152,62 @@ def _child_definition(
             *capabilities,
         ),
     )
+
+
+class _TypedAnswer(BaseModel):
+    value: int
+
+
+@dataclass
+class _SerializedAnswer:
+    value: Annotated[int, PlainSerializer(lambda value: f"id-{value}", return_type=str, when_used="json")]
+
+
+def _model_answer(value: str) -> _TypedAnswer:
+    return _TypedAnswer(value=int(value))
+
+
+def _dataclass_answer(value: str) -> _SerializedAnswer:
+    return _SerializedAnswer(value=int(value))
+
+
+def _annotated_answer(
+    value: str,
+) -> list[Annotated[int, PlainSerializer(lambda value: f"id-{value}", return_type=str)]]:
+    return [int(value)]
+
+
+@pytest.mark.parametrize(
+    ("output_function", "expected"),
+    [(_model_answer, {"value": 7}), (_dataclass_answer, {"value": "id-7"}), (_annotated_answer, ["id-7"])],
+)
+async def test_inline_child_projects_its_own_output_contract(output_function, expected) -> None:
+    async def child_stream(messages, info):
+        yield "7"
+
+    child = AgentDefinition(
+        agent=AgentSpec(), output_type=TextOutput(output_function), model=FunctionModel(stream_function=child_stream)
+    )
+    returned: list[Any] = []
+
+    async def parent_stream(messages, info):
+        results = _returns_after_latest_user(messages)
+        if not results:
+            yield {
+                0: DeltaToolCall(
+                    name="delegate", json_args='{"subagent":"reviewer","prompt":"answer"}', tool_call_id="call-typed"
+                )
+            }
+        else:
+            returned.append(results[-1].content)
+            yield "done"
+
+    executable = HarnessBuilder().build(_parent_definition(child, FunctionModel(stream_function=parent_stream)))
+    result = await executable.run("go", bindings=_bindings_factory())
+    assert result.status == "completed"
+    assert len(returned) == 1
+    assert isinstance(returned[0], dict)
+    assert returned[0]["output"] == expected
 
 
 def _inline_subagents() -> SubagentCapability:

@@ -5,9 +5,14 @@ from __future__ import annotations
 import json
 import math
 import re
+from dataclasses import is_dataclass
+from functools import lru_cache
 from typing import Any
 
-from pydantic import JsonValue
+from pydantic import BaseModel, JsonValue, TypeAdapter
+
+_ANY_ADAPTER = TypeAdapter(Any)
+_JSON_ADAPTER = TypeAdapter(JsonValue)
 
 _BEARER_VALUE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 _SENSITIVE_KEY_SEGMENTS = frozenset(
@@ -45,6 +50,40 @@ def require_finite_json(value: Any, _active: set[int] | None = None) -> None:
             require_finite_json(item, active)
     finally:
         active.remove(value_id)
+
+
+@lru_cache(maxsize=128)
+def _runtime_adapter(value_type: type[Any]) -> TypeAdapter[Any]:
+    return TypeAdapter(value_type)
+
+
+def project_json(value: Any, *, adapter: TypeAdapter[Any] | None = None) -> JsonValue:
+    """Project a typed value before enforcing the finite JSON boundary.
+
+    Prefer the owning contract's adapter. Native toolsets expose only argument
+    validators, so their process-local values use runtime structured serializers
+    inside ordinary containers; erased Annotated metadata cannot be recovered.
+    """
+    require_finite_json(value)
+    projected = (
+        adapter.dump_python(value, mode="json", warnings="error")
+        if adapter is not None
+        else _project_runtime_value(value)
+    )
+    require_finite_json(projected)
+    return _JSON_ADAPTER.validate_python(projected, strict=True)
+
+
+def _project_runtime_value(value: Any) -> Any:
+    if isinstance(value, BaseModel) or (is_dataclass(value) and not isinstance(value, type)):
+        projected = _runtime_adapter(type(value)).dump_python(value, mode="json", warnings="error")
+        require_finite_json(projected)
+        return projected
+    if isinstance(value, dict):
+        value = {key: _project_runtime_value(item) for key, item in value.items()}
+    elif isinstance(value, list | tuple):
+        value = [_project_runtime_value(item) for item in value]
+    return _ANY_ADAPTER.dump_python(value, mode="json", warnings="error")
 
 
 def redact_bearer(value: str) -> str:
