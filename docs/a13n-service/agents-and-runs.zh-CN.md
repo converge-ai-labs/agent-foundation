@@ -382,6 +382,7 @@ curl -X POST "$A13N_URL/api/v1/runs/$RUN/resume" \
 
 - `GET …/threads/{thread_id}/runs` 按从新到旧列出线程运行。`last_run_id` 是最后结束的运行，下一个运行从它的历史继续；`current_run_id` 是活跃运行。
 - `GET …/runs/{run_id}/items` 按顺序返回运行显示项（文本、推理消息、工具调用和观测），每项带 `ordinal`，并包含 `position`、可选 `resume_after` 和 `complete`。默认返回最新的 `limit` 项（默认 200，最多 500）；以首项的 ordinal 作为 `before` 可读取更早的项，以 `after` 可从某个 ordinal 往后读取。运行结束时尚在进行的项显示为 `interrupted`。
+- 超过 32 KiB 的展示字段单独保存，每个字段最多保留压缩前 16 MiB 的 UTF-8 内容。超限时只保留文本前缀并标记 `truncated=true`，超限 JSON 也会转为文本前缀。Item 的 `content_refs` 按字段名提供正文引用，包含 `id`、已保存字节数 `size_bytes`、`media_type`、`truncated` 和短预览 `preview`。通过 `GET …/runs/{run_id}/contents/{content_id}` 读取已保存内容，需要相同的工作区读取权限。Console 提供“展开全文”入口；超限时改为“展开已保存内容”，并提示内容已截断。被丢弃的后续内容和旧版已截断记录无法据此恢复。此上限不改变 Agent 执行状态，实时 delta 仍保留原有大小限制。
 - `GET …/runs/{run_id}/lineage` 返回运行及其祖先，可跨分叉，按最近到最远排列。
 - `GET …/runs/{run_id}/attempts` 列出执行尝试及其 `start_reason`（`initial`、worker 丢失后的 `recovery`、worker 关闭时的 `handoff`）和结果。非 handoff 尝试达到 `max_attempts` 后运行失败。
 

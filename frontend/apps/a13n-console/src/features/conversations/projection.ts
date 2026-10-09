@@ -50,7 +50,9 @@ export function presentItem(item: DisplayItem): PresentedItem {
     role: text(content.role) || "assistant",
     toolName: text(content.toolCallName),
     arguments: text(content.arguments),
-    ...(content.incomplete === true ? { incomplete: true } : {}),
+    ...(content.incomplete === true || item.content_refs?.arguments
+      ? { incomplete: true }
+      : {}),
     result: content.result,
     resultParts: readContentParts(content.result_parts),
     subagentRunId: text(content.subagentRunId) || undefined,

@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { formatDuration } from "../format";
 import { DiffBadges } from "./diff-badges";
+import { ItemContents } from "../stored-content";
 import {
   asksAQuestion,
   entryGlyph,
@@ -161,6 +162,10 @@ function WorkRow({ work }: { work: WorkEntry }) {
           : formatDuration(entry.durationMs)}
       </span>
       {content ? <span /> : <StateMark state={work.state} size={13} />}
+      <ItemContents
+        itemId={entry.itemId ?? entry.id}
+        className={styles.workRowContent}
+      />
     </li>
   );
 }

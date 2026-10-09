@@ -25,6 +25,8 @@ from a13n_stream_protocol.display import (
 )
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from a13n_service.runs.contents import ContentObject
+
 # Re-export existing Service imports while keeping the semantic contract shared.
 __all__ = [
     "FRAGMENTS",
@@ -58,6 +60,8 @@ class Tail(BaseModel):
     # Optional Redis resume hint; attempts without confirmed writes have none.
     resume_after: str | None = None
     continuation: DisplayContinuation | None = None
+    refs: tuple[ContentObject, ...] = ()
+    continuation_ref: ContentObject | None = None
 
 
 class Page(BaseModel):
@@ -65,6 +69,7 @@ class Page(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     items: list[Item]
+    refs: tuple[ContentObject, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +94,7 @@ class DisplayFold(SemanticDisplayFold):
             attempt=attempt,
             first=tail.first,
             continuation=tail.continuation if tail.position.attempt == attempt else None,
+            retain_content=True,
         )
         self.first = tail.first
         self.page_items, self.page_bytes = page_items, page_bytes

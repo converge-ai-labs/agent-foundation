@@ -88,6 +88,23 @@ it("continues normalized items without retransmitting or losing media/App metada
   expect(isOmitted({ omitted: true, text: "kept" })).toBe(false);
 });
 
+it("does not append live deltas to a saved preview or lose the full-content reference", () => {
+  const original = item(1, "Preview");
+  original.content_refs = {
+    text: {
+      id: "cnt_one",
+      size_bytes: 50000,
+      media_type: "text/plain",
+      preview: "Preview",
+    },
+  };
+  const items = new Map([[original.id, original]]);
+  applyDelta(items, delta(2, "suffix"));
+  expect(items.get("message")?.content.text).toBe("Preview");
+  expect(items.get("message")?.content_refs).toEqual(original.content_refs);
+  expect(items.get("message")?.last_stream_id).toBe("1-2");
+});
+
 it("rejects stale durable baselines but replays a valid newer baseline's suffix", () => {
   const state = new RunDisplayState();
   state.reconcile(baseline(5), 1);

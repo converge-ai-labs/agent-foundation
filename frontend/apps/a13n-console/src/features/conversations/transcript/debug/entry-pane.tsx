@@ -2,7 +2,6 @@ import { AguiContent, Button, DisclosureSection } from "a13n-ui";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../../../shared/api";
-import { MarkdownContent } from "../../../../shared/markdown";
 import { formatCost } from "../../../../shared/cost";
 import { Patch } from "../../../../shared/diff";
 import { formatDuration, formatTokens, resultExcerpt } from "../../format";
@@ -18,6 +17,11 @@ import { readQuestions } from "../questions";
 import { workState } from "../entry-language";
 import { PaneSection, PaneStats, PaneValue, RawDialog } from "./pane-parts";
 import type { RunScope } from "./scope";
+import {
+  StoredContent,
+  ItemContents,
+  LegacyTruncation,
+} from "../../stored-content";
 import styles from "./pane.module.css";
 
 /** What one row holds, opened in place under it. */
@@ -217,13 +221,23 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
       {!entry.hitl && (
         <div className={styles.paneColumns}>
           <PaneSection label={t("Arguments")}>
-            <PaneValue value={entry.arguments} />
+            <StoredContent
+              itemId={entry.itemId ?? entry.id}
+              field="arguments"
+              value={entry.arguments}
+              renderValue={(value) => <PaneValue value={value} />}
+            />
           </PaneSection>
           <PaneSection label={t("Result")}>
             {entry.resultParts ? (
               <AguiContent parts={entry.resultParts} />
             ) : (
-              <PaneValue value={entry.result} />
+              <StoredContent
+                itemId={entry.itemId ?? entry.id}
+                field="result"
+                value={entry.result}
+                renderValue={(value) => <PaneValue value={value} />}
+              />
             )}
           </PaneSection>
         </div>
@@ -243,6 +257,10 @@ function ActionPane({ entry, scope }: { entry: ActionEntry; scope: RunScope }) {
           <PaneValue value={entry.failure} />
         </PaneSection>
       )}
+      <ItemContents
+        itemId={entry.itemId ?? entry.id}
+        exclude={entry.hitl ? [] : ["arguments", "result"]}
+      />
     </div>
   );
 }
@@ -253,7 +271,7 @@ function ContentPane({ entry }: { entry: ContentEntry }) {
     <div className={styles.pane}>
       <div className={styles.reasoningProse}>
         {entry.text ? (
-          <MarkdownContent text={entry.text} />
+          <StoredContent itemId={entry.id} field="text" value={entry.text} />
         ) : (
           <p className={styles.paneNote}>{t("No text was retained.")}</p>
         )}
@@ -263,6 +281,7 @@ function ContentPane({ entry }: { entry: ContentEntry }) {
           {t("The provider retained protected reasoning content.")}
         </p>
       )}
+      <LegacyTruncation itemId={entry.id} />
     </div>
   );
 }
@@ -287,6 +306,7 @@ function OtherPane({ entry }: { entry: OtherEntry }) {
               value={observation.detail}
               label={t("Raw")}
             />
+            <ItemContents itemId={observation.id} />
           </li>
         ))}
       </ul>

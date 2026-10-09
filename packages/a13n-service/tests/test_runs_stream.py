@@ -184,7 +184,7 @@ async def test_fragments_merge_and_fold_the_same_display(runtime: Runtime) -> No
 
 async def test_a_long_streamed_tool_call_is_one_item_and_few_entries(runtime: Runtime) -> None:
     pieces = ["tok "] * 3000
-    # Arguments beyond the observation limit keep the one item, without its value.
+    # Service retains the full observation for external storage; transport coalescing stays unchanged.
     oversized = ["x" * 20000] * 2
     sources = _harness([*_tool_call(0, "call-1", *pieces), *_tool_call(1, "call-2", *oversized)])
     each, unmerged = await _coalesce(runtime, sources, window=0)
@@ -193,7 +193,7 @@ async def test_a_long_streamed_tool_call_is_one_item_and_few_entries(runtime: Ru
     assert len(_streamed_arguments(_events(each))) == 3002
     assert len(_streamed_arguments(_events(merged_entries))) == 4
     assert "".join(_streamed_arguments(_events(merged_entries))[:2]) == "".join(pieces)
-    assert _argument_items(merged) == ["".join(pieces), None]
+    assert _argument_items(merged) == ["".join(pieces), "".join(oversized)]
     assert _positionless(merged) == _positionless(unmerged)
     # Per tool call: its start observation, its argument observation and the call.
     assert len(unmerged.items) == len(merged.items) == 6

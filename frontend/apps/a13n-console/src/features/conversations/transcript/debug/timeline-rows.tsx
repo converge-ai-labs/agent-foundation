@@ -3,7 +3,11 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { CopyButton } from "../../../../shared/identity";
-import { MarkdownContent } from "../../../../shared/markdown";
+import {
+  StoredContent,
+  LegacyTruncation,
+  useStoredReference,
+} from "../../stored-content";
 import { formatDuration, formatTokens } from "../../format";
 import type {
   ActionEntry,
@@ -226,6 +230,7 @@ function actionText(
 /** The Agent's answer is prose, not a row: it reads at full width. */
 function ReplyBlock({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
+  const reference = useStoredReference(entry.id, "text");
   return (
     <div
       className={styles.reply}
@@ -234,10 +239,13 @@ function ReplyBlock({ entry }: { entry: ContentEntry }) {
       <div className={styles.replyLabel}>
         <span>{t("Reply")}</span>
         {entry.state === "interrupted" && <span>{t("interrupted")}</span>}
-        <CopyButton value={entry.text} iconOnly copyLabel={t("Copy reply")} />
+        {!reference && (
+          <CopyButton value={entry.text} iconOnly copyLabel={t("Copy reply")} />
+        )}
       </div>
       <div className={styles.replyBody}>
-        <MarkdownContent text={entry.text} />
+        <StoredContent itemId={entry.id} field="text" value={entry.text} />
+        <LegacyTruncation itemId={entry.id} />
       </div>
     </div>
   );

@@ -65,10 +65,12 @@ export function ThreadRow({
   row,
   showRestore = false,
   showProject = false,
+  activeWorkerCount = 0,
 }: {
   row: ActivityRow;
   showRestore?: boolean | "compact";
   showProject?: boolean;
+  activeWorkerCount?: number;
 }) {
   const coordinator = useCoordinatorMutation(row.thread);
   const [promoting, setPromoting] = useState(false);
@@ -85,6 +87,16 @@ export function ThreadRow({
     row.thread,
     composers.get(row.thread.thread_id)?.localInputs,
   );
+  const isCoordinator = row.thread.role === "coordinator";
+  const state = threadState(row);
+  const activity = [
+    state,
+    activeWorkerCount > 0
+      ? `${activeWorkerCount} ${activeWorkerCount === 1 ? "worker" : "workers"} active`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const actionsButton = useRef<HTMLButtonElement>(null);
   const canStar = row.thread.role !== "worker" && !row.thread.parent_thread_id;
   const starLabel = row.thread.starred
@@ -152,12 +164,24 @@ export function ThreadRow({
             `${styles.threadLink} ${isActive ? styles.selected : ""}`
           }
         >
-          {row.thread.role === "coordinator" ? (
-            <CoordinatorIcon size={18} />
-          ) : (
-            <ThreadStateIcon row={row} />
-          )}
-          <span>
+          <span className={styles.threadIcon}>
+            {isCoordinator ? (
+              <CoordinatorIcon size={18} />
+            ) : (
+              <ThreadStateIcon row={row} />
+            )}
+            {unsent && (
+              <span
+                className={styles.draftMarker}
+                role="img"
+                aria-label="Draft · Unsent input"
+                title="Draft · Unsent input"
+              >
+                <PencilSimple size={10} weight="bold" aria-hidden="true" />
+              </span>
+            )}
+          </span>
+          <span className={styles.threadLabel}>
             <strong title={title}>{title}</strong>
             {row.thread.role === "coordinator" && title !== "Coordinator" && (
               <span className={styles.srOnly}>Coordinator</span>
@@ -170,7 +194,18 @@ export function ThreadRow({
                     : "Without a project")}
               </small>
             )}
-            {threadState(row) && (
+            {isCoordinator ? (
+              <small
+                className={styles.coordinatorActivity}
+                aria-hidden={!activity || undefined}
+                title={activity || undefined}
+              >
+                <span className={styles.coordinatorStateIcon}>
+                  {state && <ThreadStateIcon row={row} />}
+                </span>
+                <span>{activity}</span>
+              </small>
+            ) : state ? (
               <small
                 className={
                   row.pending_decision ||
@@ -179,15 +214,10 @@ export function ThreadRow({
                     : styles.srOnly
                 }
               >
-                {threadState(row)}
+                {state}
               </small>
-            )}
+            ) : null}
           </span>
-          {unsent && (
-            <span className={styles.unsentMarker} title="Shared, unsent input">
-              Draft
-            </span>
-          )}
           {unread && (
             <span
               className={styles.resultDot}

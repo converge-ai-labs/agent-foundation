@@ -9,6 +9,15 @@ export interface DisplayItem {
   started_at: string;
   ended_at?: string | null;
   content: Record<string, unknown>;
+  content_refs?: Record<string, ContentRef>;
+}
+
+export interface ContentRef {
+  id: string;
+  size_bytes: number;
+  media_type: "text/plain" | "application/json";
+  preview: string;
+  truncated?: boolean;
 }
 
 const record = (value: unknown): value is Record<string, unknown> =>
