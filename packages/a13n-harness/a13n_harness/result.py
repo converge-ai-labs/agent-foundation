@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, compu
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.tools import DeferredToolRequests
 
+from a13n_harness._json import project_json
 from a13n_harness.errors import RetryHint, RunError
 from a13n_harness.state import HarnessState, decode_messages, encode_messages
 from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord, RunUsageSummary, UsageRecord
@@ -67,6 +68,7 @@ class HarnessRunResult[OutputT]:
         "_messages",
         "_new_message_index",
         "_output",
+        "_output_adapter",
         "_run_id",
         "_state",
         "_status",
@@ -91,6 +93,7 @@ class HarnessRunResult[OutputT]:
         deferred: DeferredToolRequests | None = None,
         _messages: tuple[ModelMessage, ...] | _MessageSnapshot = (),
         _new_message_index: int = 0,
+        _output_adapter: TypeAdapter[Any] | None = None,
     ) -> None:
         if not isinstance(thread_id, str) or not thread_id.strip():
             raise ValueError("thread_id must be a non-blank string")
@@ -142,6 +145,7 @@ class HarnessRunResult[OutputT]:
         self._run_id = run_id
         self._status = status
         self._output = deepcopy(output)
+        self._output_adapter = _output_adapter
         self._state = state.model_copy(deep=True) if state is not None else None
         self._usage = _copy_usage(usage)
         self._usage_records = tuple(record.model_copy(deep=True) for record in usage_records)
@@ -226,6 +230,7 @@ class HarnessRunResult[OutputT]:
             deferred=self.deferred if deferred is _UNSET else deferred,
             _messages=self._messages if type(self) is HarnessRunResult else self.all_messages(),
             _new_message_index=self._new_message_index,
+            _output_adapter=self._output_adapter,
         )
 
     def raise_for_status(self) -> None:
@@ -249,6 +254,14 @@ class HarnessRunResult[OutputT]:
         """Return validated output, preserving a valid None-valued output."""
         self.raise_for_status()
         return cast(OutputT, self.output)
+
+    def output_json(self) -> JsonValue:
+        """Project completed output using its process-local business contract.
+
+        Serialization failure does not change the native Run outcome. Consumers
+        retain ownership of omission, redaction and size limits.
+        """
+        return project_json(self.output_or_raise(), adapter=self._output_adapter)
 
     def __repr__(self) -> str:
         return (

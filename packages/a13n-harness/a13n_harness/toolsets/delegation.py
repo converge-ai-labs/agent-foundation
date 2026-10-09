@@ -296,7 +296,7 @@ class DelegationToolset:
                 )
                 raise ToolFailed(_child_failure_message(result, reserved_id))
             try:
-                output = _project_output(result.output_or_raise())
+                output = _project_output(result)
             except ToolFailed as exc:
                 await _emit_delegation_event(
                     ctx,
@@ -739,10 +739,9 @@ def _definition_working_state(child: BuiltSubagent):
     return matches[0] if matches else None
 
 
-def _project_output(value: Any) -> JsonValue:
+def _project_output(result: HarnessRunResult[Any]) -> JsonValue:
     try:
-        projected = _JSON_ADAPTER.dump_python(value, mode="json", warnings="error")
-        return _JSON_ADAPTER.validate_python(projected, strict=True)
+        return result.output_json()
     except Exception as exc:
         raise ToolFailed("Inline child output is not JSON-compatible.") from exc
 

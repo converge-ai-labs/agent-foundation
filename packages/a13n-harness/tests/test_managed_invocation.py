@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import pytest
@@ -28,6 +28,7 @@ from a13n_harness.toolsets import (
     tool_output_bytes,
     tool_output_text,
 )
+from pydantic import field_serializer, field_validator
 from pydantic_ai import (
     AudioUrl,
     BinaryContent,
@@ -96,6 +97,56 @@ class _Policy:
 @dataclass
 class _InvocationPolicySubclass(InvocationPolicyCapability):
     pass
+
+
+@dataclass
+class _HexPayload:
+    data: bytes
+
+    @field_validator("data", mode="before")
+    @classmethod
+    def decode(cls, value: str | bytes) -> bytes:
+        return bytes.fromhex(value) if isinstance(value, str) else value
+
+    @field_serializer("data", when_used="json")
+    def encode(self, value: bytes) -> str:
+        return value.hex()
+
+
+@pytest.mark.parametrize("managed", [False, True])
+async def test_tool_argument_projection_preserves_nested_dataclass_serializers(managed: bool) -> None:
+    executed: list[bytes] = []
+    resolved: list[bytes] = []
+
+    def consume(payloads: list[_HexPayload]) -> str:
+        executed.extend(payload.data for payload in payloads)
+        return "accepted"
+
+    async def resources(args, *, context):
+        del context
+        resolved.extend(payload.data for payload in args["payloads"])
+        return ()
+
+    metadata = replace(_metadata("consume"), resource_resolver=resources)
+    policy = _Policy(InvocationPolicyDecision.allow(), [])
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=_tool_model("consume", {"payloads": [{"data": "ff"}]}),
+        capabilities=(
+            Capability(
+                tools=[HarnessTool(consume, harness_metadata=metadata) if managed else consume], id="test-tools"
+            ),
+        ),
+    )
+    result = await executable.run(
+        "go", bindings=RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=policy),))
+    )
+    assert result.status == "completed"
+    assert executed == [b"\xff"]
+    assert "accepted" in result.output_or_raise()
+    assert resolved == ([b"\xff"] if managed else [])
+    assert policy.calls == ([("consume", {"payloads": [{"data": "ff"}]})] if managed else [])
 
 
 async def test_managed_tool_is_authorized_after_native_argument_validation() -> None:

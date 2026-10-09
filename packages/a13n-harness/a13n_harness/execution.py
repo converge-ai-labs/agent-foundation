@@ -1734,6 +1734,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 if _business_output_contains_deferred_value(output):
                     raise ValueError("deferred output must suspend the run")
                 self._executable._output_adapter.validate_python(output, strict=True)
+            validated._output_adapter = self._executable._output_adapter
             return validated
         except (TypeError, ValueError, ValidationError) as exc:
             raise PluginError(
