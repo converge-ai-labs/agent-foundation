@@ -1907,6 +1907,7 @@
   "Composer opens with this evidence and the cited version. Review the proposed change before approving it.": "Composer 会带上证据和引用的版本。请审阅改动建议后再批准。",
   "Evidence limitations": "证据局限",
   "Evidence": "证据",
+  "Steps": "步骤",
   "Trace availability depends on backend retention and capture. External producers are responsible for their trace and span references.": "trace 是否可查取决于后端保留和采集情况。外部提交者对其 trace 和 span 引用负责。",
   "Analysis": "分析",
   "Submitted through the findings API or an Agent tool.": "通过 findings API 或 Agent 工具提交。",

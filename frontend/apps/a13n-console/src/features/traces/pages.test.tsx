@@ -24,6 +24,7 @@ vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({
     workspace: { id: "ws_test" },
     basePath: "/workspaces/test",
+    can: () => false,
   }),
 }));
 vi.mock("react-i18next", () => ({

@@ -1907,6 +1907,7 @@
   "Composer opens with this evidence and the cited version. Review the proposed change before approving it.": "Composer opens with this evidence and the cited version. Review the proposed change before approving it.",
   "Evidence limitations": "Evidence limitations",
   "Evidence": "Evidence",
+  "Steps": "Steps",
   "Trace availability depends on backend retention and capture. External producers are responsible for their trace and span references.": "Trace availability depends on backend retention and capture. External producers are responsible for their trace and span references.",
   "Analysis": "Analysis",
   "Submitted through the findings API or an Agent tool.": "Submitted through the findings API or an Agent tool.",
