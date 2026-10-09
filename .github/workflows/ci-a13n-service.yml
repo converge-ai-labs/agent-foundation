@@ -66,7 +66,7 @@ jobs:
           - name: tests
             runner: ubuntu-24.04
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -116,7 +116,9 @@ jobs:
 
       - name: Test a13n Service
         if: matrix.name == 'tests'
-        timeout-minutes: 10
+        # Allow the full database-backed suite to finish on slower hosted runners.
+        # Individual stalled tests still fail through faulthandler below.
+        timeout-minutes: 15
         run: >-
           /usr/bin/time -p uv run --locked python -m pytest
           -n 3 --dist loadgroup --max-worker-restart=0
