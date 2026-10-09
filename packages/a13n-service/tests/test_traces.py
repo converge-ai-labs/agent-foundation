@@ -236,14 +236,18 @@ async def test_every_span_an_attempt_exports_carries_its_correlation(service, sc
 
 
 @pytest.mark.parametrize(
-    ("configure", "path", "authorization"),
+    ("configure", "path", "authorization", "ingestion_version"),
     [
-        (Backend.langfuse, "/api/public/otel/v1/traces", "Basic " + base64.b64encode(b"pk-lf-1:sk-lf-1").decode()),
-        (Backend.logfire, "/v1/traces", "write-token"),
+        (Backend.langfuse, "/api/public/otel/v1/traces", "Basic " + base64.b64encode(b"pk-lf-1:sk-lf-1").decode(), "4"),
+        (Backend.logfire, "/v1/traces", "write-token", None),
     ],
 )
 async def test_tracing_exports_to_the_configured_backend(
-    backend: Backend, configure: Callable[[Backend], TraceProvider], path: str, authorization: str
+    backend: Backend,
+    configure: Callable[[Backend], TraceProvider],
+    path: str,
+    authorization: str,
+    ingestion_version: str | None,
 ) -> None:
     async with open_instrumentation(
         configure(backend), metered=False, content=HarnessTraceContent.NONE
@@ -255,6 +259,7 @@ async def test_tracing_exports_to_the_configured_backend(
     assert [(request.url.path, request.headers.get("authorization")) for request in backend.requests] == [
         (path, authorization)
     ]
+    assert backend.requests[0].headers.get("x-langfuse-ingestion-version") == ingestion_version
 
     async with open_instrumentation(None, metered=False, content=HarnessTraceContent.STANDARD) as disabled:
         assert disabled is None
@@ -385,7 +390,8 @@ async def test_workspace_traces_page_through_langfuse_within_scope(api: SimpleNa
     assert [item["id"] for item in first["items"]] == ["obs-root"]
     assert (first["items"][0]["kind"], first["items"][0]["input"]) == ("agent", {"prompt": "hi"})
     request = backend.requests[0]
-    assert request.headers["authorization"] == backend.langfuse().otlp_headers["Authorization"]
+    assert request.headers["authorization"] == "Basic " + base64.b64encode(b"pk-lf-1:sk-lf-1").decode()
+    assert "x-langfuse-ingestion-version" not in request.headers
     filters = json.loads(request.url.params["filter"])
     assert {"type": "boolean", "column": "isRootObservation", "operator": "=", "value": True} in filters
     matched = {item["key"]: item["value"] for item in filters if item["type"] == "stringObject"}

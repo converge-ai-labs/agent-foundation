@@ -65,6 +65,11 @@ class Langfuse:
 
     @property
     def otlp_headers(self) -> dict[str, str]:
+        # Opt into real-time ingestion for the v2 read APIs.
+        return {**self._auth_headers, "x-langfuse-ingestion-version": "4"}
+
+    @property
+    def _auth_headers(self) -> dict[str, str]:
         pair = base64.b64encode(f"{self.public_key}:{self.secret_key}".encode()).decode()
         return {"Authorization": f"Basic {pair}"}
 
@@ -102,7 +107,7 @@ class Langfuse:
             "GET",
             self.url + _OBSERVATIONS,
             timeout=self.timeout,
-            headers=self.otlp_headers,
+            headers=self._auth_headers,
             params=params,
         )
         try:
