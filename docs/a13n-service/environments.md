@@ -64,7 +64,7 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH` changes the name, description, provider, config and labels with the template's `If-Match`. A new provider or recipe applies to environments created afterwards: an environment is built from the template as it is when its creation is dispatched, and keeps that recipe. The idle policy always applies as currently set.
 - `PATCH {"enabled": false}` stops new environments from the template; `{"enabled": true}` allows them again. Existing environments keep working.
 
-To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`. Its status is `reserved`: acceptance creates neither a vendor resource nor a queued create operation. A text-only run that never uses the environment can finish directly. Reservations count toward the managed-environment quota; Control does not proactively create them.
+To give every root thread of an agent its own environment, set the agent's `default_environment_template_id`. When a run of a thread without a `workspace` mount is accepted, the Service reserves a new environment from that template and mounts it as `workspace`. Its status is `reserved`: acceptance creates neither a vendor resource nor a queued create operation. With the default lazy preparation policy, a text-only run that never uses the environment can finish directly. Reservations count toward the managed-environment quota; Control does not proactively create them.
 
 ### Docker image versions
 
@@ -154,7 +154,17 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 - New threads and forks take initial mounts in their `environments` field. A fork shares its origin thread's mounts unless it sets `fresh_environments`. Archiving a thread removes its mounts.
 - Several threads may mount the same environment and use it at once.
 
-On first use of each mount, the worker waits up to `environments.wait_seconds` for that environment to be ready, creating reserved targets or starting stopped ones. If another dispatcher holds the operation claim, the worker waits for its published result; claim contention alone is not readiness. Input attachments and environment-backed skills can trigger first use before a model call. If they do not become ready in time, the attempt fails and the run is retried within its attempt budget; an environment that can no longer be used, such as a deleted one, fails the run with `environment_unavailable`.
+By default, `AgentConfig.lazy_environment` is `true`. On first use of each mount, the worker waits up to `environments.wait_seconds` for that environment to be ready, creating reserved targets or starting stopped ones. If another dispatcher holds the operation claim, the worker waits for its published result; claim contention alone is not readiness. Input attachments and environment-backed skills can trigger first use before a model call. If they do not become ready in time, the attempt fails and the run is retried within its attempt budget; an environment that can no longer be used, such as a deleted one, fails the run with `environment_unavailable`.
+
+Set `lazy_environment: false` in the agent configuration to prepare every mounted environment and open its execution connection before the first model request, even if no tool uses it. Each mount checks its supported operations and any selected working directory. Later tool calls reuse that connection. A run without mounts has nothing to prepare. Explicit environment creation through `POST …/environments` keeps its existing behavior.
+
+Override the agent's choice for one run through message options:
+
+```json
+{"options": {"overrides": {"lazy_environment": false}}}
+```
+
+An omitted or `null` override inherits the agent revision's value. The accepted choice survives retries and continuation runs. Async children use their own agent's configuration; inline children share their parent's environment.
 
 Async [subagents](agents-and-runs.md#subagents) get environments from their edge's policy: the parent run's mounts (`shared`), a new environment from a template (`dedicated`), or none.
 

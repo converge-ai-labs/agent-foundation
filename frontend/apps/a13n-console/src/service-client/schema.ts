@@ -3057,6 +3057,11 @@ export interface components {
        * @default
        */
       instructions?: string;
+      /**
+       * Lazy Environment
+       * @default true
+       */
+      lazy_environment?: boolean;
       media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
       /**
        * Memory Mounts
@@ -3122,6 +3127,11 @@ export interface components {
        * @default
        */
       instructions?: string;
+      /**
+       * Lazy Environment
+       * @default true
+       */
+      lazy_environment?: boolean;
       media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
       /**
        * Memory Mounts
@@ -3234,6 +3244,8 @@ export interface components {
       connection_tools?: components["schemas"]["ConnectionSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
+      /** Lazy Environment */
+      lazy_environment?: boolean | null;
       media_understanding?:
         components["schemas"]["MediaUnderstandingSelection"] | null;
       /** Model */
@@ -3274,6 +3286,8 @@ export interface components {
       connection_tools?: components["schemas"]["ConnectionSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
+      /** Lazy Environment */
+      lazy_environment?: boolean | null;
       media_understanding?:
         components["schemas"]["MediaUnderstandingSelection"] | null;
       /** Model */

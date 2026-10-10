@@ -79,6 +79,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `plugins`: `{instance_name, plugin_key, config}` selections of installed Harness plugins ([08](08-providers.md#installed-harness-plugins)).
 - `output_spec` and `retries`.
 - `default_environment_template_id`: referenced, not pinned; it is read when an environment is created from it, never during execution.
+- `lazy_environment`: defaults to `true`; `false` prepares all frozen mounts before the Run's first model request ([06](06-environments.md#execution)). A Run may override it through `options.overrides`.
 - `memory_mounts`: default memory mounts `{name, memory_id, access, recall}`, at most 32 with unique names and memories, which a thread takes at its first acceptance ([11](11-memory.md#mounts)). They are referenced, not pinned, and a run's override cannot change them.
 
 Tool permissions live on each selection and compile into one Harness tool-permission table.

@@ -64,7 +64,7 @@ curl -X POST "$A13N_URL/api/v1/environment-templates" \
 - `PATCH` 使用模板的 `If-Match` 修改名称、描述、provider、config 和标签。新 provider 或 recipe 仅影响之后创建的环境：环境使用创建任务派发时的模板构建，并保留该 recipe。空闲策略始终使用当前设置。
 - `PATCH {"enabled": false}` 阻止从该模板创建新环境；`{"enabled": true}` 重新允许。已有环境仍可使用。
 
-要让 agent 的每个根线程都有自己的环境，设置 agent 的 `default_environment_template_id`。没有 `workspace` 挂载的线程的运行被接收时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。 此时状态为 `reserved`，不创建厂商资源，也不排队创建操作。未使用环境的纯文本运行可直接完成。保留记录仍计入托管环境额度；Control 不会主动创建它。
+要让 agent 的每个根线程都有自己的环境，设置 agent 的 `default_environment_template_id`。没有 `workspace` 挂载的线程的运行被接收时，Service 根据该模板预留新环境，并以 `workspace` 名称挂载。 此时状态为 `reserved`，不创建厂商资源，也不排队创建操作。默认使用懒加载，未使用环境的纯文本运行可直接完成。保留记录仍计入托管环境额度；Control 不会主动创建它。
 
 ### Docker 镜像版本
 
@@ -154,7 +154,17 @@ curl -X POST "$A13N_URL/api/v1/threads/$THREAD/environments" \
 - 新线程和分叉线程通过 `environments` 字段指定初始挂载。分叉默认共享源线程挂载，除非设置 `fresh_environments`。归档线程会移除挂载。
 - 多个线程可以同时挂载和使用同一环境。
 
-每个挂载首次使用时，Worker 最多等待 `environments.wait_seconds` 让环境就绪，创建预留目标或启动已停止目标。其他实例持有操作 claim 时，Worker 会等待其发布结果；有实例正在处理不代表已经就绪。输入附件和依赖环境的技能可在调用模型前触发首次使用。未能及时就绪时，本次尝试失败，运行在尝试额度内重试；已无法使用的环境（例如已删除）让运行以 `environment_unavailable` 失败。
+`AgentConfig.lazy_environment` 默认为 `true`。每个挂载首次使用时，Worker 最多等待 `environments.wait_seconds` 让环境就绪，创建预留目标或启动已停止目标。其他实例持有操作 claim 时，Worker 会等待其发布结果；有实例正在处理不代表已经就绪。输入附件和依赖环境的技能可在调用模型前触发首次使用。未能及时就绪时，本次尝试失败，运行在尝试额度内重试；已无法使用的环境（例如已删除）让运行以 `environment_unavailable` 失败。
+
+将 agent 配置中的 `lazy_environment` 设为 `false`，可在首次模型请求前准备全部挂载并打开执行连接，即使工具不会使用它们。每个挂载检查其支持的操作和选定的工作目录，后续工具调用复用该连接。没有挂载的运行无需准备。通过 `POST …/environments` 显式创建环境的行为保持不变。
+
+消息可以通过以下选项仅覆盖本次运行：
+
+```json
+{"options": {"overrides": {"lazy_environment": false}}}
+```
+
+省略覆盖值或设为 `null` 时，沿用 agent 修订版本的配置。运行被接收后，重试和后续继续运行保持已接受的配置。异步子运行使用各自 agent 的配置；内联子 agent 共享父运行的环境。
 
 异步[子 agent](agents-and-runs.md#subagents) 按调用边的策略获得环境：共享父运行挂载（`shared`）、根据模板新建（`dedicated`），或不使用环境。
 

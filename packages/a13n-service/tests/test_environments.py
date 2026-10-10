@@ -862,6 +862,179 @@ async def test_unused_run_keeps_reservation_without_native_creation(env, scripte
     assert BACKEND.instances == {}
 
 
+@pytest.mark.parametrize(
+    "lazy,override,with_mounts", [(False, None, True), (True, False, True), (False, True, True), (False, None, False)]
+)
+async def test_preparation_policy_applies_to_all_mounts_before_the_model(
+    env, scripted_model, runs_kit, monkeypatch, lazy: bool, override: bool | None, with_mounts: bool
+) -> None:
+    from .environments_support import FakeConnector, FakeExecution
+
+    opened, closed = [], []
+    original_open, original_close = FakeConnector.open, FakeExecution.close
+
+    async def open_execution(self):
+        opened.append(self.environment_id)
+        return await original_open(self)
+
+    async def close_execution(self):
+        closed.append(self.environment_id)
+        await original_close(self)
+
+    monkeypatch.setattr(FakeConnector, "open", open_execution)
+    monkeypatch.setattr(FakeExecution, "close", close_execution)
+    model = await runs_kit.create_model(env, scripted_model)
+    agent = await runs_kit.add_agent(
+        env,
+        "preparation",
+        model,
+        lazy_environment=lazy,
+        default_environment_template_id=env.template["id"] if with_mounts else None,
+    )
+    extra = await reserve(env, env.template["id"]) if with_mounts else None
+    gate = asyncio.Event()
+    scripted_model.say("No tools needed", gate=gate)
+    submitted = await runs_kit.start_thread(
+        env,
+        agent,
+        "hello",
+        environments=[{"name": "data", "environment_id": extra["id"]}] if extra else [],
+        options={"overrides": {"lazy_environment": override}},
+    )
+    ids = {mount["environment_id"] for mount in submitted["run"]["environment_mounts"]}
+    eager = not (lazy if override is None else override)
+    task = await runs_kit.attempt(env)
+    try:
+        await scripted_model.request()
+        assert set(opened) == (ids if eager else set())
+        assert len(opened) == len(set(opened))
+        assert closed == []
+    finally:
+        gate.set()
+        await task
+    current = await runs_kit.get_run(env, submitted["run"]["id"])
+    assert current["status"] == "completed", current
+    assert sorted(closed) == sorted(opened)
+    assert len(BACKEND.preparations) == (len(ids) if eager else 0)
+
+
+async def test_eager_timeout_retries_with_the_accepted_policy(env, scripted_model, runs_kit, monkeypatch) -> None:
+    from .environments_support import FakeConnector
+
+    model = await runs_kit.create_model(env, scripted_model)
+    agent = await runs_kit.add_agent(env, "preparation", model, default_environment_template_id=env.template["id"])
+    submitted = await runs_kit.start_thread(env, agent, "hello", options={"overrides": {"lazy_environment": False}})
+    identity = submitted["run"]["environment_mounts"][0]["environment_id"]
+    original = FakeConnector.open
+    opened = []
+
+    async def open_execution(self):
+        opened.append(self.environment_id)
+        if len(opened) == 1:
+            await asyncio.Event().wait()
+        return await original(self)
+
+    monkeypatch.setattr(FakeConnector, "open", open_execution)
+    limits = env.runtime.settings.environments.model_copy(update={"wait_seconds": 0.5})
+    runtime = replace(env.runtime, settings=env.runtime.settings.model_copy(update={"environments": limits}))
+    await (await runs_kit.attempt(env, runtime=runtime))
+    failed = await runs_kit.get_run(env, submitted["run"]["id"])
+    assert failed["status"] == "accepted", failed
+    assert scripted_model.requests.empty()
+    assert opened == [identity]
+    changed = await env.client.post(
+        f"{env.api}/agents/{agent['id']}/revisions",
+        json={"config": {"model": model, "lazy_environment": True}, "make_default": True},
+        headers={"if-match": f'"{agent["id"]}:{agent["version"]}"'},
+    )
+    assert changed.status_code == 201, changed.text
+    scripted_model.say("Recovered")
+    await (await runs_kit.attempt(env))
+    current = await runs_kit.get_run(env, submitted["run"]["id"])
+    assert current["status"] == "completed", current
+    assert opened == [identity, identity]
+    assert len(BACKEND.preparations) == 1
+    assert current["options"]["overrides"]["lazy_environment"] is False
+
+
+async def test_eager_preparation_reuses_the_open_execution_for_tools(
+    env, local_instance, scripted_model, runs_kit, monkeypatch
+) -> None:
+    from a13n_environment.direct_local.execution import DirectLocalExecution
+
+    identity, root = local_instance
+    (root / "proof.txt").write_text("prepared once")
+    opened = []
+    original = DirectLocalExecution.open
+
+    async def open_execution(self, **kwargs):
+        opened.append(self.environment_id)
+        return await original(self, **kwargs)
+
+    monkeypatch.setattr(DirectLocalExecution, "open", open_execution)
+    agent = await runs_kit.create_agent(env, scripted_model, lazy_environment=False)
+    gate = asyncio.Event()
+    scripted_model.call("view", {"file_path": "/workspace/proof.txt"}, call_id="prepared", gate=gate)
+    scripted_model.say("Read it")
+    submitted = await runs_kit.start_thread(
+        env, agent, "read", environments=[{"name": "workspace", "environment_id": identity}]
+    )
+    task = await runs_kit.attempt(env)
+    try:
+        await scripted_model.request()
+        assert opened == [identity]
+    finally:
+        gate.set()
+        await task
+    assert (await runs_kit.get_run(env, submitted["run"]["id"]))["status"] == "completed"
+    request = await scripted_model.request()
+    assert "prepared once" in str(request)
+    assert opened == [identity]
+
+
+@pytest.mark.parametrize("signal", ["stopped", "handoff"])
+async def test_eager_preparation_stops_before_inference_and_keeps_the_operation(
+    env, scripted_model, runs_kit, monkeypatch, signal: str
+) -> None:
+    from a13n_service.runs.attempts import AttemptControl
+    from a13n_service.runs.execute import execute
+
+    from .environments_support import FakeProvider
+
+    started = asyncio.Event()
+
+    async def creating(self, recipe, **kwargs):
+        started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(FakeProvider, "create", creating)
+    model = await runs_kit.create_model(env, scripted_model)
+    agent = await runs_kit.add_agent(
+        env, "preparation", model, lazy_environment=False, default_environment_template_id=env.template["id"]
+    )
+    submitted = await runs_kit.start_thread(env, agent, "hello")
+    [lease] = await claim_run(env.runtime, worker_id="worker-eager", worker_build="test", limit=1)
+    control = AttemptControl()
+    task = asyncio.create_task(execute(env.runtime, lease, control))
+    try:
+        await asyncio.wait_for(started.wait(), timeout=5)
+        identity = submitted["run"]["environment_mounts"][0]["environment_id"]
+        operation = (await environment(env, identity))["operation_id"]
+        getattr(control, signal).set()
+        await asyncio.wait_for(task, timeout=5)
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+    current = await runs_kit.get_run(env, submitted["run"]["id"])
+    assert current["status"] == ("cancelled" if signal == "stopped" else "accepted"), current
+    attempts = (await env.client.get(f"{env.api}/runs/{current['id']}/attempts")).json()["items"]
+    assert attempts[0]["status"] == ("cancelled" if signal == "stopped" else "yielded")
+    instance = await environment(env, identity)
+    assert instance["status"] == "creating" and instance["operation_id"] == operation
+    assert instance["failure"]["code"] == "environment_operation_interrupted"
+    assert scripted_model.requests.empty()
+
+
 async def test_first_readiness_claims_locally_and_publishes_before_returning(env, monkeypatch) -> None:
     from .environments_support import FakeProvider
 
@@ -977,13 +1150,15 @@ async def test_unused_reservation_is_deleted_without_provider_calls(env) -> None
 
 
 @pytest.mark.parametrize("code", ["unavailable", "disabled"])
-async def test_tool_first_use_preserves_service_failure_and_attempt_policy(
+@pytest.mark.parametrize("lazy", [True, False])
+async def test_environment_preparation_preserves_service_failure_and_attempt_policy(
     env,
     local_instance,
     scripted_model,
     runs_kit,
     monkeypatch,
     code: str,
+    lazy: bool,
 ) -> None:
     import a13n_service.runs.environments.execution as execution
     from a13n_service.infra.errors import ServiceError
@@ -993,7 +1168,7 @@ async def test_tool_first_use_preserves_service_failure_and_attempt_policy(
 
     monkeypatch.setattr(execution, "_ready", refused)
     identity, _ = local_instance
-    agent = await runs_kit.create_agent(env, scripted_model)
+    agent = await runs_kit.create_agent(env, scripted_model, lazy_environment=lazy)
     scripted_model.call("view", {"file_path": "/workspace/proof.txt"}, call_id="first-use")
     scripted_model.say("This must not run after a Host preparation failure")
     submitted = await runs_kit.start_thread(
@@ -1012,6 +1187,8 @@ async def test_tool_first_use_preserves_service_failure_and_attempt_policy(
         assert current["status"] == "failed", current
         assert current["failure"]["code"] == "environment_unavailable"
     assert current.get("output") != "This must not run after a Host preparation failure"
+    if not lazy:
+        assert scripted_model.requests.empty()
 
 
 async def test_tool_first_use_rejects_invalid_mount_directory_without_breaking_instance(

@@ -38,6 +38,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.capabilities.steering import steering_input_ids
+from a13n_harness.environment import EnvironmentError, EnvironmentReadinessRequirement
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.usage import without_usage
@@ -466,6 +467,11 @@ class _Attempt:
             async with stream:
                 interrupt = asyncio.create_task(self._cancel_when_stopped(stream))
                 try:
+                    if not root.config.lazy_environment:
+                        if not await self._prepare_environments(stream.context.environment):
+                            if not self.control.stopped.is_set():
+                                return None
+                            stream.cancel()
                     async with self.boundaries.process(partial(self._boundary, stream=stream, output=output)):
                         async for item in stream:
                             await self._observe(item, output)
@@ -475,6 +481,48 @@ class _Attempt:
         if stream.result is None:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
         return stream.result
+
+    async def _prepare_environments(self, environment: BoundEnvironment) -> bool:
+        """Prepare frozen mounts under Harness ownership; stop or handoff interrupts the wait."""
+        if self.control.stopped.is_set() or self.control.handoff.is_set():
+            return False
+        if not environment.snapshot.mounts:
+            return True
+        logger.info("Preparing run environments before model execution")
+        readiness = [
+            asyncio.create_task(
+                environment.ensure_ready(
+                    EnvironmentReadinessRequirement(
+                        mounts=frozenset({mount.name}),
+                        operations=mount.descriptor.operation_families,
+                        timeout_seconds=self.runtime.settings.environments.wait_seconds,
+                    )
+                )
+            )
+            for mount in environment.snapshot.mounts
+        ]
+        prepared = asyncio.gather(*readiness)
+        signals = [asyncio.create_task(event.wait()) for event in (self.control.stopped, self.control.handoff)]
+        try:
+            await asyncio.wait([prepared, *signals], return_when=asyncio.FIRST_COMPLETED)
+            if self.control.stopped.is_set() or self.control.handoff.is_set():
+                return False
+            try:
+                await prepared
+            except EnvironmentError as error:
+                if error.code != "environment_timeout":
+                    raise
+                raise ServiceError(
+                    "unavailable",
+                    "The run environments did not become ready in time",
+                    {"dependency": "environment", "reason": "environment_not_ready"},
+                ) from error
+            return True
+        finally:
+            for task in [*readiness, *signals]:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(prepared, *readiness, *signals, return_exceptions=True)
 
     async def _observe(self, item: HarnessStreamEvent, output: Coalescer) -> None:
         event = item.event if isinstance(item, HarnessEvent) else None

@@ -160,6 +160,8 @@ class AgentConfig(_Frozen):
     retries: RetryConfig | None = None
     # Referenced, not pinned: read when an environment is created from it, never during execution.
     default_environment_template_id: ObjectId | None = None
+    # Otherwise prepare every frozen mount before the first model request.
+    lazy_environment: bool = True
     # Added to a thread's memory mounts at its first acceptance, for names and memories it does not use yet.
     memory_mounts: MemoryMounts = ()
 
@@ -206,6 +208,7 @@ class AgentOverride(_Frozen):
     model_settings: ModelSettings | None = None
     model_characteristics: AgentModelCharacteristics | None = None
     instructions: Instructions | None = None
+    lazy_environment: bool | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
     connection_tools: tuple[ConnectionSelection, ...] | None = Field(default=None, max_length=128)
@@ -222,6 +225,7 @@ _REPLACED = (
     "reviewer",
     "media_understanding",
     "instructions",
+    "lazy_environment",
     "plugins",
     "skills",
     "connection_tools",

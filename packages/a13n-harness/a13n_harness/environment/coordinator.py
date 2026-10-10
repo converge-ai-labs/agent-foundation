@@ -160,7 +160,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
         self._mount_tasks: dict[_MountKey, dict[asyncio.Task[Any], int]] = {}
         self._mount_drained: dict[_MountKey, asyncio.Event] = {}
         self._active_process_handles: dict[_MountKey, set[BoundProcessHandle]] = {}
-        self._readiness_tasks: dict[tuple[str, str, str], asyncio.Task[None]] = {}
+        self._readiness_tasks: dict[tuple[str, str, str | None], asyncio.Task[None]] = {}
         self._readiness_waiters: dict[asyncio.Task[None], int] = {}
         self._retirement_tasks: set[asyncio.Task[None]] = set()
         self._retirement_failures: list[BaseException] = []
@@ -991,7 +991,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         code="environment_selection_invalid",
                         details={"name": name},
                     )
-                if not entered.public.descriptor.operation_families & requested:
+                if requested and not entered.public.descriptor.operation_families & requested:
                     raise EnvironmentError(
                         "An explicitly selected mount advertises none of the requested families.",
                         code="environment_readiness_invalid",
@@ -1011,7 +1011,10 @@ class CompositeBoundEnvironment(BoundEnvironment):
         async def wait_one(entered: _EnteredMount) -> None:
             async with self._mount_slot(entered):
                 families = frozenset(entered.public.descriptor.operation_families & requested)
-                await asyncio.gather(*(self._ensure_provider_family(entered, family) for family in families))
+                if families:
+                    await asyncio.gather(*(self._ensure_provider_family(entered, family) for family in families))
+                else:
+                    await self._ensure_provider_family(entered, None)
                 entered = self._current_publication(entered)
                 self._validate_live_observation(entered, entered.provider.availability, families)
 
@@ -1166,9 +1169,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
             raise EnvironmentError("Environment mount is stale.", code="environment_stale_mount")
         return current
 
-    async def _prepare_provider(self, entered: _EnteredMount, family: EnvironmentOperationFamily) -> None:
+    async def _prepare_provider(self, entered: _EnteredMount, family: EnvironmentOperationFamily | None) -> None:
         try:
-            await entered.provider.check_ready(frozenset({family}))
+            await entered.provider.check_ready(frozenset({family}) if family is not None else frozenset())
         finally:
             # Readiness can narrow capabilities, but cannot replace this execution
             # or its backing target. Reopening uses explicit mount replacement.
@@ -1208,7 +1211,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
     async def _ensure_provider_family(
         self,
         entered: _EnteredMount,
-        family: EnvironmentOperationFamily,
+        family: EnvironmentOperationFamily | None,
     ) -> None:
         key = (entered.mount_id, entered.public.descriptor.generation, family)
         mount_key = self._mount_key(entered)
