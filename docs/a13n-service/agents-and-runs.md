@@ -45,7 +45,7 @@ The response's `id` (`ap_…`) identifies the agent in paths and references; age
 - `POST …/archive` stops new runs of the agent (`422 disabled`); runs already accepted finish. `POST …/unarchive` reverses it.
 - Lists filter by `label`, `q` (name or description), `archived`, `source` (`custom` or `builtin`), and `skill_id` or `skill_revision_id`, which keep the agents with a revision pinning it.
 
-The built-in [Agent Composer](agent-composer.md) is an agent too, the workspace's one with `source: "builtin"`; it cannot be changed or archived.
+The built-in [Agent Composer](agent-composer.md) and Finding Agent are agents with `source: "builtin"`, distinguished by `preset_kind`. Their entire configuration is read-only, including models and model settings. Preparation automatically selects a usable model and retains the current one while usable. Metadata, avatar, archiving and default-version changes are protected.
 
 ### Agent configuration
 
@@ -442,3 +442,33 @@ With a trace backend configured (`telemetry.trace_backend`, see [logs, metrics a
 - `GET …/trace-backend` returns the backend `type` (`null` when none) and `queryable_since`.
 
 Queries return only the workspace's spans. Without a backend they answer `503 unavailable`. How much content the spans hold depends on `telemetry.trace_content`.
+
+## Find and improve execution issues
+
+Open **Improve → Findings** to review diagnostic signals about Agent runs. Each finding includes a severity, human assessment, cited Agent version, trace/Run evidence, explanation and suggestion. A critical finding is still unconfirmed until you review it. The saved assessment and review note appear in reading mode. Select **Edit assessment**, choose confirmed, expected, insufficient, or false positive, optionally add a **Review note**, then select **Save assessment**. The outcome and note are saved together. Changing the outcome clears the previous rationale; Cancel restores saved values and returns to reading mode. Closing and reopening preserve the assessment and note, and the original diagnosis and evidence stay visible.
+
+Filter findings by category, severity, assessment or open/closed state. Each finding uses one primary category for its central claim:
+
+| Category             | Meaning                                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `unclear_request`    | Missing or ambiguous user intent or constraints materially affected the task.                                     |
+| `instruction_issue`  | Incorrect, conflicting or incomplete Agent instructions, with the instruction cited.                              |
+| `tool_design`        | A defect in a tool contract, schema, description or behavior for valid input.                                     |
+| `tool_usage`         | Incorrect tool selection, arguments or usage despite an adequate contract.                                        |
+| `tool_execution`     | An evidenced runtime or dependency failure during a tool invocation.                                              |
+| `answer_quality`     | An unsupported, misleading, materially incomplete or off-target final answer.                                     |
+| `context_gap`        | Task intent is clear, but required information is missing, lost, stale or incorrectly retrieved.                  |
+| `workflow_issue`     | A multistep process omits a required step, violates dependency order, loses a handoff result or ends prematurely. |
+| `boundary_violation` | An evidenced violation of an explicit approval, authorization or task constraint.                                 |
+
+Categories describe the issue, independently of the selected analysis rules, severity and your review. An unsupported success claim is an answer-quality issue even if a tool failure provides the evidence. Missing trace capture is a limitation; an expected permission denial or provider refusal is not a boundary violation. A recovered error alone need not be reported. Categories do not prove a root cause; uncertain causes stay in the explanation/limitations. Suggestions can recommend investigation when a fix is not yet verified.
+
+Later analyses of the same agent version receive recent existing findings, including unreviewed and closed findings. Unreviewed findings describe prior diagnoses; reviewed findings also supply your judgment and note. Findings from other versions are excluded. The agent compares issues and evidence, cites an existing finding in its summary for an equivalent diagnosis, and explains material changes when reporting a new finding. This reduces duplicate diagnoses without guaranteeing complete deduplication or merging stored findings. Feedback is bounded and may be shortened; each accepted analysis retains the values it received, so editing a review affects new analyses rather than retries. Use the note to explain why a diagnosis is wrong or why an apparent error is expected. The agent treats feedback as context and may report new evidence that changes the judgment.
+
+Choose **Analyze traces**, select built-in rules and a time range/count. No Agent selection is required; the scope covers workspace traces. Analysis automatically uses the built-in Finding Agent. Preparation automatically selects an available model and keeps the current model while it remains usable; its model and configuration are read-only. Analysis runs on demand through an ordinary Service Run. The deployment needs a configured trace query backend. Rules focus on execution failures, retries/recovery and answer quality; an error that recovered successfully is considered in context. From an ended trace, **Analyze trace** selects that one trace.
+
+Selection scans at most 100 roots and selects at most 20 matching traces. Execution and recovery rules prioritize failed runs and roots marked error/fatal within this scan, preserving backend order among equally prioritized candidates. Errors visible only in child spans do not affect selection priority. Answer-only analysis keeps backend order. A priority signal is a reason to investigate, not proof of a problem. The **Analysis history** tab lists analysis scopes, Run status and creation time in a table. Open a row to see selected trace count, finding count, distinct evidence-cited trace count, selection limits and trace links. These counts do not establish how many traces were fully analyzed. Open the analysis Run from the dialog to read its final summary and limitations. No findings does not mean that all traces were reviewed or that the Agent is healthy.
+
+For findings other than expected or false positive, **Review with Composer** opens a conversation naming the finding and cited version; Composer reads the evidence through its read-only finding tool. Send the proposed message, review Composer's change and approve the configuration write when appropriate. Nothing is automatically repaired or published. Experiments and datasets are not required.
+
+Custom Agents can enable configuration, trace-query and finding-submission tools under **Advanced / Platform Features**. Configuration writes default to asking; Finding Agent's managed preset has read access to configuration and no Agent write tools. External integrations can submit the same finding contract with `POST /api/v1/findings`, using a stable `source_key` unique to the submitting principal in the workspace. The producer is responsible for its trace/span references; the Service validates cited Runs and their Agent revision.

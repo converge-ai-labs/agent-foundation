@@ -62,6 +62,30 @@ The Usage verification compares daily, Agent and model totals with the overview,
 
 It reads the state back through the API and writes the seeded IDs and the verification to `var/dev/seed-report.md`; any failed check fails the reset. The scripted model's prompt markers, such as `[client]`, `[workspace]` and `[fail]`, select its behavior (see `dev/fixtures/model.py`).
 
+### Findings preview
+
+With queryable tracing, the same seeded reset adds a release operations Agent with three real scripted Runs and one completed managed Findings analysis. Open **Improve → Findings** for:
+
+- An unreviewed `answer_quality` diagnosis centered on an unsupported shipping quote; missing clarification is supporting evidence.
+- A confirmed `tool_execution` dependency issue with a reviewer note.
+- A closed `boundary_violation` false positive: a permission denial was misclassified, with a corrective review note explaining the expected behavior.
+
+Long titles and notes exercise the list and detail layout. Trace, span, Run and Agent revision links come from actual execution and tool reads. The analysis records its selected and read traces and derives its finding and cited-trace counts. The scripted analyst recognizes only the explicit preview markers in trace inputs; these fictional examples demonstrate interaction and provenance, not model quality or complete analysis.
+
+For the complete preview, start the shared local Langfuse stack with `make langfuse-up`, then run `make dev-reset STATE=seeded TRACES=langfuse` and `make dev`. This requires Docker and queryable Langfuse; no paid model provider is used. `TRACES=none` creates the example Agent and Runs but omits Findings and analysis history, without inventing trace IDs. `seed_verify.py` checks whichever tracing mode was selected and records the result in `var/dev/seed-report.md`.
+
+### Resetting earlier Findings PR databases
+
+The Findings feature uses one migration from the pre-feature schema. Disposable checkout databases previously upgraded through earlier intermediate or consolidated PR revisions must be reset and reseeded:
+
+```sh
+make dev-stop
+make dev-reset STATE=seeded
+make dev
+```
+
+These commands replace only this checkout's development stores. They do not reset the shared Langfuse stack or a hosted database. Recreate and reseed disposable hosted previews that used the earlier PR revisions before deploying this consolidated migration; do not apply this reset procedure to production data.
+
 ## Private development resources
 
 To use real providers in a seeded checkout, copy [dev-resources.example.toml](dev-resources.example.toml) to `~/.a13n/dev-resources.toml`, set its mode to `0600`, and fill in credentials. The file lives outside every checkout and is shared by all of them. It is read only as a regular file owned by the current user and not readable by others; errors name the offending location, never a value.

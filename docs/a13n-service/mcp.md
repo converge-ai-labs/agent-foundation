@@ -30,6 +30,8 @@ Set `server.public_url` to the externally reachable Service URL, and have the pr
 
 Tools are generated from explicitly admitted operations in the deployment's assembled OpenAPI, including admitted Distribution extensions. New HTTP routes are not automatically exposed. Tool names derive from operation IDs; discover the exact names and parameter schemas from your deployment. No tool accepts an arbitrary URL, method, or operation name.
 
+Read-only [Findings and analysis history](agents-and-runs.md#find-and-improve-execution-issues) are also available through MCP. Submit/review findings, prepare Finding Agent and start analysis through their direct HTTP APIs.
+
 MCP does not grant additional permissions or approval authority. For example, managing subscriptions still requires workspace `admin`, and trace queries retain the HTTP API's tenancy filtering and redaction.
 
 ## Read and update resources

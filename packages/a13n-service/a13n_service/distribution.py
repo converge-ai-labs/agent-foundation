@@ -71,6 +71,8 @@ from a13n_service.runs.children import child_results
 from a13n_service.runs.environments.maintenance import maintenance_sweep, renewal_sweep
 from a13n_service.runs.environments.routes import router as environments_router
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
+from a13n_service.runs.findings.routes import router as findings_router
+from a13n_service.runs.findings.tables import AnalysisRow, FindingRow
 from a13n_service.runs.memories.routes import router as thread_memories_router
 from a13n_service.runs.memories.tables import ThreadMemoryRow
 from a13n_service.runs.routes import router as runs_router
@@ -293,6 +295,8 @@ OSS = Distribution(
         SkillRow,
         SkillRevisionRow,
         AgentRow,
+        FindingRow,
+        AnalysisRow,
         AgentRevisionRow,
         MemoryProviderRow,
         MemoryRow,
@@ -325,6 +329,7 @@ OSS = Distribution(
         runs_router,
         usage_router,
         traces_router,
+        findings_router,
         environment_templates_router,
         environments_router,
         memories_router,

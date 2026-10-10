@@ -32,6 +32,7 @@ from a13n_service.runs.assets import AssetsCapability
 from a13n_service.runs.attempts import Lease, prove
 from a13n_service.runs.calls import CallCheck
 from a13n_service.runs.configuration import ConfigurationCapability
+from a13n_service.runs.findings.tools import FindingCapability
 from a13n_service.runs.memories.execution import (
     PlannedMemory,
     file_memory,
@@ -125,6 +126,12 @@ class Host:
         if configuration := enabled_tools(agent.config.toolsets, "configuration"):
             features.append(
                 ConfigurationCapability(self.runtime, self.lease, self.principal, self.authority, configuration)
+            )
+        trace_tools = enabled_tools(agent.config.toolsets, "traces")
+        finding_tools = enabled_tools(agent.config.toolsets, "findings")
+        if trace_tools or finding_tools:
+            features.append(
+                FindingCapability(self.runtime, self.lease, self.principal, self.authority, trace_tools, finding_tools)
             )
         return features
 

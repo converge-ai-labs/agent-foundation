@@ -17,6 +17,7 @@ import {
   Section,
   useTabParam,
 } from "../../shared/page";
+import { AnalyzeTrace } from "../findings/analyze-trace";
 import { TraceContent } from "./content";
 import { formatCost } from "../../shared/cost";
 import { backendName, useTraceBackend } from "./backend";
@@ -159,6 +160,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
           resourceKey={root.trace_id}
           actions={
             <>
+              <AnalyzeTrace runId={correlation.run_id} traceId={traceId} />
               {run && (
                 <Button
                   variant="outline"

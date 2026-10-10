@@ -16,6 +16,7 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from . import findings as finding_fixture
 from .api import router as fixture_router
 from .mem0 import keep as keep_mem0_records
 from .mem0 import router as mem0_router
@@ -69,6 +70,7 @@ async def completion(request: Request):
     tool_call = (
         planned_tool(body, prompt)
         if tool_result is None
+        or finding_fixture.selection(prompt) is not None
         or any(flag in prompt for flag in ("[structured-invalid]", "[delegate]", "[workspace]", "[memory-edit]"))
         else None
     )
@@ -89,6 +91,11 @@ async def completion(request: Request):
         text = (
             "## Local tool result\n\nThe local fixture returned:\n\n```json\n" + str(tool_result) + "\n```\n\n" + text
         )
+    for key, example in finding_fixture.EXAMPLES.items():
+        if f"[finding-{key}]" in prompt:
+            text = example["reply"]
+    if finding_fixture.selection(prompt) is not None:
+        text = "## Fictional Findings analysis\n\nRead the selected trace roots and steps, then submitted the recognized preview diagnoses with trace evidence. These scripted examples exercise review and navigation; they do not measure inference quality or establish complete review."
     response_id = "chatcmpl-local-development"
     usage = {"prompt_tokens": 20, "completion_tokens": len(text) // 4, "total_tokens": 20 + len(text) // 4}
     usage_chunk = (
@@ -189,6 +196,14 @@ def planned_tool(body: dict, prompt: str) -> dict | list[dict] | None:
         ),
     )
     tools = [item["function"] for item in body.get("tools", [])]
+    if finding_fixture.selection(prompt) is not None:
+        plan = finding_fixture.steps(body.get("messages", []), prompt)
+        made = sum(len(message.get("tool_calls") or []) for message in body.get("messages", []))
+        if made >= len(plan):
+            return None
+        name, arguments = plan[made]
+        selected = next((tool for tool in tools if tool["name"] == name), None)
+        return call(selected["name"], arguments) if selected else None
     if "[workspace]" in prompt:
         return workspace_step(body, tools)
     if "[memory-edit]" in prompt:

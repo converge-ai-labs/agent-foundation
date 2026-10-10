@@ -329,6 +329,7 @@ class Agent(BaseModel):
     labels: dict[str, str]
     default_revision_id: str | None
     source: AgentSource
+    preset_kind: Literal["composer", "finding"] | None = None
     image_url: str | None
     archived_at: datetime | None
     version: int

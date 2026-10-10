@@ -59,9 +59,9 @@ Agents and skills share the head and revision shape and one set of helpers in `r
 ## Agents
 
 ```
-agents            head columns + source  image NULL
+agents            head columns + source  preset_kind NULL  image NULL
                   CHECK (source IN ('custom', 'builtin'))
-                  UNIQUE (workspace_id) WHERE source = 'builtin'
+                  UNIQUE (workspace_id, preset_kind) WHERE source = 'builtin'
 agent_revisions   revision columns; config: AgentConfig
 ```
 
@@ -69,7 +69,7 @@ agent_revisions   revision columns; config: AgentConfig
 
 - `model`: a model key, with `model_settings`, native settings for the model's calling API, and `model_characteristics`, the context characteristics the agent assumes.
 - `instructions`.
-- `toolsets`: the built-in toolsets `files`, `shell`, `web`, `memory`, `assets` and `configuration`, stored normalized against the catalogue `GET /toolsets` serves. Enabled web search and scrape name a web provider resource.
+- `toolsets`: the built-in toolsets `files`, `shell`, `web`, `memory`, `assets`, `configuration`, `traces` and `findings`, stored normalized against the catalogue `GET /toolsets` serves. Enabled web search and scrape name a web provider resource.
 - `skills`: `{skill_id, revision_id}` selections.
 - `connection_tools`: `{connection_id, tools, defer_loading, permission, permissions}` selections ([Connections](#connections)).
 - `client_tools`, whose results a client supplies through resume, and `user_questions`, which offers `ask_user_question`.
@@ -104,7 +104,7 @@ An author's references need `read`. A run's override (`options.overrides`, [05](
 
 - `POST /agents` `{name, description, labels, config}` creates the head and revision 1.
 - `POST /agents/validate` `{config, agent_id?}` needs `write`, applies revision validation and writes nothing: 204, or the same `invalid_argument`. `agent_id` names the agent the configuration would become a revision of, so the graph check sees cycles through it.
-- `GET /agents` filters by `label`, `q`, `archived`, `source`, and by `skill_id` and `skill_revision_id`, which keep the agents with a revision that pins them.
+- `GET /agents` filters by `label`, `q`, `archived`, `source`, `preset_kind`, and by `skill_id` and `skill_revision_id`, which keep the agents with a revision that pins them.
 - `PATCH /agents/{agent}` changes `name`, `description` and `labels`.
 - `POST /agents/{agent}/archive` and `/unarchive` take `If-Match`.
 - `POST /agents/{agent}/duplicate` `{name, description, labels, revision_id?}` creates a custom head whose revision 1 copies one revision of an unarchived source, validated again. The avatar is not copied.
@@ -115,13 +115,23 @@ Export and import are Console features: the Console serializes one revision's co
 
 ### Agent Composer
 
-**Agent Composer** is an ordinary agent with `source = 'builtin'`, the workspace's only one; `GET /agents?source=builtin` finds it. `POST /agent-composer` (needs `write`) creates or refreshes it on demand and returns it:
+**Agent Composer** is an ordinary agent with `source = 'builtin'` and `preset_kind = 'composer'`; `GET /agents?source=builtin&preset_kind=composer` finds it. `POST /agent-composer` (needs `write`) creates or refreshes it on demand and returns it:
 
 - Its model is the one it already uses while that model stays usable, else the first model whose upstream name, after its last `/`, matches `composer.models` in preference order, else the workspace's first usable model by key. Without a usable model the call is 409 `model_required`.
 - A refresh synchronizes the deployment-owned name and description and appends a revision only when the configuration's digest changed. A preparation that changes neither metadata nor configuration leaves the head version unchanged and emits no update audit event.
 - A builtin head refuses metadata and avatar changes, revisions, default changes and archiving (409 `builtin`). It is visible and can be duplicated into a custom agent.
 
-Its tools are the built-in `configuration` toolset, which any agent may enable: `find_resources`, `read_resource` (by a model's key or any other resource's ID; an agent with its default revision's configuration, or with `revision_id`'s) and `describe_agent_config` read resources the run's principal may read, and `create_agent` and `create_agent_revision` call the same service functions as the API under the run's authority. The write tools default to the `ask` permission, which also keeps a repeated `create_agent`, which makes another agent, from going unseen. How a refusal reaches the model is [05](05-runs.md#execute)'s Service tools rule. There are no drafts and no separate session kind: the conversation is the editing session, and the revision is its result.
+It also enables read-only finding and trace-query tools to inspect durable evidence accompanying a finding. Its configuration tools are the built-in `configuration` toolset, which any agent may enable: `find_resources`, `read_resource` (by a model's key or any other resource's ID; an agent with its default revision's configuration, or with `revision_id`'s) and `describe_agent_config` read resources the run's principal may read, and `create_agent` and `create_agent_revision` call the same service functions as the API under the run's authority. The write tools default to the `ask` permission, which also keeps a repeated `create_agent`, which makes another agent, from going unseen. How a refusal reaches the model is [05](05-runs.md#execute)'s Service tools rule. There are no drafts and no separate session kind: the conversation is the editing session, and the revision is its result.
+
+### Finding Agent
+
+**Finding Agent** is an ordinary builtin Agent with `preset_kind = 'finding'`, distinct from Composer. Custom Agents have no preset kind. `POST /finding-agent` needs `write` and takes no request body. Preparation keeps the current usable model or automatically chooses the first usable model by key; no usable model is `model_required`. Its deployment-owned definition refreshes through normal immutable revisions. Builtin editing restrictions and duplication apply to both presets; users cannot edit their model or model settings.
+
+Deployments update API-serving and Worker roles together before preparing new presets: older builds assume a single builtin Agent and do not understand the new toolsets. The migration backfills existing builtin heads as Composer; a downgrade preserves Finding Agent heads as custom Agents without promising older builds can execute their configurations.
+
+Finding Agent reads configuration and authorized trace evidence, considers bounded exact-revision existing Findings and reviewer feedback as untrusted context, submits unreviewed findings, and summarizes results and limitations in its final reply ([07](07-facts-and-delivery.md#findings-and-analysis)). Its default configuration offers no Agent creation or revision tools. Analysis runs use ordinary Session, Thread, Run, usage and interruption lifecycles.
+
+The `traces` and `findings` toolsets are disabled by default and selectable per tool for custom Agents. Trace tools list roots, read a root and page through its steps using the same authorized backend queries as HTTP. Finding submission uses the same validation and authority as HTTP; its source Run comes from trusted execution context. Tool permissions remain independently selectable; configuration writes retain their default `ask` permission.
 
 ## Skills
 

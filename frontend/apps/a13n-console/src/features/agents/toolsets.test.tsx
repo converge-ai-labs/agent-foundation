@@ -526,3 +526,62 @@ it("enables local Web tools while Provider discovery is still pending", async ()
   await user.click(search);
   expect(draft().web.tools.search.config.provider_id).toBe("wprov_brave");
 });
+
+it("keeps platform choices when opening and toggling the group, including default ask on writes", async () => {
+  const configuration = {
+    key: "configuration",
+    display_name: "Configuration",
+    default_enabled: false,
+    config_schema: {},
+    tools: ["read", "create_revision"].map((key) => ({
+      key,
+      model_name: key,
+      display_name: key,
+      execution_id: key,
+      default_enabled: true,
+      default_permission: key === "read" ? "allow" : "ask",
+      config_schema: {},
+      supported_permissions: ["inherit", "allow", "ask", "deny", "review"],
+      resource_selector: null,
+    })),
+  };
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/toolsets")
+      ? { items: [configuration] }
+      : { items: [], next_cursor: null },
+  }));
+  http.POST.mockResolvedValue({
+    response: new Response(null, { status: 204 }),
+  });
+  const starting: NonNullable<AgentConfig["toolsets"]> = {
+    configuration: {
+      enabled: false,
+      tools: {
+        create_revision: { enabled: false, config: {} },
+        read: { enabled: true, permission: "deny", config: {} },
+      },
+    },
+  };
+  const { user, draft } = renderDraft(starting);
+  await user.click(
+    await screen.findByRole("button", { name: "Advanced / Platform Features" }),
+  );
+  expect(draft()).toEqual(starting);
+  await user.click(
+    screen.getByRole("checkbox", { name: "Enable Configuration tools" }),
+  );
+  expect(draft().configuration.enabled).toBe(true);
+  expect(draft().configuration.tools.create_revision).toMatchObject({
+    enabled: false,
+    permission: "ask",
+  });
+  expect(draft().configuration.tools.read).toMatchObject({
+    enabled: true,
+    permission: "deny",
+  });
+  await user.click(
+    screen.getByRole("checkbox", { name: "Enable Configuration tools" }),
+  );
+  expect(draft().configuration.tools.create_revision.enabled).toBe(false);
+  expect(draft().configuration.tools.read.enabled).toBe(true);
+});

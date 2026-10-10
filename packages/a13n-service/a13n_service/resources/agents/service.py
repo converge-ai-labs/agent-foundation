@@ -36,7 +36,7 @@ from a13n_service.resources.agents.schemas import (
     apply_override,
     freeze_override,
 )
-from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
+from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow, PresetKind
 from a13n_service.resources.agents.validation import validate_config
 from a13n_service.resources.rows import audit_row, given
 from a13n_service.tenancy.access import workspace_scope
@@ -57,6 +57,7 @@ def agent_view(head: AgentRow) -> Agent:
         labels=head.labels,
         default_revision_id=head.default_revision_id,
         source=head.source,
+        preset_kind=head.preset_kind,
         image_url=images.url(f"/api/v1/agents/{head.id}/avatar", head.image),
         archived_at=head.archived_at,
         version=head.version,
@@ -118,6 +119,7 @@ async def insert_head(
     body: AgentCreate,
     *,
     source: str = "custom",
+    preset_kind: PresetKind | None = None,
     registry: Registry,
     plugins: HarnessPluginFactoryCatalog,
 ) -> AgentRow:
@@ -129,6 +131,7 @@ async def insert_head(
         description=body.description,
         labels=body.labels,
         source=source,
+        preset_kind=preset_kind,
         created_by_id=actor.id,
         updated_by_id=actor.id,
     )
@@ -272,6 +275,7 @@ async def list_agents(
     q: str | None = None,
     archived: bool | None = None,
     source: AgentSource | None = None,
+    preset_kind: PresetKind | None = None,
     skill_id: str | None = None,
     skill_revision_id: str | None = None,
     limit: int,
@@ -285,6 +289,8 @@ async def list_agents(
             label_filter(AgentRow.labels, labels),
             revisions.head_filter(AgentRow, q=q, archived=archived),
         )
+        if preset_kind is not None:
+            query = query.where(AgentRow.preset_kind == preset_kind)
         if source is not None:
             query = query.where(AgentRow.source == source)
         # Agent revisions store their pins as `config.skills: [{skill_id, revision_id}]`.
@@ -300,7 +306,9 @@ async def list_agents(
             query,
             AgentRow.id,
             kind="agents",
-            owner=cursors.query_owner(scope.workspace_id, labels, q, archived, source, skill_id, skill_revision_id),
+            owner=cursors.query_owner(
+                scope.workspace_id, labels, q, archived, source, preset_kind, skill_id, skill_revision_id
+            ),
             cursor=cursor,
             limit=limit,
         )
