@@ -545,7 +545,8 @@ def _convert_part_start(item: HarnessEvent, event: PartStartEvent, state: _Obser
             events.append(TextMessageContentEvent(timestamp=timestamp, message_id=message_id, delta=part.content))
         return events
     if isinstance(part, ThinkingPart):
-        message_id = part.id or _part_id(item.run_id, state.request_index, event.index, "reasoning")
+        # A provider reasoning item can contain several summary parts with the same id.
+        message_id = _part_id(item.run_id, state.request_index, event.index, "reasoning")
         cursor = _PartCursor(
             kind="reasoning",
             part_id=message_id,
@@ -638,8 +639,11 @@ def _convert_part_end(item: HarnessEvent, event: PartEndEvent, state: _ObserverS
         events.append(TextMessageEndEvent(timestamp=timestamp, message_id=message_id))
         return events
     if isinstance(part, ThinkingPart):
-        message_id = part.id or (existing.part_id if existing is not None else None)
-        message_id = message_id or _part_id(item.run_id, state.request_index, event.index, "reasoning")
+        message_id = (
+            existing.part_id
+            if existing is not None
+            else _part_id(item.run_id, state.request_index, event.index, "reasoning")
+        )
         cursor, opened = _ending_cursor(existing, "reasoning", message_id)
         events = []
         if opened:
