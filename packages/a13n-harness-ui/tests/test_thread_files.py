@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -582,3 +583,23 @@ async def test_draft_attachment_validation_rejects_changed_or_unsafe_files(tmp_p
     with pytest.raises((ValueError, IsADirectoryError)):
         await files.validate_attachments("thread-one", (attachment.attachment_id,))
     await files.close()
+
+
+@pytest.mark.anyio
+async def test_retired_comment_capture_remains_an_ordinary_retained_file(tmp_path: Path) -> None:
+    files = ThreadFiles(tmp_path)
+    attachment = await files.stage("thread-one", AttachmentUpload("Feedback.txt", b"Saved output and feedback"))
+    await files.retain("thread-one", attachment.attachment_id)
+    metadata_path = files.directory("thread-one") / "attachments" / attachment.attachment_id / "metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["source"] = {"kind": "comment_reference", "comment_id": "comment-old"}
+    metadata["comment"] = {"author": "Reader", "version": 1, "preview": "feedback"}
+    metadata_path.write_text(json.dumps(metadata))
+    try:
+        restored, content = await files.read("thread-one", attachment.attachment_id)
+        assert restored.source is None
+        assert restored.name == attachment.name
+        assert content == b"Saved output and feedback"
+        assert "comment" not in restored.model_dump()
+    finally:
+        await files.close()

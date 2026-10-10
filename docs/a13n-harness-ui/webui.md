@@ -9,7 +9,7 @@ Start the server, open its printed login link, connect a model, and send a first
 
 ## Start the server
 
-Chat is the main view; **Files** and **Changes** open beside it, and **Terminal** below. Git viewing requires Git; native terminals require a POSIX Host. Comment controls are disabled, but saved comments remain available through the API.
+Chat is the main view; **Files** and **Changes** open beside it, and **Terminal** below. Git viewing requires Git; native terminals require a POSIX Host.
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
@@ -270,9 +270,9 @@ Sidekick supplies default Agent, Model, and reporting instructions for roots cre
 
 In conversation configuration, **Default model** sets a persistent Model independently of the composer Run picker. Choose **Follow Agent model** to clear it. The picker displays **Thread default** when following a saved default; choosing another Model affects only that Run draft. Configuration inspection distinguishes the next Model from the captured Model used by the current or saved Run.
 
-## Saved output and comments
+## Saved output
 
-WebUI comment creation, selection actions, highlights, menus and discussion panels are disabled pending redesign. This does not delete backend comments or their API. Feedback references captured before this change remain readable in messages and drafts. Child saved results remain available in their inspection panels without comment controls.
+Child results remain available in the inspection panel. Historical feedback captures remain readable as ordinary retained attachments.
 
 ## Read, edit and capture Host files and Git changes
 

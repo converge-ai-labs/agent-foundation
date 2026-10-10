@@ -180,7 +180,11 @@ async def test_history_http_pages_and_originals_never_rewrite_selected_storage(t
             assert entry["position"] == 111 and entry["parts"][1]["text_truncated"]
             assert previous["boundary_entries"][0]["position"] == 0
             text, offset = "", 0
-            target = entry["parts"][1]["comment_target"]
+            target = {
+                "producing_thread_id": selected.thread_id,
+                "source_id": source,
+                "location": {"kind": "root_text", "message": entry["position"], "part": 1},
+            }
             assert target["source_id"] == source and target["location"] == {
                 "kind": "root_text",
                 "message": 111,
@@ -197,7 +201,9 @@ async def test_history_http_pages_and_originals_never_rewrite_selected_storage(t
                 offset = body["next_offset"]
             assert text == history[111].parts[1].content
             for part in (2, 3):
-                response = await client.post(base + "/saved-output", json=entry["parts"][part]["comment_target"])
+                response = await client.post(
+                    base + "/saved-output", json={**target, "location": {**target["location"], "part": part}}
+                )
                 assert response.json()["text"] == "Same"
 
             for path, params, status, code in (

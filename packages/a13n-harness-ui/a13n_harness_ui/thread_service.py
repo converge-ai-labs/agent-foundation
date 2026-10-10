@@ -250,7 +250,7 @@ class ThreadService:
                 "The conversation context changed. Review it before clearing context.",
                 code="thread_continuation_conflict",
             )
-        stored = await self._store.objects.read_model(thread.continuation, StoredContinuation)
+        stored = await self._store.read_continuation(thread.thread_id, thread.continuation)
         previous = stored.harness_state
         if previous.thread_id != thread_id:
             raise ThreadError("The selected state belongs to another Thread.", code="thread_continuation_incompatible")

@@ -378,7 +378,6 @@ def test_git_openapi_exposes_required_capture_revision_without_app() -> None:
     assert {item.get("$ref") for item in source["anyOf"]} == {
         "#/components/schemas/FileContextSource",
         "#/components/schemas/GitContextSource",
-        "#/components/schemas/CommentContextSource",
         None,
     }
 

@@ -52,7 +52,7 @@ def import_display_history(messages: Sequence[ModelMessage]) -> DisplayHistory:
     items: list[Item] = []
     for position, message in enumerate(messages):
         entry = _message_entry(position, message).model_dump(mode="json")
-        # The transcript DTO bounds previews. Comments resolve the original full
+        # The transcript DTO bounds previews. Inspection resolves the original full
         # text, stored once in this compact row, never a truncated preview.
         if isinstance(message, ModelResponse):
             for index, part in enumerate(message.parts):

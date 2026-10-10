@@ -16,7 +16,6 @@ import type { Schema, Transport } from "../transport/client";
 import type { ThreadDraft } from "./draft";
 import { inlinePattern, isReadyAttachment } from "./inline-attachments";
 import { retainedImage } from "./attachment-thumbnail";
-import { commentReference } from "./comment-reference";
 import styles from "./conversation.module.css";
 
 export type ComposerAttachmentView = {
@@ -85,28 +84,10 @@ class AttachmentWidget extends WidgetType {
       }
     }
     const label = document.createElement("span");
-    const source = commentReference(attachment);
     const upload = this.draft.uploads.get(this.key);
     const stagedName =
       upload?.status === "staged" ? upload.file.name : undefined;
-    if (source) {
-      chip.classList.add(styles.inlineComment);
-      const heading = document.createElement("small");
-      heading.textContent = source.author
-        ? `Comment · ${source.author}`
-        : "Comment reference";
-      const excerpt = document.createElement("span");
-      excerpt.textContent = source.preview ?? this.name;
-      label.append(heading, excerpt);
-      if (source.quote) {
-        const quote = document.createElement("small");
-        quote.className = styles.inlineCommentQuote;
-        quote.textContent = `“${source.quote}”`;
-        label.append(quote);
-      }
-    } else {
-      label.textContent = stagedName ?? this.name;
-    }
+    label.textContent = stagedName ?? this.name;
     open.append(label);
     open.title = stagedName
       ? `${stagedName} · Uploads when you send`

@@ -180,10 +180,7 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
     ).toBe(true);
     expect(
       history.entries.some((entry) =>
-        entry.parts.some(
-          (part) =>
-            part.text?.includes("Protocol response") && part.comment_target,
-        ),
+        entry.parts.some((part) => part.text?.includes("Protocol response")),
       ),
     ).toBe(true);
     first.presence({ name: "Alice", color: "#112233" });

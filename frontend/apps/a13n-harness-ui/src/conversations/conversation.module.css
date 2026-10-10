@@ -1168,11 +1168,6 @@
   border-top: 1px solid var(--a13n-border);
 }
 
-.commentNotice {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-}
-
 .markdown p,
 .markdown li {
   font-size: 14px;
@@ -1366,50 +1361,6 @@
   width: 96px;
   height: 72px;
   object-fit: contain;
-}
-
-.inlineComment {
-  max-width: min(320px, 100%);
-  vertical-align: middle;
-  white-space: normal;
-}
-.inlineComment .inlineAttachmentOpen {
-  padding: 8px 10px;
-  text-align: left;
-  min-width: 0;
-}
-.inlineComment .inlineAttachmentOpen > span {
-  display: grid;
-  gap: 3px;
-  white-space: normal;
-}
-.inlineComment .inlineAttachmentOpen > span > span {
-  white-space: normal;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow-wrap: anywhere;
-}
-.inlineComment small {
-  font-size: 11px;
-  color: var(--a13n-secondary);
-  font-weight: 400;
-}
-.inlineCommentQuote {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.commentReferencePreview {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  color: var(--a13n-secondary);
-  font-size: 12px;
 }
 
 .recoveryNotice {

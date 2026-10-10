@@ -95,12 +95,7 @@ it("groups live media with its input turn, not a later instruction reusing the s
   );
   expect(screen.getAllByText("example.png")).toHaveLength(2);
 });
-it("keeps saved raw output identity intact and does not load remote Markdown images or HTML", () => {
-  const target = {
-    producing_thread_id: "one",
-    source_id: "C1",
-    location: { kind: "root_text", message: 3, part: 0 },
-  };
+it("renders saved output and does not load remote Markdown images or HTML", () => {
   const view = render(
     <SavedEntry
       entry={
@@ -111,20 +106,12 @@ it("keeps saved raw output identity intact and does not load remote Markdown ima
             {
               kind: "assistant",
               text: "**Exact** source",
-              comment_target: target,
             },
           ],
         } as Schema<"TranscriptEntry">
       }
     />,
   );
-  expect(
-    JSON.parse(
-      view.container
-        .querySelector("[data-saved-target]")!
-        .getAttribute("data-saved-target")!,
-    ),
-  ).toEqual(target);
   expect(screen.getByText("Exact").tagName).toBe("STRONG");
   expect(screen.queryByRole("button", { name: /comment/i })).toBeNull();
   view.rerender(

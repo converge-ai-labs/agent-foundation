@@ -571,14 +571,14 @@ def test_capture_and_supplements_share_one_dirty_set_without_consuming_publicati
     assert frozen.model_dump_json() == frozen_json
 
 
-def test_tool_result_does_not_renumber_later_comment_parts() -> None:
+def test_tool_result_does_not_renumber_later_text_parts() -> None:
     from a13n_stream_protocol.display import DisplayFold
 
     fold = DisplayFold("run", full_content=True)
     fold.fold(
         [
             {"type": "TOOL_CALL_START", "toolCallId": "call", "toolCallName": "inspect"},
-            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "answer", "delta": "Comment here"},
+            {"type": "TEXT_MESSAGE_CONTENT", "messageId": "answer", "delta": "Text here"},
         ]
     )
     # Both items belong to the same native response, even when the result arrives later.
@@ -591,7 +591,7 @@ def test_tool_result_does_not_renumber_later_comment_parts() -> None:
             (entry.position, index)
             for entry in entries
             for index, part in enumerate(entry.parts)
-            if part.text == "Comment here"
+            if part.text == "Text here"
         )
 
     before = address()
@@ -620,7 +620,7 @@ def test_imported_turns_preserve_native_output_and_completion_semantics(closing:
     assert display_turns(import_display_history(history)) == _transcript_turns(tuple(history), completed)
 
 
-def test_saved_run_errors_are_inspectable_without_renumbering_comment_targets():
+def test_saved_run_errors_are_inspectable_without_renumbering_text_parts():
     from a13n_harness_ui.display_projection import original_text
     from a13n_stream_protocol.display import DisplayFold
 
@@ -642,3 +642,13 @@ def test_saved_run_errors_are_inspectable_without_renumbering_comment_targets():
     assert entries[1].failures == ()
     assert original_text(display, 0, 0) == "Partial answer"
     assert original_text(display, 1, 0) == "New answer"
+
+
+def test_imported_display_rows_ignore_retired_comment_targets():
+    history = import_display_history([ModelResponse(parts=[TextPart("Original output")])])
+    payload = history.model_dump(mode="json")
+    payload["items"][0]["content"]["entry"]["parts"][0]["comment_target"] = None
+    retained = DisplayHistory.model_validate(payload)
+    entries = display_entries(retained)
+    assert entries[0].parts[0].text == "Original output"
+    assert "comment_target" not in entries[0].parts[0].model_dump()

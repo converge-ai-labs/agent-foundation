@@ -115,15 +115,6 @@ from a13n_harness_ui.model_authoring import (
 )
 from a13n_harness_ui.model_catalog import ModelCatalogSnapshot
 from a13n_harness_ui.model_controls import ModelControlSelection
-from a13n_harness_ui.output_comment_models import (
-    CommentEdit,
-    CommentPage,
-    CommentPublication,
-    OutputComment,
-    SavedChildOutputPage,
-    SavedOutputTarget,
-    SavedOutputView,
-)
 from a13n_harness_ui.page_presence import (
     PRESENCE_REFRESH_SECONDS,
     PRESENCE_TIMEOUT_SECONDS,
@@ -133,6 +124,7 @@ from a13n_harness_ui.page_presence import (
     PresenceReport,
 )
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
+from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
 from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame, DraftSummary
 from a13n_harness_ui.storage.usage import ThreadUsageView
@@ -190,7 +182,6 @@ class ListenerFeatures(SurfaceModel):
     """Implemented browser facilities, not the eventual workbench roadmap."""
 
     shared_drafts: Literal[True] = True
-    output_comments: Literal[True] = True
     page_presence: Literal[True] = True
     host_files: bool = False
     host_git: bool = False
@@ -1354,53 +1345,6 @@ def create_webui(
         return await app().inspect_thread_configuration(thread_id)
 
     @server.post(
-        "/api/threads/{thread_id}/comments", response_model=OutputComment, openapi_extra=_body(CommentPublication)
-    )
-    async def publish_comment(thread_id: str, request: Request) -> OutputComment:
-        return await app().publish_output_comment(thread_id, await _document(request, CommentPublication))
-
-    @server.get("/api/threads/{thread_id}/comments", response_model=CommentPage)
-    async def comments(
-        thread_id: str,
-        cursor: Annotated[str | None, Query(max_length=4096)] = None,
-        limit: Annotated[int, Query(ge=1, le=100)] = 20,
-        target: Annotated[str | None, Query(max_length=2048)] = None,
-        newest_first: bool = False,
-    ) -> CommentPage:
-        try:
-            selected = SavedOutputTarget.model_validate_json(target) if target is not None else None
-        except ValidationError:
-            raise HarnessUiError("Target query does not match the schema.", code="request_invalid") from None
-        return await app().list_output_comments(
-            thread_id, target=selected, cursor=cursor, limit=limit, newest_first=newest_first
-        )
-
-    @server.get("/api/threads/{thread_id}/comments/{comment_id}", response_model=OutputComment)
-    async def comment(thread_id: str, comment_id: str) -> OutputComment:
-        return await app().get_output_comment(thread_id, comment_id)
-
-    @server.patch(
-        "/api/threads/{thread_id}/comments/{comment_id}",
-        response_model=OutputComment,
-        openapi_extra=_body(CommentEdit),
-    )
-    async def edit_comment(thread_id: str, comment_id: str, request: Request) -> OutputComment:
-        return await app().edit_output_comment(thread_id, comment_id, await _document(request, CommentEdit))
-
-    @server.delete("/api/threads/{thread_id}/comments/{comment_id}", status_code=204)
-    async def delete_comment(
-        thread_id: str, comment_id: str, expected_version: Annotated[int, Query(ge=1)]
-    ) -> Response:
-        await app().delete_output_comment(thread_id, comment_id, expected_version=expected_version)
-        return Response(status_code=204)
-
-    @server.post("/api/threads/{thread_id}/comments/{comment_id}/capture", response_model=ThreadAttachment)
-    async def capture_comment(
-        thread_id: str, comment_id: str, expected_version: Annotated[int | None, Query(ge=1)] = None
-    ) -> ThreadAttachment:
-        return await app().capture_output_comment(thread_id, comment_id, expected_version=expected_version)
-
-    @server.post(
         "/api/threads/{thread_id}/saved-output", response_model=SavedOutputView, openapi_extra=_body(SavedOutputTarget)
     )
     async def saved_output(
@@ -1409,7 +1353,7 @@ def create_webui(
         offset: Annotated[int, Query(ge=0)] = 0,
         limit: Annotated[int, Query(ge=1, le=65536)] = 65536,
     ) -> SavedOutputView:
-        return await app().read_commented_output(
+        return await app().read_saved_output(
             thread_id, await _document(request, SavedOutputTarget), offset=offset, limit=limit
         )
 

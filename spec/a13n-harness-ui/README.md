@@ -4,7 +4,7 @@
 
 Harness UI (`a13n-harness-ui`) is a local Agent workbench with a personal CLI and a trusted-team collaborative WebUI, distributed by the independent `a13n-harness-ui` library. It embeds Harness in one reusable `HarnessUiApp`, reads human-editable resources, discovers trusted extensions and Capabilities, and retains internal Project/Thread identities for durable continuation and execution. Its native full-terminal renderer owns a bounded semantic display cache; the App remains conversation authority.
 
-`a13n-harness-ui` starts the interactive CLI. `a13n-harness-ui webui` explicitly starts one foreground server and WebUI-mode App. The CLI and browser adapter consume the same commands, projections, receipts, and live subscriptions. The browser provides project-organized conversations, page presence, shared prompt editing, comments on saved AI output, resource configuration, and explicitly enabled native Host files, Git views, and PTY. All browser participants share one instance authority without multi-tenancy. There is no detached daemon or IPC mode.
+`a13n-harness-ui` starts the interactive CLI. `a13n-harness-ui webui` explicitly starts one foreground server and WebUI-mode App. The CLI and browser adapter consume the same commands, projections, receipts, and live subscriptions. The browser provides project-organized conversations, page presence, shared prompt editing, resource configuration, and explicitly enabled native Host files, Git views, and PTY. All browser participants share one instance authority without multi-tenancy. There is no detached daemon or IPC mode.
 
 Harness UI provides best-effort local continuation rather than durable workflow execution. It stores complete Harness checkpoints at explicit boundaries, but it does not durably accept root receipts, input, or deferred responses, recover active operating-system processes, lease work across workers, or provide distributed failover. A finalized [graceful restart handoff](03-local-storage-and-recovery.md#graceful-restart-handoff) permits single-use continuation after a clean sequential WebUI update, not crash recovery. a13n Service remains the durable hosted product.
 
@@ -21,7 +21,7 @@ Harness UI depends on the [Harness](../a13n-harness/README.md), including its [E
 | [02-agent-composition-and-snapshots.md](02-agent-composition-and-snapshots.md)                   | Agent, MCP, Markdown subagent, import, graph resolution, tool configuration, and per-Run composition                                         |
 | [02a-model-authentication-and-account-stores.md](02a-model-authentication-and-account-stores.md) | API-key and subscription Model authentication, Codex/Grok compatible stores and Copilot source binding, native login, and refresh boundaries |
 | [02b-environment-skill-sources.md](02b-environment-skill-sources.md)                             | Host-path-preserving and virtual multi-mount Skill sources, user Skill mount, precedence, and per-Run freezing                               |
-| [03-local-storage-and-recovery.md](03-local-storage-and-recovery.md)                             | Thread metadata/configuration heads, immutable Run/checkpoint values, Environment state, output-comment storage, and local recovery          |
+| [03-local-storage-and-recovery.md](03-local-storage-and-recovery.md)                             | Thread metadata/configuration heads, immutable Run/checkpoint values, Environment state, and local recovery                                  |
 | [04-projects-threads-and-environments.md](04-projects-threads-and-environments.md)               | Project roots, Full Control and Sandbox modes, path layouts, Thread configuration, Environment binding, and state publication                |
 | [04a-devices-and-environment-bindings.md](04a-devices-and-environment-bindings.md)               | Device connections, directory discovery, binding selection, admission capture and WebUI Add environment                                      |
 | [05-runtime-subagents-and-surfaces.md](05-runtime-subagents-and-surfaces.md)                     | `HarnessUiApp`, detached projections, root operations, async children, Web listener access, tools, and live presentation                     |
@@ -32,7 +32,7 @@ Harness UI depends on the [Harness](../a13n-harness/README.md), including its [E
 
 [MCP Apps Host](09-mcp-apps.md) owns opt-in retained tool-result Apps, connection and View lifetimes, same-server interaction authority, explicit model context/messages, and browser isolation.
 
-The [WebUI catalog](webui/README.md) indexes the browser workbench, page presence and collaborative conversations, saved-output comments, native computer sharing, and bundled/Docker distribution contracts. Listener and HTTP/API behavior remain owned by `05`; transient drafts and durable comments retain their separate storage boundaries in `03`.
+The [WebUI catalog](webui/README.md) indexes the browser workbench, page presence and collaborative conversations, native computer sharing, and bundled/Docker distribution contracts. Listener and HTTP/API behavior remain owned by `05`; transient draft storage remains owned by `03`.
 
 ## Reading Paths
 
@@ -67,7 +67,7 @@ Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes deta
 11. The full-terminal CLI is an adapter over one reusable `HarnessUiApp`. Desired configuration remains editable; setup publication is explicit. Project and Thread management are not terminal workflows, but their durable identities and existing history remain intact.
 12. Focused live delivery follows complete root lineage and uses an epoch/sequence snapshot cutover. App-wide summary invalidations are best-effort refetch hints, not durable truth.
 13. Multiple local processes can open one data root through ordinary SQLite and immutable-file behavior. Mutable SQLite heads use expected-version or expected-reference compare-and-select without process lock files, PID inspection, heartbeats, leases, fencing, or distributed scheduling. Independent Apps do not thereby share live collaboration or execution receipts.
-14. Page/editor presence and shared browser drafts are in-memory collaboration state, not selected continuation or durable root-work acceptance. Published output comments are independently persisted human discussion and never enter model context automatically. Reconnect never authorizes automatic submission.
+14. Page/editor presence and shared browser drafts are in-memory collaboration state, not selected continuation or durable root-work acceptance. Reconnect never authorizes automatic submission.
 15. Native Host files, Git views, and PTY are explicitly enabled human operations on the server OS, independent of Agent Environment policy and Run lifetime.
 
 ## Conventions

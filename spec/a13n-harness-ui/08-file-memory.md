@@ -83,5 +83,5 @@ App status exposes availability, active scope keys, last outcome, attempts, and 
 3. Background work cannot delay foreground admission, appear in ordinary Thread lists, or inherit general-purpose tools. Memory Threads are visible only in the observation surface.
 4. Failed or cancelled maintenance never marks partial work as successfully organized.
 5. Concurrent file edits retain ordinary CAS protection; no whole-scope isolation is claimed.
-6. Existing configuration and continuation data remain readable without automatic rewriting. The additive SQLite migration preserves ordinary Thread identities and content with null memory scope; downgrade refuses to discard existing Memory Threads.
+6. Existing configuration and continuation data remain readable without automatic rewriting. The additive SQLite migration preserves ordinary Thread identities and content with null memory scope.
 7. Multiple rounds share one scope identity and durable observation history, never model context or execution authority.

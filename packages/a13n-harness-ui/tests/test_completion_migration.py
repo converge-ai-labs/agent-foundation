@@ -40,7 +40,6 @@ def test_completion_upgrade_preserves_legacy_writers_and_child_references(tmp_pa
                 legacy.execute(text("SELECT completion_version FROM thread WHERE thread_id='legacy'")).scalar_one() == 0
             )
             legacy.commit()
-        migrator._run(lambda config: command.downgrade(config, "122039abf689"), write=True)
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT parent_thread_id FROM thread WHERE thread_id='child'")).scalar_one()

@@ -1253,60 +1253,6 @@ export interface paths {
         patch: operations["patch_configuration_api_threads__thread_id__configuration_patch"];
         trace?: never;
     };
-    "/api/threads/{thread_id}/comments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Comments */
-        get: operations["comments_api_threads__thread_id__comments_get"];
-        put?: never;
-        /** Publish Comment */
-        post: operations["publish_comment_api_threads__thread_id__comments_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/threads/{thread_id}/comments/{comment_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Comment */
-        get: operations["comment_api_threads__thread_id__comments__comment_id__get"];
-        put?: never;
-        post?: never;
-        /** Delete Comment */
-        delete: operations["delete_comment_api_threads__thread_id__comments__comment_id__delete"];
-        options?: never;
-        head?: never;
-        /** Edit Comment */
-        patch: operations["edit_comment_api_threads__thread_id__comments__comment_id__patch"];
-        trace?: never;
-    };
-    "/api/threads/{thread_id}/comments/{comment_id}/capture": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Capture Comment */
-        post: operations["capture_comment_api_threads__thread_id__comments__comment_id__capture_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/threads/{thread_id}/saved-output": {
         parameters: {
             query?: never;
@@ -2699,63 +2645,6 @@ export interface components {
              */
             kind: "codex_subscription";
         };
-        /** CommentAuthor */
-        CommentAuthor: {
-            /** Display Name */
-            display_name: string;
-            /** Participant Id */
-            participant_id?: string | null;
-        };
-        /**
-         * CommentContextSource
-         * @description A complete published comment and its exact saved assistant output.
-         */
-        CommentContextSource: {
-            /**
-             * Kind
-             * @default comment_reference
-             * @constant
-             */
-            kind?: "comment_reference";
-            /** Root Thread Id */
-            root_thread_id: string;
-            /** Comment Id */
-            comment_id: string;
-            target: components["schemas"]["SavedOutputTarget"];
-        };
-        /** CommentPage */
-        CommentPage: {
-            /** Comments */
-            comments: components["schemas"]["OutputComment"][];
-            /** Next Cursor */
-            next_cursor?: string | null;
-        };
-        /**
-         * CommentReferencePreview
-         * @description Additive attachment display metadata; the captured bytes own full content.
-         */
-        CommentReferencePreview: {
-            /**
-             * Version
-             * @default 1
-             */
-            version?: number;
-            /** Author */
-            author?: string | null;
-            /** Preview */
-            preview?: string | null;
-            /** Quote */
-            quote?: string | null;
-        };
-        /** CommentSelection */
-        CommentSelection: {
-            /** Start */
-            start: number;
-            /** End */
-            end: number;
-            /** Quote */
-            quote: string;
-        };
         /** ConfigurationProvenance */
         ConfigurationProvenance: {
             /**
@@ -3702,12 +3591,6 @@ export interface components {
              */
             shared_drafts?: true;
             /**
-             * Output Comments
-             * @default true
-             * @constant
-             */
-            output_comments?: true;
-            /**
              * Page Presence
              * @default true
              * @constant
@@ -4198,30 +4081,6 @@ export interface components {
             object_schema_version: string;
             /** Logical Digest */
             logical_digest: string;
-        };
-        /** OutputComment */
-        OutputComment: {
-            /** Body */
-            body: string;
-            /** Comment Id */
-            comment_id: string;
-            target: components["schemas"]["SavedOutputTarget"];
-            selection?: components["schemas"]["CommentSelection"] | null;
-            author: components["schemas"]["CommentAuthor"];
-            /** Root Thread Id */
-            root_thread_id: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Version
-             * @default 1
-             */
-            version?: number;
-            /** Updated At */
-            updated_at?: string | null;
         };
         /** PageFocus */
         PageFocus: {
@@ -5272,8 +5131,7 @@ export interface components {
             /** Size */
             size: number;
             /** Source */
-            source?: components["schemas"]["FileContextSource"] | components["schemas"]["GitContextSource"] | components["schemas"]["CommentContextSource"] | null;
-            comment?: components["schemas"]["CommentReferencePreview"] | null;
+            source?: components["schemas"]["FileContextSource"] | components["schemas"]["GitContextSource"] | null;
         };
         /**
          * ThreadCompletion
@@ -5722,7 +5580,7 @@ export interface components {
         };
         /**
          * TranscriptFailure
-         * @description A retained Run error, not a model message or comment target.
+         * @description A retained Run error, not a model message.
          */
         TranscriptFailure: {
             /** Id */
@@ -5777,7 +5635,6 @@ export interface components {
         };
         /** TranscriptPart */
         TranscriptPart: {
-            comment_target?: components["schemas"]["SavedOutputTarget"] | null;
             /**
              * Text Truncated
              * @default false
@@ -6183,7 +6040,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "comment" | "thread_work" | "draft";
+            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "thread_work" | "draft";
             /**
              * Root Thread Id
              * @default null
@@ -6790,23 +6647,6 @@ export interface components {
             /** Expected Version */
             expected_version: number;
             patch: components["schemas"]["ThreadConfigurationPatch"];
-        };
-        /** CommentPublication */
-        CommentPublication: {
-            /** Body */
-            body: string;
-            /** Comment Id */
-            comment_id: string;
-            target: components["schemas"]["SavedOutputTarget"];
-            selection?: components["schemas"]["CommentSelection"] | null;
-            author: components["schemas"]["CommentAuthor"];
-        };
-        /** CommentEdit */
-        CommentEdit: {
-            /** Body */
-            body: string;
-            /** Expected Version */
-            expected_version: number;
         };
         /** ThreadContextClear */
         ThreadContextClear: {
@@ -9488,211 +9328,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadSummary"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    comments_api_threads__thread_id__comments_get: {
-        parameters: {
-            query?: {
-                cursor?: string | null;
-                limit?: number;
-                target?: string | null;
-                newest_first?: boolean;
-            };
-            header?: never;
-            path: {
-                thread_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommentPage"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    publish_comment_api_threads__thread_id__comments_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                thread_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CommentPublication"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OutputComment"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    comment_api_threads__thread_id__comments__comment_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                thread_id: string;
-                comment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OutputComment"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_comment_api_threads__thread_id__comments__comment_id__delete: {
-        parameters: {
-            query: {
-                expected_version: number;
-            };
-            header?: never;
-            path: {
-                thread_id: string;
-                comment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    edit_comment_api_threads__thread_id__comments__comment_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                thread_id: string;
-                comment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CommentEdit"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OutputComment"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    capture_comment_api_threads__thread_id__comments__comment_id__capture_post: {
-        parameters: {
-            query?: {
-                expected_version?: number | null;
-            };
-            header?: never;
-            path: {
-                thread_id: string;
-                comment_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ThreadAttachment"];
                 };
             };
             /** @description Validation Error */

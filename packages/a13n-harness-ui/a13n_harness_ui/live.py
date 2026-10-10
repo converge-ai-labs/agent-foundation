@@ -587,7 +587,6 @@ class SummaryInvalidation(_StreamModel):
         "thread",
         "root_operation",
         "child_execution",
-        "comment",
         "thread_work",
         "draft",
     ]
@@ -679,7 +678,6 @@ class HarnessUiSummaryHub:
             "thread",
             "root_operation",
             "child_execution",
-            "comment",
             "thread_work",
             "draft",
         ],
@@ -712,7 +710,6 @@ class HarnessUiSummaryHub:
             "thread",
             "root_operation",
             "child_execution",
-            "comment",
             "thread_work",
             "draft",
         ],
