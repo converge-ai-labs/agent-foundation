@@ -124,7 +124,7 @@ Harness UI does not use PID inspection, heartbeats, or time-based leases to infe
 
 ## Compatible Upgrades Across App Versions
 
-Harness UI supports forward-only database upgrades, not schema downgrades or reuse of an upgraded data root by an earlier release. Recovery uses forward repair or restoration of a complete pre-upgrade backup with its matching application version. Historical Alembic downgrade functions do not establish a supported rollback path. Migration tests cover upgrades from supported historical schemas, retained data, repeated upgrades, and current schema parity rather than downgrade round trips.
+Harness UI database migrations support forward-only upgrades, not schema downgrades.
 
 Multiple TUI or WebUI processes can remain open while a newer package migrates their shared data root. A database migration revision identifies applied schema changes; it is not a runtime package-version lock. An older App does not require the database revision to equal its bundled head, does not downgrade or stamp a newer revision, and can reconnect when its required tables and columns remain available. An active Run's save is not gated by a package-head comparison.
 
@@ -252,8 +252,6 @@ A root Run remembers only its latest successfully selected checkpoint in process
 The final selected checkpoint remains frozen when the Run ends, including failed, cancelled, suspended, and graceful-restart boundaries. The next Run starts with no replaceable checkpoint and never deletes an earlier Run's final state. Latest-completion markers and finalized restart references remain readable. There is no historical sweep, age-based cleanup, or persistent garbage-collection registry.
 
 Selected continuation reads and publish/select/remove use short per-Thread cross-process resource locks. Readers recheck the selected reference under the lock; a stale reference returns a continuation conflict, not a missing-object read. These locks protect file use only. They do not establish execution ownership or span model/tool execution, and no database transaction spans object I/O. Child checkpoints and other object families retain their existing lifecycles.
-
-Upgrading to this protocol requires stopping all Apps sharing the data root. Older Apps do not coordinate deletable checkpoint reads. The same upgrade retires output-comment APIs and drops their database tables and indexes; it does not rewrite conversation checkpoints or delete retained attachment bytes. Historical captures load as ordinary attachments. Comment data cannot be recreated by downgrade; rollback requires a pre-upgrade backup.
 
 ### Explicit Context Clearing
 
