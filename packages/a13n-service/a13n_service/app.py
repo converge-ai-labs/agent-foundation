@@ -36,6 +36,7 @@ from a13n_service.infra.sweeps import require_unique, run_sweeps
 from a13n_service.infra.tasks import Tasks
 from a13n_service.infra.telemetry import open_instrumentation
 from a13n_service.mcp import WorkspaceKey, build_mcp
+from a13n_service.migrations.run_objects import require_current
 from a13n_service.migrations.runner import heads, upgrade
 from a13n_service.providers.environments import offered
 from a13n_service.providers.registry import Registry
@@ -256,6 +257,7 @@ def build_app(
             try:
                 async with asyncio.timeout(config.server.readiness_timeout):
                     await check_schema(runtime.storage, expected)
+                    await require_current(runtime.storage)
                 if role == "all":
                     initializer = Initializer(
                         runtime.storage,

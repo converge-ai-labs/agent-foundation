@@ -99,6 +99,7 @@ async def test_application_shutdown_owns_services_and_children_before_clients_cl
 
     monkeypatch.setattr(app_module, "open_runtime", open_runtime)
     monkeypatch.setattr(app_module, "check_schema", AsyncMock())
+    monkeypatch.setattr(app_module, "require_current", AsyncMock())
     monkeypatch.setattr(app_module, "Worker", Worker)
     app = app_module.build_app(role="worker", settings=Settings())
 
@@ -141,6 +142,7 @@ async def test_application_shutdown_does_not_wait_forever_for_a_service(monkeypa
 
     monkeypatch.setattr(app_module, "open_runtime", open_runtime)
     monkeypatch.setattr(app_module, "check_schema", AsyncMock())
+    monkeypatch.setattr(app_module, "require_current", AsyncMock())
     monkeypatch.setattr(app_module, "Worker", Worker)
     app = app_module.build_app(role="worker", settings=Settings())
     try:
