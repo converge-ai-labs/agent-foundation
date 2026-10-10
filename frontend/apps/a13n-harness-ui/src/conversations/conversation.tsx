@@ -702,6 +702,11 @@ function ConversationContent({
               )}
               <PauseConversationFollowing value={interruptScroll}>
                 <ConversationTranscript
+                  currentFailureRunId={
+                    thread?.last_execution?.status === "failed"
+                      ? thread.last_execution.run_id
+                      : undefined
+                  }
                   entries={entries}
                   blocks={showLive ? liveBlocks : []}
                   localInputs={hasLater ? [] : draft.localInputs}
@@ -761,6 +766,7 @@ function ConversationContent({
                 </div>
               )}
               <RootFailureNotice
+                lastExecution={thread?.last_execution}
                 threadId={threadId}
                 receipt={receipt}
                 display={display}

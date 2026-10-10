@@ -1040,3 +1040,46 @@ it.each(["desktop", "mobile"])(
     );
   },
 );
+
+it("deduplicates the current failure in loaded turn history and restores it for older runs", () => {
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const entry = saved([
+    { kind: "user", text: "Prompt" },
+    { kind: "thinking", text: "Inspecting" },
+  ]);
+  entry.failures = [
+    { id: "error", run_id: "failed-run", message: "Saved root failure" },
+  ];
+  const content = (currentFailureRunId?: string) => (
+    <QueryClientProvider client={queries}>
+      <TransportContext
+        value={{ client: { GET: vi.fn() } } as unknown as Transport}
+      >
+        <ConversationTranscript
+          threadId="one"
+          loadDetails
+          continuation="saved"
+          entries={[entry]}
+          turns={[
+            {
+              turn_id: "turn",
+              input_position: 0,
+              end_position: 1,
+              preview: "Prompt",
+            },
+          ]}
+          blocks={[]}
+          localInputs={[]}
+          currentFailureRunId={currentFailureRunId}
+        />
+      </TransportContext>
+    </QueryClientProvider>
+  );
+  const view = render(content("failed-run"));
+  fireEvent.click(screen.getByRole("button", { name: /Execution details/ }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  view.rerender(content());
+  expect(screen.getByText("Saved root failure")).toBeTruthy();
+});

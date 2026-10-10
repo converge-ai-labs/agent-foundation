@@ -174,6 +174,9 @@ class SessionBackend:
         *,
         draft: ThreadConfiguration | None = None,
     ) -> bool:
+        self.status.execution_status = (
+            thread.last_execution.status if thread is not None and thread.last_execution is not None else None
+        )
         self.status.goal = None if thread is None else thread.goal
         agent_id = None if draft is None else draft.agent_source.id
         if thread is not None:
@@ -873,12 +876,14 @@ class SessionBackend:
                     )
                 )
                 self.receipt_id = receipt.receipt_id
+                self.status.execution_status = "preparing"
                 if admitted is not None:
                     admitted()
                 self.status.goal = (await self.app.get_root_operation(receipt.receipt_id)).goal
                 if self.cancel_requested:
                     await self.app.cancel_root_operation(receipt.receipt_id)
                 operation = await self.app.wait_root_operation(receipt.receipt_id)
+                self.status.execution_status = operation.status.value
                 self.status.goal = operation.goal
             finally:
                 pump.cancel()
@@ -929,7 +934,9 @@ class SessionBackend:
                     f"Warning: {len(outcome.environment.cleanup_failures)} environment cleanup failure(s).\n"
                 )
             return ""
-        failure = operation.failure or (None if outcome is None else outcome.execution.failure)
+        failure = operation.failure or (
+            None if outcome is None else outcome.execution.failure or outcome.continuation.failure
+        )
         if failure is not None:
             return f"Error [{failure.code}]: {failure.message}" + (
                 f"\nRetry: {failure.retry_hint}"

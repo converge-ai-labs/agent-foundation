@@ -140,3 +140,102 @@ it.each([true, false])(
     expect(retry).not.toHaveBeenCalled();
   },
 );
+
+it("restores a durable failure after cold reload without fetching an expired receipt", () => {
+  vi.mocked(useOperation).mockReturnValue(
+    {} as ReturnType<typeof useOperation>,
+  );
+  const display = new FocusDisplay();
+  const lastExecution: Schema<"ThreadExecution"> = {
+    execution_id: "receipt-previous-process",
+    status: "failed",
+    submitted_at: "2026-01-01T00:00:00Z",
+    error_code: "preparation_failed",
+    error_message:
+      "Environment preparation failed\nRepair its configuration before continuing.",
+  };
+  const view = render(
+    <RootFailureNotice
+      threadId="thread"
+      display={display}
+      lastExecution={lastExecution}
+    />,
+  );
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Environment preparation failed",
+  );
+  expect(screen.getByText("Error details").closest("details")?.open).toBe(
+    false,
+  );
+  expect(vi.mocked(useOperation).mock.lastCall?.[1]).toBeUndefined();
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  vi.mocked(useOperation).mockReturnValue({
+    data: {
+      receipt: {
+        receipt_id: "receipt-new",
+        submitted_at: "2026-01-02T00:00:00Z",
+      },
+      status: "preparing",
+    },
+  } as ReturnType<typeof useOperation>);
+  view.rerender(
+    <RootFailureNotice
+      threadId="thread"
+      receipt="receipt-new"
+      display={display}
+      lastExecution={lastExecution}
+    />,
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("distinguishes an unknown outcome from confirmed failure without offering automatic retry", () => {
+  vi.mocked(useOperation).mockReturnValue(
+    {} as ReturnType<typeof useOperation>,
+  );
+  render(
+    <RootFailureNotice
+      threadId="thread"
+      display={new FocusDisplay()}
+      lastExecution={{
+        execution_id: "receipt-lost",
+        status: "unknown",
+        submitted_at: "2026-01-01T00:00:00Z",
+        error_message: "No terminal outcome was saved.",
+      }}
+      retry={vi.fn()}
+    />,
+  );
+  expect(screen.getByText("Execution outcome unknown")).toBeTruthy();
+  expect(screen.queryByRole("button")).toBeNull();
+});
+
+it.each(["failed", "unknown"] as const)(
+  "shows newer durable %s despite a cached receipt",
+  (status) => {
+    vi.mocked(useOperation).mockReturnValue({
+      data: {
+        receipt: { receipt_id: "old", submitted_at: "2026-01-01T00:00:00Z" },
+        status: "failed",
+        failure: { message: "Old failure" },
+      },
+    } as ReturnType<typeof useOperation>);
+    render(
+      <RootFailureNotice
+        threadId="thread"
+        receipt="old"
+        display={new FocusDisplay()}
+        lastExecution={{
+          execution_id: "new",
+          submitted_at: "2026-01-02T00:00:00Z",
+          status,
+          error_message: "New outcome",
+        }}
+        retry={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("New outcome")).toBeTruthy();
+    expect(screen.queryByText("Old failure")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
+  },
+);

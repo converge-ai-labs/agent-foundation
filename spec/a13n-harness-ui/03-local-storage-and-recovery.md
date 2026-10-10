@@ -38,6 +38,16 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 
 Host-local API keys and native Copilot OAuth grants have independent private files outside SQLite and immutable objects. Copilot's file also owns its nonsecret account/source binding; shared CLI tokens remain in the selected external source. [Model Authentication](02a-model-authentication-and-account-stores.md) owns their schemas, publication, logout, and durable grant-coordination semantics. Live credential objects remain process-local; neither native nor shared secrets enter continuation storage.
 
+## Latest Root Execution
+
+Each root Thread retains one compact `last_execution` summary in SQLite, independently of its selected continuation and latest successful `completion`. It records the admitted execution identity, status, submission/start/end times, optional Harness Run ID, and a bounded safe error code/message. Preparation can fail before a Run or checkpoint exists. Failures and cancellations never replace the latest successful completion marker.
+
+The root coordinator records admission before starting execution effects, records the Run when available, and saves the terminal outcome before releasing waiters or publishing terminal status. A newly admitted attempt replaces the summary. Later transitions compare the execution identity, so an older attempt cannot overwrite a newer admission from another App. Rejected input, query failures, tool-local errors, and observation disconnects do not replace this root result. Error text uses the same safe failure projection as the live operation, bounded to 4096 characters; raw tracebacks remain diagnostic output.
+
+The summary is inspection data, not a durable receipt, input queue, execution claim, or retry authority. An App that lacks matching live authority projects a saved `preparing` or `running` value as `unknown`, without rewriting shared storage or inventing an end time. This covers abrupt restart and independent Apps: execution might have stopped or might still run elsewhere. Confirmed terminal outcomes survive browser reload and process restart. No startup sweep declares foreign work interrupted, and no summary replays tools or unsaved input. If terminal persistence fails, the live operation reports the storage failure and the last durable active record remains unknown on later inspection.
+
+Saved display-history Run errors remain inspectable alongside their surrounding transcript entry, without becoming model messages or changing existing message/part comment coordinates. They are observations already retained in selected checkpoints, not a new error journal. Surfaces avoid repeating the current failure both in history and in the latest-execution notice; a later admission does not erase older saved errors.
+
 ## Device and Environment Selection Storage
 
 Device definitions remain desired files in the accepted generation. Thread configuration stores binding selections and the normalized default; immutable Run compositions retain the exact captured Devices and working directories used for that admission. [Devices and Environment Bindings](04a-devices-and-environment-bindings.md) owns their semantics and binding-state identity.

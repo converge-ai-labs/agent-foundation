@@ -548,6 +548,21 @@ class ThreadProjectionService:
         if coordinators is None:
             coordinators = await self._store.threads.coordinators((thread.thread_id,))
         coordinator = coordinators.get(thread.thread_id)
+        execution = thread.last_execution
+        if (
+            execution is not None
+            and execution.status in {"preparing", "running"}
+            and (activity.receipt_id != execution.execution_id)
+        ):
+            # Another App may still own this attempt. Absence of local authority
+            # proves neither success nor failure; never mutate shared storage here.
+            execution = execution.model_copy(
+                update={
+                    "status": "unknown",
+                    "error_code": "execution_outcome_unknown",
+                    "error_message": "No terminal outcome was saved. This App cannot verify whether the execution stopped or is still running elsewhere. Inspect the conversation before retrying.",
+                }
+            )
         return ThreadSummary(
             memory_scope=thread.memory_scope,
             role="coordinator" if coordinator else "worker" if thread.thread_id in owners else "ordinary",
@@ -568,6 +583,7 @@ class ThreadProjectionService:
             continuation_state="initial" if thread.continuation is None else "selected",
             root_activity=activity,
             completion=thread.completion,
+            last_execution=execution,
             goal=goal,
         )
 

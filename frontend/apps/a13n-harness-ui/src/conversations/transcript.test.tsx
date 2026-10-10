@@ -232,3 +232,26 @@ it("omits model-only tool attachments without hiding genuine user media", () => 
   expect(view.container.textContent).toContain("image/png");
   expect(view.container.textContent).not.toContain("payload_omitted");
 });
+
+it("renders retained root errors alongside historical output without making them assistant prose", () => {
+  render(
+    <SavedEntry
+      entry={{
+        position: 0,
+        message_kind: "response",
+        parts: [{ kind: "assistant", text: "Partial answer" }],
+        failures: [
+          {
+            id: "failure-old",
+            run_id: "run-old",
+            message: "Earlier provider failure",
+          },
+        ],
+      }}
+    />,
+  );
+  expect(screen.getByText("Partial answer")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain(
+    "Earlier provider failure",
+  );
+});

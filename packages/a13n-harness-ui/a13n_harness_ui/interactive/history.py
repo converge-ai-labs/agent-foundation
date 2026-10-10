@@ -6,6 +6,8 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from a13n_harness_ui.surfaces import TranscriptFailure
+
 from .input_display import composer_history
 from .panels import tool_arguments, tool_preview, tool_result
 from .rendering import Status, StreamRenderer, skill_ranges, terminal_text
@@ -22,30 +24,36 @@ _PART_BYTES = 32 * 1024
 
 def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
     """Append a recent visible tail with independent byte/part and per-part bounds."""
-    selected: list[tuple[TranscriptPart, str]] = []
+    selected: list[tuple[TranscriptPart | TranscriptFailure, str]] = []
     size = 0
     omitted = page.next_cursor is not None
-    parts = (part for entry in reversed(page.entries) for part in reversed(composer_history(entry.parts)))
+    parts = (
+        part for entry in reversed(page.entries) for part in reversed((*composer_history(entry.parts), *entry.failures))
+    )
     for part in parts:
-        if not part.metadata.display or part.kind in {"system", "other"}:
+        if not isinstance(part, TranscriptFailure) and (not part.metadata.display or part.kind in {"system", "other"}):
             continue
         if len(selected) >= _HISTORY_PARTS or _HISTORY_BYTES - size < 128:
             omitted = True
             break
         text = (
-            part.text
-            if part.text is not None
+            part.message
+            if isinstance(part, TranscriptFailure)
             else (
-                "[Content omitted from history projection]"
-                if part.value_omitted
-                else part.value
-                if isinstance(part.value, str)
-                else json.dumps(part.value, ensure_ascii=False)
+                part.text
+                if part.text is not None
+                else (
+                    "[Content omitted from history projection]"
+                    if part.value_omitted
+                    else part.value
+                    if isinstance(part.value, str)
+                    else json.dumps(part.value, ensure_ascii=False)
+                )
             )
         )
         safe = terminal_text(text)
         bounded = bounded_text(safe, min(_PART_BYTES, _HISTORY_BYTES - size))
-        omitted |= bounded != safe or part.value_omitted
+        omitted |= bounded != safe or (not isinstance(part, TranscriptFailure) and part.value_omitted)
         size += len(bounded.encode("utf-8"))
         selected.append((part, bounded))
     renderer.transcript.evicted |= omitted
@@ -55,7 +63,9 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
             kind="notice",
         )
     for part, text in reversed(selected):
-        if part.kind == "tool_call":
+        if isinstance(part, TranscriptFailure):
+            renderer.append(f"Error: {text}\n", kind="notice")
+        elif part.kind == "tool_call":
             name = part.tool_name or "tool"
             block = renderer.transcript.append(f"{name}\n{tool_arguments(name, text)}", kind="tool")
             renderer.transcript.preview(block, f"{name} · {tool_preview(text)}", 2)

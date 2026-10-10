@@ -151,6 +151,7 @@ class ThreadRecord(Base):
     read_model_digest: Mapped[str | None] = mapped_column(String(_DIGEST), nullable=True)
     read_model_schema_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     read_model_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_execution_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     completion_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     completion_run_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     completion_digest: Mapped[str | None] = mapped_column(String(_DIGEST), nullable=True)

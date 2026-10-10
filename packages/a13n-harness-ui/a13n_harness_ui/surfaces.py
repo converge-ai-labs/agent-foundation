@@ -24,7 +24,7 @@ from a13n_harness_ui.model_thinking import ThinkingControl
 from a13n_harness_ui.output_comment_models import SavedOutputTarget
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
-from a13n_harness_ui.storage.contracts import AgentSource, ThreadCompletion
+from a13n_harness_ui.storage.contracts import AgentSource, ThreadCompletion, ThreadExecution
 from a13n_harness_ui.thread_files import ThreadAttachment
 
 _MAX_FAILURE_MESSAGE = 32 * 1024
@@ -160,6 +160,7 @@ class ThreadSummary(SurfaceModel):
     continuation_state: Literal["initial", "selected"]
     root_activity: RootActivityView
     completion: ThreadCompletion | None = None
+    last_execution: ThreadExecution | None = None
     goal: GoalView | None = None
 
     @field_validator("created_at", "updated_at")
@@ -287,11 +288,21 @@ class TranscriptPart(SurfaceModel):
         return self
 
 
+class TranscriptFailure(SurfaceModel):
+    """A retained Run error, not a model message or comment target."""
+
+    id: str
+    run_id: str | None = None
+    message: str = Field(max_length=4096)
+    code: str | None = Field(default=None, max_length=256)
+
+
 class TranscriptEntry(SurfaceModel):
     position: int = Field(ge=0)
     message_kind: Literal["request", "response"]
     timestamp: datetime | None = None
     parts: tuple[TranscriptPart, ...]
+    failures: tuple[TranscriptFailure, ...] = ()
 
     @field_validator("timestamp")
     @classmethod

@@ -38,7 +38,8 @@ function threadState(row: ActivityRow) {
   if (row.pending_decision) return "Needs your answer";
   if (row.thread.root_activity.state === "preparing") return "Preparing";
   if (row.thread.root_activity.state === "running") return "Running";
-  if (row.latest_operation?.status === "failed") return "Failed";
+  if (row.thread.last_execution?.status === "failed") return "Failed";
+  if (row.thread.last_execution?.status === "unknown") return "Outcome unknown";
   if (row.thread.archived) return "Archived";
   return "";
 }
@@ -48,7 +49,7 @@ function ThreadStateIcon({ row }: { row: ActivityRow }) {
     return <Question className={styles.threadWaiting} aria-hidden="true" />;
   if (row.thread.root_activity.state !== "inactive")
     return <CircleNotch className={styles.threadRunning} aria-hidden="true" />;
-  if (row.latest_operation?.status === "failed")
+  if (["failed", "unknown"].includes(row.thread.last_execution?.status ?? ""))
     return (
       <WarningCircleIcon className={styles.threadFailed} aria-hidden="true" />
     );
@@ -92,7 +93,8 @@ export function ThreadRow({
   );
   const isCoordinator = row.thread.role === "coordinator";
   const state = threadState(row);
-  const needsAttention = !!row.pending_decision || state === "Failed";
+  const needsAttention =
+    !!row.pending_decision || state === "Failed" || state === "Outcome unknown";
   const activity = [
     state,
     activeWorkerCount > 0
